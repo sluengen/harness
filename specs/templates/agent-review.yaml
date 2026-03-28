@@ -1,0 +1,50 @@
+# Agent self-review template
+#
+# Used by all non-reviewer agents (strategist, product-manager, architect,
+# backend-dev, marketing-comms) when self-evaluating their own output.
+# File naming: reviews/YYYY-MM-DD-[agent-name]-[task-id].yaml
+#
+# Scoring: 0 = not met, 1 = partially met, 2 = mostly met, 3 = fully met
+# Weighted score formula: sum(score * weight) / sum(3 * weight)
+# Pass threshold: weighted_score >= 0.8
+
+result:
+  date: "YYYY-MM-DD"
+  agent: "[agent name: strategist | product-manager | architect | backend-dev | marketing-comms]"
+  task: "[brief task description]"
+  input_summary: >
+    [One sentence describing what was requested and what was produced.]
+
+  # --------------------------------------------------------------------------
+  # Scores — use the dimensions relevant to your agent role.
+  # Each agent definition lists the exact dimensions and weights to use.
+  # Common dimensions (adjust per agent):
+  # --------------------------------------------------------------------------
+  scores:
+    input_adherence: 3        # weight 3x — does the output address every requirement?
+    format_compliance: 3      # weight 2x — does the output follow the expected format/template?
+    scope_discipline: 3       # weight 2x — no unrequested additions?
+    spec_traceability: 3      # weight 2x — every element traceable to spec or request?
+    convention_compliance: 3  # weight 1x — follows project conventions?
+    downstream_handoff: 3     # weight 2x — clear enough for next agent to act without ambiguity?
+    # Agent-specific dimensions (add/replace as appropriate):
+    # testability: 3          # weight 2x — for PM and architect
+    # security: 3             # weight 2x — for PM, architect, backend-dev
+    # tdd_compliance: 3       # weight 3x — for backend-dev
+    # audience_fit: 3         # weight 3x — for marketing-comms
+    # brand_coherence: 3      # weight 2x — for marketing-comms
+    # user_approval: 3        # weight 3x — for marketing-comms
+
+  weighted_score: 1.0   # calculate and fill in
+  passed: true          # true if weighted_score >= 0.8
+
+  issues: []
+  # If any dimension scored below 2, describe the shortfall:
+  # issues:
+  #   - dimension: input_adherence
+  #     score: 1
+  #     note: "AC-7 was not addressed in the output."
+
+  remediation: null
+  # If passed is false, describe what was revised before delivering:
+  # remediation: "Rewrote Section 3 to address AC-7. Re-scored input_adherence: 3."

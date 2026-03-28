@@ -1,0 +1,152 @@
+# System health report template
+#
+# Used by the system-steward agent when producing a health report.
+# File naming: reviews/YYYY-MM-DD-system-steward-health-report.yaml
+#
+# Severity levels: Critical | High | Medium | Low
+# (see system-steward.md for severity definitions)
+#
+# Findings are only included if there is specific evidence:
+# file name, line number, or concrete pattern observed.
+# Do not include theoretical risks or style preferences.
+
+report:
+  date: "YYYY-MM-DD"
+  agent: system-steward
+  scope: >
+    [One paragraph describing what was assessed: which repos, which spec files,
+    which assessment areas were covered. Be explicit about anything skipped and why.]
+
+  summary: >
+    [Two to four sentences. Overall health signal: how many findings, at what severity,
+    and what the dominant theme is. Do not repeat individual findings here — synthesize
+    them. e.g. "System health is good. One high-severity ADR staleness issue requires
+    attention before the next design cycle. Dependency versions are
+    current."]
+
+  finding_count:
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+
+  # --------------------------------------------------------------------------
+  # Section 1: Architecture Principle Violations
+  # Reference: specs/arch/principles.md
+  # --------------------------------------------------------------------------
+  architecture_principles:
+    assessed: true   # true | false (false if not enough code exists to assess)
+    findings:
+      - id: DRIFT-1
+        severity: High   # Critical | High | Medium | Low
+        principle: "[Principle name from specs/arch/principles.md]"
+        location: "[file path and line number or function name]"
+        description: >
+          [What the principle requires. What the code does instead.
+          Be specific — quote the code pattern or file path. Do not describe
+          what 'should' be done unless it is unambiguous.]
+        evidence: "[Exact file path: line number or function name where the violation occurs]"
+    # If no findings in this section:
+    # findings: []
+    # notes: "All assessed principles appear correctly implemented."
+
+  # --------------------------------------------------------------------------
+  # Section 2: ADR Staleness
+  # Reference: specs/decisions/ADR-*.md
+  # --------------------------------------------------------------------------
+  adr_staleness:
+    assessed: true
+    adrs_checked: []   # list of ADR file names assessed, e.g. ["ADR-001-title.md"]
+    findings:
+      - id: ADR-1
+        severity: Medium
+        adr: "[ADR filename, e.g. ADR-001-use-sqlite.md]"
+        status_in_file: Accepted   # Accepted | Proposed | Deprecated | Superseded
+        description: >
+          [What the ADR records. How the implementation has diverged from it,
+          or why the rationale no longer holds. Cite specific evidence.]
+        evidence: "[file path and line number where divergence is visible]"
+    # findings: []
+    # notes: "No accepted ADRs exist yet / all accepted ADRs match implementation."
+
+  # --------------------------------------------------------------------------
+  # Section 3: Design-to-Code Gaps
+  # Reference: specs/designs/
+  # --------------------------------------------------------------------------
+  design_code_gaps:
+    assessed: true
+    findings:
+      - id: GAP-1
+        severity: Medium
+        design_doc: "[specs/designs/filename.md]"
+        description: >
+          [What the design specifies. What is missing or structurally different
+          in the implementation. Only flag meaningful structural gaps —
+          not minor implementation variations.]
+        evidence: "[design doc section + implementation file path]"
+    # findings: []
+    # notes: "Design docs reviewed. No meaningful structural gaps found."
+
+  # --------------------------------------------------------------------------
+  # Section 4: Dependency Health
+  # Reference: pyproject.toml / requirements.txt in each product
+  # --------------------------------------------------------------------------
+  dependency_health:
+    assessed: true
+    products_checked: []   # list of products assessed
+    findings:
+      - id: DEP-1
+        severity: Low
+        package: "[package name]"
+        current_version: "[x.y.z]"
+        latest_version: "[x.y.z]"
+        product: "[product name]"
+        description: >
+          [Why this is worth flagging: major version behind, unmaintained,
+          doing more than one job and removable. Do not flag minor patch/minor
+          version lags unless they contain security fixes.]
+    # findings: []
+    # notes: "All dependencies are current / no unmaintained packages found."
+
+  # --------------------------------------------------------------------------
+  # Section 5: Test Health
+  # Reference: test suites in project repo
+  # --------------------------------------------------------------------------
+  test_health:
+    assessed: true
+    findings:
+      - id: TEST-1
+        severity: Medium
+        product: "[product name]"
+        ac_ref: "[AC-N from specs/products/...]"   # omit if not tied to an AC
+        location: "[test file path: line number or test function name]"
+        description: >
+          [What is missing or weak. Be specific: name the AC with no test,
+          quote the weak assertion, name the test that has grown into an
+          integration test. Do not flag coverage percentages.]
+    # findings: []
+    # notes: "Test coverage for all ACs confirmed. No weak assertions found."
+
+  # --------------------------------------------------------------------------
+  # Recommended tasks
+  #
+  # Drafted here for orchestrator consideration — not added to manifest.yaml
+  # directly. Orchestrator decides which to add.
+  # Only include entries for findings rated High or above.
+  # --------------------------------------------------------------------------
+  recommended_tasks:
+    - id: "refactor-[NNN]-[short-slug]"
+      name: "[Short description of the fix]"
+      type: refactor
+      product: "[Affected product]"
+      priority: "[P1–P4]"
+      status: backlog
+      source: health-report
+      health_report: "reviews/YYYY-MM-DD-system-steward-health-report.yaml"
+      finding: "[finding id, e.g. DRIFT-1]"
+      description: >
+        [What is wrong, why it matters, and what the fix involves.
+        Specific enough for an architect or dev to act on without needing
+        to re-read the full health report.]
+      pipeline: "steward → dev → reviewer"
+      # or: "steward → architect → dev → reviewer"
