@@ -1,0 +1,55 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push * --force *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git push * --force-with-lease *)",
+      "Bash(git -C * push --force *)",
+      "Bash(git -C * push * --force *)",
+      "Bash(git -C * push --force-with-lease *)",
+      "Bash(git -C * push * --force-with-lease *)",
+      "Bash(git reset --hard *)",
+      "Bash(git -C * reset --hard *)",
+      "Bash(git merge * main)",
+      "Bash(git merge * main *)",
+      "Bash(git -C * merge * main)",
+      "Bash(git -C * merge * main *)",
+      "Bash(gh pr merge *)"
+    ],
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node hooks/prompt-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node hooks/workflow-guard.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node hooks/context-monitor.js"
+          }
+        ]
+      }
+    ]
+  }
+}

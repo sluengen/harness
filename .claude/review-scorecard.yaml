@@ -1,0 +1,89 @@
+# Self-Review Scorecard
+#
+# This is the rubric used by agents and the /self-review skill to evaluate
+# output quality. Scores are 0-3 per dimension, weighted, then normalized
+# to a 0-1 scale. Results are written to reviews/ as individual YAML files.
+
+threshold: 0.8  # Minimum weighted score (0-1) to pass
+
+scale:
+  0: "Not addressed — dimension completely missing from output"
+  1: "Weak — partially addressed, significant gaps"
+  2: "Solid — addressed with minor gaps or improvements possible"
+  3: "Strong — fully addressed, no issues"
+
+dimensions:
+  - id: input_adherence
+    name: Input Adherence
+    question: "Does the output address every requirement stated in the input?"
+    weight: 3
+    applies_to: all
+
+  - id: format_compliance
+    name: Format Compliance
+    question: "Does the output follow the expected format, template, or structure?"
+    weight: 2
+    applies_to: all
+
+  - id: scope_discipline
+    name: Scope Discipline
+    question: "Does the output avoid adding things not requested or out of scope?"
+    weight: 2
+    applies_to: all
+
+  - id: spec_traceability
+    name: Spec Traceability
+    question: "Can every output element trace back to a spec, acceptance criterion, or explicit request?"
+    weight: 2
+    applies_to: all
+
+  - id: convention_compliance
+    name: Convention Compliance
+    question: "Does the output follow project conventions (principles.md, CLAUDE.md, tech stack)?"
+    weight: 1
+    applies_to: all
+
+  - id: downstream_handoff
+    name: Downstream Handoff Quality
+    question: "Is the output clear and complete enough for the next agent in the SDLC to act on without ambiguity?"
+    weight: 2
+    applies_to: [strategist, product-manager, architect]
+
+  - id: testability
+    name: Testability
+    question: "Are acceptance criteria specific and testable? Can a developer write a failing test from this output?"
+    weight: 2
+    applies_to: [product-manager, architect]
+
+  - id: tdd_compliance
+    name: TDD Compliance
+    question: "Were tests written before implementation? Do tests cover all acceptance criteria?"
+    weight: 3
+    applies_to: [backend-dev, frontend-dev]
+
+  - id: security
+    name: Security
+    question: "Are security considerations addressed per the agent's security responsibilities?"
+    weight: 2
+    applies_to: [product-manager, architect, backend-dev, reviewer]
+
+# Result file format (written to reviews/)
+#
+# Filename: reviews/YYYY-MM-DD-<agent>-<short-description>.yaml
+#
+# result:
+#   date: "2026-02-15"
+#   agent: strategist
+#   task: "Brief description of the task"
+#   input_summary: "What was requested"
+#   scores:
+#     input_adherence: 3
+#     format_compliance: 2
+#     scope_discipline: 3
+#     spec_traceability: 2
+#     convention_compliance: 3
+#     downstream_handoff: 2
+#   weighted_score: 0.85
+#   passed: true
+#   issues: []
+#   remediation: null
