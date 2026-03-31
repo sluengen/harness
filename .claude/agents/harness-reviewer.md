@@ -3,6 +3,8 @@ name: harness-reviewer
 description: Harness coherence agent — audits CLAUDE.md, agent definitions, skills, commands, hooks, and architecture specs for duplication, bloat, and correctness. Produces a structured findings report.
 tools:
   - Read
+  - Write
+  - Edit
   - Glob
   - Grep
   - Bash

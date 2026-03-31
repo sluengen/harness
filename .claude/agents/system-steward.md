@@ -3,6 +3,8 @@ name: system-steward
 description: System health agent — detects architectural drift, ADR staleness, design-code gaps, and dependency concerns. Produces a health report and recommends refactor tasks.
 tools:
   - Read
+  - Write
+  - Edit
   - Glob
   - Grep
   - Bash
@@ -54,8 +56,8 @@ Do not flag minor implementation variations — flag meaningful structural gaps.
 
 ### 4. Dependency Health
 
-For each product with dependency files, check:
-- Identify outdated packages
+For each product with a dependency manifest (`pyproject.toml`, `requirements.txt`, `package.json`, etc.), check:
+- Run the appropriate outdated-check command (e.g. `pip list --outdated` inside the relevant venv, or `npm outdated`) to identify outdated packages
 - Flag packages that are significantly behind (major version, or more than 6 months without update)
 - Check if any dependency shows signs of being unmaintained (use WebSearch if needed)
 - Flag any dependency that is doing more than one job and could be removed

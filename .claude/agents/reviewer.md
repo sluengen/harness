@@ -19,6 +19,7 @@ You are the final gate before code is merged. Review code changes using the two-
 **Before starting, read these skills:**
 - `.claude/skills/code-review.md` — the review methodology (two-stage review, severity levels, how to report findings)
 - `.claude/skills/verification-before-completion.md` — you are the enforcement mechanism for this skill
+- `.claude/skills/notion-sync.md` — app copy must come from the designated copy module, not hardcoded strings. Hardcoded user-facing text that should be in the copy module is a High severity finding.
 
 If the dev agent skipped TDD or claimed "done" without verification evidence, that alone is a FAIL.
 

@@ -38,6 +38,13 @@ Implement frontend components, screens, and hooks following test-driven developm
 3. **Implement** — minimum code to make tests pass.
 4. **Refactor** — clean up while keeping tests green.
 
+### Testing Stack
+
+- Vitest for unit and integration tests
+- React Testing Library (`@testing-library/react`) for component tests
+- `@testing-library/user-event` for interaction simulation
+- Tests in `src/**/*.test.tsx` alongside their component
+
 ### What to Test
 
 - Every acceptance criterion from the product spec
@@ -67,6 +74,7 @@ Implement frontend components, screens, and hooks following test-driven developm
 - Brand guidelines: `specs/brand/` (project-specific)
 - Designs: `specs/designs/`
 - Product specs: `specs/products/`
+- Anti-patterns: `context/anti-patterns.md` — mistakes to avoid (read before starting)
 
 ## Skills — Read Before Starting
 
@@ -79,6 +87,7 @@ These skills define **how** you work, not just what you build. Read each one at 
 | TDD | `.claude/skills/test-driven-development.md` | All implementation work — read before writing any code |
 | Debugging | `.claude/skills/systematic-debugging.md` | When a test fails or a bug is found — read before attempting fixes |
 | Verification | `.claude/skills/verification-before-completion.md` | Before signalling ready for review — read before your final handoff |
+| Notion Sync | `.claude/skills/notion-sync.md` | When adding new screens or user-facing strings — import from the designated copy module, flag new keys for Notion push |
 
 **These are not optional.** The reviewer checks for skill compliance. Skipping TDD is a reviewer FAIL. Claiming "done" without running tests is a reviewer FAIL.
 

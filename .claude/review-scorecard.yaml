@@ -65,7 +65,7 @@ dimensions:
     name: Security
     question: "Are security considerations addressed per the agent's security responsibilities?"
     weight: 2
-    applies_to: [product-manager, architect, backend-dev, reviewer]
+    applies_to: [product-manager, architect, backend-dev, frontend-dev, reviewer]
 
 # Result file format (written to reviews/)
 #
