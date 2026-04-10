@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 <!-- PROJECT: Replace this section with your project overview, tech stack,
-     and repository references. -->
+     and repository references. Also populate .claude/context.yaml with
+     your project's tech stack and key decisions. -->
 
 ## Parallel Build Streams (Worktrees)
 
@@ -36,13 +37,15 @@ Use git worktrees to run multiple pipeline tasks simultaneously. Each stream get
 |----------|---------|-------|----------|
 | `strategy/strategy.md` | Why we're building, what products, for whom | strategist | Business direction |
 | `strategy/principles.md` | Overarching decision-making principles | strategist + architect | All decisions |
-| `specs/products/*.md` | What to build — user stories, ACs, scope | product-manager | Product definition |
+| `specs/features/*.md` | Current implemented behaviour — living feature specs | product-manager + dev | Source of truth |
+| `specs/changes/<id>/` | Per-task artifacts — proposal, delta, design, tasks, review | all agents | Task execution |
 | `specs/arch/principles.md` | How we build — technical principles governing all design decisions | architect | Architecture decisions |
 | `specs/arch/escalation-levels.md` | When to pause — L0–L3 autonomy scale for agent and orchestrator actions | architect | All agent behaviour |
-| `specs/arch/pipeline.md` | Full pipeline reference — tiers, task types, bug tracking, reviewer/deploy rules | architect | Pipeline execution |
+| `specs/arch/pipeline.md` | Full pipeline reference — DAG model, artifact rules, reviewer/deploy rules | architect | Pipeline execution |
+| `specs/arch/pipeline-schema.yaml` | Machine-readable pipeline DAG — artifact deps, requirement levels, resolution logic | architect | Orchestrator routing |
 | `context/anti-patterns.md` | What failed and why — mistakes to avoid repeating | all agents | Preventing rework |
+| `.claude/context.yaml` | Shared agent context — tech stack, key decisions, anti-patterns | all agents | Context injection |
 | `specs/decisions/ADR-*.md` | Why we built it this way — record of significant architectural decisions | architect | Future design work |
-| `specs/designs/*.md` | How to build this task — schemas, models, test strategy | architect | Technical design |
 | `manifest.yaml` | Task backlog — status, assignments, artifacts | all agents | Coordination |
 | `bugs/BUG-NNN-*.md` | Bug reports — reproduction, root cause, fix, regression test, spec/ADR impact | dev + reviewer | Bug triage and regression prevention |
 
@@ -50,21 +53,28 @@ Use git worktrees to run multiple pipeline tasks simultaneously. Each stream get
 
 Full reference: `specs/arch/pipeline.md`. Summary below.
 
+The pipeline is a **DAG of artifacts**, not a linear sequence of stages. The orchestrator asks "what can happen next?" based on which artifacts exist in `specs/changes/<task-id>/`.
+
 ```
-Backend:   strategist → PM → architect → backend-dev → reviewer → deploy
-Frontend:  strategist → PM → marketing-comms → architect → frontend-dev → reviewer → deploy
-Full-stack: both dev agents run in parallel worktrees after architect
+proposal (required)
+   ├── delta (recommended)  ──┐
+   ├── design (recommended) ──┼── tasks (recommended) ── code ── review ── deploy
+   └── brand_review (recommended, frontend only)
 ```
 
-**Tiers** (`tier` field in manifest, default `standard`):
+**Typical flows:**
 
-| Tier | Pipeline | When |
-|---|---|---|
-| `standard` | Full pipeline | New features, schema changes, design judgment needed |
-| `express` | `dev → reviewer → deploy` | Carry-forwards, unambiguous bug fixes |
-| `discovery` | `dev` only | Spikes, proof-of-concept (output may not ship) |
+```
+Backend:   PM → [delta + design] → architect (tasks) → backend-dev → reviewer → deploy
+Frontend:  PM → [delta + brand_review + design] → architect (tasks) → frontend-dev → reviewer → deploy
+Full-stack: both dev agents run in parallel worktrees
+```
+
+When recommended artifacts are **waived** (with justification in proposal.md), the pipeline compresses naturally. A bug fix may flow: proposal → code → review → deploy.
 
 **Task types:** `feature` and `chore` in `tasks:` section; `bug` and `refactor` in `maintenance:` section. Bugs tracked in `bugs/` files, not manifest.
+
+**Manifest status:** three-state (`todo` | `in_progress` | `done`). Granular pipeline position is derived from the artifact DAG, not stored in the manifest.
 
 ### Agent Isolation — Worktrees Required
 
@@ -81,9 +91,9 @@ All agents use the L0–L3 escalation scale (`specs/arch/escalation-levels.md`).
 | Agent | Role | L2 checkpoints? |
 |---|---|---|
 | **strategist** | Product direction, principles, priorities | Yes — priorities, principles, personas, positioning |
-| **product-manager** | Product specs, ACs, backlog | Yes — stories, ACs, scope, domain assumptions |
+| **product-manager** | Proposals, delta specs, backlog | Yes — stories, ACs, scope, domain assumptions |
 | **marketing-comms** | Brand, voice, copy, messaging | Yes — every direction + final copy sign-off |
-| **architect** | Data models, schemas, test strategy | No |
+| **architect** | Design docs, tasks checklists, test strategy | No |
 | **backend-dev** | Python TDD, lint-clean before handoff | No |
 | **frontend-dev** | React/TS TDD, design system enforcement | No |
 | **reviewer** | Two-stage review: spec compliance then code quality | No |
@@ -93,7 +103,7 @@ All agents use the L0–L3 escalation scale (`specs/arch/escalation-levels.md`).
 
 ### Skills
 
-Skills are behavioural knowledge that agents load and follow. Unlike commands (which you invoke explicitly), skills are referenced by agent definitions and applied automatically when relevant. They live in `.claude/skills/`.
+Skills are behavioural knowledge that agents load and follow. They live in `.claude/skills/`.
 
 | Skill | File | Used by | Purpose |
 |-------|------|---------|---------|
@@ -103,10 +113,13 @@ Skills are behavioural knowledge that agents load and follow. Unlike commands (w
 | Systematic Debugging | `.claude/skills/systematic-debugging.md` | backend-dev, frontend-dev | 4-phase root cause analysis, 3-strikes escalation rule |
 | Verification Before Completion | `.claude/skills/verification-before-completion.md` | All agents | Fresh verification evidence required before any completion claim |
 | Code Review | `.claude/skills/code-review.md` | reviewer, self-review | Two-stage review methodology, severity levels, verdict criteria |
+| Code Structure | `.claude/skills/code-structure.md` | backend-dev, frontend-dev, reviewer | File size limits, modularity, composition over inline, three-strike extraction rule |
 | Writing Quality | `.claude/skills/writing-quality.md` | marketing-comms, product-manager, strategist, architect | AI slop elimination — banned phrases, structural anti-patterns, sentence-level rules |
 | Notion Sync | `.claude/skills/notion-sync.md` | frontend-dev, reviewer, marketing-comms, orchestrator | Bidirectional Notion ↔ code sync for app copy and rich docs |
+| CI Verification | `.claude/skills/ci-verification.md` | backend-dev, frontend-dev | Post-push CI check loop — poll checks, fetch errors, fix and re-push |
+| Linear Sync | `.claude/skills/linear-sync.md` | orchestrator | Bidirectional Linear ↔ manifest sync for task intake and status updates |
 
-Dev agents read these at the start of every task. The reviewer enforces compliance — skipping TDD or claiming "done" without verification evidence is a FAIL.
+Dev agents read relevant skills at the start of every task. The reviewer enforces compliance — skipping TDD or claiming "done" without verification evidence is a FAIL.
 
 ## Permissions and Safety Model
 
@@ -118,13 +131,15 @@ Dev agents read these at the start of every task. The reviewer enforces complian
 
 ### Hooks
 
-Three hooks run automatically (registered in `.claude/settings.json`):
+Five hooks run automatically (registered in `.claude/settings.json`):
 
 | Hook | Type | Trigger | Purpose |
 |------|------|---------|---------|
 | `hooks/context-monitor.js` | PostToolUse | Every tool call | Warns at 35% (warning) and 25% (critical) remaining context. Debounced to every 5 tool uses. |
 | `hooks/prompt-guard.js` | PreToolUse | Write, Edit | Scans content for prompt injection patterns (instruction override, role play, system markers, invisible Unicode). Advisory only. |
 | `hooks/workflow-guard.js` | PreToolUse | Write, Edit | Warns when editing source code on main outside a pipeline task. Advisory only. |
+| `hooks/pipeline-guard.js` | PreToolUse | Write, Edit | Warns when editing source code on a feature branch with no `specs/changes/*/proposal.md`. Catches pipeline bypass. Debounced to once/session. |
+| `hooks/ci-verify.js` | PostToolUse | Bash (git push) | Detects pushes to PR branches and reminds Claude to run the ci-verification skill. |
 
 All hooks are advisory — they inject context messages but never block execution. If the context monitor fires at critical level, run `/pause-work` before the session ends.
 
@@ -153,14 +168,20 @@ Everything at L0–L1 runs through without interruption. Do not ask for approval
 
 ### Pipeline execution
 
-Read `manifest.yaml` to determine where a task is and where to start. Never redo a completed stage — resume from the current status. Full pipeline tables and rules are in `specs/arch/pipeline.md`.
+Read `manifest.yaml` to identify task status. Evaluate the artifact DAG (`specs/arch/pipeline-schema.yaml`) to determine what artifacts are needed next. Never redo a completed artifact — resume from where the DAG indicates.
 
-**Quick reference:** manifest status → next action:
-- `backlog` → wait | `ready_for_spec` → PM | `ready_for_design` → self-review + architect | `ready_for_dev` → self-review + dev | `ready_for_review` → reviewer | `ready_for_deploy` → deployment-manager | `done` → nothing
-- Express tier skips spec/design/self-review. Discovery tier is dev-only.
-- Check both `tasks:` and `maintenance:` sections when scanning for work.
+**DAG-based quick reference:**
 
-**Reviewer FAIL:** first FAIL → send issues back to dev, re-review. Second FAIL → L3 stop, present to user.
+| DAG state | Orchestrator action |
+|---|---|
+| No change folder | Create `specs/changes/<task-id>/`, invoke product-manager |
+| `proposal.md` exists, recommended artifacts not started | Run `/self-review` → invoke agents for unblocked artifacts (delta, design, brand_review can run in parallel) |
+| All non-waived upstream artifacts complete | Run `/self-review` on design (if exists) → invoke dev |
+| Code committed, tests pass | Invoke reviewer |
+| `review.md` with PASS | Invoke deployment-manager |
+| `review.md` with FAIL | Send issues to dev (first FAIL) or L3 stop (second FAIL) |
+
+Check both `tasks:` and `maintenance:` sections when scanning for work.
 
 **Deployment:** branch + PR only. PRs require user review before merge.
 

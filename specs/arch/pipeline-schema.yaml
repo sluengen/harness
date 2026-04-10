@@ -1,0 +1,274 @@
+# =============================================================================
+# Pipeline Schema — Artifact Dependency Graph (DAG)
+# =============================================================================
+#
+# This file is the single source of truth for the pipeline. It defines:
+#   - Artifacts and their dependency graph
+#   - Requirement levels (required / recommended / optional)
+#   - Per-artifact rules (structural constraints for creation)
+#   - Resolution logic (how the orchestrator decides what happens next)
+#   - Non-linear update rules (updates don't regress position)
+#
+# pipeline.md and CLAUDE.md summarize this schema in prose.
+#
+# Key concepts:
+#   artifact:         A work product in specs/changes/<task-id>/
+#   requires:         Direct dependencies (artifacts that must be complete or waived)
+#   requirement:      required | recommended | optional
+#   waiver:           A recommended artifact skipped with justification in proposal.md
+#   capability graph: The orchestrator asks "what can happen next?" not "what stage are we at?"
+#   high-water mark:  Going back to fix an earlier artifact doesn't regress position
+#
+# Requirement levels:
+#   required:      Must exist before downstream can proceed. Only user (L2) can waive.
+#   recommended:   Proposer can skip with justification in proposal.md. Reviewer validates.
+#   optional:      Available when needed. Never blocks anything.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Artifacts
+# ---------------------------------------------------------------------------
+# Each artifact defines:
+#   produces:      File(s) created in the change folder (null = no file)
+#   requires:      Direct dependencies — other artifact IDs
+#   requirement:   required | recommended | optional
+#   agent:         Which agent creates it
+#   description:   What this artifact is
+#   rules:         Structural constraints for creating this artifact
+#   checkpoints:   L2 user checkpoints (null = none)
+#   applies_to:    Stack filter (omit = all stacks)
+
+artifacts:
+  proposal:
+    produces: proposal.md
+    requires: []
+    requirement: required
+    agent: product-manager
+    checkpoints: [stories, acceptance_criteria, scope, domain_assumptions]
+    description: >
+      Problem statement, scope, approach, and waiver justifications for any
+      recommended artifacts being skipped. Every task starts here.
+    rules:
+      - Scope to one user-facing change or one internal improvement
+      - If skipping delta, design, or tasks, include a Waivers section
+      - Each waiver names the artifact and gives a one-sentence justification
+      - The reviewer validates waivers against the actual diff
+
+  delta:
+    produces: "delta/*.md"
+    requires: [proposal]
+    requirement: recommended
+    agent: product-manager
+    description: >
+      ADDED/MODIFIED/REMOVED/RENAMED requirements relative to canonical
+      feature specs. Skip only when the change has zero impact on feature
+      spec behaviour (e.g., pure refactor, infra-only change).
+    rules:
+      - One delta file per affected feature spec (e.g., delta/auth.md)
+      - Use ADDED/MODIFIED/REMOVED/RENAMED section headers
+      - Reference the canonical spec by path (specs/features/<name>.md)
+      - Each requirement uses RFC 2119 keywords; scenarios use Given/When/Then
+
+  brand_review:
+    produces: null
+    requires: [proposal]
+    requirement: recommended
+    agent: marketing-comms
+    applies_to: [frontend, fullstack]
+    checkpoints: [positioning, brand_direction, copy, tone, final_sign_off]
+    description: >
+      Brand, voice, and copy direction for frontend surfaces. Automatically
+      waived for backend-only tasks. For frontend/fullstack, skip only when
+      the change has no user-facing copy or visual impact.
+    rules:
+      - Every user-visible string must go through brand review
+      - Output is guidance to the architect, not a stored artifact
+      - L2 checkpoint — requires explicit user approval at each step
+
+  design:
+    produces: design.md
+    requires: [proposal]
+    requirement: recommended
+    agent: architect
+    description: >
+      Data models, API contracts, component architecture, test strategy.
+      Skip only when the change requires zero architecture decisions (e.g.,
+      copy change, single-field bug fix with no structural impact).
+    rules:
+      - Address data model, API surface, component design, and test strategy
+      - Reference ADRs when design decisions have precedent
+      - Security section required when touching auth, data access, or external input
+      - If brand_review completed, incorporate its guidance
+
+  tasks:
+    produces: tasks.md
+    requires: [delta, design]
+    requirement: recommended
+    agent: architect
+    description: >
+      Implementation checklist derived from design and delta specs. Skip only
+      when the proposal alone provides sufficient implementation direction
+      (e.g., a well-described bug fix).
+    rules:
+      - Each task must be independently testable
+      - Order by dependency — earlier tasks must not depend on later ones
+      - Include test tasks alongside implementation tasks
+      - Reference specific delta requirements and design sections
+
+  exploration:
+    produces: exploration.md
+    requires: []
+    requirement: optional
+    agent: null
+    description: >
+      Investigation notes from any phase. Informational — never gates
+      anything. Any agent can create this at any time. Preserved in
+      archive for context.
+    rules:
+      - Document what was tried, what was learned, what was decided
+      - Include links to relevant code, docs, or external resources
+
+  code:
+    produces: null  # committed to branch, not a change folder artifact
+    requires: [proposal, delta, design, tasks]
+    requirement: required
+    agent: [backend-dev, frontend-dev]  # selected by stack label
+    description: >
+      TDD implementation. Requires all non-waived upstream artifacts to be
+      complete. The dev agent reads proposal plus whatever delta/design/tasks
+      exist and implements accordingly.
+    rules:
+      - Tests first, then implementation (TDD — enforced by reviewer)
+      - Lint-clean before handoff
+      - No secrets in code — escalate to L3 if needed
+
+  review:
+    produces: review.md
+    requires: [code]
+    requirement: required
+    agent: reviewer
+    description: >
+      Two-stage review — spec compliance then code quality. Also validates
+      that waived artifacts were genuinely unnecessary given the actual diff.
+    rules:
+      - "Stage 1: Does the code match the proposal, delta specs, and design?"
+      - "Stage 2: Code quality, security, TDD compliance, design system (frontend)"
+      - "Waiver validation: for each waived artifact, confirm the diff justifies the skip"
+      - "Unjustified waiver (e.g., no design but new API surface) → FAIL"
+
+  deploy:
+    produces: null
+    requires: [review]
+    requirement: required
+    agent: deployment-manager
+    requires_verdict: PASS
+    description: >
+      Create PR after reviewer PASS — never on FAIL.
+
+# ---------------------------------------------------------------------------
+# Resolution — how the orchestrator processes the DAG
+# ---------------------------------------------------------------------------
+
+resolution:
+  unblocked: >
+    An artifact is unblocked when every artifact in its `requires` list is
+    either (a) complete (file exists in change folder) or (b) waived
+    (recommended + justification in proposal.md). Required dependencies
+    must be complete — they cannot be waived without L2 user approval.
+
+  next_actions: >
+    Compute which artifacts are unblocked AND either (1) required and
+    missing, or (2) recommended, not waived, and missing. Those are the
+    next actions. Multiple may be actionable in parallel.
+
+  parallel: >
+    Artifacts with satisfied dependencies and no dependency on each other
+    can run simultaneously. Example: delta and design both require only
+    proposal — they can run in parallel after proposal completes.
+
+  waiver_resolution: >
+    When a recommended artifact is waived, its downstream dependents treat
+    it as complete for unblocking purposes. Example: if delta AND design
+    are waived, tasks (which requires [delta, design]) is unblocked. The
+    proposer may also waive tasks if the proposal provides sufficient
+    implementation direction.
+
+# ---------------------------------------------------------------------------
+# Non-linear updates
+# ---------------------------------------------------------------------------
+
+non_linear:
+  description: >
+    Pipeline position does not regress when earlier artifacts are updated.
+    The high-water mark (furthest required artifact completed) is preserved.
+
+  rules:
+    - Reviewer flags a spec gap → update proposal or delta, then re-review
+    - Position is "furthest required artifact completed" not "current artifact"
+    - Updated artifacts trigger re-validation of downstream only
+    - Review FAIL citing a proposal issue → fix path is update proposal then re-review (not restart pipeline)
+    - The orchestrator never moves a task backwards in the manifest
+
+# ---------------------------------------------------------------------------
+# Position detection
+# ---------------------------------------------------------------------------
+# The orchestrator evaluates the full DAG to determine what's needed next.
+# These labels are for status reporting, not pipeline control.
+
+detection:
+  algorithm:
+    - Read change folder contents and proposal.md waivers
+    - Mark each artifact as complete | waived | missing
+    - For each missing artifact, check if all dependencies are complete or waived
+    - "Unblocked + required + missing → must happen next"
+    - "Unblocked + recommended + not waived + missing → should happen next"
+    - If no missing required/recommended artifacts upstream of code → ready for dev
+    - If code complete → ready for review
+    - If review PASS → ready for deploy
+
+  # Position labels — derived from DAG state, used for reporting
+  position_labels:
+    not_started: "No change folder"
+    proposing: "Change folder exists, proposal.md missing"
+    specifying: "Proposal complete, recommended artifacts in progress"
+    ready_for_dev: "All non-waived upstream artifacts complete"
+    building: "Dev agent working"
+    ready_for_review: "Code committed, tests pass"
+    reviewing: "Reviewer working"
+    ready_for_deploy: "review.md exists with PASS verdict"
+    review_failed: "review.md exists with FAIL verdict"
+
+# ---------------------------------------------------------------------------
+# Reviewer rules
+# ---------------------------------------------------------------------------
+
+reviewer:
+  max_retries: 1
+  first_fail: "Send blocking issues to dev agent, re-run reviewer (L1 automated)"
+  second_fail: "Stop pipeline, present issues to user (L3 stop)"
+  waiver_validation: >
+    For each recommended artifact that was waived, the reviewer checks
+    whether the actual diff justifies the skip. An unjustified waiver
+    (e.g., "no design needed" but the diff adds a new API endpoint) is
+    a review FAIL — not a carry-forward, a hard block.
+
+# ---------------------------------------------------------------------------
+# Stack routing — which dev agent runs based on task labels
+# ---------------------------------------------------------------------------
+
+stack_routing:
+  backend: backend-dev
+  frontend: frontend-dev
+  fullstack: [backend-dev, frontend-dev]  # parallel worktrees
+
+# ---------------------------------------------------------------------------
+# Strategy (pre-pipeline, orchestrator responsibility)
+# ---------------------------------------------------------------------------
+
+strategy:
+  description: >
+    Strategy is an orchestrator responsibility, not a per-task artifact.
+    The strategist defines principles, objectives, and priorities at the
+    release level. Individual tasks inherit strategic direction.
+  agent: strategist
+  checkpoints: [priorities, principles, personas, positioning]

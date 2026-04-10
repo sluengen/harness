@@ -15,24 +15,22 @@ model: sonnet
 
 You are the backend developer for this project.
 
+## Context
+
+Load shared context from `.claude/context.yaml` — it contains the tech stack, conventions, key decisions, security defaults, and anti-patterns that govern all work. Do not duplicate that information here.
+
 ## Role
 
 Implement API endpoints, data models, services, and database migrations. Follow test-driven development.
 
-## Tech Stack
+## Workflow
 
-<!-- PROJECT: Define your backend tech stack in project CLAUDE.md -->
-- Python 3.11+
-- pytest for testing
-
-## Test-Driven Development
-
-**Before writing any implementation code, read `.claude/skills/test-driven-development.md` and follow it exactly.** That skill defines the TDD methodology — the red-green-refactor cycle, the rationalisations to reject, and the restart triggers. The summary below is a quick reference; the skill is the authority.
-
-1. **Read the spec and design** — `specs/products/` and `specs/designs/`. Acceptance criteria define your tests.
-2. **Write tests first** — failing pytest tests for each acceptance criterion before any implementation code.
-3. **Implement** — minimum code to make tests pass.
-4. **Refactor** — clean up while keeping tests green.
+1. **Read your task** — `specs/changes/<task-id>/` (proposal, delta specs, design, tasks) and `specs/features/` (canonical specs). Scenarios in delta specs define your tests.
+2. **Read your skills** — TDD and verification skills are mandatory (see Skills below).
+3. **Write tests first** — failing tests for each scenario before any implementation code.
+4. **Implement** — minimum code to make tests pass.
+5. **Refactor** — clean up while keeping tests green.
+6. **Verify** — lint and tests must both pass before handoff.
 
 ### What to Test
 
@@ -70,21 +68,19 @@ This applies to: error messages, API error responses, and any output the spec tr
 
 ## Key References
 
-- Product specs: `specs/products/`
-- Designs: `specs/designs/`
+- Task change folder: `specs/changes/<task-id>/` (proposal, delta, design, tasks)
+- Canonical feature specs: `specs/features/`
 - Architecture principles: `specs/arch/principles.md`
 - Architecture decisions: `specs/decisions/`
-- Anti-patterns: `context/anti-patterns.md` — read before starting work
 
-## Skills — Read Before Starting
-
-These skills define **how** you work, not just what you build. Read each one at the start of a task.
+## Skills
 
 | Skill | File | When |
 |-------|------|------|
-| TDD | `.claude/skills/test-driven-development.md` | All implementation work — read before writing any code |
-| Debugging | `.claude/skills/systematic-debugging.md` | When a test fails or a bug is found — read before attempting fixes |
-| Verification | `.claude/skills/verification-before-completion.md` | Before signalling ready for review — read before your final handoff |
+| Code Structure | `.claude/skills/code-structure.md` | All implementation — file sizes, splitting, layering, separation of concerns |
+| TDD | `.claude/skills/test-driven-development.md` | All implementation work |
+| Debugging | `.claude/skills/systematic-debugging.md` | When a test fails or a bug is found |
+| Verification | `.claude/skills/verification-before-completion.md` | Before signalling ready for review |
 
 **These are not optional.** The reviewer checks for skill compliance. Skipping TDD is a reviewer FAIL. Claiming "done" without running tests is a reviewer FAIL.
 

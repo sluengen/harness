@@ -1,5 +1,13 @@
 {
   "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
+    ],
     "deny": [
       "Bash(git push --force *)",
       "Bash(git push * --force *)",
@@ -16,12 +24,6 @@
       "Bash(git -C * merge * main)",
       "Bash(git -C * merge * main *)",
       "Bash(gh pr merge *)"
-    ],
-    "allow": [
-      "Read",
-      "Write",
-      "Edit",
-      "Bash(*)"
     ]
   },
   "hooks": {
@@ -36,6 +38,10 @@
           {
             "type": "command",
             "command": "node hooks/workflow-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node hooks/pipeline-guard.js"
           }
         ]
       }
@@ -47,6 +53,15 @@
           {
             "type": "command",
             "command": "node hooks/context-monitor.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node hooks/ci-verify.js"
           }
         ]
       }

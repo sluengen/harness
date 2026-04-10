@@ -1,145 +1,230 @@
 # Spec-Driven Development Pipeline
 
-Every task flows through the agent team in order. This file is the full reference — `CLAUDE.md` contains only a summary.
+Every task flows through an artifact dependency graph (DAG). This file is the prose reference — `CLAUDE.md` contains a summary. The machine-readable source of truth is `specs/arch/pipeline-schema.yaml`.
 
-## Pipeline Flows
+## Pipeline Model — Capability Graph
+
+The pipeline is a DAG of artifacts, not a linear sequence of stages. The orchestrator asks **"what can happen next?"** — not "what stage are we at?"
+
+```
+proposal (required)
+   ├── delta (recommended)  ──┐
+   ├── design (recommended) ──┼── tasks (recommended) ── code (required) ── review (required) ── deploy (required)
+   └── brand_review (recommended, frontend only)
+                               │
+   exploration (optional) ─────┘ (informational, never blocks)
+```
+
+**Parallel execution:** delta and design both require only proposal — they can run simultaneously. The orchestrator should exploit this.
+
+### Requirement Levels
+
+| Level | Rule | Who can waive |
+|---|---|---|
+| **required** | Must exist before downstream can proceed | Only user (L2 escalation) |
+| **recommended** | Proposer can skip with justification in proposal.md | PM/architect in proposal |
+| **optional** | Available when useful, never blocks | N/A — always skippable |
+
+The guardrail against shortcutting is the **reviewer**, not pre-classification. The reviewer validates that every waived artifact was genuinely unnecessary given the actual diff. An unjustified waiver is a review FAIL.
+
+### Pipeline Flows
 
 ```
 # Backend / CLI tasks:
-strategist → product-manager → architect → backend-dev → reviewer → deployment-manager
-   (why)         (what)          (how)     (build + test)  (verify)      (ship it)
+PM → [delta + design in parallel] → architect (tasks) → backend-dev → reviewer → deploy
+  (what)                             (how)              (build+test)  (verify)    (ship)
 
 # Frontend tasks (any React/TypeScript/UI work):
-strategist → product-manager → marketing-comms → architect → frontend-dev → reviewer → deployment-manager
-                                  (brand + copy)    (how)     (build + test)  (verify)      (ship it)
+PM → [delta + brand_review + design in parallel] → architect (tasks) → frontend-dev → reviewer → deploy
+                                                                       (build+test)    (verify)    (ship)
 
 # Full-stack tasks (backend + frontend together):
-strategist → product-manager → marketing-comms → architect → backend-dev + frontend-dev → reviewer → deployment-manager
-                                                              (run in parallel worktrees)
+PM → [delta + brand_review + design in parallel] → architect (tasks) → [backend-dev + frontend-dev] → reviewer → deploy
+                                                                        (parallel worktrees)
 ```
+
+When recommended artifacts are waived, the pipeline compresses naturally. A well-described bug fix flows: proposal → code → review → deploy. No separate "tier" classification needed — the DAG handles it.
+
+## Artifacts and State
+
+### Feature Specs (Source of Truth)
+
+Canonical specs live in `specs/features/`. Each describes a feature domain's **current implemented behaviour** — not what was built in a specific iteration.
+
+- One spec per feature domain (e.g., `brew-logging.md`, `auth.md`)
+- Uses RFC 2119 keywords (MUST/SHALL/SHOULD/MAY)
+- Scenarios use Given/When/Then format (each maps to a test case)
+- See `specs/templates/feature-spec.md` for format
+
+### Proposal Quality Gate
+
+The proposal is the single point where intent becomes scope. Every distinct requirement in the source issue (ticket description, user message, or bug report) must appear as a scoped item in the proposal's **Changes** or **Fix** section. The title gives the area; the description gives the specifics — solve the description, not the title.
+
+**Checklist before a proposal is complete:**
+1. Re-read the full source description sentence by sentence
+2. For each distinct behaviour, fix, or expectation mentioned: confirm it appears in the proposal scope
+3. If any requirement is intentionally excluded, state why in the proposal (out of scope, separate task, etc.)
+
+Failing this gate is how partial fixes ship and the same ticket gets re-filed.
+
+### Change Folders (Per-Task Work Products)
+
+Each task produces artifacts in `specs/changes/<task-id>/`:
+
+```
+specs/changes/<task-id>/
+  proposal.md          # Why: problem, scope, approach, waivers
+  delta/               # What changes: deltas against feature specs
+    <feature>.md       #   ADDED / MODIFIED / REMOVED / RENAMED requirements
+  design.md            # How: data model, components, test strategy
+  tasks.md             # Steps: implementation checklist
+  review.md            # Verdict: reviewer output (PASS/FAIL + findings)
+  exploration.md       # Optional: investigation notes (any phase)
+```
+
+### Waivers
+
+When a PM or architect skips a recommended artifact, they include a **Waivers** section in `proposal.md`:
+
+```markdown
+## Waivers
+
+- **delta**: No feature spec impact — this is a CSS-only fix to an existing component.
+- **design**: No architecture decisions — single-file change to an existing pattern.
+- **tasks**: Proposal describes the fix completely — no checklist needed.
+```
+
+The reviewer validates each waiver against the actual diff. If the diff contradicts the justification (e.g., "no design needed" but the diff adds a new API endpoint), the reviewer FAILs with "unjustified waiver."
+
+### Derived Pipeline Position
+
+The orchestrator evaluates the DAG — not a linear position list — to determine what happens next.
+
+**Algorithm:**
+
+1. Read change folder contents and proposal.md waivers
+2. Mark each artifact as: **complete** | **waived** | **missing**
+3. For each missing artifact, check if all dependencies are complete or waived
+4. Unblocked + required + missing → **must happen next**
+5. Unblocked + recommended + not waived + missing → **should happen next**
+6. If no missing required/recommended artifacts upstream of code → **ready for dev**
+7. If code complete → **ready for review**
+8. If review PASS → **ready for deploy**
+
+**Position labels** (for reporting):
+
+| DAG state | Label |
+|---|---|
+| No change folder | `not_started` |
+| Folder exists, no proposal | `proposing` |
+| Proposal done, recommended artifacts in progress | `specifying` |
+| All non-waived upstream complete | `ready_for_dev` |
+| Dev working | `building` |
+| Code committed, tests pass | `ready_for_review` |
+| Reviewer working | `reviewing` |
+| review.md with PASS | `ready_for_deploy` |
+| review.md with FAIL | `review_failed` |
+
+### Non-Linear Updates
+
+Pipeline position does not regress when earlier artifacts are updated. The **high-water mark** (furthest required artifact completed) is preserved.
+
+- Reviewer flags a spec gap → update proposal or delta, then re-review
+- The fix path for a review FAIL citing a proposal issue is: update proposal → re-review (not: restart the entire pipeline)
+- Updated artifacts trigger re-validation of downstream only
+- The orchestrator never moves a task backwards in the manifest
+
+### Manifest Role
+
+The manifest (`manifest.yaml`) is a **release plan**, not a pipeline ledger.
+
+- Tasks grouped by release version (or sprint/milestone)
+- Three-state status: `todo` | `in_progress` | `done`
+- Granular pipeline position derived from the DAG (above)
+
+### Archive
+
+When a task completes (PR merged):
+
+1. Delta specs merge into canonical feature specs in `specs/features/`
+2. Change folder moves to `specs/changes/archive/<release-version>/<task-id>/`
+3. Full context preserved for audit trail
 
 ## Stage Details
 
-1. **Strategy** — `strategist` defines principles, objectives, and which problems to solve next. Pauses for user input on priorities and positioning. (L2 checkpoints)
-2. **Spec** — `product-manager` writes a product spec in `specs/products/` using the template. Defines user stories, acceptance criteria, scope, and security requirements. Pauses for user input on stories, ACs, and scope. (L2 checkpoints)
-3. **Design** — `architect` reads the product spec and produces data models, CLI interface design, schema definitions, test strategy, and security considerations.
-4. **Build + Test** — `backend-dev` (Python) or `frontend-dev` (React/TypeScript) follows TDD: write tests for each acceptance criterion first, then implement to make tests pass. Backend: run `ruff check .` alongside tests. Frontend: run `vitest run` alongside tests. All code must be lint-clean and test-passing before signaling ready for review.
-5. **Verify** — `reviewer` validates the implementation against the spec, checks security, confirms TDD was followed, and runs the test suite. For frontend tasks, also runs the design system checklist (no hardcoded hex, all primitives from `components/ui/`, icons from `components/icons/`). Any non-blocking issues found during review are recorded as `review_carry_forward` items on the **next** version's backlog task in `manifest.yaml` — not on the completed task.
-6. **Deploy** — `deployment-manager` runs only after a reviewer PASS. Stages the right content for the target repo, commits with a structured message, creates a version tag, and pushes. Updates the manifest to `done`. Never deploys on a FAIL verdict — surfaces the issue and stops.
+1. **Strategy** — `strategist` defines principles, objectives, and which problems to solve next. This is an orchestrator responsibility at the release level, not a per-task artifact. Pauses for user input on priorities and positioning. (L2 checkpoints)
+2. **Proposal** — `product-manager` writes `proposal.md` in the task's change folder. Defines problem, scope, approach, and any waivers for recommended artifacts. Pauses for user input on stories, ACs, and scope. (L2 checkpoints)
+3. **Delta** — `product-manager` writes `delta/*.md` files. ADDED/MODIFIED/REMOVED/RENAMED requirements relative to canonical feature specs. Can be waived in proposal if no spec impact.
+4. **Brand Review** — `marketing-comms` provides brand, voice, and copy direction. Frontend/fullstack only. Can be waived if no user-facing copy or visual impact. (L2 checkpoints)
+5. **Design** — `architect` reads the proposal and delta specs, then writes `design.md`. Covers data models, API changes, component design, test strategy, security. Can be waived if no architecture decisions needed.
+6. **Tasks** — `architect` writes `tasks.md` as an implementation checklist derived from design and delta specs. Can be waived if proposal provides sufficient direction.
+7. **Build + Test** — `backend-dev` (Python) or `frontend-dev` (React/TypeScript) follows TDD: write tests for each scenario first, then implement. All code must be lint-clean and test-passing before signaling ready for review.
+8. **Verify** — `reviewer` validates implementation against all non-waived artifacts, checks security, confirms TDD was followed, validates waivers against the actual diff. Writes `review.md`. For frontend: also runs design system checklist.
+9. **Deploy** — `deployment-manager` runs only after a reviewer PASS. Creates a PR, updates manifest task status to `done`. Never deploys on a FAIL verdict.
 
-## Pipeline Tiers
+### Exploration
 
-Every task runs one of three pipelines. The `tier` field in `manifest.yaml` controls routing; it defaults to `standard` if absent.
-
-**Express** — carry-forward fixes and fully-specified patches
-- **Eligible:** items where every step is already described in `review_carry_forward`, or single-behaviour bug fixes with no design ambiguity
-- **Gate:** *Could a dev implement this from the manifest description alone, with zero ambiguity?* If yes, Express. If no, Standard.
-- **Pipeline:** `backend-dev → reviewer → deploy` — no spec, no design, no self-reviews
-- **Manifest:** set `tier: express` when moving the task to active status
-
-**Standard** — new features, schema changes, anything requiring design judgment
-- **Eligible:** everything not clearly Express
-- **Pipeline:** full `strategist → product-manager → architect → backend-dev → reviewer → deploy`
-- **Manifest:** `tier: standard` (or absent — this is the default)
-
-**Discovery** — exploratory spikes, proof-of-concept work
-- **Eligible:** work to validate a direction before committing to building it
-- **Pipeline:** `backend-dev` only — output may not ship
-- **Manifest:** set `tier: discovery`; add a description of what's being validated
-- **Exit:** promote to Standard (write a spec from what was learned) or discard
+Any task can include an **exploration phase**. Any agent creates `exploration.md` in the change folder documenting what they investigated and learned. This is informational — it doesn't gate anything, but is preserved in the archive.
 
 ## Task Types
 
-The `type` field classifies tasks in `manifest.yaml`. Feature and chore tasks live in the `tasks:` section; bugs and refactors live in the `maintenance:` section.
+| Type | Typical waivers | Pipeline |
+|---|---|---|
+| `feature` (default) | None — full pipeline recommended | proposal → delta → design → tasks → code → review → deploy |
+| `bug` | Delta, design, tasks often waived | proposal → code → review → deploy |
+| `refactor` | Delta often waived | proposal → design → code → review → deploy |
+| `chore` | Depends on scope | proposal → whatever is needed → code → review → deploy |
 
-| Type | Section | Default tier | Pipeline |
-|---|---|---|---|
-| `feature` (default) | `tasks:` | standard | Full pipeline or as specified by `tier` |
-| `bug` | `maintenance:` | express | dev → reviewer → deploy |
-| `refactor` | `maintenance:` | steward-sourced | steward → dev → reviewer (or + architect) |
-| `chore` | `tasks:` | n/a | Human-driven, no agent pipeline |
-
-**When to create a `type: bug` maintenance item:**
-- A reviewer records a non-blocking finding and there is no upcoming feature version to bundle it into
-- A defect or usability issue is found during real use that can be fixed independently
-- A carry-forward item on a completed task was not absorbed into the next scheduled version
-
-Use `source_task` to link a maintenance item back to the task where it was originally surfaced. Maintenance items use the same status flow as tasks (`backlog → ready_for_dev → ready_for_review → ready_for_deploy → done`).
+These are guidelines, not rigid rules. The DAG handles the actual routing based on what's waived.
 
 ## Bug Tracking
 
-Bugs are tracked in `bugs/` as individual files — **not** in `manifest.yaml`. The manifest is for features and chores; bugs are high-volume and need their own space.
+Bugs are tracked in `bugs/` as individual files — not in `manifest.yaml`. The manifest's `maintenance:` section references open bugs for visibility.
 
 **Creating a bug:**
 1. Copy `specs/templates/bug-report.md` to `bugs/BUG-NNN-short-slug.md` (next sequential number)
 2. Fill in description, steps to reproduce, expected/actual behaviour, environment, and affected spec
 3. Add a row to the index table in `bugs/README.md`
 
-**When a bug enters the dev pipeline**, update its status to `in_progress` in the bug file. No manifest entry is needed — the bug file is the source of truth.
-
 **Fix requirements — a bug fix PR is not complete unless all four are done:**
-1. **Regression test** — a test that would have caught this bug. Mandatory; if genuinely untestable, explain why in the bug file.
-2. **Spec / AC updated** — if the bug revealed a missing or wrong acceptance criterion, update `specs/products/` to reflect the correct behaviour.
-3. **ADR updated** — if the bug revealed a design decision, constraint, or pattern that should be standardised, amend an existing ADR or create a new one in `specs/decisions/`.
-4. **Bug file Resolution section filled in** — root cause, fix summary (commit/PR ref), and confirmation of the three items above.
-
-**Reviewer checklist for bug fix PRs:**
-- Regression test exists and is named in the bug file
-- `spec_gap` field: if populated, the referenced spec file has been updated
-- `adr_impact` field: if set, the referenced ADR has been amended or created
-- Bug file status is `fixed` and Resolution section is complete
-- Update the index table in `bugs/README.md` to reflect the new status
+1. **Regression test** — a test that would have caught this bug
+2. **Feature spec updated** — if the bug revealed a missing or wrong requirement, update `specs/features/`
+3. **ADR updated** — if the bug revealed a design decision that should be standardised
+4. **Bug file Resolution section filled in** — root cause, fix summary, confirmation of above
 
 ## Security Throughout
 
-Security is embedded in every stage, even for local tools:
-- **Product Manager**: Includes data sensitivity and validation requirements in specs
-- **Architect**: Designs input validation rules and data integrity constraints
-- **Dev**: Validates all inputs via Pydantic, parameterizes queries, no secrets in code
-- **Reviewer**: Checks for injection, data exposure, and validates security requirements
+Security is embedded in every artifact:
+- **Product Manager**: Includes data sensitivity and validation requirements in proposals
+- **Architect**: Designs input validation rules and data integrity constraints in design docs
+- **Dev**: Validates all inputs via validation models, parameterizes queries, no secrets in code
+- **Reviewer**: Checks for injection, data exposure, validates security requirements, validates waivers
 
 ## Orchestrator Pipeline Execution
 
-Read `manifest.yaml` to determine where a task is and where to start. Never redo a completed stage — resume from the current status. Check the `tier` field (default: `standard`) to select the right pipeline.
+Read the manifest to identify release scope and task status. Evaluate the DAG to determine what artifacts are needed next. Never redo a completed artifact — resume from where the DAG indicates.
 
-**Standard tier:**
+**DAG-based execution:**
 
-| Manifest status | Orchestrator action |
+| DAG state | Orchestrator action |
 |---|---|
-| `backlog` | Not ready — wait for strategist to prioritise |
-| `ready_for_spec` | Invoke product-manager (with PM conversation loop) |
-| `ready_for_design` | Run `/self-review` on the product spec → invoke architect |
-| `ready_for_dev` | Run `/self-review` on the design doc → invoke backend-dev |
-| `ready_for_review` | Invoke reviewer |
-| `ready_for_deploy` | Invoke deployment-manager |
-| `done` | Nothing to do |
+| No change folder | Create `specs/changes/<task-id>/`, invoke product-manager |
+| `proposal.md` exists, recommended artifacts not yet started | Run `/self-review` on proposal → invoke agents for unblocked artifacts (delta, design, brand_review can run in parallel) |
+| All non-waived upstream artifacts complete | Run `/self-review` on design (if it exists) → invoke dev |
+| Code committed, tests pass | Invoke reviewer |
+| `review.md` with PASS | Invoke deployment-manager |
+| `review.md` with FAIL | Send issues to dev (first FAIL) or escalate to user (second FAIL) |
+| Task `done` in manifest | Archive change folder, merge deltas into feature specs |
 
-**Express tier** (`tier: express` in manifest):
-
-| Manifest status | Orchestrator action |
-|---|---|
-| `ready_for_dev` | Invoke backend-dev directly — no self-review, no spec/design required |
-| `ready_for_review` | Invoke reviewer |
-| `ready_for_deploy` | Invoke deployment-manager |
-
-**Discovery tier** (`tier: discovery` in manifest):
-
-| Manifest status | Orchestrator action |
-|---|---|
-| `ready_for_dev` | Invoke backend-dev — output may not ship |
-| `done` or discarded | Close out the task; promote to Standard if continuing |
-
-**Maintenance items** (`maintenance:` section in manifest):
-
-Check both `tasks:` and `maintenance:` when scanning for work. Maintenance items follow the same status flow but skip spec and design stages. `type: bug` defaults to `tier: express`; `type: refactor` follows the steward → dev → reviewer pipeline. Maintenance items can be run independently or held and bundled into the next feature version — orchestrator uses judgement based on priority and whether a related feature task is already in flight.
-
-Update the manifest status at each handoff. The manifest is the source of truth — if a pipeline breaks and restarts, read it and continue from where it stopped.
+**Compressed pipeline (when waivers apply):** If the PM waives delta, design, and tasks in the proposal, the orchestrator proceeds directly from proposal to dev. No separate routing — the DAG resolves naturally.
 
 ### Reviewer FAIL logic
 
-1. **First FAIL** — send the full list of blocking issues back to backend-dev or frontend-dev (whichever built the task). Re-run the reviewer. (L1 — automated)
+1. **First FAIL** — send the full list of blocking issues back to dev. Re-run the reviewer. (L1 — automated)
 2. **Second FAIL** — stop. Present the blocking issues to the user and wait for direction. Do not loop again without user input. (L3 — stop)
+
+**Waiver FAIL** — if the reviewer flags an unjustified waiver, it's treated as a blocking issue. The fix path is: update the artifact that was wrongly waived (not restart the pipeline). The high-water mark is preserved.
 
 ### Deployment rules
 
-All work deploys via branch + PR. PRs require user review before merge. No direct merges to main for feature work.
+All work deploys via branch + PR. PRs target `staging` by default when a staging branch exists, otherwise `main`. PRs require user review before merge. No direct merges to main for feature work.
