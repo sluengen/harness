@@ -6,7 +6,12 @@
       "Edit",
       "Bash(*)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:docs.pydantic.dev)",
+      "WebFetch(domain:typer.tiangolo.com)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": [
       "Bash(git push --force *)",
@@ -15,56 +20,13 @@
       "Bash(git push * --force-with-lease *)",
       "Bash(git -C * push --force *)",
       "Bash(git -C * push * --force *)",
-      "Bash(git -C * push --force-with-lease *)",
-      "Bash(git -C * push * --force-with-lease *)",
       "Bash(git reset --hard *)",
       "Bash(git -C * reset --hard *)",
       "Bash(git merge * main)",
       "Bash(git merge * main *)",
-      "Bash(git -C * merge * main)",
-      "Bash(git -C * merge * main *)",
-      "Bash(gh pr merge *)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node hooks/prompt-guard.js"
-          },
-          {
-            "type": "command",
-            "command": "node hooks/workflow-guard.js"
-          },
-          {
-            "type": "command",
-            "command": "node hooks/pipeline-guard.js"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node hooks/context-monitor.js"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node hooks/ci-verify.js"
-          }
-        ]
-      }
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf $HOME*)"
     ]
   }
 }

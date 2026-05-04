@@ -1,17 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv
+uv.lock
+
+# State / artifacts
+.harness/
+*.db
+*.db-shm
+*.db-wal
+
 # Worktrees
 .worktrees/
 
-# Generated views
-views/
-
-# Python
-__pycache__/
-*.pyc
-venv/
-.venv/
-
-# Node
-node_modules/
-
 # OS
 .DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Claude Code local
+.claude/settings.local.json
