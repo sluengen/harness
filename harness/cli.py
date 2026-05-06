@@ -28,6 +28,15 @@ app = typer.Typer(
 )
 
 
+@app.callback()
+def _root() -> None:
+    """Calibrate Harness root callback.
+
+    Forces Typer into multi-subcommand mode so subcommands like `version` are
+    invoked as `harness version` (not promoted to the root).
+    """
+
+
 @app.command()
 def version(json_output: bool = typer.Option(False, "--json")) -> None:
     """Print harness version."""
@@ -35,6 +44,13 @@ def version(json_output: bool = typer.Option(False, "--json")) -> None:
         typer.echo(f'{{"version": "{__version__}"}}')
     else:
         typer.echo(f"calibrate-harness {__version__}")
+
+
+@app.command()
+def validate(workflow: str) -> None:
+    """Validate a workflow YAML file (placeholder — see H-008)."""
+    typer.echo(f"validate not yet implemented (H-008). Asked to validate: {workflow}")
+    raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":

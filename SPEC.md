@@ -1,6 +1,6 @@
 # Calibrate Harness — Design Specification
 
-**Version:** 0.5 (planning)
+**Version:** 0.6 (planning)
 **Status:** Under revision. No code lands until this is approved.
 **Guiding principle:** *Build a deterministic execution engine, not an agent framework.*
 
@@ -17,6 +17,7 @@ Execute workflows deterministically. Decouple *what work gets done* (orchestrati
 3. **LLMs as bounded functions.** AI nodes execute tightly scoped tasks against declared contracts. The workflow declares the bounded *tool set* available to a node; the LLM chooses which tools to use within that set — that's where its creative problem-solving applies. **The YAML defines what to do with each step's output; the LLM provides typed answers to declared questions.** An LLM contributing a `decision: bool` to a gate is the LLM answering a question, not deciding the route — the YAML's `on_reject:` decides the route. Control flow shape is deterministic and lives in YAML, not in model judgement.
 4. **Reproducibility.** Same inputs → same execution behaviour. Container provides consistent runtime.
 5. **CLI is a public contract.** The harness is invoked by humans, agents, and meta-orchestrators through the same CLI surface. Stable flags, stable exit codes, stable JSON output.
+6. **Data flows via the workflow, not the agent.** External data (Linear issues, Notion content, GitHub state) is fetched by deterministic upstream nodes and passed to AI nodes via state and template variables. AI nodes do not reach out to MCP servers, plugin systems, or external APIs at runtime. This keeps token cost predictable (no model burning context deciding what to fetch), keeps state explicit (the run record shows exactly what the agent saw), and keeps the agent-harness layer thin (no MCP servers to configure per-adapter, no asymmetry between Claude Code / codex / opencode features to paper over).
 
 ---
 
@@ -44,7 +45,7 @@ Execute workflows deterministically. Decouple *what work gets done* (orchestrati
 │  Execution environment (inside container)                       │
 │  - Mounted project directory at /workspace                      │
 │  - Worktree per run (when workflow opts in via worktree node)   │
-│  - Anthropic SDK / OpenAI (Ollama) / Pi (multi-backend adapter) │
+│  - Agent harness: claude_agent_sdk / codex / opencode (subproc) │
 │  - SQLite state + event log at /workspace/.harness/             │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -106,10 +107,10 @@ calibrate-harness/
 │   │   └── resume.py          ← rehydrate state, jump to next node
 │   ├── dispatch/
 │   │   ├── __init__.py
-│   │   ├── base.py            ← Agent protocol (v1)
-│   │   ├── claude.py          ← Anthropic SDK client (v1)
-│   │   ├── ollama.py          ← OpenAI SDK pointed at Ollama (v1.5)
-│   │   └── pi.py              ← Pi adapter — fans out to ~20 backends (v1.5)
+│   │   ├── base.py            ← Agent protocol — wraps an agent harness (v1)
+│   │   ├── claude_agent.py    ← claude_agent_sdk in-process (v1)
+│   │   ├── codex.py           ← OpenAI codex CLI subprocess (v1.5)
+│   │   └── opencode.py        ← opencode CLI subprocess (v1.5) — local + multi-vendor
 │   ├── state/
 │   │   ├── __init__.py
 │   │   ├── schema.py          ← BaseState, run_id, worktree fields, helpers
@@ -212,18 +213,47 @@ class Artifacts(BaseModel):
 
 ### 4.4 `harness.nodes.ai`
 
-AI node. Calls a registered `Agent` (Claude / Ollama / Pi).
+AI node. Wraps an agent harness (claude_agent_sdk / codex / opencode — see §4.7) for the duration of one bounded task.
 
 Inputs:
 - Rendered prompt (Jinja2, with `state`, `inputs`, and any `template_vars` in scope).
-- Contract type (Pydantic — either an inline-compiled model from the YAML or an importable class).
-- Allowed tool set (workflow-declared via `allowed_tools:`; defaults to a sensible read-only set: `Read`, `Grep`, `Glob`).
+- Contract type (Pydantic — compiled from inline YAML or `$contracts/<name>` reference).
+- Allowed tool set (`allowed_tools:`; default read-only: `Read`, `Grep`, `Glob`).
 
 Output: `NodeResult[contract]`.
 
-The LLM chooses which of the allowed tools to invoke. The engine never reaches into that decision — bounding is by *availability*, not by *selection*. Tool calls are captured as `tool_called` / `tool_completed` events for observability.
+#### Structured output via native tool calling
 
-Retries: see §10. Contract violations retry up to N with stricter system messages, then fail.
+The contract compiles to **two** artefacts at workflow load time:
+
+1. A **Pydantic model** for final validation.
+2. A **tool schema** (in the agent harness's native dialect) called `submit_<node_id>`, with one parameter per contract field, typed.
+
+The agent's instructions are: do the work using the allowed tools, then call `submit_<node_id>` exactly once with the typed payload. The harness extracts the call's arguments → validates against Pydantic → that's the `NodeResult.contract`.
+
+This pattern uses what RL-trained models are best at (tool calling), avoids fighting the harness's response format, and gives us first-line validation from the harness itself before our Pydantic check runs.
+
+#### Notes channel — auto-captured from text deltas
+
+Whatever text the agent emits *between* tool calls — "I'll start by reading X, looks like the issue is Y, now I'll check Z" — is captured automatically into `state.notes` (list-append). This is framework-provided, not workflow-opt-in: the harness listens to the agent harness's text-delta stream and routes each chunk as a note entry. No `note(text)` tool, no special declaration in the contract. The agent just talks; the harness just listens.
+
+Notes are bounded — see §7.
+
+#### Failure-mode catalogue (real, not hypothetical)
+
+Tool-call-based structured output works almost every time. The "almost" is what makes the engine robust. Five patterns to detect and respond to:
+
+| Pattern | Detection | Response |
+|---|---|---|
+| Model narrates the answer in chat instead of calling submit | Submit tool not called by end of turn | Contract-violation retry: stricter system message ("you MUST call submit_X with the typed payload, not narrate"). Fails after retry. |
+| Model calls submit with placeholder values (`"summary": "TODO"`) | Pydantic validation passes but values look like placeholders (regex on common patterns: `TODO`, `<...>`, `example`, etc.) | Contract-violation retry. Engine logs the suspicious payload. |
+| Model calls submit twice with different content | Engine sees two `tool_called(submit_*)` events | First call wins. Second call is logged as `decision_violation` and emits a warning. Workflow continues. |
+| Model calls submit then keeps emitting text | submit was called, but agent hasn't ended turn | Engine treats first call as the result; subsequent text becomes notes. |
+| Model never calls submit and exits the loop | Submit tool not called by turn end + agent stop | Contract-violation retry. Fails after retry exhaustion → exit code 3. |
+
+Each detection runs in the executor wrapper around the agent call. Each fires a `node_failed` (or, in the warning case, a `decision_violation` event) with a specific reason so failure-mode debugging is a single grep, not interpretive archaeology.
+
+Retries: see §10. Contract violations retry up to N with stricter system messages, then fail with exit code 3.
 
 ### 4.5 `harness.nodes.decision`
 
@@ -257,7 +287,7 @@ Three sub-types via parameter, not separate node types:
 
 ### 4.7 `harness.dispatch.base`
 
-The `Agent` protocol — what makes Claude and Ollama interchangeable:
+The `Agent` protocol wraps an **agent harness**, not a raw model API. We do not reimplement the tool loop — Claude Code, codex, and opencode have all converged on the same shape and frontier labs RL-train against it. We rent that loop and own the deterministic workflow layer above.
 
 ```python
 class Agent(Protocol):
@@ -265,21 +295,40 @@ class Agent(Protocol):
         self,
         prompt: str,
         contract: type[BaseModel],
+        submit_tool_schema: dict,    # auto-generated from contract; see §4.4
         *,
+        allowed_tools: list[str],
         cwd: Path | None,
-        max_tool_calls: int = 50,
         timeout_s: int = 600,
+        stall_timeout_s: int = 300,
     ) -> NodeResult: ...
 ```
 
 Implementations:
-- **v1 — `dispatch.claude.ClaudeAgent`** — uses `anthropic` SDK with structured-output enforcement. The only agent shipped on day one.
-- **v1.5 — `dispatch.ollama.OllamaAgent`** — uses `openai` SDK with `base_url=http://localhost:11434/v1` for direct Ollama calls.
-- **v1.5 — `dispatch.pi.PiAgent`** — wraps the Pi coding-agent harness (`@mariozechner/pi-coding-agent`), which fans out to ~20 backends (Anthropic API direct, OpenAI, Gemini, Groq, OpenRouter, local Ollama / LM Studio / llamacpp).
 
-Why defer Ollama and Pi: each adapter carries its own integration surface (auth, error mapping, tool-call handling, structured-output workarounds). Three implementations on day one means three sets of tests and three things to break before the engine is even validated. The `Agent` Protocol exists from day one — adding the others later requires no engine changes, just a new ~150-line module.
+- **v1 — `dispatch.claude_agent.ClaudeAgent`** — uses `claude_agent_sdk` (Anthropic's Python SDK that embeds the Claude Code loop in-process). Auths via `claude /login` for **subscription pricing** or `ANTHROPIC_API_KEY` for API rates. Ships day one.
+- **v1.5 — `dispatch.codex.CodexAgent`** — subprocess `codex` CLI for OpenAI models. OpenAI's frontier models are RL-trained against the codex tool-call format — using the native harness avoids the small-but-real performance penalty of routing through opencode's generic dispatch.
+- **v1.5 — `dispatch.opencode.OpencodeAgent`** — subprocess `opencode` CLI for **local models** (Ollama / llama-swap / llama.cpp via OpenAI-compatible endpoint). Could also serve OpenAI as a fallback, though codex is preferred for OpenAI native models.
 
-Adding a new agent (e.g., a future opencode adapter) follows the same pattern.
+#### Why claude_agent_sdk and not the raw `anthropic` SDK
+
+The raw Anthropic SDK gives us a model API. `claude_agent_sdk` gives us the Claude Code loop in-process (tool execution, structured response handling, sandbox semantics). Building the loop ourselves is ~1000 LOC of agent-harness reinvention. Using the SDK is ~150 LOC of adapter code and we inherit Anthropic's improvements as the SDK evolves.
+
+#### Feature symmetry — resolved by Principle 6
+
+Different agent harnesses expose different feature surfaces (Claude Code has rich MCP, skills, hooks; codex has a different dialect; opencode has its own). On the surface that's an asymmetry problem.
+
+**It isn't, because of Principle 6.** We don't use those features in the agent loop. Linear data is fetched by an upstream `script` node and passed via state, not by an in-loop MCP server. Domain knowledge lives in the prompt template (and Jinja partials), not in skills. Pre/post-tool-call interception, if we ever need it, lives at the engine level (executor wraps the agent call), not at the harness level — that makes it portable.
+
+The lowest-common-denominator we *do* depend on across all three adapters:
+- Tool calling with typed schemas
+- Streaming text output (for notes capture)
+- A bounded, explicit tool list (for `allowed_tools:`)
+- Per-tool-call observability (events captured during execution)
+
+All three harnesses support all four. Asymmetry is real but doesn't bite the workflow layer.
+
+Adding a new agent (e.g., aider, cline, or a future opencode replacement) is one ~150–250-line module that implements `Agent`. No engine changes.
 
 ### 4.8 `harness.state.store`
 
@@ -501,6 +550,15 @@ The harness resolves the reference at load time and compiles to the same Pydanti
 
 **Why every node?** Implicit shapes are the foot-gun. If a downstream node can reference `$state.<field>`, that field's existence is a load-time guarantee, not a runtime hope.
 
+#### Contract compiles to two artefacts
+
+At workflow load time, every contract compiles to:
+
+1. **A Pydantic model.** Validates the final payload after the agent returns. Backstop guarantee.
+2. **A tool schema** in the agent harness's native dialect (`submit_<node_id>(...)`). Injected into the agent's available tools at run time. The agent calls this tool with the typed payload to deliver its output. See §4.4 for the structured-output mechanism.
+
+Both artefacts come from the same source — the YAML `contract:` block — so they can never drift. Authors write one schema and get both behaviours: native tool-call structured output for the agent, Pydantic validation for the engine.
+
 ### Decision nodes (LLM gates and human approvals)
 
 The `check` node handles deterministic gating (boolean expressions over state). The `decision` node handles the *non*-deterministic kind: an LLM judging whether to proceed, or a human approving an artifact. Two actor flavors share one node type.
@@ -696,13 +754,28 @@ When multiple steps write the same state field, the merge is **type-driven**, no
 
 ### Why this works
 
-- **Accumulation is a list type.** A workflow that wants soft-context notes declares `notes: list[string]` in any contract that writes one; every writer appends. No special channel.
+- **Accumulation is a list type.** Lists naturally append; perfect for the auto-populated notes channel.
 - **Status fields are scalars.** `tests_pass`, `review_status`, `worktree_branch` overwrite naturally as the workflow progresses.
+
+### Notes — framework-provided, auto-populated
+
+The `notes: list[str]` field on `BaseState` is special only in *how it's populated*: the AI node captures the agent harness's text-delta stream (everything the model says between tool calls) and routes each chunk into `state.notes` as an append. No `note(text)` tool, no contract opt-in, no workflow ceremony.
+
+Workflows that want *typed* notes (e.g., `warnings: list[string]` populated by a specific contract field) still work and stay unaffected — those are explicit contract fields. The framework `notes` channel is for the agent's free-form thinking, captured for debugging.
+
+### Bounding strategy
+
+Notes auto-capture can grow fast — a long-running AI node can emit thousands of words of "thinking aloud." Two caps applied in order on every write:
+
+- **Per-list entry count** — max 100 entries; oldest dropped first.
+- **Total character budget** — max 50 KB across the whole list; if a write would exceed, oldest entries dropped until under budget.
+
+Both caps are non-configurable in v1. The character budget is the load-bearing one — entry count alone doesn't bound the worst case. Revisit if a real workflow hits either cap.
 
 ### Engine enforcement
 
 - Type-driven merge is applied automatically at write time inside `StateStore.update`.
-- Cap on list growth: lists capped at 100 entries (oldest dropped) to prevent unbounded accumulation. Not configurable in v1 — revisit if a real workflow hits the cap.
+- Caps applied automatically per the bounding strategy above.
 
 ### Deferred to v1.5
 
