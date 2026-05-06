@@ -26,10 +26,24 @@ Pre-implementation. The deliverable for this phase is the SPEC. Code lands only 
 
 ## Conventions (when implementation starts)
 
-- TDD — tests before implementation.
+- TDD — tests before implementation. See `.claude/skills/test-driven-development.md`.
 - Atomic commits, each leaves the project working.
 - All work on feature branches off `main`. Never commit implementation directly to `main`.
-- Lint passes before tests run.
+- Lint passes before tests run. Verification gate in `.claude/skills/verification-before-completion.md`.
+- Worktrees per `.claude/skills/worktree-isolation.md` for any multi-commit flow.
+
+## Agents
+
+| Agent | When to dispatch |
+|---|---|
+| `python-dev` | Implementation work — features, modules, contracts, dispatch adapters |
+| `reviewer` | Pre-merge review on a branch's diff |
+
+Invoke via the Agent tool with the matching `subagent_type`.
+
+## Commands
+
+- `/start-task <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
 
 ## Commit format
 
