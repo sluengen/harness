@@ -1,0 +1,22 @@
+{#
+  review.j2 — review/judgment prompt.
+
+  Purpose: instruct an agent to evaluate code or output against criteria
+  and return a verdict plus findings tagged by severity.
+
+  Required template_vars:
+    criteria         - what to evaluate against (string)
+
+  Optional template_vars:
+    severity_levels  - list of severity tiers; defaults to ["HIGH", "MEDIUM", "LOW"].
+                       Override e.g. ["BLOCKING", "ADVISORY"] to use a different scheme.
+    submit_tool_name - name of the submit tool injected by the contract;
+                       defaults to "submit" so this template renders standalone.
+#}
+Review the work against these criteria: {{ criteria }}.
+
+Read the diff or relevant files, then identify issues. Tag each finding with one of these severity levels: {{ (severity_levels | default(['HIGH', 'MEDIUM', 'LOW'])) | join(', ') }}.
+
+Be concrete — point to file and line where possible. A clean review (no findings) is a valid result; do not invent issues to fill space.
+
+When done, call {{ submit_tool_name | default('submit') }} exactly once with the verdict and findings list.
