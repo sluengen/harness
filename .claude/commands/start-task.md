@@ -91,7 +91,18 @@ All three must run clean before proceeding to review.
 
 ### Step 8: Review
 
-Dispatch the reviewer agent on the diff. Address any HIGH/MEDIUM findings on touched files (fix-now rule). Re-run verification after fixes.
+Decide whether to dispatch the reviewer agent. **Dispatch when** any of these apply:
+
+- The task has runtime semantics (timing, concurrency, async lifecycles, I/O ordering, resource cleanup)
+- The task touches security-relevant code (input validation, path handling, subprocess invocation, secret handling)
+- The task implements a contract or state mutation that downstream nodes will rely on
+- You're not confident every acceptance criterion has clean test coverage
+
+**Skip when** the task is structurally simple — pure data shape (Pydantic models, type definitions, configuration files) with comprehensive test coverage and no runtime subtlety. Note the skip in the PR description so the human review knows to look harder.
+
+Empirical record so far: the reviewer caught a flaky time-ordering test in H-002 (genuine bug — ULIDs in same millisecond aren't ordered) and a procedural commit miss in H-003. Skipped on H-005 and H-013 (Pydantic models, structurally simple) without issue. Use this as your prior.
+
+When dispatching: address any HIGH/MEDIUM findings on touched files (fix-now rule). Re-run verification after fixes.
 
 If the reviewer issues FAIL twice on the same review, stop and surface the blocking issues to the user.
 

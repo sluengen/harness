@@ -38,6 +38,42 @@ Implement modules, contracts, state schemas, dispatch adapters, CLI commands. Fo
 - **Imports:** standard library first, third-party next, local last. Ruff's `I` rule enforces.
 - **No comments that restate the code.** Only explain WHY when non-obvious. See SPEC §-aware modules for examples.
 
+## Async patterns to know
+
+### Connection helpers wrap with `@asynccontextmanager`, not `async def`
+
+A function that opens a resource and returns it from `async def` produces an awaitable. Awaiting it gives you the resource — but you can't then `async with` over it because some libraries (notably `aiosqlite`) start a background thread on `connect()` and refuse to start it twice. The naive shape:
+
+```python
+# WRONG — "RuntimeError: threads can only be started once"
+async def connect(db_path: Path) -> aiosqlite.Connection:
+    return await aiosqlite.connect(db_path)
+
+async with await connect(path) as conn:   # the await consumes the awaitable
+    ...
+```
+
+Use `@asynccontextmanager` so callers get a real async context manager:
+
+```python
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def connect(db_path: Path) -> AsyncIterator[aiosqlite.Connection]:
+    conn = await aiosqlite.connect(db_path)
+    try:
+        # set PRAGMAs etc.
+        yield conn
+    finally:
+        await conn.close()
+
+async with connect(path) as conn:   # clean
+    ...
+```
+
+This is the canonical shape for any module that hands out a managed resource (DB connection, HTTP session, subprocess). `harness/state/store.py` uses it for the SQLite connection — copy that pattern.
+
 ## Security defaults
 
 - Path operations: never accept paths from untrusted input without validating they're inside the expected prefix.
