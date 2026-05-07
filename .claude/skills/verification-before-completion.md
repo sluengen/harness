@@ -61,6 +61,18 @@ uv run pytest             # must pass — every collected test, no skips left un
 
 Read each command's output. Confirm zero errors, zero warnings, zero unexplained skips.
 
+### Bash output capture: known workaround
+
+The Claude Code Bash tool sometimes auto-backgrounds long-running commands like `uv run pytest` and reports `(Bash completed with no output)` even though the test ran. The workaround that has been confirmed to work in this repo:
+
+```bash
+.venv/bin/python -m pytest -q > /tmp/pytest.txt 2>&1 ; tail -10 /tmp/pytest.txt
+```
+
+Redirect to a file, then read the file. This avoids whatever buffering quirk causes the empty-output behaviour. Same pattern works for `ruff` and `mypy`. Use the venv's binaries directly (`.venv/bin/python`, `.venv/bin/ruff`, `.venv/bin/mypy`) rather than `uv run` if backgrounding persists.
+
+If you see `(Bash completed with no output)` from a verification command, do not interpret silence as success — re-run with the file-redirect pattern and read the file.
+
 ## For the reviewer
 
 Before issuing a PASS verdict:

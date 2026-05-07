@@ -405,6 +405,7 @@ steps:
     writes: [root_cause, plan]
 
   - id: implement-and-test
+    type: loop
     loop:
       max_iterations: 5
       until: state.tests_pass
@@ -840,6 +841,7 @@ Steps execute in declared order. `depends_on:` is rarely needed because most wor
 
 ```yaml
 - id: implement-and-test
+  type: loop
   loop:
     max_iterations: 5
     until: state.tests_pass
