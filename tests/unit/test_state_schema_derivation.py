@@ -129,9 +129,9 @@ def test_derive_worked_example_field_shape(
     path = _write_workflow(project_root, WORKED_EXAMPLE_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
 
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fields = Derived.model_fields
+    fields = derived_cls.model_fields
     # The four workflow-specific fields.
     assert "root_cause" in fields
     assert "plan" in fields
@@ -155,7 +155,7 @@ def test_derive_worked_example_field_shape(
     plan_ann = fields["plan"].annotation
     assert get_origin(plan_ann) is list
     assert get_args(plan_ann) == (str,)
-    instance = Derived(**_base_kwargs())  # type: ignore[arg-type]
+    instance = derived_cls(**_base_kwargs())  # type: ignore[arg-type]
     assert instance.plan == []  # type: ignore[attr-defined]
     assert instance.failing_tests == []  # type: ignore[attr-defined]
 
@@ -166,8 +166,8 @@ def test_derive_returns_basestate_subclass(
     """AC4: derived class is a BaseState subclass."""
     path = _write_workflow(project_root, WORKED_EXAMPLE_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
-    assert issubclass(Derived, BaseState)
+    derived_cls = derive_state_schema(loaded)
+    assert issubclass(derived_cls, BaseState)
 
 
 # ---------------------------------------------------------------------------
@@ -198,14 +198,14 @@ def test_derive_empty_writes_workflow_has_only_basestate_fields(
     nothing on top of BaseState, but still works."""
     path = _write_workflow(project_root, EMPTY_WRITES_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    assert issubclass(Derived, BaseState)
+    assert issubclass(derived_cls, BaseState)
     # No fields beyond BaseState's.
-    extra_fields = set(Derived.model_fields) - set(BaseState.model_fields)
+    extra_fields = set(derived_cls.model_fields) - set(BaseState.model_fields)
     assert extra_fields == set()
     # And it instantiates.
-    Derived(**_base_kwargs())  # type: ignore[arg-type]
+    derived_cls(**_base_kwargs())  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -232,9 +232,9 @@ def test_derive_scalar_field_becomes_optional_with_none_default(
     """AC6: a `string` writes field → `str | None`, default None."""
     path = _write_workflow(project_root, SCALAR_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fi = Derived.model_fields["summary"]
+    fi = derived_cls.model_fields["summary"]
     args = get_args(fi.annotation)
     assert str in args
     assert type(None) in args
@@ -267,13 +267,13 @@ def test_derive_list_field_keeps_list_annotation_and_empty_default(
     """AC7: a list writes-field → `list[T]`, default `[]` (NOT None)."""
     path = _write_workflow(project_root, LIST_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fi = Derived.model_fields["tags"]
+    fi = derived_cls.model_fields["tags"]
     assert get_origin(fi.annotation) is list
     assert get_args(fi.annotation) == (str,)
 
-    instance = Derived(**_base_kwargs())  # type: ignore[arg-type]
+    instance = derived_cls(**_base_kwargs())  # type: ignore[arg-type]
     assert instance.tags == []  # type: ignore[attr-defined]
 
 
@@ -303,9 +303,9 @@ def test_derive_nested_object_field_stays_optional_model(
     """AC8: nested object → derived has `<NestedModel> | None = None`."""
     path = _write_workflow(project_root, NESTED_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fi = Derived.model_fields["issue"]
+    fi = derived_cls.model_fields["issue"]
     args = get_args(fi.annotation)
     # One of the union arms must be a BaseModel subclass.
     nested_models = [
@@ -315,12 +315,12 @@ def test_derive_nested_object_field_stays_optional_model(
     assert type(None) in args
     assert fi.default is None
 
-    NestedModel = nested_models[0]
+    nested_model_cls = nested_models[0]
     # Round-trip — the nested model still validates its inputs.
-    n = NestedModel(id="X-1", title="hi")
+    n = nested_model_cls(id="X-1", title="hi")
     assert n.id == "X-1"  # type: ignore[attr-defined]
     with pytest.raises(ValidationError):
-        NestedModel(id=123, title="hi")
+        nested_model_cls(id=123, title="hi")
 
 
 # ---------------------------------------------------------------------------
@@ -351,18 +351,18 @@ def test_derive_constrained_leaf_preserves_metadata(
     Optional + None default."""
     path = _write_workflow(project_root, CONSTRAINED_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fi = Derived.model_fields["priority"]
+    fi = derived_cls.model_fields["priority"]
     # Default is None
     assert fi.default is None
     # Out-of-range still rejected.
     with pytest.raises(ValidationError):
-        Derived(**_base_kwargs(), priority=99)  # type: ignore[arg-type]
+        derived_cls(**_base_kwargs(), priority=99)  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        Derived(**_base_kwargs(), priority=0)  # type: ignore[arg-type]
+        derived_cls(**_base_kwargs(), priority=0)  # type: ignore[arg-type]
     # In-range accepted.
-    ok = Derived(**_base_kwargs(), priority=3)  # type: ignore[arg-type]
+    ok = derived_cls(**_base_kwargs(), priority=3)  # type: ignore[arg-type]
     assert ok.priority == 3  # type: ignore[attr-defined]
 
 
@@ -393,16 +393,16 @@ def test_derive_enum_field_preserves_literal_and_optional(
     `Literal[...] | None` with None default."""
     path = _write_workflow(project_root, ENUM_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    fi = Derived.model_fields["status"]
+    fi = derived_cls.model_fields["status"]
     assert fi.default is None
 
     # Bad values rejected; good values accepted.
     with pytest.raises(ValidationError):
-        Derived(**_base_kwargs(), status="MAYBE")  # type: ignore[arg-type]
+        derived_cls(**_base_kwargs(), status="MAYBE")  # type: ignore[arg-type]
 
-    ok = Derived(**_base_kwargs(), status="PASS")  # type: ignore[arg-type]
+    ok = derived_cls(**_base_kwargs(), status="PASS")  # type: ignore[arg-type]
     assert ok.status == "PASS"  # type: ignore[attr-defined]
 
 
@@ -440,12 +440,12 @@ def test_derive_two_steps_same_field_collapses_to_one(
     """AC11: two writers, identical types → one field on derived."""
     path = _write_workflow(project_root, CROSS_STEP_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
     # Just one extra field beyond BaseState.
-    extra = set(Derived.model_fields) - set(BaseState.model_fields)
+    extra = set(derived_cls.model_fields) - set(BaseState.model_fields)
     assert extra == {"verdict"}
-    fi = Derived.model_fields["verdict"]
+    fi = derived_cls.model_fields["verdict"]
     assert fi.default is None
 
 
@@ -479,10 +479,10 @@ def test_derive_includes_loop_body_writes(
     """AC12: writes inside a loop body show up on the derived state."""
     path = _write_workflow(project_root, LOOP_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
+    derived_cls = derive_state_schema(loaded)
 
-    assert "tests_pass" in Derived.model_fields
-    fi = Derived.model_fields["tests_pass"]
+    assert "tests_pass" in derived_cls.model_fields
+    fi = derived_cls.model_fields["tests_pass"]
     assert type(None) in get_args(fi.annotation)
     assert bool in get_args(fi.annotation)
     assert fi.default is None
@@ -527,8 +527,8 @@ def test_derived_class_name_ends_with_state(
     """Sanity: the derived class has a readable, deterministic name."""
     path = _write_workflow(project_root, WORKED_EXAMPLE_WORKFLOW)
     loaded = load_workflow(path, contracts_root=contracts_root)
-    Derived = derive_state_schema(loaded)
-    assert Derived.__name__.endswith("State")
+    derived_cls = derive_state_schema(loaded)
+    assert derived_cls.__name__.endswith("State")
 
 
 # Touch the imports the test module relies on — placate F401 in tooling
