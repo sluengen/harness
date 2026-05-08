@@ -25,14 +25,13 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from harness.workflow.contract import ContractCompileError
-from harness.workflow.resolver import ContractRefError
-from harness.workflow.schema import Workflow
-
 from harness.workflow.loader import (
     LoadedWorkflow,
     WorkflowLoadError,
     load_workflow,
 )
+from harness.workflow.resolver import ContractRefError
+from harness.workflow.schema import Workflow
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
