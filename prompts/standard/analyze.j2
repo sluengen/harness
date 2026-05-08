@@ -1,0 +1,22 @@
+{#
+  analyze.j2 — read-only investigation prompt.
+
+  Purpose: instruct an agent to explore code/state and return a structured summary.
+
+  Required template_vars:
+    task        - what to analyze (string)
+
+  Optional template_vars:
+    tools_hint  - guidance on which tools to favor; omitted by default
+    submit_tool_name - name of the submit tool injected by the contract;
+                       defaults to the literal "submit" so this template
+                       renders standalone in tests. The runtime passes the
+                       real submit_<node_id> name.
+#}
+{{ task }}
+
+Investigate using the tools you have. Read, grep, and trace until you have a confident picture; state assumptions when evidence is thin.
+{% if tools_hint is defined %}
+Tool guidance: {{ tools_hint }}
+{% endif %}
+When done, call {{ submit_tool_name | default('submit') }} exactly once with the typed payload. Do not narrate the answer in chat — the {{ submit_tool_name | default('submit') }} call is the answer.

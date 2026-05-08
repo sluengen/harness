@@ -1,0 +1,18 @@
+{#
+  summarize.j2 — summarisation prompt.
+
+  Purpose: instruct an agent to produce a structured summary of a subject.
+
+  Required template_vars:
+    subject          - what to summarize (string)
+
+  Optional template_vars:
+    length           - target length (string, e.g. "two paragraphs"); default "concise"
+    submit_tool_name - name of the submit tool injected by the contract;
+                       defaults to "submit" so this template renders standalone.
+#}
+Summarize: {{ subject }}.
+
+Produce a {{ length | default('concise') }} summary. Lead with the answer, not the process. Drop filler — the reader wants signal, not narrative.
+
+When done, call {{ submit_tool_name | default('submit') }} exactly once with the structured fields the contract requires.
