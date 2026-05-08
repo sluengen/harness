@@ -170,7 +170,7 @@ async def test_ac5_concurrent_runs_do_not_collide(repo: Path) -> None:
 
 
 async def test_ac6_duplicate_run_id_raises(repo: Path) -> None:
-    """AC6: re-running create with the same run_id raises and leaves the existing worktree intact."""
+    """AC6: re-running create with same run_id raises; existing worktree is intact."""
     node = WorktreeNode()
     await node.create(run_id="run-dup", repo_root=repo, base="main")
     wt = repo / ".worktrees" / "harness" / "run-dup"
