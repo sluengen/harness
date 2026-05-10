@@ -185,7 +185,7 @@ class CheckNode:
 
 def _validate_on_fail(on_fail: str) -> None:
     """Reject anything outside the SPEC §5 vocabulary."""
-    if not _ON_FAIL_RE.match(on_fail):
+    if not _ON_FAIL_RE.fullmatch(on_fail):
         raise CheckNodeError(
             f"malformed on_fail {on_fail!r}: must be one of "
             f"'cancel', 'continue', or 'retry_loop:<id>'"

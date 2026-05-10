@@ -438,6 +438,21 @@ async def test_ac14_empty_retry_loop_id_rejected(tmp_path: Path) -> None:
         await node.execute(step=step, state=_state(tmp_path))
 
 
+@pytest.mark.parametrize(
+    "on_fail",
+    ["cancel\n", "continue\n", "retry_loop:foo\n"],
+)
+async def test_ac14_trailing_newline_rejected(tmp_path: Path, on_fail: str) -> None:
+    # Python's regex `$` matches end-of-string OR right before a final newline,
+    # so `^...$` with re.match silently accepts `"cancel\n"`. Lock in fullmatch
+    # semantics so router strings must be exact.
+    node = CheckNode()
+    step = _step("True", on_fail=on_fail)
+
+    with pytest.raises(CheckNodeError):
+        await node.execute(step=step, state=_state(tmp_path))
+
+
 # ---------------------------------------------------------------------------
 # AC15 — valid on_fail formats accepted
 # ---------------------------------------------------------------------------
