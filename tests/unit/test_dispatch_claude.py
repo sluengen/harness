@@ -60,7 +60,9 @@ def _text_event(text: str) -> dict[str, Any]:
     return {"kind": "text", "text": text}
 
 
-def _tool_call_event(name: str, input_: dict[str, Any], tool_use_id: str = "tu_1") -> dict[str, Any]:
+def _tool_call_event(
+    name: str, input_: dict[str, Any], tool_use_id: str = "tu_1"
+) -> dict[str, Any]:
     """A canned 'tool call' event for the fake SDK stream."""
     return {"kind": "tool_call", "name": name, "input": input_, "tool_use_id": tool_use_id}
 
