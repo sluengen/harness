@@ -26,6 +26,7 @@ import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 _DB_PATH = Path(".harness") / "harness.db"
 _ARTIFACTS_ROOT = Path(".harness") / "artifacts"
@@ -34,8 +35,8 @@ _ARTIFACTS_ROOT = Path(".harness") / "artifacts"
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     state = _read_state(args.run_id)
-    findings = list(state.get("findings") or [])
-    insights = list(state.get("systemic_insights") or [])
+    findings: list[Any] = list(state.get("findings") or [])
+    insights: list[Any] = list(state.get("systemic_insights") or [])
 
     out_dir = _ARTIFACTS_ROOT / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +59,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _read_state(run_id: str) -> dict[str, object]:
+def _read_state(run_id: str) -> dict[str, Any]:
     """Return the run's parsed ``state_json``. Fail-fast on any error;
     the engine treats a non-zero exit as a step failure (ScriptNodeError)
     and surfaces our stderr in the resulting message."""
@@ -79,11 +80,11 @@ def _read_state(run_id: str) -> dict[str, object]:
         _die(4, f"state_json invalid: {exc}")
     if not isinstance(parsed, dict):
         _die(4, f"state_json must be an object, got {type(parsed).__name__}")
-    return parsed
+    return dict(parsed)
 
 
 def _render(
-    run_id: str, domain: str, findings: list[object], insights: list[object]
+    run_id: str, domain: str, findings: list[Any], insights: list[Any]
 ) -> str:
     """Build the markdown body. Plain f-strings — no Jinja."""
     parts: list[str] = [f"# Steward Report: {domain}", "", f"Run: `{run_id}`", ""]
@@ -92,7 +93,7 @@ def _render(
         parts.append("_No findings recorded._")
     else:
         # Group by severity, preserving first-seen order for stable output.
-        by_severity: dict[str, list[dict[str, object]]] = {}
+        by_severity: dict[str, list[dict[str, Any]]] = {}
         order: list[str] = []
         for raw in findings:
             if not isinstance(raw, dict):
