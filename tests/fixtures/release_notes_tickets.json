@@ -1,0 +1,34 @@
+{
+  "tickets": [
+    {
+      "id": "CAL-301",
+      "title": "Brew picker: drum scrolls past max grind setting",
+      "labels": ["frontend", "bug"],
+      "kind": "bug"
+    },
+    {
+      "id": "CAL-303",
+      "title": "Add equipment_grinder field to brew schema",
+      "labels": ["backend", "schema"],
+      "kind": "feature"
+    },
+    {
+      "id": "CAL-305",
+      "title": "Persist guest-mode brews to localStorage before sign-in",
+      "labels": ["frontend", "auth"],
+      "kind": "feature"
+    },
+    {
+      "id": "CAL-309",
+      "title": "Tighten 422 response on PUT /brews/{id} when display_name missing",
+      "labels": ["backend", "api"],
+      "kind": "improvement"
+    },
+    {
+      "id": "CAL-312",
+      "title": "Reviewer agent: skip carry-forward on 1-5 line MED findings",
+      "labels": ["harness"],
+      "kind": "improvement"
+    }
+  ]
+}
