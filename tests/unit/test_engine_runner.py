@@ -163,8 +163,19 @@ async def test_ac1_generates_run_id_and_inserts_runs_row(tmp_path: Path) -> None
 async def test_ac2_state_carries_base_fields_and_declared_writes(
     tmp_path: Path,
 ) -> None:
-    """A 1-step workflow with one declared write — the run row's
-    state_json carries the BaseState fields *and* the declared write."""
+    """A 1-step AI workflow with one declared write — the run row's
+    state_json carries the BaseState fields *and* the declared write.
+
+    We use an AI step backed by a MockAgent because the AINode contract
+    flow is the path the workflow loader compiles + ``isinstance``-binds
+    end-to-end; the agent returns a NodeResult whose contract instance
+    is exactly the compiled type, so ``writes:`` extraction reads the
+    declared field cleanly.
+    """
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "p.j2").write_text("hi\n")
+
     db = tmp_path / "harness.db"
     wf = tmp_path / "writer.yaml"
     _write_workflow(
@@ -174,25 +185,48 @@ async def test_ac2_state_carries_base_fields_and_declared_writes(
         version: 1
         steps:
           - id: emit
-            type: script
-            command: 'printf "%s" hello'
-            writes: [stdout]
+            type: ai
+            prompt: p.j2
+            writes: [verdict]
             contract:
-              stdout: string
-              stderr: string
-              exit_code: integer
+              verdict: string
         """,
     )
 
-    runner = Runner(db_path=db)
+    # The MockAgent will be called with the compiled contract class; we
+    # return a NodeResult whose contract field is constructed from that
+    # exact class via a tiny inline agent.
+    class _ReflectingAgent(MockAgent):
+        async def execute(  # type: ignore[override]
+            self,
+            prompt: str,
+            contract: type[BaseModel],
+            submit_tool_schema: dict[str, Any],
+            *,
+            allowed_tools: list[str],
+            cwd: Path | None,
+            timeout_s: int = 600,
+            stall_timeout_s: int = 300,
+        ) -> NodeResult[BaseModel]:
+            self.calls.append(  # type: ignore[arg-type]
+                # parent class records via RecordedCall; we mimic by
+                # appending a sentinel string — the test doesn't inspect
+                # ``calls`` for this case.
+                object()
+            )
+            return NodeResult[BaseModel](
+                contract=contract.model_validate({"verdict": "shipped"}),
+                attestation=Attestation(status="complete"),
+            )
+
+    agent = _ReflectingAgent()
+    runner = Runner(db_path=db, agent=agent, prompts_dir=prompts_dir)
     exit_code = await runner.run(wf, inputs={}, base_branch="main")
     assert exit_code == 0
 
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
-        async with conn.execute(
-            "SELECT state_json FROM runs"
-        ) as cur:
+        async with conn.execute("SELECT state_json FROM runs") as cur:
             row = await cur.fetchone()
     assert row is not None
     state = json.loads(row["state_json"])
@@ -207,7 +241,7 @@ async def test_ac2_state_carries_base_fields_and_declared_writes(
     ):
         assert key in state
     # Workflow-declared write present.
-    assert state["stdout"] == "hello"
+    assert state["verdict"] == "shipped"
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +260,7 @@ async def test_ac3_base_state_initialisation_defaults(tmp_path: Path) -> None:
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
         async with conn.execute("SELECT * FROM runs") as cur:
-            row = dict((await cur.fetchone()))  # type: ignore[arg-type]
+            row = dict(await cur.fetchone())  # type: ignore[arg-type]
     state = json.loads(row["state_json"])
     assert state["started_at"] is not None
     assert state["base_branch"] == "staging"
@@ -444,7 +478,10 @@ async def test_ac6_worktree_adapter_callable(tmp_path: Path) -> None:
     real git repo; we verify the registry shape rather than running git.
     """
     db = tmp_path / "harness.db"
-    wf = _trivial_check_workflow(tmp_path)
+    # The workflow itself isn't consulted here — we're probing the
+    # registry shape directly. Materialise tmp_path just to keep parity
+    # with the other AC6 cases.
+    _ = _trivial_check_workflow(tmp_path)
 
     runner = Runner(db_path=db)
 
@@ -477,7 +514,7 @@ async def test_ac7_check_false_with_cancel_returns_exit_1(tmp_path: Path) -> Non
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
         async with conn.execute("SELECT * FROM runs LIMIT 1") as cur:
-            row = dict((await cur.fetchone()))  # type: ignore[arg-type]
+            row = dict(await cur.fetchone())  # type: ignore[arg-type]
     assert row["status"] == "failed"
     assert row["exit_code"] == 1
 
@@ -525,7 +562,7 @@ async def test_ac8_contract_violation_returns_exit_3(tmp_path: Path) -> None:
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
         async with conn.execute("SELECT * FROM runs LIMIT 1") as cur:
-            row = dict((await cur.fetchone()))  # type: ignore[arg-type]
+            row = dict(await cur.fetchone())  # type: ignore[arg-type]
     assert row["status"] == "failed"
     assert row["exit_code"] == 3
 
@@ -553,9 +590,11 @@ async def test_ac9_loop_workflow_rejected_with_loop_not_implemented(
 
     # No run was inserted.
     if db.exists():
-        async with aiosqlite.connect(db) as conn:
-            async with conn.execute("SELECT COUNT(*) FROM runs") as cur:
-                count = (await cur.fetchone())[0]  # type: ignore[index]
+        async with (
+            aiosqlite.connect(db) as conn,
+            conn.execute("SELECT COUNT(*) FROM runs") as cur,
+        ):
+            count = (await cur.fetchone())[0]  # type: ignore[index]
         assert count == 0
 
 
@@ -576,17 +615,17 @@ async def test_ac10_keyboard_interrupt_returns_exit_130(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     wf = _trivial_check_workflow(tmp_path)
 
-    NodeRunner = Callable[
+    node_runner_t = Callable[
         [Step, Any, Context],
         Awaitable[NodeResult[BaseModel]],
     ]
 
     async def _raise_kbi(_step: Step, _state: Any, _ctx: Context) -> NodeResult[BaseModel]:
-        raise KeyboardInterrupt()
+        raise KeyboardInterrupt
 
     runner = Runner(db_path=db)
     # Override the check adapter with a KBI-raising spy.
-    overrides: dict[str, NodeRunner] = {"check": _raise_kbi}
+    overrides: dict[str, node_runner_t] = {"check": _raise_kbi}
     exit_code = await runner.run(
         wf, inputs={}, base_branch="main", _node_overrides=overrides
     )
@@ -595,7 +634,7 @@ async def test_ac10_keyboard_interrupt_returns_exit_130(tmp_path: Path) -> None:
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
         async with conn.execute("SELECT * FROM runs LIMIT 1") as cur:
-            row = dict((await cur.fetchone()))  # type: ignore[arg-type]
+            row = dict(await cur.fetchone())  # type: ignore[arg-type]
     assert row["status"] == "cancelled"
     assert row["exit_code"] == 130
 
@@ -622,7 +661,7 @@ async def test_ac11_records_duration_ms_and_exit_code(tmp_path: Path) -> None:
     async with aiosqlite.connect(db) as conn:
         conn.row_factory = aiosqlite.Row
         async with conn.execute("SELECT * FROM runs LIMIT 1") as cur:
-            row = dict((await cur.fetchone()))  # type: ignore[arg-type]
+            row = dict(await cur.fetchone())  # type: ignore[arg-type]
     assert row["exit_code"] == 0
     assert isinstance(row["duration_ms"], int)
     assert row["duration_ms"] >= 0
