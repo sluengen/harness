@@ -168,18 +168,32 @@ class Executor:
 
         await self._flush_retry_events(emitter, ctx.run_id, step.id, retry_events)
 
-        if contract_cls is not None and not isinstance(result.contract, contract_cls):
-            await self._emit_failed_for_internal(
-                emitter, ctx.run_id, step.id, "ContractMismatch"
+        # Post-dispatch validation + writes. Any raise here must still close
+        # the node lifecycle with ``node_failed`` (SPEC §4.2 / §4.9 invariant:
+        # every ``node_started`` is paired with a terminal event).
+        try:
+            if contract_cls is not None and not isinstance(
+                result.contract, contract_cls
+            ):
+                raise ContractMismatch(
+                    f"step {step.id!r}: node returned contract of type "
+                    f"{type(result.contract).__name__}, expected "
+                    f"{contract_cls.__name__}"
+                )
+            if step.writes:
+                self._validate_writes_against_contract(step, contract_cls)
+                await self._apply_writes(ctx, step, result)
+        except BaseException as exc:
+            await emitter.emit(
+                run_id=ctx.run_id,
+                event_type="node_failed",
+                node_id=step.id,
+                data={
+                    "reason": type(exc).__name__,
+                    "message": str(exc),
+                },
             )
-            raise ContractMismatch(
-                f"step {step.id!r}: node returned contract of type "
-                f"{type(result.contract).__name__}, expected {contract_cls.__name__}"
-            )
-
-        if step.writes:
-            self._validate_writes_against_contract(step, contract_cls)
-            await self._apply_writes(ctx, step, result)
+            raise
 
         duration_ms = int((time.monotonic() - started_at) * 1000)
         await emitter.emit(
@@ -287,21 +301,3 @@ class Executor:
                 data=data,
             )
 
-    @staticmethod
-    async def _emit_failed_for_internal(
-        emitter: EventEmitter,
-        run_id: str,
-        node_id: str,
-        reason: str,
-    ) -> None:
-        """Emit ``node_failed`` for an executor-internal validation failure.
-
-        Separate from the raise-from-node path because the message text is
-        controlled (no need to capture an external exception's str()).
-        """
-        await emitter.emit(
-            run_id=run_id,
-            event_type="node_failed",
-            node_id=node_id,
-            data={"reason": reason, "message": ""},
-        )

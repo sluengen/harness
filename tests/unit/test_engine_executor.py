@@ -485,6 +485,47 @@ async def test_ac6_writes_referencing_unknown_contract_field_raises_contract_mis
         await Executor().execute(step, ctx)
 
 
+async def test_writes_validation_failure_closes_node_lifecycle(
+    tmp_path: Path,
+) -> None:
+    """Post-dispatch ``ContractMismatch`` still pairs ``node_started`` with
+    ``node_failed`` (SPEC §4.2 / §4.9 lifecycle invariant).
+
+    Regression: an earlier version raised ``ContractMismatch`` from the
+    writes-validation path *after* ``node_started`` was emitted but *before*
+    any terminal event, orphaning the lifecycle.
+    """
+    db = tmp_path / "harness.db"
+    state = _base_state(tmp_path)
+    await _init_db_with_run(db, state)
+
+    spy = _SpyNode()
+    spy.queue(result=_result(_AContract(a=1)))
+
+    step = _ai_step("the-step", writes=["zzz"])
+    ctx = _make_ctx(
+        db_path=db,
+        contracts={step.id: _AContract},  # _AContract has no 'zzz'
+        nodes={"ai": spy.execute},
+    )
+
+    with pytest.raises(ContractMismatch, match="zzz"):
+        await Executor().execute(step, ctx)
+
+    rows = await _fetch_events(db)
+    lifecycle_kinds = ("node_started", "node_completed", "node_failed")
+    lifecycle = [
+        r for r in rows if r["event_type"] in lifecycle_kinds and r["node_id"] == "the-step"
+    ]
+    assert [r["event_type"] for r in lifecycle] == [
+        "node_started",
+        "node_failed",
+    ]
+    data = json.loads(str(lifecycle[1]["data_json"]))
+    assert data["reason"] == "ContractMismatch"
+    assert "zzz" in data["message"]
+
+
 # ---------------------------------------------------------------------------
 # AC7 — node_started + node_completed events emitted on success
 # ---------------------------------------------------------------------------
