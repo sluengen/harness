@@ -16,6 +16,7 @@ AC mapping is inline on each test.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -89,7 +90,7 @@ def test_ac1_v1_default_returns_spec_baked_defaults() -> None:
 def test_ac1_retry_policy_is_frozen_dataclass() -> None:
     """RetryPolicy is immutable — defaults are non-configurable in v1."""
     policy = RetryPolicy.v1_default()
-    with pytest.raises((AttributeError, Exception)):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         policy.transient_attempts = 5  # type: ignore[misc]
 
 
@@ -341,6 +342,9 @@ async def test_ac10_transient_budget_exhausted_reraises_original() -> None:
 
     assert exc_info.value is last_err
     assert counter == 3
+    # 3 attempts → 2 retry events fire before attempts 2 and 3; final raise
+    # does NOT emit an event.
+    assert len(events) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +370,9 @@ async def test_ac11_contract_violation_budget_exhausted_reraises_original() -> N
 
     assert exc_info.value is last_err
     assert counter == 2
+    # 2 attempts → 1 retry event fires before attempt 2; final raise does NOT
+    # emit an event.
+    assert len(events) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +431,37 @@ async def test_ac13_layers_do_not_compound() -> None:
     assert result == "ok"
     assert calls == 3
     assert [e[1]["reason"] for e in events] == ["contract_violation", "transient"]
+
+
+async def test_ac13_layers_do_not_compound_reverse_order() -> None:
+    """ConnectionError then ContractViolation → both retried, distinct events.
+
+    Reverse of the prior test — proves layer independence in both directions.
+
+    Sequence:
+      1. raises ConnectionError → transient retry (own budget, not exhausted)
+      2. raises ContractViolation('validation_failed') → contract budget retry
+      3. succeeds → returned value comes from the third call.
+    Two retry events: transient, contract_violation. Operation called 3 times.
+    """
+    sleeps, fake_sleep = _make_sleep_recorder()
+    events, sink = _make_event_recorder()
+    calls = 0
+
+    async def op(ctx: RetryContext) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("blip")
+        if calls == 2:
+            raise ContractViolation("validation_failed")
+        return "ok-third-call"
+
+    result = await run_with_retry(op, event_sink=sink, sleep=fake_sleep)
+
+    assert result == "ok-third-call"
+    assert calls == 3
+    assert [e[1]["reason"] for e in events] == ["transient", "contract_violation"]
 
 
 # ---------------------------------------------------------------------------
