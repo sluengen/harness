@@ -37,6 +37,7 @@ Implement modules, contracts, state schemas, dispatch adapters, CLI commands. Fo
 - **No `eval`, `exec`, `pickle` on user-provided data.** No string-formatted SQL.
 - **Imports:** standard library first, third-party next, local last. Ruff's `I` rule enforces.
 - **No comments that restate the code.** Only explain WHY when non-obvious. See SPEC §-aware modules for examples.
+- **Exception names mirror SPEC vocabulary, not PEP 8 suffix convention.** When the spec talks about "contract violations" or "stalled agents," the type is `ContractViolation` and `AgentStalled` — not `ContractViolationError` and `AgentStalledError`. This makes type names grep-cleanly against the spec. Suppress N818 with a scoped `# noqa: N818` per class. The redundancy of `Error` suffix on a subclass of `Exception` isn't worth losing the spec correspondence.
 
 ## Async patterns to know
 
