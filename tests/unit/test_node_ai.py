@@ -1,0 +1,439 @@
+"""Tests for harness.nodes.ai — see SPEC §4.3, §4.4, §4.7, §5.
+
+AINode renders a Jinja prompt with state/inputs/template_vars in scope,
+compiles the contract to a ``submit_<id>`` tool schema, dispatches to an
+injected ``Agent``, and returns the agent's :class:`NodeResult` for the
+contract slot. State mutation, retries, ``writes:`` extraction, and event
+emission are out of scope (executor / H-007).
+
+The agent is faked via :class:`harness.dispatch.mock.MockAgent` — every
+test asserts on what the AINode passed to the agent (recorded calls), not
+on a real agent's behaviour. The Jinja env mirrors the runtime convention
+asserted in :mod:`tests.unit.test_standard_prompts`: ``StrictUndefined``,
+``keep_trailing_newline=True``, ``autoescape=False``.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+from jinja2 import UndefinedError
+from pydantic import BaseModel
+
+from harness.dispatch.claude import AgentStalled, ContractViolation
+from harness.dispatch.mock import MockAgent
+from harness.nodes.ai import AINode
+from harness.nodes.base import Attestation, NodeResult
+from harness.state.schema import BaseState
+from harness.workflow.schema import AIStep
+
+# ---------------------------------------------------------------------------
+# Fixtures / helpers
+# ---------------------------------------------------------------------------
+
+
+class _Summary(BaseModel):
+    summary: str
+
+
+_SUMMARY_CONTRACT_DICT = {"summary": "string"}
+
+
+def _state(tmp_path: Path, **overrides: object) -> BaseState:
+    """A BaseState with sensible defaults for tests; override per test."""
+    defaults: dict[str, object] = {
+        "run_id": "run_test",
+        "workflow_name": "test_wf",
+        "base_branch": "main",
+        "worktree_path": None,
+        "worktree_branch": None,
+        "artifacts_dir": tmp_path / "artifacts",
+        "started_at": datetime(2026, 5, 10, 12, 0, 0),
+        "notes": [],
+    }
+    defaults.update(overrides)
+    return BaseState(**defaults)  # type: ignore[arg-type]
+
+
+def _step(
+    *,
+    id: str = "n1",
+    prompt: str = "p.j2",
+    template_vars: dict[str, object] | None = None,
+    allowed_tools: list[str] | None = None,
+    contract: object | None = None,
+    cwd: str | None = None,
+    writes_files: bool = False,
+    stall_timeout_s: int = 300,
+    timeout_s: int = 600,
+) -> AIStep:
+    """Build an AIStep with reasonable defaults."""
+    return AIStep(
+        id=id,
+        type="ai",
+        prompt=prompt,
+        template_vars=template_vars or {},
+        allowed_tools=allowed_tools or ["Read"],
+        contract=contract if contract is not None else _SUMMARY_CONTRACT_DICT,
+        cwd=cwd,
+        writes_files=writes_files,
+        stall_timeout_s=stall_timeout_s,
+        timeout_s=timeout_s,
+    )
+
+
+def _write_prompt(prompts_dir: Path, name: str, body: str) -> None:
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    (prompts_dir / name).write_text(body)
+
+
+def _success_result(summary: str = "ok") -> NodeResult[BaseModel]:
+    """A NodeResult whose contract is the inline ``_SUMMARY_CONTRACT_DICT``-shaped model.
+
+    The AINode contract-compile path will produce a different class than this
+    helper; tests that exercise the misbehaving-agent guard inject a result
+    keyed to a *different* contract class on purpose.
+    """
+    return NodeResult[BaseModel](
+        contract=_Summary(summary=summary),
+        attestation=Attestation(status="complete"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC1 — Node protocol conformance
+# ---------------------------------------------------------------------------
+
+
+def test_ai_node_type_attribute() -> None:
+    """SPEC §4.3 Node Protocol: ``type`` is one of the five literals."""
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=Path("/tmp/prompts"))
+    assert node.type == "ai"
+
+
+def test_ai_node_has_async_execute() -> None:
+    import inspect
+
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=Path("/tmp/prompts"))
+    assert inspect.iscoroutinefunction(node.execute)
+
+
+# ---------------------------------------------------------------------------
+# AC2 — Renders the Jinja prompt
+# AC3 — Render scope: state / inputs / template_vars
+# ---------------------------------------------------------------------------
+
+
+async def test_renders_prompt_with_state_inputs_and_template_vars(
+    tmp_path: Path,
+) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(
+        prompts,
+        "p.j2",
+        "run={{ state.run_id }} inp={{ inputs.task }} tv={{ goal }}\n",
+    )
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    state = _state(tmp_path)
+    step = _step(template_vars={"goal": "find-bug"})
+
+    await node.execute(step=step, state=state, inputs={"task": "the-thing"})
+
+    assert agent.calls, "agent was never invoked"
+    rendered = agent.calls[0].prompt
+    assert "run=run_test" in rendered
+    assert "inp=the-thing" in rendered
+    assert "tv=find-bug" in rendered
+
+
+async def test_template_vars_override_inputs_on_collision(tmp_path: Path) -> None:
+    """Documented precedence: template_vars > inputs > state on key collision."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "x={{ x }}\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(template_vars={"x": "from-tv"})
+
+    await node.execute(step=step, state=_state(tmp_path), inputs={"x": "from-inputs"})
+
+    assert "x=from-tv" in agent.calls[0].prompt
+
+
+async def test_strict_undefined_raises_on_missing_var(tmp_path: Path) -> None:
+    """StrictUndefined: a referenced-but-unsupplied var is a render-time error."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "{{ missing_var }}\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    with pytest.raises((UndefinedError, RuntimeError)) as exc_info:
+        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+    # AC11: error mentions the step id so debugging is one grep.
+    assert "n1" in str(exc_info.value)
+
+
+async def test_missing_prompt_file_raises_with_step_id(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    # No template file at p.j2.
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+    assert "n1" in str(exc_info.value)
+    assert "p.j2" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# AC4 (consumed) — submit_<id> schema is what the agent receives
+# ---------------------------------------------------------------------------
+
+
+async def test_dispatches_with_compiled_submit_tool_schema(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(step=_step(id="analyze"), state=_state(tmp_path), inputs={})
+
+    schema = agent.calls[0].submit_tool_schema
+    assert schema["name"] == "submit_analyze"
+    # input_schema is a Pydantic JSON schema; spot-check the field name.
+    assert "summary" in schema["input_schema"]["properties"]
+
+
+# ---------------------------------------------------------------------------
+# AC5 — Dispatches to injected Agent with allowed_tools / cwd / timeouts
+# ---------------------------------------------------------------------------
+
+
+async def test_dispatches_with_allowed_tools_and_timeouts(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(allowed_tools=["Read", "Grep"], stall_timeout_s=42, timeout_s=99)
+
+    await node.execute(step=step, state=_state(tmp_path), inputs={})
+
+    call = agent.calls[0]
+    assert call.allowed_tools == ["Read", "Grep"]
+    assert call.stall_timeout_s == 42
+    assert call.timeout_s == 99
+
+
+async def test_cwd_resolution_step_cwd_wins(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(cwd="/abs/from-step")
+    state = _state(tmp_path, worktree_path=Path("/abs/from-state"))
+
+    await node.execute(step=step, state=state, inputs={})
+
+    assert agent.calls[0].cwd == Path("/abs/from-step")
+
+
+async def test_cwd_resolution_falls_back_to_worktree_path(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    state = _state(tmp_path, worktree_path=Path("/abs/from-state"))
+
+    await node.execute(step=_step(cwd=None), state=state, inputs={})
+
+    assert agent.calls[0].cwd == Path("/abs/from-state")
+
+
+async def test_cwd_resolution_none_when_neither_set(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(step=_step(cwd=None), state=_state(tmp_path), inputs={})
+
+    assert agent.calls[0].cwd is None
+
+
+# ---------------------------------------------------------------------------
+# AC6 — Returns the agent's NodeResult; guards against misbehaving agents
+# ---------------------------------------------------------------------------
+
+
+async def test_returns_agent_node_result_unchanged(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    # MockAgent's default empty contract won't match our compiled model, so
+    # we queue an explicit result whose contract type is what the AINode
+    # compiled — observed via the recorded ``contract`` argument.
+    sentinel_contract: type[BaseModel] | None = None
+
+    async def _capture_then_succeed(*args: object, **kwargs: object) -> NodeResult[BaseModel]:
+        nonlocal sentinel_contract
+        # Re-dispatch through the real recorded path then synthesize a result
+        # using the contract the AINode compiled.
+        sentinel_contract = kwargs.get("contract") or args[1]  # type: ignore[assignment]
+        # Build a valid instance of *that* contract.
+        assert sentinel_contract is not None
+        instance = sentinel_contract.model_validate({"summary": "from-agent"})
+        return NodeResult[BaseModel](
+            contract=instance,
+            attestation=Attestation(status="complete", reasoning="r"),
+        )
+
+    # Patch MockAgent.execute on this instance.
+    agent.execute = _capture_then_succeed  # type: ignore[method-assign]
+
+    result = await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+
+    assert result.attestation.reasoning == "r"
+    # The contract instance is of the AINode-compiled type, not the agent's
+    # arbitrary BaseModel — round-tripped via model_validate.
+    assert sentinel_contract is not None
+    assert isinstance(result.contract, sentinel_contract)
+
+
+async def test_misbehaving_agent_returns_wrong_contract_type_raises(
+    tmp_path: Path,
+) -> None:
+    """Defensive isinstance check: if the agent bypasses validation and hands
+    back a contract that isn't an instance of the declared contract class,
+    AINode raises a clear RuntimeError naming the step."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+
+    # MockAgent's default result has contract=_EmptyContract() — which is
+    # not an instance of the AINode-compiled summary contract.
+    agent = MockAgent()  # default synthetic empty result
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+    assert "n1" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# AC7 — Missing contract is rejected
+# ---------------------------------------------------------------------------
+
+
+async def test_no_contract_raises(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(contract=None)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+    assert "n1" in str(exc_info.value)
+    assert "contract" in str(exc_info.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# AC8 — Inline dict compiled; pre-compiled type passed through; $contracts
+#       reference deferred to H-008.
+# ---------------------------------------------------------------------------
+
+
+async def test_inline_dict_contract_compiled_on_demand(tmp_path: Path) -> None:
+    """An inline dict contract compiles to a Pydantic model whose class name
+    derives from the step id. The agent receives that compiled type."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(id="analyze", contract={"summary": "string", "score": "integer"})
+
+    # MockAgent default returns an empty contract — we expect the misbehaving
+    # guard to fire *after* the compile step. We just assert on what was
+    # passed to the agent, which is recorded *before* the guard runs.
+    with pytest.raises(RuntimeError):
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+
+    contract_cls = agent.calls[0].contract
+    # Title-cased step id + "Contract" suffix.
+    assert contract_cls.__name__ == "AnalyzeContract"
+    # Compiled fields match.
+    assert set(contract_cls.model_fields) == {"summary", "score"}
+
+
+async def test_precompiled_type_contract_passed_through(tmp_path: Path) -> None:
+    """If the step's contract is already a BaseModel subclass, AINode uses
+    it as-is (no recompile)."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    step = AIStep(
+        id="x",
+        type="ai",
+        prompt="p.j2",
+        contract=None,  # AIStep ContractSpec is str|dict|None — we bypass.
+    )
+    # Override the field directly via model_copy to inject a pre-compiled type.
+    # The supported public path is via constructor `contract_override` — see
+    # AINode docstring. Tests use a public knob.
+    with pytest.raises(RuntimeError):
+        await node.execute(
+            step=step,
+            state=_state(tmp_path),
+            inputs={},
+            contract_override=_Summary,
+        )
+
+    assert agent.calls[0].contract is _Summary
+
+
+async def test_contract_string_reference_raises_not_implemented(
+    tmp_path: Path,
+) -> None:
+    """``$contracts/<name>`` resolution lands in H-008 — AINode rejects it
+    with a clear NotImplementedError naming the dependency ticket."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(contract="$contracts/review-verdict")
+
+    with pytest.raises(NotImplementedError) as exc_info:
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+    assert "H-008" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# AC9 — Agent exceptions propagate
+# ---------------------------------------------------------------------------
+
+
+async def test_contract_violation_propagates(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent(error=ContractViolation("not_called"))
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    with pytest.raises(ContractViolation):
+        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+
+
+async def test_agent_stalled_propagates(tmp_path: Path) -> None:
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = MockAgent(error=AgentStalled(elapsed=42.0))
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    with pytest.raises(AgentStalled):
+        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
