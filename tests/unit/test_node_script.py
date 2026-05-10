@@ -22,7 +22,6 @@ from harness.nodes.script import (
 from harness.state.schema import BaseState
 from harness.workflow.schema import ScriptStep
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
