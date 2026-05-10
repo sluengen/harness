@@ -241,17 +241,18 @@ Notes are bounded — see §7.
 
 #### Failure-mode catalogue (real, not hypothetical)
 
-Tool-call-based structured output works almost every time. The "almost" is what makes the engine robust. Five patterns to detect and respond to:
+Tool-call-based structured output works almost every time. The "almost" is what makes the engine robust. The patterns below are MECE — each carries a distinct retry response, so the engine discriminates by `ContractViolation.reason` rather than collapsing them.
 
-| Pattern | Detection | Response |
-|---|---|---|
-| Model narrates the answer in chat instead of calling submit | Submit tool not called by end of turn | Contract-violation retry: stricter system message ("you MUST call submit_X with the typed payload, not narrate"). Fails after retry. |
-| Model calls submit with placeholder values (`"summary": "TODO"`) | Pydantic validation passes but values look like placeholders (regex on common patterns: `TODO`, `<...>`, `example`, etc.) | Contract-violation retry. Engine logs the suspicious payload. |
-| Model calls submit twice with different content | Engine sees two `tool_called(submit_*)` events | First call wins. Second call is logged as `decision_violation` and emits a warning. Workflow continues. |
-| Model calls submit then keeps emitting text | submit was called, but agent hasn't ended turn | Engine treats first call as the result; subsequent text becomes notes. |
-| Model never calls submit and exits the loop | Submit tool not called by turn end + agent stop | Contract-violation retry. Fails after retry exhaustion → exit code 3. |
+| Pattern | `reason` | Detection | Response |
+|---|---|---|---|
+| Model narrates the answer in chat instead of calling submit | `not_called` | Submit tool not called by end of turn | Contract-violation retry: stricter system message ("you MUST call submit_X with the typed payload, not narrate"). Fails after retry. |
+| Model calls submit with placeholder values (`"summary": "TODO"`) | `placeholder` | Pydantic validation passes but values look like placeholders (regex on common patterns: `TODO`, `<...>`, `example`, etc.) | Contract-violation retry: "be specific — placeholders are not acceptable values." Engine logs the suspicious payload. |
+| Model calls submit but the payload fails Pydantic validation | `validation_failed` | Submit tool called; Pydantic raises ValidationError on the arguments | Contract-violation retry: error feedback inline, "match the schema fields exactly." Distinct from `placeholder` because Pydantic itself rejected — the agent didn't even produce a structurally valid call. |
+| Model calls submit twice with different content | (warning, not violation) | Engine sees two `tool_called(submit_*)` events | First call wins. Second call is logged as `decision_violation` event and emits a warning. Workflow continues. |
+| Model calls submit then keeps emitting text | (informational) | submit was called, but agent hasn't ended turn | Engine treats first call as the result; subsequent text becomes notes. |
+| Model never calls submit and exits the loop | `not_called` | Submit tool not called by turn end + agent stop | Same as the narration case — agent never produced output. Contract-violation retry. |
 
-Each detection runs in the executor wrapper around the agent call. Each fires a `node_failed` (or, in the warning case, a `decision_violation` event) with a specific reason so failure-mode debugging is a single grep, not interpretive archaeology.
+Each detection runs in the executor wrapper around the agent call. Each fires a `node_failed` (or, in the double-submit case, a `decision_violation` event) with a specific reason so failure-mode debugging is a single grep, not interpretive archaeology.
 
 Retries: see §10. Contract violations retry up to N with stricter system messages, then fail with exit code 3.
 
@@ -347,7 +348,7 @@ Events:
 - `state_changed`
 - `loop_iteration`
 - `retry_attempted`
-- `decision_requested`, `decision_made` (LLM actor), `decision_received` (human actor, v2), `decision_timeout` (v2)
+- `decision_requested`, `decision_made` (LLM actor), `decision_received` (human actor, v2), `decision_timeout` (v2), `decision_violation` (warning when an agent calls submit twice — see §4.4)
 
 Each event has `run_id`, `node_id` (nullable), `event_type`, ISO timestamp, JSON `data`, `duration_ms` (nullable).
 
