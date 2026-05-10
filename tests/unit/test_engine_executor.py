@@ -30,12 +30,11 @@ from pydantic import BaseModel, ConfigDict
 
 from harness.dispatch.claude import ContractViolation
 from harness.engine.executor import (
-    ContractMismatch,
     Context,
+    ContractMismatch,
     DependencyNotSatisfied,
     Executor,
 )
-from harness.events.schema import EventType
 from harness.nodes.base import Attestation, NodeResult
 from harness.state import store
 from harness.state.schema import BaseState
@@ -47,7 +46,6 @@ from harness.workflow.schema import (
     Step,
     WorktreeStep,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -515,7 +513,8 @@ async def test_ac7_emits_node_started_then_node_completed_on_success(
 
     rows = await _fetch_events(db)
     # Filter to only the node lifecycle events (state_changed may also appear).
-    lifecycle = [r for r in rows if r["event_type"] in ("node_started", "node_completed", "node_failed")]
+    lifecycle_kinds = ("node_started", "node_completed", "node_failed")
+    lifecycle = [r for r in rows if r["event_type"] in lifecycle_kinds]
     assert [r["event_type"] for r in lifecycle] == ["node_started", "node_completed"]
     for r in lifecycle:
         assert r["node_id"] == "the-step"
