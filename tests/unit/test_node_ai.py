@@ -23,7 +23,7 @@ from jinja2 import UndefinedError
 from pydantic import BaseModel
 
 from harness.dispatch.claude import AgentStalled, ContractViolation
-from harness.dispatch.mock import MockAgent
+from harness.dispatch.mock import MockAgent, RecordedCall
 from harness.nodes.ai import AINode
 from harness.nodes.base import Attestation, NodeResult
 from harness.state.schema import BaseState
@@ -39,6 +39,67 @@ class _Summary(BaseModel):
 
 
 _SUMMARY_CONTRACT_DICT = {"summary": "string"}
+
+
+class _CompliantMockAgent(MockAgent):
+    """A MockAgent that returns a result satisfying whatever contract it
+    was passed. Used by tests that want to exercise the AINode's happy
+    path without caring about the agent's payload — they just need the
+    isinstance guard not to fire on the AINode-compiled class.
+
+    Pass ``payload`` to override the field values, otherwise minimal
+    defaults are filled per Pydantic field type.
+    """
+
+    def __init__(self, *, payload: dict[str, object] | None = None) -> None:
+        super().__init__()
+        self._payload_override = payload or {}
+
+    async def execute(  # type: ignore[override]
+        self,
+        prompt: str,
+        contract: type[BaseModel],
+        submit_tool_schema: dict[str, object],
+        *,
+        allowed_tools: list[str],
+        cwd: Path | None,
+        timeout_s: int = 600,
+        stall_timeout_s: int = 300,
+    ) -> NodeResult[BaseModel]:
+        self.calls.append(
+            RecordedCall(
+                prompt=prompt,
+                contract=contract,
+                submit_tool_schema=submit_tool_schema,
+                allowed_tools=list(allowed_tools),
+                cwd=cwd,
+                timeout_s=timeout_s,
+                stall_timeout_s=stall_timeout_s,
+            )
+        )
+        if self.error is not None:
+            raise self.error
+        # Build minimal valid payload for the contract.
+        payload: dict[str, object] = {}
+        for field_name, info in contract.model_fields.items():
+            if field_name in self._payload_override:
+                payload[field_name] = self._payload_override[field_name]
+                continue
+            ann = info.annotation
+            if ann is str or ann is type(None):
+                payload[field_name] = "x"
+            elif ann is int:
+                payload[field_name] = 0
+            elif ann is bool:
+                payload[field_name] = False
+            elif ann is float:
+                payload[field_name] = 0.0
+            else:
+                payload[field_name] = "x"
+        return NodeResult[BaseModel](
+            contract=contract.model_validate(payload),
+            attestation=Attestation(status="complete"),
+        )
 
 
 def _state(tmp_path: Path, **overrides: object) -> BaseState:
@@ -137,7 +198,7 @@ async def test_renders_prompt_with_state_inputs_and_template_vars(
         "p.j2",
         "run={{ state.run_id }} inp={{ inputs.task }} tv={{ goal }}\n",
     )
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
     state = _state(tmp_path)
     step = _step(template_vars={"goal": "find-bug"})
@@ -155,7 +216,7 @@ async def test_template_vars_override_inputs_on_collision(tmp_path: Path) -> Non
     """Documented precedence: template_vars > inputs > state on key collision."""
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "x={{ x }}\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
     step = _step(template_vars={"x": "from-tv"})
 
@@ -198,7 +259,7 @@ async def test_missing_prompt_file_raises_with_step_id(tmp_path: Path) -> None:
 async def test_dispatches_with_compiled_submit_tool_schema(tmp_path: Path) -> None:
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
 
     await node.execute(step=_step(id="analyze"), state=_state(tmp_path), inputs={})
@@ -217,7 +278,7 @@ async def test_dispatches_with_compiled_submit_tool_schema(tmp_path: Path) -> No
 async def test_dispatches_with_allowed_tools_and_timeouts(tmp_path: Path) -> None:
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
     step = _step(allowed_tools=["Read", "Grep"], stall_timeout_s=42, timeout_s=99)
 
@@ -232,7 +293,7 @@ async def test_dispatches_with_allowed_tools_and_timeouts(tmp_path: Path) -> Non
 async def test_cwd_resolution_step_cwd_wins(tmp_path: Path) -> None:
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
     step = _step(cwd="/abs/from-step")
     state = _state(tmp_path, worktree_path=Path("/abs/from-state"))
@@ -245,7 +306,7 @@ async def test_cwd_resolution_step_cwd_wins(tmp_path: Path) -> None:
 async def test_cwd_resolution_falls_back_to_worktree_path(tmp_path: Path) -> None:
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
     state = _state(tmp_path, worktree_path=Path("/abs/from-state"))
 
@@ -257,7 +318,7 @@ async def test_cwd_resolution_falls_back_to_worktree_path(tmp_path: Path) -> Non
 async def test_cwd_resolution_none_when_neither_set(tmp_path: Path) -> None:
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
 
     await node.execute(step=_step(cwd=None), state=_state(tmp_path), inputs={})
@@ -271,38 +332,20 @@ async def test_cwd_resolution_none_when_neither_set(tmp_path: Path) -> None:
 
 
 async def test_returns_agent_node_result_unchanged(tmp_path: Path) -> None:
+    """The contract instance the agent built is what the AINode hands back."""
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
-    agent = MockAgent()
+    agent = _CompliantMockAgent(payload={"summary": "from-agent"})
     node = AINode(agent=agent, prompts_dir=prompts)
-    # MockAgent's default empty contract won't match our compiled model, so
-    # we queue an explicit result whose contract type is what the AINode
-    # compiled — observed via the recorded ``contract`` argument.
-    sentinel_contract: type[BaseModel] | None = None
-
-    async def _capture_then_succeed(*args: object, **kwargs: object) -> NodeResult[BaseModel]:
-        nonlocal sentinel_contract
-        # Re-dispatch through the real recorded path then synthesize a result
-        # using the contract the AINode compiled.
-        sentinel_contract = kwargs.get("contract") or args[1]  # type: ignore[assignment]
-        # Build a valid instance of *that* contract.
-        assert sentinel_contract is not None
-        instance = sentinel_contract.model_validate({"summary": "from-agent"})
-        return NodeResult[BaseModel](
-            contract=instance,
-            attestation=Attestation(status="complete", reasoning="r"),
-        )
-
-    # Patch MockAgent.execute on this instance.
-    agent.execute = _capture_then_succeed  # type: ignore[method-assign]
 
     result = await node.execute(step=_step(), state=_state(tmp_path), inputs={})
 
-    assert result.attestation.reasoning == "r"
-    # The contract instance is of the AINode-compiled type, not the agent's
-    # arbitrary BaseModel — round-tripped via model_validate.
-    assert sentinel_contract is not None
-    assert isinstance(result.contract, sentinel_contract)
+    # The compiled type is keyed off the step id — assert via the field
+    # name on the dynamically-compiled instance.
+    assert result.contract.summary == "from-agent"  # type: ignore[attr-defined]
+    assert result.attestation.status == "complete"
+    # Type matches what the agent received.
+    assert isinstance(result.contract, agent.calls[0].contract)
 
 
 async def test_misbehaving_agent_returns_wrong_contract_type_raises(
