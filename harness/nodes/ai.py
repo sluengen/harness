@@ -34,9 +34,12 @@ Scope decision: ``step.contract is None`` is rejected here. The
 ``writes: []`` exception SPEC §5 carves out for contract-less nodes will
 be gated by the executor (H-007), not the AINode.
 
-Precedence on Jinja-scope key collision: ``template_vars`` > ``inputs`` >
-``state``. SPEC is silent on the exact rule; the documented choice
-matches the conventional "most specific source wins". Tests pin it.
+Reserved Jinja-scope keys: ``state`` and ``inputs`` are bound by the
+framework. ``template_vars`` may add any other top-level variable, but
+declaring ``state`` or ``inputs`` in ``template_vars`` is rejected at
+render time — silent shadowing of framework scope is a workflow
+authoring bug we want to surface immediately, not at the agent's
+prompt-comprehension layer.
 
 Cwd resolution: ``step.cwd`` (string, treated as a Path) wins; else
 ``state.worktree_path``; else ``None``.
@@ -68,6 +71,9 @@ from harness.workflow.schema import AIStep
 from harness.workflow.tool_schema import compile_to_tool_schema
 
 __all__ = ["AINode"]
+
+# Scope keys the framework owns. template_vars cannot shadow these.
+_RESERVED_SCOPE_KEYS = frozenset({"state", "inputs"})
 
 
 class AINode:
@@ -119,7 +125,10 @@ class AINode:
             contract_override: Optional pre-compiled contract type. Used by
                 the executor when the contract was resolved upstream
                 (e.g. via ``$contracts/<name>`` once H-008 wires that path).
-                When supplied, ``step.contract`` is ignored.
+                When supplied, ``step.contract`` is ignored. Transitional —
+                once H-008 makes the loader pre-compile every contract into
+                ``step.contract`` itself, this parameter is expected to
+                disappear.
 
         Raises:
             RuntimeError: prompt-template not found, render error,
@@ -218,9 +227,19 @@ class AINode:
 
         Scope: ``state`` (the BaseState instance), ``inputs`` (workflow
         input dict), plus every key in ``step.template_vars`` flattened
-        as a top-level variable. Collisions resolve template_vars >
-        inputs > state.
+        as a top-level variable. ``state`` and ``inputs`` are reserved
+        scope keys: ``template_vars`` is rejected at render time if it
+        tries to shadow either, since silently clobbering a reserved
+        scope key would mask a workflow-authoring bug as a render-success.
         """
+        reserved = _RESERVED_SCOPE_KEYS & step.template_vars.keys()
+        if reserved:
+            raise RuntimeError(
+                f"AI step {step.id!r}: template_vars cannot shadow reserved "
+                f"scope keys {sorted(reserved)} — those names are bound to "
+                f"the framework-supplied state and inputs objects."
+            )
+
         try:
             template = self._env.get_template(step.prompt)
         except TemplateNotFound as e:
@@ -233,8 +252,8 @@ class AINode:
             "state": state,
             "inputs": inputs,
         }
-        # template_vars merge in as top-level vars and override any inputs/
-        # state keys with the same name.
+        # template_vars merge in as top-level vars; reserved keys (state,
+        # inputs) are guarded above so this update can never override them.
         scope.update(step.template_vars)
 
         try:

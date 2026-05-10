@@ -150,19 +150,6 @@ def _write_prompt(prompts_dir: Path, name: str, body: str) -> None:
     (prompts_dir / name).write_text(body)
 
 
-def _success_result(summary: str = "ok") -> NodeResult[BaseModel]:
-    """A NodeResult whose contract is the inline ``_SUMMARY_CONTRACT_DICT``-shaped model.
-
-    The AINode contract-compile path will produce a different class than this
-    helper; tests that exercise the misbehaving-agent guard inject a result
-    keyed to a *different* contract class on purpose.
-    """
-    return NodeResult[BaseModel](
-        contract=_Summary(summary=summary),
-        attestation=Attestation(status="complete"),
-    )
-
-
 # ---------------------------------------------------------------------------
 # AC1 — Node protocol conformance
 # ---------------------------------------------------------------------------
@@ -213,7 +200,7 @@ async def test_renders_prompt_with_state_inputs_and_template_vars(
 
 
 async def test_template_vars_override_inputs_on_collision(tmp_path: Path) -> None:
-    """Documented precedence: template_vars > inputs > state on key collision."""
+    """template_vars wins over inputs on a non-reserved key collision."""
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "x={{ x }}\n")
     agent = _CompliantMockAgent()
@@ -223,6 +210,26 @@ async def test_template_vars_override_inputs_on_collision(tmp_path: Path) -> Non
     await node.execute(step=step, state=_state(tmp_path), inputs={"x": "from-inputs"})
 
     assert "x=from-tv" in agent.calls[0].prompt
+
+
+@pytest.mark.parametrize("reserved_key", ["state", "inputs"])
+async def test_template_vars_cannot_shadow_reserved_scope_keys(
+    tmp_path: Path, reserved_key: str
+) -> None:
+    """Reserved scope keys (state, inputs) are framework-owned — shadowing raises."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "anything\n")
+    agent = _CompliantMockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+    step = _step(template_vars={reserved_key: "shadowed"})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+    msg = str(exc_info.value)
+    # AC11: error names the step + the reserved key so debugging is one grep.
+    assert "n1" in msg
+    assert reserved_key in msg
+    assert not agent.calls, "agent must not be invoked when render is rejected"
 
 
 async def test_strict_undefined_raises_on_missing_var(tmp_path: Path) -> None:
