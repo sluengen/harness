@@ -32,6 +32,8 @@ EventType = Literal[
     "decision_made",
     "decision_received",
     "decision_timeout",
+    # Agent contract violations — see SPEC §4.4 (e.g. agent calls submit twice).
+    "decision_violation",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

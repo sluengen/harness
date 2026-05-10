@@ -23,12 +23,11 @@ The downstream ``AINode`` (H-014, separate ticket) is responsible for routing
 
 # Event sink — interim wiring until H-014's executor adds an EventEmitter
 
-``__init__`` accepts an optional ``event_sink: Callable[[str, dict], None]``.
+``__init__`` accepts an optional ``event_sink: Callable[[EventType, dict], None]``.
 The adapter calls it for every ``tool_called`` / ``tool_completed`` pair, plus
-the ``decision_violation`` warning when submit is called more than once.
-``decision_violation`` is *not* a member of ``EVENT_TYPES`` yet — when the
-executor's real EventEmitter is wired up, that frozenset will need to grow
-(or the event renamed); see TODO below.
+the canonical ``decision_violation`` event when submit is called more than once.
+All event-type strings are members of ``harness.events.schema.EVENT_TYPES`` so
+the executor's real EventEmitter (H-014) can forward them without translation.
 
 # Auth surface
 
@@ -64,6 +63,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from harness.events.schema import EventType
 from harness.nodes.base import Attestation, NodeResult
 
 # --------------------------------------------------------------------------- #
@@ -232,7 +232,7 @@ class ClaudeAgent:
     def __init__(
         self,
         *,
-        event_sink: Callable[[str, dict[str, Any]], None] | None = None,
+        event_sink: Callable[[EventType, dict[str, Any]], None] | None = None,
         query_fn: QueryFn | None = None,
         model: str | None = None,
     ) -> None:
@@ -289,9 +289,6 @@ class ClaudeAgent:
                         # F3: double submit. First wins; record the violation
                         # on the sink. Workflow continues so post-submit text
                         # can still flow into notes.
-                        # TODO(events): "decision_violation" is not in
-                        # EVENT_TYPES yet — promote to canonical when the
-                        # executor wires up the real EventEmitter.
                         self._emit("decision_violation", {"payload": payload})
 
             elif kind == "tool_result":
@@ -332,7 +329,7 @@ class ClaudeAgent:
 
     # ---- internals -------------------------------------------------------- #
 
-    def _emit(self, kind: str, payload: dict[str, Any]) -> None:
+    def _emit(self, kind: EventType, payload: dict[str, Any]) -> None:
         """Forward an event to the sink if one was supplied; no-op otherwise."""
         if self._event_sink is not None:
             self._event_sink(kind, payload)
