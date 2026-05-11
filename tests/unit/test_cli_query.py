@@ -16,6 +16,7 @@ All write paths are deferred — these tests cover the read surface and the
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -35,24 +36,30 @@ runner = CliRunner()
 
 # ---------------------------------------------------------------------------
 # DB seeding helpers
+#
+# CLI tests run synchronously (the Typer ``CliRunner`` enters its own event
+# loop via ``asyncio.run`` inside command bodies). pytest-asyncio is in
+# ``auto`` mode in this repo, which means ``async def`` tests have a running
+# loop — so we expose the seeders as plain sync functions that drive their
+# coroutine via ``asyncio.run`` themselves.
 # ---------------------------------------------------------------------------
 
 
-async def _seed_run(
+async def _seed_run_async(
     db_path: Path,
     *,
-    run_id: str = "R1",
-    workflow_name: str = "feature",
-    workflow_version: int = 1,
-    status: str = "completed",
-    state_json: str = "{}",
-    inputs_json: str = "{}",
-    base_branch: str | None = "main",
-    worktree_branch: str | None = None,
-    exit_code: int | None = 0,
-    started_at: str = "2026-05-08T12:00:00Z",
-    completed_at: str | None = "2026-05-08T12:30:00Z",
-    duration_ms: int | None = 1_800_000,
+    run_id: str,
+    workflow_name: str,
+    workflow_version: int,
+    status: str,
+    state_json: str,
+    inputs_json: str,
+    base_branch: str | None,
+    worktree_branch: str | None,
+    exit_code: int | None,
+    started_at: str,
+    completed_at: str | None,
+    duration_ms: int | None,
 ) -> None:
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -79,7 +86,74 @@ async def _seed_run(
         await conn.commit()
 
 
-async def _seed_event(
+def _run_sync(coro: Any) -> Any:
+    """Run a coroutine to completion regardless of whether pytest-asyncio left
+    an event loop dangling on the current thread. ``asyncio.run`` refuses to
+    run when any loop is "running", so we use a fresh loop with explicit
+    teardown."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _seed_run(
+    db_path: Path,
+    *,
+    run_id: str = "R1",
+    workflow_name: str = "feature",
+    workflow_version: int = 1,
+    status: str = "completed",
+    state_json: str = "{}",
+    inputs_json: str = "{}",
+    base_branch: str | None = "main",
+    worktree_branch: str | None = None,
+    exit_code: int | None = 0,
+    started_at: str = "2026-05-08T12:00:00Z",
+    completed_at: str | None = "2026-05-08T12:30:00Z",
+    duration_ms: int | None = 1_800_000,
+) -> None:
+    _run_sync(
+        _seed_run_async(
+            db_path,
+            run_id=run_id,
+            workflow_name=workflow_name,
+            workflow_version=workflow_version,
+            status=status,
+            state_json=state_json,
+            inputs_json=inputs_json,
+            base_branch=base_branch,
+            worktree_branch=worktree_branch,
+            exit_code=exit_code,
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_ms=duration_ms,
+        )
+    )
+
+
+async def _seed_event_async(
+    db_path: Path,
+    *,
+    run_id: str,
+    node_id: str | None,
+    event_type: str,
+    timestamp: str,
+    duration_ms: int | None,
+    data: dict[str, Any] | None,
+) -> None:
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, node_id, event_type, timestamp, duration_ms,
+             json.dumps(data or {})),
+        )
+        await conn.commit()
+
+
+def _seed_event(
     db_path: Path,
     *,
     run_id: str = "R1",
@@ -89,14 +163,21 @@ async def _seed_event(
     duration_ms: int | None = None,
     data: dict[str, Any] | None = None,
 ) -> None:
-    ts = timestamp or "2026-05-08T12:00:00Z"
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
-            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, node_id, event_type, ts, duration_ms, json.dumps(data or {})),
+    _run_sync(
+        _seed_event_async(
+            db_path,
+            run_id=run_id,
+            node_id=node_id,
+            event_type=event_type,
+            timestamp=timestamp or "2026-05-08T12:00:00Z",
+            duration_ms=duration_ms,
+            data=data,
         )
-        await conn.commit()
+    )
+
+
+def _init_db(db_path: Path) -> None:
+    _run_sync(store.init_db(db_path))
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +204,9 @@ def test_version_json_form_emits_version_key() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_status_prints_summary_for_known_run(tmp_path: Path) -> None:
+def test_status_prints_summary_for_known_run(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(
+    _seed_run(
         db_path,
         run_id="R1",
         workflow_name="feature",
@@ -146,9 +227,9 @@ async def test_status_prints_summary_for_known_run(tmp_path: Path) -> None:
     assert "0" in out
 
 
-async def test_status_json_returns_full_row(tmp_path: Path) -> None:
+def test_status_json_returns_full_row(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(
+    _seed_run(
         db_path,
         run_id="R-json",
         workflow_name="bugfix",
@@ -179,9 +260,9 @@ async def test_status_json_returns_full_row(tmp_path: Path) -> None:
     assert payload["inputs"] == {"linear": "CAL-1"}
 
 
-async def test_status_unknown_run_exits_2(tmp_path: Path) -> None:
+def test_status_unknown_run_exits_2(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await store.init_db(db_path)
+    _init_db(db_path)
     result = runner.invoke(app, ["status", "missing", "--db", str(db_path)])
     assert result.exit_code == 2
     # Error message includes the offending id so users can see what they asked
@@ -195,18 +276,18 @@ async def test_status_unknown_run_exits_2(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_logs_prints_timeline_in_order(tmp_path: Path) -> None:
+def test_logs_prints_timeline_in_order(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_started", node_id="step-a",
         timestamp="2026-05-08T12:00:01Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_completed", node_id="step-a",
         timestamp="2026-05-08T12:00:02Z",
     )
@@ -222,18 +303,18 @@ async def test_logs_prints_timeline_in_order(tmp_path: Path) -> None:
     assert "step-a" in out
 
 
-async def test_logs_node_filter_only_shows_matching_node(tmp_path: Path) -> None:
+def test_logs_node_filter_only_shows_matching_node(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_started", node_id="step-a",
         timestamp="2026-05-08T12:00:01Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_started", node_id="step-b",
         timestamp="2026-05-08T12:00:02Z",
     )
@@ -249,9 +330,9 @@ async def test_logs_node_filter_only_shows_matching_node(tmp_path: Path) -> None
     assert "workflow_started" not in out
 
 
-async def test_logs_unknown_run_exits_2(tmp_path: Path) -> None:
+def test_logs_unknown_run_exits_2(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await store.init_db(db_path)
+    _init_db(db_path)
     result = runner.invoke(app, ["logs", "ghost", "--db", str(db_path)])
     assert result.exit_code == 2
 
@@ -261,14 +342,14 @@ async def test_logs_unknown_run_exits_2(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_events_json_emits_one_json_per_line(tmp_path: Path) -> None:
+def test_events_json_emits_one_json_per_line(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_started", node_id="s1",
         timestamp="2026-05-08T12:00:01Z", data={"x": 1},
     )
@@ -288,18 +369,18 @@ async def test_events_json_emits_one_json_per_line(tmp_path: Path) -> None:
     assert e1["data"] == {"x": 1}
 
 
-async def test_events_type_filter_excludes_other_types(tmp_path: Path) -> None:
+def test_events_type_filter_excludes_other_types(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="node_started", node_id="s1",
         timestamp="2026-05-08T12:00:01Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="tool_called", node_id="s1",
         timestamp="2026-05-08T12:00:02Z",
     )
@@ -314,10 +395,10 @@ async def test_events_type_filter_excludes_other_types(tmp_path: Path) -> None:
     assert json.loads(lines[0])["event_type"] == "tool_called"
 
 
-async def test_events_human_form_compact(tmp_path: Path) -> None:
+def test_events_human_form_compact(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
@@ -329,9 +410,9 @@ async def test_events_human_form_compact(tmp_path: Path) -> None:
     assert "2026-05-08T12:00:00Z" in out
 
 
-async def test_events_unknown_run_exits_2(tmp_path: Path) -> None:
+def test_events_unknown_run_exits_2(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
-    await store.init_db(db_path)
+    _init_db(db_path)
     result = runner.invoke(app, ["events", "missing", "--db", str(db_path)])
     assert result.exit_code == 2
 
@@ -491,9 +572,7 @@ def test_validate_known_good_workflow_prints_ok(tmp_path: Path) -> None:
         steps:
           - id: hello
             type: check
-            run: "echo hi"
-            expect:
-              status: "ok"
+            expr: "1 + 1 == 2"
     """))
     result = runner.invoke(app, ["validate", str(workflow_yaml)])
     assert result.exit_code == 0, result.stdout
@@ -537,15 +616,15 @@ def test_cli_module_entrypoint_still_works() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_logs_follow_exits_when_run_is_terminal(tmp_path: Path) -> None:
+def test_logs_follow_exits_when_run_is_terminal(tmp_path: Path) -> None:
     """``--follow`` polls until the run's status is terminal, then exits."""
     db_path = tmp_path / ".harness" / "harness.db"
-    await _seed_run(db_path, run_id="R1", status="completed")
-    await _seed_event(
+    _seed_run(db_path, run_id="R1", status="completed")
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_started",
         timestamp="2026-05-08T12:00:00Z",
     )
-    await _seed_event(
+    _seed_event(
         db_path, run_id="R1", event_type="workflow_completed",
         timestamp="2026-05-08T12:30:00Z",
     )
@@ -566,12 +645,12 @@ async def test_logs_follow_exits_when_run_is_terminal(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_db_flag_overrides_default(tmp_path: Path) -> None:
+def test_db_flag_overrides_default(tmp_path: Path) -> None:
     """Confirm read commands consult ``--db`` and not the cwd-relative
     default. This is the test that pins the contract; the implementation
     must accept ``--db`` on every read command."""
     db_path = tmp_path / "alt.db"
-    await _seed_run(db_path, run_id="ALT1")
+    _seed_run(db_path, run_id="ALT1")
     result = runner.invoke(app, ["status", "ALT1", "--db", str(db_path)])
     assert result.exit_code == 0, result.stdout
 
