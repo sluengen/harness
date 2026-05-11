@@ -7,9 +7,7 @@ output. Subcommands are split across modules for readability:
 * :mod:`harness.cli.validate` — ``harness validate <workflow.yaml>``
 * :mod:`harness.cli.query`    — ``harness status / logs / events``
 * :mod:`harness.cli.worktrees` — ``harness worktrees list / cleanup``
-
-Per-workflow ``harness run <workflow>`` dynamic generation is reserved for a
-later task; this package only assembles the read-side surface.
+* :mod:`harness.cli.run`      — ``harness run <workflow>`` (dynamic subcommands)
 
 Exit codes:
 - 0   workflow completed successfully / read command succeeded
@@ -29,6 +27,7 @@ from harness.cli.query import (
     logs_command,
     status_command,
 )
+from harness.cli.run import run_command
 from harness.cli.validate import validate_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
@@ -60,6 +59,20 @@ app.command(name="logs", help="Print a run's event timeline.")(logs_command)
 app.command(name="events", help="Print a run's events (JSON or compact).")(
     events_command
 )
+
+# Dynamic per-workflow `run` command. Uses context-settings to leave
+# workflow-specific args unparsed so `harness.cli.run` can build a Click
+# command from the YAML on the fly.
+app.command(
+    name="run",
+    help="Execute a workflow. Per-workflow flags are loaded from its YAML.",
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "help_option_names": [],
+    },
+    add_help_option=False,
+)(run_command)
 
 # Nested worktrees app.
 app.add_typer(worktrees_app, name="worktrees", help="Inspect or clean up run worktrees.")
