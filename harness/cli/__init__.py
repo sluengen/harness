@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import typer
 
+from harness.cli.decisions import decision_app, decisions_app
 from harness.cli.query import (
     events_command,
     logs_command,
@@ -76,6 +77,18 @@ app.command(
 
 # Nested worktrees app.
 app.add_typer(worktrees_app, name="worktrees", help="Inspect or clean up run worktrees.")
+
+# v2-reserved decision surface — see SPEC §11 and harness/cli/decisions.py.
+app.add_typer(
+    decisions_app,
+    name="decisions",
+    help="v2-reserved — enumerate paused runs awaiting human decision.",
+)
+app.add_typer(
+    decision_app,
+    name="decision",
+    help="v2-reserved — inspect or resolve a paused decision node.",
+)
 
 
 __all__ = ["app"]
