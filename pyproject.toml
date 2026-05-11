@@ -47,6 +47,11 @@ ignore = ["S101"]  # allow `assert` in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
+# Typer's idiomatic signature uses ``= typer.Option(...)`` and
+# ``= typer.Argument(...)`` in argument defaults (B008). Subprocess calls
+# in worktrees.py use ``git`` from PATH with list-form args, never shell=True
+# (S603/S607).
+"harness/cli/**" = ["B008", "S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"
