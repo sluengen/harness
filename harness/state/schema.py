@@ -32,10 +32,32 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["BaseState"]
+__all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
+
+
+# Canonical run-status enum — see SPEC §12. The SQLite column is ``TEXT NOT
+# NULL`` without a CHECK constraint, so this Literal is the type-safe seam:
+# engine writers + CLI readers import :data:`RUN_STATUSES` to validate the
+# string they read out of the DB. ``paused`` and ``stalled`` belong to the
+# v1.5 lifecycle additions (H-025) and are admitted here even though the v2
+# decision flow that produces ``paused`` runs is not yet wired.
+RunStatus = Literal[
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "stalled",
+    "paused",
+]
+
+RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
+"""Runtime view of the canonical run statuses — derived from
+:data:`RunStatus` so the two cannot drift."""
 
 
 class BaseState(BaseModel):
