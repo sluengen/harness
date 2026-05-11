@@ -19,7 +19,9 @@ A handful of cases exercise integration with the runner — see
 from __future__ import annotations
 
 import json
+import tempfile
 import textwrap
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,11 +29,14 @@ import aiosqlite
 import pytest
 
 from harness.dispatch.mock import MockAgent
+from harness.engine.executor import Context, Executor
 from harness.engine.loop import LoopExecutor, LoopExhausted
 from harness.engine.runner import LoopNotImplemented, Runner
+from harness.events.emitter import EventEmitter
+from harness.identity import generate_run_id
+from harness.state.store import init_db
 from harness.workflow.derive import derive_state_schema
 from harness.workflow.loader import load_workflow
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,9 +60,11 @@ async def _fetch_events(db_path: Path, run_id: str) -> list[dict[str, Any]]:
 
 
 async def _fetch_single_run_id(db_path: Path) -> str:
-    async with aiosqlite.connect(db_path) as conn:
-        async with conn.execute("SELECT run_id FROM runs LIMIT 1") as cur:
-            row = await cur.fetchone()
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute("SELECT run_id FROM runs LIMIT 1") as cur,
+    ):
+        row = await cur.fetchone()
     assert row is not None, "no run row found"
     return str(row[0])
 
@@ -260,16 +267,6 @@ async def test_loop_exhaustion_raises_loop_exhausted() -> None:
     # We need a LoopExecutor + a Context to feed it. Build a minimal
     # workflow via the loader so the contracts compile and state schema
     # is real.
-    import tempfile
-    from datetime import UTC, datetime
-
-    from harness.dispatch.mock import MockAgent
-    from harness.engine.executor import Context, Executor
-    from harness.engine.runner import Runner
-    from harness.events.emitter import EventEmitter
-    from harness.identity import generate_run_id
-    from harness.state.store import init_db
-
     with tempfile.TemporaryDirectory() as td:
         tmp_path = Path(td)
         db = tmp_path / "harness.db"
@@ -425,9 +422,13 @@ async def test_loop_state_propagates_between_iterations(tmp_path: Path) -> None:
     assert len(iters) == 2, f"expected exactly 2 iterations, got {len(iters)}"
 
     # And the final state has flipped=true.
-    async with aiosqlite.connect(db) as conn:
-        async with conn.execute("SELECT state_json FROM runs WHERE run_id = ?", (run_id,)) as cur:
-            row = await cur.fetchone()
+    async with (
+        aiosqlite.connect(db) as conn,
+        conn.execute(
+            "SELECT state_json FROM runs WHERE run_id = ?", (run_id,)
+        ) as cur,
+    ):
+        row = await cur.fetchone()
     assert row is not None
     state = json.loads(row[0])
     assert state["flipped"] is True

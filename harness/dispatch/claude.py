@@ -243,6 +243,17 @@ class ClaudeAgent:
 
     # ---- public API ------------------------------------------------------- #
 
+    def reset(self) -> None:
+        """Drop the carried-over notes buffer.
+
+        SPEC §10 fresh_context: the loop evaluator calls ``reset()``
+        between iterations of a ``fresh_context: true`` loop. The
+        per-call ``execute()`` already clears ``notes`` at its top, so
+        this is belt-and-braces for callers that read ``self.notes``
+        between iterations.
+        """
+        self.notes = []
+
     async def execute(
         self,
         prompt: str,

@@ -84,6 +84,14 @@ class MockAgent:
         """
         self._queue.append(result)
 
+    def reset(self) -> None:
+        """No-op for the in-process MockAgent.
+
+        SPEC §10 fresh_context: the loop evaluator calls ``reset()``
+        between iterations. MockAgent doesn't retain SDK / conversation
+        state across calls, so there's nothing to clear.
+        """
+
     async def execute(
         self,
         prompt: str,
