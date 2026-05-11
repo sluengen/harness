@@ -13,7 +13,7 @@ venv/
 .mypy_cache/
 
 # uv
-uv.lock
+# uv.lock is committed — required for reproducible `uv sync --frozen` in Docker builds (SPEC §13 / H-029).
 
 # State / artifacts
 .harness/
