@@ -38,16 +38,20 @@ Design choices worth flagging:
 
 * **``until_bash:`` runs after the iteration's child steps.** It is
   exec'd via ``asyncio.create_subprocess_exec(["bash", "-c", cmd])`` —
-  list-form, no ``shell=True``. Exit 0 means satisfied; any non-zero
-  exit means not-yet-satisfied. ``$state.<field>`` and ``$inputs.<key>``
-  references are substituted in-string before exec; missing references
-  raise (silent empty-string would mask authoring bugs). A
-  :data:`_UNTIL_BASH_TIMEOUT_S` cap keeps a hung command from stalling
-  the loop forever — a timeout is treated as "not satisfied" and the
-  ``loop_iteration`` event carries ``data.until_bash_timeout=True`` so
-  the boundary is visible. Combined ``until + until_bash`` is rejected
-  with :class:`ValueError` because the resolution semantics are
-  ambiguous; pick one.
+  list-form at the Python boundary (no ``shell=True``), but ``bash -c``
+  itself still parses ``cmd``. ``$state.<field>`` / ``$inputs.<key>``
+  references are substituted *as strings* into the command before exec,
+  so workflow authors should not reference state fields that might
+  contain untrusted shell metacharacters. The v1 threat model treats
+  the workflow author as the trust boundary; per-token quoting is left
+  to the author. Missing references raise (silent empty-string would
+  mask authoring bugs). Exit 0 means satisfied; any non-zero exit means
+  not-yet-satisfied. A :data:`_UNTIL_BASH_TIMEOUT_S` cap keeps a hung
+  command from stalling the loop forever — a timeout is treated as
+  "not satisfied" and the ``loop_iteration`` event carries
+  ``data.until_bash_timeout=True`` so the boundary is visible.
+  Combined ``until + until_bash`` is rejected with :class:`ValueError`
+  because the resolution semantics are ambiguous; pick one.
 
 * **``retry_loop:<id>`` rewinds to the named loop.** A child check
   whose ``on_fail`` field starts with ``retry_loop:`` raises
@@ -140,10 +144,9 @@ class RetryLoopRequested(Exception):  # noqa: N818 — engine signalling vocabul
     by check_adapter, consumed by LoopExecutor.
     """
 
-    def __init__(self, loop_id: str, *, requested_by: str | None = None) -> None:
+    def __init__(self, loop_id: str, *, requested_by: str) -> None:
         super().__init__(
-            f"retry_loop:{loop_id}"
-            + (f" requested by check {requested_by!r}" if requested_by else "")
+            f"retry_loop:{loop_id} requested by check {requested_by!r}"
         )
         self.loop_id = loop_id
         self.requested_by = requested_by

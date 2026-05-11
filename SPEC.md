@@ -485,7 +485,7 @@ steps:
 | `stall_timeout_s`    | ai               | kill node if no SDK event (tool_called/completed) for N seconds; default: `300` (5 min). Distinct from hard `timeout_s` wall. |
 | `expr`               | check            | Python boolean expression over `state`                                |
 | `on_fail`            | check            | `cancel` \| `retry_loop:<id>` \| `continue`                           |
-| `loop`               | loop             | nested block with `max_iterations`, `until`, `steps`                  |
+| `loop`               | loop             | nested block with `max_iterations`, `steps`, and one of `until` / `until_bash` (see §10) |
 | `action`             | worktree         | `create` \| `cleanup`                                                 |
 | `policy`             | worktree.cleanup | `merge_to_base` \| `leave_for_inspection` \| `delete_unconditionally` |
 
@@ -854,6 +854,10 @@ The loop runs its `steps` in declared order, evaluates `until:` against state, r
 - If `max_iterations` reached without satisfying `until:` → workflow fails (exit 1) with a `loop_exhausted` event.
 
 `fresh_context: true` (optional) reinitialises the AI context per iteration. Useful for "self-correcting" loops where carrying prior reasoning hurts.
+
+**Satisfaction predicate — `until:` or `until_bash:`.** A loop block must declare exactly one. `until:` is a Python boolean expression over `state` (the default shape). `until_bash:` is a shell command run via `bash -c` after each iteration; exit 0 means satisfied, any non-zero exit means not-yet-satisfied. `$state.<field>` / `$inputs.<key>` references inside the command are substituted before exec; missing references fail the workflow. A 300s wall-clock timeout caps each invocation — a timed-out command is treated as "not satisfied" and the `loop_iteration` event carries `data.until_bash_timeout=true`. Declaring both `until:` and `until_bash:` is rejected as ambiguous.
+
+**`retry_loop:<loop-id>` from a child check rewinds to the named loop.** When a `check` step inside (or after) a loop fails with `on_fail: retry_loop:<id>`, the enclosing loop starts another iteration of the loop whose `step.id` matches `<id>`. The retry counts against the same `max_iterations` budget. The pre-retry `loop_iteration` event carries `data.trigger=retry_loop_requested` and `data.requested_by=<check-id>` so the rewind is visible in the event log. A `retry_loop:<id>` referencing a loop that is not on the active stack fails the workflow with a message naming the offending id.
 
 ### Retry policies (three layers, distinct)
 

@@ -615,6 +615,96 @@ async def test_loop_until_bash_substitutes_state_tokens(tmp_path: Path) -> None:
     assert len(iters) == 2, f"expected 2 iterations, got {len(iters)}"
 
 
+async def test_loop_until_bash_unknown_state_field_fails_clearly(
+    tmp_path: Path,
+) -> None:
+    """A `$state.X` reference inside `until_bash:` that names a field
+    not on the state schema fails the workflow with a message naming
+    the offending field (silent empty-string substitution would mask
+    workflow-authoring bugs)."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "until_bash_bad_sub.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: until_bash_bad_sub
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 1
+              until_bash: "test $state.no_such_field -eq 0"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    failed = next(e for e in events if e["event_type"] == "workflow_failed")
+    data = json.loads(failed["data_json"])
+    blob = (data.get("reason") or "") + " " + (data.get("message") or "")
+    assert "no_such_field" in blob, (
+        f"failure message should name the missing state field: {data!r}"
+    )
+
+
+async def test_loop_until_bash_timeout_treated_as_not_satisfied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hung ``until_bash:`` command times out at the documented cap and
+    is treated as "not satisfied". The boundary is visible on the
+    ``loop_iteration`` event via ``data.until_bash_timeout=true``."""
+    # Cap the wait at ~0.2s so a `sleep 5` is definitively a timeout.
+    import harness.engine.loop as loop_mod
+
+    monkeypatch.setattr(loop_mod, "_UNTIL_BASH_TIMEOUT_S", 0.2)
+
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "until_bash_timeout.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: until_bash_timeout
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 1
+              until_bash: "sleep 5"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+
+    # Loop runs one iteration; until_bash times out → not satisfied →
+    # max_iterations exhausted → LoopExhausted → exit 1.
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    assert len(iters) == 1, f"expected exactly 1 iteration, got {len(iters)}"
+    data = json.loads(iters[0]["data_json"])
+    assert data.get("until_bash_timeout") is True, (
+        f"expected until_bash_timeout=True on iteration event: {data!r}"
+    )
+    assert data["until_satisfied"] is False
+
+
 # ---------------------------------------------------------------------------
 # AC8 — both until and until_bash are rejected
 # ---------------------------------------------------------------------------

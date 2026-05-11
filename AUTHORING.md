@@ -124,6 +124,41 @@ Minimal example of each:
         writes: [tests_pass]
 ```
 
+**Alternative satisfaction predicate — `until_bash:`.** Use when the exit condition is naturally a shell command rather than a Python expression over state (e.g. polling an external endpoint, waiting on a file mtime). Exit 0 satisfies; any non-zero exit means "iterate again". `$state.<field>` is substituted before exec. Declare one of `until:` / `until_bash:`, not both.
+
+```yaml
+- id: wait-for-marker
+  type: loop
+  loop:
+    max_iterations: 10
+    until_bash: "test -f $state.worktree_path/.ready"
+    steps:
+      - id: poll
+        type: script
+        command: 'sleep 1; printf "%s" "{}"'
+        writes: []
+```
+
+**Retry a loop from a child check — `on_fail: retry_loop:<loop-id>`.** When a `check` inside a loop fails with this `on_fail`, the loop starts another iteration of the named loop. The retry counts against `max_iterations`. Use this when a check ratifies a side-effect that the loop body produces; falling through to `until:` would require pushing the same boolean into state twice.
+
+```yaml
+- id: settle
+  type: loop
+  loop:
+    max_iterations: 5
+    until: state.settled
+    steps:
+      - id: tick
+        type: script
+        command: 'printf "%s" "{\"settled\": false}"'
+        contract: {settled: boolean}
+        writes: [settled]
+      - id: ratify
+        type: check
+        expr: state.settled
+        on_fail: retry_loop:settle  # matches the enclosing loop's `id`
+```
+
 ---
 
 ## 3. Inline contracts — the grammar
