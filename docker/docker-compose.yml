@@ -1,0 +1,43 @@
+# calibrate-harness dev compose — see SPEC.md §13.
+#
+# The harness is a one-shot CLI (not a long-running service). This compose file
+# exists to make local dev invocations short and consistent: it captures the
+# mount, working dir, env-var passthrough, and host-network bridge in one place.
+#
+# Typical use:
+#   # Build once.
+#   docker compose -f docker/docker-compose.yml build harness
+#
+#   # Run a workflow against another repo (mount the host repo into /workspace).
+#   HARNESS_TARGET_REPO=/abs/path/to/calibrate-coffee \
+#     docker compose -f docker/docker-compose.yml run --rm harness \
+#       run steward --domain=architecture
+#
+# `HARNESS_TARGET_REPO` defaults to the current directory, which is convenient
+# when iterating on the harness against its own repo.
+
+services:
+  harness:
+    image: calibrate-harness:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    working_dir: /workspace
+    volumes:
+      # Host repo → /workspace. Worktrees and `.harness/` state DB land on the host FS.
+      # Default mounts the directory **above** this compose file (i.e. the harness
+      # repo root) so the harness can run against itself without extra config.
+      # Override with HARNESS_TARGET_REPO=/abs/path/to/some/repo.
+      - "${HARNESS_TARGET_REPO:-..}:/workspace"
+    environment:
+      # Secrets are passed through from the host shell; never baked into the image.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      LINEAR_API_KEY: "${LINEAR_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      # Defaults to host.docker.internal so Ollama on the host is reachable from
+      # inside the container. Override to point elsewhere if needed.
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}"
+    # On Linux, host.docker.internal is not auto-provisioned (it is on Docker
+    # Desktop). This makes the same Ollama hostname resolvable everywhere.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
