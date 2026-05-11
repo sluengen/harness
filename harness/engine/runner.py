@@ -59,7 +59,7 @@ from harness.dispatch.base import Agent
 from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent
 from harness.engine.executor import Context, Executor, NodeRunner
-from harness.engine.loop import LoopExecutor
+from harness.engine.loop import LoopExecutor, RetryLoopRequested
 from harness.engine.retry import RetryPolicy
 from harness.events.emitter import EventEmitter
 from harness.identity import artifacts_dir as artifacts_dir_for
@@ -85,19 +85,7 @@ from harness.workflow.schema import (
     WorktreeStep,
 )
 
-__all__ = ["CheckFailed", "LoopNotImplemented", "Runner"]
-
-
-class LoopNotImplemented(Exception):  # noqa: N818 — partial-coverage guard
-    """Raised by check_adapter when ``on_fail: retry_loop:<id>`` resolves.
-
-    The top-level loop evaluator (H-021) is now wired in, but the
-    ``retry_loop:<id>`` integration on the check node — which would
-    rewind execution to a named loop step on check failure — is a
-    separate ticket. Until it lands, the check adapter raises this
-    sentinel so the workflow author sees an explicit deferral rather
-    than silent fall-through.
-    """
+__all__ = ["CheckFailed", "Runner"]
 
 
 class CheckFailed(RuntimeError):  # noqa: N818 — engine vocabulary
@@ -563,7 +551,10 @@ class Runner:
             # the runner translates the routing here so the executor's
             # standard ``node_failed → re-raise`` path covers cancel.
             # ``continue`` lets the workflow proceed regardless;
-            # ``retry_loop:<id>`` is H-021 territory.
+            # ``retry_loop:<id>`` raises :class:`RetryLoopRequested` so
+            # the enclosing :class:`LoopExecutor` can rewind to the
+            # named loop. With no enclosing loop the runner's generic
+            # handler surfaces it as a workflow failure naming the id.
             if not result.contract.passed:
                 on_fail = result.contract.on_fail
                 if on_fail == "cancel":
@@ -572,10 +563,8 @@ class Runner:
                         f"expr={step.expr!r}"
                     )
                 if on_fail.startswith("retry_loop:"):
-                    raise LoopNotImplemented(
-                        f"check {step.id!r} on_fail={on_fail!r} requires the "
-                        f"loop evaluator (H-021)"
-                    )
+                    loop_id = on_fail[len("retry_loop:") :]
+                    raise RetryLoopRequested(loop_id, requested_by=step.id)
                 # on_fail == "continue" — fall through, result returned.
             return result
 

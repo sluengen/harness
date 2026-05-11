@@ -31,7 +31,7 @@ import pytest
 from harness.dispatch.mock import MockAgent
 from harness.engine.executor import Context, Executor
 from harness.engine.loop import LoopExecutor, LoopExhausted
-from harness.engine.runner import LoopNotImplemented, Runner
+from harness.engine.runner import Runner
 from harness.events.emitter import EventEmitter
 from harness.identity import generate_run_id
 from harness.state.store import init_db
@@ -146,27 +146,46 @@ def _loop_exhaustion_workflow(tmp_path: Path) -> Path:
     return path
 
 
-def _loop_until_bash_only_workflow(tmp_path: Path) -> Path:
-    """A loop with ``until_bash:`` only, ``until:`` set to an unreachable
-    sentinel expression — the schema requires ``until:`` so we can't omit
-    it. The LoopExecutor must still reject ``until_bash:`` as deferred."""
-    path = tmp_path / "loopy_until_bash.yaml"
-    # The schema requires until: str — we use the empty string sentinel
-    # the LoopExecutor treats as "use until_bash instead". The executor
-    # may also key off `until_bash is not None` and reject regardless;
-    # both shapes are covered.
+def _loop_until_bash_succeeds_workflow(tmp_path: Path) -> Path:
+    """A loop with ``until_bash:`` only — the command exits 0 on iteration
+    1 so the loop terminates cleanly without needing ``until:``."""
+    path = tmp_path / "loopy_until_bash_ok.yaml"
     _write_workflow(
         path,
         """
-        name: loopy_until_bash
+        name: loopy_until_bash_ok
         version: 1
         steps:
           - id: body
             type: loop
             loop:
-              max_iterations: 1
-              until: ""
+              max_iterations: 3
               until_bash: "true"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+    return path
+
+
+def _loop_until_bash_exhausts_workflow(tmp_path: Path) -> Path:
+    """A loop with ``until_bash:`` only — the command always exits non-zero,
+    so the loop iterates to exhaustion."""
+    path = tmp_path / "loopy_until_bash_fail.yaml"
+    _write_workflow(
+        path,
+        """
+        name: loopy_until_bash_fail
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 2
+              until_bash: "false"
               steps:
                 - id: noop
                   type: check
@@ -505,20 +524,126 @@ async def test_loop_fresh_context_resets_agent(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC7 — until_bash alone raises NotImplementedError
+# AC7 — until_bash alone runs the loop until exit 0 (H-021b)
 # ---------------------------------------------------------------------------
 
 
-async def test_loop_until_bash_alone_raises_not_implemented(tmp_path: Path) -> None:
-    """``until_bash:`` execution is deferred to a follow-up. When the
-    loop block declares ``until_bash:`` with an empty ``until:``, the
-    LoopExecutor raises :class:`NotImplementedError`."""
+async def test_loop_until_bash_alone_terminates_on_exit_zero(tmp_path: Path) -> None:
+    """``until_bash:`` is executed each iteration; exit 0 satisfies the
+    loop just like a true ``until:`` expression. No ``until:`` field is
+    required."""
     db = tmp_path / "harness.db"
-    wf = _loop_until_bash_only_workflow(tmp_path)
+    wf = _loop_until_bash_succeeds_workflow(tmp_path)
 
     exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
-    # Runner translates NotImplementedError into exit 1 via the generic
-    # BaseException arm.
+    assert exit_code == 0
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    # ``true`` exits 0 on iteration 1; the loop must satisfy after one pass.
+    assert len(iters) == 1, f"expected 1 iteration, got {len(iters)}: {iters!r}"
+    data = json.loads(iters[0]["data_json"])
+    assert data["until_satisfied"] is True
+
+
+async def test_loop_until_bash_non_zero_iterates_until_exhaustion(
+    tmp_path: Path,
+) -> None:
+    """A non-zero exit is treated as "not satisfied"; the loop keeps
+    iterating until ``max_iterations`` and raises ``LoopExhausted``."""
+    db = tmp_path / "harness.db"
+    wf = _loop_until_bash_exhausts_workflow(tmp_path)
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    failed = next(e for e in events if e["event_type"] == "workflow_failed")
+    data = json.loads(failed["data_json"])
+    reason_blob = (data.get("reason") or "") + " " + (data.get("message") or "")
+    assert "loop_exhausted" in reason_blob.lower() or "loopexhausted" in reason_blob.lower(), (
+        f"expected loop_exhausted marker: {data!r}"
+    )
+
+
+async def test_loop_until_bash_substitutes_state_tokens(tmp_path: Path) -> None:
+    """``$state.<field>`` references in the ``until_bash:`` command are
+    substituted with the live state value before exec. Use a derived
+    state field that ticks each iteration; satisfy when the count
+    reaches a threshold."""
+    db = tmp_path / "harness.db"
+    counter_path = tmp_path / "subcounter"
+    wf = tmp_path / "until_bash_sub.yaml"
+    _write_workflow(
+        wf,
+        f"""
+        name: until_bash_sub
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 5
+              # Satisfy once `state.count` reaches 2. The command literally
+              # contains `$state.count` and must be substituted with the
+              # current integer before exec.
+              until_bash: "test $state.count -ge 2"
+              steps:
+                - id: tick
+                  type: script
+                  command: |
+                    n=$(cat {counter_path} 2>/dev/null || echo 0)
+                    n=$((n + 1))
+                    echo $n > {counter_path}
+                    printf '{{"count": %d}}' $n
+                  writes: [count]
+                  contract:
+                    count: integer
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0, "workflow did not exit 0 — substitution likely broken"
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    # Iteration 1: count=1, test 1 -ge 2 → non-zero → continue.
+    # Iteration 2: count=2, test 2 -ge 2 → zero → satisfied.
+    assert len(iters) == 2, f"expected 2 iterations, got {len(iters)}"
+
+
+async def test_loop_until_bash_unknown_state_field_fails_clearly(
+    tmp_path: Path,
+) -> None:
+    """A `$state.X` reference inside `until_bash:` that names a field
+    not on the state schema fails the workflow with a message naming
+    the offending field (silent empty-string substitution would mask
+    workflow-authoring bugs)."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "until_bash_bad_sub.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: until_bash_bad_sub
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 1
+              until_bash: "test $state.no_such_field -eq 0"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
     assert exit_code == 1
 
     run_id = await _fetch_single_run_id(db)
@@ -526,9 +651,58 @@ async def test_loop_until_bash_alone_raises_not_implemented(tmp_path: Path) -> N
     failed = next(e for e in events if e["event_type"] == "workflow_failed")
     data = json.loads(failed["data_json"])
     blob = (data.get("reason") or "") + " " + (data.get("message") or "")
-    assert "NotImplementedError" in blob or "until_bash" in blob.lower(), (
-        f"workflow_failed data should mention until_bash: {data!r}"
+    assert "no_such_field" in blob, (
+        f"failure message should name the missing state field: {data!r}"
     )
+
+
+async def test_loop_until_bash_timeout_treated_as_not_satisfied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hung ``until_bash:`` command times out at the documented cap and
+    is treated as "not satisfied". The boundary is visible on the
+    ``loop_iteration`` event via ``data.until_bash_timeout=true``."""
+    # Cap the wait at ~0.2s so a `sleep 5` is definitively a timeout.
+    import harness.engine.loop as loop_mod
+
+    monkeypatch.setattr(loop_mod, "_UNTIL_BASH_TIMEOUT_S", 0.2)
+
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "until_bash_timeout.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: until_bash_timeout
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 1
+              until_bash: "sleep 5"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+
+    # Loop runs one iteration; until_bash times out → not satisfied →
+    # max_iterations exhausted → LoopExhausted → exit 1.
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    assert len(iters) == 1, f"expected exactly 1 iteration, got {len(iters)}"
+    data = json.loads(iters[0]["data_json"])
+    assert data.get("until_bash_timeout") is True, (
+        f"expected until_bash_timeout=True on iteration event: {data!r}"
+    )
+    assert data["until_satisfied"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -590,35 +764,116 @@ async def test_loop_child_error_propagates_immediately(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC10 — retry_loop:<id> path on check_adapter still raises LoopNotImplemented
+# AC10 — retry_loop:<id> from a check inside a loop drives another iteration
 # ---------------------------------------------------------------------------
 
 
-async def test_check_retry_loop_still_raises_loop_not_implemented(
-    tmp_path: Path,
-) -> None:
-    """A check step whose ``on_fail: retry_loop:<id>`` resolves at runtime
-    still raises :class:`LoopNotImplemented` — that integration is owned
-    by a separate ticket, not H-021."""
+async def test_check_retry_loop_triggers_next_iteration(tmp_path: Path) -> None:
+    """A check inside a loop with ``on_fail: retry_loop:<loop-id>`` causes
+    the LoopExecutor to start another iteration of the named loop rather
+    than failing the workflow.
+
+    Flow: each iteration ticks a counter on disk and writes the value to
+    state. The in-loop check is ``state.count >= 2``. On iteration 1 the
+    check is False → ``on_fail: retry_loop:body`` requests another
+    iteration. On iteration 2 it's True → loop satisfies via ``until``.
+    """
     db = tmp_path / "harness.db"
-    wf = tmp_path / "retryloop.yaml"
+    counter_path = tmp_path / "rl_counter"
+    wf = tmp_path / "retry_loop.yaml"
     _write_workflow(
         wf,
-        """
-        name: retryloopwf
+        f"""
+        name: retry_loop_wf
         version: 1
         steps:
-          - id: gate
-            type: check
-            expr: "False"
-            on_fail: "retry_loop:body"
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 5
+              until: "state.count >= 2"
+              steps:
+                - id: tick
+                  type: script
+                  command: |
+                    n=$(cat {counter_path} 2>/dev/null || echo 0)
+                    n=$((n + 1))
+                    echo $n > {counter_path}
+                    printf '{{"count": %d}}' $n
+                  writes: [count]
+                  contract:
+                    count: integer
+                - id: gate
+                  type: check
+                  expr: "state.count >= 2"
+                  on_fail: "retry_loop:body"
         """,
     )
 
-    # The check_adapter's branch is reached when the check is False AND
-    # the on_fail string begins with retry_loop:. The exception propagates
-    # to the runner's generic BaseException handler — exit code 1, with
-    # a workflow_failed event whose reason is LoopNotImplemented.
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0, (
+        "retry_loop should drive another iteration, not fail the run"
+    )
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    # Iteration 1: check False → retry_loop:body requested.
+    # Iteration 2: check True → until satisfied → loop exits.
+    assert len(iters) == 2, (
+        f"expected 2 iterations driven by retry_loop, got {len(iters)}"
+    )
+
+    # The first iteration's loop_iteration event must mark the retry trigger.
+    iter1_data = json.loads(iters[0]["data_json"])
+    assert iter1_data.get("trigger") == "retry_loop_requested", (
+        f"iteration 1 should record retry_loop trigger: {iter1_data!r}"
+    )
+    # The check id that requested the retry should be recorded.
+    assert iter1_data.get("requested_by") == "gate", (
+        f"iteration 1 should name the requesting check: {iter1_data!r}"
+    )
+
+    # The second iteration's loop_iteration event must NOT carry the retry
+    # trigger — it exited via ``until``.
+    iter2_data = json.loads(iters[1]["data_json"])
+    assert iter2_data.get("trigger") != "retry_loop_requested"
+    assert iter2_data.get("until_satisfied") is True
+
+
+async def test_check_retry_loop_counts_against_max_iterations(
+    tmp_path: Path,
+) -> None:
+    """retry_loop requests count against ``max_iterations``. A check that
+    never passes (always requests retry_loop) exhausts the loop's
+    iteration budget and raises LoopExhausted."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "retry_loop_exhaust.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: retry_loop_exhaust
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 2
+              until: "state.never"
+              steps:
+                - id: write_never
+                  type: script
+                  command: 'printf "%s" "{\\"never\\": false}"'
+                  writes: [never]
+                  contract:
+                    never: boolean
+                - id: gate
+                  type: check
+                  expr: "False"
+                  on_fail: "retry_loop:body"
+        """,
+    )
+
     exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
     assert exit_code == 1
 
@@ -626,18 +881,51 @@ async def test_check_retry_loop_still_raises_loop_not_implemented(
     events = await _fetch_events(db, run_id)
     failed = next(e for e in events if e["event_type"] == "workflow_failed")
     data = json.loads(failed["data_json"])
-    assert data.get("reason") == "LoopNotImplemented", (
-        f"expected LoopNotImplemented marker, got {data!r}"
+    blob = (data.get("reason") or "") + " " + (data.get("message") or "")
+    assert "loopexhausted" in blob.lower() or "loop_exhausted" in blob.lower(), (
+        f"max_iterations should be honoured: {data!r}"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC11 — LoopNotImplemented export remains usable
+# AC10b — cross-loop retry_loop:<other-id> fails clearly
 # ---------------------------------------------------------------------------
 
 
-def test_loop_not_implemented_still_exported() -> None:
-    """The legacy :class:`LoopNotImplemented` sentinel still exists on
-    :mod:`harness.engine.runner` (a separate ticket cleans up the
-    ``retry_loop:`` path)."""
-    assert issubclass(LoopNotImplemented, Exception)
+async def test_check_retry_loop_unknown_id_fails_with_clear_message(
+    tmp_path: Path,
+) -> None:
+    """``retry_loop:<id>`` referencing a loop that is not currently active
+    fails the workflow with a message naming the offending id. The
+    simplest case: a check sits outside any loop and asks to retry a
+    non-existent one. The runner's generic handler maps the raise to
+    exit 1; the failure reason must name ``retry_loop`` and the bad id."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "retry_loop_unknown.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: retry_loop_unknown
+        version: 1
+        steps:
+          - id: gate
+            type: check
+            expr: "False"
+            on_fail: "retry_loop:no_such_loop"
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    failed = next(e for e in events if e["event_type"] == "workflow_failed")
+    data = json.loads(failed["data_json"])
+    blob = (data.get("reason") or "") + " " + (data.get("message") or "")
+    assert "retry_loop" in blob.lower(), (
+        f"failure message should mention retry_loop: {data!r}"
+    )
+    assert "no_such_loop" in blob, (
+        f"failure message should name the bad loop id: {data!r}"
+    )

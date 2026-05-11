@@ -22,6 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ContractSpec: TypeAlias = str | dict[str, Any]
 
 
+def _is_non_empty(value: str | None) -> bool:
+    """Treat ``None`` and ``""`` as "absent" for loop block satisfaction
+    fields. Used by :class:`LoopBlock`'s ``until`` / ``until_bash``
+    validator."""
+    return value is not None and value != ""
+
+
 # ---------------------------------------------------------------------------
 # Inputs
 # ---------------------------------------------------------------------------
@@ -163,10 +170,25 @@ class LoopBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int = Field(gt=0)
-    until: str
+    # Exactly one of ``until`` / ``until_bash`` must be set. The empty string is
+    # treated as "absent" so workflows that historically declared
+    # ``until: ""`` alongside ``until_bash:`` (the pre-H-021b workaround for
+    # ``until`` being required) keep validating. The combined-fields case is
+    # rejected by :class:`harness.engine.loop.LoopExecutor` at run time so the
+    # message names the offending step.
+    until: str | None = None
     fresh_context: bool = False
     until_bash: str | None = None
     steps: list[Step]
+
+    @model_validator(mode="after")
+    def _check_until_or_until_bash(self) -> LoopBlock:
+        if not _is_non_empty(self.until) and not _is_non_empty(self.until_bash):
+            raise ValueError(
+                "loop block must declare `until:` or `until_bash:` "
+                "(or both, subject to engine rejection of the combined form)"
+            )
+        return self
 
 
 class LoopStep(_BaseStep):

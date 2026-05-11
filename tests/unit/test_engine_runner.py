@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent
 from harness.engine.executor import Context
-from harness.engine.runner import LoopNotImplemented, Runner
+from harness.engine.runner import Runner
 from harness.identity import _CROCKFORD_ULID
 from harness.nodes.base import Attestation, NodeResult
 from harness.workflow.schema import Step
@@ -604,14 +604,6 @@ async def test_ac9_loop_workflow_runs_via_loop_executor(
     events = await _fetch_events(db, run_id)
     iters = [e for e in events if e["event_type"] == "loop_iteration"]
     assert len(iters) == 1, f"expected exactly one loop_iteration, got {iters!r}"
-
-
-async def test_ac9_loop_not_implemented_still_exported() -> None:
-    """The :class:`LoopNotImplemented` sentinel still exists — the
-    check_adapter's ``retry_loop:<id>`` path continues to raise it
-    pending a separate ticket. (See ``test_engine_loop.py`` for the
-    end-to-end coverage of that path.)"""
-    assert issubclass(LoopNotImplemented, Exception)
 
 
 # ---------------------------------------------------------------------------
