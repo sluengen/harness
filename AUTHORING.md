@@ -1,0 +1,447 @@
+# Authoring Workflows
+
+A practical guide to writing workflows for calibrate-harness. Task-oriented and example-heavy. If you want the design rationale ("why does it work this way") read `SPEC.md`; this file covers the *how*.
+
+> **Mental model in one sentence.** A workflow is a YAML file with declared inputs and a list of steps; each step has a `type:` and a `contract:` (the typed shape of its output); the engine derives the run's state schema from the union of all `writes:` declarations across steps.
+
+---
+
+## 1. The minimal workflow
+
+The smallest thing that loads cleanly:
+
+```yaml
+name: hello
+version: 1
+
+steps:
+  - id: say-hi
+    type: script
+    command: echo "hello"
+    contract:
+      output: string
+    writes: [output]
+```
+
+That's a valid workflow. `name` (snake-case), `version` (integer ≥ 1), and `steps` (non-empty list) are the three required workflow-level fields. Each step needs an `id`, a `type:`, a `contract:` (if it writes state), and `writes:` listing which contract fields land in state.
+
+---
+
+## 2. Step types at a glance
+
+| Type | One-liner | Required keys |
+|---|---|---|
+| `ai` | Call an agent harness with a prompt + contract | `prompt`, `contract` |
+| `script` | Run a shell or python script, capture stdout | `command` *or* `script`, `contract` (if state writes) |
+| `check` | Evaluate a deterministic boolean expression over state | `expr` |
+| `decision` | Gate the workflow on an LLM or human decision | `actor`, plus actor-specific fields |
+| `worktree` | Create or clean up an isolated git worktree for the run | `action` (and `base` or `policy`) |
+| `loop` | Iterate a block of steps until a state condition is true | `loop:` block |
+
+Minimal example of each:
+
+```yaml
+# ai
+- id: investigate
+  type: ai
+  prompt: prompts/standard/analyze.j2
+  template_vars:
+    task: "Read app/models.py and explain the User schema"
+  contract:
+    summary: string
+  writes: [summary]
+```
+
+```yaml
+# script
+- id: run-tests
+  type: script
+  runtime: python
+  script: scripts/run_pytest.py
+  contract:
+    tests_pass: boolean
+    failing: { type: list, of: string }
+  writes: [tests_pass, failing]
+```
+
+```yaml
+# check — pure boolean expression over state
+- id: gate
+  type: check
+  expr: state.tests_pass == True
+  on_fail: cancel        # or: continue | retry_loop:<loop-id>
+```
+
+```yaml
+# decision (LLM actor — v1; human actor is v2)
+- id: should-proceed
+  type: decision
+  actor: llm
+  prompt: prompts/standard/review.j2
+  template_vars:
+    criteria: "Is there enough info to plan a fix?"
+  contract:
+    decision: boolean
+    reasoning: string
+  on_reject: cancel      # or: continue | retry_loop:<id> | pause_for_human
+```
+
+```yaml
+# worktree — opt-in isolation, two actions
+- id: setup
+  type: worktree
+  action: create
+  base: $inputs.base_branch
+  writes: [worktree_path, worktree_branch]
+
+- id: teardown
+  type: worktree
+  action: cleanup
+  policy: merge_to_base  # or: leave_for_inspection | delete_unconditionally
+```
+
+```yaml
+# loop — note: type:loop IS required (the spec table requires it)
+- id: implement-and-test
+  type: loop
+  loop:
+    max_iterations: 5
+    until: state.tests_pass
+    steps:
+      - id: implement
+        type: ai
+        prompt: prompts/standard/implement.j2
+        allowed_tools: [Read, Write, Edit, Bash]
+        cwd: $state.worktree_path
+        writes_files: true
+        writes: []     # produces files, not state — contract optional
+      - id: run-tests
+        type: script
+        command: pytest -x
+        cwd: $state.worktree_path
+        contract:
+          tests_pass: boolean
+        writes: [tests_pass]
+```
+
+---
+
+## 3. Inline contracts — the grammar
+
+Every step that puts data into state declares its output shape with `contract:`. The harness compiles the YAML to a Pydantic model at load time, the agent (for AI nodes) calls a generated tool with that schema, and `writes:` then extracts the named fields into state.
+
+**Three primitive types** — `string`, `integer`, `boolean`, `number`. Plus `list` (with `of:`), and nested objects (a mapping is a sub-schema).
+
+### Example 1 — flat scalars
+
+```yaml
+contract:
+  status: string
+  count: integer
+  has_pii: boolean
+```
+
+### Example 2 — list of strings, then list of objects
+
+```yaml
+contract:
+  warnings:
+    type: list
+    of: string
+  findings:
+    type: list
+    of:
+      severity: string
+      area: string
+      description: string
+```
+
+### Example 3 — nested object + constraints
+
+```yaml
+contract:
+  verdict:
+    type: string
+    enum: [PASS, FAIL]
+  priority:
+    type: integer
+    min: 1
+    max: 5
+  release_id:
+    type: string
+    pattern: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+  summary:
+    type: string
+    format: long      # informational; doesn't constrain
+```
+
+Supported constraint keys: `enum`, `pattern`, `min`, `max`, `format`. For anything more complex (custom validators, computed fields), hoist the schema to `$contracts/<name>` (see §6).
+
+### Contract is optional when `writes: []`
+
+A step that mutates files but writes nothing to state (typically an AI node inside a loop body) doesn't need a contract:
+
+```yaml
+- id: implement
+  type: ai
+  prompt: prompts/standard/implement.j2
+  writes_files: true
+  writes: []           # nothing flows to state — contract optional
+```
+
+Otherwise: `contract:` is required and `writes:` field names must match the contract's field names exactly.
+
+---
+
+## 4. State and `writes:`
+
+**State is derived, not declared.** You don't write a state-schema file. The harness walks every step's `contract:` and `writes:`, takes the union, and builds the state schema for the run. There's no `state_schema:` field on the workflow — trying to declare one is a load-time error.
+
+### Rules
+
+- For each step, every name in `writes:` must match a field name in that step's `contract:`. Type comes from the contract.
+- If two steps write the same field name, they must agree on type. Mismatch is a load-time error.
+- `BaseState` (framework-provided) is always present: `run_id`, `workflow_name`, `base_branch`, `worktree_path`, `worktree_branch`, `artifacts_dir`, `started_at`, `notes`.
+
+### Merge semantics by type
+
+When two steps both write the same state field, the merge follows the field's *type*:
+
+| Type | Behaviour |
+|---|---|
+| `list` | Append |
+| Scalar (`string`, `integer`, `boolean`, `number`) | Overwrite |
+
+So a `findings: list[...]` field accumulates across nodes; a `status: string` field reflects the last writer.
+
+### Variable references
+
+Two namespaces inside YAML scalar values:
+
+- `$inputs.X` — caller-provided CLI inputs
+- `$state.X` — the live state object (any field from any earlier step's `writes:`)
+
+```yaml
+args:
+  - "--since-days"
+  - "$inputs.since_days"
+  - "--tickets-json"
+  - "$state.tickets"
+```
+
+Inside Jinja prompt templates the same vars are available as Jinja variables (no `$` prefix):
+
+```jinja
+{{ state.tickets }}
+{{ inputs.since_days }}
+```
+
+---
+
+## 5. Standard prompts
+
+Four reusable Jinja templates live in `prompts/standard/`. Each accepts a small set of `template_vars` documented in the file's header comment.
+
+| File | Use it for | Required `template_vars` |
+|---|---|---|
+| `analyze.j2` | Read-only investigation; produce a structured summary | `task` |
+| `implement.j2` | Mutate code/files in the worktree, optionally with tests | `task` |
+| `review.j2` | Evaluate against criteria; produce a verdict + findings | `criteria` |
+| `summarize.j2` | Summarise a subject; produce structured output | `subject` |
+
+Reference one in an AI step:
+
+```yaml
+- id: review-pr
+  type: ai
+  prompt: prompts/standard/review.j2
+  template_vars:
+    criteria: "Correctness, test coverage, regression risk"
+  contract:
+    status: { type: string, enum: [PASS, FAIL] }
+    issues: { type: list, of: string }
+  writes: [status, issues]
+```
+
+If a standard prompt doesn't fit, write your own `.j2` in `prompts/<workflow>/<name>.j2`. Keep custom prompts as the exception — the standard library covers most cases via `template_vars`.
+
+---
+
+## 6. Sharing schemas with `$contracts/<name>`
+
+A schema used by multiple workflows can be hoisted into `contracts/<name>.yaml` and referenced by name:
+
+```yaml
+# contracts/review-verdict.yaml
+status:
+  type: string
+  enum: [PASS, FAIL]
+issues:
+  type: list
+  of:
+    severity: string
+    description: string
+blocking: boolean
+```
+
+```yaml
+# any workflow
+- id: review
+  type: ai
+  prompt: prompts/standard/review.j2
+  template_vars:
+    criteria: "..."
+  contract: $contracts/review-verdict
+  writes: [status, issues, blocking]
+```
+
+The harness resolves the reference at load time and compiles the same Pydantic model it would for an inline contract.
+
+---
+
+## 7. Worked example: release-notes
+
+A three-step workflow that pulls closed Linear tickets, summarises them, and writes a release-notes markdown file. This is the canonical example used for the 10-minute ergonomics test.
+
+```yaml
+# workflows/release-notes.yaml
+name: release-notes
+version: 1
+description: Pull recent Linear tickets and summarise into release notes markdown.
+
+inputs:
+  since_days:
+    type: integer
+    default: 7
+  output_path:
+    type: string
+    default: ""
+
+steps:
+  - id: fetch-tickets
+    type: script
+    runtime: python
+    script: scripts/fetch_recent_linear_tickets.py
+    args: ["--since-days", "$inputs.since_days"]
+    contract:
+      tickets:
+        type: list
+        of:
+          id: string
+          title: string
+          labels:
+            type: list
+            of: string
+          kind: string
+    writes: [tickets]
+
+  - id: summarise
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/standard/summarize.j2
+    template_vars:
+      subject: "Linear tickets closed in the last $inputs.since_days days: $state.tickets"
+      length: "release-notes markdown grouped by type (Features, Bug fixes, Improvements)"
+    allowed_tools: [Read]
+    contract:
+      release_notes: string
+    writes: [release_notes]
+
+  - id: write-file
+    type: script
+    runtime: python
+    script: scripts/write_release_notes.py
+    args: ["--run-id", "$state.run_id", "--output-path", "$inputs.output_path"]
+    contract:
+      output_path: string
+    writes: [output_path]
+```
+
+What's going on:
+
+- **Inputs.** Two CLI inputs with defaults. The caller can override either: `harness run release-notes --since-days=14 --output-path=/tmp/notes.md`.
+- **Step 1 (script).** Deterministic data fetch — runs a Python script that hits the Linear API. Contract declares the shape of one ticket; writes the list into `state.tickets`. The engine never asks an LLM to fetch data — that's Principle 6 (`SPEC.md` §1.6).
+- **Step 2 (ai).** Summarises the tickets using the standard prompt with parameterised `template_vars`. The agent's contract has one field (`release_notes: string`) which becomes a tool the agent calls to submit its output. `allowed_tools: [Read]` keeps the agent bounded — no Write/Bash/Edit.
+- **Step 3 (script).** Writes the summarised string to disk. Returns the output path so a caller can find it via `harness status <run-id> --json`.
+
+**Derived state** (you don't write this; the engine builds it):
+
+```python
+class ReleaseNotesState(BaseState):
+    tickets: list[Ticket] = []
+    release_notes: str | None = None
+    output_path: str | None = None
+```
+
+---
+
+## 8. Running a workflow
+
+```bash
+harness run release-notes --since-days=7 --output-path=/tmp/notes.md
+```
+
+Each workflow's CLI surface is generated from its `inputs:` block (see SPEC §11 — *Per-workflow inputs*). `harness run <workflow> --help` prints the flags + positionals for that specific workflow.
+
+Common flags every workflow supports:
+
+```bash
+harness status <run-id>             # current status + state snapshot
+harness logs <run-id> [--follow]    # tail the log
+harness events <run-id> [--type tool_called]   # filter events
+```
+
+---
+
+## 9. Validating a workflow
+
+Two ways:
+
+```bash
+# Static validation — does the YAML load + cross-validate?
+harness validate workflows/release-notes.yaml
+```
+
+```python
+# Programmatic, from any test or script
+from harness.workflow.loader import load_workflow
+loaded = load_workflow("workflows/release-notes.yaml")
+print(loaded.workflow)        # the Workflow Pydantic model
+print(loaded.contracts)       # compiled Pydantic models per step
+print(loaded.state_schema)    # derived state class
+```
+
+The load step runs every cross-validation: `writes:` matches `contract:` field names, type consistency across writers, worktree-rule (any `writes_files: true` step has a `worktree.create` ancestor), `actor: human` rejected as v2-reserved, etc. If it loads, the workflow's shape is sound.
+
+---
+
+## 10. Common pitfalls
+
+Real ones, in roughly the order people hit them:
+
+| Pitfall | Fix |
+|---|---|
+| Loop step omits `type: loop` | The spec table requires `type:` on every step including loops. Add `type: loop`. |
+| `writes:` field name doesn't match `contract:` field name | They must agree exactly. `writes: [tickets]` requires the contract to have a `tickets:` field. |
+| Two steps write the same state field with different types | One says `tickets: string`, another says `tickets: list of object`. Pick one, or rename one of the fields. |
+| AI step with `writes_files: true` but no worktree | Load-time error. Add a `worktree.create` step upstream. |
+| Trying to declare `state_schema:` on the workflow | There is no such field — state is derived. Remove it. |
+| `decision` step with `actor: human` | v2-reserved; loads but errors at run-time. Use `actor: llm` or wait for v2. |
+| Inline contract for a list of objects written as `list[object]` | YAML syntax is `type: list` + `of: { field: type, ... }`. See §3 example 2. |
+| AI step has `prompt:` pointing at a file that doesn't exist | The loader resolves prompt paths relative to the workflow file's directory. Check the path or move the prompt. |
+| Forgot to fill in `template_vars` that a standard prompt requires | Read the `.j2` file's header comment — required vars are listed. `analyze.j2` needs `task`, `summarize.j2` needs `subject`, etc. |
+| Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `.claude/skills/verification-before-completion.md`. |
+
+---
+
+## 11. When to read SPEC.md
+
+This guide is enough to *write* a workflow. Read SPEC.md when you need to:
+
+- Understand *why* a constraint exists (e.g., why every node needs a contract — §4.4 failure-mode catalogue)
+- Decide whether a new step type should be a node type or a script (§4.1–§4.6)
+- Tune retry behaviour, decide between human and LLM actors, design a new shared contract (§4.4, §4.5, §5)
+- Audit the engine for the events it emits or the state it persists (§12)
+
+For everything else — writing workflows, picking step types, declaring contracts — this guide should be self-contained.
