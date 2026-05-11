@@ -2,6 +2,11 @@
 
 Real subprocesses are exercised; nothing is mocked. Each test maps to one
 acceptance criterion in the H-015 brief.
+
+H-027 extends the suite with three tests for the optional
+``contract_override`` parameter — when supplied, ScriptNode parses stdout
+as JSON and validates it against the override Pydantic model, returning
+a NodeResult whose contract is the override instance.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from harness.nodes.base import NodeResult
 from harness.nodes.script import (
@@ -302,3 +308,100 @@ async def test_ac12_stdout_truncated_when_over_cap(tmp_path: Path) -> None:
     assert "truncated" in result.contract.stdout.lower()
     # The head of the captured output is preserved.
     assert result.contract.stdout.startswith("A" * 64)
+
+
+# ---------------------------------------------------------------------------
+# H-027 — contract_override seam (mirrors AINode / DecisionNode)
+#
+# When the executor wants a script's stdout treated as a typed payload — e.g.
+# the steward workflow's ``write-report`` step that declares
+# ``contract: { report_path: string }`` — it passes ``contract_override``.
+# ScriptNode parses stdout as JSON, validates against the override, and
+# returns NodeResult[override]. The three failure modes (no contract, bad
+# JSON, schema mismatch) each have a distinct expected error.
+# ---------------------------------------------------------------------------
+
+
+class _ReportContract(BaseModel):
+    report_path: str
+
+
+async def test_contract_override_parses_json_stdout_against_model(
+    tmp_path: Path,
+) -> None:
+    """Script prints valid JSON matching the override schema → NodeResult
+    whose contract is an instance of the override class."""
+    node = ScriptNode()
+    step = _step(
+        runtime="python",
+        command='import json; print(json.dumps({"report_path": "/tmp/report.md"}))',
+    )
+
+    result = await node.execute(
+        step=step,
+        state=_state(tmp_path),
+        contract_override=_ReportContract,
+    )
+
+    assert isinstance(result.contract, _ReportContract)
+    assert result.contract.report_path == "/tmp/report.md"
+    assert result.attestation.status == "complete"
+
+
+async def test_contract_override_malformed_json_raises_clean(
+    tmp_path: Path,
+) -> None:
+    """Script prints non-JSON → raises with a message that includes the
+    head of stdout so the workflow author can spot the offending line."""
+    node = ScriptNode()
+    step = _step(runtime="python", command='print("not json at all")')
+
+    with pytest.raises(ScriptNodeError) as excinfo:
+        await node.execute(
+            step=step,
+            state=_state(tmp_path),
+            contract_override=_ReportContract,
+        )
+
+    msg = str(excinfo.value)
+    assert "json" in msg.lower()
+    assert "not json" in msg
+
+
+async def test_contract_override_schema_mismatch_raises_clean(
+    tmp_path: Path,
+) -> None:
+    """Script prints valid JSON but missing the required field →
+    raises with a Pydantic-derived message."""
+    node = ScriptNode()
+    step = _step(
+        runtime="python",
+        command='import json; print(json.dumps({"wrong_key": "x"}))',
+    )
+
+    with pytest.raises(ScriptNodeError) as excinfo:
+        await node.execute(
+            step=step,
+            state=_state(tmp_path),
+            contract_override=_ReportContract,
+        )
+
+    msg = str(excinfo.value)
+    # Pydantic's error message will mention the missing field or the
+    # extra key. Either is acceptable evidence the validation fired.
+    assert "report_path" in msg or "validation" in msg.lower()
+
+
+async def test_contract_override_none_preserves_legacy_behaviour(
+    tmp_path: Path,
+) -> None:
+    """Without ``contract_override`` ScriptNode still returns
+    ``NodeResult[ScriptOutput]`` exactly as before — load-bearing for
+    every existing script step in the codebase."""
+    node = ScriptNode()
+    step = _step(runtime="bash", command='echo "free-form text"')
+
+    result = await node.execute(step=step, state=_state(tmp_path))
+
+    assert isinstance(result.contract, ScriptOutput)
+    assert result.contract.stdout == "free-form text\n"

@@ -11,29 +11,41 @@ Variable substitution: ``args`` entries that match ``$state.<field>`` or
 coerced to ``str``. Missing references raise — silent empty-string
 substitution would mask workflow-authoring bugs.
 
+Contract override (H-027): when the executor passes
+``contract_override``, ScriptNode treats the script's stdout as a typed
+payload — parses it as JSON, validates the parsed dict against the
+override Pydantic model, and returns ``NodeResult[override]``. JSON
+parse errors and Pydantic validation errors both surface as
+:class:`ScriptNodeError` carrying the head of stdout so the
+workflow-authoring bug is grep-able. Without ``contract_override`` the
+node returns ``NodeResult[ScriptOutput]`` exactly as before — the seam
+is purely additive. This mirrors the ``contract_override`` parameter
+that ``AINode`` and ``DecisionNode`` already expose; the executor's
+script adapter (``harness.engine.runner._build_node_registry``) forwards
+``ctx.contracts[step.id]`` through.
+
 Out of scope (deferred):
 
 * Configurable ``on_fail`` (mirror CheckNode) — the v1 contract is
   "non-zero exit means the node failed".
 * Streaming stdout/stderr to the event log — v1 captures only.
-* Contract enforcement against the YAML ``contract:`` block — that is
-  the executor's (H-007) job. ScriptNode produces a fixed
-  ``ScriptOutput`` shape; the executor validates whatever subset of it
-  the workflow declared.
 
-SPEC: §4.3 (Node protocol), §5 ("script" rows / "Variable substitution").
+SPEC: §4.3 (Node protocol), §5 ("script" rows / "Variable substitution"),
+§14 (steward workflow's ``write-report`` step).
 """
 
 from __future__ import annotations
 
 import asyncio
+import builtins
 import contextlib
+import json
 import shutil
 import sys
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from harness.nodes.base import Attestation, NodeResult
 from harness.state.schema import BaseState
@@ -57,6 +69,12 @@ DEFAULT_MAX_OUTPUT_BYTES: Final[int] = 1024 * 1024  # 1 MiB
 DEFAULT_TIMEOUT_S: Final[float] = 300.0
 
 _TRUNCATION_MARKER: Final[str] = "\n…[truncated]"
+
+# When ``contract_override`` parsing/validation fails, include a head of
+# stdout in the raised exception so the workflow author can spot the
+# offending line without re-running. 200 chars is enough for a typical
+# error line, short enough to not flood logs.
+_STDOUT_HEAD_LIMIT: Final[int] = 200
 
 
 class ScriptNodeError(RuntimeError):  # noqa: N818 — spec vocabulary, not PEP-8 N818
@@ -110,12 +128,26 @@ class ScriptNode:
         step: ScriptStep,
         state: BaseState,
         inputs: dict[str, Any] | None = None,
-    ) -> NodeResult[ScriptOutput]:
+        contract_override: builtins.type[BaseModel] | None = None,
+    ) -> NodeResult[BaseModel]:
         """Run the script step and return its captured output.
 
+        Args:
+            step: The workflow's :class:`ScriptStep`.
+            state: Run state — referenced via ``$state.<field>`` in args.
+            inputs: Workflow inputs — referenced via ``$inputs.<key>``.
+            contract_override: Optional Pydantic model. When supplied,
+                ScriptNode parses stdout as JSON, validates against this
+                model, and returns ``NodeResult[override]``. Without it,
+                returns ``NodeResult[ScriptOutput]`` (the legacy shape).
+                Mirrors the same parameter on :class:`AINode` /
+                :class:`DecisionNode`.
+
         Raises:
-            ScriptNodeError: on non-zero exit, timeout, or missing
-                ``$state.X`` / ``$inputs.X`` reference in ``args``.
+            ScriptNodeError: on non-zero exit, timeout, missing
+                ``$state.X`` / ``$inputs.X`` reference in ``args``, or —
+                when ``contract_override`` is supplied — malformed JSON
+                or schema validation failure.
         """
         inputs = inputs or {}
         resolved_args = [
@@ -132,7 +164,22 @@ class ScriptNode:
                 f"stderr: {stderr.strip()[:500]}"
             )
 
-        return NodeResult(
+        if contract_override is not None:
+            contract_instance = self._parse_and_validate(
+                step_id=step.id, stdout=stdout, contract_cls=contract_override
+            )
+            return NodeResult[BaseModel](
+                contract=contract_instance,
+                attestation=Attestation(
+                    status="complete",
+                    reasoning=(
+                        f"script step {step.id!r} exited 0; stdout validated "
+                        f"against {contract_override.__name__}"
+                    ),
+                ),
+            )
+
+        return NodeResult[BaseModel](
             contract=ScriptOutput(
                 stdout=stdout,
                 stderr=stderr,
@@ -145,6 +192,40 @@ class ScriptNode:
         )
 
     # ---- internals ------------------------------------------------------- #
+
+    @staticmethod
+    def _parse_and_validate(
+        *,
+        step_id: str,
+        stdout: str,
+        contract_cls: builtins.type[BaseModel],
+    ) -> BaseModel:
+        """Parse ``stdout`` as JSON and validate against ``contract_cls``.
+
+        Two failure modes, both surfaced as :class:`ScriptNodeError`:
+
+        * JSON decode error → message references the offending head of
+          stdout so the workflow author can spot it without re-running.
+        * Pydantic :class:`ValidationError` → message carries the
+          Pydantic error verbatim (it already names the bad field).
+        """
+        head = stdout[:_STDOUT_HEAD_LIMIT]
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise ScriptNodeError(
+                f"script step {step_id!r}: stdout is not valid JSON "
+                f"(contract_override={contract_cls.__name__}): {exc.msg}; "
+                f"stdout head: {head!r}"
+            ) from exc
+        try:
+            return contract_cls.model_validate(payload)
+        except ValidationError as exc:
+            raise ScriptNodeError(
+                f"script step {step_id!r}: stdout payload failed validation "
+                f"against {contract_cls.__name__}: {exc}; "
+                f"stdout head: {head!r}"
+            ) from exc
 
     @staticmethod
     def _substitute(arg: str, *, state: BaseState, inputs: dict[str, Any]) -> str:

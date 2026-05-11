@@ -540,12 +540,27 @@ class Runner:
             )
 
         async def script_adapter(
-            step: Step, state: BaseState, _ctx: Context
+            step: Step, state: BaseState, ctx: Context
         ) -> NodeResult[Any]:
             assert isinstance(step, ScriptStep), (
                 f"script adapter received non-ScriptStep: {type(step).__name__}"
             )
-            return await script_node.execute(step=step, state=state, inputs=inputs)
+            # Same rationale as ai_adapter: when the step declares an
+            # inline contract:, the loader compiled it and exposed it via
+            # ctx.contracts. Pass it through so ScriptNode parses stdout
+            # as JSON and binds it to the same Pydantic class the
+            # executor's downstream isinstance check uses. Without this,
+            # the steward workflow's write-report step (writes:
+            # [report_path]) would fail at the executor's
+            # _validate_writes_against_contract — ScriptOutput has no
+            # ``report_path`` field. See SPEC §14.
+            override = ctx.contracts.get(step.id)
+            return await script_node.execute(
+                step=step,
+                state=state,
+                inputs=inputs,
+                contract_override=override,
+            )
 
         async def check_adapter(
             step: Step, state: BaseState, _ctx: Context
