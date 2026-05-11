@@ -605,7 +605,7 @@ async def test_loop_until_bash_substitutes_state_tokens(tmp_path: Path) -> None:
     )
 
     exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
-    assert exit_code == 0, f"workflow did not exit 0 — substitution likely broken"
+    assert exit_code == 0, "workflow did not exit 0 — substitution likely broken"
 
     run_id = await _fetch_single_run_id(db)
     events = await _fetch_events(db, run_id)
@@ -722,7 +722,7 @@ async def test_check_retry_loop_triggers_next_iteration(tmp_path: Path) -> None:
 
     exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
     assert exit_code == 0, (
-        f"retry_loop should drive another iteration, not fail the run"
+        "retry_loop should drive another iteration, not fail the run"
     )
 
     run_id = await _fetch_single_run_id(db)
