@@ -6,16 +6,15 @@ entry point in H-023 will call ``asyncio.run(runner.run(...))``). It:
 1. Generates a run id via :func:`harness.identity.generate_run_id`.
 2. Loads the workflow YAML and derives its state schema
    (:mod:`harness.workflow.loader`, :mod:`harness.workflow.derive`).
-3. Rejects workflows that declare a ``loop`` step — H-021 owns that
-   evaluator. The rejection lands *before* any state row is written so a
-   loop-bearing run never leaves residue.
-4. Inserts the ``runs`` row and emits ``workflow_started``.
-5. Walks steps in declared order, calling
-   :meth:`harness.engine.executor.Executor.execute` for each. The
+3. Inserts the ``runs`` row and emits ``workflow_started``.
+4. Walks top-level steps in declared order; for each step it dispatches
+   either to :meth:`harness.engine.executor.Executor.execute` (the five
+   leaf node types) or to :class:`harness.engine.loop.LoopExecutor`
+   (loop blocks — SPEC §10). The
    :class:`~harness.engine.executor.Context` is built once and reused;
-   per-type :data:`NodeRunner` adapters are constructed up-front from the
-   five concrete Node classes (AI/Script/Check/Decision/Worktree).
-6. Catches the three terminal exception classes and maps them to SPEC §11
+   per-type :data:`NodeRunner` adapters are constructed up-front from
+   the five concrete Node classes (AI/Script/Check/Decision/Worktree).
+5. Catches the three terminal exception classes and maps them to SPEC §11
    exit codes:
 
    * success → ``workflow_completed`` + status ``completed`` + exit 0.
@@ -60,6 +59,7 @@ from harness.dispatch.base import Agent
 from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent
 from harness.engine.executor import Context, Executor, NodeRunner
+from harness.engine.loop import LoopExecutor
 from harness.engine.retry import RetryPolicy
 from harness.events.emitter import EventEmitter
 from harness.identity import artifacts_dir as artifacts_dir_for
@@ -88,13 +88,15 @@ from harness.workflow.schema import (
 __all__ = ["CheckFailed", "LoopNotImplemented", "Runner"]
 
 
-class LoopNotImplemented(Exception):  # noqa: N818 — temporary guard
-    """Raised when the workflow contains a ``type: loop`` step.
+class LoopNotImplemented(Exception):  # noqa: N818 — partial-coverage guard
+    """Raised by check_adapter when ``on_fail: retry_loop:<id>`` resolves.
 
-    H-021 (loop block evaluator) is not yet implemented. The runner rejects
-    loop-bearing workflows up front so a partially-executed run doesn't
-    leave residue. This guard will be removed when H-021 lands and the
-    runner learns to evaluate loop blocks.
+    The top-level loop evaluator (H-021) is now wired in, but the
+    ``retry_loop:<id>`` integration on the check node — which would
+    rewind execution to a named loop step on check failure — is a
+    separate ticket. Until it lands, the check adapter raises this
+    sentinel so the workflow author sees an explicit deferral rather
+    than silent fall-through.
     """
 
 
@@ -175,14 +177,11 @@ class Runner:
             SIGINT / ``KeyboardInterrupt``.
 
         Raises:
-            LoopNotImplemented: the workflow declares a ``type: loop``
-                step (H-021 not yet wired). Raised before any DB write.
-            Any other exception from :func:`load_workflow` or
+            Any exception from :func:`load_workflow` or
                 :func:`derive_state_schema` — invocation errors (SPEC §11
                 exit 2) are the CLI layer's concern, not the runner's.
         """
         loaded = load_workflow(workflow_path)
-        self._reject_loop_steps(loaded.workflow)
 
         state_schema = derive_state_schema(loaded)
         run_id = generate_run_id()
@@ -211,28 +210,6 @@ class Runner:
             self._restore_sigint_handler(previous_handler)
 
     # ---- internals ------------------------------------------------------- #
-
-    @staticmethod
-    def _reject_loop_steps(workflow: Workflow) -> None:
-        """Raise :class:`LoopNotImplemented` if any step (nested or top-level) is a loop.
-
-        H-021 owns the loop block evaluator; until it lands the runner
-        refuses to execute loop-bearing workflows so partial results
-        don't leave residue. Walks loop bodies recursively (a loop
-        inside a loop would be doubly out of scope).
-        """
-
-        def walk(steps: list[Step]) -> None:
-            for step in steps:
-                if isinstance(step, LoopStep):
-                    raise LoopNotImplemented(
-                        f"workflow {workflow.name!r} step {step.id!r}: "
-                        f"loop blocks are not yet implemented "
-                        f"(H-021 owns the loop evaluator)"
-                    )
-                # No other step type carries nested steps in v1.
-
-        walk(list(workflow.steps))
 
     async def _run_inner(
         self,
@@ -301,6 +278,15 @@ class Runner:
             nodes=registry,
         )
 
+        # Build the loop evaluator once per run; it reuses the same
+        # executor + agent + emitter so loop children share the wider
+        # run's retry policy, contract registry, and event log.
+        loop_executor = LoopExecutor(
+            executor=self._executor,
+            agent=self._agent,
+            emitter=emitter,
+        )
+
         # Walk steps. Each terminal exception class maps to a distinct
         # exit code (SPEC §11). KeyboardInterrupt MUST be caught before
         # the catch-all ``BaseException`` arm so the cancelled path wins.
@@ -308,7 +294,10 @@ class Runner:
         try:
             for step in loaded.workflow.steps:
                 last_step_id = step.id
-                await self._executor.execute(step, ctx)
+                if isinstance(step, LoopStep):
+                    await loop_executor.execute(step, ctx)
+                else:
+                    await self._executor.execute(step, ctx)
         except KeyboardInterrupt:
             await self._finalise_failure(
                 emitter=emitter,

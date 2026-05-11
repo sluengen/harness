@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-import pytest
 from pydantic import BaseModel
 
 from harness.dispatch.claude import ContractViolation
@@ -573,29 +572,46 @@ async def test_ac8_contract_violation_returns_exit_3(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC9 — loop steps are rejected at load time (H-021 stub)
+# AC9 — loop steps now execute via the LoopExecutor (H-021 wired)
 # ---------------------------------------------------------------------------
 
 
-async def test_ac9_loop_workflow_rejected_with_loop_not_implemented(
+async def test_ac9_loop_workflow_runs_via_loop_executor(
     tmp_path: Path,
 ) -> None:
-    """A workflow with any ``type: loop`` step raises LoopNotImplemented
-    before any state row is written."""
+    """A workflow with a ``type: loop`` step is dispatched to the
+    LoopExecutor and runs to completion. The ``until: True`` literal
+    means the loop exits after iteration 1, so the run finishes with
+    exit code 0 and a ``loop_iteration`` event is emitted."""
     db = tmp_path / "harness.db"
     wf = _loop_workflow(tmp_path)
 
-    with pytest.raises(LoopNotImplemented, match="H-021"):
-        await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
 
-    # No run was inserted.
-    if db.exists():
-        async with (
-            aiosqlite.connect(db) as conn,
-            conn.execute("SELECT COUNT(*) FROM runs") as cur,
-        ):
-            count = (await cur.fetchone())[0]  # type: ignore[index]
-        assert count == 0
+    # Exactly one runs row, and at least one loop_iteration event.
+    async with (
+        aiosqlite.connect(db) as conn,
+        conn.execute("SELECT COUNT(*) FROM runs") as cur,
+    ):
+        count = (await cur.fetchone())[0]  # type: ignore[index]
+    assert count == 1
+
+    async with aiosqlite.connect(db) as conn:
+        conn.row_factory = aiosqlite.Row
+        async with conn.execute("SELECT run_id FROM runs LIMIT 1") as cur:
+            run_id = (await cur.fetchone())[0]  # type: ignore[index]
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    assert len(iters) == 1, f"expected exactly one loop_iteration, got {iters!r}"
+
+
+async def test_ac9_loop_not_implemented_still_exported() -> None:
+    """The :class:`LoopNotImplemented` sentinel still exists — the
+    check_adapter's ``retry_loop:<id>`` path continues to raise it
+    pending a separate ticket. (See ``test_engine_loop.py`` for the
+    end-to-end coverage of that path.)"""
+    assert issubclass(LoopNotImplemented, Exception)
 
 
 # ---------------------------------------------------------------------------
