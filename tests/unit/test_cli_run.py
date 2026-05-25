@@ -678,4 +678,4 @@ def test_existing_version_command_still_runs(cli: CliRunner) -> None:
     """Regression: the ``version`` command still works."""
     result = cli.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "calibrate-harness" in result.output
+    assert "slate-harness" in result.output

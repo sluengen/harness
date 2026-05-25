@@ -1,4 +1,4 @@
-# calibrate-harness — Docker
+# slate-harness — Docker
 
 Container image and compose setup for running the harness against any target
 project. Reference: SPEC.md §13.
@@ -25,7 +25,7 @@ process: each `docker run` invokes one workflow and exits.
 From the repo root:
 
 ```bash
-docker build -t calibrate-harness:dev -f docker/Dockerfile .
+docker build -t slate-harness:dev -f docker/Dockerfile .
 ```
 
 Or via compose:
@@ -34,14 +34,14 @@ Or via compose:
 docker compose -f docker/docker-compose.yml build harness
 ```
 
-The image tag `calibrate-harness:dev` is what the integration test
+The image tag `slate-harness:dev` is what the integration test
 (`tests/integration/test_docker.py`) builds and asserts against.
 
 ## Sanity check
 
 ```bash
-docker run --rm calibrate-harness:dev version
-# → calibrate-harness 0.1.0
+docker run --rm slate-harness:dev version
+# → slate-harness 0.1.0
 ```
 
 ## Required environment variables
@@ -70,7 +70,7 @@ The harness reads workflow YAMLs that ship inside the image
 
 ```bash
 # In one terminal — build once.
-docker build -t calibrate-harness:dev -f docker/Dockerfile .
+docker build -t slate-harness:dev -f docker/Dockerfile .
 
 # In another terminal — run a workflow against calibrate-coffee.
 cd /abs/path/to/calibrate-coffee
@@ -78,7 +78,7 @@ docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
   -e ANTHROPIC_API_KEY \
   -e LINEAR_API_KEY \
-  calibrate-harness:dev \
+  slate-harness:dev \
   run steward --domain=architecture
 ```
 

@@ -185,10 +185,10 @@ def _init_db(db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_version_human_form_prints_calibrate_harness() -> None:
+def test_version_human_form_prints_slate_harness() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "calibrate-harness" in result.stdout
+    assert "slate-harness" in result.stdout
 
 
 def test_version_json_form_emits_version_key() -> None:
@@ -608,7 +608,7 @@ def test_cli_module_entrypoint_still_works() -> None:
         timeout=15,
     )
     assert result.returncode == 0
-    assert "calibrate-harness" in result.stdout
+    assert "slate-harness" in result.stdout
 
 
 # ---------------------------------------------------------------------------

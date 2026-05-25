@@ -1,6 +1,6 @@
 # Authoring Workflows
 
-A practical guide to writing workflows for calibrate-harness. Task-oriented and example-heavy. If you want the design rationale ("why does it work this way") read `SPEC.md`; this file covers the *how*.
+A practical guide to writing workflows for slate-harness. Task-oriented and example-heavy. If you want the design rationale ("why does it work this way") read `SPEC.md`; this file covers the *how*.
 
 > **Mental model in one sentence.** A workflow is a YAML file with declared inputs and a list of steps; each step has a `type:` and a `contract:` (the typed shape of its output); the engine derives the run's state schema from the union of all `writes:` declarations across steps.
 

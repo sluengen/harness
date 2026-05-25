@@ -3,10 +3,10 @@
 Asserts:
 
 1. The Docker image at ``docker/Dockerfile`` builds successfully from the repo
-   root using the tag ``calibrate-harness:dev``.
+   root using the tag ``slate-harness:dev``.
 2. The image's ENTRYPOINT is ``["uv", "run", "harness"]`` such that
-   ``docker run --rm calibrate-harness:dev version`` prints a version string
-   starting with ``calibrate-harness``.
+   ``docker run --rm slate-harness:dev version`` prints a version string
+   starting with ``slate-harness``.
 
 The test is marked ``@pytest.mark.docker`` and SKIPS if ``docker info`` fails
 (CI may not have docker available; macOS/Linux dev hosts typically do).
@@ -25,7 +25,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
-IMAGE_TAG = "calibrate-harness:dev"
+IMAGE_TAG = "slate-harness:dev"
 
 
 def _docker_available() -> bool:
@@ -110,6 +110,6 @@ def test_docker_run_harness_version(built_image: str) -> None:
         f"--- stdout ---\n{result.stdout}\n"
         f"--- stderr ---\n{result.stderr}"
     )
-    assert "calibrate-harness" in result.stdout, (
-        f"Expected 'calibrate-harness' in version output, got: {result.stdout!r}"
+    assert "slate-harness" in result.stdout, (
+        f"Expected 'slate-harness' in version output, got: {result.stdout!r}"
     )

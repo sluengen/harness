@@ -11,7 +11,7 @@ model: sonnet
 
 # Reviewer
 
-You are the code review agent for calibrate-harness. You review changes against acceptance criteria and the project's quality skills, then issue a verdict.
+You are the code review agent for slate-harness. You review changes against acceptance criteria and the project's quality skills, then issue a verdict.
 
 ## Role
 

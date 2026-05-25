@@ -1,14 +1,14 @@
-# calibrate-harness — runtime image
+# slate-harness — runtime image
 # See SPEC.md §13 (Docker Setup).
 #
 # Build from the repo root:
-#   docker build -t calibrate-harness:dev -f docker/Dockerfile .
+#   docker build -t slate-harness:dev -f docker/Dockerfile .
 #
 # Run, mounting a host project at /workspace:
 #   docker run --rm \
 #     -v "$(pwd)":/workspace -w /workspace \
 #     -e ANTHROPIC_API_KEY -e LINEAR_API_KEY \
-#     calibrate-harness:dev run steward --domain=architecture
+#     slate-harness:dev run steward --domain=architecture
 FROM python:3.11-slim
 
 # OS deps: git for worktree operations, ca-certificates for HTTPS to Anthropic / Linear.

@@ -73,7 +73,7 @@ The engine never asks an LLM what to do next. The YAML decides.
 ## 3. Repository Structure
 
 ```
-calibrate-harness/
+slate-harness/
 ├── pyproject.toml
 ├── README.md
 ├── CLAUDE.md
@@ -1040,7 +1040,7 @@ docker run --rm -it \
   -e LINEAR_API_KEY \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 \
   -w /workspace \
-  calibrate-harness:latest \
+  slate-harness:latest \
   run feature --linear=CAL-249 --base=staging
 ```
 
@@ -1186,7 +1186,7 @@ These are deliberately unresolved. Pick before code lands.
 
 1. **Workflow location: in-repo or harness-side?**
    - In-repo: workflows live in the project repo (`calibrate-coffee/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
-   - Harness-side: workflows live in `calibrate-harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
+   - Harness-side: workflows live in `slate-harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
    - **Lean:** harness-side, because cleanliness > convenience for a single-team tool. Revisit when a second project consumes the harness.
 
 2. **State persistence on resume.** ~~Defer until we hit a workflow that genuinely benefits from mid-run resume.~~ **Resolved by the `decision` node (§5):** `actor: human` requires resume capability, and that's promoted to v2 critical path. v1 stores latest state on the row; v2 lifts that to per-completion snapshots so paused runs can be rehydrated cleanly. Resume-from-failure (the broader case) follows the same machinery — once human-decision resume works, resume-from-failure is mostly a CLI verb away.
