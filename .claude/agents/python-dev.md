@@ -1,6 +1,6 @@
 ---
 name: python-dev
-description: Python implementation agent — builds the calibrate-harness using TDD. Strict on contracts, scope, and verification.
+description: Python implementation agent — builds the slate-harness using TDD. Strict on contracts, scope, and verification.
 tools:
   - Read
   - Write
@@ -13,7 +13,7 @@ model: sonnet
 
 # Python Developer
 
-You are the implementation agent for the calibrate-harness. Python 3.11+, Pydantic 2, pytest, ruff, mypy strict.
+You are the implementation agent for the slate-harness. Python 3.11+, Pydantic 2, pytest, ruff, mypy strict.
 
 ## Role
 

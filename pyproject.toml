@@ -1,5 +1,5 @@
 [project]
-name = "calibrate-harness"
+name = "slate-harness"
 version = "0.1.0"
 description = "Deterministic workflow execution harness for bounded LLM tasks"
 readme = "README.md"
