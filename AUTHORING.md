@@ -165,7 +165,7 @@ Minimal example of each:
 
 Every step that puts data into state declares its output shape with `contract:`. The harness compiles the YAML to a Pydantic model at load time, the agent (for AI nodes) calls a generated tool with that schema, and `writes:` then extracts the named fields into state.
 
-**Three primitive types** — `string`, `integer`, `boolean`, `number`. Plus `list` (with `of:`), and nested objects (a mapping is a sub-schema).
+**Four primitive types** — `string`, `integer`, `boolean`, `number`. Plus `list` (with `of:`), and nested objects (a mapping is a sub-schema).
 
 ### Example 1 — flat scalars
 
@@ -255,6 +255,8 @@ Two namespaces inside YAML scalar values:
 
 - `$inputs.X` — caller-provided CLI inputs
 - `$state.X` — the live state object (any field from any earlier step's `writes:`)
+
+`$`-substitution happens inside **any YAML scalar string** before the step runs — that includes `args:` list entries, `cwd:`, and the values inside `template_vars:`. Jinja templates (the `.j2` files referenced by `prompt:`) receive the resolved values as `state`/`inputs` Jinja variables (no `$` prefix needed inside the template body).
 
 ```yaml
 args:

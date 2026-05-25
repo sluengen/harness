@@ -1,0 +1,58 @@
+name: notion_release_notes_digest
+version: 1
+description: Pull Notion pages tagged release-notes from the last N days and summarise into markdown grouped by tag.
+
+inputs:
+  lookback_days:
+    type: integer
+    default: 14
+
+steps:
+  - id: fetch-pages
+    type: script
+    runtime: python
+    script: scripts/fetch_notion_release_notes_pages.py
+    args:
+      - "--since-days"
+      - "$inputs.lookback_days"
+      - "--tag"
+      - "release-notes"
+    contract:
+      pages:
+        type: list
+        of:
+          id: string
+          title: string
+          url: string
+          tags:
+            type: list
+            of: string
+          last_edited: string
+          content: string
+    writes: [pages]
+
+  - id: summarise
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/standard/summarize.j2
+    template_vars:
+      subject: "Notion pages tagged 'release-notes' from the last $inputs.lookback_days days: $state.pages"
+      length: "markdown document organised by tag — one '## <tag>' section per distinct tag, with a bulleted summary of each page (title + 1-2 sentence digest) underneath"
+    allowed_tools: [Read]
+    contract:
+      notes_markdown: string
+    writes: [notes_markdown]
+
+  - id: write-file
+    type: script
+    runtime: python
+    script: scripts/write_notion_release_notes.py
+    args:
+      - "--run-id"
+      - "$state.run_id"
+      - "--content"
+      - "$state.notes_markdown"
+    contract:
+      output_path: string
+    writes: [output_path]
