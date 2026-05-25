@@ -1,0 +1,79 @@
+name: ticket_fix
+version: 1
+description: >
+  Take a Linear ticket ID, set up an isolated worktree off main, have an AI
+  agent investigate and implement a fix (with tests), have a separate AI
+  reviewer evaluate the diff, and on PASS commit + push the branch. On FAIL
+  the workflow cancels.
+
+inputs:
+  ticket_id:
+    type: string
+  base_branch:
+    type: string
+    default: main
+
+steps:
+  # ---------- Stage 1: intake / worktree ----------
+  - id: setup-worktree
+    type: worktree
+    action: create
+    base: $inputs.base_branch
+    writes: [worktree_path, worktree_branch]
+
+  # ---------- Stage 2: build (investigate + implement) ----------
+  - id: implement-fix
+    type: ai
+    prompt: prompts/standard/implement.j2
+    template_vars:
+      task: >
+        Investigate Linear ticket $inputs.ticket_id, determine the root cause,
+        and apply a focused fix in the worktree at $state.worktree_path.
+        Include or update tests that cover the change, and confirm they pass
+        before submitting.
+    allowed_tools: [Read, Write, Edit, Bash]
+    cwd: $state.worktree_path
+    writes_files: true
+    writes: []
+
+  # ---------- Stage 3: review ----------
+  - id: review-diff
+    type: ai
+    prompt: prompts/standard/review.j2
+    template_vars:
+      criteria: "correctness, test coverage, regression risk"
+    allowed_tools: [Read, Bash]
+    cwd: $state.worktree_path
+    contract:
+      review_status:
+        type: string
+        enum: [PASS, FAIL]
+      findings:
+        type: list
+        of:
+          severity: string
+          description: string
+    writes: [review_status, findings]
+
+  - id: gate-on-review
+    type: check
+    expr: state.review_status == "PASS"
+    on_fail: cancel
+
+  # ---------- Stage 4: outtake (commit + push, then merge worktree) ----------
+  - id: commit-and-push
+    type: script
+    runtime: bash
+    command: >
+      cd $state.worktree_path &&
+      git add -A &&
+      git commit -m "fix($inputs.ticket_id): apply reviewed change" &&
+      git push -u origin $state.worktree_branch
+    contract:
+      pushed_branch: string
+    writes: [pushed_branch]
+
+  - id: cleanup-worktree
+    type: worktree
+    action: cleanup
+    policy: merge_to_base
