@@ -1,0 +1,38 @@
+{
+  "scenario_id": "C",
+  "run_id": "004",
+  "workflow_path": "lessons/ergonomics/run-004/scenario-C.yaml",
+  "pain_points": [
+    {
+      "severity": "confusing",
+      "section": "§2 loop / §10 pitfalls last row",
+      "description": "The 'commit before merge_to_base' contract is implicit. §2 worktree note mentions a preceding script 'typically' runs git add/commit, but the loop body uses prompts/standard/implement.j2 (writes_files: true, writes: []) which gives no guarantee the agent staged or committed. Author has to insert an extra git add/commit script step between the loop and worktree.cleanup; nothing in §2 or §10 flags this as a required pattern."
+    },
+    {
+      "severity": "confusing",
+      "section": "§10 last row (single-direction branching)",
+      "description": "The canonical PASS/FAIL workaround relies on 'workflow halts before cleanup on failure', leaving the worktree on disk. The guide does not say which cleanup policy to choose if the author wants explicit teardown on FAIL — only merge_to_base/leave_for_inspection/delete_unconditionally are listed, none of which can be conditional. Authoring 'commit and merge on pass, cancel on fail' forces leaving the failed worktree behind, which may surprise authors expecting symmetric cleanup."
+    },
+    {
+      "severity": "minor",
+      "section": "§4 / §2 loop example",
+      "description": "It is not obvious that state.tests_pass starts as falsy/undefined on the first iteration so the until: check does not short-circuit before the loop body runs. The guide says 'state written inside loop steps persists across iterations' but does not state the initial-value semantics for until: on iteration 0."
+    },
+    {
+      "severity": "minor",
+      "section": "§2 worktree",
+      "description": "merge_to_base behaviour around remote pushes is ambiguous: 'engine fetches latest before the ff-merge' implies the worktree commit must reach a remote for ff-merge to see it, but the example says 'or just git add/commit' is fine. Unclear whether merge_to_base operates purely on local refs or expects a push."
+    },
+    {
+      "severity": "minor",
+      "section": "§2 script multi-line / $-substitution",
+      "description": "Substitution table in §4 lists command: as a substitution site, but does not clarify whether $state.X expansion happens inside a multi-line command: | block before bash sees it (vs being passed through to the shell). For commit-changes I assumed pre-substitution, which matches the table, but a worked multi-line example would remove the doubt."
+    }
+  ],
+  "self_assessment": "The workflow matches the expected shape (worktree.create → loop{implement, run-tests} → check → commit → cleanup) and follows AUTHORING.md's documented patterns: type: loop on the loop step, writes_files: true with writes: [] on the implement AI step, single-direction check with on_fail: cancel for the PASS-only success path, and merge_to_base on cleanup. The main authoring friction was realising I needed an explicit commit step between the loop and merge_to_base, which the guide hints at in §2 but never spells out as a required pattern when the loop body is an AI implement step.",
+  "consulted_only_authoring_md": true,
+  "files_read": [
+    "AUTHORING.md",
+    "prompts/standard/implement.j2"
+  ]
+}
