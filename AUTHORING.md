@@ -52,16 +52,29 @@ Minimal example of each:
   writes: [summary]
 ```
 
+Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonnet`), `allowed_tools:` (defaults to `[Read, Grep, Glob]`), `cwd:`, `writes_files:` (default `false`), `stall_timeout_s:` (default `300`), `timeout_s:` (default `600`).
+
 ```yaml
-# script
-- id: run-tests
+# script — bash form (default runtime). `command:` runs the value as bash.
+# For multi-line bash use `command: |\n  ...`. For a script file, use
+# `script:` + `runtime: bash|python`.
+- id: run-tests-bash
   type: script
-  runtime: python
-  script: scripts/run_pytest.py
+  command: pytest -x
   contract:
     tests_pass: boolean
-    failing: { type: list, of: string }
-  writes: [tests_pass, failing]
+  writes: [tests_pass]
+
+# script — python form
+- id: fetch-data
+  type: script
+  runtime: python
+  script: scripts/fetch.py
+  contract:
+    items:
+      type: list
+      of: string
+  writes: [items]
 ```
 
 ```yaml
@@ -87,12 +100,17 @@ Minimal example of each:
 ```
 
 ```yaml
-# worktree — opt-in isolation, two actions
+# worktree — opt-in isolation, two actions.
+# Special case: worktree steps have no contract: and no writes:.
+# - worktree.create writes worktree_path + worktree_branch directly into
+#   BaseState (framework-managed). Downstream nodes reference them via
+#   $state.worktree_path / $state.worktree_branch — they're BaseState
+#   fields, available even when no upstream step declares them.
+# - worktree.cleanup reads state, mutates the filesystem, writes nothing.
 - id: setup
   type: worktree
   action: create
   base: $inputs.base_branch
-  writes: [worktree_path, worktree_branch]
 
 - id: teardown
   type: worktree
@@ -100,8 +118,14 @@ Minimal example of each:
   policy: merge_to_base  # or: leave_for_inspection | delete_unconditionally
 ```
 
+`merge_to_base` fast-forwards the configured `base:` branch (from the upstream `create`) to the worktree branch. It assumes the worktree branch already has the commits you want — typically created by a preceding `script` step that runs `git add/commit/push` (or just `git add/commit`, since the engine fetches latest before the ff-merge).
+
 ```yaml
-# loop — note: type:loop IS required (the spec table requires it)
+# loop — note: type:loop IS required (the spec table requires it).
+# `until:` accepts any Python boolean expression over state. `until: state.x`
+# (truthy check) and `until: state.x == True` are both valid.
+# State written inside loop steps persists across iterations — the next
+# pass reads what the previous pass wrote.
 - id: implement-and-test
   type: loop
   loop:
@@ -256,7 +280,17 @@ Two namespaces inside YAML scalar values:
 - `$inputs.X` — caller-provided CLI inputs
 - `$state.X` — the live state object (any field from any earlier step's `writes:`)
 
-`$`-substitution happens inside **any YAML scalar string** before the step runs — that includes `args:` list entries, `cwd:`, and the values inside `template_vars:`. Jinja templates (the `.j2` files referenced by `prompt:`) receive the resolved values as `state`/`inputs` Jinja variables (no `$` prefix needed inside the template body).
+`$`-substitution happens inside **any YAML scalar string** before the step runs. Concrete list of where substitution applies:
+
+| Where | Step types | Example |
+|---|---|---|
+| `args:` list entries | `script` | `args: ["--days", "$inputs.lookback"]` |
+| `command:` | `script` | `command: "ls $state.worktree_path"` |
+| `cwd:` | `ai`, `script` | `cwd: $state.worktree_path` |
+| `base:` | `worktree` (`create`) | `base: $inputs.base_branch` |
+| `template_vars:` *values* | `ai`, `decision` | `template_vars: { task: "$state.plan" }` |
+
+Jinja templates (the `.j2` files referenced by `prompt:`) receive the resolved values as `state`/`inputs` Jinja variables (no `$` prefix needed inside the template body).
 
 ```yaml
 args:
@@ -279,12 +313,12 @@ Inside Jinja prompt templates the same vars are available as Jinja variables (no
 
 Four reusable Jinja templates live in `prompts/standard/`. Each accepts a small set of `template_vars` documented in the file's header comment.
 
-| File | Use it for | Required `template_vars` |
-|---|---|---|
-| `analyze.j2` | Read-only investigation; produce a structured summary | `task` |
-| `implement.j2` | Mutate code/files in the worktree, optionally with tests | `task` |
-| `review.j2` | Evaluate against criteria; produce a verdict + findings | `criteria` |
-| `summarize.j2` | Summarise a subject; produce structured output | `subject` |
+| File | Use it for | Required `template_vars` | Optional `template_vars` |
+|---|---|---|---|
+| `analyze.j2` | Read-only investigation; produce a structured summary | `task` | `tools_hint` |
+| `implement.j2` | Mutate code/files in the worktree, optionally with tests | `task` | `constraints` |
+| `review.j2` | Evaluate against criteria; produce a verdict + findings | `criteria` | `severity_levels` (default `[HIGH, MEDIUM, LOW]`) |
+| `summarize.j2` | Summarise a subject; produce structured output | `subject` | `length` (default `"concise"`) |
 
 Reference one in an AI step:
 
@@ -469,6 +503,8 @@ Real ones, in roughly the order people hit them:
 | AI step has `prompt:` pointing at a file that doesn't exist | The loader resolves prompt paths relative to the workflow file's directory. Check the path or move the prompt. |
 | Forgot to fill in `template_vars` that a standard prompt requires | Read the `.j2` file's header comment — required vars are listed. `analyze.j2` needs `task`, `summarize.j2` needs `subject`, etc. |
 | Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `.claude/skills/verification-before-completion.md`. |
+| `worktree.create` step has `writes:` or `contract:` | Loader rejects either. Worktree steps are framework-managed: `worktree.create` writes `worktree_path` + `worktree_branch` directly into `BaseState`; downstream nodes reference them via `$state.worktree_path` / `$state.worktree_branch`. No `writes:` or `contract:` needed (or allowed). See §2 worktree example. |
+| Want "do X on PASS, Y on FAIL" branching from a single `check` | The grammar has no multi-branch routing. `check.on_fail:` is single-direction (`cancel`/`continue`/`retry_loop:<id>`). Canonical workaround: gate with `on_fail: cancel`, put only the success-path cleanup downstream; the workflow halts before cleanup on failure. For richer branching, split into two workflows. |
 
 ---
 
