@@ -4,7 +4,7 @@ Asserts:
 
 1. The Docker image at ``docker/Dockerfile`` builds successfully from the repo
    root using the tag ``slate-harness:dev``.
-2. The image's ENTRYPOINT is ``["uv", "run", "harness"]`` such that
+2. The image's ENTRYPOINT is ``["uv", "run", "slate-harness"]`` such that
    ``docker run --rm slate-harness:dev version`` prints a version string
    starting with ``slate-harness``.
 
@@ -97,7 +97,7 @@ def test_docker_image_builds(built_image: str) -> None:
 
 
 def test_docker_run_harness_version(built_image: str) -> None:
-    """`docker run --rm <image> version` prints the harness version string."""
+    """`docker run --rm <image> version` prints the slate-harness version string."""
     result = subprocess.run(
         ["docker", "run", "--rm", built_image, "version"],
         capture_output=True,

@@ -431,10 +431,10 @@ steps:
 
 What's going on:
 
-- **Inputs.** Two CLI inputs with defaults. The caller can override either: `harness run release-notes --since-days=14 --output-path=/tmp/notes.md`.
+- **Inputs.** Two CLI inputs with defaults. The caller can override either: `slate-harness run release-notes --since-days=14 --output-path=/tmp/notes.md`.
 - **Step 1 (script).** Deterministic data fetch — runs a Python script that hits the Linear API. Contract declares the shape of one ticket; writes the list into `state.tickets`. The engine never asks an LLM to fetch data — that's Principle 6 (`SPEC.md` §1.6).
 - **Step 2 (ai).** Summarises the tickets using the standard prompt with parameterised `template_vars`. The agent's contract has one field (`release_notes: string`) which becomes a tool the agent calls to submit its output. `allowed_tools: [Read]` keeps the agent bounded — no Write/Bash/Edit.
-- **Step 3 (script).** Writes the summarised string to disk. Returns the output path so a caller can find it via `harness status <run-id> --json`.
+- **Step 3 (script).** Writes the summarised string to disk. Returns the output path so a caller can find it via `slate-harness status <run-id> --json`.
 
 **Derived state** (you don't write this; the engine builds it):
 
@@ -450,17 +450,17 @@ class ReleaseNotesState(BaseState):
 ## 8. Running a workflow
 
 ```bash
-harness run release-notes --since-days=7 --output-path=/tmp/notes.md
+slate-harness run release-notes --since-days=7 --output-path=/tmp/notes.md
 ```
 
-Each workflow's CLI surface is generated from its `inputs:` block (see SPEC §11 — *Per-workflow inputs*). `harness run <workflow> --help` prints the flags + positionals for that specific workflow.
+Each workflow's CLI surface is generated from its `inputs:` block (see SPEC §11 — *Per-workflow inputs*). `slate-harness run <workflow> --help` prints the flags + positionals for that specific workflow.
 
 Common flags every workflow supports:
 
 ```bash
-harness status <run-id>             # current status + state snapshot
-harness logs <run-id> [--follow]    # tail the log
-harness events <run-id> [--type tool_called]   # filter events
+slate-harness status <run-id>             # current status + state snapshot
+slate-harness logs <run-id> [--follow]    # tail the log
+slate-harness events <run-id> [--type tool_called]   # filter events
 ```
 
 ---
@@ -471,7 +471,7 @@ Two ways:
 
 ```bash
 # Static validation — does the YAML load + cross-validate?
-harness validate workflows/release-notes.yaml
+slate-harness validate workflows/release-notes.yaml
 ```
 
 ```python

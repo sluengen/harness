@@ -36,8 +36,8 @@ COPY harness/ ./harness/
 COPY workflows/ ./workflows/
 COPY prompts/ ./prompts/
 
-# Install the harness package itself into the venv so `uv run harness` resolves the
-# console script declared in pyproject.toml (project.scripts.harness).
+# Install the slate-harness package itself into the venv so `uv run slate-harness`
+# resolves the console script declared in pyproject.toml (project.scripts.slate-harness).
 RUN uv sync --frozen --no-dev
 
 ENV PYTHONUNBUFFERED=1 \
@@ -46,7 +46,7 @@ ENV PYTHONUNBUFFERED=1 \
     # target repo at /workspace and `uv` would otherwise fail to locate pyproject.toml.
     UV_PROJECT=/opt/harness \
     # The image is fully built; suppress uv's implicit reinstall-on-run behaviour so
-    # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
+    # `slate-harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
     UV_NO_SYNC=1
 
-ENTRYPOINT ["uv", "run", "harness"]
+ENTRYPOINT ["uv", "run", "slate-harness"]

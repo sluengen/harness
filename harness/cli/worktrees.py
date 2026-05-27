@@ -1,4 +1,4 @@
-"""``harness worktrees`` subcommands — list + cleanup.
+"""``slate-harness worktrees`` subcommands — list + cleanup.
 
 Scope is deliberately narrow: walk ``<repo_root>/.worktrees/harness/`` on
 disk, then for ``cleanup`` shell out to ``git worktree remove`` so the index

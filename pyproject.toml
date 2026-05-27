@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-harness = "harness.cli:app"
+slate-harness = "harness.cli:app"
 
 [build-system]
 requires = ["hatchling"]
