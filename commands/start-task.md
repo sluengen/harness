@@ -44,7 +44,7 @@ cd /Users/scottluengen/Documents/1_Projects/calibrate-coffee && \
 
 ### Step 4: Enter a worktree
 
-Per `.claude/skills/worktree-isolation.md`. Branch name follows `harness/<H-NNN>-<short-slug>`:
+Per `skills/worktree-isolation.md`. Branch name follows `harness/<H-NNN>-<short-slug>`:
 
 ```bash
 cd ~/Documents/1_Projects/harness && \
@@ -73,13 +73,13 @@ Acceptance:
 
 ### Step 6: Implement
 
-Dispatch the python-dev agent with the task, OR work directly if the change is small and contained (rule of thumb: under 100 LOC, single file). Either way, the dev work follows TDD per `.claude/skills/test-driven-development.md`.
+Dispatch the python-dev agent with the task, OR work directly if the change is small and contained (rule of thumb: under 100 LOC, single file). Either way, the dev work follows TDD per `skills/test-driven-development.md`.
 
 If dispatching python-dev as a sub-agent and other sub-agents may run in parallel, use `isolation: "worktree"`.
 
 ### Step 7: Verify
 
-Per `.claude/skills/verification-before-completion.md`:
+Per `skills/verification-before-completion.md`:
 
 ```bash
 uv run ruff check .

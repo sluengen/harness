@@ -93,4 +93,4 @@ If you logged any questions or design ambiguities, surface them — the user may
 
 ## Companion skill — ergonomics check
 
-`.claude/skills/workflow-author-ergonomics.md` is the reproducible test of this skill's effectiveness. After material edits to `AUTHORING.md` or `harness/workflow/`, re-run that skill to catch regressions in the authoring surface.
+`skills/workflow-author-ergonomics.md` is the reproducible test of this skill's effectiveness. After material edits to `AUTHORING.md` or `harness/workflow/`, re-run that skill to catch regressions in the authoring surface.
