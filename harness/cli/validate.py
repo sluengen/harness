@@ -1,4 +1,4 @@
-"""``harness validate <workflow.yaml>`` — static workflow validation.
+"""``slate-harness validate <workflow.yaml>`` — static workflow validation.
 
 Delegates to :func:`harness.workflow.loader.load_workflow`. The loader runs
 every load-time check (schema validation, contract compilation, writes-against-

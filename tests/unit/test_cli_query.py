@@ -1,13 +1,13 @@
 """Tests for harness CLI read-side query commands — see SPEC §11.
 
 Covers:
-    harness status <run-id>          [--json]
-    harness logs   <run-id>          [--follow] [--node <id>]
-    harness events <run-id>          [--type <event_type>] [--json]
-    harness worktrees list           [--json]
-    harness worktrees cleanup        [--age <duration>] [--merged]
-    harness validate <workflow.yaml>
-    harness version                  [--json]
+    slate-harness status <run-id>          [--json]
+    slate-harness logs   <run-id>          [--follow] [--node <id>]
+    slate-harness events <run-id>          [--type <event_type>] [--json]
+    slate-harness worktrees list           [--json]
+    slate-harness worktrees cleanup        [--age <duration>] [--merged]
+    slate-harness validate <workflow.yaml>
+    slate-harness version                  [--json]
 
 All write paths are deferred — these tests cover the read surface and the
 ``validate`` static check only. The CLI is invoked via Typer's
@@ -181,7 +181,7 @@ def _init_db(db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness version  — existing command, confirm both forms
+# slate-harness version  — existing command, confirm both forms
 # ---------------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ def test_version_json_form_emits_version_key() -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness status <run-id>  [--json]
+# slate-harness status <run-id>  [--json]
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +272,7 @@ def test_status_unknown_run_exits_2(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness logs <run-id>  [--node <id>]  [--follow]
+# slate-harness logs <run-id>  [--node <id>]  [--follow]
 # ---------------------------------------------------------------------------
 
 
@@ -338,7 +338,7 @@ def test_logs_unknown_run_exits_2(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness events <run-id>  [--type ...]  [--json]
+# slate-harness events <run-id>  [--type ...]  [--json]
 # ---------------------------------------------------------------------------
 
 
@@ -418,7 +418,7 @@ def test_events_unknown_run_exits_2(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness worktrees list  [--json]
+# slate-harness worktrees list  [--json]
 # ---------------------------------------------------------------------------
 
 
@@ -473,7 +473,7 @@ def test_worktrees_list_human_form_prints_paths(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness worktrees cleanup  [--age <duration>] [--merged]
+# slate-harness worktrees cleanup  [--age <duration>] [--merged]
 # ---------------------------------------------------------------------------
 
 
@@ -558,7 +558,7 @@ def test_worktrees_cleanup_no_filter_removes_nothing(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness validate <workflow.yaml>
+# slate-harness validate <workflow.yaml>
 # ---------------------------------------------------------------------------
 
 

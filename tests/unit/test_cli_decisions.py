@@ -26,7 +26,7 @@ runner = CliRunner()
 
 
 # ---------------------------------------------------------------------------
-# harness decisions list
+# slate-harness decisions list
 # ---------------------------------------------------------------------------
 
 
@@ -55,7 +55,7 @@ def test_decisions_list_help_calls_out_v2_reserved() -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness decision show <run-id>
+# slate-harness decision show <run-id>
 # ---------------------------------------------------------------------------
 
 
@@ -83,7 +83,7 @@ def test_decision_show_help_calls_out_v2_reserved() -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness decision approve <run-id>
+# slate-harness decision approve <run-id>
 # ---------------------------------------------------------------------------
 
 
@@ -112,7 +112,7 @@ def test_decision_approve_help_calls_out_v2_reserved() -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness decision reject <run-id>
+# slate-harness decision reject <run-id>
 # ---------------------------------------------------------------------------
 
 

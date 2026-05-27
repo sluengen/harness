@@ -2,10 +2,10 @@
 
 The four verbs below are part of the v2 human-in-the-loop decision flow:
 
-* ``harness decisions list``               — enumerate paused runs
-* ``harness decision show <run-id>``       — display the question + state
-* ``harness decision approve <run-id>``    — resume from the decision node
-* ``harness decision reject <run-id>``     — apply the on_reject path
+* ``slate-harness decisions list``               — enumerate paused runs
+* ``slate-harness decision show <run-id>``       — display the question + state
+* ``slate-harness decision approve <run-id>``    — resume from the decision node
+* ``slate-harness decision reject <run-id>``     — apply the on_reject path
 
 Per SPEC, the *names* are reserved in v1 so callers can plan for them
 without churn at the v1→v2 boundary. The bodies error gracefully with the
@@ -64,7 +64,7 @@ def _reserved_v2(json_output: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ``harness decisions`` (plural) — only one verb today (``list``), but kept as
+# ``slate-harness decisions`` (plural) — only one verb today (``list``), but kept as
 # a sub-app for symmetry with ``decision`` and to leave room for v2 verbs like
 # ``decisions count`` without restructuring.
 # ---------------------------------------------------------------------------
