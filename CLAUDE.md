@@ -26,11 +26,11 @@ Pre-implementation. The deliverable for this phase is the SPEC. Code lands only 
 
 ## Conventions (when implementation starts)
 
-- TDD — tests before implementation. See `.claude/skills/test-driven-development.md`.
+- TDD — tests before implementation. See `skills/test-driven-development.md`.
 - Atomic commits, each leaves the project working.
 - All work on feature branches off `main`. Never commit implementation directly to `main`.
-- Lint passes before tests run. Verification gate in `.claude/skills/verification-before-completion.md`.
-- Worktrees per `.claude/skills/worktree-isolation.md` for any multi-commit flow.
+- Lint passes before tests run. Verification gate in `skills/verification-before-completion.md`.
+- Worktrees per `skills/worktree-isolation.md` for any multi-commit flow.
 
 ## Agents
 
@@ -44,6 +44,15 @@ Invoke via the Agent tool with the matching `subagent_type`.
 ## Commands
 
 - `/start-task <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
+- `/build-workflow <description>` — build a new slate-harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
+
+## Agent-agnostic layout
+
+The canonical location for agent definitions, skills, and commands is the repo root: `agents/`, `skills/`, `commands/`. These are plain markdown — any agent harness (Claude Code, Codex, OpenCode, etc.) that can read markdown can consume them.
+
+For Claude Code's discovery convention, `.claude/agents`, `.claude/skills`, `.claude/commands` are **symlinks** pointing at the canonical top-level directories. Edit at the canonical location; Claude Code sees the change via the symlink. New agent ecosystems can add their own symlink layer (or read top-level directly).
+
+`.claude/settings.json` stays under `.claude/` — it's genuinely Claude-specific (permissions, hooks).
 
 ## Commit format
 

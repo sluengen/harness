@@ -85,16 +85,16 @@ This is the canonical shape for any module that hands out a managed resource (DB
 
 | Skill | When |
 |---|---|
-| TDD (`.claude/skills/test-driven-development.md`) | Every implementation task. Iron law. |
-| Scope discipline (`.claude/skills/scope-discipline.md`) | Read first, touch only what the task requires. |
-| Verification (`.claude/skills/verification-before-completion.md`) | Before claiming any work done. |
-| Worktree isolation (`.claude/skills/worktree-isolation.md`) | When spawning sub-agents in parallel, or when the orchestrator is in the shared root. |
+| TDD (`skills/test-driven-development.md`) | Every implementation task. Iron law. |
+| Scope discipline (`skills/scope-discipline.md`) | Read first, touch only what the task requires. |
+| Verification (`skills/verification-before-completion.md`) | Before claiming any work done. |
+| Worktree isolation (`skills/worktree-isolation.md`) | When spawning sub-agents in parallel, or when the orchestrator is in the shared root. |
 
 These are not optional. The reviewer enforces them.
 
 ## Quality bar
 
-Output is reviewed against `.claude/skills/code-review.md`. Reviewer dimensions:
+Output is reviewed against `skills/code-review.md`. Reviewer dimensions:
 
 | Dimension | Weight | Question |
 |---|---|---|

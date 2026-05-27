@@ -107,4 +107,4 @@ Before signalling ready for review:
 - [ ] Full suite passes with clean output (no warnings, no skipped tests).
 - [ ] Lint and types pass: `uv run ruff check .` and `uv run mypy harness`.
 
-See `.claude/skills/verification-before-completion.md` for the full gate.
+See `skills/verification-before-completion.md` for the full gate.

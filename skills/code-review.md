@@ -45,7 +45,7 @@ For each AC: implementation present? Test present? Test runs?
 
 ### Scope discipline (2x weight)
 
-Per `.claude/skills/scope-discipline.md`:
+Per `skills/scope-discipline.md`:
 
 - Every modified file traces to the task — no "while I was there" edits.
 - No speculative refactors or new abstractions the task didn't require.

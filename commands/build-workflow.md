@@ -9,7 +9,7 @@ Build a new slate-harness workflow YAML from a high-level description. Activates
 
 ## What this does
 
-Activates `.claude/skills/workflow-authoring.md`, which guides the agent through a six-step protocol:
+Activates `skills/workflow-authoring.md`, which guides the agent through a six-step protocol:
 
 1. Read `AUTHORING.md` in full
 2. Pick the canonical shape (3-stage informational or 4-stage code-mutating)
@@ -59,6 +59,6 @@ The agent reports the workflow path and validation result. You can:
 
 ## Related
 
-- `.claude/skills/workflow-authoring.md` — the protocol this command activates
-- `.claude/skills/workflow-author-ergonomics.md` — reproducible test of the authoring surface; runs after `AUTHORING.md` or schema edits to catch regressions
+- `skills/workflow-authoring.md` — the protocol this command activates
+- `skills/workflow-author-ergonomics.md` — reproducible test of the authoring surface; runs after `AUTHORING.md` or schema edits to catch regressions
 - `AUTHORING.md` — the canonical workflow author reference (the skill leans entirely on this)

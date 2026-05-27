@@ -1153,12 +1153,12 @@ A short, project-only file:
 - Project description and tech stack
 - Test/lint commands
 - Code conventions
-- Path to `.claude/skills/` (execution-side skills, not pipeline mechanics)
+- Path to `skills/` (execution-side skills, not pipeline mechanics)
 - Output-contract reminder for AI nodes invoked by harness
 
 Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all leave Calibrate.
 
-### What stays in Calibrate's `.claude/skills/`
+### What stays in Calibrate's `skills/`
 
 Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start-task, nightly-review, etc.) deletes — the harness owns those concerns now.
 

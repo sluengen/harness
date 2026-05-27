@@ -83,4 +83,4 @@ Before issuing a PASS verdict:
 
 ## What this isn't
 
-This skill is the *running of* the evidence. Connecting it back to the original request — "this test proves AC2 is satisfied" — lives in `.claude/skills/scope-discipline.md` (Phase 4 — tie outcome back to request).
+This skill is the *running of* the evidence. Connecting it back to the original request — "this test proves AC2 is satisfied" — lives in `skills/scope-discipline.md` (Phase 4 — tie outcome back to request).
