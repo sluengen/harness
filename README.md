@@ -51,11 +51,23 @@ The console script `slate-harness` lands on `PATH` (under your venv).
 docker build -t slate-harness:v1.0.0 -f docker/Dockerfile .
 docker run --rm \
   -v "$(pwd)":/workspace -w /workspace \
-  -e ANTHROPIC_API_KEY \
+  -v "$HOME/.claude":/root/.claude:ro \
   slate-harness:v1.0.0 run <workflow>
 ```
 
-The image mounts your project at `/workspace` and runs the workflow against it. State + worktrees + events land in `/workspace/.harness/` (gitignored). See [`docker/README.md`](./docker/README.md) for full container details.
+The image mounts your project at `/workspace` and runs the workflow against it. State + worktrees + events land in `/workspace/.harness/` (gitignored). The `~/.claude` mount carries your Claude Code OAuth credentials into the container so the run uses subscription pricing — see [Authentication](#authentication) below for alternatives. See [`docker/README.md`](./docker/README.md) for full container details.
+
+## Authentication
+
+slate-harness wraps `claude_agent_sdk`, which itself wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+
+| Path | Pricing | When |
+|---|---|---|
+| `claude /login` on the host, then run locally | Subscription | Local development. The SDK reads OAuth from `~/.claude/` automatically — **no env var needed.** |
+| Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts where you can ship the OAuth token. |
+| `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. CI without OAuth access. |
+
+The SDK picks them up in this order: in-memory OAuth > `CLAUDE_CODE_OAUTH_TOKEN` > `ANTHROPIC_API_KEY`. If you've run `claude /login` and you're invoking slate-harness on the same machine, you don't need to set anything.
 
 ## First run
 
@@ -63,7 +75,7 @@ A workflow needs three things in your repo:
 
 1. The workflow YAML at `workflows/<name>.yaml`
 2. The contracts + prompts it references (inline or shared)
-3. `ANTHROPIC_API_KEY` in the environment (or `claude /login` for subscription auth via `claude_agent_sdk`)
+3. **One of the auth paths above.** Default: just `claude /login` once; nothing else to set.
 
 Smallest possible run-once example:
 
