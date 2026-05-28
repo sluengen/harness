@@ -4,9 +4,11 @@ Implements the ``Agent`` protocol on top of Anthropic's ``claude_agent_sdk``
 Python SDK, which embeds the Claude Code loop in-process. Responsibilities:
 
 1. Run the SDK ``query`` loop with the executor-supplied prompt + allowed tools.
-2. Inject a ``submit_<node_id>`` tool reference (the executor compiles the
-   schema from the contract — see SPEC §4.4 — we just enforce that exactly
-   one call to it is the agent's required output mechanism).
+2. Inject a ``submit_<node_id>`` tool via an in-process MCP server
+   (``_SUBMIT_MCP_SERVER``) so the agent session has a callable tool to
+   signal completion.  The executor compiles the schema — see SPEC §4.4.
+   The MCP server name is ``harness``; the full tool name seen by the agent
+   is ``mcp__harness__submit_<node_id>``.
 3. Detect the five SPEC §4.4 failure modes and raise ``ContractViolation``
    with a structured ``reason`` so the executor's retry layer can branch on
    it. Submit-twice does not raise; it emits a ``decision_violation`` event
@@ -142,6 +144,11 @@ def _payload_has_placeholder(payload: dict[str, Any]) -> bool:
     return any(_looks_placeholder(v) for v in payload.values())
 
 
+# Name of the in-process MCP server that exposes the submit tool to the agent.
+# The agent sees the tool as ``mcp__<server>__submit_<node_id>``.
+_SUBMIT_MCP_SERVER = "harness"
+
+
 # --------------------------------------------------------------------------- #
 # Event classification — interim dialect
 # --------------------------------------------------------------------------- #
@@ -275,14 +282,21 @@ class ClaudeAgent:
         """
         self.notes = []  # per-call reset; tests assert this contract.
 
-        submit_name = submit_tool_schema["name"]
+        bare_submit_name = submit_tool_schema["name"]
+        # The submit tool is exposed via an in-process MCP server so the agent
+        # session has a callable tool. The real SDK emits the full MCP-namespaced
+        # name in ToolUseBlock; the test seam uses the bare name directly.
+        mcp_submit_name = f"mcp__{_SUBMIT_MCP_SERVER}__{bare_submit_name}"
         first_call: dict[str, Any] | None = None
         query_fn = self._query_fn or _resolve_real_query_fn()
 
         # Wall-clock cap. The executor wraps in its own ``asyncio.wait_for``
         # for total timeout enforcement; this is the per-stream stall guard.
         async for event in self._iter_with_stall_guard(
-            query_fn(prompt=prompt, options=self._build_options(allowed_tools, cwd)),
+            query_fn(
+                prompt=prompt,
+                options=self._build_options(allowed_tools, cwd, submit_tool_schema),
+            ),
             stall_timeout_s=stall_timeout_s,
         ):
             kind = event.get("kind")
@@ -292,7 +306,7 @@ class ClaudeAgent:
 
             elif kind == "tool_call":
                 self._emit("tool_called", {"name": event["name"], "input": event["input"]})
-                if event["name"] == submit_name:
+                if event["name"] in (bare_submit_name, mcp_submit_name):
                     payload = event["input"]
                     if first_call is None:
                         first_call = payload
@@ -345,17 +359,51 @@ class ClaudeAgent:
         if self._event_sink is not None:
             self._event_sink(kind, payload)
 
-    def _build_options(self, allowed_tools: list[str], cwd: Path | None) -> Any:
+    def _build_options(
+        self,
+        allowed_tools: list[str],
+        cwd: Path | None,
+        submit_tool_schema: dict[str, Any] | None = None,
+    ) -> Any:
         """Build the ``ClaudeAgentOptions`` for the underlying ``query`` call.
+
+        When ``submit_tool_schema`` is supplied, registers the submit tool as
+        an in-process MCP server (``_SUBMIT_MCP_SERVER``) so the agent session
+        has a callable ``mcp__harness__submit_<node_id>`` tool. The handler is
+        a no-op — the dispatch loop captures the payload via the ``ToolUseBlock``
+        event before the MCP handler runs.
 
         Imported lazily so this module loads without the SDK installed (tests
         provide ``query_fn`` and never call this).
         """
         try:
-            from claude_agent_sdk import ClaudeAgentOptions
+            from claude_agent_sdk import ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server
         except ImportError:  # pragma: no cover - tests bypass via query_fn
             return None
-        kwargs: dict[str, Any] = {"allowed_tools": list(allowed_tools)}
+
+        effective_allowed = list(allowed_tools)
+        kwargs: dict[str, Any] = {}
+
+        if submit_tool_schema is not None:
+            bare_name: str = submit_tool_schema["name"]
+            full_name = f"mcp__{_SUBMIT_MCP_SERVER}__{bare_name}"
+
+            async def _noop_handler(args: dict[str, Any]) -> dict[str, Any]:
+                return {"content": [{"type": "text", "text": "OK"}]}
+
+            submit_tool = SdkMcpTool(
+                name=bare_name,
+                description=submit_tool_schema.get(
+                    "description", "Submit the typed payload for this node."
+                ),
+                input_schema=submit_tool_schema["input_schema"],
+                handler=_noop_handler,
+            )
+            server_cfg = create_sdk_mcp_server(_SUBMIT_MCP_SERVER, tools=[submit_tool])
+            kwargs["mcp_servers"] = {_SUBMIT_MCP_SERVER: server_cfg}
+            effective_allowed.append(full_name)
+
+        kwargs["allowed_tools"] = effective_allowed
         if cwd is not None:
             kwargs["cwd"] = cwd
         if self._model is not None:

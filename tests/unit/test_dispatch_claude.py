@@ -553,3 +553,47 @@ async def test_call_to_unrelated_tool_name_does_not_count_as_submit() -> None:
             "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=["Read"], cwd=None
         )
     assert exc_info.value.reason == "not_called"
+
+
+# ---------------------------------------------------------------------------
+# CAL-505 — MCP-prefixed submit name is accepted by execute()
+# ---------------------------------------------------------------------------
+
+
+async def test_mcp_prefixed_submit_name_counts_as_submit() -> None:
+    """The real SDK emits ``mcp__harness__submit_<id>`` when the agent calls
+    the in-process MCP submit tool.  execute() must accept that name as a
+    valid submit call, not flag it as not_called.
+    """
+    from harness.dispatch.claude import _SUBMIT_MCP_SERVER
+
+    mcp_name = f"mcp__{_SUBMIT_MCP_SERVER}__submit_node_id"
+    events = [
+        _tool_call_event(mcp_name, {"summary": "done via mcp"}),
+        _tool_result_event(),
+        _stop_event(),
+    ]
+    agent = ClaudeAgent(query_fn=_make_query_fn(events))
+
+    result = await agent.execute(
+        "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None
+    )
+    assert result.contract.summary == "done via mcp"  # type: ignore[attr-defined]
+
+
+async def test_mcp_prefixed_name_of_different_server_does_not_count() -> None:
+    """A submit call namespaced under a *different* MCP server must not satisfy
+    the submit requirement — only ``mcp__harness__*`` is the canonical server."""
+    mcp_name = "mcp__other_server__submit_node_id"
+    events = [
+        _tool_call_event(mcp_name, {"summary": "wrong server"}),
+        _tool_result_event(),
+        _stop_event(),
+    ]
+    agent = ClaudeAgent(query_fn=_make_query_fn(events))
+
+    with pytest.raises(ContractViolation) as exc_info:
+        await agent.execute(
+            "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None
+        )
+    assert exc_info.value.reason == "not_called"
