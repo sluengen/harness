@@ -127,29 +127,19 @@ slate-harness/
 │   │   └── prompt.py          ← Jinja2 prompt rendering
 │   ├── identity.py            ← run_id generation, propagation
 │   └── log.py                 ← structured logging
-├── workflows/                 ← YAML workflow definitions
-│   ├── feature.yaml
-│   ├── bugfix.yaml
-│   ├── review.yaml
-│   └── steward.yaml
+├── workflows/                 ← YAML workflow definitions (yours go here)
+│   ├── release-notes.yaml     ← shipped: pull Linear, summarise, write file
+│   └── steward.yaml           ← shipped: domain steward review (calibrate-coffee context)
 ├── contracts/                 ← shared YAML contract schemas (referenced via $contracts/<name>)
-│   ├── review-verdict.yaml
-│   ├── linear-issue.yaml
-│   └── code-change.yaml
-├── prompts/                   ← Jinja2 prompt templates referenced by workflows
-│   ├── standard/              ← shared library: analyze.j2, implement.j2, review.j2, summarize.j2
-│   ├── feature/
-│   ├── bugfix/
-│   ├── review/
-│   └── steward/
-├── examples/
-│   └── test_fix_loop.yaml     ← canonical "test → fix" loop example
+├── prompts/
+│   └── standard/              ← shared library: analyze.j2, implement.j2, review.j2, summarize.j2
+│                              ← workflow-specific prompts go in prompts/<workflow-name>/
 └── tests/
     ├── unit/                  ← per-module unit tests
-    ├── integration/           ← end-to-end with mocked AI dispatch
-    └── fixtures/
-        └── synthetic_repo/    ← throwaway repo for dispatch / worktree tests
+    └── integration/           ← end-to-end with mocked AI dispatch
 ```
+
+Placeholder dirs (`prompts/{feature,bugfix,review,steward}/`, `examples/`, `tests/fixtures/synthetic_repo/`) were removed once shipping reality drifted from the spec. The diagram shows what exists today; create subdirectories under `workflows/`, `contracts/`, or `prompts/<workflow-name>/` as new workflows demand them.
 
 **Conventions:**
 - One Python module = one responsibility.
