@@ -101,16 +101,16 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
 
 ```yaml
 # worktree — opt-in isolation, two actions.
-# Special case: worktree steps have no contract: and no writes:.
-# - worktree.create writes worktree_path + worktree_branch directly into
-#   BaseState (framework-managed). Downstream nodes reference them via
-#   $state.worktree_path / $state.worktree_branch — they're BaseState
-#   fields, available even when no upstream step declares them.
-# - worktree.cleanup reads state, mutates the filesystem, writes nothing.
+# worktree.create writes worktree_path + worktree_branch into BaseState;
+# declare them with writes: like any other step. No contract: needed —
+# the fields are framework-managed. Downstream nodes reference them via
+# $state.worktree_path / $state.worktree_branch.
+# worktree.cleanup reads state, mutates the filesystem, writes nothing.
 - id: setup
   type: worktree
   action: create
   base: $inputs.base_branch
+  writes: [worktree_path, worktree_branch]
 
 - id: teardown
   type: worktree
@@ -503,7 +503,7 @@ Real ones, in roughly the order people hit them:
 | AI step has `prompt:` pointing at a file that doesn't exist | The loader resolves prompt paths relative to the workflow file's directory. Check the path or move the prompt. |
 | Forgot to fill in `template_vars` that a standard prompt requires | Read the `.j2` file's header comment — required vars are listed. `analyze.j2` needs `task`, `summarize.j2` needs `subject`, etc. |
 | Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `skills/verification-before-completion.md`. |
-| `worktree.create` step has `writes:` or `contract:` | Loader rejects either. Worktree steps are framework-managed: `worktree.create` writes `worktree_path` + `worktree_branch` directly into `BaseState`; downstream nodes reference them via `$state.worktree_path` / `$state.worktree_branch`. No `writes:` or `contract:` needed (or allowed). See §2 worktree example. |
+| Adding `contract:` to a `worktree.create` step | Worktree steps don't take `contract:` — their writes (`worktree_path`, `worktree_branch`) are framework-managed directly into `BaseState`. Use `writes: [worktree_path, worktree_branch]` without a `contract:`. See §2 worktree example. |
 | Want "do X on PASS, Y on FAIL" branching from a single `check` | The grammar has no multi-branch routing. `check.on_fail:` is single-direction (`cancel`/`continue`/`retry_loop:<id>`). Canonical workaround: gate with `on_fail: cancel`, put only the success-path cleanup downstream; the workflow halts before cleanup on failure. For richer branching, split into two workflows. |
 
 ---

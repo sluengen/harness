@@ -702,6 +702,59 @@ steps:
 
 
 # ---------------------------------------------------------------------------
+# Worktree steps may declare writes: without a contract: (CAL-497)
+# ---------------------------------------------------------------------------
+
+
+def test_load_worktree_create_with_writes_succeeds(
+    project_root: Path, contracts_root: Path
+) -> None:
+    """worktree.create may declare writes: [worktree_path, worktree_branch]
+    without a contract: — the fields are framework-managed and bypass the
+    normal contract → writes pathway.
+    """
+    body = """\
+name: wf
+version: 1
+steps:
+  - id: setup
+    type: worktree
+    action: create
+    base: staging
+    writes: [worktree_path, worktree_branch]
+  - id: use-worktree
+    type: script
+    command: echo "$STATE_WORKTREE_PATH"
+    writes: []
+"""
+    path = _write_workflow(project_root, body)
+    loaded = load_workflow(path, contracts_root=contracts_root)
+    assert loaded.workflow.name == "wf"
+    # Worktree steps never appear in the contracts dict.
+    assert "setup" not in loaded.contracts
+
+
+def test_load_non_worktree_writes_without_contract_still_raises(
+    project_root: Path, contracts_root: Path
+) -> None:
+    """The AC14 guard still fires for non-worktree steps — CAL-497 exempts
+    only WorktreeStep, not all step types."""
+    body = """\
+name: wf
+version: 1
+steps:
+  - id: bad
+    type: script
+    command: echo
+    writes: [x]
+"""
+    path = _write_workflow(project_root, body)
+    with pytest.raises(WorkflowLoadError) as exc:
+        load_workflow(path, contracts_root=contracts_root)
+    assert "bad" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
 # `contracts_root` defaults to <workflow>/../../contracts
 # ---------------------------------------------------------------------------
 

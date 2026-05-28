@@ -44,7 +44,9 @@ def _build_runner() -> Runner:
     captures the runner's arguments without spinning up SQLite + the
     executor + agent dispatch.
     """
-    return Runner()
+    from harness.dispatch.claude import ClaudeAgent
+
+    return Runner(agent=ClaudeAgent())
 
 
 def run_command(

@@ -1,0 +1,18 @@
+{#
+  build/implement.j2 — implementation prompt for the build workflow.
+
+  Extends the standard implement pattern with Linear ticket context.
+  Uses Jinja's `inputs.linear_id` directly (resolved at render time)
+  rather than `$inputs.linear_id` template_var substitution, which
+  is not yet implemented for template_vars values.
+
+  Required: inputs.linear_id must be in scope (set by the engine).
+  submit_tool_name injected by the contract engine.
+#}
+Implement the changes required for Linear ticket {{ inputs.linear_id }}.
+
+Fetch the ticket details from Linear (title, description, acceptance criteria). Plan the minimal change that satisfies them. Apply the change in this worktree. Write or update tests where the change is testable; run them and confirm they pass before submitting.
+
+Keep the diff focused — no drive-by refactors or unrelated cleanup.
+
+When the work is complete and verified, call {{ submit_tool_name | default('submit') }} exactly once with no arguments — the file mutations are the output.

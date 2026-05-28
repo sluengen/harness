@@ -76,6 +76,15 @@ __all__ = ["AINode"]
 _RESERVED_SCOPE_KEYS = frozenset({"state", "inputs"})
 
 
+class _EmptyContract(BaseModel):
+    """Zero-field contract for AI steps that declare ``writes: []``.
+
+    Gives the agent a ``submit_<step_id>`` tool with no required fields,
+    letting it signal completion after file mutations without writing
+    anything to state.
+    """
+
+
 class AINode:
     """v1 AI node: render → dispatch → return.
 
@@ -155,10 +164,9 @@ class AINode:
         # Defensive guard: a well-behaved Agent (per protocol) returns a
         # NodeResult whose contract is an instance of the type we passed.
         # ClaudeAgent enforces this; MockAgent's bare-default does not.
-        # We refuse to silently propagate a wrong-typed contract because
-        # the executor's `writes:` extraction would then crash with a
-        # confusing error far from the actual cause.
-        if not isinstance(result.contract, contract_cls):
+        # Skip the check for writes:[] steps — the empty-contract path is
+        # a signal-only submit; we never extract fields from it.
+        if step.writes and not isinstance(result.contract, contract_cls):
             raise RuntimeError(
                 f"AI step {step.id!r}: agent returned a contract instance of "
                 f"{builtins.type(result.contract).__name__}, expected "
@@ -186,11 +194,10 @@ class AINode:
 
         spec = step.contract
         if spec is None:
-            raise RuntimeError(
-                f"AI step {step.id!r}: no contract declared. AI nodes that "
-                f"produce state output require a contract; the writes:[] "
-                f"exception is gated by the executor (H-007)."
-            )
+            # writes:[] exception (SPEC §5 / AUTHORING §3): no state output,
+            # only file mutations. Return the zero-field contract so the agent
+            # still gets a submit tool to call to signal completion.
+            return _EmptyContract
 
         if isinstance(spec, type) and issubclass(spec, BaseModel):
             # Already-compiled type — passthrough.

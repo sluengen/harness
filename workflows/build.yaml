@@ -27,16 +27,8 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/implement.j2
-    template_vars:
-      task: >
-        Implement the changes required for Linear ticket $inputs.linear_id.
-        Fetch the ticket details from Linear (title, description, acceptance
-        criteria), plan the minimal change that satisfies them, apply the change
-        in this worktree, and write or update tests. Run the full test suite and
-        confirm it passes before submitting.
+    prompt: prompts/build/implement.j2
     allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
-    cwd: $state.worktree_path
     writes_files: true
     writes: []
 
@@ -44,14 +36,8 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/review.j2
-    template_vars:
-      criteria: >
-        Correctness relative to Linear ticket $inputs.linear_id acceptance
-        criteria, adequate test coverage, focused diff (no drive-by changes),
-        no obvious regressions.
+    prompt: prompts/build/review.j2
     allowed_tools: [Read, Grep, Glob, Bash]
-    cwd: $state.worktree_path
     contract:
       verdict:
         type: string
@@ -68,12 +54,12 @@ steps:
 
   - id: commit-and-push
     type: script
-    cwd: $state.worktree_path
     command: |
       git add -A
-      git commit -m "feat($inputs.linear_id): implement ticket changes"
-      git push -u origin $state.worktree_branch
+      git commit -m "feat($1): implement ticket changes"
+      git push -u origin "$2"
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
+    args: ["$inputs.linear_id", "$state.worktree_branch"]
     contract:
       commit_sha: string
     writes: [commit_sha]

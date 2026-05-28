@@ -362,9 +362,16 @@ def _validate_writes_without_contract(workflow: Workflow) -> None:
     ``contract:`` is a load-time error. ``writes: []`` and no contract
     is the documented sidecar pattern (e.g. the ``implement`` node in
     the SPEC §5 example).
+
+    ``WorktreeStep`` is explicitly excluded: ``worktree.create`` writes
+    ``worktree_path`` and ``worktree_branch`` directly into
+    ``BaseState`` via framework-managed paths, not via the normal
+    ``contract:`` → ``writes:`` pathway.
     """
     for step in _iter_steps(workflow.steps):
         if not step.writes:
+            continue
+        if isinstance(step, WorktreeStep):
             continue
         if _step_contract_spec(step) is None:
             raise WorkflowLoadError(

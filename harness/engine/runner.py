@@ -594,10 +594,17 @@ class Runner:
             )
             if step.action == "create":
                 assert step.base is not None  # WorktreeStep validator
+                base = step.base
+                if base.startswith("$inputs."):
+                    key = base[len("$inputs."):]
+                    base = str(inputs.get(key, base))
+                elif base.startswith("$state."):
+                    field = base[len("$state."):]
+                    base = str(getattr(state, field, base))
                 return await worktree_node.create(
                     run_id=rid,
                     repo_root=repo_root,
-                    base=step.base,
+                    base=base,
                 )
             # cleanup
             assert step.policy is not None  # WorktreeStep validator
@@ -625,17 +632,16 @@ class Runner:
         }
 
     def _resolve_prompts_dir(self, workflow_path: Path | None) -> Path:
-        """Pick the prompts dir: constructor override > workflow sibling > ``.``.
+        """Pick the prompts dir: constructor override > repo root > ``.``.
 
-        AI / decision nodes need a Jinja root; tests that don't supply
-        one get the workflow's parent (the directory next to the YAML)
-        or ``.`` as the last resort.
+        Prompts live at ``prompts/`` next to ``workflows/`` at the repo root,
+        so the Jinja loader must be anchored there — not at ``workflow_path.parent``
+        (which is ``workflows/``). ``self._repo_root`` defaults to ``Path(".")``
+        which is the cwd at invocation time (the repo root for normal usage).
         """
         if self._prompts_dir is not None:
             return self._prompts_dir
-        if workflow_path is not None:
-            return workflow_path.parent
-        return Path(".")
+        return self._repo_root
 
     # ---- signal handling ------------------------------------------------- #
 
