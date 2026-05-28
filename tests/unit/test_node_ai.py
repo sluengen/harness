@@ -125,6 +125,7 @@ def _step(
     template_vars: dict[str, object] | None = None,
     allowed_tools: list[str] | None = None,
     contract: object | None = None,
+    writes: list[str] | None = None,
     cwd: str | None = None,
     writes_files: bool = False,
     stall_timeout_s: int = 300,
@@ -138,6 +139,7 @@ def _step(
         template_vars=template_vars or {},
         allowed_tools=allowed_tools or ["Read"],
         contract=contract if contract is not None else _SUMMARY_CONTRACT_DICT,
+        writes=writes if writes is not None else [],
         cwd=cwd,
         writes_files=writes_files,
         stall_timeout_s=stall_timeout_s,
@@ -360,7 +362,11 @@ async def test_misbehaving_agent_returns_wrong_contract_type_raises(
 ) -> None:
     """Defensive isinstance check: if the agent bypasses validation and hands
     back a contract that isn't an instance of the declared contract class,
-    AINode raises a clear RuntimeError naming the step."""
+    AINode raises a clear RuntimeError naming the step.
+
+    The guard only fires when the step declares writes — writes:[] steps are
+    signal-only and the engine never extracts fields from their contract.
+    """
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
 
@@ -369,27 +375,37 @@ async def test_misbehaving_agent_returns_wrong_contract_type_raises(
     agent = MockAgent()  # default synthetic empty result
     node = AINode(agent=agent, prompts_dir=prompts)
 
+    # writes=["summary"] ensures the guard fires (guard skips writes:[] steps).
     with pytest.raises(RuntimeError) as exc_info:
-        await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+        await node.execute(
+            step=_step(writes=["summary"]), state=_state(tmp_path), inputs={}
+        )
     assert "n1" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
-# AC7 — Missing contract is rejected
+# AC7 — Null contract (writes:[] exception) uses _EmptyContract
 # ---------------------------------------------------------------------------
 
 
-async def test_no_contract_raises(tmp_path: Path) -> None:
+async def test_no_contract_step_uses_empty_contract(tmp_path: Path) -> None:
+    """A step with contract=None (writes:[] exception per SPEC §5) does not
+    raise at the AINode layer. Instead, AINode supplies a zero-field
+    _EmptyContract so the agent still has a submit tool to call on completion.
+    The loader / executor gate the "no-contract + non-empty writes" case.
+    """
     prompts = tmp_path / "prompts"
     _write_prompt(prompts, "p.j2", "go\n")
     agent = MockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
-    step = _step(contract=None)
+    # Build AIStep directly — _step() substitutes _SUMMARY_CONTRACT_DICT for None.
+    step = AIStep(id="n1", type="ai", prompt="p.j2", contract=None, writes=[])
 
-    with pytest.raises(RuntimeError) as exc_info:
-        await node.execute(step=step, state=_state(tmp_path), inputs={})
-    assert "n1" in str(exc_info.value)
-    assert "contract" in str(exc_info.value).lower()
+    result = await node.execute(step=step, state=_state(tmp_path), inputs={})
+
+    assert result is not None
+    # Agent receives the zero-field contract, not None.
+    assert len(agent.calls[0].contract.model_fields) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +421,12 @@ async def test_inline_dict_contract_compiled_on_demand(tmp_path: Path) -> None:
     _write_prompt(prompts, "p.j2", "go\n")
     agent = MockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
-    step = _step(id="analyze", contract={"summary": "string", "score": "integer"})
+    # writes must be non-empty so the misbehaving-agent guard fires after compile.
+    step = _step(
+        id="analyze",
+        contract={"summary": "string", "score": "integer"},
+        writes=["summary", "score"],
+    )
 
     # MockAgent default returns an empty contract — we expect the misbehaving
     # guard to fire *after* the compile step. We just assert on what was
@@ -428,11 +449,14 @@ async def test_precompiled_type_contract_passed_through(tmp_path: Path) -> None:
     agent = MockAgent()
     node = AINode(agent=agent, prompts_dir=prompts)
 
+    # writes=["summary"] so the misbehaving-agent guard fires after dispatch
+    # (MockAgent returns _EmptyContract(), not _Summary()).
     step = AIStep(
         id="x",
         type="ai",
         prompt="p.j2",
-        contract=None,  # AIStep ContractSpec is str|dict|None — we bypass.
+        contract=None,  # bypassed via contract_override
+        writes=["summary"],
     )
     # Override the field directly via model_copy to inject a pre-compiled type.
     # The supported public path is via constructor `contract_override` — see

@@ -22,6 +22,7 @@ steps:
     type: worktree
     action: create
     base: $inputs.base_branch
+    writes: [worktree_path, worktree_branch]
 
   - id: implement
     type: ai

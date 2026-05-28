@@ -41,7 +41,7 @@ from harness.events.schema import EventType
 from harness.nodes.base import NodeResult
 from harness.state.schema import BaseState
 from harness.state.store import read_state, update_state
-from harness.workflow.schema import Step
+from harness.workflow.schema import Step, WorktreeStep
 
 __all__ = [
     "ContractMismatch",
@@ -181,7 +181,15 @@ class Executor:
                     f"{contract_cls.__name__}"
                 )
             if step.writes:
-                self._validate_writes_against_contract(step, contract_cls)
+                # WorktreeStep: contract_cls is None (no entry in
+                # ctx.contracts), so validate against the node's actual
+                # result type (WorktreeCreateOutput) instead (CAL-497).
+                effective_cls = (
+                    contract_cls
+                    if contract_cls is not None
+                    else type(result.contract)
+                )
+                self._validate_writes_against_contract(step, effective_cls)
                 await self._apply_writes(ctx, step, result)
         except BaseException as exc:
             await emitter.emit(
@@ -233,12 +241,26 @@ class Executor:
     ) -> type[BaseModel] | None:
         """Pick the contract type for this step.
 
-        Returns ``None`` only when the step has no writes AND no contract is
-        registered — i.e. the SPEC §5 ``writes: []`` exception. Any step
-        with a non-empty ``writes:`` MUST have a registered contract.
+        Returns ``None`` in two cases:
+        * the step has no writes AND no contract is registered — the SPEC §5
+          ``writes: []`` sidecar pattern.
+        * the step is a :class:`WorktreeStep` — worktree steps carry
+          framework-managed writes (``worktree_path`` / ``worktree_branch``)
+          that map directly onto :class:`~harness.state.schema.BaseState`
+          without going through the normal ``contract: → writes:`` path, so
+          no contract is ever registered for them in ``ctx.contracts``.
+          The executor uses ``type(result.contract)`` as the effective class
+          when validating and applying their writes (CAL-497).
+
+        Any other step with a non-empty ``writes:`` MUST have a registered
+        contract.
         """
         contract_cls = ctx.contracts.get(step.id)
         if contract_cls is None and step.writes:
+            if isinstance(step, WorktreeStep):
+                # Framework-managed writes; validated against the node's
+                # result contract after dispatch.
+                return None
             raise ContractMismatch(
                 f"step {step.id!r}: declares writes={step.writes!r} but no "
                 f"contract is registered in Context.contracts"

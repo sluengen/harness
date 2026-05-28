@@ -9,7 +9,9 @@ running outside a shell that has already sourced it.
 
 from __future__ import annotations
 
+import contextlib
 import os
+from typing import Any, cast
 
 import httpx
 
@@ -39,21 +41,21 @@ class LinearClient:
                 "LINEAR_API_KEY is required. Set it in .env or the environment."
             )
 
-    def _request(self, query: str, variables: dict | None = None) -> dict:
+    def _request(self, query: str, variables: dict[str, str] | None = None) -> dict[str, Any]:
         headers = {
             "Authorization": self.api_key,
             "Content-Type": "application/json",
         }
-        payload: dict = {"query": query}
+        payload: dict[str, Any] = {"query": query}
         if variables:
             payload["variables"] = variables
 
         resp = httpx.post(API_URL, json=payload, headers=headers, timeout=DEFAULT_TIMEOUT)
 
         try:
-            body = resp.json()
-        except Exception:
-            raise LinearAPIError(f"HTTP {resp.status_code}: {resp.text}")
+            body: dict[str, Any] = resp.json()
+        except Exception as exc:
+            raise LinearAPIError(f"HTTP {resp.status_code}: {resp.text}") from exc
 
         if "errors" in body and body["errors"]:
             error = body["errors"][0]
@@ -63,19 +65,18 @@ class LinearClient:
                 retry_after = None
                 raw = resp.headers.get("retry-after")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError):
                         retry_after = int(raw)
-                    except ValueError:
-                        pass
                 raise LinearRateLimitError(message, retry_after=retry_after)
             raise LinearAPIError(message)
 
         if resp.status_code >= 400:
             raise LinearAPIError(f"HTTP {resp.status_code}: {resp.text}")
 
-        return body.get("data", {})
+        result: dict[str, Any] = body.get("data", {})
+        return result
 
-    def get_issue(self, identifier: str) -> dict:
+    def get_issue(self, identifier: str) -> dict[str, Any]:
         """Return full details for a single issue by identifier (e.g. CAL-497)."""
         query = """
         query GetIssue($identifier: String!) {
@@ -92,9 +93,10 @@ class LinearClient:
         }
         """
         data = self._request(query, {"identifier": identifier})
-        issue = data.get("issue")
-        if issue is None:
+        raw = data.get("issue")
+        if raw is None:
             raise LinearAPIError(f"Issue {identifier} not found")
+        issue: dict[str, Any] = cast(dict[str, Any], raw)
         issue["labels"] = [lb["name"] for lb in issue.get("labels", {}).get("nodes", [])]
         return issue
 
@@ -111,7 +113,7 @@ class LinearClient:
         nodes = data.get("workflowStates", {}).get("nodes", [])
         return {node["name"]: node["id"] for node in nodes}
 
-    def update_issue_state(self, issue_id: str, state_id: str) -> dict:
+    def update_issue_state(self, issue_id: str, state_id: str) -> dict[str, Any]:
         """Move an issue to a different workflow state."""
         query = """
         mutation UpdateIssue($issueId: String!, $stateId: String!) {
@@ -122,9 +124,9 @@ class LinearClient:
         }
         """
         data = self._request(query, {"issueId": issue_id, "stateId": state_id})
-        return data.get("issueUpdate", {})
+        return cast(dict[str, Any], data.get("issueUpdate", {}))
 
-    def add_comment(self, issue_id: str, body: str) -> dict:
+    def add_comment(self, issue_id: str, body: str) -> dict[str, Any]:
         """Add a comment to an issue (issue_id is the UUID, not the identifier)."""
         query = """
         mutation AddComment($issueId: String!, $body: String!) {
@@ -135,4 +137,4 @@ class LinearClient:
         }
         """
         data = self._request(query, {"issueId": issue_id, "body": body})
-        return data.get("commentCreate", {})
+        return cast(dict[str, Any], data.get("commentCreate", {}))

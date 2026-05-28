@@ -64,8 +64,12 @@ def derive_state_schema(loaded: LoadedWorkflow) -> type[BaseState]:
     for step in _iter_all_steps(workflow.steps):
         contract = contracts.get(step.id)
         if contract is None:
-            # Steps without a contract are guaranteed by the loader to
-            # have writes: []; nothing to contribute.
+            # Steps without a contract contribute nothing to the derived
+            # state.  This covers two cases:
+            #   * steps with writes: [] (the sidecar pattern)
+            #   * WorktreeStep — its writes (worktree_path, worktree_branch)
+            #     are already declared on BaseState, so there is nothing to
+            #     add here (CAL-497).
             continue
         for name in step.writes:
             if name in derived_fields:

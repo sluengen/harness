@@ -1376,6 +1376,11 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19" },
@@ -1394,6 +1399,9 @@ requires-dist = [
     { name = "ulid-py", specifier = ">=1.1" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "mypy", specifier = ">=2.0.0" }]
 
 [[package]]
 name = "sniffio"

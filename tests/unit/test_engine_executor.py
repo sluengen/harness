@@ -36,6 +36,7 @@ from harness.engine.executor import (
     Executor,
 )
 from harness.nodes.base import Attestation, NodeResult
+from harness.nodes.worktree import WorktreeCreateOutput
 from harness.state import store
 from harness.state.schema import BaseState
 from harness.workflow.schema import (
@@ -762,6 +763,150 @@ async def test_ac10_missing_contract_for_writing_step_raises(tmp_path: Path) -> 
 
     with pytest.raises(ContractMismatch):
         await Executor().execute(step, ctx)
+
+
+# ---------------------------------------------------------------------------
+# CAL-497 — WorktreeStep with writes: [...] needs no registered contract
+# ---------------------------------------------------------------------------
+
+
+async def test_worktree_step_with_writes_succeeds_without_registered_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WorktreeStep with ``writes: [worktree_path, worktree_branch]`` must
+    succeed even though no contract is registered in ctx.contracts (CAL-497).
+
+    The executor should validate the writes against ``WorktreeCreateOutput``
+    (the node's result type) and project the values into state.
+    """
+    from pathlib import Path as FsPath
+
+    db = tmp_path / "harness.db"
+    state = _base_state(tmp_path)
+    await _init_db_with_run(db, state)
+
+    captured: list[dict[str, Any]] = []
+    real_update = store.update_state
+
+    async def spy_update_state(
+        run_id: str,
+        schema: type[BaseState],
+        *,
+        db_path: FsPath = store.DEFAULT_DB_PATH,
+        emit_event: bool = True,
+        **fields: Any,
+    ) -> BaseState:
+        captured.append(dict(fields))
+        return await real_update(
+            run_id, schema, db_path=db_path, emit_event=emit_event, **fields
+        )
+
+    monkeypatch.setattr(
+        "harness.engine.executor.update_state",
+        spy_update_state,
+        raising=True,
+    )
+
+    fake_path = tmp_path / ".worktrees" / "harness" / "R1"
+    fake_branch = "harness/R1"
+    spy = _SpyNode()
+    spy.queue(
+        result=NodeResult(
+            contract=WorktreeCreateOutput(
+                worktree_path=fake_path,
+                worktree_branch=fake_branch,
+            ),
+            attestation=Attestation(status="complete"),
+        )
+    )
+
+    step = WorktreeStep(
+        id="setup",
+        type="worktree",
+        action="create",
+        base="main",
+        writes=["worktree_path", "worktree_branch"],
+    )
+    ctx = _make_ctx(
+        db_path=db,
+        contracts={},  # no entry for WorktreeStep — that's the point
+        nodes={"worktree": spy.execute},
+    )
+
+    result = await Executor().execute(step, ctx)
+    assert isinstance(result.contract, WorktreeCreateOutput)
+
+    # The declared writes fields must have been projected into state.
+    assert len(captured) == 1
+    assert captured[0] == {
+        "worktree_path": fake_path,
+        "worktree_branch": fake_branch,
+    }
+
+
+async def test_worktree_step_with_empty_writes_still_writes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WorktreeStep with ``writes: []`` (default) must not call update_state —
+    backward-compatibility check (CAL-497)."""
+    from pathlib import Path as FsPath
+
+    db = tmp_path / "harness.db"
+    state = _base_state(tmp_path)
+    await _init_db_with_run(db, state)
+
+    calls = 0
+    real_update = store.update_state
+
+    async def spy_update_state(
+        run_id: str,
+        schema: type[BaseState],
+        *,
+        db_path: FsPath = store.DEFAULT_DB_PATH,
+        emit_event: bool = True,
+        **fields: Any,
+    ) -> BaseState:
+        nonlocal calls
+        calls += 1
+        return await real_update(
+            run_id, schema, db_path=db_path, emit_event=emit_event, **fields
+        )
+
+    monkeypatch.setattr(
+        "harness.engine.executor.update_state",
+        spy_update_state,
+        raising=True,
+    )
+
+    fake_path = tmp_path / ".worktrees" / "harness" / "R1"
+    spy = _SpyNode()
+    spy.queue(
+        result=NodeResult(
+            contract=WorktreeCreateOutput(
+                worktree_path=fake_path,
+                worktree_branch="harness/R1",
+            ),
+            attestation=Attestation(status="complete"),
+        )
+    )
+
+    step = WorktreeStep(
+        id="setup",
+        type="worktree",
+        action="create",
+        base="main",
+        writes=[],  # no writes — old pattern
+    )
+    ctx = _make_ctx(
+        db_path=db,
+        contracts={},
+        nodes={"worktree": spy.execute},
+    )
+
+    await Executor().execute(step, ctx)
+    assert calls == 0
 
 
 # ---------------------------------------------------------------------------
