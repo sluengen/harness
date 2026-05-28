@@ -143,8 +143,7 @@ slate-harness/
 
 From v1.0 onward, slate-harness's own follow-on work flows through slate-harness:
 
-- Bugs and small features → `slate-harness run bugfix --linear=<CAL-NNN>`
-- Larger feature work → `slate-harness run feature --linear=<CAL-NNN>`
+- All work items (bugs, features, improvements) → `slate-harness run build --linear=<CAL-NNN>`
 - Domain assessments → `slate-harness run steward --domain=<area>`
 
 The first dog-food runs are [CAL-497](https://linear.app/calibrate-coffee/issue/CAL-497) (engine: loader/worktree contract reconciliation) and [CAL-498](https://linear.app/calibrate-coffee/issue/CAL-498) (AUTHORING.md minor refinements from the run-004 cycle). If those ship cleanly through the harness, self-hosting is validated empirically.
