@@ -1,134 +1,101 @@
 # Start Task
 
-Kick off work on a Linear issue. Solo-dev flow: branch + worktree, status update, work, PR.
+Kick off work on a Linear issue in the harness repo. Fetches the ticket, creates a worktree, and sets up for implementation.
+
+> **Note:** For automated end-to-end implementation, use `slate-harness run build --linear=<CAL-NNN>` instead — the build workflow manages its own worktree. Use `start-task` for human-driven development where you want an agent to assist step-by-step.
 
 ## Usage
 
 - `/start-task <CAL-NNN>` — start work on a specific Linear issue
-- `/start-task` — pick up the highest-priority In Progress or Todo issue from the Harness initiative
+- `/start-task` — list open issues and pick one with the user
 
 ## Instructions
 
 ### Step 1: Resolve the task
 
-If a `<CAL-NNN>` argument was provided:
-1. Fetch the issue via the sync CLI (in calibrate-coffee):
-   ```bash
-   cd /Users/scottluengen/Documents/1_Projects/calibrate-coffee && \
-     set -a && source .env.development && set +a && \
-     PYTHONPATH=. python -m harness.tools.sync linear get <CAL-NNN>
-   ```
-2. Confirm the issue is in the Harness v1, v1.5, or v2 project. If not, abort and report.
-3. Note the title (e.g., `[H-001] Project bootstrap + CI`), the description (acceptance + dependencies), and the priority.
+Fetch the issue:
 
-If no argument provided:
-1. List unblocked Todo or In Progress issues in the Harness v1 project, ordered by priority.
-2. Pick the highest-priority unblocked one.
-3. Confirm with the user before proceeding.
+```bash
+PYTHONPATH=. python scripts/fetch_linear_ticket.py <CAL-NNN>
+```
+
+Note the title, description, and acceptance criteria.
+
+If no argument provided: ask the user which ticket to work on, then fetch it.
 
 ### Step 2: Validate prerequisites
 
-- **Dependencies:** if the issue's description lists `Depends on: H-XXX`, check that those issues are Done in Linear. If any aren't, stop and report.
-- **Status:** if the issue is already Done, report and stop. If it's already In Progress (and not by you), confirm before continuing — could be a parallel session.
+- **Dependencies:** if the description lists `Depends on: CAL-XXX`, verify those are Done in Linear. If not, stop and report.
+- **Status:** if the issue is already Done, report and stop.
 
-### Step 3: Move the task to In Progress
-
-Update Linear status with a starting comment:
-
-```bash
-cd /Users/scottluengen/Documents/1_Projects/calibrate-coffee && \
-  set -a && source .env.development && set +a && \
-  PYTHONPATH=. python -m harness.tools.sync linear push <CAL-NNN> in_progress \
-    --comment "Starting <H-NNN>: <one-line summary>"
-```
-
-### Step 4: Enter a worktree
-
-Per `skills/worktree-isolation.md`. Branch name follows `harness/<H-NNN>-<short-slug>`:
-
-```bash
-cd ~/Documents/1_Projects/harness && \
-  git fetch origin && \
-  git worktree add .worktrees/<H-NNN> -b harness/<H-NNN>-<short-slug> main && \
-  cd .worktrees/<H-NNN>
-```
-
-If the worktree already exists (resuming), `cd` into it and continue.
-
-### Step 5: Print a status block
-
-Before starting work:
+### Step 3: Print a task brief
 
 ```
 Task:     <issue title>
 Linear:   <CAL-NNN>
-Roadmap:  <H-NNN>
-Branch:   harness/<H-NNN>-<short-slug>
-Worktree: .worktrees/<H-NNN>
+URL:      <issue url>
+State:    <current state>
 Acceptance:
   - <AC1>
   - <AC2>
   ...
 ```
 
-### Step 6: Implement
+### Step 4: Create a worktree
 
-Dispatch the python-dev agent with the task, OR work directly if the change is small and contained (rule of thumb: under 100 LOC, single file). Either way, the dev work follows TDD per `skills/test-driven-development.md`.
-
-If dispatching python-dev as a sub-agent and other sub-agents may run in parallel, use `isolation: "worktree"`.
-
-### Step 7: Verify
-
-Per `skills/verification-before-completion.md`:
+Branch name follows `harness/<CAL-NNN>-<short-slug>`:
 
 ```bash
+git fetch origin
+git worktree add .worktrees/<CAL-NNN> -b harness/<CAL-NNN>-<short-slug> main
+```
+
+If a worktree already exists for this ticket (resuming), just enter it.
+
+### Step 5: Implement
+
+Follow `skills/test-driven-development.md`. Work in the worktree at `.worktrees/<CAL-NNN>/`.
+
+For larger tasks, dispatch the `python-dev` sub-agent with `isolation: "worktree"`.
+
+### Step 6: Verify
+
+Per `skills/verification-before-completion.md` — all three must pass:
+
+```bash
+cd .worktrees/<CAL-NNN>
 uv run ruff check .
 uv run mypy harness
 uv run pytest
 ```
 
-All three must run clean before proceeding to review.
+### Step 7: Review
 
-### Step 8: Review
+Dispatch the `reviewer` sub-agent when any of these apply:
+- Runtime semantics (async, I/O ordering, resource cleanup)
+- Subprocess invocation, path handling, or secret handling
+- A contract or state mutation downstream nodes depend on
+- Uncertain test coverage of acceptance criteria
 
-Decide whether to dispatch the reviewer agent. **Dispatch when** any of these apply:
+Address all HIGH/MEDIUM findings. Re-run verification after fixes.
 
-- The task has runtime semantics (timing, concurrency, async lifecycles, I/O ordering, resource cleanup)
-- The task touches security-relevant code (input validation, path handling, subprocess invocation, secret handling)
-- The task implements a contract or state mutation that downstream nodes will rely on
-- You're not confident every acceptance criterion has clean test coverage
-
-**Skip when** the task is structurally simple — pure data shape (Pydantic models, type definitions, configuration files) with comprehensive test coverage and no runtime subtlety. Note the skip in the PR description so the human review knows to look harder.
-
-Empirical record so far: the reviewer caught a flaky time-ordering test in H-002 (genuine bug — ULIDs in same millisecond aren't ordered) and a procedural commit miss in H-003. Skipped on H-005 and H-013 (Pydantic models, structurally simple) without issue. Use this as your prior.
-
-When dispatching: address any HIGH/MEDIUM findings on touched files (fix-now rule). Re-run verification after fixes.
-
-If the reviewer issues FAIL twice on the same review, stop and surface the blocking issues to the user.
-
-### Step 9: Ship
+### Step 8: Ship
 
 ```bash
-git push -u origin harness/<H-NNN>-<short-slug>
-gh pr create --base main --title "[<H-NNN>] <title> (<CAL-NNN>)" --body "<test plan + summary, references the Linear issue>"
+cd .worktrees/<CAL-NNN>
+git push -u origin harness/<CAL-NNN>-<short-slug>
+gh pr create --base main \
+  --title "<CAL-NNN>: <title>" \
+  --body "<summary + test plan>"
 ```
 
-Then move the Linear issue to In Review with the PR link:
-
-```bash
-cd /Users/scottluengen/Documents/1_Projects/calibrate-coffee && \
-  set -a && source .env.development && set +a && \
-  PYTHONPATH=. python -m harness.tools.sync linear push <CAL-NNN> in_review \
-    --comment "PR: <pr-url>"
-```
-
-The user reviews and merges the PR. After merge, manually move Linear to Done (or extend the sync flow later).
+Move the issue to **In Review** in Linear and paste the PR link as a comment.
 
 ## Pause points
 
-The orchestrator pauses for user input only when:
-1. The reviewer fails twice on the same task — present blocking issues.
-2. A sub-agent escalates a decision it cannot make autonomously.
-3. The task's acceptance criteria are ambiguous — surface, don't guess.
+Pause only when:
+1. The reviewer fails twice on the same task.
+2. A sub-agent escalates a decision it can't make autonomously.
+3. Acceptance criteria are ambiguous — surface, don't guess.
 
 Everything else runs through.

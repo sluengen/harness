@@ -13,6 +13,10 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
+# Env / secrets
+.env
+.env.*
+
 # uv
 # uv.lock is committed — required for reproducible `uv sync --frozen` in Docker builds (SPEC §13 / H-029).
 

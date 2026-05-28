@@ -1,18 +1,46 @@
 {#
   build/implement.j2 — implementation prompt for the build workflow.
 
-  Extends the standard implement pattern with Linear ticket context.
-  Uses Jinja's `inputs.linear_id` directly (resolved at render time)
-  rather than `$inputs.linear_id` template_var substitution, which
+  Extends the standard implement pattern with explicit Linear fetch instructions
+  and skill invocation. Uses Jinja's `inputs.linear_id` directly (resolved at
+  render time) rather than $inputs.linear_id template_var substitution, which
   is not yet implemented for template_vars values.
 
-  Required: inputs.linear_id must be in scope (set by the engine).
+  Required: inputs.linear_id in scope (set by the engine).
   submit_tool_name injected by the contract engine.
 #}
-Implement the changes required for Linear ticket {{ inputs.linear_id }}.
+You are implementing the changes required for Linear ticket {{ inputs.linear_id }}.
 
-Fetch the ticket details from Linear (title, description, acceptance criteria). Plan the minimal change that satisfies them. Apply the change in this worktree. Write or update tests where the change is testable; run them and confirm they pass before submitting.
+## Step 1 — Fetch the ticket
 
-Keep the diff focused — no drive-by refactors or unrelated cleanup.
+Run this exact command to get the ticket details. Do not use Notion, the Linear
+web app, or any MCP tool — use the script:
+
+```bash
+PYTHONPATH=. python scripts/fetch_linear_ticket.py {{ inputs.linear_id }}
+```
+
+Read the `title`, `description`, and acceptance criteria from the output.
+
+## Step 2 — Implement
+
+Follow `skills/test-driven-development.md`:
+- Write failing tests first, then make them pass.
+- Keep the diff focused — no drive-by refactors or unrelated cleanup.
+- Write or update tests for every changed behaviour; run them and confirm they pass.
+
+## Step 3 — Verify
+
+Run the full verification gate before submitting:
+
+```bash
+uv run ruff check .
+uv run mypy harness
+uv run pytest
+```
+
+All three must be clean.
+
+## Step 4 — Submit
 
 When the work is complete and verified, call {{ submit_tool_name | default('submit') }} exactly once with no arguments — the file mutations are the output.
