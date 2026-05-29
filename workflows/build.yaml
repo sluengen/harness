@@ -56,9 +56,9 @@ steps:
   - id: commit-and-push
     type: script
     command: |
-      git add -A
-      git commit -m "feat($1): implement ticket changes"
-      git push -u origin "$2"
+      git add -A >&2
+      git commit -m "feat($1): implement ticket changes" >&2
+      git push -u origin "$2" >&2
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
     args: ["$inputs.linear_id", "$state.worktree_branch"]
     contract:
