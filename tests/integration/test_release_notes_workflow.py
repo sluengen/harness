@@ -6,9 +6,9 @@ Mirrors the steward integration test pattern:
    - ``.harness/`` (DB schema initialised via ``init_db``)
    - ``workflows/release-notes.yaml`` (copied from the repo)
    - ``prompts/standard/summarize.j2`` (copied)
-   - ``scripts/fetch_recent_linear_tickets.py`` + ``scripts/write_release_notes.py`` (copied)
-   - ``tests/fixtures/release_notes_tickets.json`` (copied — the fetch
-     script reads from a path resolved from its own location)
+   - ``scripts/write_release_notes.py`` (copied)
+   - A fake ``curl`` on PATH that returns ``tests/fixtures/release_notes_tickets.json``
+     in the Linear API response format (no network required).
 2. Constructs a reflecting :class:`MockAgent` that queues one payload
    for the ``summarise`` AI step. The payload's ``release_notes`` field
    is a recognisable string the test will assert on.
@@ -25,6 +25,7 @@ No network. No real Claude calls. No env-var gating.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,6 @@ from harness.state.store import init_db
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_SRC = _REPO_ROOT / "workflows" / "release-notes.yaml"
 _PROMPT_SRC = _REPO_ROOT / "prompts" / "standard" / "summarize.j2"
-_FETCH_SCRIPT_SRC = _REPO_ROOT / "scripts" / "fetch_recent_linear_tickets.py"
 _WRITE_SCRIPT_SRC = _REPO_ROOT / "scripts" / "write_release_notes.py"
 _FIXTURE_SRC = _REPO_ROOT / "tests" / "fixtures" / "release_notes_tickets.json"
 
@@ -93,13 +93,15 @@ def release_notes_project(
     shutil.copy(_PROMPT_SRC, tmp_path / "prompts" / "standard" / "summarize.j2")
 
     (tmp_path / "scripts").mkdir()
-    shutil.copy(_FETCH_SCRIPT_SRC, tmp_path / "scripts" / "fetch_recent_linear_tickets.py")
     shutil.copy(_WRITE_SCRIPT_SRC, tmp_path / "scripts" / "write_release_notes.py")
 
-    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
-    shutil.copy(
-        _FIXTURE_SRC, tmp_path / "tests" / "fixtures" / "release_notes_tickets.json"
-    )
+    # Fake curl returns the Linear API fixture — no network needed.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(f"#!/bin/bash\ncat {_FIXTURE_SRC}\n")
+    fake_curl.chmod(0o755)
+    monkeypatch.setenv("PATH", str(fake_bin) + ":" + os.environ.get("PATH", ""))
 
     monkeypatch.chdir(tmp_path)
     return tmp_path

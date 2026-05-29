@@ -1,34 +1,38 @@
 {
-  "tickets": [
-    {
-      "id": "CAL-301",
-      "title": "Brew picker: drum scrolls past max grind setting",
-      "labels": ["frontend", "bug"],
-      "kind": "bug"
-    },
-    {
-      "id": "CAL-303",
-      "title": "Add equipment_grinder field to brew schema",
-      "labels": ["backend", "schema"],
-      "kind": "feature"
-    },
-    {
-      "id": "CAL-305",
-      "title": "Persist guest-mode brews to localStorage before sign-in",
-      "labels": ["frontend", "auth"],
-      "kind": "feature"
-    },
-    {
-      "id": "CAL-309",
-      "title": "Tighten 422 response on PUT /brews/{id} when display_name missing",
-      "labels": ["backend", "api"],
-      "kind": "improvement"
-    },
-    {
-      "id": "CAL-312",
-      "title": "Reviewer agent: skip carry-forward on 1-5 line MED findings",
-      "labels": ["harness"],
-      "kind": "improvement"
+  "data": {
+    "issues": {
+      "nodes": [
+        {
+          "id": "abc-301",
+          "identifier": "CAL-301",
+          "title": "Brew picker: drum scrolls past max grind setting",
+          "labels": {"nodes": [{"name": "frontend"}, {"name": "bug"}]}
+        },
+        {
+          "id": "abc-303",
+          "identifier": "CAL-303",
+          "title": "Add equipment_grinder field to brew schema",
+          "labels": {"nodes": [{"name": "backend"}, {"name": "feature"}]}
+        },
+        {
+          "id": "abc-305",
+          "identifier": "CAL-305",
+          "title": "Persist guest-mode brews to localStorage before sign-in",
+          "labels": {"nodes": [{"name": "frontend"}, {"name": "feature"}]}
+        },
+        {
+          "id": "abc-309",
+          "identifier": "CAL-309",
+          "title": "Tighten 422 response on PUT /brews/{id} when display_name missing",
+          "labels": {"nodes": [{"name": "backend"}, {"name": "improvement"}]}
+        },
+        {
+          "id": "abc-312",
+          "identifier": "CAL-312",
+          "title": "Reviewer agent: skip carry-forward on 1-5 line MED findings",
+          "labels": {"nodes": [{"name": "harness"}, {"name": "improvement"}]}
+        }
+      ]
     }
-  ]
+  }
 }
