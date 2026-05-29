@@ -157,6 +157,7 @@ async def update_state(
     *,
     db_path: Path = DEFAULT_DB_PATH,
     emit_event: bool = True,
+    merge_overrides: dict[str, str] | None = None,
     **fields: Any,
 ) -> S:
     """Apply ``fields`` to the run's state under SPEC §7 merge rules.
@@ -173,6 +174,13 @@ async def update_state(
         merged into the existing dict. Disjoint keys accumulate; shared
         keys take the incoming value (last writer wins per key).
       * **unknown** field — rejected (``StateStoreError``).
+
+    Per-write merge overrides (H-1.5-004):
+      ``merge_overrides`` maps field names to a merge strategy that takes
+      precedence over the type-driven default:
+
+      * ``"replace"`` — unconditional overwrite regardless of field type.
+        Most useful for lists (forces overwrite instead of append).
 
     The full read-modify-write happens inside a single
     ``BEGIN IMMEDIATE`` transaction so concurrent writers serialise
@@ -195,7 +203,7 @@ async def update_state(
             raw = await _select_state_json(conn, run_id)
             current = _validate(schema, json.loads(raw), context=f"run {run_id!r}")
 
-            merged = _merge(schema, current, fields)
+            merged = _merge(schema, current, fields, merge_overrides or {})
             new_state = _validate(
                 schema, merged, context=f"run {run_id!r} (post-merge)"
             )
@@ -268,17 +276,28 @@ def _merge(
     schema: type[BaseState],
     current: BaseState,
     incoming: dict[str, Any],
+    merge_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Apply per-field merge to ``current`` and return a plain dict.
+
+    ``merge_overrides`` maps field name → merge strategy.  Currently only
+    ``"replace"`` is defined: it forces an unconditional overwrite for any
+    field type, bypassing the type-driven rules below.
 
     The caller re-validates the result against ``schema`` before
     persisting — so we don't need to be defensive about types here, the
     re-validation step will catch a list-shaped value handed to a
     scalar field, etc.
     """
+    overrides = merge_overrides or {}
     merged: dict[str, Any] = current.model_dump(mode="json")
 
     for name, value in incoming.items():
+        # Per-write override takes priority over type-driven defaults.
+        if overrides.get(name) == "replace":
+            merged[name] = value
+            continue
+
         annotation = schema.model_fields[name].annotation
         if get_origin(annotation) is list:
             existing = list(merged.get(name) or [])

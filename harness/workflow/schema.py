@@ -8,6 +8,11 @@ is captured raw as either a string reference or a dict.
 The Step type is a discriminated union over the documented `type:` field. Every
 step in YAML must declare its type — including loop steps. The spec example
 omitted `type: loop`; the spec table requires it. We follow the table.
+
+Per-write merge overrides (H-1.5-004): the ``writes:`` list accepts either a
+plain string (short-form, type-driven merge) or a dict with ``field`` and an
+optional ``merge`` key (long-form). Both forms are normalised to
+:class:`WriteSpec` at parse time so downstream code works with a single type.
 """
 
 from __future__ import annotations
@@ -27,6 +32,50 @@ def _is_non_empty(value: str | None) -> bool:
     fields. Used by :class:`LoopBlock`'s ``until`` / ``until_bash``
     validator."""
     return value is not None and value != ""
+
+
+# ---------------------------------------------------------------------------
+# WriteSpec — per-write merge override (H-1.5-004)
+# ---------------------------------------------------------------------------
+
+
+class WriteSpec(BaseModel):
+    """A single write declaration in a step's ``writes:`` list.
+
+    Short-form ``writes: [plan]`` (a string) is normalised to
+    ``WriteSpec(field="plan", merge=None)`` at :class:`_BaseStep` parse time.
+
+    Long-form ``writes: [{field: plan, merge: replace}]`` explicitly sets a
+    merge override that takes precedence over the type-driven default:
+
+    * ``merge: replace`` — unconditional overwrite for any field type.
+      Most useful for lists, which normally append.  Scalars already overwrite
+      by default so ``replace`` is a no-op there, but it is accepted without
+      error.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    merge: Literal["replace"] | None = None
+
+
+def _normalise_writes(raw: list[Any]) -> list[WriteSpec]:
+    """Convert a raw ``writes:`` list (mix of strings and dicts) to
+    ``list[WriteSpec]``.  Pydantic's built-in coercion handles the dict→model
+    path; we only need to handle the string shorthand.
+    """
+    result: list[WriteSpec] = []
+    for item in raw:
+        if isinstance(item, str):
+            result.append(WriteSpec(field=item))
+        elif isinstance(item, WriteSpec):
+            result.append(item)
+        else:
+            # Let Pydantic validate the dict via model_validate so error
+            # messages point at the right field.
+            result.append(WriteSpec.model_validate(item))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +117,23 @@ class _BaseStep(BaseModel):
 
     id: str
     depends_on: list[str] = Field(default_factory=list)
-    writes: list[str] = Field(default_factory=list)
+    writes: list[WriteSpec] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_writes_field(cls, data: Any) -> Any:
+        """Convert short-form string entries in ``writes:`` to WriteSpec dicts
+        before Pydantic validates the model.  This runs on the raw input (a
+        plain dict from YAML or a Python call-site) before field-level
+        coercion, so both ``writes: ["plan"]`` and
+        ``writes: [{field: plan, merge: replace}]`` produce
+        ``list[WriteSpec]``.
+        """
+        if isinstance(data, dict) and "writes" in data:
+            raw_writes = data["writes"]
+            if isinstance(raw_writes, list):
+                data = {**data, "writes": _normalise_writes(raw_writes)}
+        return data
 
 
 class AIStep(_BaseStep):

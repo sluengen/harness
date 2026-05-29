@@ -449,3 +449,87 @@ async def test_ac18_parallel_disjoint_writes_both_land(tmp_path: Path) -> None:
     persisted = await _read_state_json(db_path)
     assert persisted["foo"] == "A"
     assert persisted["bar"] == "B"
+
+
+# ---------------------------------------------------------------------------
+# AC19..AC22 — per-write merge override (H-1.5-004)
+# ---------------------------------------------------------------------------
+
+
+async def test_ac19_merge_replace_on_list_overwrites_instead_of_appending(
+    tmp_path: Path,
+) -> None:
+    """merge_overrides={"items": "replace"} forces an overwrite on a list field
+    instead of the default append behaviour."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"items": ["existing-a", "existing-b"]}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(items=(list[str], Field(default_factory=list)))
+
+    new = await update_state(
+        "R1",
+        schema,
+        db_path=db_path,
+        merge_overrides={"items": "replace"},
+        items=["fresh"],
+    )
+    assert new.items == ["fresh"]  # type: ignore[attr-defined]
+    persisted = await _read_state_json(db_path)
+    assert persisted["items"] == ["fresh"]
+
+
+async def test_ac20_merge_replace_on_list_with_empty_incoming_replaces_all(
+    tmp_path: Path,
+) -> None:
+    """merge_overrides replace with an empty list clears the field."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"items": ["a", "b", "c"]}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(items=(list[str], Field(default_factory=list)))
+
+    new = await update_state(
+        "R1",
+        schema,
+        db_path=db_path,
+        merge_overrides={"items": "replace"},
+        items=[],
+    )
+    assert new.items == []  # type: ignore[attr-defined]
+
+
+async def test_ac21_merge_replace_on_scalar_still_overwrites(
+    tmp_path: Path,
+) -> None:
+    """merge_overrides replace on a scalar field behaves the same as the default
+    overwrite — no error, incoming value wins."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"foo": "old"}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(foo=(str | None, None))
+
+    new = await update_state(
+        "R1",
+        schema,
+        db_path=db_path,
+        merge_overrides={"foo": "replace"},
+        foo="new",
+    )
+    assert new.foo == "new"  # type: ignore[attr-defined]
+
+
+async def test_ac22_no_merge_override_list_still_appends(tmp_path: Path) -> None:
+    """Without merge_overrides (or None), list fields still append as per
+    the type-driven default."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"items": ["existing"]}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(items=(list[str], Field(default_factory=list)))
+
+    new = await update_state(
+        "R1",
+        schema,
+        db_path=db_path,
+        merge_overrides=None,
+        items=["appended"],
+    )
+    assert new.items == ["existing", "appended"]  # type: ignore[attr-defined]

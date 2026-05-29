@@ -427,11 +427,17 @@ async def test_ac5_only_declared_writes_propagate(
         *,
         db_path: Path = store.DEFAULT_DB_PATH,
         emit_event: bool = True,
+        merge_overrides: dict[str, str] | None = None,
         **fields: Any,
     ) -> BaseState:
         captured.append(dict(fields))
         return await real_update(
-            run_id, schema, db_path=db_path, emit_event=emit_event, **fields
+            run_id,
+            schema,
+            db_path=db_path,
+            emit_event=emit_event,
+            merge_overrides=merge_overrides,
+            **fields,
         )
 
     monkeypatch.setattr(
@@ -626,11 +632,17 @@ async def test_ac9_executor_is_the_only_state_writer(
         *,
         db_path: Path = store.DEFAULT_DB_PATH,
         emit_event: bool = True,
+        merge_overrides: dict[str, str] | None = None,
         **fields: Any,
     ) -> BaseState:
         captured.append(dict(fields))
         return await real_update(
-            run_id, schema, db_path=db_path, emit_event=emit_event, **fields
+            run_id,
+            schema,
+            db_path=db_path,
+            emit_event=emit_event,
+            merge_overrides=merge_overrides,
+            **fields,
         )
 
     monkeypatch.setattr(
@@ -795,11 +807,17 @@ async def test_worktree_step_with_writes_succeeds_without_registered_contract(
         *,
         db_path: FsPath = store.DEFAULT_DB_PATH,
         emit_event: bool = True,
+        merge_overrides: dict[str, str] | None = None,
         **fields: Any,
     ) -> BaseState:
         captured.append(dict(fields))
         return await real_update(
-            run_id, schema, db_path=db_path, emit_event=emit_event, **fields
+            run_id,
+            schema,
+            db_path=db_path,
+            emit_event=emit_event,
+            merge_overrides=merge_overrides,
+            **fields,
         )
 
     monkeypatch.setattr(
@@ -930,3 +948,123 @@ async def test_unregistered_step_type_raises(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="no node registered"):
         await Executor().execute(step, ctx)
+
+
+# ---------------------------------------------------------------------------
+# AC-merge-override — executor passes WriteSpec.merge to update_state
+# (H-1.5-004)
+# ---------------------------------------------------------------------------
+
+
+async def test_merge_override_replace_passed_to_update_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a write entry carries merge=replace, the executor passes
+    merge_overrides={"<field>": "replace"} to update_state."""
+    from harness.workflow.schema import WriteSpec
+
+    db = tmp_path / "harness.db"
+    state = _base_state(tmp_path)
+    await _init_db_with_run(db, state)
+
+    captured_overrides: list[dict[str, str] | None] = []
+    real_update = store.update_state
+
+    async def spy_update_state(
+        run_id: str,
+        schema: type[BaseState],
+        *,
+        db_path: Path = store.DEFAULT_DB_PATH,
+        emit_event: bool = True,
+        merge_overrides: dict[str, str] | None = None,
+        **fields: Any,
+    ) -> BaseState:
+        captured_overrides.append(merge_overrides)
+        return await real_update(
+            run_id,
+            schema,
+            db_path=db_path,
+            emit_event=emit_event,
+            merge_overrides=merge_overrides,
+            **fields,
+        )
+
+    monkeypatch.setattr(
+        "harness.engine.executor.update_state",
+        spy_update_state,
+        raising=True,
+    )
+
+    spy = _SpyNode()
+    spy.queue(result=_result(_AContract(a=7)))
+
+    # Build an AIStep with a long-form write entry (merge=replace).
+    step = AIStep(
+        id="s1",
+        type="ai",
+        prompt="x.j2",
+        writes=[WriteSpec(field="a", merge="replace")],
+    )
+    ctx = _make_ctx(
+        db_path=db,
+        contracts={step.id: _AContract},
+        nodes={"ai": spy.execute},
+    )
+
+    await Executor().execute(step, ctx)
+
+    assert len(captured_overrides) == 1
+    assert captured_overrides[0] == {"a": "replace"}
+
+
+async def test_no_merge_override_passes_none_to_update_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When all writes use the short-form (no merge override), the executor
+    passes merge_overrides=None to update_state."""
+    db = tmp_path / "harness.db"
+    state = _base_state(tmp_path)
+    await _init_db_with_run(db, state)
+
+    captured_overrides: list[dict[str, str] | None] = []
+    real_update = store.update_state
+
+    async def spy_update_state(
+        run_id: str,
+        schema: type[BaseState],
+        *,
+        db_path: Path = store.DEFAULT_DB_PATH,
+        emit_event: bool = True,
+        merge_overrides: dict[str, str] | None = None,
+        **fields: Any,
+    ) -> BaseState:
+        captured_overrides.append(merge_overrides)
+        return await real_update(
+            run_id,
+            schema,
+            db_path=db_path,
+            emit_event=emit_event,
+            merge_overrides=merge_overrides,
+            **fields,
+        )
+
+    monkeypatch.setattr(
+        "harness.engine.executor.update_state",
+        spy_update_state,
+        raising=True,
+    )
+
+    spy = _SpyNode()
+    spy.queue(result=_result(_AContract(a=3)))
+
+    step = _ai_step(writes=["a"])
+    ctx = _make_ctx(
+        db_path=db,
+        contracts={step.id: _AContract},
+        nodes={"ai": spy.execute},
+    )
+
+    await Executor().execute(step, ctx)
+
+    assert len(captured_overrides) == 1
+    assert captured_overrides[0] is None
