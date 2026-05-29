@@ -11,7 +11,10 @@ Trigger the build workflow for a Linear issue. The harness handles everything â€
 ### Step 1 â€” Fetch the ticket
 
 ```bash
-PYTHONPATH=. python scripts/fetch_linear_ticket.py <CAL-NNN>
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query{issue(id:\"<CAL-NNN>\"){identifier title description state{name} labels{nodes{name}} url}}"}'
 ```
 
 Print a brief for the user:

@@ -14,10 +14,13 @@ You are implementing the changes required for Linear ticket {{ inputs.linear_id 
 ## Step 1 — Fetch the ticket
 
 Run this exact command to get the ticket details. Do not use Notion, the Linear
-web app, or any MCP tool — use the script:
+web app, or any MCP tool — use the API directly:
 
 ```bash
-PYTHONPATH=. python scripts/fetch_linear_ticket.py {{ inputs.linear_id }}
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query{issue(id:\"{{ inputs.linear_id }}\"){identifier title description state{name} labels{nodes{name}} url}}"}'
 ```
 
 Read the `title`, `description`, and acceptance criteria from the output.

@@ -375,8 +375,11 @@ steps:
 
   - id: fetch-issue
     type: script
-    runtime: python
-    script: scripts/fetch_linear.py
+    command: |
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{issue(id:\"$1\"){id identifier title description state{name} labels{nodes{name}} url}}"}'
     args: ["$inputs.linear_id"]
     contract: $contracts/linear-issue              # shared YAML schema
     writes: [issue]
