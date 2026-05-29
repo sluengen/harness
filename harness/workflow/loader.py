@@ -240,7 +240,8 @@ def _validate_writes_against_contracts(
             # AC14 covers "writes without contract"; not our concern here.
             continue
         contract_fields = set(contract.model_fields)
-        for name in step.writes:
+        for spec in step.writes:
+            name = spec.field
             if name not in contract_fields:
                 raise WorkflowLoadError(
                     f"step {step.id!r} writes field {name!r} not declared "
@@ -261,7 +262,8 @@ def _validate_writer_type_consistency(
         contract = contracts.get(step.id)
         if contract is None:
             continue
-        for name in step.writes:
+        for spec in step.writes:
+            name = spec.field
             if name not in contract.model_fields:
                 # AC8 will catch this — don't double-fire.
                 continue

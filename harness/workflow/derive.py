@@ -71,7 +71,8 @@ def derive_state_schema(loaded: LoadedWorkflow) -> type[BaseState]:
             #     are already declared on BaseState, so there is nothing to
             #     add here (CAL-497).
             continue
-        for name in step.writes:
+        for spec in step.writes:
+            name = spec.field
             if name in derived_fields:
                 # Loader guarantees identical types across writers, so
                 # the first occurrence wins. Skip silently.

@@ -15,6 +15,7 @@ from harness.workflow.schema import (
     ScriptStep,
     Workflow,
     WorktreeStep,
+    WriteSpec,
 )
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,8 @@ def test_ai_step_with_inline_contract() -> None:
         writes=["summary", "items"],
     )
     assert isinstance(step.contract, dict)
-    assert step.writes == ["summary", "items"]
+    # writes is normalised to list[WriteSpec]; field names match originals.
+    assert [w.field for w in step.writes] == ["summary", "items"]
 
 
 def test_ai_step_with_dotted_contract_reference() -> None:
@@ -338,3 +340,102 @@ def test_workflow_rejects_extra_fields() -> None:
     }
     with pytest.raises(ValidationError, match="extra"):
         Workflow.model_validate(raw)
+
+
+# ---------------------------------------------------------------------------
+# WriteSpec — H-1.5-004 per-write merge override
+# ---------------------------------------------------------------------------
+
+
+def test_write_spec_minimal() -> None:
+    """Short-form string normalises to WriteSpec with no merge override."""
+    spec = WriteSpec(field="plan")
+    assert spec.field == "plan"
+    assert spec.merge is None
+
+
+def test_write_spec_replace_override() -> None:
+    """Long-form with merge=replace parses correctly."""
+    spec = WriteSpec(field="plan", merge="replace")
+    assert spec.field == "plan"
+    assert spec.merge == "replace"
+
+
+def test_write_spec_rejects_unknown_merge_value() -> None:
+    """merge must be one of the allowed literals (only 'replace' for v1.5)."""
+    with pytest.raises(ValidationError):
+        WriteSpec(field="plan", merge="append")  # type: ignore[arg-type]
+
+
+def test_write_spec_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError, match="extra"):
+        WriteSpec.model_validate({"field": "plan", "unknown": True})
+
+
+def test_ai_step_writes_short_form_normalised_to_write_spec() -> None:
+    """Short-form strings in writes: are normalised to WriteSpec(field=..., merge=None)."""
+    step = AIStep(type="ai", id="s", prompt="p.j2", writes=["foo", "bar"])
+    assert all(isinstance(w, WriteSpec) for w in step.writes)
+    assert step.writes[0].field == "foo"
+    assert step.writes[0].merge is None
+    assert step.writes[1].field == "bar"
+
+
+def test_ai_step_writes_long_form_accepted() -> None:
+    """Long-form dict entries in writes: are parsed to WriteSpec correctly."""
+    step = AIStep(
+        type="ai",
+        id="s",
+        prompt="p.j2",
+        writes=[{"field": "plan", "merge": "replace"}],
+    )
+    assert len(step.writes) == 1
+    assert step.writes[0].field == "plan"
+    assert step.writes[0].merge == "replace"
+
+
+def test_ai_step_writes_mixed_form_accepted() -> None:
+    """Short-form and long-form can be mixed in the same writes: list."""
+    step = AIStep(
+        type="ai",
+        id="s",
+        prompt="p.j2",
+        writes=["summary", {"field": "plan", "merge": "replace"}],
+    )
+    assert len(step.writes) == 2
+    assert step.writes[0].field == "summary"
+    assert step.writes[0].merge is None
+    assert step.writes[1].field == "plan"
+    assert step.writes[1].merge == "replace"
+
+
+def test_ai_step_writes_empty_list_accepted() -> None:
+    """Empty writes: [] is still valid."""
+    step = AIStep(type="ai", id="s", prompt="p.j2", writes=[])
+    assert step.writes == []
+
+
+def test_workflow_yaml_long_form_writes_parses_correctly() -> None:
+    """End-to-end: YAML-shaped dict round-trips through Workflow.model_validate."""
+    raw = {
+        "name": "feature",
+        "version": 1,
+        "steps": [
+            {
+                "id": "implement",
+                "type": "ai",
+                "prompt": "p.j2",
+                "writes": [
+                    "summary",
+                    {"field": "plan", "merge": "replace"},
+                ],
+            }
+        ],
+    }
+    wf = Workflow.model_validate(raw)
+    step = wf.steps[0]
+    assert isinstance(step, AIStep)
+    assert step.writes[0].field == "summary"
+    assert step.writes[0].merge is None
+    assert step.writes[1].field == "plan"
+    assert step.writes[1].merge == "replace"

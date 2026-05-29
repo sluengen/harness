@@ -288,7 +288,7 @@ class Executor:
         # is non-empty, so the assert is defensive only.
         assert contract_cls is not None
         contract_fields = set(contract_cls.model_fields.keys())
-        unknown = [name for name in step.writes if name not in contract_fields]
+        unknown = [spec.field for spec in step.writes if spec.field not in contract_fields]
         if unknown:
             raise ContractMismatch(
                 f"step {step.id!r}: writes={unknown!r} not declared on "
@@ -300,12 +300,26 @@ class Executor:
     async def _apply_writes(
         ctx: Context, step: Step, result: NodeResult[BaseModel]
     ) -> None:
-        """Project the declared ``writes:`` fields onto state."""
-        payload = {name: getattr(result.contract, name) for name in step.writes}
+        """Project the declared ``writes:`` fields onto state.
+
+        Per-write merge overrides (H-1.5-004): any :class:`WriteSpec` entry
+        with a non-``None`` ``merge`` value is collected into
+        ``merge_overrides`` and forwarded to :func:`update_state`.  Entries
+        without an override (``merge=None``) rely on the type-driven default.
+        When no overrides are present, ``None`` is passed so the store takes
+        its fast path.
+        """
+        overrides: dict[str, str] = {
+            spec.field: spec.merge
+            for spec in step.writes
+            if spec.merge is not None
+        }
+        payload = {spec.field: getattr(result.contract, spec.field) for spec in step.writes}
         await update_state(
             ctx.run_id,
             ctx.state_schema,
             db_path=ctx.db_path,
+            merge_overrides=overrides or None,
             **payload,
         )
 
