@@ -13,7 +13,7 @@ State writes go through :func:`update_state` only. The function:
    (rejects unknown fields).
 2. Loads the current ``state_json``, validates it, applies type-driven
    merge per SPEC §7 (list = append, scalar = overwrite, dict =
-   reject — deferred to v1.5), re-validates the result, and writes it
+   key-merge / shallow update), re-validates the result, and writes it
    back inside a single transaction.
 3. Caps the framework ``notes`` list at :data:`NOTES_MAX_ENTRIES`
    entries / :data:`NOTES_MAX_CHARS` characters, dropping oldest first.
@@ -56,8 +56,8 @@ S = TypeVar("S", bound=BaseState)
 class StateStoreError(Exception):
     """Raised when a read or write violates the schema or merge rules.
 
-    Wraps Pydantic :class:`ValidationError` and surfaces unknown-field /
-    dict-write rejects so callers see one error type at the boundary.
+    Wraps Pydantic :class:`ValidationError` and surfaces unknown-field
+    rejects so callers see one error type at the boundary.
     """
 
 # Schema per SPEC §12. Idempotent — every CREATE uses ``IF NOT EXISTS``. Re-running
@@ -169,8 +169,9 @@ async def update_state(
         (entries first, then characters; oldest dropped).
       * **scalar** field (str / int / bool / float / model / Literal /
         constrained) — overwrite; last writer wins.
-      * **dict** field — rejected (``StateStoreError``); merge semantics
-        deferred to v1.5.
+      * **dict** field — key-merge (shallow update): incoming keys are
+        merged into the existing dict. Disjoint keys accumulate; shared
+        keys take the incoming value (last writer wins per key).
       * **unknown** field — rejected (``StateStoreError``).
 
     The full read-modify-write happens inside a single
@@ -187,7 +188,6 @@ async def update_state(
         return await read_state(run_id, schema, db_path=db_path)
 
     _reject_unknown_fields(schema, fields)
-    _reject_dict_writes(schema, fields)
 
     async with store_connection(db_path) as conn:
         await conn.execute("BEGIN IMMEDIATE")
@@ -264,16 +264,6 @@ def _reject_unknown_fields(schema: type[BaseState], fields: dict[str, Any]) -> N
         )
 
 
-def _reject_dict_writes(schema: type[BaseState], fields: dict[str, Any]) -> None:
-    for name in fields:
-        annotation = schema.model_fields[name].annotation
-        if get_origin(annotation) is dict:
-            raise StateStoreError(
-                f"dict-field write to {name!r} is not supported "
-                f"(dict-merge semantics deferred to v1.5)"
-            )
-
-
 def _merge(
     schema: type[BaseState],
     current: BaseState,
@@ -296,6 +286,12 @@ def _merge(
             if name == "notes":
                 existing = _bound_notes(existing)
             merged[name] = existing
+        elif get_origin(annotation) is dict:
+            # Key-merge (shallow update): disjoint keys accumulate;
+            # shared keys take the incoming value.
+            existing_dict = dict(merged.get(name) or {})
+            existing_dict.update(value or {})
+            merged[name] = existing_dict
         else:
             # Scalar / model / Literal / constrained — overwrite.
             merged[name] = value

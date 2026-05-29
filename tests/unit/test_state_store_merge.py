@@ -228,19 +228,79 @@ async def test_ac9_invalid_value_type_raises(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC10 — dict reject (deferred to v1.5)
+# AC10 — dict key-merge (H-1.5-003)
 # ---------------------------------------------------------------------------
 
 
-async def test_ac10_dict_field_rejected_with_v15_message(tmp_path: Path) -> None:
+async def test_ac10a_dict_single_writer_keys_land(tmp_path: Path) -> None:
+    """First write to an empty dict populates the keys."""
     db_path = tmp_path / "h.db"
     payload = _base_state_kwargs() | {"my_dict": {}}
     await _init_db_with_run(db_path, state=payload)
     schema = _make_schema(
         my_dict=(dict[str, str], Field(default_factory=dict)),
     )
-    with pytest.raises(StateStoreError, match="v1.5"):
-        await update_state("R1", schema, db_path=db_path, my_dict={"k": "v"})
+
+    new = await update_state("R1", schema, db_path=db_path, my_dict={"k": "v"})
+    assert new.my_dict == {"k": "v"}  # type: ignore[attr-defined]
+    persisted = await _read_state_json(db_path)
+    assert persisted["my_dict"] == {"k": "v"}
+
+
+async def test_ac10b_dict_disjoint_keys_accumulate(tmp_path: Path) -> None:
+    """Second writer adding non-overlapping keys: both sets present."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"my_dict": {"a": "1"}}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(
+        my_dict=(dict[str, str], Field(default_factory=dict)),
+    )
+
+    new = await update_state("R1", schema, db_path=db_path, my_dict={"b": "2"})
+    assert new.my_dict == {"a": "1", "b": "2"}  # type: ignore[attr-defined]
+
+
+async def test_ac10c_dict_overlapping_key_last_writer_wins(tmp_path: Path) -> None:
+    """When incoming shares a key with the current dict, incoming value wins."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"my_dict": {"k": "old", "x": "keep"}}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(
+        my_dict=(dict[str, str], Field(default_factory=dict)),
+    )
+
+    new = await update_state("R1", schema, db_path=db_path, my_dict={"k": "new"})
+    assert new.my_dict == {"k": "new", "x": "keep"}  # type: ignore[attr-defined]
+
+
+async def test_ac10d_dict_consecutive_writes_accumulate(tmp_path: Path) -> None:
+    """Three consecutive writes each contributing disjoint keys all land."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"my_dict": {}}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(
+        my_dict=(dict[str, str], Field(default_factory=dict)),
+    )
+
+    await update_state("R1", schema, db_path=db_path, my_dict={"a": "1"})
+    await update_state("R1", schema, db_path=db_path, my_dict={"b": "2"})
+    await update_state("R1", schema, db_path=db_path, my_dict={"c": "3"})
+
+    persisted = await _read_state_json(db_path)
+    assert persisted["my_dict"] == {"a": "1", "b": "2", "c": "3"}
+
+
+async def test_ac10e_dict_empty_incoming_leaves_existing_intact(tmp_path: Path) -> None:
+    """Writing an empty dict is a no-change key-merge — existing keys survive."""
+    db_path = tmp_path / "h.db"
+    payload = _base_state_kwargs() | {"my_dict": {"a": "1"}}
+    await _init_db_with_run(db_path, state=payload)
+    schema = _make_schema(
+        my_dict=(dict[str, str], Field(default_factory=dict)),
+    )
+
+    new = await update_state("R1", schema, db_path=db_path, my_dict={})
+    assert new.my_dict == {"a": "1"}  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
