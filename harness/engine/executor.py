@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +107,8 @@ class Context:
     contracts: dict[str, type[BaseModel]]
     state_schema: type[BaseState]
     nodes: dict[str, NodeRunner]
+    workflow_name: str = field(default="")
+    progress_sink: Callable[[str, str | None, int | None], None] | None = field(default=None)
 
 
 class Executor:
@@ -129,7 +131,7 @@ class Executor:
             BaseException: anything the node raises after retry budget
                 exhaustion, re-raised after a ``node_failed`` event lands.
         """
-        emitter = EventEmitter(ctx.db_path)
+        emitter = EventEmitter(ctx.db_path, on_emit=ctx.progress_sink)
         state = await read_state(ctx.run_id, ctx.state_schema, db_path=ctx.db_path)
 
         self._check_depends_on(step, state)

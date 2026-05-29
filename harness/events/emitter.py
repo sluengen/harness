@@ -25,6 +25,7 @@ in Python 3.11+ once the ``Z`` is replaced with ``+00:00``.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -41,10 +42,23 @@ class EventEmitter:
     the emitter does not own a long-lived connection because the engine may be
     invoked from contexts (e.g. CLI subcommands) where pooling would outlive
     the work.
+
+    Args:
+        db_path: Path to the SQLite database.
+        on_emit: Optional synchronous callback invoked after each successful
+            INSERT + commit. Signature: ``(event_type, node_id, duration_ms)``.
+            Used by :class:`~harness.engine.progress.ProgressReporter` to tap
+            the event stream for terminal output without a new persistence layer
+            (CAL-507).
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        on_emit: Callable[[str, str | None, int | None], None] | None = None,
+    ) -> None:
         self._db_path = db_path
+        self._on_emit = on_emit
 
     async def emit(
         self,
@@ -87,3 +101,6 @@ class EventEmitter:
                 (run_id, node_id, event_type, timestamp, duration_ms, data_json),
             )
             await conn.commit()
+
+        if self._on_emit is not None:
+            self._on_emit(event_type, node_id, duration_ms)

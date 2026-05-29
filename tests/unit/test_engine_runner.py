@@ -674,3 +674,39 @@ async def test_ac11_records_duration_ms_and_exit_code(tmp_path: Path) -> None:
     assert isinstance(row["duration_ms"], int)
     assert row["duration_ms"] >= 0
     assert row["completed_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# CAL-507 — progress output during run
+# ---------------------------------------------------------------------------
+
+
+async def test_progress_lines_appear_during_run(tmp_path: Path) -> None:
+    """Runner with progress=True writes at least one 'started' line during run."""
+    import io
+
+    db = tmp_path / "harness.db"
+    wf = _trivial_check_workflow(tmp_path)
+    progress_buf = io.StringIO()
+
+    runner = Runner(db_path=db, progress=True, _progress_file=progress_buf)
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+
+    output = progress_buf.getvalue()
+    assert "started" in output
+
+
+async def test_progress_false_suppresses_output(tmp_path: Path) -> None:
+    """Runner with progress=False writes nothing to the progress file."""
+    import io
+
+    db = tmp_path / "harness.db"
+    wf = _trivial_check_workflow(tmp_path)
+    progress_buf = io.StringIO()
+
+    runner = Runner(db_path=db, progress=False, _progress_file=progress_buf)
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+
+    assert progress_buf.getvalue() == ""

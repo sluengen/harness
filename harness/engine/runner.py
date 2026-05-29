@@ -53,7 +53,7 @@ import signal
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from harness.dispatch.base import Agent
 from harness.dispatch.claude import ContractViolation
@@ -128,12 +128,16 @@ class Runner:
         db_path: Path | None = None,
         prompts_dir: Path | None = None,
         repo_root: Path | None = None,
+        progress: bool = True,
+        _progress_file: IO[str] | None = None,
     ) -> None:
         self._agent: Agent = agent if agent is not None else MockAgent()
         self._policy = policy if policy is not None else RetryPolicy.v1_default()
         self._db_path = db_path if db_path is not None else DEFAULT_DB_PATH
         self._prompts_dir = prompts_dir
         self._repo_root = repo_root if repo_root is not None else Path(".")
+        self._progress = progress
+        self._progress_file = _progress_file
         self._executor = Executor(policy=self._policy)
 
     async def run(
@@ -238,7 +242,15 @@ class Runner:
             started_at=started_wall,
         )
 
-        emitter = EventEmitter(self._db_path)
+        from harness.engine.progress import ProgressReporter
+
+        progress_sink = (
+            ProgressReporter(loaded.workflow.name, file=self._progress_file)
+            if self._progress
+            else None
+        )
+
+        emitter = EventEmitter(self._db_path, on_emit=progress_sink)
         await emitter.emit(
             run_id=run_id,
             event_type="workflow_started",
@@ -264,6 +276,8 @@ class Runner:
             contracts=loaded.contracts,
             state_schema=state_schema,
             nodes=registry,
+            workflow_name=loaded.workflow.name,
+            progress_sink=progress_sink,
         )
 
         # Build the loop evaluator once per run; it reuses the same

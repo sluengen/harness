@@ -99,9 +99,11 @@ def runner_spy(monkeypatch: pytest.MonkeyPatch) -> _RunnerSpy:
     """Install a ``_RunnerSpy`` in place of the CLI's ``Runner`` factory.
 
     The CLI uses ``cli_module._build_runner()`` so tests can swap a spy in.
+    ``_build_runner`` now accepts keyword arguments (e.g. ``quiet``); the
+    lambda accepts and ignores them so all existing tests still pass.
     """
     spy = _RunnerSpy(exit_code=0)
-    monkeypatch.setattr(cli_module, "_build_runner", lambda: spy)
+    monkeypatch.setattr(cli_module, "_build_runner", lambda **_kw: spy)
     return spy
 
 
@@ -586,7 +588,7 @@ def test_ac5_propagates_runner_exit_code(
     """The CLI returns whatever ``Runner.run`` returned (here: 3)."""
     _minimal_workflow(tmp_path)
     spy = _RunnerSpy(exit_code=3)
-    monkeypatch.setattr(cli_module, "_build_runner", lambda: spy)
+    monkeypatch.setattr(cli_module, "_build_runner", lambda **_kw: spy)
 
     result = cli.invoke(
         app, ["run", "demo", "--workflows-dir", str(tmp_path)]
@@ -606,7 +608,7 @@ def test_ac9_runner_invoked_via_asyncio_run(
     """
     _minimal_workflow(tmp_path)
     spy = _RunnerSpy(exit_code=0)
-    monkeypatch.setattr(cli_module, "_build_runner", lambda: spy)
+    monkeypatch.setattr(cli_module, "_build_runner", lambda **_kw: spy)
 
     calls: list[Any] = []
     import asyncio as _asyncio
@@ -679,3 +681,58 @@ def test_existing_version_command_still_runs(cli: CliRunner) -> None:
     result = cli.invoke(app, ["version"])
     assert result.exit_code == 0
     assert "slate-harness" in result.output
+
+
+# ---------------------------------------------------------------------------
+# CAL-507 — --quiet flag
+# ---------------------------------------------------------------------------
+
+
+def test_quiet_flag_passes_quiet_true_to_build_runner(
+    tmp_path: Path,
+    cli: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Passing ``--quiet`` calls ``_build_runner(quiet=True)``."""
+    _minimal_workflow(tmp_path)
+
+    captured_kw: dict[str, Any] = {}
+    spy = _RunnerSpy(exit_code=0)
+
+    def capturing_build_runner(**kw: Any) -> _RunnerSpy:
+        captured_kw.update(kw)
+        return spy
+
+    monkeypatch.setattr(cli_module, "_build_runner", capturing_build_runner)
+
+    result = cli.invoke(
+        app,
+        ["run", "demo", "--workflows-dir", str(tmp_path), "--quiet"],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured_kw.get("quiet") is True
+
+
+def test_no_quiet_flag_passes_quiet_false_to_build_runner(
+    tmp_path: Path,
+    cli: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without ``--quiet``, ``_build_runner`` receives ``quiet=False``."""
+    _minimal_workflow(tmp_path)
+
+    captured_kw: dict[str, Any] = {}
+    spy = _RunnerSpy(exit_code=0)
+
+    def capturing_build_runner(**kw: Any) -> _RunnerSpy:
+        captured_kw.update(kw)
+        return spy
+
+    monkeypatch.setattr(cli_module, "_build_runner", capturing_build_runner)
+
+    result = cli.invoke(
+        app,
+        ["run", "demo", "--workflows-dir", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured_kw.get("quiet") is False
