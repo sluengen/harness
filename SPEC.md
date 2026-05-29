@@ -746,7 +746,6 @@ When multiple steps write the same state field, the merge is **type-driven**, no
 |------------|-----------------|---------|
 | `list`     | Append          | `notes: list[str]` — every writer appends; the field accumulates across nodes |
 | Scalar (`string`, `integer`, `boolean`, `number`) | Overwrite | `tests_pass: bool` — last writer wins, which is what you want for status fields |
-| `dict`     | Key-merge (shallow update) | `tags: dict[str, str]` — disjoint keys from multiple writers accumulate; shared keys take the incoming value (last writer wins per key) |
 
 ### Why this works
 
@@ -775,7 +774,8 @@ Both caps are non-configurable in v1. The character budget is the load-bearing o
 
 ### Deferred to v1.5
 
-- **Per-write merge override** (e.g., `merge: replace` on a list to force overwrite). No concrete v1 workflow needs the override. Type-driven defaults are the only behaviour available.
+- **Dict-merge semantics.** Multiple writers contributing keys to a shared `dict` field. Cut from v1 because no shipped workflow needs it; the same outcome is achievable with separate scalar fields. Add back when a real workflow forces the case.
+- **Per-write merge override** (e.g., `merge: replace` on a list to force overwrite). Same reason — no concrete v1 workflow needs the override. Type-driven defaults are the only behaviour available.
 
 ---
 
