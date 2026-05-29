@@ -37,16 +37,19 @@ _DEFAULT_WORKFLOWS_DIR = Path("workflows")
 _BASE_BRANCH_KW = "_base_branch__"
 
 
-def _build_runner() -> Runner:
+def _build_runner(*, quiet: bool = False) -> Runner:
     """Construct the default :class:`Runner`.
 
     Lives at module scope so tests can monkeypatch it with a spy that
     captures the runner's arguments without spinning up SQLite + the
     executor + agent dispatch.
+
+    Args:
+        quiet: When ``True``, suppress progress output to stderr.
     """
     from harness.dispatch.claude import ClaudeAgent
 
-    return Runner(agent=ClaudeAgent())
+    return Runner(agent=ClaudeAgent(), progress=not quiet)
 
 
 def run_command(
@@ -58,6 +61,11 @@ def run_command(
         _DEFAULT_WORKFLOWS_DIR,
         "--workflows-dir",
         help="Directory containing workflow YAML files. Defaults to ./workflows.",
+    ),
+    quiet: bool = typer.Option(  # noqa: B008 — Typer pattern.
+        False,
+        "--quiet",
+        help="Suppress per-node progress output to stderr.",
     ),
 ) -> None:
     """Execute a workflow. Per-workflow flags are loaded from its YAML.
@@ -84,6 +92,7 @@ def run_command(
         workflow_path=workflow_path,
         inputs_spec=dict(loaded.workflow.inputs),
         description=loaded.workflow.description or None,
+        quiet=quiet,
     )
 
     try:
@@ -121,6 +130,7 @@ def _build_dynamic_command(
     workflow_path: Path,
     inputs_spec: dict[str, InputSpec],
     description: str | None,
+    quiet: bool = False,
 ) -> click.Command:
     """Compile the workflow's ``inputs:`` block into a ``click.Command``.
 
@@ -179,7 +189,7 @@ def _build_dynamic_command(
 
         inputs: dict[str, Any] = {k: v for k, v in kw.items() if v is not None}
 
-        runner = _build_runner()
+        runner = _build_runner(quiet=quiet)
         exit_code = asyncio.run(
             runner.run(workflow_path, inputs, base_branch=base_branch)
         )
