@@ -13,23 +13,9 @@ inputs:
 steps:
   - id: fetch-tickets
     type: script
-    command: |
-      SINCE=$(python3 -c "from datetime import datetime,timedelta; print((datetime.utcnow()-timedelta(days=int('$1'))).strftime('%Y-%m-%dT%H:%M:%SZ'))")
-      curl -s -X POST https://api.linear.app/graphql \
-        -H "Authorization: $LINEAR_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d '{"query":"query($since:DateTimeOrDuration!){issues(filter:{completedAt:{gt:$since},state:{type:{eq:\"completed\"}}},first:100){nodes{id identifier title labels{nodes{name}}}}}","variables":{"since":"'"$SINCE"'"}}' \
-      | python3 -c "
-import json,sys
-nodes=json.load(sys.stdin)['data']['issues']['nodes']
-tickets=[]
-for n in nodes:
-    labels=[l['name'] for l in n['labels']['nodes']]
-    kind=next((l.lower() for l in labels if l.lower() in ('bug','feature','improvement','chore')),'feature')
-    tickets.append({'id':n['id'],'title':n['title'],'labels':labels,'kind':kind})
-print(json.dumps({'tickets':tickets}))
-"
-    args: ["$inputs.since_days"]
+    runtime: python
+    script: scripts/fetch_recent_linear_tickets.py
+    args: ["--since-days", "$inputs.since_days"]
     contract:
       tickets:
         type: list
