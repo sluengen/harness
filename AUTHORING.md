@@ -52,7 +52,7 @@ Minimal example of each:
   writes: [summary]
 ```
 
-Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonnet`), `allowed_tools:` (defaults to `[Read, Grep, Glob]`; **replaces** the default when set — not additive), `cwd:`, `writes_files:` (default `false`), `stall_timeout_s:` (default `300`), `timeout_s:` (default `600`).
+Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonnet`), `allowed_tools:` (defaults to `[Read, Grep, Glob]`), `cwd:`, `writes_files:` (default `false`), `stall_timeout_s:` (default `300`), `timeout_s:` (default `600`).
 
 ```yaml
 # script — bash form (default runtime). `command:` runs the value as bash.
@@ -118,13 +118,12 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
   policy: merge_to_base  # or: leave_for_inspection | delete_unconditionally
 ```
 
-`merge_to_base` fast-forwards the configured `base:` branch (from the upstream `create`) to the worktree branch — a **local** operation, no remote push required. It assumes the worktree branch already has the commits you want, typically staged by a preceding `script` step (`git add && git commit`).
+`merge_to_base` fast-forwards the configured `base:` branch (from the upstream `create`) to the worktree branch. It assumes the worktree branch already has the commits you want — typically created by a preceding `script` step that runs `git add/commit/push` (or just `git add/commit`, since the engine fetches latest before the ff-merge).
 
 ```yaml
 # loop — note: type:loop IS required (the spec table requires it).
 # `until:` accepts any Python boolean expression over state. `until: state.x`
 # (truthy check) and `until: state.x == True` are both valid.
-# `until:` is evaluated *after* each iteration — the body always runs at least once.
 # State written inside loop steps persists across iterations — the next
 # pass reads what the previous pass wrote.
 - id: implement-and-test
@@ -147,15 +146,6 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
         contract:
           tests_pass: boolean
         writes: [tests_pass]
-```
-
-**Committing inside loops.** An AI step with `writes_files: true` mutates the filesystem but does not commit. If the loop feeds a `worktree.cleanup` step with `policy: merge_to_base`, add an explicit commit step between the loop and cleanup so `merge_to_base` has commits to merge:
-
-```yaml
-- id: commit-changes
-  type: script
-  command: "git -C $state.worktree_path add -A && git -C $state.worktree_path commit -m 'wip'"
-  writes: []
 ```
 
 **Alternative satisfaction predicate — `until_bash:`.** Use when the exit condition is naturally a shell command rather than a Python expression over state (e.g. polling an external endpoint, waiting on a file mtime). Exit 0 satisfies; any non-zero exit means "iterate again". `$state.<field>` is substituted before exec. Declare one of `until:` / `until_bash:`, not both.
@@ -185,8 +175,7 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
       - id: tick
         type: script
         command: 'printf "%s" "{\"settled\": false}"'
-        contract:
-          settled: boolean
+        contract: {settled: boolean}
         writes: [settled]
       - id: ratify
         type: check
@@ -296,12 +285,10 @@ Two namespaces inside YAML scalar values:
 | Where | Step types | Example |
 |---|---|---|
 | `args:` list entries | `script` | `args: ["--days", "$inputs.lookback"]` |
-| `command:` (single-line or multi-line `\|`) | `script` | `command: "ls $state.worktree_path"` |
+| `command:` | `script` | `command: "ls $state.worktree_path"` |
 | `cwd:` | `ai`, `script` | `cwd: $state.worktree_path` |
 | `base:` | `worktree` (`create`) | `base: $inputs.base_branch` |
 | `template_vars:` *values* | `ai`, `decision` | `template_vars: { task: "$state.plan" }` |
-
-Multi-line `command: |` blocks are a single YAML scalar — `$state.X` and `$inputs.X` are substituted across all lines of the block before bash sees it.
 
 Jinja templates (the `.j2` files referenced by `prompt:`) receive the resolved values as `state`/`inputs` Jinja variables (no `$` prefix needed inside the template body).
 
@@ -342,12 +329,8 @@ Reference one in an AI step:
   template_vars:
     criteria: "Correctness, test coverage, regression risk"
   contract:
-    status:
-      type: string
-      enum: [PASS, FAIL]
-    issues:
-      type: list
-      of: string
+    status: { type: string, enum: [PASS, FAIL] }
+    issues: { type: list, of: string }
   writes: [status, issues]
 ```
 
@@ -521,7 +504,6 @@ Real ones, in roughly the order people hit them:
 | Forgot to fill in `template_vars` that a standard prompt requires | Read the `.j2` file's header comment — required vars are listed. `analyze.j2` needs `task`, `summarize.j2` needs `subject`, etc. |
 | Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `skills/verification-before-completion.md`. |
 | Want "do X on PASS, Y on FAIL" branching from a single `check` | The grammar has no multi-branch routing. `check.on_fail:` is single-direction (`cancel`/`continue`/`retry_loop:<id>`). Canonical workaround: gate with `on_fail: cancel`, put only the success-path cleanup downstream; the workflow halts before cleanup on failure. For richer branching, split into two workflows. |
-| Worktree left on disk after `on_fail: cancel` | When a workflow cancels, any `worktree.cleanup` step downstream of the cancel point never runs. Run `slate-harness worktrees cleanup` periodically to remove stale worktrees, or add a dedicated cleanup step before the gate if immediate cleanup is needed on the failure path. |
 
 ---
 
