@@ -22,12 +22,12 @@ A single sub-agent dispatched while the orchestrator is in its own worktree and 
 
 ## Procedure — orchestrator entry
 
-At the top of any multi-commit flow (`/start-task`, manual long sessions, etc.):
+At the top of any multi-commit flow (`/start`, manual long sessions, etc.):
 
 ```bash
 cd ~/Documents/1_Projects/harness
 
-# Pick a worktree name. For /start-task, use the issue ID (H-NNN); it's already unique.
+# Pick a worktree name. For /start, use the issue ID (H-NNN); it's already unique.
 # For ad-hoc sessions, use a timestamp so parallel sessions don't collide.
 WORKTREE=".worktrees/<H-NNN>"          # or: ".worktrees/session-$(date +%Y-%m-%d-%H%M%S)"
 BRANCH="harness/<H-NNN>-<short-slug>"  # or: "session/<timestamp>"

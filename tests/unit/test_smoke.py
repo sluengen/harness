@@ -25,4 +25,4 @@ def test_cli_version_runs() -> None:
         timeout=10,
     )
     assert result.returncode == 0
-    assert "slate-harness" in result.stdout
+    assert "harness" in result.stdout

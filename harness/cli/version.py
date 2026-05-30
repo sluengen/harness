@@ -1,6 +1,6 @@
-"""``slate-harness version`` — print the slate-harness version string.
+"""``harness version`` — print the harness version string.
 
-Two output forms: human (``slate-harness <v>``) and machine (``--json``
+Two output forms: human (``harness <v>``) and machine (``--json``
 emits ``{"version": "<v>"}``). Per SPEC §11 JSON keys are part of the public
 contract — don't rename without a major bump.
 """
@@ -19,8 +19,8 @@ def version_command(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Print slate-harness version."""
+    """Print harness version."""
     if json_output:
         typer.echo(json.dumps({"version": __version__}))
     else:
-        typer.echo(f"slate-harness {__version__}")
+        typer.echo(f"harness {__version__}")

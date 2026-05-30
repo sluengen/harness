@@ -30,7 +30,7 @@ Execute workflows deterministically. Decouple *what work gets done* (orchestrati
 │  - Decides WHAT to run                                          │
 │  - Invokes harness via CLI                                      │
 └───────────────────────────┬─────────────────────────────────────┘
-                            │ slate-harness run <workflow> [flags]
+                            │ harness run <workflow> [flags]
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Harness (this project)                                         │
@@ -52,7 +52,7 @@ Execute workflows deterministically. Decouple *what work gets done* (orchestrati
 
 ### Data flow per run
 
-1. Caller invokes `slate-harness run feature --linear CAL-249 --base staging`.
+1. Caller invokes `harness run feature --linear CAL-249 --base staging`.
 2. Harness generates a `run_id` (ULID).
 3. Harness loads `workflows/feature.yaml` + its declared `state_schema`.
 4. Harness initialises state, writes a `runs` row, emits `workflow_started`.
@@ -73,7 +73,7 @@ The engine never asks an LLM what to do next. The YAML decides.
 ## 3. Repository Structure
 
 ```
-slate-harness/
+harness/
 ├── pyproject.toml
 ├── README.md
 ├── CLAUDE.md
@@ -252,7 +252,7 @@ Decision/approval gate. Two actor flavors:
 
 **`actor: llm`** (v1) — same execution shape as an AI node, but the contract must include a `decision: bool` field and the engine routes on it via `on_reject:`. Emits a dedicated `decision_made` event so audit queries can find gates without parsing every node output. Implemented as syntactic sugar over the AI dispatch path plus routing.
 
-**`actor: human`** (v2 — schema reserved in v1, errors at load time until v2 ships) — pauses the workflow. Engine emits `decision_requested`, writes `paused_awaiting_decision` status to the runs row, persists state, prints the prompt + run-id to stdout, and exits with code **4**. The decision arrives via a separate CLI invocation (`slate-harness decision approve|reject <run-id>`) which rehydrates state, emits `decision_received`, and resumes from the next step.
+**`actor: human`** (v2 — schema reserved in v1, errors at load time until v2 ships) — pauses the workflow. Engine emits `decision_requested`, writes `paused_awaiting_decision` status to the runs row, persists state, prints the prompt + run-id to stdout, and exits with code **4**. The decision arrives via a separate CLI invocation (`harness decision approve|reject <run-id>`) which rehydrates state, emits `decision_received`, and resumes from the next step.
 
 The resume machinery lives in `harness/decisions/`. v1 ships the schema parser (which validates the YAML) and a load-time guard that rejects workflows using `actor: human` until v2 lands.
 
@@ -606,10 +606,10 @@ Mechanics (v2):
 3. Exits with code **4** (paused).
 4. The decider (human or orchestrator) reviews and runs:
    ```bash
-   slate-harness decisions list                                # all paused runs
-   slate-harness decision show <run-id>                        # the question + display_state
-   slate-harness decision approve <run-id> [--comment="..."]
-   slate-harness decision reject  <run-id> [--comment="..."]
+   harness decisions list                                # all paused runs
+   harness decision show <run-id>                        # the question + display_state
+   harness decision approve <run-id> [--comment="..."]
+   harness decision reject  <run-id> [--comment="..."]
    ```
 5. The approve/reject command rehydrates state, emits `decision_received`, resumes from the next step (or applies `on_reject:`).
 
@@ -635,7 +635,7 @@ Per-input fields:
 | `flag`     | explicit CLI flag (default: `--<input_name>`, underscores → dashes)  |
 | `position` | integer; if set, accepts as positional arg instead of flag           |
 
-`slate-harness run <workflow> --help` introspects the YAML and prints the input contract. Adding a new workflow means writing YAML, not editing CLI code.
+`harness run <workflow> --help` introspects the YAML and prints the input contract. Adding a new workflow means writing YAML, not editing CLI code.
 
 Example workflow inputs supporting both flag and positional forms:
 
@@ -655,9 +655,9 @@ inputs:
 Yields:
 
 ```bash
-slate-harness run feature --linear=CAL-249                          # flag form
-slate-harness run feature "Build a dropdown menu"                   # positional form
-slate-harness run feature --linear=CAL-249 "with these specifics…"  # both
+harness run feature --linear=CAL-249                          # flag form
+harness run feature "Build a dropdown menu"                   # positional form
+harness run feature --linear=CAL-249 "with these specifics…"  # both
 ```
 
 ### Variable substitution
@@ -792,7 +792,7 @@ A single ULID (or short UUID) is generated at workflow start and propagated ever
 | Artifacts dir | `.harness/artifacts/<run-id>/` |
 | Logs | `.harness/logs/<run-id>.log` |
 
-`slate-harness logs <run-id>`, `slate-harness status <run-id>`, `git log harness/<run-id>` all work against the same identifier. One ID, one grep.
+`harness logs <run-id>`, `harness status <run-id>`, `git log harness/<run-id>` all work against the same identifier. One ID, one grep.
 
 ---
 
@@ -886,39 +886,39 @@ Stall is distinct from the hard `timeout_s` wall (which terminates after total e
 ### Command surface
 
 ```
-slate-harness run <workflow> [<positional>...] [--<input>=<value> ...]
-slate-harness status <run-id>                   [--json]
-slate-harness logs <run-id>                     [--follow] [--node <id>]
-slate-harness events <run-id>                   [--type <event_type>] [--json]
-slate-harness worktrees list                    [--json]
-slate-harness worktrees cleanup                 [--age <duration>] [--merged]
-slate-harness decisions list                    [--json]                  # v2: paused runs
-slate-harness decision show <run-id>            [--json]                  # v2
-slate-harness decision approve <run-id>         [--comment="..."]         # v2
-slate-harness decision reject  <run-id>         [--comment="..."]         # v2
-slate-harness validate <workflow.yaml>          # static validation, no execution
-slate-harness version                           [--json]
+harness run <workflow> [<positional>...] [--<input>=<value> ...]
+harness status <run-id>                   [--json]
+harness logs <run-id>                     [--follow] [--node <id>]
+harness events <run-id>                   [--type <event_type>] [--json]
+harness worktrees list                    [--json]
+harness worktrees cleanup                 [--age <duration>] [--merged]
+harness decisions list                    [--json]                  # v2: paused runs
+harness decision show <run-id>            [--json]                  # v2
+harness decision approve <run-id>         [--comment="..."]         # v2
+harness decision reject  <run-id>         [--comment="..."]         # v2
+harness validate <workflow.yaml>          # static validation, no execution
+harness version                           [--json]
 ```
 
 The `decisions` / `decision` surface is **reserved in v1** — the verbs exist as no-ops or "not yet implemented" errors, but the names won't change in v2. Callers can plan for them.
 
 ### Per-workflow inputs (dynamic subcommand generation)
 
-The `<workflow>` slot in `slate-harness run <workflow>` is dynamic. The CLI loads the workflow YAML at invocation, reads its `inputs:` block, and generates the appropriate flag and positional argument structure on the fly. **The workflow IS the CLI definition for its own subcommand.**
+The `<workflow>` slot in `harness run <workflow>` is dynamic. The CLI loads the workflow YAML at invocation, reads its `inputs:` block, and generates the appropriate flag and positional argument structure on the fly. **The workflow IS the CLI definition for its own subcommand.**
 
 This means:
-- `slate-harness run feature --help` introspects `workflows/feature.yaml` and prints that workflow's specific flags + positional args.
+- `harness run feature --help` introspects `workflows/feature.yaml` and prints that workflow's specific flags + positional args.
 - Adding a new workflow means writing YAML, not editing CLI code.
 - Per-workflow input shape is defined in the YAML's `inputs:` block (see §5 — *Inputs and CLI generation*).
 
 Examples across workflows:
 
 ```bash
-slate-harness run feature --linear=CAL-249               # flag form
-slate-harness run feature "Build a dropdown menu"        # positional form (input has `position: 1`)
-slate-harness run steward --domain=architecture
-slate-harness run bugfix --linear=$LINEAR_ID --base=staging
-slate-harness run review --pr=142 --json | jq .review_status
+harness run feature --linear=CAL-249               # flag form
+harness run feature "Build a dropdown menu"        # positional form (input has `position: 1`)
+harness run steward --domain=architecture
+harness run bugfix --linear=$LINEAR_ID --base=staging
+harness run review --pr=142 --json | jq .review_status
 ```
 
 ### Exit codes (stable contract)
@@ -929,7 +929,7 @@ slate-harness run review --pr=142 --json | jq .review_status
 | 1 | Workflow failed (caught error during execution — e.g., loop exhausted, check failed) |
 | 2 | Invocation error (bad flags, missing config, workflow YAML invalid, state schema import failed) |
 | 3 | Contract violation (LLM output failed validation after exhausting retries) |
-| 4 | Paused awaiting decision (human-decision node, v2) — not a failure; resumes via `slate-harness decision approve\|reject` |
+| 4 | Paused awaiting decision (human-decision node, v2) — not a failure; resumes via `harness decision approve\|reject` |
 | 130 | SIGINT (user cancelled) |
 
 ### JSON output
@@ -940,17 +940,17 @@ Every read command supports `--json` for machine consumers. Schema is versioned 
 
 ```bash
 # Human / agent kicks off a feature
-slate-harness run feature --linear=CAL-249 --base=staging
+harness run feature --linear=CAL-249 --base=staging
 
 # Cron fires the nightly architecture steward
-slate-harness run steward --domain=architecture
+harness run steward --domain=architecture
 
 # Linear webhook (future) shells out
-slate-harness run bugfix --linear=$LINEAR_ID --base=staging
+harness run bugfix --linear=$LINEAR_ID --base=staging
 
 # Claude Code session inside the agent flow
 # (the harness binary is on PATH inside any container that has it)
-slate-harness run review --pr=142 --json | jq .review_status
+harness run review --pr=142 --json | jq .review_status
 ```
 
 ---
@@ -994,7 +994,7 @@ CREATE INDEX idx_events_type ON events(event_type);
 CREATE INDEX idx_events_run_node ON events(run_id, node_id);
 ```
 
-WAL mode enabled for concurrent reads (`slate-harness status` while a run is in progress).
+WAL mode enabled for concurrent reads (`harness status` while a run is in progress).
 
 ---
 
@@ -1021,7 +1021,7 @@ COPY workflows/ ./workflows/
 COPY prompts/ ./prompts/
 
 ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["uv", "run", "slate-harness"]
+ENTRYPOINT ["uv", "run", "harness"]
 ```
 
 ### Invocation
@@ -1032,7 +1032,7 @@ docker run --rm -it \
   -v "$HOME/.claude":/root/.claude:ro \
   -e LINEAR_API_KEY \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 \
-  slate-harness:latest \
+  harness:latest \
   run feature --linear=CAL-249 --base=staging
 ```
 
@@ -1163,7 +1163,7 @@ Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all
 
 ### What stays in Calibrate's `skills/`
 
-Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start-task, nightly-review, etc.) deletes — the harness owns those concerns now.
+Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
 
 ---
 
@@ -1189,7 +1189,7 @@ These are deliberately unresolved. Pick before code lands.
 
 1. **Workflow location: in-repo or harness-side?**
    - In-repo: workflows live in the project repo (`calibrate-coffee/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
-   - Harness-side: workflows live in `slate-harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
+   - Harness-side: workflows live in `harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
    - **Lean:** harness-side, because cleanliness > convenience for a single-team tool. Revisit when a second project consumes the harness.
 
 2. **State persistence on resume.** ~~Defer until we hit a workflow that genuinely benefits from mid-run resume.~~ **Resolved by the `decision` node (§5):** `actor: human` requires resume capability, and that's promoted to v2 critical path. v1 stores latest state on the row; v2 lifts that to per-completion snapshots so paused runs can be rehydrated cleanly. Resume-from-failure (the broader case) follows the same machinery — once human-decision resume works, resume-from-failure is mostly a CLI verb away.
@@ -1199,7 +1199,7 @@ These are deliberately unresolved. Pick before code lands.
    - **`runs` table:** each concurrent run owns its row by `run_id` PK. Updates target distinct rows — no contention.
    - **`events` table:** append-only, autoincrement PK. SQLite WAL mode handles concurrent appenders cleanly (writers serialise on the WAL, readers don't block).
    - **State writes:** the `runs.state_json` column is updated per-run, so concurrent state writes target different rows. No shared resource.
-   - **Reads (`slate-harness status`, `slate-harness logs`) during a running workflow:** WAL means readers see a snapshot without blocking writers.
+   - **Reads (`harness status`, `harness logs`) during a running workflow:** WAL means readers see a snapshot without blocking writers.
 
    The risk is bounded: the only real contention point is bursty event writes from many concurrent runs, which WAL serialises with millisecond-class lock acquisition. Acceptable for v1's expected workload (1–3 concurrent runs locally). If usage grows beyond that, switch to PostgreSQL — the schema is portable.
 
@@ -1224,7 +1224,7 @@ These are deliberately unresolved. Pick before code lands.
 
 - [ ] **The 10-minute workflow test.** A new workflow can be written from a blank page in under 10 minutes, end-to-end, by someone who's read this spec once. Test with a real example: write a `release-notes` workflow that pulls Linear tickets from the last week and asks Claude to summarise. If it feels slow, verbose, or mentally taxing, the system is too heavy and v1 needs cuts before shipping.
 - [ ] Steward workflow runs end-to-end against a synthetic repo fixture.
-- [ ] Token cost per run is logged and visible in `slate-harness status --json`.
+- [ ] Token cost per run is logged and visible in `harness status --json`.
 - [ ] Event log captures every tool call inside an AI node (replay-quality observability).
 - [ ] Concurrent runs against the same project don't collide (per §17.3 analysis).
 

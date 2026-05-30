@@ -178,4 +178,4 @@ For now, the runner is the orchestrating Claude Code session. To execute:
 4. Validate each produced workflow via `harness.workflow.loader.load_workflow()`.
 5. Aggregate into the report.
 
-A future enhancement (post-v1) could turn this into a workflow that lives in `workflows/ergonomics-check.yaml` and runs via `slate-harness run ergonomics-check`. For v1, the skill markdown plus orchestrator coordination is sufficient.
+A future enhancement (post-v1) could turn this into a workflow that lives in `workflows/ergonomics-check.yaml` and runs via `harness run ergonomics-check`. For v1, the skill markdown plus orchestrator coordination is sufficient.

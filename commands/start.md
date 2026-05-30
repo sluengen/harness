@@ -4,7 +4,7 @@ Trigger the build workflow for a Linear issue. The harness handles everything �
 
 ## Usage
 
-- `/start-task <CAL-NNN>` — run the build workflow for the given Linear issue
+- `/start <CAL-NNN>` — run the build workflow for the given Linear issue
 
 ## Prerequisites
 
@@ -21,11 +21,11 @@ source .env
 LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API → Personal API keys
 ```
 
-`slate-harness` is not installed globally in development — invoke it via `uv run` from the repo root:
+`harness` is not installed globally in development — invoke it via `uv run` from the repo root:
 
 ```bash
 # dev invocation pattern (used throughout these instructions)
-source .env && PYTHONPATH=. uv run slate-harness <args>
+source .env && PYTHONPATH=. uv run harness <args>
 ```
 
 ## Instructions
@@ -53,7 +53,7 @@ If the issue is already Done or has unresolved dependencies listed in the descri
 ### Step 2 — Run the build workflow
 
 ```bash
-source .env && PYTHONPATH=. uv run slate-harness run build --linear=<CAL-NNN>
+source .env && PYTHONPATH=. uv run harness run build --linear=<CAL-NNN>
 ```
 
 The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.
@@ -63,8 +63,8 @@ The workflow handles the rest: worktree, implement, review, gate, commit, push, 
 Check the run result:
 
 ```bash
-source .env && PYTHONPATH=. uv run slate-harness status <run-id>
-source .env && PYTHONPATH=. uv run slate-harness logs   <run-id>
+source .env && PYTHONPATH=. uv run harness status <run-id>
+source .env && PYTHONPATH=. uv run harness logs   <run-id>
 ```
 
 Report whether the run completed, was cancelled by the gate (review FAIL), or failed with an error. Surface the reviewer's findings if the gate fired.

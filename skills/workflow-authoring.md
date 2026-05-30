@@ -1,6 +1,6 @@
 # Workflow Authoring
 
-Skill for building a slate-harness workflow YAML from a high-level description. Activates whenever the agent needs to author a new workflow.
+Skill for building a harness workflow YAML from a high-level description. Activates whenever the agent needs to author a new workflow.
 
 ## When this skill activates
 
@@ -82,7 +82,7 @@ If you logged any questions or design ambiguities, surface them — the user may
 
 ## What this skill does NOT do
 
-- **Doesn't run the workflow.** Authoring produces YAML; running is `slate-harness run <workflow>`.
+- **Doesn't run the workflow.** Authoring produces YAML; running is `harness run <workflow>`.
 - **Doesn't design new step types or grammar.** That's `SPEC.md` territory; outside this skill's scope.
 - **Doesn't write Python contract classes.** Inline YAML contracts are canonical; sharing happens via `$contracts/<name>` (also YAML).
 - **Doesn't reinvent state schemas.** State is *derived* from `writes:` declarations across the workflow — no `state_schema:` field exists.

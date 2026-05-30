@@ -1,5 +1,5 @@
 [project]
-name = "slate-harness"
+name = "harness"
 version = "0.1.0"
 description = "Deterministic workflow execution harness for bounded LLM tasks"
 readme = "README.md"
@@ -29,7 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-slate-harness = "harness.cli:app"
+harness = "harness.cli:app"
 
 [build-system]
 requires = ["hatchling"]

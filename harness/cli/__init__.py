@@ -3,11 +3,11 @@
 The CLI is the public contract. Stable flags, stable exit codes, stable JSON
 output. Subcommands are split across modules for readability:
 
-* :mod:`harness.cli.version`  — ``slate-harness version``
-* :mod:`harness.cli.validate` — ``slate-harness validate <workflow.yaml>``
-* :mod:`harness.cli.query`    — ``slate-harness status / logs / events``
-* :mod:`harness.cli.worktrees` — ``slate-harness worktrees list / cleanup``
-* :mod:`harness.cli.run`      — ``slate-harness run <workflow>`` (dynamic subcommands)
+* :mod:`harness.cli.version`  — ``harness version``
+* :mod:`harness.cli.validate` — ``harness validate <workflow.yaml>``
+* :mod:`harness.cli.query`    — ``harness status / logs / events``
+* :mod:`harness.cli.worktrees` — ``harness worktrees list / cleanup``
+* :mod:`harness.cli.run`      — ``harness run <workflow>`` (dynamic subcommands)
 
 Exit codes:
 - 0   workflow completed successfully / read command succeeded
@@ -44,12 +44,12 @@ def _root() -> None:
     """Calibrate Harness root callback.
 
     Forces Typer into multi-subcommand mode so subcommands like ``version`` are
-    invoked as ``slate-harness version`` (not promoted to the root).
+    invoked as ``harness version`` (not promoted to the root).
     """
 
 
 # Top-level read commands.
-app.command(name="version", help="Print slate-harness version.")(version_command)
+app.command(name="version", help="Print harness version.")(version_command)
 app.command(name="validate", help="Validate a workflow YAML file (static).")(
     validate_command
 )

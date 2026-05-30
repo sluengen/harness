@@ -1,7 +1,7 @@
 name: build
 version: 1
 description: >
-  General-purpose build workflow for slate-harness dog-fooding. Fetches a
+  General-purpose build workflow for harness dog-fooding. Fetches a
   Linear ticket, implements the required changes in an isolated worktree, has a
   second agent review them, and on PASS commits, pushes, and merges to the base
   branch.

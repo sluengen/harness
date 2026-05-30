@@ -1,6 +1,6 @@
 # Build Workflow
 
-Build a new slate-harness workflow YAML from a high-level description. Activates the `workflow-authoring` skill.
+Build a new harness workflow YAML from a high-level description. Activates the `workflow-authoring` skill.
 
 ## Usage
 
@@ -53,7 +53,7 @@ The agent doesn't need to read `SPEC.md` or `harness/` source — `AUTHORING.md`
 
 The agent reports the workflow path and validation result. You can:
 
-- Run it: `slate-harness run <workflow-name> <inputs>`
+- Run it: `harness run <workflow-name> <inputs>`
 - Inspect it: `cat workflows/<name>.yaml`
 - Iterate: tell the agent what to change and re-invoke the skill, or edit directly
 

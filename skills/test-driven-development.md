@@ -1,6 +1,6 @@
 # Test-Driven Development
 
-This skill applies to all implementation work in slate-harness. It is not optional. It is how code gets written here.
+This skill applies to all implementation work in harness. It is not optional. It is how code gets written here.
 
 ## The Iron Law
 

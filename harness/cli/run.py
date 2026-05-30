@@ -1,4 +1,4 @@
-"""``slate-harness run <workflow>`` — dynamic subcommand generation (SPEC §11).
+"""``harness run <workflow>`` — dynamic subcommand generation (SPEC §11).
 
 Per-workflow subcommand generation: at invocation, the CLI loads
 ``workflows/<workflow>.yaml``, reads its ``inputs:`` block, and dynamically
@@ -70,7 +70,7 @@ def run_command(
 ) -> None:
     """Execute a workflow. Per-workflow flags are loaded from its YAML.
 
-    Run ``slate-harness run <workflow> --help`` to see the workflow's specific
+    Run ``harness run <workflow> --help`` to see the workflow's specific
     inputs.
     """
     workflow_path = workflows_dir / f"{workflow}.yaml"
@@ -98,7 +98,7 @@ def run_command(
     try:
         result = dynamic_command.main(
             args=list(ctx.args),
-            prog_name=f"slate-harness run {workflow}",
+            prog_name=f"harness run {workflow}",
             standalone_mode=False,
         )
     except click.exceptions.UsageError as exc:

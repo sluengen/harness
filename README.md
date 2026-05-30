@@ -1,4 +1,4 @@
-# slate-harness
+# harness
 
 A deterministic workflow execution harness for bounded LLM tasks. Decouples *what* gets run (orchestration, external) from *how* it runs (this harness).
 
@@ -26,10 +26,10 @@ For the full architectural picture and "why" of every decision, read [`SPEC.md`]
 ### Local (development)
 
 ```bash
-git clone git@github.com:sluengen/harness.git slate-harness
-cd slate-harness
+git clone git@github.com:sluengen/harness.git harness
+cd harness
 uv sync --extra dev
-.venv/bin/slate-harness version
+.venv/bin/harness version
 ```
 
 ### As a dependency in another repo (current path)
@@ -43,23 +43,23 @@ uv add git+ssh://git@github.com/sluengen/harness.git@v1.0.0
 pip install git+ssh://git@github.com/sluengen/harness.git@v1.0.0
 ```
 
-The console script `slate-harness` lands on `PATH` (under your venv).
+The console script `harness` lands on `PATH` (under your venv).
 
 ### Docker
 
 ```bash
-docker build -t slate-harness:v1.0.0 -f docker/Dockerfile .
+docker build -t harness:v1.0.0 -f docker/Dockerfile .
 docker run --rm \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.claude":/root/.claude:ro \
-  slate-harness:v1.0.0 run <workflow>
+  harness:v1.0.0 run <workflow>
 ```
 
 The image mounts your project at `/workspace` and runs the workflow against it. State + worktrees + events land in `/workspace/.harness/` (gitignored). The `~/.claude` mount carries your Claude Code OAuth credentials into the container so the run uses subscription pricing — see [Authentication](#authentication) below for alternatives. See [`docker/README.md`](./docker/README.md) for full container details.
 
 ## Authentication
 
-slate-harness wraps `claude_agent_sdk`, which itself wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+harness wraps `claude_agent_sdk`, which itself wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
 
 | Path | Pricing | When |
 |---|---|---|
@@ -67,7 +67,7 @@ slate-harness wraps `claude_agent_sdk`, which itself wraps Claude Code. **Auth f
 | Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts where you can ship the OAuth token. |
 | `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. CI without OAuth access. |
 
-The SDK picks them up in this order: in-memory OAuth > `CLAUDE_CODE_OAUTH_TOKEN` > `ANTHROPIC_API_KEY`. If you've run `claude /login` and you're invoking slate-harness on the same machine, you don't need to set anything.
+The SDK picks them up in this order: in-memory OAuth > `CLAUDE_CODE_OAUTH_TOKEN` > `ANTHROPIC_API_KEY`. If you've run `claude /login` and you're invoking harness on the same machine, you don't need to set anything.
 
 ## First run
 
@@ -99,10 +99,10 @@ Say hi in five words or fewer.
 ```
 
 ```bash
-slate-harness run hello
-slate-harness status <run-id>          # what happened
-slate-harness logs   <run-id>          # full event log
-slate-harness events <run-id> --json   # machine-readable
+harness run hello
+harness status <run-id>          # what happened
+harness logs   <run-id>          # full event log
+harness events <run-id> --json   # machine-readable
 ```
 
 ## Authoring workflows
@@ -121,10 +121,10 @@ Or use the `/build-workflow` slash command (Claude Code) — the agent reads `AU
 ## Repository layout
 
 ```
-slate-harness/
+harness/
 ├── agents/             ← agent role definitions (python-dev, reviewer)
 ├── skills/             ← reusable skills (TDD, scope discipline, workflow authoring)
-├── commands/           ← user-invocable slash commands (start-task, build-workflow)
+├── commands/           ← user-invocable slash commands (start, build-workflow)
 ├── workflows/          ← workflow YAML files
 ├── contracts/          ← shared YAML contract schemas (referenced via $contracts/<name>)
 ├── prompts/standard/   ← reusable Jinja prompt templates
@@ -139,12 +139,12 @@ slate-harness/
 
 `agents/`, `skills/`, `commands/` are agent-agnostic (plain markdown). Claude Code sees them via symlinks at `.claude/{agents,skills,commands}` → `../{agents,skills,commands}`. Other agent ecosystems can read the top-level paths directly or add their own symlink layer.
 
-## Using slate-harness on slate-harness (dog-fooding)
+## Using harness on harness (dog-fooding)
 
-From v1.0 onward, slate-harness's own follow-on work flows through slate-harness:
+From v1.0 onward, harness's own follow-on work flows through harness:
 
-- All work items (bugs, features, improvements) → `slate-harness run build --linear=<CAL-NNN>`
-- Domain assessments → `slate-harness run steward --domain=<area>`
+- All work items (bugs, features, improvements) → `harness run build --linear=<CAL-NNN>`
+- Domain assessments → `harness run steward --domain=<area>`
 
 The first dog-food runs are [CAL-497](https://linear.app/calibrate-coffee/issue/CAL-497) (engine: loader/worktree contract reconciliation) and [CAL-498](https://linear.app/calibrate-coffee/issue/CAL-498) (AUTHORING.md minor refinements from the run-004 cycle). If those ship cleanly through the harness, self-hosting is validated empirically.
 
@@ -154,7 +154,7 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 
 ## Related
 
-- **Primary consumer:** [`calibrate-coffee`](https://github.com/sluengen/calibrate-coffee) — first repo to dog-food slate-harness.
+- **Primary consumer:** [`calibrate-coffee`](https://github.com/sluengen/calibrate-coffee) — first repo to dog-food harness.
 - **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (workflow concepts, worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
 
 ## Changelog
@@ -173,7 +173,7 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 ### v1.1 (planned)
 
 - PyPI publish + release pipeline
-- `slate-harness init <dir>` scaffold for consuming repos
+- `harness init <dir>` scaffold for consuming repos
 - 7 minor AUTHORING.md refinements (CAL-498)
 - Loader/worktree contract reconciliation (CAL-497)
 

@@ -43,8 +43,8 @@ Invoke via the Agent tool with the matching `subagent_type`.
 
 ## Commands
 
-- `/start-task <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
-- `/build-workflow <description>` — build a new slate-harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
+- `/start <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
+- `/build-workflow <description>` — build a new harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
 
 ## Agent-agnostic layout
 

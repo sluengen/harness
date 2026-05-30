@@ -3,16 +3,16 @@
 See SPEC §11 (CLI Design) and §5 (Inputs and CLI generation). Each test
 maps to one acceptance criterion in the H-023 brief:
 
-* AC1 — ``slate-harness run <workflow>`` introspects ``workflows/<workflow>.yaml``
+* AC1 — ``harness run <workflow>`` introspects ``workflows/<workflow>.yaml``
   and registers a subcommand whose options match the YAML's ``inputs:`` block.
 * AC2 — InputSpec → CLI parameter mapping (string/integer/boolean, flag form,
   default flag derived from name, position → positional argument, required,
   default, enum, pattern, the schema-level mutual-exclusion of flag+position).
-* AC3 — ``slate-harness run <workflow> --help`` prints the workflow's input
+* AC3 — ``harness run <workflow> --help`` prints the workflow's input
   contract — names, types, required/optional, defaults.
 * AC4 — ``--base`` defaults to ``main`` and is exposed on every dynamic
   subcommand; it maps to ``Runner.run(base_branch=...)``.
-* AC5 — ``slate-harness run <workflow> [args...]`` actually invokes
+* AC5 — ``harness run <workflow> [args...]`` actually invokes
   ``Runner.run(...)`` and returns the runner's exit code.
 * AC6 — Unknown workflow → exit 2 with a clear error.
 * AC7 — Workflow YAML invalid (``WorkflowLoadError``) → exit 2 with the
@@ -680,7 +680,7 @@ def test_existing_version_command_still_runs(cli: CliRunner) -> None:
     """Regression: the ``version`` command still works."""
     result = cli.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "slate-harness" in result.output
+    assert "harness" in result.output
 
 
 # ---------------------------------------------------------------------------
