@@ -262,6 +262,20 @@ class WorktreeNode:
                 f"update-ref refs/heads/{base} failed: {stderr.strip()}"
             )
 
+        # Sync the main working tree's index to the new HEAD.
+        #
+        # ``git update-ref`` moved the ref but left the index pointing at the
+        # old tree, so ``git status`` would show every new/changed file as
+        # staged for reversal — phantom deletions ready to be committed.
+        # ``read-tree HEAD`` re-reads the index from the new commit without
+        # touching the working tree, which is guaranteed clean at this point
+        # (all work happened in the isolated worktree).
+        rc, _stdout, stderr = await _git(repo_root, "read-tree", "HEAD")
+        if rc != 0:
+            raise WorktreeNodeError(
+                f"read-tree HEAD failed after advancing {base}: {stderr.strip()}"
+            )
+
         # Remove the worktree dir + branch. If the worktree dir is already
         # gone (a previous half-cleanup), `worktree remove` will fail; treat
         # that as the dir being already removed and continue with prune.

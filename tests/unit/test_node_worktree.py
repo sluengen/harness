@@ -434,3 +434,46 @@ async def test_ac15_cleanup_prunes_worktree_metadata(repo: Path, policy: str) ->
 def test_ac16_node_type_is_worktree() -> None:
     """AC16: WorktreeNode declares `type: Literal['worktree']`."""
     assert WorktreeNode().type == "worktree"
+
+
+# ---------------------------------------------------------------------------
+# Index sync after merge_to_base — AC17
+# ---------------------------------------------------------------------------
+
+
+async def test_ac17_merge_to_base_index_synced_after_cleanup(repo: Path) -> None:
+    """AC17: after merge_to_base the main working tree index matches HEAD.
+
+    Before the fix, ``git update-ref`` advanced HEAD but left the index
+    pointing at the old tree, so ``git diff --cached`` showed every new/changed
+    file staged for reversal — phantom deletions ready to be committed.
+    """
+    node = WorktreeNode()
+    create_result = await node.create(run_id="run-idx", repo_root=repo, base="main")
+    wt = create_result.contract.worktree_path
+
+    # Commit a new file inside the worktree so the merge advances HEAD.
+    (wt / "feature.txt").write_text("new file\n")
+    _git(wt, "add", "feature.txt")
+    _git(wt, "commit", "-m", "feat: add feature")
+
+    await node.cleanup(
+        run_id="run-idx",
+        repo_root=repo,
+        worktree_path=wt,
+        worktree_branch="harness/run-idx",
+        base="main",
+        policy="merge_to_base",
+    )
+
+    # The index must be clean relative to the new HEAD — no staged reversals.
+    proc = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.stdout.strip() == "", (
+        f"stale staged changes after merge_to_base: {proc.stdout.strip()!r}"
+    )
