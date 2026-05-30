@@ -262,15 +262,16 @@ class WorktreeNode:
                 f"update-ref refs/heads/{base} failed: {stderr.strip()}"
             )
 
-        # Sync the main working tree's index to the new HEAD.
+        # Sync the main working tree's index and files to the new HEAD.
         #
         # ``git update-ref`` moved the ref but left the index pointing at the
         # old tree, so ``git status`` would show every new/changed file as
         # staged for reversal — phantom deletions ready to be committed.
-        # ``read-tree HEAD`` re-reads the index from the new commit without
-        # touching the working tree, which is guaranteed clean at this point
-        # (all work happened in the isolated worktree).
-        rc, _stdout, stderr = await _git(repo_root, "read-tree", "HEAD")
+        # ``read-tree -u HEAD`` re-reads the index from the new commit and
+        # updates working-tree files that differ between old and new index
+        # (all work happened in the isolated worktree so there are no local
+        # modifications to lose).
+        rc, _stdout, stderr = await _git(repo_root, "read-tree", "-u", "HEAD")
         if rc != 0:
             raise WorktreeNodeError(
                 f"read-tree HEAD failed after advancing {base}: {stderr.strip()}"
