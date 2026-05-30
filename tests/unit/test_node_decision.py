@@ -76,6 +76,7 @@ class _CompliantMockAgent(MockAgent):
         cwd: Path | None,
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
+        max_turns: int | None = None,
     ) -> NodeResult[BaseModel]:
         self.calls.append(
             RecordedCall(
@@ -86,6 +87,7 @@ class _CompliantMockAgent(MockAgent):
                 cwd=cwd,
                 timeout_s=timeout_s,
                 stall_timeout_s=stall_timeout_s,
+                max_turns=max_turns,
             )
         )
         if self.error is not None:

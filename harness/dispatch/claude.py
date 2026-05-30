@@ -271,8 +271,15 @@ class ClaudeAgent:
         cwd: Path | None,
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
+        max_turns: int | None = None,
     ) -> NodeResult[BaseModel]:
         """Run the SDK loop and return ``NodeResult[contract]``.
+
+        Args:
+            max_turns: Optional cap on how many model turns the SDK allows
+                within this single node invocation.  ``None`` defers to the
+                SDK's own default.  Maps directly to
+                ``ClaudeAgentOptions.max_turns``.
 
         Raises:
             ContractViolation: F1/F2/F5 from SPEC §4.4 (and validation
@@ -295,7 +302,9 @@ class ClaudeAgent:
         async for event in self._iter_with_stall_guard(
             query_fn(
                 prompt=prompt,
-                options=self._build_options(allowed_tools, cwd, submit_tool_schema),
+                options=self._build_options(
+                    allowed_tools, cwd, submit_tool_schema, max_turns
+                ),
             ),
             stall_timeout_s=stall_timeout_s,
         ):
@@ -364,6 +373,7 @@ class ClaudeAgent:
         allowed_tools: list[str],
         cwd: Path | None,
         submit_tool_schema: dict[str, Any] | None = None,
+        max_turns: int | None = None,
     ) -> Any:
         """Build the ``ClaudeAgentOptions`` for the underlying ``query`` call.
 
@@ -372,6 +382,9 @@ class ClaudeAgent:
         has a callable ``mcp__harness__submit_<node_id>`` tool. The handler is
         a no-op — the dispatch loop captures the payload via the ``ToolUseBlock``
         event before the MCP handler runs.
+
+        ``max_turns`` is forwarded to ``ClaudeAgentOptions.max_turns`` when
+        provided; ``None`` leaves the SDK default unchanged.
 
         Imported lazily so this module loads without the SDK installed (tests
         provide ``query_fn`` and never call this).
@@ -408,6 +421,8 @@ class ClaudeAgent:
             kwargs["cwd"] = cwd
         if self._model is not None:
             kwargs["model"] = self._model
+        if max_turns is not None:
+            kwargs["max_turns"] = max_turns
         return ClaudeAgentOptions(**kwargs)
 
     @staticmethod

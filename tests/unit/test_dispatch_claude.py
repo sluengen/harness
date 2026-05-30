@@ -597,3 +597,58 @@ async def test_mcp_prefixed_name_of_different_server_does_not_count() -> None:
             "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None
         )
     assert exc_info.value.reason == "not_called"
+
+
+# ---------------------------------------------------------------------------
+# max_turns forwarded to ClaudeAgentOptions (H-1.5-006)
+# ---------------------------------------------------------------------------
+
+
+async def test_max_turns_forwarded_to_sdk_options() -> None:
+    """max_turns passed to execute() is forwarded to ClaudeAgentOptions.max_turns
+    so the SDK enforces the per-node turn budget."""
+    captured_options: list[Any] = []
+
+    async def _capturing_query(
+        *, prompt: str, options: Any = None, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_options.append(options)
+        yield _tool_call_event("submit_node_id", {"summary": "done"})
+        yield _stop_event()
+
+    agent = ClaudeAgent(query_fn=_capturing_query)
+    await agent.execute(
+        "p",
+        _SampleContract,
+        SUBMIT_SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+        max_turns=7,
+    )
+
+    assert len(captured_options) == 1
+    assert captured_options[0].max_turns == 7
+
+
+async def test_max_turns_none_leaves_sdk_default() -> None:
+    """When max_turns is None (the default), ClaudeAgentOptions.max_turns stays
+    None so the SDK uses its own default (no cap from the harness side)."""
+    captured_options: list[Any] = []
+
+    async def _capturing_query(
+        *, prompt: str, options: Any = None, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_options.append(options)
+        yield _tool_call_event("submit_node_id", {"summary": "done"})
+        yield _stop_event()
+
+    agent = ClaudeAgent(query_fn=_capturing_query)
+    await agent.execute(
+        "p",
+        _SampleContract,
+        SUBMIT_SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+    )
+
+    assert captured_options[0].max_turns is None

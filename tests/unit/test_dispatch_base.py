@@ -67,6 +67,7 @@ def test_external_class_satisfying_protocol_is_an_agent() -> None:
             cwd: Path | None,
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
+            max_turns: int | None = None,
         ) -> NodeResult[BaseModel]:
             return _result()
 
@@ -257,3 +258,39 @@ async def test_error_is_recorded_before_raising() -> None:
     assert len(mock.calls) == 1
     assert mock.calls[0].prompt == "the prompt"
     assert mock.calls[0].allowed_tools == ["Read"]
+
+
+# ---------------------------------------------------------------------------
+# MockAgent.execute — max_turns (H-1.5-006)
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_records_max_turns_when_passed() -> None:
+    """max_turns passed to execute is captured in RecordedCall."""
+    mock = MockAgent(default_result=_result())
+
+    await mock.execute(
+        "p",
+        _SampleContract,
+        _SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+        max_turns=7,
+    )
+
+    assert mock.calls[0].max_turns == 7
+
+
+async def test_execute_records_max_turns_as_none_by_default() -> None:
+    """Omitting max_turns records None in RecordedCall."""
+    mock = MockAgent(default_result=_result())
+
+    await mock.execute(
+        "p",
+        _SampleContract,
+        _SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+    )
+
+    assert mock.calls[0].max_turns is None

@@ -93,6 +93,38 @@ def test_ai_step_with_dotted_contract_reference() -> None:
 
 
 # ---------------------------------------------------------------------------
+# AIStep.max_turns (H-1.5-006)
+# ---------------------------------------------------------------------------
+
+
+def test_ai_step_max_turns_defaults_to_none() -> None:
+    """max_turns is absent by default — None means 'use SDK default'."""
+    step = AIStep(type="ai", id="implement", prompt="p.j2")
+    assert step.max_turns is None
+
+
+def test_ai_step_accepts_positive_max_turns() -> None:
+    step = AIStep(type="ai", id="implement", prompt="p.j2", max_turns=5)
+    assert step.max_turns == 5
+
+
+def test_ai_step_accepts_max_turns_one() -> None:
+    """1 is the minimum valid value (single-turn behaviour)."""
+    step = AIStep(type="ai", id="implement", prompt="p.j2", max_turns=1)
+    assert step.max_turns == 1
+
+
+def test_ai_step_rejects_zero_max_turns() -> None:
+    with pytest.raises(ValidationError):
+        AIStep(type="ai", id="implement", prompt="p.j2", max_turns=0)
+
+
+def test_ai_step_rejects_negative_max_turns() -> None:
+    with pytest.raises(ValidationError):
+        AIStep(type="ai", id="implement", prompt="p.j2", max_turns=-1)
+
+
+# ---------------------------------------------------------------------------
 # ScriptStep
 # ---------------------------------------------------------------------------
 

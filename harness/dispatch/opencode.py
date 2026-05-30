@@ -222,6 +222,7 @@ class OpencodeAgent:
         cwd: Path | None,
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
+        max_turns: int | None = None,  # noqa: ARG002 — opencode CLI has no max_turns flag
     ) -> NodeResult[BaseModel]:
         """Run opencode and return ``NodeResult[contract]``.
 

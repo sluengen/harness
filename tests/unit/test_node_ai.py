@@ -65,6 +65,7 @@ class _CompliantMockAgent(MockAgent):
         cwd: Path | None,
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
+        max_turns: int | None = None,
     ) -> NodeResult[BaseModel]:
         self.calls.append(
             RecordedCall(
@@ -75,6 +76,7 @@ class _CompliantMockAgent(MockAgent):
                 cwd=cwd,
                 timeout_s=timeout_s,
                 stall_timeout_s=stall_timeout_s,
+                max_turns=max_turns,
             )
         )
         if self.error is not None:
@@ -130,6 +132,7 @@ def _step(
     writes_files: bool = False,
     stall_timeout_s: int = 300,
     timeout_s: int = 600,
+    max_turns: int | None = None,
 ) -> AIStep:
     """Build an AIStep with reasonable defaults."""
     return AIStep(
@@ -144,6 +147,7 @@ def _step(
         writes_files=writes_files,
         stall_timeout_s=stall_timeout_s,
         timeout_s=timeout_s,
+        max_turns=max_turns,
     )
 
 
@@ -511,3 +515,34 @@ async def test_agent_stalled_propagates(tmp_path: Path) -> None:
 
     with pytest.raises(AgentStalled):
         await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+
+
+# ---------------------------------------------------------------------------
+# AC10 — max_turns forwarded to agent (H-1.5-006)
+# ---------------------------------------------------------------------------
+
+
+async def test_max_turns_passed_to_agent(tmp_path: Path) -> None:
+    """AINode forwards step.max_turns to agent.execute so the SDK can cap
+    the number of model turns in a single node invocation."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = _CompliantMockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(step=_step(max_turns=5), state=_state(tmp_path), inputs={})
+
+    assert agent.calls[0].max_turns == 5
+
+
+async def test_max_turns_none_by_default_passes_through(tmp_path: Path) -> None:
+    """When max_turns is absent (None), AINode passes None to the agent so
+    the SDK uses its own default behaviour."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = _CompliantMockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(step=_step(), state=_state(tmp_path), inputs={})
+
+    assert agent.calls[0].max_turns is None

@@ -206,6 +206,7 @@ async def test_ac2_state_carries_base_fields_and_declared_writes(
             cwd: Path | None,
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
+            max_turns: int | None = None,
         ) -> NodeResult[BaseModel]:
             self.calls.append(  # type: ignore[arg-type]
                 # parent class records via RecordedCall; we mimic by

@@ -16,8 +16,10 @@ Implements the v1 :class:`AINode` per SPEC §4.4. Responsibilities:
    string references are deferred to the H-008 wiring.
 3. **Dispatch** to the supplied :class:`harness.dispatch.base.Agent` via
    ``execute(prompt, contract, submit_tool_schema, allowed_tools=…,
-   cwd=…, timeout_s=…, stall_timeout_s=…)``. The agent is injected at
-   construction — AINode never discovers an agent globally.
+   cwd=…, timeout_s=…, stall_timeout_s=…, max_turns=…)``. The agent is
+   injected at construction — AINode never discovers an agent globally.
+   ``step.max_turns`` (None → SDK default) is forwarded as-is so the
+   adapter can cap the number of model turns per SPEC §H-1.5-006.
 4. **Return** the agent's :class:`NodeResult` unchanged. A defensive
    ``isinstance(result.contract, contract)`` check guards against a
    misbehaving agent that bypassed the protocol's validation.
@@ -159,6 +161,7 @@ class AINode:
             cwd=cwd,
             timeout_s=step.timeout_s,
             stall_timeout_s=step.stall_timeout_s,
+            max_turns=step.max_turns,
         )
 
         # Defensive guard: a well-behaved Agent (per protocol) returns a

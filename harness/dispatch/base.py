@@ -47,6 +47,7 @@ class Agent(Protocol):
         cwd: Path | None,
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
+        max_turns: int | None = None,
     ) -> NodeResult[BaseModel]: ...
 
 

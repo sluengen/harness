@@ -186,6 +186,7 @@ class AIStep(_BaseStep):
     writes_files: bool = False
     stall_timeout_s: int = 300
     timeout_s: int = 600
+    max_turns: int | None = Field(default=None, ge=1)
 
 
 class ScriptStep(_BaseStep):
