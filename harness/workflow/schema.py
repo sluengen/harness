@@ -13,6 +13,11 @@ Per-write merge overrides (H-1.5-004): the ``writes:`` list accepts either a
 plain string (short-form, type-driven merge) or a dict with ``field`` and an
 optional ``merge`` key (long-form). Both forms are normalised to
 :class:`WriteSpec` at parse time so downstream code works with a single type.
+
+Per-node retry configuration (H-1.5-005): each step may declare an optional
+``retry:`` block that overrides v1's fixed defaults for that node only.
+Currently only ``retry.transient.attempts`` is exposed.  Absent fields fall
+through to the global :class:`~harness.engine.retry.RetryPolicy` defaults.
 """
 
 from __future__ import annotations
@@ -25,6 +30,36 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # import path, or an inline schema dict. Compilation lands in H-006; we just
 # capture the raw form here.
 ContractSpec: TypeAlias = str | dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Per-node retry configuration (H-1.5-005)
+# ---------------------------------------------------------------------------
+
+
+class RetryTransientConfig(BaseModel):
+    """Transient-layer overrides for a single step.
+
+    All fields are optional: ``None`` means "inherit from the global policy".
+    Currently only ``attempts`` is exposed — further knobs (base delay, max
+    delay) can be added here without breaking existing YAML.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    attempts: int | None = Field(default=None, ge=1)
+
+
+class RetryConfig(BaseModel):
+    """Per-node retry configuration block (``retry:`` in YAML).
+
+    Each sub-block is optional.  A step with no ``retry:`` key gets v1's
+    fixed defaults from :meth:`~harness.engine.retry.RetryPolicy.v1_default`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    transient: RetryTransientConfig | None = None
 
 
 def _is_non_empty(value: str | None) -> bool:
@@ -118,6 +153,7 @@ class _BaseStep(BaseModel):
     id: str
     depends_on: list[str] = Field(default_factory=list)
     writes: list[WriteSpec] = Field(default_factory=list)
+    retry: RetryConfig | None = None
 
     @model_validator(mode="before")
     @classmethod

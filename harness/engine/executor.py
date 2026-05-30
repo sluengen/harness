@@ -41,7 +41,7 @@ from harness.events.schema import EventType
 from harness.nodes.base import NodeResult
 from harness.state.schema import BaseState
 from harness.state.store import read_state, update_state
-from harness.workflow.schema import Step, WorktreeStep
+from harness.workflow.schema import RetryConfig, Step, WorktreeStep
 
 __all__ = [
     "ContractMismatch",
@@ -114,12 +114,40 @@ class Context:
 class Executor:
     """Per-step execution wrapper. One instance per workflow run.
 
-    Stateless apart from the retry policy; the runner constructs once and
-    re-uses across every step it dispatches.
+    Stateless apart from the base retry policy; the runner constructs once and
+    re-uses across every step it dispatches.  Per-step retry overrides (from
+    the step's ``retry:`` YAML block) are merged at dispatch time via
+    :meth:`_policy_for_step`.
     """
 
     def __init__(self, *, policy: RetryPolicy | None = None) -> None:
         self._policy = policy if policy is not None else RetryPolicy.v1_default()
+
+    def _policy_for_step(self, step: Step) -> RetryPolicy:
+        """Build the effective :class:`RetryPolicy` for this step.
+
+        The base policy (global default or constructor override) is used as the
+        fallback for any field not overridden by the step's ``retry:`` block.
+        Only the fields declared in the step's config are replaced; absent
+        fields inherit the base values.
+        """
+        retry_cfg: RetryConfig | None = getattr(step, "retry", None)
+        if retry_cfg is None:
+            return self._policy
+
+        transient_attempts = self._policy.transient_attempts
+        if (
+            retry_cfg.transient is not None
+            and retry_cfg.transient.attempts is not None
+        ):
+            transient_attempts = retry_cfg.transient.attempts
+
+        return RetryPolicy(
+            transient_attempts=transient_attempts,
+            transient_base_delay_s=self._policy.transient_base_delay_s,
+            transient_max_delay_s=self._policy.transient_max_delay_s,
+            contract_violation_attempts=self._policy.contract_violation_attempts,
+        )
 
     async def execute(self, step: Step, ctx: Context) -> NodeResult[BaseModel]:
         """Run one step end-to-end.
@@ -147,13 +175,14 @@ class Executor:
         def sink(event_type: EventType, data: dict[str, Any]) -> None:
             retry_events.append((event_type, data))
 
+        step_policy = self._policy_for_step(step)
         started_at = time.monotonic()
         try:
             async def op(_rc: RetryContext) -> NodeResult[BaseModel]:
                 return await runner(step, state, ctx)
 
             result = await run_with_retry(
-                op, policy=self._policy, event_sink=sink
+                op, policy=step_policy, event_sink=sink
             )
         except BaseException as exc:
             await self._flush_retry_events(emitter, ctx.run_id, step.id, retry_events)
