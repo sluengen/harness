@@ -40,7 +40,7 @@ from harness.events.emitter import EventEmitter
 from harness.events.schema import EventType
 from harness.nodes.base import NodeResult
 from harness.state.schema import BaseState
-from harness.state.store import read_state, update_state
+from harness.state.store import read_state, update_state, write_snapshot
 from harness.workflow.schema import RetryConfig, Step, WorktreeStep
 
 __all__ = [
@@ -233,6 +233,13 @@ class Executor:
                 },
             )
             raise
+
+        # Snapshot the full state after a successful completion. Done after
+        # all writes have landed so the snapshot captures the post-step state.
+        # This is the H-2-001 per-completion history: the v2 resume machinery
+        # reads the highest-seq snapshot instead of the mutable state_json row.
+        state_after = await read_state(ctx.run_id, ctx.state_schema, db_path=ctx.db_path)
+        await write_snapshot(ctx.run_id, step.id, state_after, db_path=ctx.db_path)
 
         duration_ms = int((time.monotonic() - started_at) * 1000)
         await emitter.emit(

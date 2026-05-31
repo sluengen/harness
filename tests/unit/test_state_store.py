@@ -48,6 +48,7 @@ async def test_init_db_creates_both_tables(tmp_path: Path) -> None:
     tables = await _table_names(db_path)
     assert "runs" in tables
     assert "events" in tables
+    assert "run_snapshots" in tables
 
 
 async def test_init_db_creates_indexes(tmp_path: Path) -> None:
@@ -60,6 +61,8 @@ async def test_init_db_creates_indexes(tmp_path: Path) -> None:
     assert "idx_events_run" in indexes
     assert "idx_events_type" in indexes
     assert "idx_events_run_node" in indexes
+    assert "idx_snapshots_run" in indexes
+    assert "idx_snapshots_run_seq" in indexes
 
 
 async def test_init_db_is_idempotent(tmp_path: Path) -> None:
@@ -68,7 +71,7 @@ async def test_init_db_is_idempotent(tmp_path: Path) -> None:
     # Second call must not raise.
     await store.init_db(db_path)
     tables = await _table_names(db_path)
-    assert {"runs", "events"} <= tables
+    assert {"runs", "events", "run_snapshots"} <= tables
 
 
 async def test_init_db_creates_parent_dir(tmp_path: Path) -> None:
