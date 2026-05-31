@@ -53,6 +53,9 @@ ignore = ["S101"]  # allow `assert` in tests
 # in worktrees.py use ``git`` from PATH with list-form args, never shell=True
 # (S603/S607).
 "harness/cli/**" = ["B008", "S603", "S607"]
+# intake/linear_webhook.py spawns harness via subprocess (S603/S607) and
+# binds to 0.0.0.0 by default (S104).
+"intake/**" = ["S603", "S607", "S104"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -63,6 +66,8 @@ warn_unused_configs = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+# Add repo root so ``intake`` (a sibling package outside ``harness/``) is importable.
+pythonpath = ["."]
 
 [dependency-groups]
 dev = [
