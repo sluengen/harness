@@ -2,15 +2,26 @@
   build/review.j2 — review prompt for the build workflow.
 
   Evaluates the implementation against the originating Linear ticket.
-  Uses Jinja's `inputs.linear_id` directly (resolved at render time).
+  Reviewer also authors the commit message from what was actually built.
 
-  Required: inputs.linear_id must be in scope (set by the engine).
+  Required state: ticket_title, ticket_description (written by fetch-ticket).
+  Required inputs: linear_id.
   submit_tool_name injected by the contract engine.
 #}
-Review the implementation against these criteria: correctness relative to Linear ticket {{ inputs.linear_id }} acceptance criteria, adequate test coverage, focused diff (no drive-by changes), no obvious regressions.
+Review the implementation of Linear ticket {{ inputs.linear_id }} — **{{ state.ticket_title }}**.
 
-Read the diff or relevant files, then identify issues. Tag each finding with one of: HIGH, MEDIUM, LOW.
+## Acceptance criteria
+
+{{ state.ticket_description }}
+
+## Review criteria
+
+Evaluate against: correctness relative to the acceptance criteria above, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Read the diff or relevant files, then identify issues. Tag each finding with HIGH, MEDIUM, or LOW.
 
 Be concrete — point to file and line where possible. A clean review (no findings) is a valid result; do not invent issues to fill space.
 
-When done, call {{ submit_tool_name | default('submit') }} exactly once with the verdict and findings list.
+## Commit message
+
+Once you have read the diff, write a commit message describing what was actually built — not the ticket title. Format: `type(scope): description` where type is one of `feat / fix / chore / refactor / test`. One line, under 72 characters.
+
+When done, call {{ submit_tool_name | default('submit') }} exactly once with the verdict, issues list, and commit message.

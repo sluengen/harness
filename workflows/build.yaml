@@ -1,10 +1,11 @@
 name: build
-version: 1
+version: 2
 description: >
-  General-purpose build workflow for harness dog-fooding. Fetches a
-  Linear ticket, implements the required changes in an isolated worktree, has a
-  second agent review them, and on PASS commits, pushes, and merges to the base
-  branch.
+  General-purpose build workflow for harness dog-fooding. Sets the Linear
+  ticket in-progress, fetches ticket content, implements changes in an
+  isolated worktree, has a reviewer agent review and author the commit
+  message, commits and pushes on PASS, tears down locally, then marks
+  the task done.
 
 inputs:
   linear_id:
@@ -24,12 +25,43 @@ steps:
     base: $inputs.base_branch
     writes: [worktree_path, worktree_branch]
 
+  - id: set-in-progress
+    type: script
+    command: |
+      STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){team{states{nodes{id type}}}}}"}' \
+        | jq -r '.data.issue.team.states.nodes[] | select(.type=="started") | .id' \
+        | head -1)
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$inputs.linear_id\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+        > /dev/null
+      printf '{}'
+    writes: []
+
+  - id: fetch-ticket
+    type: script
+    command: |
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){title description}}"}' \
+        | jq '{ticket_title: .data.issue.title, ticket_description: (.data.issue.description // "")}'
+    contract:
+      ticket_title: string
+      ticket_description: string
+    writes: [ticket_title, ticket_description]
+
   - id: implement
     type: ai
     agent: claude
     model: sonnet
     prompt: prompts/build/implement.j2
     allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+    cwd: $state.worktree_path
     writes_files: true
     writes: []
 
@@ -39,6 +71,7 @@ steps:
     model: sonnet
     prompt: prompts/build/review.j2
     allowed_tools: [Read, Grep, Glob, Bash]
+    cwd: $state.worktree_path
     contract:
       verdict:
         type: string
@@ -46,7 +79,8 @@ steps:
       issues:
         type: list
         of: string
-    writes: [verdict, issues]
+      commit_message: string
+    writes: [verdict, issues, commit_message]
 
   - id: gate
     type: check
@@ -57,10 +91,11 @@ steps:
     type: script
     command: |
       git add -A >&2
-      git commit -m "feat($1): implement ticket changes" >&2
-      git push -u origin "$2" >&2
+      git commit -m "$2" >&2
+      git push -u origin "$1" >&2
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
-    args: ["$inputs.linear_id", "$state.worktree_branch"]
+    args: ["$state.worktree_branch", "$state.commit_message"]
+    cwd: $state.worktree_path
     contract:
       commit_sha: string
     writes: [commit_sha]
@@ -68,4 +103,21 @@ steps:
   - id: teardown
     type: worktree
     action: cleanup
-    policy: merge_to_base
+    policy: delete_unconditionally
+
+  - id: close-task
+    type: script
+    command: |
+      STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){team{states{nodes{id type}}}}}"}' \
+        | jq -r '.data.issue.team.states.nodes[] | select(.type=="completed") | .id' \
+        | head -1)
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$inputs.linear_id\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+        > /dev/null
+      printf '{}'
+    writes: []

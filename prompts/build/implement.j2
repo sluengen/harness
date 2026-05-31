@@ -1,38 +1,29 @@
 {#
   build/implement.j2 — implementation prompt for the build workflow.
 
-  Extends the standard implement pattern with explicit Linear fetch instructions
-  and skill invocation. Uses Jinja's `inputs.linear_id` directly (resolved at
-  render time) rather than $inputs.linear_id template_var substitution, which
-  is not yet implemented for template_vars values.
+  Ticket content is pre-fetched by the fetch-ticket step and available
+  in state. No external API calls needed.
 
-  Required: inputs.linear_id in scope (set by the engine).
+  Required state: ticket_title, ticket_description (written by fetch-ticket).
+  Required inputs: linear_id.
   submit_tool_name injected by the contract engine.
 #}
 You are implementing the changes required for Linear ticket {{ inputs.linear_id }}.
 
-## Step 1 — Fetch the ticket
+## Ticket
 
-Run this exact command to get the ticket details. Do not use Notion, the Linear
-web app, or any MCP tool — use the API directly:
+**{{ state.ticket_title }}**
 
-```bash
-curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"{{ inputs.linear_id }}\"){identifier title description state{name} labels{nodes{name}} url}}"}'
-```
+{{ state.ticket_description }}
 
-Read the `title`, `description`, and acceptance criteria from the output.
-
-## Step 2 — Implement
+## Step 1 — Implement
 
 Follow `skills/test-driven-development.md`:
 - Write failing tests first, then make them pass.
 - Keep the diff focused — no drive-by refactors or unrelated cleanup.
 - Write or update tests for every changed behaviour; run them and confirm they pass.
 
-## Step 3 — Verify
+## Step 2 — Verify
 
 Run the full verification gate before submitting:
 
@@ -44,6 +35,6 @@ uv run pytest
 
 All three must be clean.
 
-## Step 4 — Submit
+## Step 3 — Submit
 
 When the work is complete and verified, call {{ submit_tool_name | default('submit') }} exactly once with no arguments — the file mutations are the output.
