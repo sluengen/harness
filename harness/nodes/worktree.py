@@ -267,11 +267,12 @@ class WorktreeNode:
         # ``git update-ref`` moved the ref but left the index pointing at the
         # old tree, so ``git status`` would show every new/changed file as
         # staged for reversal — phantom deletions ready to be committed.
-        # ``read-tree -u HEAD`` re-reads the index from the new commit and
-        # updates working-tree files that differ between old and new index
+        # ``read-tree --reset -u HEAD`` re-reads the index from the new commit
+        # and updates working-tree files that differ between old and new index
         # (all work happened in the isolated worktree so there are no local
-        # modifications to lose).
-        rc, _stdout, stderr = await _git(repo_root, "read-tree", "-u", "HEAD")
+        # modifications to lose). ``--reset`` is required; bare ``-u`` is
+        # invalid without -m/--reset/--prefix.
+        rc, _stdout, stderr = await _git(repo_root, "read-tree", "--reset", "-u", "HEAD")
         if rc != 0:
             raise WorktreeNodeError(
                 f"read-tree HEAD failed after advancing {base}: {stderr.strip()}"
