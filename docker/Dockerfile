@@ -1,14 +1,14 @@
-# slate-harness — runtime image
+# harness — runtime image
 # See SPEC.md §13 (Docker Setup).
 #
 # Build from the repo root:
-#   docker build -t slate-harness:dev -f docker/Dockerfile .
+#   docker build -t harness:dev -f docker/Dockerfile .
 #
 # Run, mounting a host project at /workspace:
 #   docker run --rm \
 #     -v "$(pwd)":/workspace -w /workspace \
 #     -e ANTHROPIC_API_KEY -e LINEAR_API_KEY \
-#     slate-harness:dev run steward --domain=architecture
+#     harness:dev run steward --domain=architecture
 FROM python:3.11-slim
 
 # OS deps: git for worktree operations, ca-certificates for HTTPS to Anthropic / Linear.
@@ -36,8 +36,8 @@ COPY harness/ ./harness/
 COPY workflows/ ./workflows/
 COPY prompts/ ./prompts/
 
-# Install the slate-harness package itself into the venv so `uv run slate-harness`
-# resolves the console script declared in pyproject.toml (project.scripts.slate-harness).
+# Install the harness package itself into the venv so `uv run harness`
+# resolves the console script declared in pyproject.toml (project.scripts.harness).
 RUN uv sync --frozen --no-dev
 
 ENV PYTHONUNBUFFERED=1 \
@@ -46,7 +46,7 @@ ENV PYTHONUNBUFFERED=1 \
     # target repo at /workspace and `uv` would otherwise fail to locate pyproject.toml.
     UV_PROJECT=/opt/harness \
     # The image is fully built; suppress uv's implicit reinstall-on-run behaviour so
-    # `slate-harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
+    # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
     UV_NO_SYNC=1
 
-ENTRYPOINT ["uv", "run", "slate-harness"]
+ENTRYPOINT ["uv", "run", "harness"]

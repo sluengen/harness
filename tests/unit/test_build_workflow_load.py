@@ -36,7 +36,7 @@ def loaded_build() -> LoadedWorkflow:
 def test_build_workflow_loads_without_error(loaded_build: LoadedWorkflow) -> None:
     """The shipped YAML parses and all loader cross-step checks pass."""
     assert loaded_build.workflow.name == "build"
-    assert loaded_build.workflow.version == 1
+    assert loaded_build.workflow.version == 2
 
 
 def test_build_workflow_step_ids(loaded_build: LoadedWorkflow) -> None:
@@ -44,11 +44,14 @@ def test_build_workflow_step_ids(loaded_build: LoadedWorkflow) -> None:
     step_ids = [s.id for s in loaded_build.workflow.steps]
     assert step_ids == [
         "setup",
+        "set-in-progress",
+        "fetch-ticket",
         "implement",
         "review",
         "gate",
         "commit-and-push",
         "teardown",
+        "close-task",
     ]
 
 
