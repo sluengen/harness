@@ -1,6 +1,6 @@
 """Tests for intake.linear_webhook — Linear webhook intake (sibling process).
 
-Tests are organised around the six acceptance criteria implied by CAL-301:
+Tests are organised around the acceptance criteria implied by CAL-301 and CAL-302:
 
 AC1 — verify_signature: HMAC-SHA256 validation (positive + negative).
 AC2 — route_event: correct routing by action, type, state, workflow_map.
@@ -8,6 +8,11 @@ AC3 — HTTP handler: correct HTTP responses for valid/invalid requests.
 AC4 — run_harness: subprocess is spawned with correct arguments.
 AC5 — config_from_env: reads environment variables; exits on missing secret.
 AC6 — build_server: constructs a bound HTTPServer; serve_forever contract.
+AC7 — reconcile_event: returns identifier on non-active state; None otherwise.
+AC8 — find_active_runs_for_linear_id: queries running/pending runs from DB.
+AC9 — cancel_run: cancels running/pending runs; ignores completed/failed.
+AC10 — HTTP handler integration: reconciliation called after route_event.
+AC11 — WebhookConfig new fields + config_from_env reads them.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import sqlite3 as _sqlite3
 import threading
 from typing import Any
 from unittest.mock import patch
@@ -36,8 +42,11 @@ pytest.importorskip(
 from intake.linear_webhook import (  # noqa: E402,I001
     WebhookConfig,
     build_server,
+    cancel_run,
     config_from_env,
+    find_active_runs_for_linear_id,
     make_handler,
+    reconcile_event,
     route_event,
     run_harness,
     verify_signature,
@@ -409,6 +418,8 @@ class TestConfigFromEnv:
         monkeypatch.delenv("HARNESS_WORKFLOW", raising=False)
         monkeypatch.delenv("HARNESS_BASE_BRANCH", raising=False)
         monkeypatch.delenv("HARNESS_WORKFLOW_MAP", raising=False)
+        monkeypatch.delenv("HARNESS_DB_PATH", raising=False)
+        monkeypatch.delenv("HARNESS_ACTIVE_STATES", raising=False)
 
         config = config_from_env()
 
@@ -496,8 +507,393 @@ class TestWebhookConfig:
         assert config.workflow == "build"
         assert config.base_branch == "main"
         assert config.workflow_map == {}
+        assert config.db_path == ".harness/harness.db"
+        assert config.active_states == frozenset({"Backlog", "Todo", "In Progress", "In Review"})
 
     def test_frozen(self) -> None:
         config = WebhookConfig(secret="x")
         with pytest.raises(dataclasses.FrozenInstanceError):
             config.secret = "y"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# DB test helpers (used by AC8, AC9)
+# ---------------------------------------------------------------------------
+
+_RUNS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS runs (
+  run_id TEXT PRIMARY KEY,
+  workflow_name TEXT NOT NULL,
+  workflow_version INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  inputs_json TEXT NOT NULL,
+  base_branch TEXT,
+  worktree_branch TEXT,
+  exit_code INTEGER,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  duration_ms INTEGER
+);
+"""
+
+
+def _insert_test_run(db_path: str, run_id: str, status: str, linear_id: str) -> None:
+    conn = _sqlite3.connect(db_path)
+    conn.executescript(_RUNS_SCHEMA)
+    conn.execute(
+        "INSERT INTO runs"
+        " (run_id, workflow_name, workflow_version, status, state_json, inputs_json, started_at)"
+        " VALUES (?, 'build', 1, ?, '{}', ?, '2024-01-01T00:00:00')",
+        (run_id, status, json.dumps({"linear": linear_id})),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _get_run_status(db_path: str, run_id: str) -> str | None:
+    conn = _sqlite3.connect(db_path)
+    cursor = conn.execute("SELECT status FROM runs WHERE run_id = ?", (run_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return str(row[0]) if row else None
+
+
+def _get_run_completed_at(db_path: str, run_id: str) -> str | None:
+    conn = _sqlite3.connect(db_path)
+    cursor = conn.execute("SELECT completed_at FROM runs WHERE run_id = ?", (run_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return str(row[0]) if row else None
+
+
+# ---------------------------------------------------------------------------
+# AC7 — reconcile_event
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileEvent:
+    def test_returns_identifier_on_non_active_state(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Done")
+        result = reconcile_event(payload, config)
+        assert result == "CAL-302"
+
+    def test_returns_none_for_active_state(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="In Progress")
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_backlog_active_state(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Backlog")
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_non_issue_type(self) -> None:
+        config = _default_config()
+        payload = {
+            "type": "Comment",
+            "action": "update",
+            "data": {"identifier": "CAL-1", "state": {"name": "Done"}},
+        }
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_create_action(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="create", identifier="CAL-302", state_name="Done")
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_remove_action(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="remove", identifier="CAL-302", state_name="Done")
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_missing_identifier(self) -> None:
+        config = _default_config()
+        payload = {"type": "Issue", "action": "update", "data": {"state": {"name": "Done"}}}
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_null_state(self) -> None:
+        config = _default_config()
+        payload = {
+            "type": "Issue",
+            "action": "update",
+            "data": {"identifier": "CAL-302", "state": None},
+        }
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_returns_none_for_empty_state_name(self) -> None:
+        config = _default_config()
+        payload = {
+            "type": "Issue",
+            "action": "update",
+            "data": {"identifier": "CAL-302", "state": {"name": ""}},
+        }
+        result = reconcile_event(payload, config)
+        assert result is None
+
+    def test_custom_active_states_respected(self) -> None:
+        config = _default_config(active_states=frozenset({"Doing"}))
+        payload_active = _issue_payload(
+            action="update", identifier="CAL-302", state_name="Doing"
+        )
+        payload_inactive = _issue_payload(
+            action="update", identifier="CAL-302", state_name="In Progress"
+        )
+        assert reconcile_event(payload_active, config) is None
+        assert reconcile_event(payload_inactive, config) == "CAL-302"
+
+    def test_cancelled_state_triggers_reconciliation(self) -> None:
+        config = _default_config()
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Cancelled")
+        result = reconcile_event(payload, config)
+        assert result == "CAL-302"
+
+
+# ---------------------------------------------------------------------------
+# AC8 — find_active_runs_for_linear_id
+# ---------------------------------------------------------------------------
+
+
+class TestFindActiveRunsForLinearId:
+    def test_returns_empty_when_db_does_not_exist(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "nonexistent.db")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+    def test_returns_running_run_ids(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == ["run-1"]
+
+    def test_returns_pending_run_ids(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == ["run-2"]
+
+    def test_returns_multiple_active_runs(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert sorted(result) == ["run-1", "run-2"]
+
+    def test_excludes_completed_runs(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-done", "completed", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+    def test_excludes_failed_runs(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-fail", "failed", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+    def test_excludes_cancelled_runs(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-cancelled", "cancelled", "CAL-302")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+    def test_returns_empty_when_no_match(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-other", "running", "CAL-999")
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+    def test_returns_empty_on_operational_error(self, tmp_path: Any) -> None:
+        """Catches OperationalError (e.g. missing table) and returns []."""
+        db_path = str(tmp_path / "harness.db")
+        # Create the DB file but don't create the runs table
+        conn = _sqlite3.connect(db_path)
+        conn.close()
+        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# AC9 — cancel_run
+# ---------------------------------------------------------------------------
+
+
+class TestCancelRun:
+    def test_does_nothing_when_db_does_not_exist(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "nonexistent.db")
+        # Should not raise
+        cancel_run("run-1", db_path)
+
+    def test_cancels_running_run(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        cancel_run("run-1", db_path)
+        assert _get_run_status(db_path, "run-1") == "cancelled"
+
+    def test_cancels_pending_run(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
+        cancel_run("run-2", db_path)
+        assert _get_run_status(db_path, "run-2") == "cancelled"
+
+    def test_stamps_completed_at(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        cancel_run("run-1", db_path)
+        completed_at = _get_run_completed_at(db_path, "run-1")
+        assert completed_at is not None
+        assert completed_at != "None"
+
+    def test_does_not_change_completed_run(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-done", "completed", "CAL-302")
+        cancel_run("run-done", db_path)
+        assert _get_run_status(db_path, "run-done") == "completed"
+
+    def test_does_not_change_failed_run(self, tmp_path: Any) -> None:
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-fail", "failed", "CAL-302")
+        cancel_run("run-fail", db_path)
+        assert _get_run_status(db_path, "run-fail") == "failed"
+
+    def test_swallows_operational_error(self, tmp_path: Any) -> None:
+        """OperationalError (e.g. missing table) must be caught, not raised."""
+        db_path = str(tmp_path / "harness.db")
+        conn = _sqlite3.connect(db_path)
+        conn.close()
+        # Should not raise even though runs table doesn't exist
+        cancel_run("run-1", db_path)
+
+
+# ---------------------------------------------------------------------------
+# AC10 — HTTP handler integration
+# ---------------------------------------------------------------------------
+
+
+class TestHttpHandlerReconciliation:
+    def _start(self, config: WebhookConfig) -> Any:
+        return build_server("127.0.0.1", 0, config)
+
+    def test_update_to_done_triggers_reconciliation(self, tmp_path: Any) -> None:
+        """Update event to a non-active state triggers cancel_run for active runs."""
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+
+        config = _default_config(db_path=db_path)
+        server = self._start(config)
+        port = server.server_address[1]
+
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Done")
+        body = json.dumps(payload).encode()
+
+        thread = threading.Thread(target=_serve_one, args=(server,))
+        thread.start()
+        status = _post_to_server(port, "/webhook", body, config.secret)
+        thread.join(timeout=5)
+        server.server_close()
+
+        assert status == 200
+        assert _get_run_status(db_path, "run-active") == "cancelled"
+
+    def test_create_event_does_not_trigger_reconciliation(self, tmp_path: Any) -> None:
+        """Create events must not trigger reconciliation."""
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+
+        config = _default_config(db_path=db_path)
+        server = self._start(config)
+        port = server.server_address[1]
+
+        payload = _issue_payload(action="create", identifier="CAL-302", state_name="Done")
+        body = json.dumps(payload).encode()
+
+        with patch("intake.linear_webhook.run_harness"):
+            thread = threading.Thread(target=_serve_one, args=(server,))
+            thread.start()
+            status = _post_to_server(port, "/webhook", body, config.secret)
+            thread.join(timeout=5)
+        server.server_close()
+
+        assert status == 200
+        # create actions must not cancel runs
+        assert _get_run_status(db_path, "run-active") == "running"
+
+    def test_update_to_active_state_does_not_cancel(self, tmp_path: Any) -> None:
+        """Update event to an active state must not cancel runs."""
+        db_path = str(tmp_path / "harness.db")
+        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+
+        config = _default_config(db_path=db_path)
+        server = self._start(config)
+        port = server.server_address[1]
+
+        payload = _issue_payload(action="update", identifier="CAL-302", state_name="In Progress")
+        body = json.dumps(payload).encode()
+
+        thread = threading.Thread(target=_serve_one, args=(server,))
+        thread.start()
+        status = _post_to_server(port, "/webhook", body, config.secret)
+        thread.join(timeout=5)
+        server.server_close()
+
+        assert status == 200
+        assert _get_run_status(db_path, "run-active") == "running"
+
+
+# ---------------------------------------------------------------------------
+# AC11 — WebhookConfig new fields + config_from_env
+# ---------------------------------------------------------------------------
+
+
+class TestWebhookConfigNewFields:
+    def test_config_from_env_reads_db_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", "s3cr3t")
+        monkeypatch.setenv("HARNESS_DB_PATH", "/custom/path/harness.db")
+        monkeypatch.delenv("HARNESS_ACTIVE_STATES", raising=False)
+
+        config = config_from_env()
+        assert config.db_path == "/custom/path/harness.db"
+
+    def test_config_from_env_default_db_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", "s3cr3t")
+        monkeypatch.delenv("HARNESS_DB_PATH", raising=False)
+        monkeypatch.delenv("HARNESS_ACTIVE_STATES", raising=False)
+
+        config = config_from_env()
+        assert config.db_path == ".harness/harness.db"
+
+    def test_config_from_env_reads_active_states(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", "s3cr3t")
+        monkeypatch.setenv("HARNESS_ACTIVE_STATES", '["Doing", "Review"]')
+        monkeypatch.delenv("HARNESS_DB_PATH", raising=False)
+
+        config = config_from_env()
+        assert config.active_states == frozenset({"Doing", "Review"})
+
+    def test_config_from_env_exits_on_invalid_active_states_json(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", "s3cr3t")
+        monkeypatch.setenv("HARNESS_ACTIVE_STATES", "not-json")
+
+        with pytest.raises(SystemExit) as exc_info:
+            config_from_env()
+        assert exc_info.value.code == 1
+
+    def test_config_from_env_exits_on_non_array_active_states(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", "s3cr3t")
+        monkeypatch.setenv("HARNESS_ACTIVE_STATES", '{"key": "value"}')
+
+        with pytest.raises(SystemExit) as exc_info:
+            config_from_env()
+        assert exc_info.value.code == 1

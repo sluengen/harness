@@ -27,12 +27,14 @@ Exit codes:
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import hmac
 import http.server
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -43,6 +45,9 @@ __all__ = [
     "verify_signature",
     "route_event",
     "run_harness",
+    "reconcile_event",
+    "find_active_runs_for_linear_id",
+    "cancel_run",
     "make_handler",
     "build_server",
     "config_from_env",
@@ -87,6 +92,16 @@ class WebhookConfig:
     Example::
 
         {"update:In Progress": "build", "create:*": "triage"}
+    """
+
+    db_path: str = ".harness/harness.db"
+    """Path to the harness SQLite database file (for reconciliation queries)."""
+
+    active_states: frozenset[str] = frozenset({"Backlog", "Todo", "In Progress", "In Review"})
+    """Linear state names that indicate a ticket is actively being worked on.
+
+    Reconciliation only triggers when a ticket moves to a state NOT in this set.
+    Frozenset is immutable so the default is safe on a frozen dataclass.
     """
 
 
@@ -215,6 +230,122 @@ def run_harness(identifier: str, workflow: str, config: WebhookConfig) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Reconciliation (symphony-pattern: cancel runs when ticket leaves active state)
+# ---------------------------------------------------------------------------
+
+
+def reconcile_event(
+    payload: dict[str, Any],
+    config: WebhookConfig,
+) -> str | None:
+    """Return the Linear identifier when a ticket leaves an active state.
+
+    Reconciliation applies only to ``Issue`` ``update`` events where the new
+    state is not in ``config.active_states``.  All other events return ``None``
+    so the caller knows no cancellation is needed.
+
+    Args:
+        payload: Parsed JSON from the Linear webhook request body.
+        config: Server configuration supplying ``active_states``.
+
+    Returns:
+        The Linear identifier (e.g. ``"CAL-302"``) if cancellation is needed,
+        or ``None`` if the event should not trigger reconciliation.
+    """
+    if payload.get("type") != "Issue":
+        return None
+    if payload.get("action") != "update":
+        return None
+
+    data: dict[str, Any] = payload.get("data") or {}
+    identifier: str = data.get("identifier", "")
+    if not identifier:
+        return None
+
+    state_obj: dict[str, Any] = data.get("state") or {}
+    state_name: str = state_obj.get("name", "")
+    if not state_name:
+        return None
+
+    if state_name in config.active_states:
+        return None
+
+    return identifier
+
+
+def find_active_runs_for_linear_id(identifier: str, db_path: str) -> list[str]:
+    """Return run_ids of ``running``/``pending`` runs for a Linear identifier.
+
+    Queries the harness SQLite database using ``json_extract`` to match the
+    ``$.linear`` field in ``inputs_json``.
+
+    Returns ``[]`` when the database file does not exist or on any
+    ``sqlite3.OperationalError`` (e.g. missing table).
+
+    Args:
+        identifier: Linear issue identifier (e.g. ``"CAL-302"``).
+        db_path: Path to the harness SQLite database file.
+
+    Returns:
+        List of ``run_id`` strings for active runs, or ``[]``.
+    """
+    import os as _os
+
+    if not _os.path.exists(db_path):
+        return []
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT run_id FROM runs"
+            " WHERE status IN ('running', 'pending')"
+            " AND json_extract(inputs_json, '$.linear') = ?",
+            (identifier,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [str(row[0]) for row in rows]
+    except sqlite3.OperationalError as exc:
+        _LOG.warning("find_active_runs_for_linear_id: db error for %s: %s", identifier, exc)
+        return []
+
+
+def cancel_run(run_id: str, db_path: str) -> None:
+    """Mark a harness run as ``cancelled`` in the database.
+
+    Only updates runs whose current ``status`` is ``running`` or ``pending``,
+    so already-terminal runs (completed, failed, cancelled) are not touched.
+    Also stamps ``completed_at`` with the current UTC timestamp.
+
+    Does nothing (no raise) when the database file does not exist.
+    Catches ``sqlite3.OperationalError`` — logs and swallows so a DB schema
+    mismatch cannot crash the intake server.
+
+    Args:
+        run_id: The ``run_id`` to cancel.
+        db_path: Path to the harness SQLite database file.
+    """
+    import os as _os
+
+    if not _os.path.exists(db_path):
+        return
+
+    completed_at = _dt.datetime.now(_dt.UTC).isoformat()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE runs SET status = 'cancelled', completed_at = ?"
+            " WHERE run_id = ? AND status IN ('running', 'pending')",
+            (completed_at, run_id),
+        )
+        conn.commit()
+        conn.close()
+        _LOG.info("cancelled run %s", run_id)
+    except sqlite3.OperationalError as exc:
+        _LOG.error("cancel_run: db error for %s: %s", run_id, exc)
+
+
+# ---------------------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------------------
 
@@ -262,6 +393,12 @@ def make_handler(config: WebhookConfig) -> type[http.server.BaseHTTPRequestHandl
                 workflow, identifier = result
                 run_harness(identifier, workflow, config)
 
+            reconcile_id = reconcile_event(payload, config)
+            if reconcile_id is not None:
+                _LOG.info("reconciling runs for %s", reconcile_id)
+                for run_id in find_active_runs_for_linear_id(reconcile_id, config.db_path):
+                    cancel_run(run_id, config.db_path)
+
             self._respond(200)
 
         def _respond(self, code: int) -> None:
@@ -305,11 +442,14 @@ def config_from_env() -> WebhookConfig:
 
     Optional:
         ``HARNESS_BIN``, ``HARNESS_WORKFLOW``, ``HARNESS_BASE_BRANCH``,
-        ``HARNESS_WORKFLOW_MAP`` (JSON string).
+        ``HARNESS_WORKFLOW_MAP`` (JSON string),
+        ``HARNESS_DB_PATH``,
+        ``HARNESS_ACTIVE_STATES`` (JSON array of strings).
 
     Raises:
-        SystemExit(1): when ``LINEAR_WEBHOOK_SECRET`` is unset or when
-            ``HARNESS_WORKFLOW_MAP`` contains invalid JSON.
+        SystemExit(1): when ``LINEAR_WEBHOOK_SECRET`` is unset, when
+            ``HARNESS_WORKFLOW_MAP`` contains invalid JSON, or when
+            ``HARNESS_ACTIVE_STATES`` contains invalid JSON or is not an array.
     """
     secret = os.environ.get("LINEAR_WEBHOOK_SECRET", "")
     if not secret:
@@ -331,12 +471,33 @@ def config_from_env() -> WebhookConfig:
             )
             sys.exit(1)
 
+    active_states: frozenset[str] = frozenset({"Backlog", "Todo", "In Progress", "In Review"})
+    raw_states = os.environ.get("HARNESS_ACTIVE_STATES", "")
+    if raw_states:
+        try:
+            parsed = json.loads(raw_states)
+        except json.JSONDecodeError:
+            print(
+                "error: HARNESS_ACTIVE_STATES is not valid JSON",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not isinstance(parsed, list):
+            print(
+                "error: HARNESS_ACTIVE_STATES must be a JSON array",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        active_states = frozenset(parsed)
+
     return WebhookConfig(
         secret=secret,
         harness_bin=os.environ.get("HARNESS_BIN", "harness"),
         workflow=os.environ.get("HARNESS_WORKFLOW", "build"),
         base_branch=os.environ.get("HARNESS_BASE_BRANCH", "main"),
         workflow_map=workflow_map,
+        db_path=os.environ.get("HARNESS_DB_PATH", ".harness/harness.db"),
+        active_states=active_states,
     )
 
 
