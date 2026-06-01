@@ -56,7 +56,6 @@ from harness.workflow.resolver import (
     resolve_contract_ref,
 )
 from harness.workflow.schema import (
-    DecisionStep,
     LoopStep,
     Step,
     Workflow,
@@ -124,7 +123,6 @@ def load_workflow(
     _validate_writes_against_contracts(workflow, contracts)
     _validate_writer_type_consistency(workflow, contracts)
     _validate_worktree_ancestry(workflow)
-    _validate_decision_actor(workflow)
     _validate_writes_without_contract(workflow)
 
     return LoadedWorkflow(workflow=workflow, contracts=contracts, path=path)
@@ -347,16 +345,6 @@ def _validate_worktree_ancestry(workflow: Workflow) -> None:
             prev_has_worktree = local_flag[step.id]
 
     visit_block(list(workflow.steps), inherited=False)
-
-
-def _validate_decision_actor(workflow: Workflow) -> None:
-    """AC13: ``decision`` with ``actor: human`` is reserved for v2."""
-    for step in _iter_steps(workflow.steps):
-        if isinstance(step, DecisionStep) and step.actor == "human":
-            raise WorkflowLoadError(
-                f"step {step.id!r}: decision actor 'human' not supported "
-                f"in v1; use actor: llm"
-            )
 
 
 def _validate_writes_without_contract(workflow: Workflow) -> None:

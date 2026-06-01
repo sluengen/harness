@@ -7,8 +7,11 @@ compiles inline contracts (H-006), and runs load-time validations:
 * every name in `writes:` exists on the step's compiled contract
 * multiple writers of the same field declare identical types
 * any `writes_files: true` step has a `worktree.create` ancestor
-* `decision` step with `actor: human` is rejected (v2 feature)
 * a step without a `contract:` may only have `writes: []`
+
+Note: ``decision`` steps with ``actor: human`` are now loaded without error
+(H-2-002). The runner raises ``HumanDecisionRequested`` at execute time
+instead.
 
 All failures surface as `WorkflowLoadError` with the original cause in
 `__cause__`. The tests check the exception type AND that the cause is
@@ -611,37 +614,32 @@ steps:
 
 
 # ---------------------------------------------------------------------------
-# AC13: decision actor:human → load-time error (v2 feature)
+# AC13: decision actor:human → allowed at load time (H-2-002)
+# Runner raises HumanDecisionRequested at execute time instead.
 # ---------------------------------------------------------------------------
 
 
-def test_load_decision_actor_human_raises(
+def test_load_decision_actor_human_succeeds(
     project_root: Path, contracts_root: Path
 ) -> None:
+    """H-2-002: actor: human workflows now load without error.
+
+    The runner raises HumanDecisionRequested at execute time; the loader
+    no longer blocks these workflows at load time.
+    """
     body = """\
 name: wf
 version: 1
 steps:
-  - id: setup
-    type: worktree
-    action: create
-    base: staging
-    writes: []
   - id: ask-human
     type: decision
     actor: human
-    via: cli
     message: "Approve?"
-    contract:
-      decision: boolean
-    writes: [decision]
+    on_reject: cancel
 """
     path = _write_workflow(project_root, body)
-    with pytest.raises(WorkflowLoadError) as exc:
-        load_workflow(path, contracts_root=contracts_root)
-    msg = str(exc.value)
-    assert "human" in msg
-    assert "ask-human" in msg
+    loaded = load_workflow(path, contracts_root=contracts_root)
+    assert loaded.workflow.name == "wf"
 
 
 def test_load_decision_actor_llm_succeeds(

@@ -39,6 +39,7 @@ from harness.engine.retry import RetryContext, RetryPolicy, run_with_retry
 from harness.events.emitter import EventEmitter
 from harness.events.schema import EventType
 from harness.nodes.base import NodeResult
+from harness.nodes.decision import HumanDecisionRequested
 from harness.state.schema import BaseState
 from harness.state.store import read_state, update_state, write_snapshot
 from harness.workflow.schema import RetryConfig, Step, WorktreeStep
@@ -176,6 +177,9 @@ class Executor:
                 return await runner(step, state, ctx)
 
             result = await run_with_retry(op, policy=step_policy, event_sink=sink)
+        except HumanDecisionRequested:
+            await self._flush_retry_events(emitter, ctx.run_id, step.id, retry_events)
+            raise
         except BaseException as exc:
             await self._flush_retry_events(emitter, ctx.run_id, step.id, retry_events)
             await emitter.emit(

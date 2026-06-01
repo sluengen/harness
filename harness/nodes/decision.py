@@ -1,4 +1,4 @@
-"""Decision node — LLM gate (v1) + human approval (v2 schema-reserved).
+"""Decision node — LLM gate (v1) + human approval pause (H-2-002).
 
 Implements :class:`DecisionNode` per SPEC §4.5. Two actor flavors:
 
@@ -15,15 +15,18 @@ with two additions:
    ``{"step_id", "decision", "on_reject"}`` — ``on_reject`` is echoed
    verbatim from the workflow YAML so the executor (H-007) can route on it.
 
-**``actor: human``** (v2) — schema-reserved. Running such a workflow
-errors at ``execute()`` time with ``"actor: human is reserved for v2"``
-until the resume machinery (``harness/decisions/``) ships.
+**``actor: human``** (H-2-002) — raises :class:`HumanDecisionRequested`
+so the runner can pause the workflow, persist ``status='paused'`` with
+``exit_code=4``, emit ``decision_requested`` + ``workflow_paused`` events,
+and print resume instructions. Before raising, emits a ``decision_requested``
+event via the (optional) ``event_sink`` so callers that wire the node-level
+sink also get the event synchronously.
 
 Out of scope (executor / H-007):
 
 * Routing on ``on_reject`` (cancel / continue / retry_loop / pause_for_human).
 * ``writes:`` extraction onto state.
-* ``decision_requested`` / ``decision_received`` events for the human path.
+* ``decision_received`` event for the resume path.
 
 Composition: the LLM path delegates render + dispatch + isinstance-guard to
 an internally-constructed :class:`AINode`. SPEC §4.5 explicitly endorses
@@ -54,14 +57,29 @@ from harness.state.schema import BaseState
 from harness.workflow.contract import ContractCompileError, compile_inline_contract
 from harness.workflow.schema import AIStep, DecisionStep
 
-__all__ = ["DecisionNode"]
+__all__ = ["DecisionNode", "HumanDecisionRequested"]
 
-_HUMAN_ACTOR_RESERVED_MSG = "actor: human is reserved for v2"
+
+class HumanDecisionRequested(Exception):  # noqa: N818 — spec vocabulary
+    """Raised by DecisionNode when actor=human is reached.
+
+    Carries step_id and message so the runner can emit the
+    ``decision_requested`` event and print instructions without
+    re-parsing the step.
+    """
+
+    def __init__(self, *, step_id: str, message: str) -> None:
+        super().__init__(
+            f"decision step {step_id!r}: paused awaiting human decision"
+        )
+        self.step_id = step_id
+        self.message = message
 
 
 class DecisionNode:
     """v1 Decision node: ``actor: llm`` dispatches via :class:`AINode` + emits
-    a ``decision_made`` event; ``actor: human`` raises until v2 lands.
+    a ``decision_made`` event; ``actor: human`` raises
+    :class:`HumanDecisionRequested` so the runner can pause the workflow.
 
     The :class:`Agent` and ``prompts_dir`` are injected at construction; an
     inner :class:`AINode` instance is built once and reused across calls.
@@ -97,21 +115,30 @@ class DecisionNode:
         """Validate the contract, dispatch via the AI path, emit event.
 
         Raises:
-            RuntimeError: ``actor: human`` (v2 reserved); contract missing
-                or wrong-typed ``decision`` field; or anything the
-                underlying :class:`AINode` raises.
+            HumanDecisionRequested: ``actor: human`` — emits
+                ``decision_requested`` via the event_sink (if wired) then
+                raises so the runner can pause the workflow.
+            RuntimeError: contract missing or wrong-typed ``decision``
+                field; or anything the underlying :class:`AINode` raises.
             NotImplementedError: ``step.contract`` is a ``$contracts/<name>``
                 string reference (H-008 territory) — mirrors :class:`AINode`.
         """
         if step.actor == "human":
-            # v2 territory. SPEC §4.5: "running a workflow that uses
-            # actor: human errors at load time with 'actor: human is
-            # reserved for v2' until the resume machinery ships." We match
-            # the SPEC's error message at execute() time — load-time
-            # rejection lands when the workflow loader (H-008) wires up.
-            raise RuntimeError(
-                f"decision step {step.id!r}: {_HUMAN_ACTOR_RESERVED_MSG}"
-            )
+            # H-2-002: emit decision_requested via the node-level sink (if
+            # wired), then raise so the runner can persist the paused state
+            # and emit the workflow-level events.
+            assert step.message is not None  # noqa: S101 — guaranteed by DecisionStep validator
+            if self._event_sink is not None:
+                self._event_sink(
+                    "decision_requested",
+                    {
+                        "step_id": step.id,
+                        "message": step.message,
+                        "on_reject": step.on_reject,
+                        "on_timeout": step.on_timeout,
+                    },
+                )
+            raise HumanDecisionRequested(step_id=step.id, message=step.message)
 
         # actor: llm path. Build a transient AIStep mirroring the
         # DecisionStep's LLM-relevant fields. DecisionStep doesn't declare
