@@ -24,14 +24,18 @@ Be concrete — point to file and line where possible. A clean review (no findin
 
 Choose exactly one:
 
-- **PASS** — no findings. The implementation is correct, tested, and focused.
-- **FAIL** — one or more findings that should be fixed before shipping. Use this for
-  any finding you can describe in a sentence and the implementer could address in this
-  session. Severity does not matter — a LOW finding that is fixable is still FAIL.
+- **PASS** — nothing to report. The implementation is correct, tested, and focused.
+  `issues` must be empty. If you would write anything into `issues`, you cannot choose
+  PASS — choose FAIL or DEFER instead.
+- **FAIL** — one or more findings that must be fixed before shipping. Use this for any
+  finding the implementer could address in this session. Severity does not matter — a
+  LOW finding that is fixable is still FAIL. Stale documentation, N+1 queries, missed
+  spec updates: all FAIL.
 - **DEFER** — a finding that is genuinely out of scope for this ticket: requires
   architectural redesign, a new spec, or work clearly beyond this ticket's boundary.
-  The current code is shippable as-is; the deferred item is tracked separately.
-  Use DEFER sparingly. If in doubt, use FAIL.
+  The current code is shippable as-is; the deferred item becomes its own Linear ticket.
+  Use DEFER sparingly — only when a fix cannot reasonably land in this session. If in
+  doubt, use FAIL.
 
 On FAIL: populate `issues` with each finding (file:line, description). Leave
 `commit_message` empty and `deferred_brief` empty.
