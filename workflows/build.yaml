@@ -31,15 +31,16 @@ steps:
       STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){team{states{nodes{id type}}}}}"}' \
+        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id type}}}}}\"}" \
         | jq -r '.data.issue.team.states.nodes[] | select(.type=="started") | .id' \
         | head -1)
       curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$inputs.linear_id\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
         > /dev/null
       printf '{}'
+    args: ["$inputs.linear_id"]
     writes: []
 
   - id: fetch-ticket
@@ -48,8 +49,9 @@ steps:
       curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){title description}}"}' \
+        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){title description}}\"}" \
         | jq '{ticket_title: .data.issue.title, ticket_description: (.data.issue.description // "")}'
+    args: ["$inputs.linear_id"]
     contract:
       ticket_title: string
       ticket_description: string
@@ -61,7 +63,6 @@ steps:
     model: sonnet
     prompt: prompts/build/implement.j2
     allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
-    cwd: $state.worktree_path
     writes_files: true
     writes: []
 
@@ -71,7 +72,6 @@ steps:
     model: sonnet
     prompt: prompts/build/review.j2
     allowed_tools: [Read, Grep, Glob, Bash]
-    cwd: $state.worktree_path
     contract:
       verdict:
         type: string
@@ -95,7 +95,6 @@ steps:
       git push -u origin "$1" >&2
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
     args: ["$state.worktree_branch", "$state.commit_message"]
-    cwd: $state.worktree_path
     contract:
       commit_sha: string
     writes: [commit_sha]
@@ -107,17 +106,19 @@ steps:
 
   - id: close-task
     type: script
+    cwd: "."
     command: |
       STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        -d '{"query":"query{issue(id:\"$inputs.linear_id\"){team{states{nodes{id type}}}}}"}' \
+        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id type}}}}}\"}" \
         | jq -r '.data.issue.team.states.nodes[] | select(.type=="completed") | .id' \
         | head -1)
       curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$inputs.linear_id\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
         > /dev/null
       printf '{}'
+    args: ["$inputs.linear_id"]
     writes: []
