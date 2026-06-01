@@ -56,7 +56,6 @@ from harness.workflow.resolver import (
     resolve_contract_ref,
 )
 from harness.workflow.schema import (
-    DecisionStep,
     LoopStep,
     Step,
     Workflow,
