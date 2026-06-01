@@ -5,8 +5,9 @@ DecisionNode is a thin gate over the AI dispatch path:
 * ``actor: llm`` (v1) — same execution shape as ``AINode``, but the contract
   is required to declare ``decision: bool`` and a ``decision_made`` event is
   emitted on success.
-* ``actor: human`` (v2) — schema-reserved; running such a workflow errors
-  ("actor: human is reserved for v2") until the resume machinery ships.
+* ``actor: human`` (H-2-002) — raises ``HumanDecisionRequested`` so the
+  runner can pause the workflow, set status='paused', emit
+  ``decision_requested`` + ``workflow_paused``, and return exit code 4.
 
 Routing on ``on_reject:`` is the executor's job (H-007). The DecisionNode
 itself only validates the contract, dispatches, and records the
@@ -27,7 +28,7 @@ from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent, RecordedCall
 from harness.events.schema import EventType
 from harness.nodes.base import Attestation, NodeResult
-from harness.nodes.decision import DecisionNode
+from harness.nodes.decision import DecisionNode, HumanDecisionRequested
 from harness.state.schema import BaseState
 from harness.workflow.schema import DecisionStep
 
@@ -196,22 +197,66 @@ def test_decision_node_has_async_execute() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC3 — actor: human reserved for v2
+# AC3 — actor: human raises HumanDecisionRequested (H-2-002)
 # ---------------------------------------------------------------------------
 
 
-async def test_actor_human_raises_v2_reserved(tmp_path: Path) -> None:
-    """SPEC §4.5: workflows using actor: human error until v2 ships."""
+async def test_actor_human_raises_human_decision_requested(tmp_path: Path) -> None:
+    """H-2-002: actor: human raises HumanDecisionRequested (not RuntimeError)."""
     prompts = tmp_path / "prompts"
     prompts.mkdir()
     agent = MockAgent()
     node = DecisionNode(agent=agent, prompts_dir=prompts)
     step = _step(actor="human", prompt=None, message="approve?")
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(HumanDecisionRequested):
         await node.execute(step=step, state=_state(tmp_path), inputs={})
-    assert "actor: human is reserved for v2" in str(exc_info.value)
     assert not agent.calls, "agent must not be invoked for human-actor steps"
+
+
+async def test_actor_human_exception_carries_step_id_and_message(tmp_path: Path) -> None:
+    """HumanDecisionRequested.step_id and .message match the step."""
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    node = DecisionNode(agent=MockAgent(), prompts_dir=prompts)
+    step = _step(actor="human", prompt=None, message="Is this correct?")
+
+    with pytest.raises(HumanDecisionRequested) as exc_info:
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+    exc = exc_info.value
+    assert exc.step_id == step.id
+    assert exc.message == "Is this correct?"
+
+
+async def test_actor_human_emits_decision_requested_via_event_sink(tmp_path: Path) -> None:
+    """decision_requested is emitted via the event_sink before the exception."""
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    recorded, sink = _make_sink()
+    node = DecisionNode(agent=MockAgent(), prompts_dir=prompts, event_sink=sink)
+    step = _step(actor="human", prompt=None, message="approve?", on_reject="cancel")
+
+    with pytest.raises(HumanDecisionRequested):
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
+
+    assert len(recorded) == 1
+    event_type, payload = recorded[0]
+    assert event_type == "decision_requested"
+    assert payload["step_id"] == step.id
+    assert payload["message"] == "approve?"
+    assert payload["on_reject"] == "cancel"
+    assert "on_timeout" in payload
+
+
+async def test_actor_human_no_event_when_sink_is_none(tmp_path: Path) -> None:
+    """When event_sink is None, no error — HumanDecisionRequested still raised."""
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    node = DecisionNode(agent=MockAgent(), prompts_dir=prompts, event_sink=None)
+    step = _step(actor="human", prompt=None, message="approve?")
+
+    with pytest.raises(HumanDecisionRequested):
+        await node.execute(step=step, state=_state(tmp_path), inputs={})
 
 
 # ---------------------------------------------------------------------------

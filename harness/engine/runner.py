@@ -14,7 +14,7 @@ entry point in H-023 will call ``asyncio.run(runner.run(...))``). It:
    :class:`~harness.engine.executor.Context` is built once and reused;
    per-type :data:`NodeRunner` adapters are constructed up-front from
    the five concrete Node classes (AI/Script/Check/Decision/Worktree).
-5. Catches the three terminal exception classes and maps them to SPEC §11
+5. Catches the four terminal exception classes and maps them to SPEC §11
    exit codes:
 
    * success → ``workflow_completed`` + status ``completed`` + exit 0.
@@ -23,6 +23,8 @@ entry point in H-023 will call ``asyncio.run(runner.run(...))``). It:
    * :class:`harness.dispatch.claude.ContractViolation` after retry budget
      → ``workflow_failed`` with the violation reason + status ``failed``
      + exit 3.
+   * :class:`harness.nodes.decision.HumanDecisionRequested` → ``decision_requested``
+     + ``workflow_paused`` events, status ``paused``, exit 4.
    * anything else from the executor → ``workflow_failed`` + status
      ``failed`` + exit 1.
 
@@ -50,6 +52,7 @@ from __future__ import annotations
 
 import json
 import signal
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,7 +70,7 @@ from harness.identity import generate_run_id
 from harness.nodes.ai import AINode
 from harness.nodes.base import NodeResult
 from harness.nodes.check import CheckNode
-from harness.nodes.decision import DecisionNode
+from harness.nodes.decision import DecisionNode, HumanDecisionRequested
 from harness.nodes.script import ScriptNode
 from harness.nodes.worktree import WorktreeNode
 from harness.state.schema import BaseState
@@ -165,8 +168,9 @@ class Runner:
 
         Returns:
             ``0`` on success, ``1`` on caught executor failure, ``3`` on
-            :class:`ContractViolation` after retry exhaustion, ``130`` on
-            SIGINT / ``KeyboardInterrupt``.
+            :class:`ContractViolation` after retry exhaustion, ``4`` on
+            :class:`HumanDecisionRequested` (workflow paused awaiting
+            decision), ``130`` on SIGINT / ``KeyboardInterrupt``.
 
         Raises:
             Any exception from :func:`load_workflow` or
@@ -322,6 +326,15 @@ class Runner:
                 reason=f"ContractViolation: {exc.reason}",
             )
             return 3
+        except HumanDecisionRequested as exc:
+            await self._finalise_pause(
+                emitter=emitter,
+                run_id=run_id,
+                started_monotonic=started_monotonic,
+                step_id=exc.step_id,
+                message=exc.message,
+            )
+            return 4
         except BaseException as exc:
             # Catch-all for anything else the executor surfaces post-retry.
             # The executor already emitted ``node_failed``; we layer the
@@ -397,6 +410,52 @@ class Runner:
             event_type="workflow_failed",
             duration_ms=duration_ms,
             data=data,
+        )
+
+    async def _finalise_pause(
+        self,
+        *,
+        emitter: EventEmitter,
+        run_id: str,
+        started_monotonic: float,
+        step_id: str,
+        message: str,
+    ) -> None:
+        """Persist the paused state + emit lifecycle events + print instructions.
+
+        Called when a human-decision node is reached (SPEC §4.5, H-2-002).
+        Updates the run row to status='paused' with exit_code=4, emits
+        ``decision_requested`` and ``workflow_paused`` events, then prints the
+        decision message and resume instructions to stdout.
+        """
+        duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+        await self._update_run_completion(
+            run_id=run_id,
+            status="paused",
+            exit_code=4,
+            duration_ms=duration_ms,
+        )
+        await emitter.emit(
+            run_id=run_id,
+            event_type="decision_requested",
+            node_id=step_id,
+            data={"step_id": step_id, "message": message},
+        )
+        await emitter.emit(
+            run_id=run_id,
+            event_type="workflow_paused",
+            duration_ms=duration_ms,
+            data={"step_id": step_id},
+        )
+        print(
+            f"\n[harness] Workflow paused — human decision required\n"
+            f"  Run ID:  {run_id}\n"
+            f"  Message: {message}\n"
+            f"\n"
+            f"  To continue:\n"
+            f"    harness decision approve {run_id}\n"
+            f"    harness decision reject  {run_id}\n",
+            file=sys.stdout,
         )
 
     async def _worktree_was_created(self, run_id: str) -> bool:
