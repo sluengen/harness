@@ -284,10 +284,10 @@ class WorktreeNode:
         worktree_removed = await self._git_worktree_remove(
             repo_root, worktree_path, force=False
         )
+        await _git(repo_root, "worktree", "prune")
         branch_removed = await self._git_branch_delete(
             repo_root, worktree_branch, force=False
         )
-        await _git(repo_root, "worktree", "prune")
 
         return NodeResult(
             contract=WorktreeCleanupOutput(
@@ -350,10 +350,10 @@ class WorktreeNode:
         worktree_removed = await self._git_worktree_remove(
             repo_root, worktree_path, force=True
         )
+        await _git(repo_root, "worktree", "prune")
         branch_removed = await self._git_branch_delete(
             repo_root, worktree_branch, force=True
         )
-        await _git(repo_root, "worktree", "prune")
 
         return NodeResult(
             contract=WorktreeCleanupOutput(
