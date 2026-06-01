@@ -929,3 +929,231 @@ async def test_check_retry_loop_unknown_id_fails_with_clear_message(
     assert "no_such_loop" in blob, (
         f"failure message should name the bad loop id: {data!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# on_exhaust field — schema and engine behaviour (CAL-511)
+# ---------------------------------------------------------------------------
+
+
+def test_loop_block_on_exhaust_defaults_to_cancel() -> None:
+    """LoopBlock.on_exhaust defaults to 'cancel' for backwards compatibility."""
+    from harness.workflow.schema import CheckStep, LoopBlock
+
+    block = LoopBlock(
+        max_iterations=2,
+        until="state.never",
+        steps=[CheckStep(type="check", id="noop", expr="True", on_fail="cancel")],
+    )
+    assert block.on_exhaust == "cancel"
+
+
+async def test_on_exhaust_continue_does_not_raise_on_exhaustion(
+    tmp_path: Path,
+) -> None:
+    """A loop with ``on_exhaust: continue`` falls through to post-loop steps
+    without raising LoopExhausted. The post-loop check step must run and
+    pass (exit_code == 0)."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "exhaust_continue.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: exhaust_continue
+        version: 1
+        steps:
+          - id: fix-loop
+            type: loop
+            loop:
+              max_iterations: 2
+              until: "state.never"
+              on_exhaust: continue
+              steps:
+                - id: write-false
+                  type: script
+                  command: 'printf "%s" "{\\"never\\": false}"'
+                  writes: [never]
+                  contract:
+                    never: boolean
+          - id: post-loop
+            type: check
+            expr: "True"
+            on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0, "on_exhaust: continue should fall through, not fail"
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    started = [e["node_id"] for e in events if e["event_type"] == "node_started"]
+    assert "post-loop" in started, (
+        f"post-loop step must run after on_exhaust: continue; started={started}"
+    )
+
+
+async def test_on_exhaust_cancel_default_still_raises(tmp_path: Path) -> None:
+    """The default on_exhaust: cancel behaviour is unchanged.
+
+    This test verifies that existing AC2 / AC3 behaviour is preserved when
+    on_exhaust is not set (it defaults to 'cancel')."""
+    db = tmp_path / "harness.db"
+    wf = _loop_exhaustion_workflow(tmp_path)  # uses default on_exhaust (cancel)
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1, "default on_exhaust: cancel must still fail the run"
+
+
+# ---------------------------------------------------------------------------
+# Simulation tests — build workflow review-loop paths (CAL-511)
+# ---------------------------------------------------------------------------
+
+
+async def test_fail_retry_pass_path(tmp_path: Path) -> None:
+    """Simulate FAIL → retry → PASS: loop writes FAIL on first iteration and
+    PASS on second. After the loop, gate-exhausted passes (verdict=PASS).
+    Verify exit_code == 0."""
+    db = tmp_path / "harness.db"
+    counter_path = tmp_path / "frp_counter"
+    wf = tmp_path / "fail_retry_pass.yaml"
+    _write_workflow(
+        wf,
+        f"""
+        name: fail_retry_pass
+        version: 1
+        steps:
+          - id: fix-loop
+            type: loop
+            loop:
+              max_iterations: 3
+              until: 'state.verdict != "FAIL"'
+              on_exhaust: continue
+              steps:
+                - id: review
+                  type: script
+                  command: |
+                    n=$(cat {counter_path} 2>/dev/null || echo 0)
+                    n=$((n + 1))
+                    echo $n > {counter_path}
+                    if [ "$n" -ge 2 ]; then
+                      printf '{{"verdict": "PASS"}}'
+                    else
+                      printf '{{"verdict": "FAIL"}}'
+                    fi
+                  writes: [verdict]
+                  contract:
+                    verdict:
+                      type: string
+                      enum: [PASS, FAIL, DEFER]
+                - id: gate-retry
+                  type: check
+                  expr: 'state.verdict != "FAIL"'
+                  on_fail: "retry_loop:fix-loop"
+          - id: gate-exhausted
+            type: check
+            expr: 'state.verdict != "FAIL"'
+            on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0, "FAIL→retry→PASS path should exit 0"
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    started = [e["node_id"] for e in events if e["event_type"] == "node_started"]
+    assert "gate-exhausted" in started, (
+        f"gate-exhausted must run after the loop; started={started}"
+    )
+
+
+async def test_defer_no_error_path(tmp_path: Path) -> None:
+    """Simulate DEFER path: loop writes DEFER (not FAIL) so gate-retry exits
+    immediately. After the loop, gate-exhausted passes (DEFER != FAIL).
+    Verify exit_code == 0."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "defer_path.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: defer_path
+        version: 1
+        steps:
+          - id: fix-loop
+            type: loop
+            loop:
+              max_iterations: 3
+              until: 'state.verdict != "FAIL"'
+              on_exhaust: continue
+              steps:
+                - id: review
+                  type: script
+                  command: 'printf "%s" "{\\"verdict\\": \\"DEFER\\"}"'
+                  writes: [verdict]
+                  contract:
+                    verdict:
+                      type: string
+                      enum: [PASS, FAIL, DEFER]
+                - id: gate-retry
+                  type: check
+                  expr: 'state.verdict != "FAIL"'
+                  on_fail: "retry_loop:fix-loop"
+          - id: gate-exhausted
+            type: check
+            expr: 'state.verdict != "FAIL"'
+            on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0, "DEFER path should exit 0 (DEFER is not FAIL)"
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    started = [e["node_id"] for e in events if e["event_type"] == "node_started"]
+    assert "gate-exhausted" in started, (
+        f"gate-exhausted must run after the loop; started={started}"
+    )
+
+
+async def test_exhaustion_cancels_on_gate_exhausted(tmp_path: Path) -> None:
+    """Simulate exhaustion path: loop always writes FAIL, exhausts after
+    max_iterations: 2 with on_exhaust: continue. gate-exhausted cancels
+    (verdict still FAIL). Verify exit_code == 1."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "exhaustion_cancel.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: exhaustion_cancel
+        version: 1
+        steps:
+          - id: fix-loop
+            type: loop
+            loop:
+              max_iterations: 2
+              until: 'state.verdict != "FAIL"'
+              on_exhaust: continue
+              steps:
+                - id: review
+                  type: script
+                  command: 'printf "%s" "{\\"verdict\\": \\"FAIL\\"}"'
+                  writes: [verdict]
+                  contract:
+                    verdict:
+                      type: string
+                      enum: [PASS, FAIL, DEFER]
+                - id: gate-retry
+                  type: check
+                  expr: 'state.verdict != "FAIL"'
+                  on_fail: "retry_loop:fix-loop"
+          - id: gate-exhausted
+            type: check
+            expr: 'state.verdict != "FAIL"'
+            on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1, "exhaustion path should exit 1 (gate-exhausted cancels)"

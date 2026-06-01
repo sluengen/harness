@@ -266,6 +266,8 @@ class LoopExecutor:
             if loop.until_bash
             else f"until={loop.until!r}"
         )
+        if loop.on_exhaust == "continue":
+            return
         raise LoopExhausted(
             f"loop_exhausted: step {step.id!r} ran {loop.max_iterations} "
             f"iterations without satisfying {predicate}"

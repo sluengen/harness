@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from harness.workflow.loader import LoadedWorkflow, load_workflow
-from harness.workflow.schema import ScriptStep
+from harness.workflow.schema import LoopStep, ScriptStep
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BUILD_WORKFLOW = _REPO_ROOT / "workflows" / "build.yaml"
@@ -36,19 +36,20 @@ def loaded_build() -> LoadedWorkflow:
 def test_build_workflow_loads_without_error(loaded_build: LoadedWorkflow) -> None:
     """The shipped YAML parses and all loader cross-step checks pass."""
     assert loaded_build.workflow.name == "build"
-    assert loaded_build.workflow.version == 2
+    assert loaded_build.workflow.version == 3
 
 
 def test_build_workflow_step_ids(loaded_build: LoadedWorkflow) -> None:
-    """Steps are declared in the expected order."""
+    """Steps are declared in the expected order (version 3 structure)."""
     step_ids = [s.id for s in loaded_build.workflow.steps]
     assert step_ids == [
         "setup",
         "set-in-progress",
         "fetch-ticket",
-        "implement",
-        "review",
-        "gate",
+        "fix-loop",
+        "notify-exhausted",
+        "gate-exhausted",
+        "handle-deferred",
         "commit-and-push",
         "teardown",
         "close-task",
@@ -79,6 +80,47 @@ def _commit_and_push_step(loaded_build: LoadedWorkflow) -> ScriptStep:
             )
             return step  # type: ignore[return-value]
     pytest.fail("commit-and-push step not found in build workflow")
+
+
+# ---------------------------------------------------------------------------
+# CAL-511 — version 3 structure: fix-loop inner steps, DEFER contract
+# ---------------------------------------------------------------------------
+
+
+def test_build_workflow_fix_loop_inner_steps(loaded_build: LoadedWorkflow) -> None:
+    """The fix-loop block's inner steps are implement, review, and gate-retry."""
+    fix_loop = next(
+        s for s in loaded_build.workflow.steps if s.id == "fix-loop"
+    )
+    assert isinstance(fix_loop, LoopStep), (
+        f"fix-loop should be a LoopStep, got {type(fix_loop)}"
+    )
+    inner_ids = [s.id for s in fix_loop.loop.steps]
+    assert inner_ids == ["implement", "review", "gate-retry"]
+
+
+def test_build_workflow_review_contract_has_defer(loaded_build: LoadedWorkflow) -> None:
+    """The review step's contract includes DEFER in the verdict enum."""
+    review_contract = loaded_build.contracts.get("review")
+    assert review_contract is not None, "review step must have a contract"
+    verdict_field = review_contract.model_fields.get("verdict")
+    assert verdict_field is not None, "review contract must have a verdict field"
+    # The annotation is Literal["PASS", "FAIL", "DEFER"] (or similar).
+    annotation_str = str(verdict_field.annotation)
+    assert "DEFER" in annotation_str, (
+        f"verdict annotation must include DEFER: {annotation_str!r}"
+    )
+
+
+def test_build_workflow_review_contract_has_deferred_brief(
+    loaded_build: LoadedWorkflow,
+) -> None:
+    """The review step's contract includes the deferred_brief field."""
+    review_contract = loaded_build.contracts.get("review")
+    assert review_contract is not None, "review step must have a contract"
+    assert "deferred_brief" in review_contract.model_fields, (
+        "review contract must have a deferred_brief field"
+    )
 
 
 def test_commit_and_push_git_commands_redirect_stdout_to_stderr(

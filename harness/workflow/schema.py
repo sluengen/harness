@@ -281,6 +281,11 @@ class LoopBlock(BaseModel):
     until: str | None = None
     fresh_context: bool = False
     until_bash: str | None = None
+    # ``cancel`` (default): LoopExhausted propagates and the workflow fails.
+    # ``continue``: fall through to post-loop steps when max_iterations is
+    # reached without ``until`` becoming true. Backwards-compatible: existing
+    # workflows that omit this field get the original cancel behaviour.
+    on_exhaust: Literal["cancel", "continue"] = "cancel"
     steps: list[Step]
 
     @model_validator(mode="after")
