@@ -87,16 +87,16 @@ async def _table_columns(db_path: Path, table: str) -> dict[str, dict[str, objec
         aiosqlite.connect(db_path) as conn,
         conn.execute(f"PRAGMA table_info({table})") as cursor,
     ):
-        return {
-            row[1]: {"type": row[2], "notnull": row[3], "pk": row[5]}
-            async for row in cursor
-        }
+        return {row[1]: {"type": row[2], "notnull": row[3], "pk": row[5]} async for row in cursor}
 
 
 async def _index_names(db_path: Path) -> set[str]:
-    async with aiosqlite.connect(db_path) as conn, conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
-    ) as cursor:
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+        ) as cursor,
+    ):
         return {row[0] async for row in cursor}
 
 
@@ -108,9 +108,10 @@ async def _index_names(db_path: Path) -> set[str]:
 async def test_ac1_init_db_creates_run_snapshots_table(tmp_path: Path) -> None:
     db_path = tmp_path / "h.db"
     await store.init_db(db_path)
-    async with aiosqlite.connect(db_path) as conn, conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ) as cur:
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur,
+    ):
         tables = {row[0] async for row in cur}
     assert "run_snapshots" in tables
 
@@ -293,7 +294,7 @@ async def test_ac9_read_latest_snapshot_ignores_other_runs(tmp_path: Path) -> No
 
 
 # ---------------------------------------------------------------------------
-# AC10 — read_latest_snapshot raises StateStoreError if run does not exist
+# AC10 — read_latest_snapshot returns None when run has no snapshots
 # ---------------------------------------------------------------------------
 
 
@@ -441,3 +442,35 @@ async def test_ac13_executor_does_not_write_snapshot_on_node_failure(tmp_path: P
 
     rows = await _snapshot_rows(db_path)
     assert len(rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# AC_UNIQUE — UNIQUE (run_id, seq) prevents duplicate seq values at DB level
+# ---------------------------------------------------------------------------
+
+
+async def test_ac_unique_run_id_seq_constraint_rejects_duplicate(tmp_path: Path) -> None:
+    """DB-level UNIQUE (run_id, seq) constraint prevents silent corruption."""
+    import aiosqlite as _aiosqlite
+
+    db_path = tmp_path / "h.db"
+    await _seed_run(db_path)
+
+    # First insert is fine.
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "INSERT INTO run_snapshots (run_id, node_id, seq, state_json, captured_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("R1", "step-a", 1, "{}", "2026-01-01T00:00:00"),
+        )
+        await conn.commit()
+
+    # Second insert with the SAME (run_id, seq) must raise.
+    with pytest.raises(_aiosqlite.IntegrityError):
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO run_snapshots (run_id, node_id, seq, state_json, captured_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("R1", "step-b", 1, "{}", "2026-01-01T00:00:01"),
+            )
+            await conn.commit()
