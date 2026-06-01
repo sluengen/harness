@@ -6,6 +6,8 @@ run.
 
 H-003 supplied :func:`connect` and :func:`init_db`. H-010 layers
 :func:`read_state` and :func:`update_state` on top of that foundation.
+H-2-001 adds :func:`write_snapshot` and :func:`read_latest_snapshot` for
+per-completion state snapshot history (foundation for v2 resume).
 
 State writes go through :func:`update_state` only. The function:
 
@@ -24,6 +26,12 @@ State writes go through :func:`update_state` only. The function:
 4. Emits a ``state_changed`` event on success unless the caller opts
    out via ``emit_event=False``.
 
+After each node completes the executor calls :func:`write_snapshot`,
+which appends an immutable snapshot row to ``run_snapshots`` keyed by
+``run_id`` + an auto-incrementing ``seq``. The v2 resume machinery reads
+the highest-``seq`` row via :func:`read_latest_snapshot` to rehydrate
+state without relying on the mutable ``runs.state_json`` column.
+
 Module-level functions (rather than a ``StateStore`` class) match the
 existing style — H-003 defined :func:`connect` / :func:`init_db` as
 free functions and the single-db-per-project model means there's no
@@ -35,6 +43,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, get_origin
 
@@ -95,6 +104,18 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_run_node ON events(run_id, node_id);
+
+CREATE TABLE IF NOT EXISTS run_snapshots (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id      TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  node_id     TEXT NOT NULL,
+  seq         INTEGER NOT NULL,
+  state_json  TEXT NOT NULL,
+  captured_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_run ON run_snapshots(run_id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_run_seq ON run_snapshots(run_id, seq);
 """
 
 
@@ -234,6 +255,84 @@ async def update_state(
         )
 
     return new_state
+
+
+# ---------------------------------------------------------------------------
+# Per-completion snapshots — H-2-001
+# ---------------------------------------------------------------------------
+
+
+async def write_snapshot(
+    run_id: str,
+    node_id: str,
+    state: BaseState,
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> None:
+    """Append an immutable state snapshot row after a node completes.
+
+    ``seq`` is computed as ``MAX(seq) + 1`` for the run (or 1 if none
+    exist), assigned inside a single ``BEGIN IMMEDIATE`` transaction so
+    concurrent writers targeting the same run serialise correctly.
+
+    The snapshot is purely additive — it never mutates ``runs.state_json``.
+    The v2 resume machinery reads the latest snapshot via
+    :func:`read_latest_snapshot` rather than the mutable row.
+    """
+    captured_at = datetime.now(UTC).isoformat()
+    state_json = state.model_dump_json()
+
+    async with store_connection(db_path) as conn:
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            async with conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) FROM run_snapshots WHERE run_id = ?",
+                (run_id,),
+            ) as cur:
+                row = await cur.fetchone()
+            next_seq: int = (int(row[0]) if row is not None else 0) + 1
+
+            await conn.execute(
+                "INSERT INTO run_snapshots (run_id, node_id, seq, state_json, captured_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (run_id, node_id, next_seq, state_json, captured_at),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+
+
+async def read_latest_snapshot(
+    run_id: str,
+    schema: type[S],
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> S | None:
+    """Return the state at the most recent snapshot, or ``None`` if none exist.
+
+    The "most recent" snapshot is the row with the highest ``seq`` for the
+    given ``run_id``. Returns ``None`` (not an error) when a run exists but
+    has no snapshots yet — callers should fall back to ``read_state`` in
+    that case.
+
+    Raises:
+        StateStoreError: the snapshot's ``state_json`` fails schema validation.
+    """
+    async with (
+        store_connection(db_path) as conn,
+        conn.execute(
+            "SELECT state_json FROM run_snapshots "
+            "WHERE run_id = ? ORDER BY seq DESC LIMIT 1",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+
+    if row is None:
+        return None
+
+    return _validate(schema, json.loads(str(row[0])), context=f"snapshot for run {run_id!r}")
 
 
 # ---------------------------------------------------------------------------
