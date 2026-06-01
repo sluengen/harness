@@ -8,7 +8,20 @@
   Required inputs: linear_id.
   submit_tool_name injected by the contract engine.
 #}
-You are implementing the changes required for Linear ticket {{ inputs.linear_id }}.
+{% if state.issues %}
+## Previous review — issues to fix
+
+This is a retry. The previous implementation was rejected. Fix **all** of the following
+before re-submitting:
+
+{% for issue in state.issues %}
+- {{ issue }}
+{% endfor %}
+
+Do not re-submit until every item above is addressed and verified.
+
+---
+{% endif %}
 
 ## Ticket
 

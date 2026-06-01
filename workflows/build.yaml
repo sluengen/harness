@@ -1,11 +1,11 @@
 name: build
-version: 2
+version: 3
 description: >
   General-purpose build workflow for harness dog-fooding. Sets the Linear
   ticket in-progress, fetches ticket content, implements changes in an
-  isolated worktree, has a reviewer agent review and author the commit
-  message, commits and pushes on PASS, tears down locally, then marks
-  the task done.
+  isolated worktree, runs a review loop (up to 3 iterations) to catch
+  fixable issues before shipping, commits and pushes on PASS or DEFER,
+  tears down locally, then marks the task done.
 
 inputs:
   linear_id:
@@ -57,35 +57,103 @@ steps:
       ticket_description: string
     writes: [ticket_title, ticket_description]
 
-  - id: implement
-    type: ai
-    agent: claude
-    model: sonnet
-    prompt: prompts/build/implement.j2
-    allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
-    writes_files: true
+  - id: fix-loop
+    type: loop
+    loop:
+      max_iterations: 3
+      until: 'state.verdict != "FAIL"'
+      on_exhaust: continue
+      steps:
+
+        - id: implement
+          type: ai
+          agent: claude
+          model: sonnet
+          prompt: prompts/build/implement.j2
+          allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+          writes_files: true
+          writes: []
+
+        - id: review
+          type: ai
+          agent: claude
+          model: sonnet
+          prompt: prompts/build/review.j2
+          allowed_tools: [Read, Grep, Glob, Bash]
+          contract:
+            verdict:
+              type: string
+              enum: [PASS, FAIL, DEFER]
+            issues:
+              type: list
+              of: string
+            commit_message: string
+            deferred_brief: string
+          writes: [verdict, issues, commit_message, deferred_brief]
+
+        - id: gate-retry
+          type: check
+          expr: 'state.verdict != "FAIL"'
+          on_fail: "retry_loop:fix-loop"
+
+  - id: notify-exhausted
+    type: script
+    cwd: "."
+    command: |
+      VERDICT="$1"
+      LINEAR_ID="$2"
+      BRANCH="$3"
+      ISSUES="$4"
+      if [ "$VERDICT" = "FAIL" ]; then
+        TODO_STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "{\"query\":\"query{issue(id:\\\"${LINEAR_ID}\\\"){team{states{nodes{id type}}}}}\"}" \
+          | jq -r '.data.issue.team.states.nodes[] | select(.type=="unstarted") | .id' \
+          | head -1)
+        COMMENT=$(printf 'Review loop exhausted after maximum iterations without passing. Work in progress on branch: %s.\n\nReviewer findings:\n%s\n\nPlease inspect and retry.' "${BRANCH}" "${ISSUES}")
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg issue_id "$LINEAR_ID" --arg body "$COMMENT" '{"query":"mutation{commentCreate(input:{issueId:\($issue_id),body:\($body)}){success}}"}')" \
+          > /dev/null
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg id "$LINEAR_ID" --arg state_id "$TODO_STATE_ID" '{"query":"mutation{issueUpdate(id:\($id),input:{stateId:\($state_id)}){success}}"}')" \
+          > /dev/null
+      fi
+      printf '{}'
+    args: ["$state.verdict", "$inputs.linear_id", "$state.worktree_branch", "$state.issues"]
     writes: []
 
-  - id: review
-    type: ai
-    agent: claude
-    model: sonnet
-    prompt: prompts/build/review.j2
-    allowed_tools: [Read, Grep, Glob, Bash]
-    contract:
-      verdict:
-        type: string
-        enum: [PASS, FAIL]
-      issues:
-        type: list
-        of: string
-      commit_message: string
-    writes: [verdict, issues, commit_message]
-
-  - id: gate
+  - id: gate-exhausted
     type: check
-    expr: state.verdict == "PASS"
+    expr: 'state.verdict != "FAIL"'
     on_fail: cancel
+
+  - id: handle-deferred
+    type: script
+    cwd: "."
+    command: |
+      VERDICT="$1"
+      BRIEF="$2"
+      LINEAR_ID="$3"
+      if [ "$VERDICT" = "DEFER" ]; then
+        TEAM_ID=$(curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "{\"query\":\"query{issue(id:\\\"${LINEAR_ID}\\\"){team{id}}}\"}" \
+          | jq -r '.data.issue.team.id')
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg team_id "$TEAM_ID" --arg title "$BRIEF" --arg parent_id "$LINEAR_ID" '{"query":"mutation{issueCreate(input:{teamId:\($team_id),title:\($title),parentId:\($parent_id)}){success issue{identifier}}}"}')" \
+          > /dev/null
+      fi
+      printf '{}'
+    args: ["$state.verdict", "$state.deferred_brief", "$inputs.linear_id"]
+    writes: []
 
   - id: commit-and-push
     type: script

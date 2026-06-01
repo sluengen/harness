@@ -16,12 +16,38 @@ Review the implementation of Linear ticket {{ inputs.linear_id }} — **{{ state
 
 ## Review criteria
 
-Evaluate against: correctness relative to the acceptance criteria above, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Read the diff or relevant files, then identify issues. Tag each finding with HIGH, MEDIUM, or LOW.
+Evaluate against: correctness relative to the acceptance criteria above, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Read the diff or relevant files, then identify issues.
 
 Be concrete — point to file and line where possible. A clean review (no findings) is a valid result; do not invent issues to fill space.
 
+## Verdict
+
+Choose exactly one:
+
+- **PASS** — no findings. The implementation is correct, tested, and focused.
+- **FAIL** — one or more findings that should be fixed before shipping. Use this for
+  any finding you can describe in a sentence and the implementer could address in this
+  session. Severity does not matter — a LOW finding that is fixable is still FAIL.
+- **DEFER** — a finding that is genuinely out of scope for this ticket: requires
+  architectural redesign, a new spec, or work clearly beyond this ticket's boundary.
+  The current code is shippable as-is; the deferred item is tracked separately.
+  Use DEFER sparingly. If in doubt, use FAIL.
+
+On FAIL: populate `issues` with each finding (file:line, description). Leave
+`commit_message` empty and `deferred_brief` empty.
+
+On PASS: `issues` is empty. Write `commit_message`.
+
+On DEFER: populate `issues` with the deferred finding. Write `commit_message` (the
+current code ships). Write `deferred_brief` as a one-line ticket title for the new
+Linear issue.
+
 ## Commit message
 
-Once you have read the diff, write a commit message describing what was actually built — not the ticket title. Format: `type(scope): description` where type is one of `feat / fix / chore / refactor / test`. One line, under 72 characters.
+Required for PASS and DEFER. Once you have read the diff, write a commit message
+describing what was actually built — not the ticket title. Format:
+`type(scope): description` where type is one of `feat / fix / chore / refactor / test`.
+One line, under 72 characters.
 
-When done, call {{ submit_tool_name | default('submit') }} exactly once with the verdict, issues list, and commit message.
+When done, call {{ submit_tool_name | default('submit') }} exactly once with the verdict,
+issues list, commit message, and deferred_brief.
