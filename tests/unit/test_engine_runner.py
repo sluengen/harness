@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+import pytest
 from pydantic import BaseModel
 
 from harness.dispatch.claude import ContractViolation
@@ -711,3 +712,120 @@ async def test_progress_false_suppresses_output(tmp_path: Path) -> None:
     assert exit_code == 0
 
     assert progress_buf.getvalue() == ""
+
+
+# ---------------------------------------------------------------------------
+# Helpers for pause tests
+# ---------------------------------------------------------------------------
+
+
+def _human_decision_workflow(tmp_path: Path, message: str = "Approve the work?") -> Path:
+    """A workflow with a single human-decision node."""
+    path = tmp_path / "human_decision.yaml"
+    _write_workflow(
+        path,
+        f"""
+        name: needs-approval
+        version: 1
+        steps:
+          - id: approve
+            type: decision
+            actor: human
+            message: "{message}"
+            on_reject: cancel
+        """,
+    )
+    return path
+
+
+async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
+    """Fetch all events rows ordered by id — for tests with a single run."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        async with conn.execute(
+            "SELECT id, run_id, node_id, event_type, timestamp, duration_ms, "
+            "data_json FROM events ORDER BY id"
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def _fetch_single_run(db_path: Path) -> dict[str, Any]:
+    """Fetch the sole run row — asserts exactly one run was inserted."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        async with conn.execute("SELECT * FROM runs") as cur:
+            rows = await cur.fetchall()
+    assert len(rows) == 1, f"expected 1 run, got {len(rows)}"
+    return dict(rows[0])
+
+
+# ---------------------------------------------------------------------------
+# AC-pause — actor: human pauses with exit 4
+# ---------------------------------------------------------------------------
+
+
+async def test_human_decision_returns_exit_4(tmp_path: Path) -> None:
+    """SPEC §4.5 / H-2-002: runner returns exit code 4 for human decision."""
+    db = tmp_path / "harness.db"
+    wf = _human_decision_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 4
+
+
+async def test_human_decision_run_status_paused(tmp_path: Path) -> None:
+    """Run row status is 'paused' after a human decision node."""
+    db = tmp_path / "harness.db"
+    wf = _human_decision_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "paused"
+    assert row["exit_code"] == 4
+
+
+async def test_human_decision_emits_decision_requested_event(tmp_path: Path) -> None:
+    """decision_requested event is written to the event log."""
+    db = tmp_path / "harness.db"
+    wf = _human_decision_workflow(tmp_path, message="Please review")
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    events = await _fetch_all_events(db)
+    event_types = [e["event_type"] for e in events]
+    assert "decision_requested" in event_types
+
+    dr_event = next(e for e in events if e["event_type"] == "decision_requested")
+    data = json.loads(dr_event["data_json"])
+    assert data["step_id"] == "approve"
+    assert data["message"] == "Please review"
+
+
+async def test_human_decision_emits_workflow_paused_event(tmp_path: Path) -> None:
+    """workflow_paused event is emitted (not workflow_failed)."""
+    db = tmp_path / "harness.db"
+    wf = _human_decision_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    events = await _fetch_all_events(db)
+    event_types = [e["event_type"] for e in events]
+    assert "workflow_paused" in event_types
+    assert "workflow_failed" not in event_types
+    assert "node_failed" not in event_types
+
+
+async def test_human_decision_prints_message_to_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The decision message and run-id are printed to stdout."""
+    db = tmp_path / "harness.db"
+    wf = _human_decision_workflow(tmp_path, message="Is the report correct?")
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    captured = capsys.readouterr()
+    assert "Is the report correct?" in captured.out
+    assert "harness decision approve" in captured.out
