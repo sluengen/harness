@@ -56,9 +56,7 @@ __all__ = [
 # (H-022) builds these by binding each Node implementation's keyword-only
 # execute() to this uniform call shape; the executor itself doesn't import
 # the Node classes so this module stays independent of dispatch backends.
-NodeRunner = Callable[
-    [Step, BaseState, "Context"], Awaitable[NodeResult[BaseModel]]
-]
+NodeRunner = Callable[[Step, BaseState, "Context"], Awaitable[NodeResult[BaseModel]]]
 
 
 class DependencyNotSatisfied(Exception):  # noqa: N818 — SPEC vocabulary
@@ -136,10 +134,7 @@ class Executor:
             return self._policy
 
         transient_attempts = self._policy.transient_attempts
-        if (
-            retry_cfg.transient is not None
-            and retry_cfg.transient.attempts is not None
-        ):
+        if retry_cfg.transient is not None and retry_cfg.transient.attempts is not None:
             transient_attempts = retry_cfg.transient.attempts
 
         return RetryPolicy(
@@ -166,9 +161,7 @@ class Executor:
         contract_cls = self._resolve_contract(step, ctx)
         runner = self._resolve_runner(step, ctx)
 
-        await emitter.emit(
-            run_id=ctx.run_id, event_type="node_started", node_id=step.id
-        )
+        await emitter.emit(run_id=ctx.run_id, event_type="node_started", node_id=step.id)
 
         retry_events: list[tuple[EventType, dict[str, Any]]] = []
 
@@ -178,12 +171,11 @@ class Executor:
         step_policy = self._policy_for_step(step)
         started_at = time.monotonic()
         try:
+
             async def op(_rc: RetryContext) -> NodeResult[BaseModel]:
                 return await runner(step, state, ctx)
 
-            result = await run_with_retry(
-                op, policy=step_policy, event_sink=sink
-            )
+            result = await run_with_retry(op, policy=step_policy, event_sink=sink)
         except BaseException as exc:
             await self._flush_retry_events(emitter, ctx.run_id, step.id, retry_events)
             await emitter.emit(
@@ -202,10 +194,9 @@ class Executor:
         # Post-dispatch validation + writes. Any raise here must still close
         # the node lifecycle with ``node_failed`` (SPEC §4.2 / §4.9 invariant:
         # every ``node_started`` is paired with a terminal event).
+        state_after: BaseState = state  # no-writes path: state is already current
         try:
-            if contract_cls is not None and not isinstance(
-                result.contract, contract_cls
-            ):
+            if contract_cls is not None and not isinstance(result.contract, contract_cls):
                 raise ContractMismatch(
                     f"step {step.id!r}: node returned contract of type "
                     f"{type(result.contract).__name__}, expected "
@@ -215,13 +206,9 @@ class Executor:
                 # WorktreeStep: contract_cls is None (no entry in
                 # ctx.contracts), so validate against the node's actual
                 # result type (WorktreeCreateOutput) instead (CAL-497).
-                effective_cls = (
-                    contract_cls
-                    if contract_cls is not None
-                    else type(result.contract)
-                )
+                effective_cls = contract_cls if contract_cls is not None else type(result.contract)
                 self._validate_writes_against_contract(step, effective_cls)
-                await self._apply_writes(ctx, step, result)
+                state_after = await self._apply_writes(ctx, step, result)
         except BaseException as exc:
             await emitter.emit(
                 run_id=ctx.run_id,
@@ -238,7 +225,6 @@ class Executor:
         # all writes have landed so the snapshot captures the post-step state.
         # This is the H-2-001 per-completion history: the v2 resume machinery
         # reads the highest-seq snapshot instead of the mutable state_json row.
-        state_after = await read_state(ctx.run_id, ctx.state_schema, db_path=ctx.db_path)
         await write_snapshot(ctx.run_id, step.id, state_after, db_path=ctx.db_path)
 
         duration_ms = int((time.monotonic() - started_at) * 1000)
@@ -274,9 +260,7 @@ class Executor:
                 )
 
     @staticmethod
-    def _resolve_contract(
-        step: Step, ctx: Context
-    ) -> type[BaseModel] | None:
+    def _resolve_contract(step: Step, ctx: Context) -> type[BaseModel] | None:
         """Pick the contract type for this step.
 
         Returns ``None`` in two cases:
@@ -316,9 +300,7 @@ class Executor:
         return runner
 
     @staticmethod
-    def _validate_writes_against_contract(
-        step: Step, contract_cls: type[BaseModel] | None
-    ) -> None:
+    def _validate_writes_against_contract(step: Step, contract_cls: type[BaseModel] | None) -> None:
         """Every name in ``step.writes`` must exist on the contract."""
         # _resolve_contract already raised if contract_cls is None and writes
         # is non-empty, so the assert is defensive only.
@@ -333,9 +315,7 @@ class Executor:
             )
 
     @staticmethod
-    async def _apply_writes(
-        ctx: Context, step: Step, result: NodeResult[BaseModel]
-    ) -> None:
+    async def _apply_writes(ctx: Context, step: Step, result: NodeResult[BaseModel]) -> BaseState:
         """Project the declared ``writes:`` fields onto state.
 
         Per-write merge overrides (H-1.5-004): any :class:`WriteSpec` entry
@@ -344,14 +324,15 @@ class Executor:
         without an override (``merge=None``) rely on the type-driven default.
         When no overrides are present, ``None`` is passed so the store takes
         its fast path.
+
+        Returns the merged state so the caller can snapshot it without an
+        extra DB read.
         """
         overrides: dict[str, str] = {
-            spec.field: spec.merge
-            for spec in step.writes
-            if spec.merge is not None
+            spec.field: spec.merge for spec in step.writes if spec.merge is not None
         }
         payload = {spec.field: getattr(result.contract, spec.field) for spec in step.writes}
-        await update_state(
+        return await update_state(
             ctx.run_id,
             ctx.state_schema,
             db_path=ctx.db_path,
@@ -374,4 +355,3 @@ class Executor:
                 node_id=node_id,
                 data=data,
             )
-

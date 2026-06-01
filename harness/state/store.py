@@ -69,6 +69,7 @@ class StateStoreError(Exception):
     dict-write rejects so callers see one error type at the boundary.
     """
 
+
 # Schema per SPEC §12. Idempotent — every CREATE uses ``IF NOT EXISTS``. Re-running
 # this script on an existing DB is a no-op.
 _SCHEMA = """
@@ -111,7 +112,8 @@ CREATE TABLE IF NOT EXISTS run_snapshots (
   node_id     TEXT NOT NULL,
   seq         INTEGER NOT NULL,
   state_json  TEXT NOT NULL,
-  captured_at TEXT NOT NULL
+  captured_at TEXT NOT NULL,
+  UNIQUE (run_id, seq)
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON run_snapshots(run_id);
@@ -225,9 +227,7 @@ async def update_state(
             current = _validate(schema, json.loads(raw), context=f"run {run_id!r}")
 
             merged = _merge(schema, current, fields, merge_overrides or {})
-            new_state = _validate(
-                schema, merged, context=f"run {run_id!r} (post-merge)"
-            )
+            new_state = _validate(schema, merged, context=f"run {run_id!r} (post-merge)")
 
             await conn.execute(
                 "UPDATE runs SET state_json = ? WHERE run_id = ?",
@@ -290,7 +290,8 @@ async def write_snapshot(
                 (run_id,),
             ) as cur:
                 row = await cur.fetchone()
-            next_seq: int = (int(row[0]) if row is not None else 0) + 1
+            assert row is not None  # COALESCE aggregate always returns a row
+            next_seq: int = int(row[0]) + 1
 
             await conn.execute(
                 "INSERT INTO run_snapshots (run_id, node_id, seq, state_json, captured_at) "
@@ -322,8 +323,7 @@ async def read_latest_snapshot(
     async with (
         store_connection(db_path) as conn,
         conn.execute(
-            "SELECT state_json FROM run_snapshots "
-            "WHERE run_id = ? ORDER BY seq DESC LIMIT 1",
+            "SELECT state_json FROM run_snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1",
             (run_id,),
         ) as cur,
     ):
@@ -345,9 +345,7 @@ store_connection = connect
 
 
 async def _select_state_json(conn: aiosqlite.Connection, run_id: str) -> str:
-    async with conn.execute(
-        "SELECT state_json FROM runs WHERE run_id = ?", (run_id,)
-    ) as cur:
+    async with conn.execute("SELECT state_json FROM runs WHERE run_id = ?", (run_id,)) as cur:
         row = await cur.fetchone()
     if row is None:
         raise StateStoreError(f"no run with run_id={run_id!r}")
@@ -366,8 +364,7 @@ def _reject_unknown_fields(schema: type[BaseState], fields: dict[str, Any]) -> N
     unknown = set(fields.keys()) - known
     if unknown:
         raise StateStoreError(
-            f"unknown state field(s) {sorted(unknown)!r}; "
-            f"declared fields are {sorted(known)!r}"
+            f"unknown state field(s) {sorted(unknown)!r}; declared fields are {sorted(known)!r}"
         )
 
 
