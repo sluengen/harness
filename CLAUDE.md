@@ -4,7 +4,7 @@
 
 A deterministic workflow execution harness in Python. Decouples orchestration (external) from execution (this).
 
-**The full design lives in `SPEC.md` — read it first.** This file is intentionally short and points at the spec.
+**Design specs live in `specs/` — read the relevant file first. `SPEC.md` is now an index.**
 
 ## Current state
 
