@@ -46,6 +46,22 @@ Invoke via the Agent tool with the matching `subagent_type`.
 - `/start <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
 - `/build-workflow <description>` — build a new harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
 
+## Invoking the harness CLI
+
+Use `bin/harness` instead of `uv run harness` when running from a shell that already has `VIRTUAL_ENV` set (e.g. a Homebrew-managed Python or another project's activated venv).  The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`, bypassing `uv` entirely:
+
+```bash
+source .env && PYTHONPATH=. bin/harness run build --linear=CAL-NNN
+```
+
+**Why**: `uv run` warns and may use the wrong interpreter when `VIRTUAL_ENV` points at a path that doesn't match the project's `.venv` — see CAL-508.  `bin/harness` is immune to this because it never calls `uv`.
+
+The old pattern still works when `VIRTUAL_ENV` is clean:
+
+```bash
+source .env && PYTHONPATH=. uv run harness <args>   # safe only if VIRTUAL_ENV is unset
+```
+
 ## Agent-agnostic layout
 
 The canonical location for agent definitions, skills, and commands is the repo root: `agents/`, `skills/`, `commands/`. These are plain markdown — any agent harness (Claude Code, Codex, OpenCode, etc.) that can read markdown can consume them.
