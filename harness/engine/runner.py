@@ -51,6 +51,7 @@ not via state fields.
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 import time
@@ -186,13 +187,16 @@ class Runner:
         state_schema = derive_state_schema(loaded)
         run_id = generate_run_id()
 
-        # Install a SIGINT handler that maps the signal to a
+        # Install signal handlers that map SIGINT and SIGTERM to
         # ``KeyboardInterrupt`` raised at the next interpreter check
-        # point. The default Python handler already does this for the
-        # main thread, but we re-install defensively so a calling shell
-        # that masked SIGINT doesn't leave the runner unable to honour
-        # SPEC §10's cancellation contract.
-        previous_handler = self._install_sigint_handler()
+        # point. The default Python handler already does this for SIGINT
+        # on the main thread, but we re-install defensively so a calling
+        # shell that masked SIGINT doesn't leave the runner unable to honour
+        # SPEC §10's cancellation contract.  The SIGTERM handler (H-2-006)
+        # converts an external ``harness cancel`` into the same
+        # KeyboardInterrupt path so both signals share one terminal arm.
+        previous_sigint = self._install_sigint_handler()
+        previous_sigterm = self._install_sigterm_handler()
 
         try:
             return await self._run_inner(
@@ -204,10 +208,11 @@ class Runner:
                 node_overrides=_node_overrides,
             )
         finally:
-            # Always restore the previous handler — even if _run_inner
+            # Always restore previous handlers — even if _run_inner
             # raised an unexpected exception class out past our terminal
             # handling.
-            self._restore_sigint_handler(previous_handler)
+            self._restore_sigint_handler(previous_sigint)
+            self._restore_sigterm_handler(previous_sigterm)
 
     async def resume(
         self,
@@ -298,7 +303,8 @@ class Runner:
             return 1
 
         # Approved, or on_reject == "continue" — walk the remaining steps.
-        previous_handler = self._install_sigint_handler()
+        previous_sigint = self._install_sigint_handler()
+        previous_sigterm = self._install_sigterm_handler()
         try:
             return await self._resume_inner(
                 loaded=loaded,
@@ -308,7 +314,8 @@ class Runner:
                 start_after_step_id=step_id,
             )
         finally:
-            self._restore_sigint_handler(previous_handler)
+            self._restore_sigint_handler(previous_sigint)
+            self._restore_sigterm_handler(previous_sigterm)
 
     # ---- internals ------------------------------------------------------- #
 
@@ -477,12 +484,17 @@ class Runner:
         return str(step_id) if step_id is not None else None
 
     async def _set_run_status_running(self, run_id: str) -> None:
-        """Reset the run row to status='running', clearing exit_code and completed_at."""
+        """Reset the run row to status='running', clearing exit_code and completed_at.
+
+        ``pid`` is refreshed to the current process so ``harness cancel``
+        targets the *resume* process rather than the (already-exited)
+        original ``harness run`` process.
+        """
         async with connect(self._db_path) as conn:
             await conn.execute(
                 "UPDATE runs SET status = 'running', exit_code = NULL, "
-                "completed_at = NULL WHERE run_id = ?",
-                (run_id,),
+                "completed_at = NULL, pid = ? WHERE run_id = ?",
+                (os.getpid(), run_id),
             )
             await conn.commit()
 
@@ -773,13 +785,16 @@ class Runner:
         ``started_at``; everything else is left null until the run
         terminates (the completion update fills ``completed_at``,
         ``exit_code``, ``duration_ms`` in one go).
+
+        ``pid`` is written at INSERT time so ``harness cancel`` can
+        resolve the correct process immediately after the run starts.
         """
         async with connect(self._db_path) as conn:
             await conn.execute(
                 "INSERT INTO runs ("
                 "run_id, workflow_name, workflow_version, status, "
-                "state_json, inputs_json, base_branch, started_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "state_json, inputs_json, base_branch, started_at, pid"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     workflow.name,
@@ -789,6 +804,7 @@ class Runner:
                     json.dumps(inputs),
                     base_branch,
                     started_at.isoformat(),
+                    os.getpid(),
                 ),
             )
             await conn.commit()
@@ -1020,5 +1036,36 @@ class Runner:
             return
         try:
             signal.signal(signal.SIGINT, previous)
+        except (ValueError, OSError):  # pragma: no cover - non-main-thread
+            return
+
+    @staticmethod
+    def _install_sigterm_handler() -> Any:
+        """Install a SIGTERM → KeyboardInterrupt handler (H-2-006).
+
+        ``harness cancel <run-id>`` delivers SIGTERM to the runner process.
+        This handler converts SIGTERM into :class:`KeyboardInterrupt` so the
+        runner's existing ``except KeyboardInterrupt`` arm handles both
+        signals identically: ``workflow_failed`` with ``reason='cancelled'``,
+        ``status='cancelled'``, exit code 130.
+
+        Off the main thread (some test harnesses) ``signal.signal`` raises
+        :class:`ValueError`; we treat that as "nothing to do".
+        """
+        def _sigterm_to_kbi(signum: int, frame: Any) -> None:
+            raise KeyboardInterrupt("SIGTERM")
+
+        try:
+            return signal.signal(signal.SIGTERM, _sigterm_to_kbi)
+        except (ValueError, OSError):  # pragma: no cover - non-main-thread
+            return None
+
+    @staticmethod
+    def _restore_sigterm_handler(previous: Any) -> None:
+        """Best-effort restore the previous SIGTERM handler."""
+        if previous is None:
+            return
+        try:
+            signal.signal(signal.SIGTERM, previous)
         except (ValueError, OSError):  # pragma: no cover - non-main-thread
             return
