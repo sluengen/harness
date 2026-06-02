@@ -60,6 +60,7 @@ from typing import IO, Any
 
 import aiosqlite
 
+from harness.decisions.resume import rehydrate_state as _rehydrate_state
 from harness.dispatch.base import Agent
 from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent
@@ -330,6 +331,11 @@ class Runner:
         started_monotonic = time.monotonic()
 
         await self._set_run_status_running(run_id)
+
+        # Rehydrate state from the latest per-completion snapshot (H-2-001).
+        # Falls back to runs.state_json when no snapshot exists (decision node
+        # was the first step with no predecessor steps).
+        await _rehydrate_state(run_id, state_schema, db_path=self._db_path)
 
         from harness.engine.progress import ProgressReporter
 

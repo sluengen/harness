@@ -125,3 +125,4 @@ After each node completes successfully, the executor calls `write_snapshot(run_i
 - No-op writes (empty `fields` dict) return the current state without touching the DB or emitting an event.
 - `update_state` emits a `state_changed` event on success (unless `emit_event=False`). The event carries only `{"fields": [<changed names>]}`, not the full new state.
 - Dict fields are explicitly rejected. Any attempt to write a `dict`-annotated field raises `StateStoreError` immediately.
+- `restore_state(run_id, state)` performs a verbatim overwrite of `runs.state_json` without any merge. It is the only sanctioned path for resume operations that must restore an exact snapshot. Like `update_state`, it is the sole place where direct SQL against `state_json` is permitted.
