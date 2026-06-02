@@ -14,6 +14,7 @@ Provides a human- and machine-friendly interface for running workflows, querying
 
 ```
 harness run <workflow> [--base <branch>] [--quiet] [--workflows-dir <dir>] [<workflow-inputs>...]
+harness cancel <run-id>   [--json] [--db <path>]
 harness status <run-id>   [--json] [--db <path>]
 harness logs <run-id>     [--follow] [--node <id>] [--db <path>]
 harness events <run-id>   [--type <event_type>] [--json] [--db <path>]
@@ -46,6 +47,29 @@ A reserved `--base` / `_base_branch__` flag is added to every dynamic subcommand
 On workflow not found: exits 2. On load error: exits 2. On runner return value: propagates that exit code.
 
 The default `ClaudeAgent` is constructed at dispatch time via `_build_runner`. `--quiet` suppresses per-node progress output.
+
+---
+
+## `harness cancel`
+
+Delivers a SIGTERM to the process running the workflow identified by `run-id`.
+The process PID is recorded in the `runs.pid` column at run-start (H-2-006).
+
+Errors (exit 2):
+- Run not found in the DB.
+- Run exists but status is not `running` (already completed, failed, cancelled, or paused).
+- Run was started before H-2-006 and has no recorded PID (`runs.pid IS NULL`).
+- The recorded PID belongs to a process that is no longer alive (stale PID).
+- Insufficient permission to signal the process.
+
+On success (exit 0): prints a confirmation line (or `--json` object) and exits.
+The running `harness run` process handles the SIGTERM by converting it to
+`KeyboardInterrupt`, which flows through the normal cancellation path:
+`workflow_failed` with `reason='cancelled'`, `status='cancelled'`, exit 130.
+
+`--json` output:
+- Success: `{"run_id": "<id>", "outcome": "cancelled"}`
+- Failure: `{"error": "<message>"}`
 
 ---
 
@@ -100,7 +124,7 @@ Duration format: `30m`, `12h`, `7d` (minutes, hours, days). `s` (seconds) is als
 | 2 | Invocation error (bad flags, unknown run-id, workflow YAML invalid) |
 | 3 | Contract violation (LLM output failed validation after retry exhaustion) |
 | 4 | Paused awaiting decision (v2 — reserved) |
-| 130 | SIGINT / KeyboardInterrupt |
+| 130 | SIGINT / SIGTERM / KeyboardInterrupt (running workflow cancelled) |
 
 ---
 

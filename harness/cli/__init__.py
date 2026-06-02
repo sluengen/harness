@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import typer
 
+from harness.cli.cancel import cancel_command
 from harness.cli.decisions import decision_app, decisions_app
 from harness.cli.query import (
     events_command,
@@ -59,6 +60,9 @@ app.command(name="status", help="Print a run's terminal-state summary.")(
 app.command(name="logs", help="Print a run's event timeline.")(logs_command)
 app.command(name="events", help="Print a run's events (JSON or compact).")(
     events_command
+)
+app.command(name="cancel", help="Cancel a running workflow by sending SIGTERM.")(
+    cancel_command
 )
 
 # Dynamic per-workflow `run` command. Uses context-settings to leave
