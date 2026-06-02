@@ -1,4 +1,4 @@
-"""CLI surface for ``decisions`` / ``decision`` — H-2-003.
+"""CLI surface for ``decisions`` / ``decision`` — H-2-003 / H-2-004.
 
 ``decisions list``      — query paused runs; render run_id, workflow, started_at
                           and the question extracted from the most recent
@@ -8,11 +8,13 @@
                           plus the display_state field values for the human
                           decider.
 
-``decision approve``    — v2-reserved stub; exits 2 with "deferred to v2".
-``decision reject``     — v2-reserved stub; exits 2 with "deferred to v2".
+``decision approve``    — approve a paused decision; resumes workflow execution.
+``decision reject``     — reject a paused decision; cancels or continues per
+                          the step's ``on_reject`` policy.
 
 Exit codes (per SPEC §11):
 * 0  — succeeded; produced output (or produced empty output for an empty list).
+* 1  — workflow rejected and cancelled (on_reject=cancel).
 * 2  — invocation error: unknown run-id, run not paused, bad flags.
 
 JSON output uses ``json.dumps(..., default=str)`` for non-serialisable values,
@@ -30,26 +32,10 @@ from typing import Any
 import aiosqlite
 import typer
 
+from harness.engine.runner import DEFAULT_WORKFLOWS_DIR, Runner
 from harness.state import store
 
 __all__ = ["decisions_app", "decision_app"]
-
-
-# ---------------------------------------------------------------------------
-# Shared "deferred to v2" responder — approve / reject only.
-# ---------------------------------------------------------------------------
-
-_DEFERRED_MESSAGE = "deferred to v2"
-_RESERVED_HELP = "v2-reserved — not yet implemented (see SPEC §11)."
-
-
-def _reserved_v2(json_output: bool) -> None:
-    """Emit the canonical ``deferred to v2`` response and raise ``typer.Exit(2)``."""
-    if json_output:
-        typer.echo(json.dumps({"error": _DEFERRED_MESSAGE}))
-    else:
-        typer.echo(_DEFERRED_MESSAGE, err=True)
-    raise typer.Exit(code=2)
 
 
 def _resolve_db_path(db: Path | None) -> Path:
@@ -227,6 +213,17 @@ def decisions_list_command(
 # ---------------------------------------------------------------------------
 
 
+def _build_decision_runner(db_path: Path) -> Runner:
+    """Construct the :class:`Runner` used by approve / reject commands.
+
+    Lives at module scope so tests can monkeypatch it with a spy that
+    captures ``resume()`` calls without spinning up the full executor.
+    """
+    from harness.dispatch.claude import ClaudeAgent
+
+    return Runner(agent=ClaudeAgent(), db_path=db_path, progress=True)
+
+
 decision_app = typer.Typer(
     help="Inspect or resolve a paused decision node.",
     no_args_is_help=True,
@@ -299,29 +296,123 @@ def decision_show_command(
             typer.echo(f"  {field}: {value}")
 
 
-@decision_app.command("approve", help=_RESERVED_HELP)
+@decision_app.command("approve")
 def decision_approve_command(
     run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
     comment: str | None = typer.Option(
         None, "--comment", help="Optional decision comment (captured to event log)."
     ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to harness.db (defaults to .harness/harness.db).",
+    ),
+    workflows_dir: Path = typer.Option(  # noqa: B008 — Typer pattern.
+        DEFAULT_WORKFLOWS_DIR,
+        "--workflows-dir",
+        help="Directory containing workflow YAML files.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Approve a paused decision — v2-reserved, not yet implemented."""
-    _reserved_v2(json_output)
+    """Approve a paused human-decision node and resume workflow execution."""
+    db_path = _resolve_db_path(db)
+    row = asyncio.run(_fetch_run_row(db_path, run_id))
+
+    if row is None:
+        if json_output:
+            typer.echo(json.dumps({"error": f"no run with run_id={run_id!r}"}))
+        else:
+            typer.echo(f"no run with run_id={run_id!r}", err=True)
+        raise typer.Exit(code=2)
+
+    if row["status"] != "paused":
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"error": f"run {run_id!r} is not paused (status={row['status']!r})"}
+                )
+            )
+        else:
+            typer.echo(
+                f"run {run_id!r} is not paused (status={row['status']!r})", err=True
+            )
+        raise typer.Exit(code=2)
+
+    decision_runner = _build_decision_runner(db_path)
+    exit_code = asyncio.run(
+        decision_runner.resume(
+            run_id,
+            approved=True,
+            comment=comment,
+            workflows_dir=workflows_dir,
+        )
+    )
+
+    if json_output:
+        typer.echo(
+            json.dumps({"run_id": run_id, "outcome": "approved", "exit_code": exit_code})
+        )
+    raise typer.Exit(code=exit_code)
 
 
-@decision_app.command("reject", help=_RESERVED_HELP)
+@decision_app.command("reject")
 def decision_reject_command(
     run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
     comment: str | None = typer.Option(
         None, "--comment", help="Optional decision comment (captured to event log)."
     ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to harness.db (defaults to .harness/harness.db).",
+    ),
+    workflows_dir: Path = typer.Option(  # noqa: B008 — Typer pattern.
+        DEFAULT_WORKFLOWS_DIR,
+        "--workflows-dir",
+        help="Directory containing workflow YAML files.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Reject a paused decision — v2-reserved, not yet implemented."""
-    _reserved_v2(json_output)
+    """Reject a paused human-decision node; cancels or continues per on_reject policy."""
+    db_path = _resolve_db_path(db)
+    row = asyncio.run(_fetch_run_row(db_path, run_id))
+
+    if row is None:
+        if json_output:
+            typer.echo(json.dumps({"error": f"no run with run_id={run_id!r}"}))
+        else:
+            typer.echo(f"no run with run_id={run_id!r}", err=True)
+        raise typer.Exit(code=2)
+
+    if row["status"] != "paused":
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"error": f"run {run_id!r} is not paused (status={row['status']!r})"}
+                )
+            )
+        else:
+            typer.echo(
+                f"run {run_id!r} is not paused (status={row['status']!r})", err=True
+            )
+        raise typer.Exit(code=2)
+
+    decision_runner = _build_decision_runner(db_path)
+    exit_code = asyncio.run(
+        decision_runner.resume(
+            run_id,
+            approved=False,
+            comment=comment,
+            workflows_dir=workflows_dir,
+        )
+    )
+
+    if json_output:
+        typer.echo(
+            json.dumps({"run_id": run_id, "outcome": "rejected", "exit_code": exit_code})
+        )
+    raise typer.Exit(code=exit_code)

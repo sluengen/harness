@@ -829,3 +829,240 @@ async def test_human_decision_prints_message_to_stdout(
     captured = capsys.readouterr()
     assert "Is the report correct?" in captured.out
     assert "harness decision approve" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# Helpers for resume tests
+# ---------------------------------------------------------------------------
+
+
+def _decision_then_check_workflow(tmp_path: Path) -> Path:
+    """A workflow with a human decision node, then a check step after it."""
+    path = tmp_path / "needs-approval.yaml"
+    _write_workflow(
+        path,
+        """
+        name: needs-approval
+        version: 1
+        steps:
+          - id: gate
+            type: decision
+            actor: human
+            message: "Approve?"
+            on_reject: cancel
+          - id: after
+            type: check
+            expr: "True"
+            on_fail: cancel
+        """,
+    )
+    return path
+
+
+def _decision_on_reject_continue_workflow(tmp_path: Path) -> Path:
+    """A workflow with on_reject: continue — rejection proceeds to post-steps."""
+    path = tmp_path / "reject-continue.yaml"
+    _write_workflow(
+        path,
+        """
+        name: reject-continue
+        version: 1
+        steps:
+          - id: gate
+            type: decision
+            actor: human
+            message: "Approve?"
+            on_reject: continue
+          - id: after
+            type: check
+            expr: "True"
+            on_fail: cancel
+        """,
+    )
+    return path
+
+
+# ---------------------------------------------------------------------------
+# AC-resume — Runner.resume() tests
+# ---------------------------------------------------------------------------
+
+
+async def test_runner_resume_run_not_found_raises_value_error(tmp_path: Path) -> None:
+    """resume() raises ValueError if run_id is not in the DB."""
+    db = tmp_path / "harness.db"
+    runner = Runner(db_path=db, progress=False)
+    with pytest.raises(ValueError, match="not found"):
+        await runner.resume("NONEXISTENT", approved=True, workflows_dir=tmp_path)
+
+
+async def test_runner_resume_run_not_paused_raises_value_error(tmp_path: Path) -> None:
+    """resume() raises ValueError if the run exists but is not paused."""
+    db = tmp_path / "harness.db"
+    wf = _trivial_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 0  # completed run
+
+    row = await _fetch_single_run(db)
+    with pytest.raises(ValueError, match="not paused"):
+        await runner.resume(row["run_id"], approved=True, workflows_dir=tmp_path)
+
+
+async def test_runner_resume_no_decision_event_raises_value_error(tmp_path: Path) -> None:
+    """resume() raises ValueError when no decision_requested event exists."""
+    # Seed a paused run manually without seeding the decision_requested event.
+    from harness.state import store
+
+    db = tmp_path / "harness.db"
+    await store.init_db(db)
+    async with store.connect(db) as conn:
+        await conn.execute(
+            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
+            "state_json, inputs_json, base_branch, started_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("TESTRUN", "needs-approval", 1, "paused", "{}", "{}", "main", "2026-01-01T00:00:00Z"),
+        )
+        await conn.commit()
+
+    # Write the workflow so load succeeds.
+    _decision_then_check_workflow(tmp_path)
+
+    runner = Runner(db_path=db, progress=False)
+    with pytest.raises(ValueError, match="decision_requested"):
+        await runner.resume("TESTRUN", approved=True, workflows_dir=tmp_path)
+
+
+async def test_runner_resume_approve_emits_decision_received(tmp_path: Path) -> None:
+    """Approving a paused run emits a decision_received event with approved=True."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+
+    events = await _fetch_all_events(db)
+    received = [e for e in events if e["event_type"] == "decision_received"]
+    assert len(received) == 1
+    data = json.loads(received[0]["data_json"])
+    assert data["approved"] is True
+    assert data["step_id"] == "gate"
+
+
+async def test_runner_resume_approve_completes_workflow(tmp_path: Path) -> None:
+    """Approving a paused run resumes execution and completes the workflow."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 4
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    exit_code = await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "completed"
+    assert row["exit_code"] == 0
+
+    events = await _fetch_all_events(db)
+    event_types = [e["event_type"] for e in events]
+    assert "workflow_completed" in event_types
+
+
+async def test_runner_resume_approve_with_comment(tmp_path: Path) -> None:
+    """Comment is captured in decision_received data."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    await runner.resume(run_id, approved=True, comment="lgtm", workflows_dir=tmp_path)
+
+    events = await _fetch_all_events(db)
+    received = next(e for e in events if e["event_type"] == "decision_received")
+    data = json.loads(received["data_json"])
+    assert data["comment"] == "lgtm"
+
+
+async def test_runner_resume_reject_cancel_exits_1(tmp_path: Path) -> None:
+    """Rejecting a paused run with on_reject=cancel exits 1 and emits workflow_failed."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    exit_code = await runner.resume(run_id, approved=False, workflows_dir=tmp_path)
+    assert exit_code == 1
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "failed"
+    assert row["exit_code"] == 1
+
+    events = await _fetch_all_events(db)
+    event_types = [e["event_type"] for e in events]
+    assert "workflow_failed" in event_types
+    assert "workflow_completed" not in event_types
+
+
+async def test_runner_resume_reject_continue_completes(tmp_path: Path) -> None:
+    """Rejecting a paused run with on_reject=continue exits 0."""
+    db = tmp_path / "harness.db"
+    wf = _decision_on_reject_continue_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    exit_code = await runner.resume(run_id, approved=False, workflows_dir=tmp_path)
+    assert exit_code == 0
+
+
+async def test_runner_resume_reject_cancel_emits_decision_received(tmp_path: Path) -> None:
+    """Reject + cancel still emits decision_received before failing."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    await runner.resume(run_id, approved=False, workflows_dir=tmp_path)
+
+    events = await _fetch_all_events(db)
+    received = [e for e in events if e["event_type"] == "decision_received"]
+    assert len(received) == 1
+    data = json.loads(received[0]["data_json"])
+    assert data["approved"] is False
+
+
+async def test_runner_resume_updates_status_to_running_then_completed(tmp_path: Path) -> None:
+    """After resume approve, DB row ends up status=completed and exit_code=0."""
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+    await runner.run(wf, inputs={})
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "paused"
+    run_id = row["run_id"]
+
+    await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "completed"
+    assert row["exit_code"] == 0
+    assert row["completed_at"] is not None

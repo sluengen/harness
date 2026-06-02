@@ -58,6 +58,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
 
+import aiosqlite
+
 from harness.dispatch.base import Agent
 from harness.dispatch.claude import ContractViolation
 from harness.dispatch.mock import MockAgent
@@ -88,7 +90,9 @@ from harness.workflow.schema import (
     WorktreeStep,
 )
 
-__all__ = ["CheckFailed", "Runner"]
+__all__ = ["CheckFailed", "DEFAULT_WORKFLOWS_DIR", "Runner"]
+
+DEFAULT_WORKFLOWS_DIR = Path("workflows")
 
 
 class CheckFailed(RuntimeError):  # noqa: N818 — engine vocabulary
@@ -205,7 +209,282 @@ class Runner:
             # handling.
             self._restore_sigint_handler(previous_handler)
 
+    async def resume(
+        self,
+        run_id: str,
+        *,
+        approved: bool,
+        comment: str | None = None,
+        workflows_dir: Path | None = None,
+    ) -> int:
+        """Resume a paused workflow after a human decision.
+
+        Args:
+            run_id: The run to resume. Must be paused.
+            approved: ``True`` to proceed; ``False`` to reject.
+            comment: Optional human comment captured on the event log.
+            workflows_dir: Directory containing workflow YAML files. Defaults to
+                :data:`DEFAULT_WORKFLOWS_DIR`.
+
+        Returns:
+            Exit code per SPEC §11: 0 on success, 1 on rejection/failure,
+            3 on ContractViolation, 4 if a second decision node is reached,
+            130 on KeyboardInterrupt.
+
+        Raises:
+            ValueError: run not found, run not paused, or no ``decision_requested``
+                event found (indicates the paused run was not created by a
+                decision node).
+        """
+        wf_dir = workflows_dir if workflows_dir is not None else DEFAULT_WORKFLOWS_DIR
+
+        row = await self._read_run_row(run_id)
+        if row is None:
+            raise ValueError(f"run {run_id!r} not found")
+        if row["status"] != "paused":
+            raise ValueError(f"run {run_id!r} is not paused (status={row['status']!r})")
+
+        step_id = await self._fetch_paused_step_id(run_id)
+        if step_id is None:
+            raise ValueError(
+                f"run {run_id!r}: no decision_requested event found — "
+                "cannot determine which step to resume from"
+            )
+
+        workflow_name: str = row["workflow_name"]
+        workflow_path = wf_dir / f"{workflow_name}.yaml"
+        loaded = load_workflow(workflow_path)
+        state_schema = derive_state_schema(loaded)
+
+        # Emit decision_received before any outcome branching.
+        emitter = EventEmitter(self._db_path)
+        decision_data: dict[str, Any] = {
+            "approved": approved,
+            "step_id": step_id,
+        }
+        if comment is not None:
+            decision_data["comment"] = comment
+        await emitter.emit(
+            run_id=run_id,
+            event_type="decision_received",
+            node_id=step_id,
+            data=decision_data,
+        )
+
+        # Find the DecisionStep to inspect on_reject.
+        decision_step: DecisionStep | None = None
+        for s in loaded.workflow.steps:
+            if s.id == step_id and isinstance(s, DecisionStep):
+                decision_step = s
+                break
+        if decision_step is None:
+            raise ValueError(
+                f"run {run_id!r}: step {step_id!r} not found as a top-level "
+                "DecisionStep in the workflow"
+            )
+
+        if not approved and decision_step.on_reject == "cancel":
+            # Rejection with cancel policy — fail the run immediately.
+            started_monotonic = time.monotonic()
+            await self._finalise_failure(
+                emitter=emitter,
+                run_id=run_id,
+                last_step_id=step_id,
+                started_monotonic=started_monotonic,
+                status="failed",
+                exit_code=1,
+                reason="rejected",
+            )
+            return 1
+
+        # Approved, or on_reject == "continue" — walk the remaining steps.
+        previous_handler = self._install_sigint_handler()
+        try:
+            return await self._resume_inner(
+                loaded=loaded,
+                run_id=run_id,
+                state_schema=state_schema,
+                inputs=json.loads(row.get("inputs_json") or "{}"),
+                start_after_step_id=step_id,
+            )
+        finally:
+            self._restore_sigint_handler(previous_handler)
+
     # ---- internals ------------------------------------------------------- #
+
+    async def _resume_inner(
+        self,
+        *,
+        loaded: LoadedWorkflow,
+        run_id: str,
+        state_schema: type[BaseState],
+        inputs: dict[str, Any],
+        start_after_step_id: str,
+    ) -> int:
+        """Walk steps AFTER the decision step on a resumed paused run.
+
+        Does NOT insert a run row or emit ``workflow_started`` — those
+        happened in the original :meth:`run` call.  Reads state from DB
+        per-step via the normal executor path (snapshots).
+        """
+        started_monotonic = time.monotonic()
+
+        await self._set_run_status_running(run_id)
+
+        from harness.engine.progress import ProgressReporter
+
+        progress_sink = (
+            ProgressReporter(loaded.workflow.name, file=self._progress_file)
+            if self._progress
+            else None
+        )
+
+        emitter = EventEmitter(self._db_path, on_emit=progress_sink)
+
+        registry = self._build_node_registry(
+            inputs=inputs,
+            workflow_path=loaded.path,
+            run_id=run_id,
+        )
+        ctx = Context(
+            run_id=run_id,
+            db_path=self._db_path,
+            contracts=loaded.contracts,
+            state_schema=state_schema,
+            nodes=registry,
+            workflow_name=loaded.workflow.name,
+            progress_sink=progress_sink,
+        )
+        loop_executor = LoopExecutor(
+            executor=self._executor,
+            agent=self._agent,
+            emitter=emitter,
+        )
+
+        # Locate the index of the decision step, then walk only the steps after.
+        step_idx: int | None = None
+        for i, step in enumerate(loaded.workflow.steps):
+            if step.id == start_after_step_id:
+                step_idx = i
+                break
+        if step_idx is None:
+            raise ValueError(
+                f"step {start_after_step_id!r} not found in top-level steps of "
+                f"workflow {loaded.workflow.name!r}"
+            )
+
+        remaining_steps = loaded.workflow.steps[step_idx + 1 :]
+        last_step_id: str | None = None
+        try:
+            for step in remaining_steps:
+                last_step_id = step.id
+                if isinstance(step, LoopStep):
+                    await loop_executor.execute(step, ctx)
+                else:
+                    await self._executor.execute(step, ctx)
+        except KeyboardInterrupt:
+            await self._finalise_failure(
+                emitter=emitter,
+                run_id=run_id,
+                last_step_id=last_step_id,
+                started_monotonic=started_monotonic,
+                status="cancelled",
+                exit_code=130,
+                reason="cancelled",
+            )
+            return 130
+        except ContractViolation as exc:
+            await self._finalise_failure(
+                emitter=emitter,
+                run_id=run_id,
+                last_step_id=last_step_id,
+                started_monotonic=started_monotonic,
+                status="failed",
+                exit_code=3,
+                reason=f"ContractViolation: {exc.reason}",
+            )
+            return 3
+        except HumanDecisionRequested as exc:
+            await self._finalise_pause(
+                emitter=emitter,
+                run_id=run_id,
+                started_monotonic=started_monotonic,
+                step_id=exc.step_id,
+                message=exc.message,
+            )
+            return 4
+        except BaseException as exc:
+            await self._finalise_failure(
+                emitter=emitter,
+                run_id=run_id,
+                last_step_id=last_step_id,
+                started_monotonic=started_monotonic,
+                status="failed",
+                exit_code=1,
+                reason=type(exc).__name__,
+                message=str(exc),
+            )
+            return 1
+
+        duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+        await self._update_run_completion(
+            run_id=run_id,
+            status="completed",
+            exit_code=0,
+            duration_ms=duration_ms,
+        )
+        await emitter.emit(
+            run_id=run_id,
+            event_type="workflow_completed",
+            duration_ms=duration_ms,
+        )
+        return 0
+
+    async def _read_run_row(self, run_id: str) -> dict[str, Any] | None:
+        """Read the full run row from DB, or return ``None`` if not found."""
+        if not self._db_path.exists():
+            return None
+        async with connect(self._db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute(
+                "SELECT run_id, workflow_name, workflow_version, status, "
+                "state_json, inputs_json, base_branch, started_at "
+                "FROM runs WHERE run_id = ?",
+                (run_id,),
+            ) as cur:
+                row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def _fetch_paused_step_id(self, run_id: str) -> str | None:
+        """Return the step_id from the latest ``decision_requested`` event, or ``None``."""
+        async with (
+            connect(self._db_path) as conn,
+            conn.execute(
+                "SELECT data_json FROM events "
+                "WHERE run_id = ? AND event_type = 'decision_requested' "
+                "ORDER BY id DESC LIMIT 1",
+                (run_id,),
+            ) as cur,
+        ):
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        try:
+            data = json.loads(str(row[0]))
+        except (TypeError, ValueError):
+            return None
+        step_id = data.get("step_id")
+        return str(step_id) if step_id is not None else None
+
+    async def _set_run_status_running(self, run_id: str) -> None:
+        """Reset the run row to status='running', clearing exit_code and completed_at."""
+        async with connect(self._db_path) as conn:
+            await conn.execute(
+                "UPDATE runs SET status = 'running', exit_code = NULL, "
+                "completed_at = NULL WHERE run_id = ?",
+                (run_id,),
+            )
+            await conn.commit()
 
     async def _run_inner(
         self,

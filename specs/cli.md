@@ -23,8 +23,8 @@ harness worktrees list    [--json] [--repo-root <path>]
 harness worktrees cleanup [--age <duration>] [--merged] [--repo-root <path>]
 harness decisions list    [--json] [--db <path>]
 harness decision show <run-id>    [--json] [--db <path>]
-harness decision approve <run-id> [--comment <text>] [--json]   (v2-reserved)
-harness decision reject <run-id>  [--comment <text>] [--json]   (v2-reserved)
+harness decision approve <run-id> [--comment <text>] [--workflows-dir <dir>] [--json]
+harness decision reject <run-id>  [--comment <text>] [--workflows-dir <dir>] [--json]
 ```
 
 ---
@@ -107,6 +107,6 @@ Duration format: `30m`, `12h`, `7d` (minutes, hours, days). `s` (seconds) is als
 ## Notable constraints
 
 - `--json` on read commands uses `json.dumps(..., default=str)` for non-serialisable values.
-- `decisions list` and `decision show` are live. `decision approve` / `decision reject` remain v2-reserved stubs (exit 2 with "deferred to v2").
+- `decisions list`, `decision show`, `decision approve`, and `decision reject` are all live. `approve` and `reject` load the workflow YAML, emit `decision_received`, then resume execution of remaining steps (approve or on_reject=continue) or call `_finalise_failure` (on_reject=cancel). `--workflows-dir` overrides the default `workflows/` directory.
 - `--db` defaults to `Path.cwd() / ".harness/harness.db"` for all read commands. The `run` command uses the `Runner`'s `DEFAULT_DB_PATH` (relative `.harness/harness.db`).
 - Progress output (per-node `node_started`/`node_completed` lines) goes to stderr via `ProgressReporter`; `--quiet` suppresses it.
