@@ -1,11 +1,14 @@
-"""Tests for ``decisions`` / ``decision`` CLI surface — H-2-003.
+"""Tests for ``decisions`` / ``decision`` CLI surface — H-2-003 / H-2-004.
 
 H-2-003 implements the read-side of the human-in-the-loop decision flow:
 
 * ``harness decisions list``        — list paused runs (question from event)
 * ``harness decision show <run-id>``— render question + display_state fields
 
-``approve`` / ``reject`` remain v2-reserved stubs.
+H-2-004 implements the write-side:
+
+* ``harness decision approve <run-id>`` — resume the workflow approved
+* ``harness decision reject <run-id>``  — resume the workflow rejected
 
 Contract:
 
@@ -29,7 +32,10 @@ Contract:
   * ``--db <path>`` overrides the default DB location.
 
 ``decision approve / reject``
-  * Exit 2 with "deferred to v2" message (unchanged from v1).
+  * Exits 2 when run not found.
+  * Exits 2 when run is not paused.
+  * Calls runner.resume() with correct approved flag and optional comment.
+  * ``--json`` emits a JSON object with run_id, outcome, exit_code.
 
 ``RUN_STATUSES`` type guard:
   * ``paused`` and ``stalled`` are present in the canonical status set.
@@ -42,6 +48,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
@@ -501,56 +508,221 @@ def test_decision_show_db_flag(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness decision approve / reject — still v2-reserved
+# harness decision approve / reject — H-2-004 spy helpers
 # ---------------------------------------------------------------------------
 
 
-def test_decision_approve_exits_2_with_deferred_message() -> None:
-    """AC 3 — approve with no comment."""
-    result = runner.invoke(app, ["decision", "approve", "R1"])
-    assert result.exit_code == 2
-    assert result.stdout == ""
-    assert "deferred to v2" in result.stderr
+class _ResumeRunnerSpy:
+    """Minimal Runner stand-in that records resume() calls."""
+
+    def __init__(self, *, exit_code: int = 0) -> None:
+        self._exit_code = exit_code
+        self.calls: list[dict[str, Any]] = []
+
+    async def resume(
+        self,
+        run_id: str,
+        *,
+        approved: bool,
+        comment: str | None = None,
+        workflows_dir: Any = None,
+    ) -> int:
+        self.calls.append(
+            {
+                "run_id": run_id,
+                "approved": approved,
+                "comment": comment,
+                "workflows_dir": workflows_dir,
+            }
+        )
+        return self._exit_code
 
 
-def test_decision_approve_with_comment_still_exits_2() -> None:
-    """AC 3 — approve with --comment still defers."""
+# ---------------------------------------------------------------------------
+# harness decision approve — error cases
+# ---------------------------------------------------------------------------
+
+
+def test_decision_approve_run_not_found_exits_2(tmp_path: Path) -> None:
+    """Run not in DB → exit 2, run_id mentioned on stderr."""
+    db = tmp_path / "harness.db"
     result = runner.invoke(
-        app, ["decision", "approve", "R1", "--comment", "looks good"]
+        app, ["decision", "approve", "MISSING", "--db", str(db)]
     )
     assert result.exit_code == 2
-    assert "deferred to v2" in result.stderr
+    assert "MISSING" in result.stderr
 
 
-def test_decision_approve_help_calls_out_v2_reserved() -> None:
-    result = runner.invoke(app, ["decision", "approve", "--help"])
-    assert result.exit_code == 0
-    assert "v2-reserved" in result.stdout
-    assert "not yet implemented" in result.stdout
-
-
-def test_decision_reject_exits_2_with_deferred_message() -> None:
-    """AC 4 — reject with no comment."""
-    result = runner.invoke(app, ["decision", "reject", "R1"])
-    assert result.exit_code == 2
-    assert result.stdout == ""
-    assert "deferred to v2" in result.stderr
-
-
-def test_decision_reject_with_comment_still_exits_2() -> None:
-    """AC 4 — reject with --comment still defers."""
+def test_decision_approve_run_not_paused_exits_2(tmp_path: Path) -> None:
+    """Run exists but is not paused → exit 2, 'paused' mentioned on stderr."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="completed")
     result = runner.invoke(
-        app, ["decision", "reject", "R1", "--comment", "rebrew"]
+        app, ["decision", "approve", "R1", "--db", str(db)]
     )
     assert result.exit_code == 2
-    assert "deferred to v2" in result.stderr
+    assert "paused" in result.stderr.lower()
 
 
-def test_decision_reject_help_calls_out_v2_reserved() -> None:
-    result = runner.invoke(app, ["decision", "reject", "--help"])
-    assert result.exit_code == 0
-    assert "v2-reserved" in result.stdout
-    assert "not yet implemented" in result.stdout
+# ---------------------------------------------------------------------------
+# harness decision approve — success cases (spy)
+# ---------------------------------------------------------------------------
+
+
+def test_decision_approve_calls_resume_with_approved_true(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """approve calls runner.resume(approved=True, comment=None), exits 0."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=0)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(app, ["decision", "approve", "R1", "--db", str(db)])
+    assert result.exit_code == 0, result.output
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["approved"] is True
+    assert spy.calls[0]["comment"] is None
+
+
+def test_decision_approve_with_comment_passes_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--comment passed → spy captures comment value."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=0)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(
+        app, ["decision", "approve", "R1", "--comment", "lgtm", "--db", str(db)]
+    )
+    assert result.exit_code == 0, result.output
+    assert spy.calls[0]["comment"] == "lgtm"
+
+
+def test_decision_approve_json_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--json emits JSON object with outcome='approved' and exit_code."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=0)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(
+        app, ["decision", "approve", "R1", "--json", "--db", str(db)]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["run_id"] == "R1"
+    assert payload["outcome"] == "approved"
+    assert payload["exit_code"] == 0
+
+
+# ---------------------------------------------------------------------------
+# harness decision reject — error cases
+# ---------------------------------------------------------------------------
+
+
+def test_decision_reject_run_not_found_exits_2(tmp_path: Path) -> None:
+    """Run not in DB → exit 2, run_id mentioned on stderr."""
+    db = tmp_path / "harness.db"
+    result = runner.invoke(
+        app, ["decision", "reject", "MISSING", "--db", str(db)]
+    )
+    assert result.exit_code == 2
+    assert "MISSING" in result.stderr
+
+
+def test_decision_reject_run_not_paused_exits_2(tmp_path: Path) -> None:
+    """Run exists but is not paused → exit 2."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="completed")
+    result = runner.invoke(
+        app, ["decision", "reject", "R1", "--db", str(db)]
+    )
+    assert result.exit_code == 2
+    assert "paused" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# harness decision reject — success cases (spy)
+# ---------------------------------------------------------------------------
+
+
+def test_decision_reject_calls_resume_with_approved_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reject calls runner.resume(approved=False), exits with runner's code."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=1)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(app, ["decision", "reject", "R1", "--db", str(db)])
+    assert result.exit_code == 1
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["approved"] is False
+
+
+def test_decision_reject_with_comment_passes_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--comment passed to reject → spy captures comment."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=1)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(
+        app, ["decision", "reject", "R1", "--comment", "not ready", "--db", str(db)]
+    )
+    assert result.exit_code == 1
+    assert spy.calls[0]["comment"] == "not ready"
+
+
+def test_decision_reject_json_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--json emits JSON object with outcome='rejected'."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    spy = _ResumeRunnerSpy(exit_code=1)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(
+        app, ["decision", "reject", "R1", "--json", "--db", str(db)]
+    )
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["run_id"] == "R1"
+    assert payload["outcome"] == "rejected"
+    assert payload["exit_code"] == 1
 
 
 # ---------------------------------------------------------------------------
