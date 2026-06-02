@@ -78,16 +78,16 @@ app.command(
 # Nested worktrees app.
 app.add_typer(worktrees_app, name="worktrees", help="Inspect or clean up run worktrees.")
 
-# v2-reserved decision surface — see SPEC §11 and harness/cli/decisions.py.
+# Decision surface — list/show implemented (H-2-003); approve/reject v2-reserved.
 app.add_typer(
     decisions_app,
     name="decisions",
-    help="v2-reserved — enumerate paused runs awaiting human decision.",
+    help="Enumerate paused runs awaiting human decision.",
 )
 app.add_typer(
     decision_app,
     name="decision",
-    help="v2-reserved — inspect or resolve a paused decision node.",
+    help="Inspect or resolve a paused decision node.",
 )
 
 
