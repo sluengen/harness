@@ -83,8 +83,11 @@ Create this issue? (yes / edit / cancel)
 
 If the user wants edits, apply them and re-show. Do not call the API until explicitly confirmed with "yes".
 
-### Step 4 — Fetch team ID
+### Step 4 — Fetch team ID and projects
 
+Run both in parallel — team ID is needed for issue creation, projects for the picker in Step 5.
+
+**Teams:**
 ```bash
 source .env && curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" \
@@ -92,12 +95,51 @@ source .env && curl -s -X POST https://api.linear.app/graphql \
   -d '{"query":"query{teams{nodes{id key name}}}"}'
 ```
 
-Use the `id` of the team whose `key` matches the project. For this repo the expected key is `CAL`.
+Use the `id` of the team whose `key` is `CAL`.
 
-### Step 5 — Create the issue
+**Projects for that team:**
+```bash
+source .env && curl -s -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query{teams(filter:{key:{eq:\"CAL\"}}){nodes{projects{nodes{id name}}}}}"}'
+```
 
-Use `jq --arg` to JSON-encode title and description (handles newlines and special characters automatically), pipe to curl:
+### Step 5 — Pick a project
 
+List the project names and ask the user:
+
+```
+Available projects:
+  1. <Project A>
+  2. <Project B>
+  3. None
+
+Which project should this issue belong to?
+```
+
+Wait for the user's selection before proceeding. If they pick "None", omit `projectId` from the mutation.
+
+### Step 6 — Create the issue
+
+Use `jq --arg` to JSON-encode all string fields (handles newlines and special characters automatically), pipe to curl.
+
+**With a project:**
+```bash
+source .env && jq -n \
+  --arg teamId "<team-id>" \
+  --arg title "<title>" \
+  --arg description "<description>" \
+  --arg projectId "<project-id>" \
+  --argjson priority <1|2|3|4> \
+  '{"query":"mutation($input:IssueCreateInput!){issueCreate(input:$input){success issue{identifier url}}}","variables":{"input":{"teamId":$teamId,"title":$title,"description":$description,"projectId":$projectId,"priority":$priority}}}' \
+| curl -s -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d @-
+```
+
+**Without a project:**
 ```bash
 source .env && jq -n \
   --arg teamId "<team-id>" \
@@ -113,10 +155,11 @@ source .env && jq -n \
 
 Check that `success` is `true` in the response. If not, show the full response and stop.
 
-### Step 6 — Report
+### Step 7 — Report
 
 ```
 Created: CAL-NNN
+Project: <project name or "none">
 URL:     <linear url>
 
 Next: /start CAL-NNN
