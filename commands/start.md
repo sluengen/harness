@@ -21,6 +21,8 @@ source .env
 LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API → Personal API keys
 ```
 
+> **No Linear CLI is installed.** All Linear interaction in this project goes through the GraphQL API directly — `curl` in shell scripts, `urllib.request` in Python. Do not search for a `linear` binary or attempt `npx linear`.
+
 `harness` is not installed globally in development — invoke it via `uv run` from the repo root:
 
 ```bash

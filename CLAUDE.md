@@ -46,6 +46,10 @@ Invoke via the Agent tool with the matching `subagent_type`.
 - `/start <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
 - `/build-workflow <description>` — build a new harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
 
+## Linear
+
+No Linear CLI is installed. All Linear interaction uses the GraphQL API directly — `curl` in shell, `urllib.request` in Python. The key is `LINEAR_API_KEY` in `.env`. Do not search for a binary or attempt `npx linear`.
+
 ## Invoking the harness CLI
 
 Use `bin/harness` instead of `uv run harness` when running from a shell that already has `VIRTUAL_ENV` set (e.g. a Homebrew-managed Python or another project's activated venv).  The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`, bypassing `uv` entirely:
