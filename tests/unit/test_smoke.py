@@ -8,6 +8,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 import harness
 
 
@@ -26,3 +28,37 @@ def test_cli_version_runs() -> None:
     )
     assert result.returncode == 0
     assert "harness" in result.stdout
+
+
+def test_cli_help_runs() -> None:
+    """harness --help exits 0 and prints usage information."""
+    result = subprocess.run(
+        [sys.executable, "-m", "harness.cli", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0
+    assert "harness" in result.stdout.lower() or "usage" in result.stdout.lower()
+
+
+def test_cli_validate_release_notes() -> None:
+    """harness validate workflows/release-notes.yaml exits 0 for the bundled workflow."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    workflow_file = repo_root / "workflows" / "release-notes.yaml"
+    if not workflow_file.exists():
+        pytest.skip("release-notes.yaml not present in this checkout")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "harness.cli", "validate", "workflows/release-notes.yaml"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        cwd=str(repo_root),
+    )
+    assert result.returncode == 0, (
+        f"harness validate failed (rc={result.returncode}):\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )

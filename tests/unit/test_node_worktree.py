@@ -477,3 +477,68 @@ async def test_ac17_merge_to_base_index_synced_after_cleanup(repo: Path) -> None
     assert proc.stdout.strip() == "", (
         f"stale staged changes after merge_to_base: {proc.stdout.strip()!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# merge_to_base dirty-tree guard — AC18, AC19
+# ---------------------------------------------------------------------------
+
+
+async def test_ac18_merge_to_base_dirty_working_tree_raises(repo: Path) -> None:
+    """AC18: merge_to_base refuses when the base working tree has uncommitted
+    modifications to tracked files."""
+    node = WorktreeNode()
+    create_result = await node.create(run_id="run-dirty-wt", repo_root=repo, base="main")
+    wt = create_result.contract.worktree_path
+
+    # Commit on the worktree branch so ff-merge would otherwise succeed.
+    (wt / "feature.txt").write_text("data\n")
+    _git(wt, "add", "feature.txt")
+    _git(wt, "commit", "-m", "feat")
+
+    # Dirty the base repo's working tree (modify a tracked file without staging).
+    (repo / "README.md").write_text("modified content\n")
+
+    with pytest.raises(WorktreeNodeError, match="dirty"):
+        await node.cleanup(
+            run_id="run-dirty-wt",
+            repo_root=repo,
+            worktree_path=wt,
+            worktree_branch="harness/run-dirty-wt",
+            base="main",
+            policy="merge_to_base",
+        )
+
+    # The worktree and branch must still exist (no partial cleanup).
+    assert wt.exists()
+    assert _branch_exists(repo, "harness/run-dirty-wt")
+
+
+async def test_ac19_merge_to_base_dirty_index_raises(repo: Path) -> None:
+    """AC19: merge_to_base refuses when the base index has staged changes."""
+    node = WorktreeNode()
+    create_result = await node.create(run_id="run-dirty-idx", repo_root=repo, base="main")
+    wt = create_result.contract.worktree_path
+
+    # Commit on the worktree branch so ff-merge would otherwise succeed.
+    (wt / "feature.txt").write_text("data\n")
+    _git(wt, "add", "feature.txt")
+    _git(wt, "commit", "-m", "feat")
+
+    # Stage a new file in the base repo (dirty index, no unstaged changes).
+    (repo / "staged.txt").write_text("staged content\n")
+    _git(repo, "add", "staged.txt")
+
+    with pytest.raises(WorktreeNodeError, match="dirty"):
+        await node.cleanup(
+            run_id="run-dirty-idx",
+            repo_root=repo,
+            worktree_path=wt,
+            worktree_branch="harness/run-dirty-idx",
+            base="main",
+            policy="merge_to_base",
+        )
+
+    # Spec requires refusal to leave worktree and branch intact.
+    assert wt.exists()
+    assert _branch_exists(repo, "harness/run-dirty-idx")

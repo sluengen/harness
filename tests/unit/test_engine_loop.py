@@ -1157,3 +1157,87 @@ async def test_exhaustion_cancels_on_gate_exhausted(tmp_path: Path) -> None:
 
     exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
     assert exit_code == 1, "exhaustion path should exit 1 (gate-exhausted cancels)"
+
+
+async def test_loop_until_bash_substitutes_input_tokens(tmp_path: Path) -> None:
+    """$inputs.<key> references in until_bash are substituted with the run's
+    input value. With threshold=2 passed as an input, the loop satisfies
+    when state.count reaches 2."""
+    db = tmp_path / "harness.db"
+    counter_path = tmp_path / "inp_counter"
+    wf = tmp_path / "until_bash_input_sub.yaml"
+    _write_workflow(
+        wf,
+        f"""
+        name: until_bash_input_sub
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 5
+              until_bash: "test $state.count -ge $inputs.threshold"
+              steps:
+                - id: tick
+                  type: script
+                  command: |
+                    n=$(cat {counter_path} 2>/dev/null || echo 0)
+                    n=$((n + 1))
+                    echo $n > {counter_path}
+                    printf '{{"count": %d}}' $n
+                  writes: [count]
+                  contract:
+                    count: integer
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(
+        wf, inputs={"threshold": "2"}, base_branch="main"
+    )
+    assert exit_code == 0, "inputs substitution should let the loop satisfy at count=2"
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    iters = [e for e in events if e["event_type"] == "loop_iteration"]
+    # Iteration 1: count=1, test 1 -ge 2 → non-zero → continue.
+    # Iteration 2: count=2, test 2 -ge 2 → zero → satisfied.
+    assert len(iters) == 2, f"expected 2 iterations, got {len(iters)}"
+
+
+async def test_loop_until_bash_unknown_inputs_key_fails_clearly(
+    tmp_path: Path,
+) -> None:
+    """A $inputs.X reference inside until_bash that names a key not in run
+    inputs fails the workflow with a message naming the offending key."""
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "until_bash_bad_input.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: until_bash_bad_input
+        version: 1
+        steps:
+          - id: body
+            type: loop
+            loop:
+              max_iterations: 1
+              until_bash: "test $inputs.no_such_input -eq 0"
+              steps:
+                - id: noop
+                  type: check
+                  expr: "True"
+                  on_fail: cancel
+        """,
+    )
+
+    exit_code = await Runner(db_path=db).run(wf, inputs={}, base_branch="main")
+    assert exit_code == 1
+
+    run_id = await _fetch_single_run_id(db)
+    events = await _fetch_events(db, run_id)
+    failed = next(e for e in events if e["event_type"] == "workflow_failed")
+    data = json.loads(failed["data_json"])
+    blob = (data.get("reason") or "") + " " + (data.get("message") or "")
+    assert "no_such_input" in blob, (
+        f"failure message should name the missing inputs key: {data!r}"
+    )

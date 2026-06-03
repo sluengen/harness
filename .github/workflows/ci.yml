@@ -33,7 +33,11 @@ jobs:
         run: uv run ruff check .
 
       - name: Type-check with mypy
-        run: uv run mypy harness
+        # Tests are excluded from mypy: the 89 errors there are a known
+        # backlog; scope is harness + intake (production code only).
+        run: uv run mypy harness intake
 
       - name: Run tests
+        # pytest-timeout kills any single test that stalls past 120 s;
+        # the job-level timeout-minutes: 10 is a secondary backstop.
         run: uv run pytest

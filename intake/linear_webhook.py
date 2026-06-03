@@ -405,7 +405,7 @@ def make_handler(config: WebhookConfig) -> type[http.server.BaseHTTPRequestHandl
             self.send_response(code)
             self.end_headers()
 
-        def log_message(self, fmt: str, *args: Any) -> None:  # type: ignore[override]
+        def log_message(self, fmt: str, *args: Any) -> None:
             _LOG.debug(fmt, *args)
 
     return _LinearHandler

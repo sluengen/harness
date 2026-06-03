@@ -760,3 +760,20 @@ async def test_call_to_unrelated_tool_name_does_not_count_as_submit() -> None:
             "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=["Read"], cwd=None
         )
     assert exc_info.value.reason == "not_called"
+
+
+# ---------------------------------------------------------------------------
+# Unsupported adapter guard (v1 restriction)
+# ---------------------------------------------------------------------------
+
+
+def test_codex_agent_without_proc_fn_raises_runtime_error() -> None:
+    """CodexAgent without proc_fn (real subprocess path) is not supported in v1."""
+    with pytest.raises(RuntimeError, match="not supported"):
+        CodexAgent()
+
+
+def test_codex_agent_with_proc_fn_is_constructable() -> None:
+    """Providing proc_fn bypasses the unsupported-guard (test seam)."""
+    agent = CodexAgent(proc_fn=_make_proc_fn([]))
+    assert agent is not None

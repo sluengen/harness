@@ -293,11 +293,7 @@ class LoopExecutor:
             command = self._substitute_template(
                 loop.until_bash,
                 state=state,
-                # Workflow inputs are stored on the run row but not
-                # surfaced through Context; templating them here is a
-                # follow-up if/when a real workflow needs it. For now
-                # we treat ``$inputs.X`` as unknown.
-                inputs={},
+                inputs=dict(ctx.inputs),
                 step_id=step.id,
             )
             exit_code, timed_out = await self._run_until_bash(command)
