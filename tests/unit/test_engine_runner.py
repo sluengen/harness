@@ -1069,6 +1069,131 @@ async def test_runner_resume_updates_status_to_running_then_completed(tmp_path: 
 
 
 # ---------------------------------------------------------------------------
+# H-2-005 — state continuity + snapshot rehydration on resume
+# ---------------------------------------------------------------------------
+
+
+def _pre_decision_write_workflow(tmp_path: Path) -> Path:
+    """Workflow: script step writes 'result' → human gate → check depends_on result."""
+    path = tmp_path / "pre-write.yaml"
+    _write_workflow(
+        path,
+        r"""
+        name: pre-write
+        version: 1
+        steps:
+          - id: compute
+            type: script
+            runtime: python
+            command: 'import json; print(json.dumps({"result": "written_by_script"}))'
+            writes: [result]
+            contract:
+              result: string
+          - id: gate
+            type: decision
+            actor: human
+            message: "Approve?"
+            on_reject: cancel
+          - id: check
+            type: check
+            expr: "state.result is not None"
+            depends_on: [result]
+            on_fail: cancel
+        """,
+    )
+    return path
+
+
+async def test_runner_resume_state_written_pre_decision_survives_resume(
+    tmp_path: Path,
+) -> None:
+    """State written by a pre-decision step is available after resume.
+
+    The 'check' step has depends_on: [result]. If resume doesn't preserve
+    the pre-pause state, DependencyNotSatisfied is raised and the run fails.
+    """
+    db = tmp_path / "harness.db"
+    wf = _pre_decision_write_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 4  # paused at gate
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    exit_code = await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+    assert exit_code == 0  # check passes because result is in state
+
+
+async def test_runner_resume_uses_snapshot_rehydration_when_state_json_stale(
+    tmp_path: Path,
+) -> None:
+    """Snapshot-based rehydration recovers state when runs.state_json is stale.
+
+    After pause: corrupt runs.state_json by clearing the 'result' field.
+    Without snapshot rehydration, the 'check' step's depends_on fails.
+    With snapshot rehydration, the snapshot (written after 'compute' completed)
+    restores the correct state and the resume succeeds.
+    """
+    db = tmp_path / "harness.db"
+    wf = _pre_decision_write_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 4  # paused at gate
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    # Corrupt runs.state_json: remove the 'result' field so it becomes None.
+    # This simulates the state_json being stale relative to the snapshot.
+    state = json.loads(row["state_json"])
+    state["result"] = None
+    async with aiosqlite.connect(db) as conn:
+        await conn.execute(
+            "UPDATE runs SET state_json = ? WHERE run_id = ?",
+            (json.dumps(state), run_id),
+        )
+        await conn.commit()
+
+    # Resume must use the snapshot (which has result = "written_by_script"),
+    # not the corrupted runs.state_json.
+    exit_code = await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+    assert exit_code == 0  # succeeds because rehydration restored result
+
+
+async def test_runner_resume_rehydration_fallback_when_no_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Resume succeeds via runs.state_json fallback when no snapshots exist.
+
+    Decision is the first step, so no predecessor produced a snapshot.
+    The fallback path reads from runs.state_json.
+    """
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)  # decision is first step
+    runner = Runner(db_path=db, progress=False)
+
+    exit_code = await runner.run(wf, inputs={})
+    assert exit_code == 4  # paused
+
+    row = await _fetch_single_run(db)
+    run_id = row["run_id"]
+
+    # Verify there are no snapshots for this run (decision was first step).
+    async with aiosqlite.connect(db) as conn, conn.execute(
+        "SELECT COUNT(*) FROM run_snapshots WHERE run_id = ?", (run_id,)
+    ) as cur:
+        count = (await cur.fetchone())[0]
+    assert count == 0, "decision-first workflow should have no snapshots before resume"
+
+    # Resume uses runs.state_json fallback — should succeed.
+    exit_code = await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+    assert exit_code == 0
+
+
+# ---------------------------------------------------------------------------
 # H-2-006 — PID recording + SIGTERM handler
 # ---------------------------------------------------------------------------
 

@@ -5,12 +5,17 @@ See SPEC §12 for the schema, §4.8 for the store responsibilities.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 import pytest
+from pydantic import create_model
 
 from harness.state import store
+from harness.state.schema import BaseState
 
 # ---------------------------------------------------------------------------
 # init_db — idempotency, parent-dir creation, both tables exist
@@ -214,3 +219,82 @@ async def test_runs_status_enum_accepts_all_documented_values(
         ) as cur:
             row = await cur.fetchone()
             assert row is not None and row[0] == status
+
+
+# ---------------------------------------------------------------------------
+# restore_state — verbatim overwrite
+# ---------------------------------------------------------------------------
+
+
+def _base_kwargs_st(run_id: str = "R1") -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "workflow_name": "wf",
+        "base_branch": "main",
+        "artifacts_dir": "/tmp/x",
+        "started_at": datetime(2026, 5, 8, 12, 0, 0).isoformat(),
+        "notes": [],
+    }
+
+
+async def _seed_run_st(db_path: Path, run_id: str = "R1", state_json: str | None = None) -> None:
+    await store.init_db(db_path)
+    if state_json is None:
+        state_json = json.dumps(_base_kwargs_st(run_id))
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
+            "state_json, inputs_json, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, "wf", 1, "paused", state_json, "{}", "2026-05-08T00:00:00Z"),
+        )
+        await conn.commit()
+
+
+async def test_restore_state_overwrites_state_json(tmp_path: Path) -> None:
+    """restore_state writes the supplied state verbatim to runs.state_json."""
+    db = tmp_path / "h.db"
+    derived_state_cls = create_model(
+        "DerivedState", __base__=BaseState, label=(str | None, None)
+    )
+    await _seed_run_st(db)
+
+    new_state = derived_state_cls.model_validate(_base_kwargs_st() | {"label": "restored"})
+    await store.restore_state("R1", new_state, db_path=db)
+
+    async with aiosqlite.connect(db) as conn, conn.execute(
+        "SELECT state_json FROM runs WHERE run_id = ?", ("R1",)
+    ) as cur:
+        row = await cur.fetchone()
+    assert row is not None
+    persisted = json.loads(row[0])
+    assert persisted["label"] == "restored"
+
+
+async def test_restore_state_does_not_append_lists(tmp_path: Path) -> None:
+    """restore_state replaces notes entirely rather than appending."""
+    db = tmp_path / "h.db"
+    derived_state_cls = create_model("DerivedState", __base__=BaseState)
+    initial = _base_kwargs_st() | {"notes": ["old"]}
+    await _seed_run_st(db, state_json=json.dumps(initial))
+
+    new_state = derived_state_cls.model_validate(_base_kwargs_st() | {"notes": ["new"]})
+    await store.restore_state("R1", new_state, db_path=db)
+
+    async with aiosqlite.connect(db) as conn, conn.execute(
+        "SELECT state_json FROM runs WHERE run_id = ?", ("R1",)
+    ) as cur:
+        row = await cur.fetchone()
+    assert row is not None
+    persisted = json.loads(row[0])
+    assert persisted["notes"] == ["new"]
+
+
+async def test_restore_state_raises_for_unknown_run(tmp_path: Path) -> None:
+    """restore_state raises StateStoreError when the run_id doesn't exist."""
+    db = tmp_path / "h.db"
+    derived_state_cls = create_model("DerivedState", __base__=BaseState)
+    await store.init_db(db)
+    state = derived_state_cls.model_validate(_base_kwargs_st())
+
+    with pytest.raises(store.StateStoreError, match="no run"):
+        await store.restore_state("NONEXISTENT", state, db_path=db)

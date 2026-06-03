@@ -281,6 +281,46 @@ async def update_state(
     return new_state
 
 
+async def restore_state(
+    run_id: str,
+    state: BaseState,
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> None:
+    """Overwrite ``runs.state_json`` verbatim with the supplied state.
+
+    Unlike :func:`update_state` (which applies field-level merge rules),
+    this function replaces the persisted JSON atomically with the exact
+    serialisation of ``state``.  It is intended for resume operations
+    where the caller already holds a validated snapshot and must restore
+    it without any merge semantics.
+
+    Raises:
+        StateStoreError: the run does not exist.
+    """
+    async with store_connection(db_path) as conn:
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            async with conn.execute(
+                "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                raise StateStoreError(f"no run with run_id={run_id!r}")
+
+            await conn.execute(
+                "UPDATE runs SET state_json = ? WHERE run_id = ?",
+                (state.model_dump_json(), run_id),
+            )
+            await conn.commit()
+        except StateStoreError:
+            await conn.rollback()
+            raise
+        except Exception:
+            await conn.rollback()
+            raise
+
+
 # ---------------------------------------------------------------------------
 # Per-completion snapshots — H-2-001
 # ---------------------------------------------------------------------------
