@@ -223,6 +223,22 @@ class WorktreeNode:
         if base is None:
             raise WorktreeNodeError("merge_to_base requires `base`")
 
+        # Refuse if the base working tree or index is dirty. The
+        # ``git read-tree --reset -u HEAD`` call that syncs the index
+        # after the ref update would overwrite local modifications —
+        # refuse early with a clear message so no work is lost.
+        rc, porcelain_out, _ = await _git(repo_root, "status", "--porcelain")
+        dirty_lines = [
+            line for line in porcelain_out.splitlines()
+            if line and not line.startswith("??") and not line.startswith("!!")
+        ]
+        if dirty_lines:
+            raise WorktreeNodeError(
+                f"merge_to_base refused: base repo working tree or index is dirty — "
+                f"commit or stash changes before merging, or run in a clean CI checkout. "
+                f"Dirty files: {', '.join(line[3:].strip() for line in dirty_lines)}"
+            )
+
         # Resolve the worktree branch tip and the base tip up front. If either
         # fails, the worktree is missing or the run state is corrupt.
         rc, branch_tip, stderr = await _git(repo_root, "rev-parse", worktree_branch)

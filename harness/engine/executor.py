@@ -107,6 +107,7 @@ class Context:
     state_schema: type[BaseState]
     nodes: dict[str, NodeRunner]
     workflow_name: str = field(default="")
+    inputs: dict[str, Any] = field(default_factory=dict)
     progress_sink: Callable[[str, str | None, int | None], None] | None = field(default=None)
 
 

@@ -6,11 +6,30 @@ A deterministic workflow execution harness in Python. Decouples orchestration (e
 
 **Design specs live in `specs/` — read the relevant file first. `SPEC.md` is now an index.**
 
+For workflow authoring see `AUTHORING.md`. For the full feature surface see `README.md`.
+
 ## Current state
 
-Pre-implementation. The deliverable for this phase is the SPEC. Code lands only after the SPEC is approved.
+v1 shipped and production-ready for `ClaudeAgent`-based workflows. The harness
+runs YAML workflows end-to-end: AI nodes (Claude), script nodes, check nodes,
+decision nodes, worktree lifecycle, loop blocks with `until:` / `until_bash:`,
+and Linear webhook intake.
 
-## Tech stack (planned)
+## v1 supported surfaces
+
+| Surface | Status |
+|---------|--------|
+| `ClaudeAgent` dispatch | ✅ Supported |
+| Script nodes | ✅ Supported |
+| Check / decision nodes | ✅ Supported |
+| Worktree lifecycle (create / cleanup) | ✅ Supported |
+| Loop blocks (`until:`, `until_bash:`) | ✅ Supported |
+| `$state.<field>` / `$inputs.<key>` substitution | ✅ Supported |
+| Linear webhook intake | ✅ Supported |
+| `CodexAgent` dispatch | ❌ Not supported in v1 |
+| `OpencodeAgent` dispatch | ❌ Not supported in v1 |
+
+## Tech stack
 
 | Layer | Choice |
 |------|--------|
@@ -20,11 +39,27 @@ Pre-implementation. The deliverable for this phase is the SPEC. Code lands only 
 | CLI | Typer |
 | Templates | Jinja2 |
 | Workflows | YAML |
-| AI dispatch | `anthropic` SDK (Claude), `openai` SDK pointed at Ollama for local models |
+| AI dispatch | `anthropic` SDK (Claude via `claude_agent_sdk`) |
 | State + events | SQLite (via `aiosqlite`) |
 | Test / lint | pytest, ruff, mypy |
 
-## Conventions (when implementation starts)
+## Verification gate
+
+Run all three before merging — all must be clean:
+
+```bash
+uv run ruff check .
+uv run mypy harness intake
+uv run pytest
+```
+
+Notes:
+- `mypy` scope is `harness intake` (production code). Tests are excluded; the 89
+  test-file mypy errors are a known backlog.
+- `pytest` uses per-test timeout of 120 s (`pytest-timeout`); job-level CI
+  timeout is 10 min.
+
+## Conventions
 
 - TDD — tests before implementation. See `skills/test-driven-development.md`.
 - Atomic commits, each leaves the project working.
@@ -89,15 +124,16 @@ This harness is decoupled from any one project. Specifically, it does **not**:
 
 Those live in their respective project repos.
 
-## Layout (proposed in SPEC, not yet instantiated)
+## Layout
 
 ```
-SPEC.md              ← source of truth for design
-README.md
+SPEC.md              ← design index (specs/ has per-feature detail)
+README.md            ← user-facing overview
+AUTHORING.md         ← workflow YAML authoring guide
 CLAUDE.md            ← this file
 .claude/settings.json
-harness/             ← Python package (created after SPEC approval)
-workflows/           ← YAML workflows (created after SPEC approval)
+harness/             ← Python package
+workflows/           ← YAML workflow definitions
 tests/
 docker/
 ```

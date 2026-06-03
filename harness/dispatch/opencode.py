@@ -26,11 +26,11 @@ and should not be redefined here.
 
 # Test seam
 
-``__init__`` accepts ``proc_fn`` to inject a fake subprocess iterator for
-unit tests; defaults to ``_resolve_real_proc_fn()`` at execute time. The
-fake receives keyword args ``(cmd, stdin, env, cwd)`` and yields adapter-dialect
-dicts. The real proc_fn yields raw NDJSON strings; ``_iter_with_stall_guard``
-classifies them via ``_classify_real_line``.
+``__init__`` requires ``proc_fn`` (raises ``RuntimeError`` if omitted — OpenCode
+dispatch is not supported in v1). The fake proc_fn receives keyword args
+``(cmd, stdin, env, cwd)`` and yields adapter-dialect dicts. A real proc_fn
+would yield raw NDJSON strings; ``_iter_with_stall_guard`` classifies them
+via ``_classify_real_line``.
 
 See SPEC §4.4 (failure-mode catalogue), §4.7 (Agent protocol), §7 (notes
 channel), §10 (stall detection).
@@ -196,10 +196,15 @@ class OpencodeAgent:
         event_sink: Callable[[EventType, dict[str, Any]], None] | None = None,
         proc_fn: ProcFn | None = None,
     ) -> None:
+        if proc_fn is None:
+            raise RuntimeError(
+                "OpenCode dispatch is not supported in v1 of this release. "
+                "Use ClaudeAgent instead, or pass proc_fn= for testing."
+            )
         self._provider = provider
         self._model = model
         self._event_sink = event_sink
-        self._proc_fn = proc_fn  # None -> resolved lazily inside execute()
+        self._proc_fn: ProcFn = proc_fn
         self.notes: list[str] = []
 
     # ---- public API ------------------------------------------------------- #
@@ -236,7 +241,7 @@ class OpencodeAgent:
         submit_name = submit_tool_schema["name"]
         first_call: dict[str, Any] | None = None
 
-        proc_fn = self._proc_fn or _resolve_real_proc_fn()
+        proc_fn = self._proc_fn
         cmd = _build_cmd(self._provider, self._model, submit_tool_schema)
 
         async for event in self._iter_with_stall_guard(
@@ -342,54 +347,3 @@ class OpencodeAgent:
                     yield classified
 
 
-# --------------------------------------------------------------------------- #
-# Real subprocess proc_fn
-# --------------------------------------------------------------------------- #
-
-
-def _resolve_real_proc_fn() -> ProcFn:
-    """Return a proc_fn that launches ``opencode run`` as a real subprocess.
-
-    The returned function accepts keyword args ``(cmd, stdin, env, cwd)`` and
-    yields each stdout line as a string. Raises ``RuntimeError`` if
-    ``opencode`` is not found in PATH.
-    """
-
-    async def _real_proc(
-        *,
-        cmd: list[str],
-        stdin: str,
-        env: dict[str, str] | None,
-        cwd: Path | None,
-    ) -> AsyncIterator[str]:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=env,
-                cwd=str(cwd) if cwd is not None else None,
-            )
-        except FileNotFoundError as e:
-            raise RuntimeError(
-                "opencode is not installed or not found in PATH; "
-                "install opencode or pass proc_fn= for testing."
-            ) from e
-
-        assert proc.stdin is not None
-        assert proc.stdout is not None
-
-        proc.stdin.write(stdin.encode())
-        await proc.stdin.drain()
-        proc.stdin.close()
-
-        while True:
-            raw = await proc.stdout.readline()
-            if not raw:
-                break
-            yield raw.decode()
-
-        await proc.wait()
-
-    return _real_proc

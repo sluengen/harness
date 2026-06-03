@@ -366,6 +366,7 @@ class Runner:
             state_schema=state_schema,
             nodes=registry,
             workflow_name=loaded.workflow.name,
+            inputs=inputs,
             progress_sink=progress_sink,
         )
         loop_executor = LoopExecutor(
@@ -578,6 +579,7 @@ class Runner:
             state_schema=state_schema,
             nodes=registry,
             workflow_name=loaded.workflow.name,
+            inputs=inputs,
             progress_sink=progress_sink,
         )
 
