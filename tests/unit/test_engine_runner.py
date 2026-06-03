@@ -1191,3 +1191,108 @@ async def test_runner_resume_rehydration_fallback_when_no_snapshot(
     # Resume uses runs.state_json fallback — should succeed.
     exit_code = await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
     assert exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# H-2-006 — PID recording + SIGTERM handler
+# ---------------------------------------------------------------------------
+
+
+async def test_pid_recorded_on_run_row(tmp_path: Path) -> None:
+    """run() writes os.getpid() to the ``pid`` column of the runs row."""
+    import os
+
+    db = tmp_path / "harness.db"
+    wf = _trivial_check_workflow(tmp_path)
+
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    assert row["pid"] == os.getpid()
+
+
+async def test_resume_refreshes_pid_so_cancel_targets_correct_process(
+    tmp_path: Path,
+) -> None:
+    """resume() updates the ``pid`` column to os.getpid().
+
+    In production the original ``harness run`` process exits after writing
+    status='paused'.  A later ``harness resume`` runs in a new process.
+    Without refreshing ``pid``, ``harness cancel`` would probe the stale PID
+    of the original process, receive ProcessLookupError, and exit 2 — making
+    cancellation of resumed runs impossible.
+
+    We verify the fix by seeding the run row with a sentinel PID of -1
+    (impossible for a real process) and confirming that resume() overwrites
+    it with the current process ID.
+    """
+    import os
+
+    db = tmp_path / "harness.db"
+    wf = _decision_then_check_workflow(tmp_path)
+    runner = Runner(db_path=db, progress=False)
+
+    # First run pauses at the decision node.
+    await runner.run(wf, inputs={})
+    row = await _fetch_single_run(db)
+    assert row["status"] == "paused"
+    run_id = row["run_id"]
+
+    # Overwrite pid with a sentinel value to simulate a different (exited) process.
+    async with aiosqlite.connect(db) as conn:
+        await conn.execute("UPDATE runs SET pid = -1 WHERE run_id = ?", (run_id,))
+        await conn.commit()
+
+    # Resume — _set_run_status_running must refresh pid to os.getpid().
+    await runner.resume(run_id, approved=True, workflows_dir=tmp_path)
+
+    row = await _fetch_single_run(db)
+    assert row["pid"] == os.getpid(), (
+        "resume() did not refresh pid; harness cancel would target the stale "
+        "PID from the original run process"
+    )
+
+
+def test_sigterm_handler_raises_keyboard_interrupt() -> None:
+    """_install_sigterm_handler installs a handler that converts SIGTERM
+    into KeyboardInterrupt (the same path as SIGINT cancellation)."""
+    import signal as _signal
+
+    previous = Runner._install_sigterm_handler()
+    try:
+        handler = _signal.getsignal(_signal.SIGTERM)
+        assert callable(handler), "expected a callable signal handler"
+        with pytest.raises(KeyboardInterrupt):
+            handler(_signal.SIGTERM, None)  # type: ignore[call-arg]
+    finally:
+        Runner._restore_sigterm_handler(previous)
+
+
+async def test_sigterm_cancels_run_same_as_sigint(tmp_path: Path) -> None:
+    """A node that raises KeyboardInterrupt (SIGTERM-equivalent) causes
+    status='cancelled', exit_code=130 — identical to the SIGINT path.
+
+    SIGTERM installs a handler that raises KeyboardInterrupt, so the
+    runner's ``except KeyboardInterrupt`` arm handles both signals
+    identically. We verify this by injecting KeyboardInterrupt directly
+    (sending real SIGTERM to the test process would kill pytest itself).
+    """
+    db = tmp_path / "harness.db"
+    wf = _trivial_check_workflow(tmp_path)
+
+    async def _raise_kbi(
+        _step: Step, _state: Any, _ctx: Context
+    ) -> NodeResult[Any]:
+        raise KeyboardInterrupt
+
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(
+        wf, inputs={}, _node_overrides={"check": _raise_kbi}
+    )
+    assert exit_code == 130
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "cancelled"
+    assert row["exit_code"] == 130

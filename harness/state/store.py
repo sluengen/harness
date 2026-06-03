@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS runs (
   exit_code           INTEGER,
   started_at          TEXT NOT NULL,
   completed_at        TEXT,
-  duration_ms         INTEGER
+  duration_ms         INTEGER,
+  pid                 INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
@@ -149,6 +150,29 @@ async def init_db(db_path: Path = DEFAULT_DB_PATH) -> None:
         await conn.execute("PRAGMA foreign_keys = ON")
         await conn.executescript(_SCHEMA)
         await conn.commit()
+    await _migrate(db_path)
+
+
+async def _migrate(db_path: Path) -> None:
+    """Apply incremental column additions that cannot be expressed in ``_SCHEMA``.
+
+    ``CREATE TABLE IF NOT EXISTS`` leaves existing tables untouched, so new
+    columns added to ``_SCHEMA`` after the initial creation must be applied
+    as ``ALTER TABLE ... ADD COLUMN`` migrations here.  Each migration is
+    idempotent: the ``OperationalError`` raised when a column already exists
+    is silently swallowed.
+
+    H-2-006: ``runs.pid INTEGER`` — process ID of the harness run process,
+        used by ``harness cancel <run-id>`` to deliver SIGTERM.
+    """
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            await conn.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+            await conn.commit()
+        except aiosqlite.OperationalError:
+            pass  # Column already present — fresh DB or migration already ran.
 
 
 # ---------------------------------------------------------------------------

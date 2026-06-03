@@ -27,7 +27,8 @@ CREATE TABLE runs (
   exit_code           INTEGER,
   started_at          TEXT NOT NULL,
   completed_at        TEXT,
-  duration_ms         INTEGER
+  duration_ms         INTEGER,
+  pid                 INTEGER   -- PID of the owning harness process; updated on resume (H-2-006)
 );
 
 CREATE TABLE events (
