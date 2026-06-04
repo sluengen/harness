@@ -1,6 +1,8 @@
-name: release-notes
+name: release
 version: 1
-description: Pull recent Linear tickets and summarise into release notes markdown.
+description: >
+  Pull recent Linear tickets, summarise into release notes, write to disk,
+  and raise a GitHub PR from dev to main.
 
 inputs:
   since_days:
@@ -9,6 +11,10 @@ inputs:
   output_path:
     type: string
     default: ""
+  repo:
+    type: string
+    flag: --repo
+    required: true
 
 steps:
   - id: fetch-tickets
@@ -54,3 +60,19 @@ steps:
     contract:
       output_path: string
     writes: [output_path]
+
+  - id: raise-pr
+    type: script
+    command: |
+      TODAY=$(date +%Y-%m-%d)
+      PR_URL=$(gh pr create \
+        --repo "$1" \
+        --title "Release — ${TODAY}" \
+        --body-file "$2" \
+        --base main \
+        --head dev)
+      printf '{"pr_url": "%s"}' "$PR_URL"
+    args: ["$inputs.repo", "$state.output_path"]
+    contract:
+      pr_url: string
+    writes: [pr_url]

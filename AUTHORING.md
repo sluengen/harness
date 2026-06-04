@@ -373,13 +373,15 @@ loop:
 
 ## 5. Standard prompts
 
-Four reusable Jinja templates live in `prompts/standard/`. Each accepts a small set of `template_vars` documented in the file's header comment.
+Six reusable Jinja templates live in `prompts/`. Each accepts a small set of `template_vars` documented in the file's header comment.
 
 | File | Use it for | Required `template_vars` | Optional `template_vars` |
 |---|---|---|---|
 | `analyze.j2` | Read-only investigation; produce a structured summary | `task` | `tools_hint` |
 | `implement.j2` | Mutate code/files in the worktree, optionally with tests | `task` | `constraints` |
+| `implement-ticket.j2` | Ticket-aware implementation with retry context and verification gate | _(uses state.ticket_title / state.ticket_description)_ | — |
 | `review.j2` | Evaluate against criteria; produce a verdict + findings | `criteria` | `severity_levels` (default `[HIGH, MEDIUM, LOW]`) |
+| `review-ticket.j2` | Ticket-aware review: PASS/FAIL/DEFER verdict + commit message | _(uses state.ticket_title / state.ticket_description)_ | — |
 | `summarize.j2` | Summarise a subject; produce structured output | `subject` | `length` (default `"concise"`) |
 
 Reference one in an AI step:
@@ -387,7 +389,7 @@ Reference one in an AI step:
 ```yaml
 - id: review-pr
   type: ai
-  prompt: prompts/standard/review.j2
+  prompt: prompts/review.j2
   template_vars:
     criteria: "Correctness, test coverage, regression risk"
   contract:
@@ -400,7 +402,7 @@ Reference one in an AI step:
   writes: [status, issues]
 ```
 
-If a standard prompt doesn't fit, write your own `.j2` in `prompts/<workflow>/<name>.j2`. Keep custom prompts as the exception — the standard library covers most cases via `template_vars`.
+If no standard prompt fits, write your own `.j2` in `prompts/<name>.j2`. Keep custom prompts as the exception — the standard library covers most cases via `template_vars`.
 
 ---
 
@@ -425,7 +427,7 @@ blocking: boolean
 # any workflow
 - id: review
   type: ai
-  prompt: prompts/standard/review.j2
+  prompt: prompts/review.j2
   template_vars:
     criteria: "..."
   contract: $contracts/review-verdict
@@ -436,15 +438,17 @@ The harness resolves the reference at load time and compiles the same Pydantic m
 
 ---
 
-## 7. Worked example: release-notes
+## 7. Worked example: release
 
-A three-step workflow that pulls closed Linear tickets, summarises them, and writes a release-notes markdown file. This is the canonical example used for the 10-minute ergonomics test.
+A four-step workflow that pulls closed Linear tickets, summarises them into release notes, writes to disk, and raises a GitHub PR from `dev` to `main`. This is the canonical example used for the 10-minute ergonomics test.
 
 ```yaml
-# workflows/release-notes.yaml
-name: release-notes
+# workflows/release.yaml
+name: release
 version: 1
-description: Pull recent Linear tickets and summarise into release notes markdown.
+description: >
+  Pull recent Linear tickets, summarise into release notes, write to disk,
+  and raise a GitHub PR from dev to main.
 
 inputs:
   since_days:
@@ -453,13 +457,18 @@ inputs:
   output_path:
     type: string
     default: ""
+  repo:
+    type: string
+    flag: --repo
+    required: true
 
 steps:
   - id: fetch-tickets
     type: script
-    runtime: python
-    script: scripts/fetch_recent_linear_tickets.py
-    args: ["--since-days", "$inputs.since_days"]
+    command: |
+      SINCE=$(python3 -c "...")
+      curl ... | python3 -c "..."
+    args: ["$inputs.since_days"]
     contract:
       tickets:
         type: list
@@ -476,7 +485,7 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/summarize.j2
+    prompt: prompts/summarize.j2
     template_vars:
       subject: "Linear tickets closed in the last $inputs.since_days days: $state.tickets"
       length: "release-notes markdown grouped by type (Features, Bug fixes, Improvements)"
@@ -493,22 +502,40 @@ steps:
     contract:
       output_path: string
     writes: [output_path]
+
+  - id: raise-pr
+    type: script
+    command: |
+      TODAY=$(date +%Y-%m-%d)
+      PR_URL=$(gh pr create \
+        --repo "$1" \
+        --title "Release — ${TODAY}" \
+        --body-file "$2" \
+        --base main \
+        --head dev)
+      printf '{"pr_url": "%s"}' "$PR_URL"
+    args: ["$inputs.repo", "$state.output_path"]
+    contract:
+      pr_url: string
+    writes: [pr_url]
 ```
 
 What's going on:
 
-- **Inputs.** Two CLI inputs with defaults. The caller can override either: `harness run release-notes --since-days=14 --output-path=/tmp/notes.md`.
-- **Step 1 (script).** Deterministic data fetch — runs a Python script that hits the Linear API. Contract declares the shape of one ticket; writes the list into `state.tickets`. The engine never asks an LLM to fetch data — that's Principle 6 (`SPEC.md` §1.6).
-- **Step 2 (ai).** Summarises the tickets using the standard prompt with parameterised `template_vars`. The agent's contract has one field (`release_notes: string`) which becomes a tool the agent calls to submit its output. `allowed_tools: [Read]` keeps the agent bounded — no Write/Bash/Edit.
-- **Step 3 (script).** Writes the summarised string to disk. Returns the output path so a caller can find it via `harness status <run-id> --json`.
+- **Inputs.** `since_days` and `output_path` have defaults; `repo` is required (`--repo owner/name`).
+- **Step 1 (script).** Deterministic data fetch — hits the Linear API. Contract declares the shape of one ticket; writes the list into `state.tickets`. The engine never asks an LLM to fetch data — that's Principle 6 (`SPEC.md` §1.6).
+- **Step 2 (ai).** Summarises the tickets using the standard prompt with parameterised `template_vars`. The agent's contract has one field (`release_notes: string`) which becomes a tool the agent calls to submit its output. `allowed_tools: [Read]` keeps the agent bounded.
+- **Step 3 (script).** Writes the summarised string to disk. Returns the absolute `output_path` in state so the next step can reference it.
+- **Step 4 (script).** Uses `gh pr create --body-file` with `$state.output_path` (already on disk) to raise the PR. Captures and stores the PR URL.
 
 **Derived state** (you don't write this; the engine builds it):
 
 ```python
-class ReleaseNotesState(BaseState):
+class ReleaseState(BaseState):
     tickets: list[Ticket] = []
     release_notes: str | None = None
     output_path: str | None = None
+    pr_url: str | None = None
 ```
 
 ---
@@ -516,7 +543,7 @@ class ReleaseNotesState(BaseState):
 ## 8. Running a workflow
 
 ```bash
-harness run release-notes --since-days=7 --output-path=/tmp/notes.md
+harness run release --repo owner/myapp --since-days=7 --output-path=/tmp/notes.md
 ```
 
 Each workflow's CLI surface is generated from its `inputs:` block (see SPEC §11 — *Per-workflow inputs*). `harness run <workflow> --help` prints the flags + positionals for that specific workflow.
@@ -537,13 +564,13 @@ Two ways:
 
 ```bash
 # Static validation — does the YAML load + cross-validate?
-harness validate workflows/release-notes.yaml
+harness validate workflows/release.yaml
 ```
 
 ```python
 # Programmatic, from any test or script
 from harness.workflow.loader import load_workflow
-loaded = load_workflow("workflows/release-notes.yaml")
+loaded = load_workflow("workflows/release.yaml")
 print(loaded.workflow)        # the Workflow Pydantic model
 print(loaded.contracts)       # compiled Pydantic models per step
 print(loaded.state_schema)    # derived state class
