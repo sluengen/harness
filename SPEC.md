@@ -298,7 +298,7 @@ class Agent(Protocol):
 Implementations:
 
 - **v1 — `dispatch.claude_agent.ClaudeAgent`** — uses `claude_agent_sdk` (Anthropic's Python SDK that embeds the Claude Code loop in-process). Auths via `claude /login` for **subscription pricing** or `ANTHROPIC_API_KEY` for API rates. Ships day one.
-- **v1.5 — `dispatch.codex.CodexAgent`** — subprocess `codex` CLI for OpenAI models. OpenAI's frontier models are RL-trained against the codex tool-call format — using the native harness avoids the small-but-real performance penalty of routing through opencode's generic dispatch.
+- **v1 — `dispatch.codex.CodexAgent`** — subprocess `codex` CLI for OpenAI models with text-submit completion. OpenAI's frontier models are RL-trained against the codex tool-call format — using the native harness avoids the small-but-real performance penalty of routing through opencode's generic dispatch.
 - **v1.5 — `dispatch.opencode.OpencodeAgent`** — subprocess `opencode` CLI for **local models** (Ollama / llama-swap / llama.cpp via OpenAI-compatible endpoint). Could also serve OpenAI as a fallback, though codex is preferred for OpenAI native models.
 
 #### Why claude_agent_sdk and not the raw `anthropic` SDK
@@ -312,9 +312,9 @@ Different agent harnesses expose different feature surfaces (Claude Code has ric
 **It isn't, because of Principle 6.** We don't use those features in the agent loop. Linear data is fetched by an upstream `script` node and passed via state, not by an in-loop MCP server. Domain knowledge lives in the prompt template (and Jinja partials), not in skills. Pre/post-tool-call interception, if we ever need it, lives at the engine level (executor wraps the agent call), not at the harness level — that makes it portable.
 
 The lowest-common-denominator we *do* depend on across all three adapters:
-- Tool calling with typed schemas
+- Structured completion with typed schemas
 - Streaming text output (for notes capture)
-- A bounded, explicit tool list (for `allowed_tools:`)
+- Cwd-scoped execution
 - Per-tool-call observability (events captured during execution)
 
 All three harnesses support all four. Asymmetry is real but doesn't bite the workflow layer.

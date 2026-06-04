@@ -40,16 +40,16 @@ That's a valid workflow. `name` (snake-case), `version` (integer ≥ 1), and `st
 
 ## Backend compatibility
 
-Not all agent adapters support every AI step feature. The table below shows what v1's `ClaudeAgent` supports vs the v1.5 adapters.
+Not all agent adapters support every AI step feature. The table below shows what v1's `ClaudeAgent` and `CodexAgent` support vs the v1.5 adapters.
 
-| Feature | `ClaudeAgent` (v1) | `CodexAgent` (v1.5) | `OpencodeAgent` (v1.5) |
+| Feature | `ClaudeAgent` (v1) | `CodexAgent` (v1) | `OpencodeAgent` (v1.5) |
 |---|---|---|---|
-| `submit` tool injection | ✓ | ✗ (not supported) | ✗ (not supported) |
+| `submit` tool injection | ✓ | text-submit completion | ✗ (not supported) |
 | `cwd:` | ✓ | ✓ | ✓ |
 | `max_turns:` | ✓ | ✗ | ✗ |
 | `allowed_tools:` | ✓ | ✗ | ✗ |
 
-For production workflows, use `ClaudeAgent`. The v1.5 adapters exist for future use and raise `RuntimeError` in production (no `proc_fn` wired).
+For production workflows, use `ClaudeAgent` or `CodexAgent`. The v1.5 `OpencodeAgent` adapter exists for future use and raises `RuntimeError` in production (no `proc_fn` wired).
 
 Minimal example of each:
 

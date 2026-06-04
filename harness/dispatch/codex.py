@@ -9,7 +9,8 @@ OpenAI model.
 Responsibilities:
 
 1. Build and launch ``codex --full-auto -q [--model <model_id>]`` with the
-   prompt delivered via stdin.
+   prompt delivered via stdin (augmented with SUBMIT instructions for agents
+   that don't support native tool injection).
 2. Parse the NDJSON stream line-by-line using ``_classify_real_line``, which
    maps codex's event format to the same adapter-dialect dicts used by
    ``ClaudeAgent`` and ``OpencodeAgent``.
@@ -27,11 +28,9 @@ and should not be redefined here.
 
 # Test seam
 
-``__init__`` requires ``proc_fn`` (raises ``RuntimeError`` if omitted — Codex
-dispatch is not supported in v1). The fake proc_fn receives keyword args
-``(cmd, stdin, env, cwd)`` and yields adapter-dialect dicts. A real proc_fn
-would yield raw NDJSON strings; ``_iter_with_stall_guard`` classifies them
-via ``_classify_real_line``.
+``__init__`` accepts an optional ``proc_fn``. When omitted, ``_default_proc_fn``
+is wired in as the real subprocess path. For tests, supply a fake proc_fn that
+yields adapter-dialect dicts directly.
 
 See SPEC §4.4 (failure-mode catalogue), §4.7 (Agent protocol), §7 (notes
 channel), §10 (stall detection).
@@ -65,6 +64,39 @@ from harness.nodes.base import Attestation, NodeResult
 # A proc function takes keyword args (cmd, stdin, env, cwd) and yields a stream
 # of *something* — adapter-dialect dicts in tests, raw NDJSON strings in prod.
 ProcFn = Callable[..., AsyncIterator[Any]]
+
+
+# --------------------------------------------------------------------------- #
+# Default subprocess proc_fn
+# --------------------------------------------------------------------------- #
+
+
+async def _default_proc_fn(
+    *,
+    cmd: list[str],
+    stdin: str,
+    env: dict[str, str],
+    cwd: Path | None,
+) -> AsyncIterator[str]:
+    """Run cmd as a subprocess, feed stdin, yield stdout lines as NDJSON strings."""
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        env=env,
+        cwd=cwd,
+    )
+    if process.stdin is None:  # pragma: no cover
+        raise RuntimeError("subprocess stdin pipe was not created")
+    if process.stdout is None:  # pragma: no cover
+        raise RuntimeError("subprocess stdout pipe was not created")
+    process.stdin.write(stdin.encode())
+    await process.stdin.drain()
+    process.stdin.close()
+    async for line in process.stdout:
+        yield line.decode()
+    await process.wait()
 
 
 # --------------------------------------------------------------------------- #
@@ -145,14 +177,70 @@ def _classify_real_line(line: str) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
+# Submit-via-text helpers (supports_submit_tool=False path)
+# --------------------------------------------------------------------------- #
+
+
+def _augment_prompt_for_submit(prompt: str, submit_tool_schema: dict[str, Any]) -> str:
+    """Append submit-tool instructions for agents that don't support native tool injection.
+
+    Instructs the agent to output a SUBMIT: <json> line when done, which the
+    execute loop recognises and treats as the structured output submit call.
+    """
+    name = submit_tool_schema.get("name", "submit")
+    input_schema = submit_tool_schema.get("input_schema", {})
+    properties = input_schema.get("properties", {})
+    required: list[str] = input_schema.get("required", [])
+
+    fields_desc = "\n".join(
+        f"  - {k}: {v.get('type', 'string')}"
+        + (f" (one of: {v['enum']})" if "enum" in v else "")
+        for k, v in properties.items()
+    )
+
+    schema_json = json.dumps(dict.fromkeys(required, "...") if required else {})
+
+    instruction = (
+        f"\n\n---\n"
+        f"## Completion Signal\n\n"
+        f"When you have finished the task, you MUST signal completion by including "
+        f"the following single line anywhere in your final response:\n\n"
+        f"SUBMIT: <json>\n\n"
+        f"Where <json> is a JSON object with these required fields:\n"
+        f"{fields_desc}\n\n"
+        f"Example:\n"
+        f"SUBMIT: {schema_json}\n\n"
+        f"The submit call name is: {name}\n"
+    )
+    return prompt + instruction
+
+
+def _extract_submit_from_text(text: str) -> dict[str, Any] | None:
+    """Scan a text event for a SUBMIT: <json> line and return the payload, or None.
+
+    Accepts the first well-formed ``SUBMIT: <json>`` line found in *text*,
+    regardless of which submit tool the workflow expects (the augmented prompt
+    already constrains the model to emit the correct JSON shape for that tool).
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("SUBMIT:"):
+            json_part = stripped[len("SUBMIT:"):].strip()
+            try:
+                payload = json.loads(json_part)
+                if isinstance(payload, dict):
+                    return payload
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # Command builder
 # --------------------------------------------------------------------------- #
 
 
-def _build_cmd(
-    model: str | None,
-    submit_tool_schema: dict[str, Any],  # noqa: ARG001 — tool injection not yet supported by codex
-) -> list[str]:
+def _build_cmd(model: str | None) -> list[str]:
     """Build the ``codex`` invocation.
 
     Model flag logic:
@@ -193,14 +281,9 @@ class CodexAgent:
         event_sink: Callable[[EventType, dict[str, Any]], None] | None = None,
         proc_fn: ProcFn | None = None,
     ) -> None:
-        if proc_fn is None:
-            raise RuntimeError(
-                "Codex dispatch is not supported in v1 of this release. "
-                "Use ClaudeAgent instead, or pass proc_fn= for testing."
-            )
         self._model = model
         self._event_sink = event_sink
-        self._proc_fn: ProcFn = proc_fn
+        self._proc_fn: ProcFn = proc_fn if proc_fn is not None else _default_proc_fn
         self.notes: list[str] = []
 
     # ---- public API ------------------------------------------------------- #
@@ -238,12 +321,13 @@ class CodexAgent:
         first_call: dict[str, Any] | None = None
 
         proc_fn = self._proc_fn
-        cmd = _build_cmd(self._model, submit_tool_schema)
+        cmd = _build_cmd(self._model)
+        augmented_prompt = _augment_prompt_for_submit(prompt, submit_tool_schema)
 
         async for event in self._iter_with_stall_guard(
             proc_fn(
                 cmd=cmd,
-                stdin=prompt,
+                stdin=augmented_prompt,
                 env=dict(os.environ),
                 cwd=cwd,
             ),
@@ -253,6 +337,13 @@ class CodexAgent:
 
             if kind == "text":
                 self.notes.append(event["text"])
+                # Check for text-based submit (for agents with supports_submit_tool=False)
+                submit_payload = _extract_submit_from_text(event["text"])
+                if submit_payload is not None:
+                    if first_call is None:
+                        first_call = submit_payload
+                    else:
+                        self._emit("decision_violation", {"payload": submit_payload})
 
             elif kind == "tool_call":
                 self._emit("tool_called", {"name": event["name"], "input": event["input"]})
@@ -341,5 +432,3 @@ class CodexAgent:
             else:
                 for classified in _classify_real_line(str(item)):
                     yield classified
-
-
