@@ -28,17 +28,20 @@ steps:
   - id: set-in-progress
     type: script
     command: |
-      STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
+      NODES=$(curl -s -X POST https://api.linear.app/graphql \
         -H "Authorization: $LINEAR_API_KEY" \
         -H "Content-Type: application/json" \
-        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id type}}}}}\"}" \
-        | jq -r '.data.issue.team.states.nodes[] | select(.type=="started") | .id' \
-        | head -1)
-      curl -s -X POST https://api.linear.app/graphql \
-        -H "Authorization: $LINEAR_API_KEY" \
-        -H "Content-Type: application/json" \
-        --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
-        > /dev/null
+        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id name type}}}}}\"}" \
+        | jq -c '.data.issue.team.states.nodes')
+      STATE_ID=$(printf '%s' "$NODES" \
+        | jq -r 'map(select(.type=="started")) | (map(select((.name | ascii_downcase) == "in progress")) | first) // first | .id // empty')
+      if [ -n "$STATE_ID" ]; then
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+          > /dev/null
+      fi
       printf '{}'
     args: ["$inputs.linear_id"]
     writes: []
@@ -72,6 +75,27 @@ steps:
           prompt: prompts/implement-ticket.j2
           allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
           writes_files: true
+          writes: []
+
+        - id: set-in-review
+          type: script
+          command: |
+            NODES=$(curl -s -X POST https://api.linear.app/graphql \
+              -H "Authorization: $LINEAR_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id name type}}}}}\"}" \
+              | jq -c '.data.issue.team.states.nodes')
+            STATE_ID=$(printf '%s' "$NODES" \
+              | jq -r 'map(select(.type=="started")) | (map(select((.name | ascii_downcase) == "in review")) | first) // first | .id // empty')
+            if [ -n "$STATE_ID" ]; then
+              curl -s -X POST https://api.linear.app/graphql \
+                -H "Authorization: $LINEAR_API_KEY" \
+                -H "Content-Type: application/json" \
+                --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+                > /dev/null
+            fi
+            printf '{}'
+          args: ["$inputs.linear_id"]
           writes: []
 
         - id: review
