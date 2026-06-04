@@ -39,5 +39,5 @@ git push origin v<X.Y.Z>
 ## Post-release
 
 - [ ] GitHub Release created from the tag with the changelog section pasted in
-- [ ] Any consuming repos pinned to the new tag (update `uv.lock` / `pyproject.toml`)
+- [ ] Consuming repos updated to the new tag — see `BOOTSTRAP.md §Updating` for the per-install-method steps (git checkout + Docker rebuild, or pip upgrade)
 - [ ] Linear milestone closed or next milestone opened

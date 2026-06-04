@@ -85,8 +85,29 @@ Place your workflow YAML files in `workflows/`. Reference examples at `.harness/
 
 ## Updating
 
+### Pin to a release tag (recommended)
+
+```bash
+git -C .harness fetch --tags
+git -C .harness checkout v<X.Y.Z>
+```
+
+If you're using Docker, rebuild the image after every checkout:
+
+```bash
+docker build -t harness:local -f .harness/docker/Dockerfile .harness
+```
+
+If you're using the direct pip install, upgrade to the tag:
+
+```bash
+pip install --upgrade "git+ssh://git@github.com/sluengen/harness.git@v<X.Y.Z>"
+```
+
+### Track latest (rolling)
+
 ```bash
 git -C .harness pull
 ```
 
-Symlinks resolve automatically — no re-linking needed.
+Docker users still need to rebuild after pulling. Symlinks resolve automatically — no re-linking needed either way.
