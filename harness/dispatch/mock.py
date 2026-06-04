@@ -20,10 +20,11 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
+from harness.dispatch.base import AgentCapability
 from harness.nodes.base import Attestation, NodeResult
 
 
@@ -70,6 +71,13 @@ class MockAgent:
       recording the invocation in ``calls``. Useful for verifying the executor
       passes the right arguments even on failure paths.
     """
+
+    capability: ClassVar[AgentCapability] = AgentCapability(
+        supports_submit_tool=True,
+        supports_cwd=True,
+        supports_max_turns=True,
+        supports_tool_allowlist=True,
+    )
 
     default_result: NodeResult[BaseModel] | None = None
     error: BaseException | None = None

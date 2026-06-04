@@ -55,6 +55,8 @@ from harness.engine.runner import Runner
 from harness.nodes.base import Attestation, NodeResult
 from harness.state.store import init_db
 
+pytestmark = pytest.mark.integration
+
 # Resolve the worktree root so we can copy the shipped artefacts into
 # tmp_path.
 _REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -65,6 +65,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from harness.dispatch.base import AgentCapability
 from harness.events.schema import EventType
 from harness.nodes.base import Attestation, NodeResult
 
@@ -235,6 +236,13 @@ class ClaudeAgent:
     See module docstring for the design notes (notes channel, event sink,
     auth, test seam).
     """
+
+    capability: AgentCapability = AgentCapability(
+        supports_submit_tool=True,
+        supports_cwd=True,
+        supports_max_turns=True,
+        supports_tool_allowlist=True,
+    )
 
     def __init__(
         self,

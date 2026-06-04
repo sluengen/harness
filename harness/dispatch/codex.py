@@ -49,6 +49,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from harness.dispatch.base import AgentCapability
 from harness.dispatch.claude import (
     AgentStalled,
     ContractViolation,
@@ -150,18 +151,13 @@ def _classify_real_line(line: str) -> list[dict[str, Any]]:
 
 def _build_cmd(
     model: str | None,
-    submit_tool_schema: dict[str, Any],  # noqa: ARG001 — reserved for future injection
+    submit_tool_schema: dict[str, Any],  # noqa: ARG001 — tool injection not yet supported by codex
 ) -> list[str]:
     """Build the ``codex`` invocation.
 
     Model flag logic:
     - ``model`` set: ``--model <model_id>``
     - ``model`` not set: no ``--model`` flag
-
-    # TODO: inject submit tool
-    The submit tool schema is accepted here for future use when codex gains
-    a mechanism for in-process tool injection. For now, tool capture happens
-    via NDJSON parsing.
     """
     cmd: list[str] = ["codex", "--full-auto", "-q"]
 
@@ -182,6 +178,13 @@ class CodexAgent:
     See module docstring for design notes (notes channel, event sink,
     test seam, NDJSON parsing).
     """
+
+    capability: AgentCapability = AgentCapability(
+        supports_submit_tool=False,
+        supports_cwd=True,
+        supports_max_turns=False,
+        supports_tool_allowlist=False,
+    )
 
     def __init__(
         self,

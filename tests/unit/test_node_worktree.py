@@ -19,6 +19,8 @@ from harness.nodes.worktree import (
     WorktreeNodeError,
 )
 
+pytestmark = pytest.mark.slow
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

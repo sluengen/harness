@@ -793,3 +793,128 @@ def test_module_exports_present() -> None:
 
 # Keep imports referenced even if any individual assertion path is skipped.
 _ = (Any,)
+
+
+# ---------------------------------------------------------------------------
+# Item 2: $inputs.* in unsupported surfaces
+# ---------------------------------------------------------------------------
+
+
+def test_inputs_ref_in_script_command_raises_load_error(
+    project_root: Path, contracts_root: Path
+) -> None:
+    path = _write_workflow(
+        project_root,
+        """\
+name: bad-command
+version: 1
+steps:
+  - id: run-test
+    type: script
+    command: scripts/deploy.sh $inputs.env
+    writes: []
+""",
+    )
+    with pytest.raises(WorkflowLoadError, match="run-test") as exc:
+        load_workflow(path, contracts_root=contracts_root)
+    msg = str(exc.value)
+    assert "$inputs" in msg or "inputs" in msg
+    assert "command" in msg
+
+
+def test_inputs_ref_in_check_expr_raises_load_error(
+    project_root: Path, contracts_root: Path
+) -> None:
+    path = _write_workflow(
+        project_root,
+        """\
+name: bad-check
+version: 1
+steps:
+  - id: gate
+    type: check
+    expr: "$inputs.flag == True"
+    on_fail: cancel
+""",
+    )
+    with pytest.raises(WorkflowLoadError, match="gate") as exc:
+        load_workflow(path, contracts_root=contracts_root)
+    msg = str(exc.value)
+    assert "$inputs" in msg or "inputs" in msg
+    assert "expr" in msg
+
+
+def test_inputs_ref_in_loop_until_expression_raises_load_error(
+    project_root: Path, contracts_root: Path
+) -> None:
+    path = _write_workflow(
+        project_root,
+        """\
+name: bad-until
+version: 1
+steps:
+  - id: my-loop
+    type: loop
+    loop:
+      max_iterations: 5
+      until: "$inputs.done == True"
+      steps:
+        - id: tick
+          type: script
+          command: echo hi
+          writes: []
+""",
+    )
+    with pytest.raises(WorkflowLoadError, match="my-loop") as exc:
+        load_workflow(path, contracts_root=contracts_root)
+    msg = str(exc.value)
+    assert "$inputs" in msg or "inputs" in msg
+    assert "until" in msg
+
+
+def test_inputs_ref_in_args_does_not_raise(
+    project_root: Path, contracts_root: Path
+) -> None:
+    """$inputs.* in args: is the correct pattern and must not raise."""
+    path = _write_workflow(
+        project_root,
+        """\
+name: ok-args
+version: 1
+steps:
+  - id: run
+    type: script
+    command: scripts/deploy.sh
+    args: ["$inputs.env"]
+    writes: []
+""",
+    )
+    # Must not raise.
+    loaded = load_workflow(path, contracts_root=contracts_root)
+    assert loaded is not None
+
+
+def test_inputs_ref_in_until_bash_does_not_raise(
+    project_root: Path, contracts_root: Path
+) -> None:
+    """$inputs.* in until_bash: is the correct pattern and must not raise."""
+    path = _write_workflow(
+        project_root,
+        """\
+name: ok-until-bash
+version: 1
+steps:
+  - id: wait-loop
+    type: loop
+    loop:
+      max_iterations: 10
+      until_bash: "[ -f $inputs.output_path ]"
+      steps:
+        - id: poll
+          type: script
+          command: sleep 1
+          writes: []
+""",
+    )
+    loaded = load_workflow(path, contracts_root=contracts_root)
+    assert loaded is not None
