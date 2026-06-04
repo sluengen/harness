@@ -73,6 +73,11 @@ pythonpath = ["."]
 # consuming the full CI job budget; the job-level timeout-minutes is a
 # secondary backstop.
 timeout = 120
+markers = [
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "integration: marks tests that require external services or a real Docker environment",
+    "docker: marks tests that require a running Docker daemon",
+]
 
 [dependency-groups]
 dev = [

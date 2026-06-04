@@ -49,6 +49,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from harness.dispatch.base import AgentCapability
 from harness.dispatch.claude import (
     AgentStalled,
     ContractViolation,
@@ -182,6 +183,13 @@ class CodexAgent:
     See module docstring for design notes (notes channel, event sink,
     test seam, NDJSON parsing).
     """
+
+    capability: AgentCapability = AgentCapability(
+        supports_submit_tool=False,
+        supports_cwd=True,
+        supports_max_turns=False,
+        supports_tool_allowlist=False,
+    )
 
     def __init__(
         self,

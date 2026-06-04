@@ -294,3 +294,77 @@ async def test_execute_records_max_turns_as_none_by_default() -> None:
     )
 
     assert mock.calls[0].max_turns is None
+
+
+# ---------------------------------------------------------------------------
+# AgentCapability — feature flags on each adapter (Item 1)
+# ---------------------------------------------------------------------------
+
+
+def test_agent_capability_dataclass_is_importable() -> None:
+    from harness.dispatch.base import AgentCapability
+
+    cap = AgentCapability(
+        supports_submit_tool=True,
+        supports_cwd=True,
+        supports_max_turns=True,
+        supports_tool_allowlist=True,
+    )
+    assert cap.supports_submit_tool is True
+    assert cap.supports_cwd is True
+    assert cap.supports_max_turns is True
+    assert cap.supports_tool_allowlist is True
+
+
+def test_claude_agent_capability_values() -> None:
+    from harness.dispatch.claude import ClaudeAgent
+
+    cap = ClaudeAgent.capability
+    assert cap.supports_submit_tool is True
+    assert cap.supports_cwd is True
+    assert cap.supports_max_turns is True
+    assert cap.supports_tool_allowlist is True
+
+
+def test_codex_agent_capability_values() -> None:
+    from harness.dispatch.codex import CodexAgent
+
+    cap = CodexAgent.capability
+    assert cap.supports_submit_tool is False
+    assert cap.supports_cwd is True
+    assert cap.supports_max_turns is False
+    assert cap.supports_tool_allowlist is False
+
+
+def test_opencode_agent_capability_values() -> None:
+    from harness.dispatch.opencode import OpencodeAgent
+
+    cap = OpencodeAgent.capability
+    assert cap.supports_submit_tool is False
+    assert cap.supports_cwd is True
+    assert cap.supports_max_turns is False
+    assert cap.supports_tool_allowlist is False
+
+
+def test_mock_agent_capability_values() -> None:
+    from harness.dispatch.mock import MockAgent
+
+    cap = MockAgent.capability
+    assert cap.supports_submit_tool is True
+    assert cap.supports_cwd is True
+    assert cap.supports_max_turns is True
+    assert cap.supports_tool_allowlist is True
+
+
+def test_agent_capability_is_frozen() -> None:
+    """AgentCapability dataclass must be frozen (immutable)."""
+    from harness.dispatch.base import AgentCapability
+
+    cap = AgentCapability(
+        supports_submit_tool=True,
+        supports_cwd=False,
+        supports_max_turns=False,
+        supports_tool_allowlist=False,
+    )
+    with pytest.raises((AttributeError, TypeError)):
+        cap.supports_submit_tool = False  # type: ignore[misc]

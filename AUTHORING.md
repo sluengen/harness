@@ -38,6 +38,19 @@ That's a valid workflow. `name` (snake-case), `version` (integer ≥ 1), and `st
 | `worktree` | Create or clean up an isolated git worktree for the run | `action` (and `base` or `policy`) |
 | `loop` | Iterate a block of steps until a state condition is true | `loop:` block |
 
+## Backend compatibility
+
+Not all agent adapters support every AI step feature. The table below shows what v1's `ClaudeAgent` supports vs the v1.5 adapters.
+
+| Feature | `ClaudeAgent` (v1) | `CodexAgent` (v1.5) | `OpencodeAgent` (v1.5) |
+|---|---|---|---|
+| `submit` tool injection | ✓ | ✗ (not supported) | ✗ (not supported) |
+| `cwd:` | ✓ | ✓ | ✓ |
+| `max_turns:` | ✓ | ✗ | ✗ |
+| `allowed_tools:` | ✓ | ✗ | ✗ |
+
+For production workflows, use `ClaudeAgent`. The v1.5 adapters exist for future use and raise `RuntimeError` in production (no `proc_fn` wired).
+
 Minimal example of each:
 
 ```yaml
@@ -318,6 +331,40 @@ Inside Jinja prompt templates the same vars are available as Jinja variables (no
 ```jinja
 {{ state.tickets }}
 {{ inputs.since_days }}
+```
+
+#### Safe bash quoting with `$inputs.*` and `$state.*`
+
+Substitution in `args:` replaces the whole token, so quoting is safe:
+
+```yaml
+- id: run
+  type: script
+  command: scripts/deploy.sh
+  args: ["$inputs.env", "$state.branch"]
+```
+
+**Do not** use `$inputs.*` or `$state.*` inside `command:`. The `command:` string is passed verbatim to `bash -c` — the shell will try to expand `$inputs` as a shell variable (which is empty), not the harness value. Use `args:` for dynamic values:
+
+```yaml
+# WRONG — $inputs.env will be empty in bash
+- id: bad
+  type: script
+  command: scripts/deploy.sh $inputs.env
+
+# CORRECT — value is substituted before bash sees it
+- id: good
+  type: script
+  command: scripts/deploy.sh
+  args: ["$inputs.env"]
+```
+
+`$inputs.*` also works in `until_bash:` (the whole command is preprocessed before shell execution):
+
+```yaml
+loop:
+  max_iterations: 10
+  until_bash: "[ -f $inputs.output_path ]"
 ```
 
 ---

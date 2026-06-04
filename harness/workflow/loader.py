@@ -39,6 +39,7 @@ for the common case; full fidelity for the rare case.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -56,7 +57,9 @@ from harness.workflow.resolver import (
     resolve_contract_ref,
 )
 from harness.workflow.schema import (
+    CheckStep,
     LoopStep,
+    ScriptStep,
     Step,
     Workflow,
     WorktreeStep,
@@ -124,6 +127,7 @@ def load_workflow(
     _validate_writer_type_consistency(workflow, contracts)
     _validate_worktree_ancestry(workflow)
     _validate_writes_without_contract(workflow)
+    _validate_inputs_refs(workflow)
 
     return LoadedWorkflow(workflow=workflow, contracts=contracts, path=path)
 
@@ -345,6 +349,62 @@ def _validate_worktree_ancestry(workflow: Workflow) -> None:
             prev_has_worktree = local_flag[step.id]
 
     visit_block(list(workflow.steps), inherited=False)
+
+
+def _validate_inputs_refs(workflow: Workflow) -> None:
+    """Reject ``$inputs.*`` in surfaces where substitution does not run.
+
+    Substitution works in ``args:`` (ScriptStep) and ``until_bash:``
+    (LoopBlock). It does NOT work in:
+
+    - ``ScriptStep.command`` — passed verbatim to ``bash -c``.
+    - ``CheckStep.expr`` — evaluated as a Python expression.
+    - ``LoopBlock.until`` — evaluated as a Python expression.
+
+    Detecting these early at load time gives a clear error rather than a
+    silent wrong value at runtime.
+    """
+    _marker = "$inputs."
+
+    def check_steps(steps: list[Step]) -> None:
+        for step in steps:
+            if (
+                isinstance(step, ScriptStep)
+                and step.command is not None
+                and _marker in step.command
+            ):
+                # Extract the first $inputs.X reference for the message.
+                ref = _first_inputs_ref(step.command)
+                raise WorkflowLoadError(
+                    f"step {step.id!r} command: uses {ref} but $inputs.* "
+                    f"is not substituted in command: — use args: instead"
+                )
+            if isinstance(step, CheckStep) and _marker in step.expr:
+                ref = _first_inputs_ref(step.expr)
+                raise WorkflowLoadError(
+                    f"step {step.id!r} expr: uses {ref} but $inputs.* "
+                    f"is not substituted in expr: — use state fields or "
+                    f"pass inputs via a preceding script step"
+                )
+            if isinstance(step, LoopStep):
+                if step.loop.until is not None and _marker in step.loop.until:
+                    ref = _first_inputs_ref(step.loop.until)
+                    raise WorkflowLoadError(
+                        f"step {step.id!r} until: uses {ref} but $inputs.* "
+                        f"is not substituted in until: — use until_bash: for "
+                        f"shell-expanded predicates, or copy the value to state "
+                        f"via a preceding step and reference $state.*"
+                    )
+                # Recurse into loop body.
+                check_steps(list(step.loop.steps))
+
+    check_steps(list(workflow.steps))
+
+
+def _first_inputs_ref(text: str) -> str:
+    """Extract the first ``$inputs.X`` token from ``text`` for error messages."""
+    match = re.search(r"\$inputs\.\w+", text)
+    return match.group(0) if match else "$inputs.*"
 
 
 def _validate_writes_without_contract(workflow: Workflow) -> None:

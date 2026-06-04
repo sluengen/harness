@@ -24,9 +24,11 @@ import typer
 
 from harness.cli.cancel import cancel_command
 from harness.cli.decisions import decision_app, decisions_app
+from harness.cli.doctor import doctor_command
 from harness.cli.query import (
     events_command,
     logs_command,
+    runs_command,
     status_command,
 )
 from harness.cli.run import run_command
@@ -64,6 +66,8 @@ app.command(name="events", help="Print a run's events (JSON or compact).")(
 app.command(name="cancel", help="Cancel a running workflow by sending SIGTERM.")(
     cancel_command
 )
+app.command(name="doctor", help="Run system health checks.")(doctor_command)
+app.command(name="runs", help="List recent runs.")(runs_command)
 
 # Dynamic per-workflow `run` command. Uses context-settings to leave
 # workflow-specific args unparsed so `harness.cli.run` can build a Click

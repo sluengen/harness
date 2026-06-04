@@ -25,12 +25,23 @@ verify structural conformance.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 from harness.nodes.base import NodeResult
+
+
+@dataclass(frozen=True)
+class AgentCapability:
+    """Feature flags for an agent adapter — see dispatch/base.py."""
+
+    supports_submit_tool: bool
+    supports_cwd: bool
+    supports_max_turns: bool
+    supports_tool_allowlist: bool
 
 
 @runtime_checkable

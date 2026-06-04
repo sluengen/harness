@@ -162,13 +162,18 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 ### v1.0.0 (2026-05-27)
 
 - Engine: workflow loader, derived state, type-driven merge, dispatch protocol, six node types (`ai`, `script`, `check`, `decision`, `worktree`, `loop`), three-layer retry, executor, runner.
-- Dispatch: `claude_agent_sdk` adapter (v1); `codex`/`opencode` deferred to v1.5.
-- CLI: dynamic per-workflow subcommands, query commands (`status`/`logs`/`events`/`worktrees`/`validate`/`version`), v2-reserved decision verbs.
+- Dispatch: `claude_agent_sdk` adapter (v1); `codex`/`opencode` subprocess adapters exist but are gated behind `proc_fn=` for testing (not production-ready).
+- CLI: dynamic per-workflow subcommands, query commands (`status`/`logs`/`events`/`worktrees`/`validate`/`version`/`runs`/`doctor`), v2-reserved decision verbs.
 - Docker image with reproducible build.
 - AUTHORING.md author guide.
 - Ergonomics validation skill + 4 documented validation runs.
 - `/build-workflow` slash command + `workflow-authoring` skill.
 - Agent-agnostic layout (top-level `agents/`, `skills/`, `commands/`).
+- Dict-merge state semantics, per-write merge override (`merge: replace`).
+- Per-node retry configuration (`retry.transient.attempts`).
+- Linear webhook intake + reconciliation (`intake/` package).
+- State snapshots (per-completion) written after every successful node.
+- Workflow-level cancellation on SIGINT + SIGTERM.
 
 ### v1.1 (planned)
 
@@ -179,14 +184,10 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 
 ### v1.5 (planned)
 
-- Codex + OpenCode dispatch adapters
-- Dict-merge state semantics, per-write merge override
-- Per-node retry configuration
-- AI node multi-turn
-- Linear webhook intake + reconciliation
+- `CodexAgent` and `OpencodeAgent` production wiring (subprocess + tool injection)
+- AI node multi-turn improvements
 
 ### v2 (planned)
 
 - Human-actor decision nodes with pause/resume
-- Per-completion state snapshots
-- Workflow-level cancellation from external signal
+- Decision pause/resume via CLI (`harness decision approve/reject`)

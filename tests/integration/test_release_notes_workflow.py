@@ -39,6 +39,8 @@ from harness.engine.runner import Runner
 from harness.nodes.base import Attestation, NodeResult
 from harness.state.store import init_db
 
+pytestmark = pytest.mark.integration
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_SRC = _REPO_ROOT / "workflows" / "release-notes.yaml"
 _PROMPT_SRC = _REPO_ROOT / "prompts" / "standard" / "summarize.j2"
