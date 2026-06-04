@@ -690,14 +690,14 @@ def test_classify_message_assistant_list_content_is_ignored() -> None:
 
 def test_build_cmd_no_model_produces_base_flags() -> None:
     """No model -> [\"codex\", \"--full-auto\", \"-q\"] with no --model flag."""
-    cmd = _build_cmd(model=None, submit_tool_schema=SUBMIT_SCHEMA)
+    cmd = _build_cmd(model=None)
     assert cmd == ["codex", "--full-auto", "-q"]
     assert "--model" not in cmd
 
 
 def test_build_cmd_with_model_appends_model_flag() -> None:
     """With model -> appends [\"--model\", <model_id>]."""
-    cmd = _build_cmd(model="gpt-4o", submit_tool_schema=SUBMIT_SCHEMA)
+    cmd = _build_cmd(model="gpt-4o")
     assert "--model" in cmd
     model_idx = cmd.index("--model")
     assert cmd[model_idx + 1] == "gpt-4o"
@@ -705,14 +705,14 @@ def test_build_cmd_with_model_appends_model_flag() -> None:
 
 def test_build_cmd_always_starts_with_codex() -> None:
     """Command must always start with ``codex``."""
-    cmd = _build_cmd(model=None, submit_tool_schema=SUBMIT_SCHEMA)
+    cmd = _build_cmd(model=None)
     assert cmd[0] == "codex"
 
 
 def test_build_cmd_always_includes_full_auto_and_quiet() -> None:
     """``--full-auto`` and ``-q`` must always be present."""
     for model in (None, "gpt-4o"):
-        cmd = _build_cmd(model=model, submit_tool_schema=SUBMIT_SCHEMA)
+        cmd = _build_cmd(model=model)
         assert "--full-auto" in cmd
         assert "-q" in cmd
 
@@ -763,17 +763,242 @@ async def test_call_to_unrelated_tool_name_does_not_count_as_submit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Unsupported adapter guard (v1 restriction)
+# AC-new1/2 — Default construction (v1 guard removed)
 # ---------------------------------------------------------------------------
 
 
-def test_codex_agent_without_proc_fn_raises_runtime_error() -> None:
-    """CodexAgent without proc_fn (real subprocess path) is not supported in v1."""
-    with pytest.raises(RuntimeError, match="not supported"):
-        CodexAgent()
+def test_codex_agent_default_construction_succeeds() -> None:
+    """CodexAgent() without proc_fn constructs without error."""
+    agent = CodexAgent()
+    assert agent is not None
+
+
+def test_codex_agent_default_proc_fn_is_set() -> None:
+    """CodexAgent() with no proc_fn gets _default_proc_fn wired in."""
+    from harness.dispatch.codex import _default_proc_fn
+
+    agent = CodexAgent()
+    assert agent._proc_fn is _default_proc_fn
 
 
 def test_codex_agent_with_proc_fn_is_constructable() -> None:
-    """Providing proc_fn bypasses the unsupported-guard (test seam)."""
+    """Providing proc_fn sets that proc_fn (test seam still works)."""
     agent = CodexAgent(proc_fn=_make_proc_fn([]))
     assert agent is not None
+
+
+# ---------------------------------------------------------------------------
+# AC-new3/4 — _augment_prompt_for_submit
+# ---------------------------------------------------------------------------
+
+
+def test_augment_prompt_appends_submit_header() -> None:
+    """_augment_prompt_for_submit appends SUBMIT instructions containing field names."""
+    from harness.dispatch.codex import _augment_prompt_for_submit
+
+    result = _augment_prompt_for_submit("Do the thing.", SUBMIT_SCHEMA)
+    assert "Do the thing." in result
+    assert "SUBMIT:" in result
+    assert "summary" in result
+
+
+def test_augment_prompt_preserves_original() -> None:
+    """_augment_prompt_for_submit result starts with original prompt text."""
+    from harness.dispatch.codex import _augment_prompt_for_submit
+
+    original = "Review the code changes."
+    result = _augment_prompt_for_submit(original, SUBMIT_SCHEMA)
+    assert result.startswith(original)
+
+
+def test_augment_prompt_example_is_single_line_submit() -> None:
+    """The prompt example must match the single-line SUBMIT parser."""
+    from harness.dispatch.codex import (
+        _augment_prompt_for_submit,
+        _extract_submit_from_text,
+    )
+
+    result = _augment_prompt_for_submit("Do the thing.", SUBMIT_SCHEMA)
+    submit_lines = [line for line in result.splitlines() if line.startswith("SUBMIT: {")]
+    assert submit_lines == ['SUBMIT: {"summary": "..."}']
+    assert _extract_submit_from_text(submit_lines[0]) == {"summary": "..."}
+
+
+def test_augment_prompt_example_uses_schema_appropriate_values() -> None:
+    """Example JSON should not ask Codex to submit wrong primitive shapes."""
+    from harness.dispatch.codex import (
+        _augment_prompt_for_submit,
+        _extract_submit_from_text,
+    )
+
+    schema = {
+        "name": "submit_review",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string", "enum": ["PASS", "FAIL", "DEFER"]},
+                "issues": {"type": "array", "items": {"type": "string"}},
+                "commit_message": {"type": "string"},
+                "deferred_brief": {"type": "string"},
+            },
+            "required": ["verdict", "issues", "commit_message", "deferred_brief"],
+        },
+    }
+
+    result = _augment_prompt_for_submit("Review.", schema)
+    submit_lines = [line for line in result.splitlines() if line.startswith("SUBMIT: {")]
+    assert submit_lines == [
+        'SUBMIT: {"verdict": "PASS", "issues": [], '
+        '"commit_message": "...", "deferred_brief": "..."}'
+    ]
+    assert _extract_submit_from_text(submit_lines[0]) == {
+        "verdict": "PASS",
+        "issues": [],
+        "commit_message": "...",
+        "deferred_brief": "...",
+    }
+
+
+# ---------------------------------------------------------------------------
+# AC-new5/6/7 — _extract_submit_from_text
+# ---------------------------------------------------------------------------
+
+
+def test_extract_submit_from_text_detects_submit_line() -> None:
+    """_extract_submit_from_text returns parsed dict when SUBMIT: line present."""
+    from harness.dispatch.codex import _extract_submit_from_text
+
+    text = 'Here is my analysis.\nSUBMIT: {"summary": "all good"}\nDone.'
+    result = _extract_submit_from_text(text)
+    assert result == {"summary": "all good"}
+
+
+def test_extract_submit_from_text_returns_none_when_absent() -> None:
+    """_extract_submit_from_text returns None when no SUBMIT: line present."""
+    from harness.dispatch.codex import _extract_submit_from_text
+
+    text = "I reviewed everything and it looks good."
+    result = _extract_submit_from_text(text)
+    assert result is None
+
+
+def test_extract_submit_from_text_ignores_malformed_json() -> None:
+    """_extract_submit_from_text returns None when SUBMIT: payload is not valid JSON."""
+    from harness.dispatch.codex import _extract_submit_from_text
+
+    text = "SUBMIT: not valid json {"
+    result = _extract_submit_from_text(text)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# AC-new8 — execute handles text-based submit (SUBMIT: line in text event)
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_handles_text_based_submit() -> None:
+    """When a text event contains 'SUBMIT: <json>', execute treats it as submit."""
+    events = [
+        _text_event('Analysis complete.\nSUBMIT: {"summary": "all done"}\n'),
+        _stop_event(),
+    ]
+    agent = CodexAgent(proc_fn=_make_proc_fn(events))
+    result = await agent.execute(
+        "do the thing",
+        _SampleContract,
+        SUBMIT_SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+    )
+    assert result.contract.summary == "all done"  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# AC-new10 — double text-based submit → first wins + decision_violation
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_double_text_submit_first_wins() -> None:
+    """Two SUBMIT: lines in text events → first wins, second emits decision_violation."""
+    sink_events: list[tuple[str, dict[str, Any]]] = []
+    events = [
+        _text_event('SUBMIT: {"summary": "first"}'),
+        _text_event('SUBMIT: {"summary": "second"}'),
+        _stop_event(),
+    ]
+    agent = CodexAgent(
+        proc_fn=_make_proc_fn(events),
+        event_sink=lambda kind, payload: sink_events.append((kind, payload)),
+    )
+    result = await agent.execute(
+        "p", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None
+    )
+    assert result.contract.summary == "first"  # type: ignore[attr-defined]
+    violations = [(k, p) for k, p in sink_events if k == "decision_violation"]
+    assert len(violations) == 1
+
+
+# ---------------------------------------------------------------------------
+# AC-new11 — prompt is augmented with schema instructions before proc_fn call
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_augments_prompt_before_sending() -> None:
+    """The proc_fn receives an augmented prompt containing submit instructions."""
+    received_stdin: list[str] = []
+
+    async def capturing_proc_fn(
+        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        received_stdin.append(stdin)
+        yield _tool_call_event("submit_node_id", {"summary": "done"})
+        yield _tool_result_event()
+        yield _stop_event()
+
+    agent = CodexAgent(proc_fn=capturing_proc_fn)
+    await agent.execute(
+        "Original prompt.",
+        _SampleContract,
+        SUBMIT_SCHEMA,
+        allowed_tools=[],
+        cwd=None,
+    )
+    assert len(received_stdin) == 1
+    assert "Original prompt." in received_stdin[0]
+    assert "SUBMIT:" in received_stdin[0]
+
+
+# ---------------------------------------------------------------------------
+# AC-new12 — _build_cmd: no submit_tool_schema parameter
+# ---------------------------------------------------------------------------
+
+
+def test_build_cmd_no_model_produces_base_flags_no_schema_param() -> None:
+    """_build_cmd takes only model; SUBMIT_SCHEMA is no longer a parameter."""
+    cmd = _build_cmd(model=None)
+    assert cmd == ["codex", "--full-auto", "-q"]
+    assert "--model" not in cmd
+
+
+def test_build_cmd_with_model_appends_model_flag_no_schema_param() -> None:
+    """_build_cmd(model=...) appends --model flag; no submit_tool_schema arg."""
+    cmd = _build_cmd(model="gpt-4o")
+    assert "--model" in cmd
+    model_idx = cmd.index("--model")
+    assert cmd[model_idx + 1] == "gpt-4o"
+
+
+# ---------------------------------------------------------------------------
+# Integration — _default_proc_fn is an async generator function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_codex_agent_real_proc_fn_is_callable() -> None:
+    """The default proc_fn is an async generator callable (doesn't need codex binary)."""
+    import inspect
+
+    from harness.dispatch.codex import _default_proc_fn
+
+    assert callable(_default_proc_fn)
+    assert inspect.isasyncgenfunction(_default_proc_fn)

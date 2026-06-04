@@ -1296,3 +1296,188 @@ async def test_sigterm_cancels_run_same_as_sigint(tmp_path: Path) -> None:
     row = await _fetch_single_run(db)
     assert row["status"] == "cancelled"
     assert row["exit_code"] == 130
+
+
+# ---------------------------------------------------------------------------
+# Per-node agent routing (step.agent field)
+# ---------------------------------------------------------------------------
+
+
+async def test_per_node_agent_routing_codex_step_uses_codex_agent(tmp_path: Path) -> None:
+    """A step with agent='codex' dispatches to the codex override, not default agent."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "p.j2").write_text("do it\n")
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "routing.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: routing
+        version: 1
+        steps:
+          - id: step1
+            type: ai
+            agent: codex
+            prompt: p.j2
+            writes: [summary]
+            contract:
+              summary: string
+        """,
+    )
+
+    agents_called: list[str] = []
+
+    class _TrackingAgent(MockAgent):
+        def __init__(self, name: str) -> None:
+            super().__init__()
+            self._name = name
+
+        async def execute(  # type: ignore[override]
+            self,
+            prompt: str,
+            contract: type[BaseModel],
+            submit_tool_schema: dict[str, Any],
+            *,
+            allowed_tools: list[str],
+            cwd: Path | None,
+            timeout_s: int = 600,
+            stall_timeout_s: int = 300,
+            max_turns: int | None = None,
+        ) -> NodeResult[BaseModel]:
+            agents_called.append(self._name)
+            return NodeResult[BaseModel](
+                contract=contract.model_validate({"summary": f"done by {self._name}"}),
+                attestation=Attestation(status="complete"),
+            )
+
+    default_agent = _TrackingAgent("default")
+    codex_agent = _TrackingAgent("codex")
+
+    runner = Runner(
+        db_path=db,
+        agent=default_agent,
+        prompts_dir=prompts_dir,
+        progress=False,
+        _step_agents={"codex": codex_agent},
+    )
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+    assert agents_called == ["codex"]
+
+
+async def test_per_node_agent_routing_falls_back_to_default_for_none(tmp_path: Path) -> None:
+    """A step with no agent field uses the default Runner agent."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "p.j2").write_text("do it\n")
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "norouting.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: norouting
+        version: 1
+        steps:
+          - id: step1
+            type: ai
+            prompt: p.j2
+            writes: [summary]
+            contract:
+              summary: string
+        """,
+    )
+
+    agents_called: list[str] = []
+
+    class _TrackingAgent(MockAgent):
+        async def execute(  # type: ignore[override]
+            self,
+            prompt: str,
+            contract: type[BaseModel],
+            submit_tool_schema: dict[str, Any],
+            *,
+            allowed_tools: list[str],
+            cwd: Path | None,
+            timeout_s: int = 600,
+            stall_timeout_s: int = 300,
+            max_turns: int | None = None,
+        ) -> NodeResult[BaseModel]:
+            agents_called.append("default")
+            return NodeResult[BaseModel](
+                contract=contract.model_validate({"summary": "done"}),
+                attestation=Attestation(status="complete"),
+            )
+
+    runner = Runner(
+        db_path=db,
+        agent=_TrackingAgent(),
+        prompts_dir=prompts_dir,
+        progress=False,
+    )
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+    assert agents_called == ["default"]
+
+
+async def test_per_node_agent_routing_claude_step_uses_claude_override(tmp_path: Path) -> None:
+    """A step with agent='claude' routes to the 'claude' _step_agents override."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "p.j2").write_text("do it\n")
+    db = tmp_path / "harness.db"
+    wf = tmp_path / "routeclaude.yaml"
+    _write_workflow(
+        wf,
+        """
+        name: routeclaude
+        version: 1
+        steps:
+          - id: step1
+            type: ai
+            agent: claude
+            prompt: p.j2
+            writes: [summary]
+            contract:
+              summary: string
+        """,
+    )
+
+    agents_called: list[str] = []
+
+    class _TrackingAgent(MockAgent):
+        def __init__(self, name: str) -> None:
+            super().__init__()
+            self._name = name
+
+        async def execute(  # type: ignore[override]
+            self,
+            prompt: str,
+            contract: type[BaseModel],
+            submit_tool_schema: dict[str, Any],
+            *,
+            allowed_tools: list[str],
+            cwd: Path | None,
+            timeout_s: int = 600,
+            stall_timeout_s: int = 300,
+            max_turns: int | None = None,
+        ) -> NodeResult[BaseModel]:
+            agents_called.append(self._name)
+            return NodeResult[BaseModel](
+                contract=contract.model_validate({"summary": f"done by {self._name}"}),
+                attestation=Attestation(status="complete"),
+            )
+
+    default_agent = _TrackingAgent("default")
+    claude_agent = _TrackingAgent("claude")
+
+    runner = Runner(
+        db_path=db,
+        agent=default_agent,
+        prompts_dir=prompts_dir,
+        progress=False,
+        _step_agents={"claude": claude_agent},
+    )
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+    assert agents_called == ["claude"]

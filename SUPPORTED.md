@@ -7,6 +7,7 @@ This file is the authoritative record of what harness v1 supports. Anything not 
 | Feature | Notes |
 |---------|-------|
 | `ClaudeAgent` dispatch | via `claude_agent_sdk` |
+| `CodexAgent` dispatch | via `codex` CLI subprocess with text-submit completion |
 | Script nodes (`bash` + `python`) | `command:` or `script:` with args substitution |
 | Check nodes | Python expression evaluation over state |
 | Decision nodes (`actor: llm`) | LLM-gated gate; human actor is v2 |
@@ -22,14 +23,13 @@ This file is the authoritative record of what harness v1 supports. Anything not 
 
 ## v1.5 — Adapters (experimental, not production-ready)
 
-These adapters exist in the codebase but raise `RuntimeError` if used without a test `proc_fn`. They are disabled by default.
+These adapters exist in the codebase but are not production-wired.
 
 | Feature | Status |
 |---------|--------|
-| `CodexAgent` dispatch | Subprocess adapter exists; `proc_fn=None` raises `RuntimeError` |
 | `OpencodeAgent` dispatch | Subprocess adapter exists; `proc_fn=None` raises `RuntimeError` |
 
-Do not reference these adapters in production workflows. Use `ClaudeAgent`.
+Do not reference `OpencodeAgent` in production workflows. Use `ClaudeAgent` or `CodexAgent`.
 
 ## v2 — Reserved / not implemented
 

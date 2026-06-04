@@ -139,6 +139,7 @@ class Runner:
         repo_root: Path | None = None,
         progress: bool = True,
         _progress_file: IO[str] | None = None,
+        _step_agents: dict[str, Agent] | None = None,
     ) -> None:
         self._agent: Agent = agent if agent is not None else MockAgent()
         self._policy = policy if policy is not None else RetryPolicy.v1_default()
@@ -147,6 +148,7 @@ class Runner:
         self._repo_root = repo_root if repo_root is not None else Path(".")
         self._progress = progress
         self._progress_file = _progress_file
+        self._step_agents = _step_agents
         self._executor = Executor(policy=self._policy)
 
     async def run(
@@ -864,14 +866,32 @@ class Runner:
         # registry shape.
         rid = run_id if run_id is not None else ""
 
-        ai_node = AINode(agent=self._agent, prompts_dir=prompts_dir)
         script_node = ScriptNode()
         check_node = CheckNode()
-        decision_node = DecisionNode(
-            agent=self._agent,
-            prompts_dir=prompts_dir,
-        )
         worktree_node = WorktreeNode()
+
+        # Lazy per-type agent cache for per-node routing.
+        _step_agent_cache: dict[str, Agent] = {}
+
+        def _resolve_step_agent(step_agent_name: str | None) -> Agent:
+            """Return the agent for a step, routing by step.agent or falling back to default."""
+            if step_agent_name is None:
+                return self._agent
+            # Test-seam overrides take priority.
+            if self._step_agents and step_agent_name in self._step_agents:
+                return self._step_agents[step_agent_name]
+            # Built-in factory: lazy-construct and cache real agents by name.
+            if step_agent_name in _step_agent_cache:
+                return _step_agent_cache[step_agent_name]
+            if step_agent_name == "codex":
+                from harness.dispatch.codex import CodexAgent
+
+                agent_instance: Agent = CodexAgent()
+                _step_agent_cache[step_agent_name] = agent_instance
+                return agent_instance
+            # Unknown name (including "claude"): fall back to injected default.
+            # Production callers inject ClaudeAgent; tests inject MockAgent.
+            return self._agent
 
         async def ai_adapter(
             step: Step, state: BaseState, ctx: Context
@@ -885,6 +905,8 @@ class Runner:
             # recompiles the inline dict into a fresh class and the
             # executor's downstream isinstance check fails on identity.
             override = ctx.contracts.get(step.id)
+            step_agent = _resolve_step_agent(step.agent)
+            ai_node = AINode(agent=step_agent, prompts_dir=prompts_dir)
             return await ai_node.execute(
                 step=step,
                 state=state,
@@ -954,6 +976,11 @@ class Runner:
             # contract so executor + decision isinstance checks agree on
             # one class.
             override = ctx.contracts.get(step.id)
+            step_agent = _resolve_step_agent(step.agent)
+            decision_node = DecisionNode(
+                agent=step_agent,
+                prompts_dir=prompts_dir,
+            )
             return await decision_node.execute(
                 step=step,
                 state=state,
