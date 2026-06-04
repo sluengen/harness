@@ -29,7 +29,7 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/analyze.j2
+    prompt: prompts/analyze.j2
     template_vars:
       task: "Read the codebase and produce a structured summary of the $inputs.domain domain"
     allowed_tools: [Read, Grep, Glob, Bash]
@@ -47,7 +47,7 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/review.j2
+    prompt: prompts/review.j2
     template_vars:
       criteria: "$inputs.domain principles, recurring patterns, systemic issues"
     allowed_tools: [Read, Grep, Glob]

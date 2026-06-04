@@ -69,7 +69,7 @@ steps:
           type: ai
           agent: claude
           model: sonnet
-          prompt: prompts/build/implement.j2
+          prompt: prompts/implement-ticket.j2
           allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
           writes_files: true
           writes: []
@@ -78,7 +78,7 @@ steps:
           type: ai
           agent: claude
           model: sonnet
-          prompt: prompts/build/review.j2
+          prompt: prompts/review-ticket.j2
           allowed_tools: [Read, Grep, Glob, Bash]
           contract:
             verdict:

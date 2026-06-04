@@ -37,7 +37,7 @@ steps:
     type: ai
     agent: claude
     model: sonnet
-    prompt: prompts/standard/summarize.j2
+    prompt: prompts/summarize.j2
     template_vars:
       subject: "Linear tickets closed in the last $inputs.since_days days: $state.tickets"
       length: "release-notes markdown grouped by type (Features, Bug fixes, Improvements)"
