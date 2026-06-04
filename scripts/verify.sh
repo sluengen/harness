@@ -4,19 +4,19 @@
 set -euo pipefail
 
 echo "=== ruff ==="
-uv run ruff check .
+uv run --extra dev ruff check .
 
 echo "=== mypy ==="
-uv run mypy harness intake
+uv run --extra dev mypy harness intake
 
 echo "=== pytest ==="
-uv run pytest --durations=20
+uv run --extra dev pytest --durations=20
 
 echo "=== CLI smoke ==="
-uv run harness version
+uv run --extra dev python -m harness.cli version
 
 echo "=== mock run ==="
-uv run harness validate workflows/build.yaml
+uv run --extra dev python -m harness.cli validate workflows/build.yaml
 
 echo ""
 echo "All checks passed."

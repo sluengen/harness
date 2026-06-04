@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, UndefinedError
 
-PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts" / "standard"
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 TEMPLATES = ["analyze.j2", "implement.j2", "review.j2", "summarize.j2"]
 
@@ -47,7 +47,7 @@ def _env() -> Environment:
 @pytest.mark.parametrize("name", TEMPLATES)
 def test_template_file_exists(name: str) -> None:
     path = PROMPTS_DIR / name
-    assert path.is_file(), f"missing standard prompt template: {path}"
+    assert path.is_file(), f"missing prompt template: {path}"
 
 
 # ---------------------------------------------------------------------------

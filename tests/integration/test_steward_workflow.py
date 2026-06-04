@@ -6,7 +6,7 @@ run would:
 1. Materialises a tmp project root with:
    - ``.harness/`` (DB schema initialised via ``init_db``)
    - ``workflows/steward.yaml`` (copied from the repo)
-   - ``prompts/standard/{analyze,review}.j2`` (copied)
+   - ``prompts/{analyze,review}.j2`` (copied)
    - ``scripts/write_steward_report.py`` (copied)
 2. Constructs a ``MockAgent`` with one ``set_next(...)`` per AI step.
    The agent's per-call result must be a :class:`NodeResult` whose
@@ -15,7 +15,7 @@ run would:
    We solve that by hooking on top of ``MockAgent.execute`` to
    construct the contract from the type the AINode passes through.
 3. Runs ``Runner(...).run(workflows/steward.yaml, inputs={"domain":
-   "architecture"}, base_branch="main")`` and asserts:
+   "architecture"}, base_branch="dev")`` and asserts:
    - exit code 0,
    - the lifecycle events fired in canonical order,
    - state row carries ``summary``, ``findings``, ``systemic_insights``,
@@ -61,7 +61,7 @@ pytestmark = pytest.mark.integration
 # tmp_path.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _STEWARD_WORKFLOW_SRC = _REPO_ROOT / "workflows" / "steward.yaml"
-_STANDARD_PROMPTS_SRC = _REPO_ROOT / "prompts" / "standard"
+_PROMPTS_SRC = _REPO_ROOT / "prompts"
 _WRITE_REPORT_SRC = _REPO_ROOT / "scripts" / "write_steward_report.py"
 
 
@@ -133,7 +133,7 @@ def steward_project(
         tmp_path/
           .harness/harness.db
           workflows/steward.yaml
-          prompts/standard/{analyze,review}.j2
+          prompts/{analyze,review}.j2
           scripts/write_steward_report.py
 
     The script's CWD when invoked by ScriptNode is the process cwd
@@ -144,9 +144,9 @@ def steward_project(
     (tmp_path / "workflows").mkdir()
     shutil.copy(_STEWARD_WORKFLOW_SRC, tmp_path / "workflows" / "steward.yaml")
 
-    (tmp_path / "prompts" / "standard").mkdir(parents=True)
+    (tmp_path / "prompts").mkdir(parents=True)
     for prompt in ("analyze.j2", "review.j2"):
-        shutil.copy(_STANDARD_PROMPTS_SRC / prompt, tmp_path / "prompts" / "standard" / prompt)
+        shutil.copy(_PROMPTS_SRC / prompt, tmp_path / "prompts" / prompt)
 
     (tmp_path / "scripts").mkdir()
     shutil.copy(_WRITE_REPORT_SRC, tmp_path / "scripts" / "write_steward_report.py")
@@ -214,7 +214,7 @@ async def test_steward_workflow_end_to_end(steward_project: Path) -> None:
     exit_code = await runner.run(
         steward_project / "workflows" / "steward.yaml",
         inputs={"domain": "architecture"},
-        base_branch="main",
+        base_branch="dev",
     )
 
     assert exit_code == 0, f"run failed; agent.calls={len(agent.calls)}"

@@ -4,8 +4,8 @@ Mirrors the steward integration test pattern:
 
 1. Materialises a tmp project root with:
    - ``.harness/`` (DB schema initialised via ``init_db``)
-   - ``workflows/release-notes.yaml`` (copied from the repo)
-   - ``prompts/standard/summarize.j2`` (copied)
+   - ``workflows/release.yaml`` (copied from the repo)
+   - ``prompts/summarize.j2`` (copied)
    - ``scripts/write_release_notes.py`` (copied)
    - A fake ``curl`` on PATH that returns ``tests/fixtures/release_notes_tickets.json``
      in the Linear API response format (no network required).
@@ -16,6 +16,7 @@ Mirrors the steward integration test pattern:
    - exit code 0,
    - the lifecycle events fired in order,
    - state row carries ``tickets``, ``release_notes``, ``output_path``,
+     ``pr_url``,
    - the markdown file at ``output_path`` exists and contains the
      mocked release-notes payload.
 
@@ -42,8 +43,8 @@ from harness.state.store import init_db
 pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_SRC = _REPO_ROOT / "workflows" / "release-notes.yaml"
-_PROMPT_SRC = _REPO_ROOT / "prompts" / "standard" / "summarize.j2"
+_WORKFLOW_SRC = _REPO_ROOT / "workflows" / "release.yaml"
+_PROMPT_SRC = _REPO_ROOT / "prompts" / "summarize.j2"
 _WRITE_SCRIPT_SRC = _REPO_ROOT / "scripts" / "write_release_notes.py"
 _FIXTURE_SRC = _REPO_ROOT / "tests" / "fixtures" / "release_notes_tickets.json"
 
@@ -90,20 +91,24 @@ def release_notes_project(
 ) -> Path:
     """Materialise ``tmp_path`` with the shipped release-notes artefacts."""
     (tmp_path / "workflows").mkdir()
-    shutil.copy(_WORKFLOW_SRC, tmp_path / "workflows" / "release-notes.yaml")
+    shutil.copy(_WORKFLOW_SRC, tmp_path / "workflows" / "release.yaml")
 
-    (tmp_path / "prompts" / "standard").mkdir(parents=True)
-    shutil.copy(_PROMPT_SRC, tmp_path / "prompts" / "standard" / "summarize.j2")
+    (tmp_path / "prompts").mkdir(parents=True)
+    shutil.copy(_PROMPT_SRC, tmp_path / "prompts" / "summarize.j2")
 
     (tmp_path / "scripts").mkdir()
     shutil.copy(_WRITE_SCRIPT_SRC, tmp_path / "scripts" / "write_release_notes.py")
 
-    # Fake curl returns the Linear API fixture — no network needed.
+    # Fake curl returns the Linear API fixture and fake gh returns a PR URL —
+    # no network or GitHub auth needed.
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_curl = fake_bin / "curl"
     fake_curl.write_text(f"#!/bin/bash\ncat {_FIXTURE_SRC}\n")
     fake_curl.chmod(0o755)
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text("#!/bin/bash\necho https://github.test/example/pull/123\n")
+    fake_gh.chmod(0o755)
     monkeypatch.setenv("PATH", str(fake_bin) + ":" + os.environ.get("PATH", ""))
 
     monkeypatch.chdir(tmp_path)
@@ -133,9 +138,13 @@ async def test_release_notes_workflow_end_to_end(
         repo_root=release_notes_project,
     )
     exit_code = await runner.run(
-        release_notes_project / "workflows" / "release-notes.yaml",
-        inputs={"since_days": 7, "output_path": str(output_path)},
-        base_branch="main",
+        release_notes_project / "workflows" / "release.yaml",
+        inputs={
+            "since_days": 7,
+            "output_path": str(output_path),
+            "repo": "owner/repo",
+        },
+        base_branch="dev",
     )
 
     assert exit_code == 0, f"run failed; agent.calls={len(agent.calls)}"
@@ -174,6 +183,8 @@ async def test_release_notes_workflow_end_to_end(
         ("node_completed", "summarise"),
         ("node_started", "write-file"),
         ("node_completed", "write-file"),
+        ("node_started", "raise-pr"),
+        ("node_completed", "raise-pr"),
         ("workflow_completed", None),
     ]
 
@@ -182,6 +193,7 @@ async def test_release_notes_workflow_end_to_end(
     assert len(state["tickets"]) >= 3
     assert state["release_notes"] == mocked_body
     assert state["output_path"] == str(output_path.resolve())
+    assert state["pr_url"] == "https://github.test/example/pull/123"
 
     assert output_path.is_file(), f"release notes not at {output_path}"
     body = output_path.read_text()

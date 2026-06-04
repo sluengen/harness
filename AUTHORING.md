@@ -57,7 +57,7 @@ Minimal example of each:
 # ai
 - id: investigate
   type: ai
-  prompt: prompts/standard/analyze.j2
+  prompt: prompts/analyze.j2
   template_vars:
     task: "Read app/models.py and explain the User schema"
   contract:
@@ -103,7 +103,7 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
 - id: should-proceed
   type: decision
   actor: llm
-  prompt: prompts/standard/review.j2
+  prompt: prompts/review.j2
   template_vars:
     criteria: "Is there enough info to plan a fix?"
   contract:
@@ -148,7 +148,7 @@ Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonn
     steps:
       - id: implement
         type: ai
-        prompt: prompts/standard/implement.j2
+        prompt: prompts/implement.j2
         allowed_tools: [Read, Write, Edit, Bash]
         cwd: $state.worktree_path
         writes_files: true
@@ -267,7 +267,7 @@ A step that mutates files but writes nothing to state (typically an AI node insi
 ```yaml
 - id: implement
   type: ai
-  prompt: prompts/standard/implement.j2
+  prompt: prompts/implement.j2
   writes_files: true
   writes: []           # nothing flows to state — contract optional
 ```
@@ -551,6 +551,7 @@ Each workflow's CLI surface is generated from its `inputs:` block (see SPEC §11
 Common flags every workflow supports:
 
 ```bash
+harness run <workflow> --base dev     # override the default base branch (dev)
 harness status <run-id>             # current status + state snapshot
 harness logs <run-id> [--follow]    # tail the log
 harness events <run-id> [--type tool_called]   # filter events

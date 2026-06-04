@@ -2,7 +2,7 @@
 
 Three checks, in order of strictness:
 
-1. The release-notes worked example exists on disk and validates against
+1. The release worked example exists on disk and validates against
    Workflow (this is the file a reader would copy from in §7).
 2. Every ``` yaml block in AUTHORING.md parses as valid YAML.
 3. Every yaml block that's a *full workflow* (has top-level ``name`` +
@@ -11,7 +11,7 @@ Three checks, in order of strictness:
 Step-only snippets (single-step blocks that reference state fields without
 the upstream steps to populate them) are intentionally NOT validated — they
 are illustrative. The two full workflows (the minimal §1 example and the §7
-release-notes example) are the strict gate.
+release example) are the strict gate.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from harness.workflow.schema import Workflow
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_PATH = REPO_ROOT / "AUTHORING.md"
-RELEASE_NOTES_PATH = REPO_ROOT / "workflows" / "release-notes.yaml"
+RELEASE_WORKFLOW_PATH = REPO_ROOT / "workflows" / "release.yaml"
 
 _YAML_BLOCK = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
 
@@ -35,11 +35,11 @@ def _yaml_blocks() -> list[str]:
     return _YAML_BLOCK.findall(GUIDE_PATH.read_text())
 
 
-def test_release_notes_workflow_loads() -> None:
+def test_release_workflow_loads() -> None:
     """The §7 worked example exists and is a valid workflow."""
-    wf = Workflow.model_validate(yaml.safe_load(RELEASE_NOTES_PATH.read_text()))
-    assert wf.name == "release-notes"
-    assert len(wf.steps) == 3
+    wf = Workflow.model_validate(yaml.safe_load(RELEASE_WORKFLOW_PATH.read_text()))
+    assert wf.name == "release"
+    assert len(wf.steps) == 4
 
 
 def test_authoring_guide_exists_and_has_yaml_examples() -> None:

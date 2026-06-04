@@ -12,7 +12,7 @@ Caveats worth recording so the number isn't taken at face value:
 
 - The clock measures only writing-time. Pre-clock I read SPEC §5 (workflow
   schema) and §14 (steward example reference) once, and skimmed the existing
-  `prompts/standard/summarize.j2` and `scripts/write_steward_report.py` —
+  `prompts/summarize.j2` and `scripts/write_steward_report.py` —
   exactly what the spec mandates ("someone who's read this spec once").
   The pre-read counts as the "read the spec" baseline; nothing about the
   measurement is unfair.
@@ -38,7 +38,7 @@ Caveats worth recording so the number isn't taken at face value:
   pattern for `write_release_notes.py`. Without that prior knowledge a
   truly cold author would lose 2–3 minutes on "how does a downstream
   script read upstream state".
-- **`prompts/standard/summarize.j2`.** Read its docstring header to learn
+- **`prompts/summarize.j2`.** Read its docstring header to learn
   the required `subject` template var. Saved me from inventing a custom
   prompt.
 - **`harness/workflow/contract.py` (lines 159–188).** Had to consult this
@@ -126,7 +126,7 @@ Caveats worth recording so the number isn't taken at face value:
 - **Friction class**: boilerplate
 - **What slowed you down**: The acceptance step had to be
   `uv run python -c "from harness.workflow.loader import load_workflow;
-  from pathlib import Path; load_workflow(Path('workflows/release-notes.yaml'))"`.
+  from pathlib import Path; load_workflow(Path('workflows/release.yaml'))"`.
   That's a load-bearing 130-character one-liner an author would have to
   remember or paste from somewhere. Not a blocker for THIS test (the
   brief explicitly noted the workaround), but a real friction once we

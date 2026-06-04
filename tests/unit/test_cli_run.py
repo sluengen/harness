@@ -10,14 +10,14 @@ maps to one acceptance criterion in the H-023 brief:
   default, enum, pattern, the schema-level mutual-exclusion of flag+position).
 * AC3 — ``harness run <workflow> --help`` prints the workflow's input
   contract — names, types, required/optional, defaults.
-* AC4 — ``--base`` defaults to ``main`` and is exposed on every dynamic
+* AC4 — ``--base`` defaults to ``dev`` and is exposed on every dynamic
   subcommand; it maps to ``Runner.run(base_branch=...)``.
 * AC5 — ``harness run <workflow> [args...]`` actually invokes
   ``Runner.run(...)`` and returns the runner's exit code.
 * AC6 — Unknown workflow → exit 2 with a clear error.
 * AC7 — Workflow YAML invalid (``WorkflowLoadError``) → exit 2 with the
   underlying message.
-* AC8 — ``--base`` default is ``main``.
+* AC8 — ``--base`` default is ``dev``.
 * AC9 — The runner is invoked via ``asyncio.run(...)`` at the CLI boundary.
 """
 
@@ -82,7 +82,7 @@ class _RunnerSpy:
         workflow_path: Path,
         inputs: dict[str, Any],
         *,
-        base_branch: str = "main",
+        base_branch: str = "dev",
     ) -> int:
         self.calls.append(
             {
@@ -506,11 +506,11 @@ def test_ac3_help_lists_inputs_with_types_and_defaults(
 
 
 # ---------------------------------------------------------------------------
-# AC4 / AC8 — --base option with default 'main'
+# AC4 / AC8 — --base option with default 'dev'
 # ---------------------------------------------------------------------------
 
 
-def test_ac4_base_flag_defaults_to_main(
+def test_ac4_base_flag_defaults_to_dev(
     tmp_path: Path, cli: CliRunner, runner_spy: _RunnerSpy
 ) -> None:
     _minimal_workflow(tmp_path)
@@ -518,7 +518,7 @@ def test_ac4_base_flag_defaults_to_main(
         app, ["run", "demo", "--workflows-dir", str(tmp_path)]
     )
     assert result.exit_code == 0, result.output
-    assert runner_spy.calls[0]["base_branch"] == "main"
+    assert runner_spy.calls[0]["base_branch"] == "dev"
 
 
 def test_ac4_base_flag_overridable(

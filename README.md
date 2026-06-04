@@ -112,7 +112,7 @@ Read [`AUTHORING.md`](./AUTHORING.md) — it's the canonical guide. About 400 li
 - Step types (`ai`, `script`, `check`, `decision`, `worktree`, `loop`) with minimal examples
 - Inline contract grammar + the `$contracts/<name>` shared-schema mechanism
 - State and `writes:` (derivation, type-driven merge, variable substitution)
-- Standard prompts (`prompts/standard/{analyze,implement,review,summarize}.j2`)
+- Standard prompts (`prompts/{analyze,implement,review,summarize}.j2`)
 - A worked release-notes example end-to-end
 - Common pitfalls
 
@@ -127,7 +127,7 @@ harness/
 ├── commands/           ← user-invocable slash commands (start, build-workflow)
 ├── workflows/          ← workflow YAML files
 ├── contracts/          ← shared YAML contract schemas (referenced via $contracts/<name>)
-├── prompts/standard/   ← reusable Jinja prompt templates
+├── prompts/            ← reusable Jinja prompt templates
 ├── harness/            ← the Python engine
 ├── docker/             ← container build + entrypoint
 ├── lessons/            ← validation artifacts (ergonomics runs, etc.)

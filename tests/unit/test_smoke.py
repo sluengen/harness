@@ -42,17 +42,17 @@ def test_cli_help_runs() -> None:
     assert "harness" in result.stdout.lower() or "usage" in result.stdout.lower()
 
 
-def test_cli_validate_release_notes() -> None:
-    """harness validate workflows/release-notes.yaml exits 0 for the bundled workflow."""
+def test_cli_validate_release() -> None:
+    """harness validate workflows/release.yaml exits 0 for the bundled workflow."""
     from pathlib import Path
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    workflow_file = repo_root / "workflows" / "release-notes.yaml"
+    workflow_file = repo_root / "workflows" / "release.yaml"
     if not workflow_file.exists():
-        pytest.skip("release-notes.yaml not present in this checkout")
+        pytest.skip("release.yaml not present in this checkout")
 
     result = subprocess.run(
-        [sys.executable, "-m", "harness.cli", "validate", "workflows/release-notes.yaml"],
+        [sys.executable, "-m", "harness.cli", "validate", "workflows/release.yaml"],
         capture_output=True,
         text=True,
         timeout=10,

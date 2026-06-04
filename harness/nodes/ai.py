@@ -96,8 +96,8 @@ class AINode:
 
     The Jinja ``Environment`` is built once per AINode instance and reused
     across calls — the ``FileSystemLoader`` rooted at ``prompts_dir`` lets
-    workflows reference templates by relative path (``prompts/standard/
-    review.j2`` or ``my-prompt.j2``).
+    workflows reference templates by relative path (``prompts/review.j2`` or
+    ``my-prompt.j2``).
     """
 
     type: Literal["ai"] = "ai"
