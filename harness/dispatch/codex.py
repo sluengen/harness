@@ -198,7 +198,23 @@ def _augment_prompt_for_submit(prompt: str, submit_tool_schema: dict[str, Any]) 
         for k, v in properties.items()
     )
 
-    schema_json = json.dumps(dict.fromkeys(required, "...") if required else {})
+    def _example_value(schema: dict[str, Any]) -> Any:
+        field_type = schema.get("type", "string")
+        if "enum" in schema and schema["enum"]:
+            return schema["enum"][0]
+        if field_type == "array":
+            return []
+        if field_type == "boolean":
+            return False
+        if field_type in {"integer", "number"}:
+            return 0
+        if field_type == "object":
+            return {}
+        return "..."
+
+    schema_json = json.dumps(
+        {field: _example_value(properties.get(field, {})) for field in required}
+    )
 
     instruction = (
         f"\n\n---\n"

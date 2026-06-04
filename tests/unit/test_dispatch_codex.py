@@ -824,6 +824,41 @@ def test_augment_prompt_example_is_single_line_submit() -> None:
     assert _extract_submit_from_text(submit_lines[0]) == {"summary": "..."}
 
 
+def test_augment_prompt_example_uses_schema_appropriate_values() -> None:
+    """Example JSON should not ask Codex to submit wrong primitive shapes."""
+    from harness.dispatch.codex import (
+        _augment_prompt_for_submit,
+        _extract_submit_from_text,
+    )
+
+    schema = {
+        "name": "submit_review",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string", "enum": ["PASS", "FAIL", "DEFER"]},
+                "issues": {"type": "array", "items": {"type": "string"}},
+                "commit_message": {"type": "string"},
+                "deferred_brief": {"type": "string"},
+            },
+            "required": ["verdict", "issues", "commit_message", "deferred_brief"],
+        },
+    }
+
+    result = _augment_prompt_for_submit("Review.", schema)
+    submit_lines = [line for line in result.splitlines() if line.startswith("SUBMIT: {")]
+    assert submit_lines == [
+        'SUBMIT: {"verdict": "PASS", "issues": [], '
+        '"commit_message": "...", "deferred_brief": "..."}'
+    ]
+    assert _extract_submit_from_text(submit_lines[0]) == {
+        "verdict": "PASS",
+        "issues": [],
+        "commit_message": "...",
+        "deferred_brief": "...",
+    }
+
+
 # ---------------------------------------------------------------------------
 # AC-new5/6/7 — _extract_submit_from_text
 # ---------------------------------------------------------------------------
