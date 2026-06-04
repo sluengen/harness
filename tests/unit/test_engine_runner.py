@@ -679,7 +679,7 @@ async def test_ac11_records_duration_ms_and_exit_code(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CAL-507 — progress output during run
+# progress output during run
 # ---------------------------------------------------------------------------
 
 

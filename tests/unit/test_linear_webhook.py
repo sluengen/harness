@@ -1,6 +1,6 @@
 """Tests for intake.linear_webhook — Linear webhook intake (sibling process).
 
-Tests are organised around the acceptance criteria implied by CAL-301 and CAL-302:
+Tests are organised around the acceptance criteria implied by PROJ-301 and PROJ-302:
 
 AC1 — verify_signature: HMAC-SHA256 validation (positive + negative).
 AC2 — route_event: correct routing by action, type, state, workflow_map.
@@ -73,7 +73,7 @@ def _default_config(**overrides: Any) -> WebhookConfig:
 def _issue_payload(
     *,
     action: str = "create",
-    identifier: str = "CAL-1",
+    identifier: str = "PROJ-1",
     state_name: str = "Backlog",
 ) -> dict[str, Any]:
     """Minimal Linear Issue webhook payload."""
@@ -133,23 +133,23 @@ class TestVerifySignature:
 class TestRouteEvent:
     def test_issue_create_returns_default_workflow(self) -> None:
         config = _default_config(workflow="build")
-        payload = _issue_payload(action="create", identifier="CAL-5")
+        payload = _issue_payload(action="create", identifier="PROJ-5")
         result = route_event(payload, config)
-        assert result == ("build", "CAL-5")
+        assert result == ("build", "PROJ-5")
 
     def test_non_issue_type_ignored(self) -> None:
         config = _default_config()
-        payload = {"type": "Comment", "action": "create", "data": {"identifier": "CAL-5"}}
+        payload = {"type": "Comment", "action": "create", "data": {"identifier": "PROJ-5"}}
         assert route_event(payload, config) is None
 
     def test_remove_action_ignored(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="remove", identifier="CAL-5")
+        payload = _issue_payload(action="remove", identifier="PROJ-5")
         assert route_event(payload, config) is None
 
     def test_update_without_mapping_ignored(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="update", identifier="CAL-5")
+        payload = _issue_payload(action="update", identifier="PROJ-5")
         assert route_event(payload, config) is None
 
     def test_missing_identifier_ignored(self) -> None:
@@ -164,22 +164,22 @@ class TestRouteEvent:
 
     def test_missing_type_ignored(self) -> None:
         config = _default_config()
-        payload = {"action": "create", "data": {"identifier": "CAL-5"}}
+        payload = {"action": "create", "data": {"identifier": "PROJ-5"}}
         assert route_event(payload, config) is None
 
     def test_update_with_specific_state_mapping(self) -> None:
         config = _default_config(
             workflow_map={"update:In Progress": "build"},
         )
-        payload = _issue_payload(action="update", identifier="CAL-7", state_name="In Progress")
+        payload = _issue_payload(action="update", identifier="PROJ-7", state_name="In Progress")
         result = route_event(payload, config)
-        assert result == ("build", "CAL-7")
+        assert result == ("build", "PROJ-7")
 
     def test_update_with_wildcard_mapping(self) -> None:
         config = _default_config(workflow_map={"update:*": "triage"})
-        payload = _issue_payload(action="update", identifier="CAL-8", state_name="Todo")
+        payload = _issue_payload(action="update", identifier="PROJ-8", state_name="Todo")
         result = route_event(payload, config)
-        assert result == ("triage", "CAL-8")
+        assert result == ("triage", "PROJ-8")
 
     def test_specific_mapping_wins_over_wildcard(self) -> None:
         """Specific ``action:state`` key must beat wildcard ``action:*``."""
@@ -189,18 +189,18 @@ class TestRouteEvent:
                 "create:*": "build",
             }
         )
-        payload = _issue_payload(action="create", identifier="CAL-9", state_name="Backlog")
+        payload = _issue_payload(action="create", identifier="PROJ-9", state_name="Backlog")
         result = route_event(payload, config)
-        assert result == ("triage", "CAL-9")
+        assert result == ("triage", "PROJ-9")
 
     def test_create_wildcard_overrides_default(self) -> None:
         config = _default_config(
             workflow="build",
             workflow_map={"create:*": "custom"},
         )
-        payload = _issue_payload(action="create", identifier="CAL-10")
+        payload = _issue_payload(action="create", identifier="PROJ-10")
         result = route_event(payload, config)
-        assert result == ("custom", "CAL-10")
+        assert result == ("custom", "PROJ-10")
 
     def test_payload_with_null_state(self) -> None:
         """state can be null in the payload; routing still works."""
@@ -208,10 +208,10 @@ class TestRouteEvent:
         payload = {
             "type": "Issue",
             "action": "create",
-            "data": {"identifier": "CAL-11", "state": None},
+            "data": {"identifier": "PROJ-11", "state": None},
         }
         result = route_event(payload, config)
-        assert result == ("build", "CAL-11")
+        assert result == ("build", "PROJ-11")
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ class TestHttpHandler:
 
         server.server_close()
         assert status == 200
-        mock_run.assert_called_once_with("CAL-1", "build", config)
+        mock_run.assert_called_once_with("PROJ-1", "build", config)
 
     def test_invalid_signature_returns_401(self) -> None:
         config = _default_config()
@@ -337,7 +337,7 @@ class TestHttpHandler:
         server = self._start(config)
         port = server.server_address[1]
 
-        payload = {"type": "Comment", "action": "create", "data": {"identifier": "CAL-1"}}
+        payload = {"type": "Comment", "action": "create", "data": {"identifier": "PROJ-1"}}
         body = json.dumps(payload).encode()
 
         with patch("intake.linear_webhook.run_harness") as mock_run:
@@ -378,10 +378,10 @@ class TestRunHarness:
         config = _default_config(harness_bin="harness", workflow="build", base_branch="staging")
 
         with patch("intake.linear_webhook.subprocess") as mock_subproc:
-            run_harness("CAL-99", "build", config)
+            run_harness("PROJ-99", "build", config)
 
         mock_subproc.Popen.assert_called_once_with(
-            ["harness", "run", "build", "--linear=CAL-99", "--base=staging"],
+            ["harness", "run", "build", "--linear=PROJ-99", "--base=staging"],
             start_new_session=True,
             stdin=mock_subproc.DEVNULL,
             stdout=mock_subproc.DEVNULL,
@@ -392,7 +392,7 @@ class TestRunHarness:
         config = _default_config(harness_bin="/usr/local/bin/harness")
 
         with patch("intake.linear_webhook.subprocess") as mock_subproc:
-            run_harness("CAL-5", "build", config)
+            run_harness("PROJ-5", "build", config)
 
         cmd = mock_subproc.Popen.call_args[0][0]
         assert cmd[0] == "/usr/local/bin/harness"
@@ -403,7 +403,7 @@ class TestRunHarness:
 
         with patch("intake.linear_webhook.subprocess.Popen", side_effect=OSError("not found")):
             # Should not raise.
-            run_harness("CAL-1", "build", config)
+            run_harness("PROJ-1", "build", config)
 
 
 # ---------------------------------------------------------------------------
@@ -575,19 +575,19 @@ def _get_run_completed_at(db_path: str, run_id: str) -> str | None:
 class TestReconcileEvent:
     def test_returns_identifier_on_non_active_state(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Done")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="Done")
         result = reconcile_event(payload, config)
-        assert result == "CAL-302"
+        assert result == "PROJ-302"
 
     def test_returns_none_for_active_state(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="In Progress")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="In Progress")
         result = reconcile_event(payload, config)
         assert result is None
 
     def test_returns_none_for_backlog_active_state(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Backlog")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="Backlog")
         result = reconcile_event(payload, config)
         assert result is None
 
@@ -596,20 +596,20 @@ class TestReconcileEvent:
         payload = {
             "type": "Comment",
             "action": "update",
-            "data": {"identifier": "CAL-1", "state": {"name": "Done"}},
+            "data": {"identifier": "PROJ-1", "state": {"name": "Done"}},
         }
         result = reconcile_event(payload, config)
         assert result is None
 
     def test_returns_none_for_create_action(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="create", identifier="CAL-302", state_name="Done")
+        payload = _issue_payload(action="create", identifier="PROJ-302", state_name="Done")
         result = reconcile_event(payload, config)
         assert result is None
 
     def test_returns_none_for_remove_action(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="remove", identifier="CAL-302", state_name="Done")
+        payload = _issue_payload(action="remove", identifier="PROJ-302", state_name="Done")
         result = reconcile_event(payload, config)
         assert result is None
 
@@ -624,7 +624,7 @@ class TestReconcileEvent:
         payload = {
             "type": "Issue",
             "action": "update",
-            "data": {"identifier": "CAL-302", "state": None},
+            "data": {"identifier": "PROJ-302", "state": None},
         }
         result = reconcile_event(payload, config)
         assert result is None
@@ -634,7 +634,7 @@ class TestReconcileEvent:
         payload = {
             "type": "Issue",
             "action": "update",
-            "data": {"identifier": "CAL-302", "state": {"name": ""}},
+            "data": {"identifier": "PROJ-302", "state": {"name": ""}},
         }
         result = reconcile_event(payload, config)
         assert result is None
@@ -642,19 +642,19 @@ class TestReconcileEvent:
     def test_custom_active_states_respected(self) -> None:
         config = _default_config(active_states=frozenset({"Doing"}))
         payload_active = _issue_payload(
-            action="update", identifier="CAL-302", state_name="Doing"
+            action="update", identifier="PROJ-302", state_name="Doing"
         )
         payload_inactive = _issue_payload(
-            action="update", identifier="CAL-302", state_name="In Progress"
+            action="update", identifier="PROJ-302", state_name="In Progress"
         )
         assert reconcile_event(payload_active, config) is None
-        assert reconcile_event(payload_inactive, config) == "CAL-302"
+        assert reconcile_event(payload_inactive, config) == "PROJ-302"
 
     def test_cancelled_state_triggers_reconciliation(self) -> None:
         config = _default_config()
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Cancelled")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="Cancelled")
         result = reconcile_event(payload, config)
-        assert result == "CAL-302"
+        assert result == "PROJ-302"
 
 
 # ---------------------------------------------------------------------------
@@ -665,50 +665,50 @@ class TestReconcileEvent:
 class TestFindActiveRunsForLinearId:
     def test_returns_empty_when_db_does_not_exist(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "nonexistent.db")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
     def test_returns_running_run_ids(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-1", "running", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-1", "running", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == ["run-1"]
 
     def test_returns_pending_run_ids(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-2", "pending", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == ["run-2"]
 
     def test_returns_multiple_active_runs(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-1", "running", "CAL-302")
-        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-1", "running", "PROJ-302")
+        _insert_test_run(db_path, "run-2", "pending", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert sorted(result) == ["run-1", "run-2"]
 
     def test_excludes_completed_runs(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-done", "completed", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-done", "completed", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
     def test_excludes_failed_runs(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-fail", "failed", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-fail", "failed", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
     def test_excludes_cancelled_runs(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-cancelled", "cancelled", "CAL-302")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-cancelled", "cancelled", "PROJ-302")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
     def test_returns_empty_when_no_match(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-other", "running", "CAL-999")
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        _insert_test_run(db_path, "run-other", "running", "PROJ-999")
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
     def test_returns_empty_on_operational_error(self, tmp_path: Any) -> None:
@@ -717,7 +717,7 @@ class TestFindActiveRunsForLinearId:
         # Create the DB file but don't create the runs table
         conn = _sqlite3.connect(db_path)
         conn.close()
-        result = find_active_runs_for_linear_id("CAL-302", db_path)
+        result = find_active_runs_for_linear_id("PROJ-302", db_path)
         assert result == []
 
 
@@ -734,19 +734,19 @@ class TestCancelRun:
 
     def test_cancels_running_run(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        _insert_test_run(db_path, "run-1", "running", "PROJ-302")
         cancel_run("run-1", db_path)
         assert _get_run_status(db_path, "run-1") == "cancelled"
 
     def test_cancels_pending_run(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-2", "pending", "CAL-302")
+        _insert_test_run(db_path, "run-2", "pending", "PROJ-302")
         cancel_run("run-2", db_path)
         assert _get_run_status(db_path, "run-2") == "cancelled"
 
     def test_stamps_completed_at(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-1", "running", "CAL-302")
+        _insert_test_run(db_path, "run-1", "running", "PROJ-302")
         cancel_run("run-1", db_path)
         completed_at = _get_run_completed_at(db_path, "run-1")
         assert completed_at is not None
@@ -754,13 +754,13 @@ class TestCancelRun:
 
     def test_does_not_change_completed_run(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-done", "completed", "CAL-302")
+        _insert_test_run(db_path, "run-done", "completed", "PROJ-302")
         cancel_run("run-done", db_path)
         assert _get_run_status(db_path, "run-done") == "completed"
 
     def test_does_not_change_failed_run(self, tmp_path: Any) -> None:
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-fail", "failed", "CAL-302")
+        _insert_test_run(db_path, "run-fail", "failed", "PROJ-302")
         cancel_run("run-fail", db_path)
         assert _get_run_status(db_path, "run-fail") == "failed"
 
@@ -785,13 +785,13 @@ class TestHttpHandlerReconciliation:
     def test_update_to_done_triggers_reconciliation(self, tmp_path: Any) -> None:
         """Update event to a non-active state triggers cancel_run for active runs."""
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+        _insert_test_run(db_path, "run-active", "running", "PROJ-302")
 
         config = _default_config(db_path=db_path)
         server = self._start(config)
         port = server.server_address[1]
 
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="Done")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="Done")
         body = json.dumps(payload).encode()
 
         thread = threading.Thread(target=_serve_one, args=(server,))
@@ -806,13 +806,13 @@ class TestHttpHandlerReconciliation:
     def test_create_event_does_not_trigger_reconciliation(self, tmp_path: Any) -> None:
         """Create events must not trigger reconciliation."""
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+        _insert_test_run(db_path, "run-active", "running", "PROJ-302")
 
         config = _default_config(db_path=db_path)
         server = self._start(config)
         port = server.server_address[1]
 
-        payload = _issue_payload(action="create", identifier="CAL-302", state_name="Done")
+        payload = _issue_payload(action="create", identifier="PROJ-302", state_name="Done")
         body = json.dumps(payload).encode()
 
         with patch("intake.linear_webhook.run_harness"):
@@ -829,13 +829,13 @@ class TestHttpHandlerReconciliation:
     def test_update_to_active_state_does_not_cancel(self, tmp_path: Any) -> None:
         """Update event to an active state must not cancel runs."""
         db_path = str(tmp_path / "harness.db")
-        _insert_test_run(db_path, "run-active", "running", "CAL-302")
+        _insert_test_run(db_path, "run-active", "running", "PROJ-302")
 
         config = _default_config(db_path=db_path)
         server = self._start(config)
         port = server.server_address[1]
 
-        payload = _issue_payload(action="update", identifier="CAL-302", state_name="In Progress")
+        payload = _issue_payload(action="update", identifier="PROJ-302", state_name="In Progress")
         body = json.dumps(payload).encode()
 
         thread = threading.Thread(target=_serve_one, args=(server,))

@@ -1,4 +1,4 @@
-# calibrate-harness build context exclusions.
+# harness build context exclusions.
 # Keep the image small and reproducible: only the runtime sources listed in the
 # Dockerfile (pyproject.toml, uv.lock, README.md, harness/, workflows/, prompts/)
 # should ever end up in a layer.

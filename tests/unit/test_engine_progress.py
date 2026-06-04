@@ -1,4 +1,4 @@
-"""Tests for harness.engine.progress — terminal progress reporter (CAL-507).
+"""Tests for harness.engine.progress — terminal progress reporter.
 
 Each test maps to one acceptance criterion:
 1. node_started → prints "[wf] node_id         started\n"

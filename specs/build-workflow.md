@@ -14,7 +14,7 @@ General-purpose implementation workflow for harness issues. Sets a Linear ticket
 
 | Input | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `linear_id` | string | yes | — | Linear ticket ID, e.g. `CAL-512`. Pattern: `^[A-Z]+-\d+$`. Flag: `--linear`. |
+| `linear_id` | string | yes | — | Linear ticket ID, e.g. `PROJ-512`. Pattern: `^[A-Z]+-\d+$`. Flag: `--linear`. |
 | `base_branch` | string | no | `main` | Branch to create the worktree from. Flag: `--base-branch`. |
 
 ---

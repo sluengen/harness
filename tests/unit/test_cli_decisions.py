@@ -415,7 +415,7 @@ def test_decision_show_renders_question(tmp_path: Path) -> None:
 def test_decision_show_renders_display_state_values(tmp_path: Path) -> None:
     """Fields listed in ``display_state`` are resolved from state_json and shown."""
     db = tmp_path / "harness.db"
-    state = {"ticket": "CAL-123", "notes": ["patch applied"], "score": 42}
+    state = {"ticket": "PROJ-123", "notes": ["patch applied"], "score": 42}
     _seed_run(
         db,
         run_id="R1",
@@ -434,7 +434,7 @@ def test_decision_show_renders_display_state_values(tmp_path: Path) -> None:
     result = runner.invoke(app, ["decision", "show", "R1", "--db", str(db)])
     assert result.exit_code == 0, result.output
     assert "ticket" in result.stdout
-    assert "CAL-123" in result.stdout
+    assert "PROJ-123" in result.stdout
     assert "score" in result.stdout
     assert "42" in result.stdout
     # notes is not in display_state, should be absent

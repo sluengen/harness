@@ -21,7 +21,7 @@ Implement modules, contracts, state schemas, dispatch adapters, CLI commands. Fo
 
 ## Workflow
 
-1. **Read your task.** The Linear issue (e.g., `CAL-XXX` for `H-NNN`) has the brief, dependencies, and acceptance criteria. If implementing harness internals, also read the relevant `SPEC.md` section — the issue references it.
+1. **Read your task.** The Linear issue (e.g., `PROJ-XXX`) has the brief, dependencies, and acceptance criteria. If implementing harness internals, also read the relevant `SPEC.md` section — the issue references it.
 2. **Read your skills** (mandatory — see §Skills below). TDD and verification are the iron laws.
 3. **Read the existing code.** Even on greenfield work, read sibling modules to understand naming and patterns. Articulate the pattern in one sentence before editing.
 4. **Write tests first.** Failing pytest tests for each acceptance criterion before any implementation code.

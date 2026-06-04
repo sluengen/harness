@@ -1,4 +1,4 @@
-"""Validate AUTHORING.md's YAML examples — see CAL-393 acceptance.
+"""Validate AUTHORING.md's YAML examples.
 
 Three checks, in order of strictness:
 

@@ -1,4 +1,4 @@
-# Calibrate Harness — Design Specification
+# Harness — Design Specification
 
 **Version:** 0.6 (planning)
 **Status:** Under revision. No code lands until this is approved.
@@ -52,7 +52,7 @@ Execute workflows deterministically. Decouple *what work gets done* (orchestrati
 
 ### Data flow per run
 
-1. Caller invokes `harness run feature --linear CAL-249 --base staging`.
+1. Caller invokes `harness run feature --linear PROJ-249 --base staging`.
 2. Harness generates a `run_id` (ULID).
 3. Harness loads `workflows/feature.yaml` + its declared `state_schema`.
 4. Harness initialises state, writes a `runs` row, emits `workflow_started`.
@@ -129,7 +129,7 @@ harness/
 │   └── log.py                 ← structured logging
 ├── workflows/                 ← YAML workflow definitions (yours go here)
 │   ├── release-notes.yaml     ← shipped: pull Linear, summarise, write file
-│   └── steward.yaml           ← shipped: domain steward review (calibrate-coffee context)
+│   └── steward.yaml           ← shipped: domain steward review
 ├── contracts/                 ← shared YAML contract schemas (referenced via $contracts/<name>)
 ├── prompts/
 │   └── standard/              ← shared library: analyze.j2, implement.j2, review.j2, summarize.j2
@@ -655,9 +655,9 @@ inputs:
 Yields:
 
 ```bash
-harness run feature --linear=CAL-249                          # flag form
+harness run feature --linear=PROJ-249                          # flag form
 harness run feature "Build a dropdown menu"                   # positional form
-harness run feature --linear=CAL-249 "with these specifics…"  # both
+harness run feature --linear=PROJ-249 "with these specifics…"  # both
 ```
 
 ### Variable substitution
@@ -807,9 +807,9 @@ Worktree handling is a node type, not an engine feature. Workflows opt in:
 
 ### Mount and path
 
-- The container mounts the project repo at `/workspace` (bind mount of e.g., `/Users/scottluengen/Documents/1_Projects/calibrate-coffee` on the host).
+- The container mounts the project repo at `/workspace` (bind mount of e.g., `/abs/path/to/your-repo` on the host).
 - Worktrees are created inside the mount at `/workspace/.worktrees/harness/<run-id>/` so they share the gitdir.
-- `.worktrees/` is in the project's `.gitignore` (already true for Calibrate).
+- `.worktrees/` is in the project's `.gitignore` (already done for many projects).
 
 ### Branch identity
 
@@ -914,7 +914,7 @@ This means:
 Examples across workflows:
 
 ```bash
-harness run feature --linear=CAL-249               # flag form
+harness run feature --linear=PROJ-249               # flag form
 harness run feature "Build a dropdown menu"        # positional form (input has `position: 1`)
 harness run steward --domain=architecture
 harness run bugfix --linear=$LINEAR_ID --base=staging
@@ -940,7 +940,7 @@ Every read command supports `--json` for machine consumers. Schema is versioned 
 
 ```bash
 # Human / agent kicks off a feature
-harness run feature --linear=CAL-249 --base=staging
+harness run feature --linear=PROJ-249 --base=staging
 
 # Cron fires the nightly architecture steward
 harness run steward --domain=architecture
@@ -1033,7 +1033,7 @@ docker run --rm -it \
   -e LINEAR_API_KEY \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 \
   harness:latest \
-  run feature --linear=CAL-249 --base=staging
+  run feature --linear=PROJ-249 --base=staging
 ```
 
 ### Mount strategy
@@ -1146,11 +1146,11 @@ Cut order: **stewards → bugfix → feature.**
 | Phase | Scope | Done when |
 |-------|-------|-----------|
 | **A. Greenfield** | Build harness in isolation. Test with synthetic repo fixture. | Steward workflow runs end-to-end against fixture. Engine emits clean event log. |
-| **B. Shadow** | Run steward + bugfix workflows against Calibrate dev branch alongside the existing pipeline. Worktrees + diffs + reports produced; **no merges**. Compare outputs against existing pipeline. | 5 successful shadow runs per workflow with comparable or better output. |
-| **C. Cutover (partial)** | Stewards live (replace nightly-review). Bugfix live in normal mode. Feature work continues on current Calibrate harness. | Calibrate's `nightly-review.skill` removed. Bugfixes flow through harness CLI. |
-| **D. Cutover (full)** | Feature workflow live. Calibrate manifest, change folders, harness/, strategy/ migrated to Notion or removed. CLAUDE.md slimmed to project-only content. | Calibrate `harness/`, `manifest.yaml`, `harness/changes/` deleted. `CLAUDE.md` under 50 lines. |
+| **B. Shadow** | Run steward + bugfix workflows against a target repo's dev branch alongside the existing pipeline. Worktrees + diffs + reports produced; **no merges**. Compare outputs against existing pipeline. | 5 successful shadow runs per workflow with comparable or better output. |
+| **C. Cutover (partial)** | Stewards live (replace nightly-review). Bugfix live in normal mode. Feature work continues on current pipeline. | Legacy `nightly-review.skill` removed. Bugfixes flow through harness CLI. |
+| **D. Cutover (full)** | Feature workflow live. Project manifest, change folders, strategy migrated or removed. CLAUDE.md slimmed to project-only content. | Project `harness/`, `manifest.yaml`, `harness/changes/` deleted. `CLAUDE.md` under 50 lines. |
 
-### What goes back into Calibrate's `CLAUDE.md` (target state)
+### What goes back into a project's `CLAUDE.md` (target state)
 
 A short, project-only file:
 - Project description and tech stack
@@ -1159,9 +1159,9 @@ A short, project-only file:
 - Path to `skills/` (execution-side skills, not pipeline mechanics)
 - Output-contract reminder for AI nodes invoked by harness
 
-Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all leave Calibrate.
+Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all leave the project's CLAUDE.md.
 
-### What stays in Calibrate's `skills/`
+### What stays in a project's `skills/`
 
 Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
 
@@ -1188,7 +1188,7 @@ Explicit list of things this project does **not** do, even on request:
 These are deliberately unresolved. Pick before code lands.
 
 1. **Workflow location: in-repo or harness-side?**
-   - In-repo: workflows live in the project repo (`calibrate-coffee/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
+   - In-repo: workflows live in the project repo (`your-repo/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
    - Harness-side: workflows live in `harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
    - **Lean:** harness-side, because cleanliness > convenience for a single-team tool. Revisit when a second project consumes the harness.
 

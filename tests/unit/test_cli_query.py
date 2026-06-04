@@ -236,7 +236,7 @@ def test_status_json_returns_full_row(tmp_path: Path) -> None:
         workflow_version=2,
         status="failed",
         state_json='{"k": "v"}',
-        inputs_json='{"linear": "CAL-1"}',
+        inputs_json='{"linear": "PROJ-1"}',
         base_branch="staging",
         worktree_branch="harness/R-json",
         exit_code=1,
@@ -257,7 +257,7 @@ def test_status_json_returns_full_row(tmp_path: Path) -> None:
     assert payload["duration_ms"] == 12_345
     # state_json + inputs_json round-trip as parsed objects (not raw strings).
     assert payload["state"] == {"k": "v"}
-    assert payload["inputs"] == {"linear": "CAL-1"}
+    assert payload["inputs"] == {"linear": "PROJ-1"}
 
 
 def test_status_unknown_run_exits_2(tmp_path: Path) -> None:

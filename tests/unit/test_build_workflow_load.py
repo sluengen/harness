@@ -1,6 +1,6 @@
 """Load + regression tests for the shipped ``workflows/build.yaml``.
 
-Covers structural validity and the specific bug fix for CAL-506:
+Covers structural validity and the specific bug fix for commit-and-push output parsing:
 the ``commit-and-push`` step must redirect all git output to stderr so
 that only the ``printf`` JSON line reaches stdout and the harness can
 parse it as the step's contract payload.
@@ -67,7 +67,7 @@ def test_build_workflow_has_linear_id_input(loaded_build: LoadedWorkflow) -> Non
 
 
 # ---------------------------------------------------------------------------
-# CAL-506 — commit-and-push must not mix git stdout with JSON output
+# commit-and-push must not mix git stdout with JSON output
 # ---------------------------------------------------------------------------
 
 
@@ -83,7 +83,7 @@ def _commit_and_push_step(loaded_build: LoadedWorkflow) -> ScriptStep:
 
 
 # ---------------------------------------------------------------------------
-# CAL-511 — version 3 structure: fix-loop inner steps, DEFER contract
+# version 3 structure: fix-loop inner steps, DEFER contract
 # ---------------------------------------------------------------------------
 
 
@@ -132,8 +132,7 @@ def test_commit_and_push_git_commands_redirect_stdout_to_stderr(
 
     Without this fix the harness receives git's human-readable progress
     lines mixed with the JSON, ``json.loads`` fails, and the run is
-    recorded as ``failed`` even though the commit and push both succeeded
-    (CAL-506).
+    recorded as ``failed`` even though the commit and push both succeeded.
     """
     step = _commit_and_push_step(loaded_build)
     assert step.command is not None, "commit-and-push step must use inline command"

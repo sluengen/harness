@@ -4,31 +4,31 @@
       "nodes": [
         {
           "id": "abc-301",
-          "identifier": "CAL-301",
-          "title": "Brew picker: drum scrolls past max grind setting",
+          "identifier": "PROJ-301",
+          "title": "UI: dropdown scrolls past max setting",
           "labels": {"nodes": [{"name": "frontend"}, {"name": "bug"}]}
         },
         {
           "id": "abc-303",
-          "identifier": "CAL-303",
-          "title": "Add equipment_grinder field to brew schema",
+          "identifier": "PROJ-303",
+          "title": "Add equipment_type field to item schema",
           "labels": {"nodes": [{"name": "backend"}, {"name": "feature"}]}
         },
         {
           "id": "abc-305",
-          "identifier": "CAL-305",
-          "title": "Persist guest-mode brews to localStorage before sign-in",
+          "identifier": "PROJ-305",
+          "title": "Persist guest-mode items to localStorage before sign-in",
           "labels": {"nodes": [{"name": "frontend"}, {"name": "feature"}]}
         },
         {
           "id": "abc-309",
-          "identifier": "CAL-309",
-          "title": "Tighten 422 response on PUT /brews/{id} when display_name missing",
+          "identifier": "PROJ-309",
+          "title": "Tighten 422 response on PUT /items/{id} when display_name missing",
           "labels": {"nodes": [{"name": "backend"}, {"name": "improvement"}]}
         },
         {
           "id": "abc-312",
-          "identifier": "CAL-312",
+          "identifier": "PROJ-312",
           "title": "Reviewer agent: skip carry-forward on 1-5 line MED findings",
           "labels": {"nodes": [{"name": "harness"}, {"name": "improvement"}]}
         }

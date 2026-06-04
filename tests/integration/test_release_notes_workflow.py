@@ -1,4 +1,4 @@
-"""End-to-end integration test for the release-notes workflow (CAL-292 / H-028).
+"""End-to-end integration test for the release-notes workflow.
 
 Mirrors the steward integration test pattern:
 
@@ -120,8 +120,8 @@ async def test_release_notes_workflow_end_to_end(
     agent = _ReflectingMockAgent()
     mocked_body = (
         "# Release Notes\n\n"
-        "## Features\n- CAL-303: equipment_grinder field\n\n"
-        "## Bug fixes\n- CAL-301: drum picker overshoot\n"
+        "## Features\n- PROJ-303: equipment_type field\n\n"
+        "## Bug fixes\n- PROJ-301: dropdown overshoot\n"
     )
     agent.queue_payload({"release_notes": mocked_body})
 
@@ -186,5 +186,5 @@ async def test_release_notes_workflow_end_to_end(
     assert output_path.is_file(), f"release notes not at {output_path}"
     body = output_path.read_text()
     assert "Release Notes" in body
-    assert "CAL-303" in body
-    assert "CAL-301" in body
+    assert "PROJ-303" in body
+    assert "PROJ-301" in body

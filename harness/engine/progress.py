@@ -1,4 +1,4 @@
-"""Progress reporter for terminal output during workflow execution (CAL-507).
+"""Progress reporter for terminal output during workflow execution.
 
 Taps the EventEmitter's on_emit callback to stream one line per node/workflow
 transition to stderr without any new persistence layer.

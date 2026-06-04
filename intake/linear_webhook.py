@@ -205,7 +205,7 @@ def run_harness(identifier: str, workflow: str, config: WebhookConfig) -> None:
     intake process.
 
     Args:
-        identifier: Linear issue identifier (e.g. ``"CAL-301"``).
+        identifier: Linear issue identifier (e.g. ``"PROJ-301"``).
         workflow: Workflow name to run (e.g. ``"build"``).
         config: Server config supplying ``harness_bin`` and ``base_branch``.
     """
@@ -249,7 +249,7 @@ def reconcile_event(
         config: Server configuration supplying ``active_states``.
 
     Returns:
-        The Linear identifier (e.g. ``"CAL-302"``) if cancellation is needed,
+        The Linear identifier (e.g. ``"PROJ-302"``) if cancellation is needed,
         or ``None`` if the event should not trigger reconciliation.
     """
     if payload.get("type") != "Issue":
@@ -283,7 +283,7 @@ def find_active_runs_for_linear_id(identifier: str, db_path: str) -> list[str]:
     ``sqlite3.OperationalError`` (e.g. missing table).
 
     Args:
-        identifier: Linear issue identifier (e.g. ``"CAL-302"``).
+        identifier: Linear issue identifier (e.g. ``"PROJ-302"``).
         db_path: Path to the harness SQLite database file.
 
     Returns:

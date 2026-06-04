@@ -119,8 +119,8 @@ The harness reads workflow YAMLs that ship inside the image
 # In one terminal — build once.
 docker build -t harness:dev -f docker/Dockerfile .
 
-# In another terminal — run a workflow against calibrate-coffee.
-cd /abs/path/to/calibrate-coffee
+# In another terminal — run a workflow against your-repo.
+cd /abs/path/to/your-repo
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.claude":/root/.claude:ro \
@@ -141,7 +141,7 @@ project on disk.
 docker compose -f docker/docker-compose.yml build harness
 
 # Run a workflow against another repo on disk.
-HARNESS_TARGET_REPO=/abs/path/to/calibrate-coffee \
+HARNESS_TARGET_REPO=/abs/path/to/your-repo \
   docker compose -f docker/docker-compose.yml run --rm harness \
     run steward --domain=architecture
 ```

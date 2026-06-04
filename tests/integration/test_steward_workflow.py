@@ -1,4 +1,4 @@
-"""End-to-end integration test for the steward workflow (CAL-291 / H-027).
+"""End-to-end integration test for the steward workflow.
 
 This test wires the shipped artefacts together exactly the way a real
 run would:

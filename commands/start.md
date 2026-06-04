@@ -4,7 +4,7 @@ Trigger the build workflow for a Linear issue. The harness handles everything �
 
 ## Usage
 
-- `/start <CAL-NNN>` — run the build workflow for the given Linear issue
+- `/start <ISSUE-ID>` — run the build workflow for the given Linear issue
 
 ## Prerequisites
 
@@ -38,14 +38,14 @@ source .env && PYTHONPATH=. uv run harness <args>
 source .env && curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"<CAL-NNN>\"){identifier title description state{name} labels{nodes{name}} url}}"}'
+  -d '{"query":"query{issue(id:\"<ISSUE-ID>\"){identifier title description state{name} labels{nodes{name}} url}}"}'
 ```
 
 Print a brief for the user:
 
 ```
 Task:   <title>
-Linear: <CAL-NNN>
+Linear: <ISSUE-ID>
 URL:    <url>
 State:  <current state>
 ```
@@ -55,7 +55,7 @@ If the issue is already Done or has unresolved dependencies listed in the descri
 ### Step 2 — Run the build workflow
 
 ```bash
-source .env && PYTHONPATH=. uv run harness run build --linear=<CAL-NNN>
+source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID>
 ```
 
 The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.

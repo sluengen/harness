@@ -1,4 +1,4 @@
-# Calibrate Harness — CLAUDE.md
+# Harness — CLAUDE.md
 
 ## Project
 
@@ -87,7 +87,7 @@ Invoke via the Agent tool with the matching `subagent_type`.
 
 ## Commands
 
-- `/start <CAL-NNN>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
+- `/start <ISSUE-ID>` — kick off work on a Linear issue (branch + worktree + Linear status + work + PR).
 - `/build-workflow <description>` — build a new harness workflow YAML from a description; activates `skills/workflow-authoring.md`.
 
 ## Linear
@@ -99,10 +99,10 @@ No Linear CLI is installed. All Linear interaction uses the GraphQL API directly
 Use `bin/harness` instead of `uv run harness` when running from a shell that already has `VIRTUAL_ENV` set (e.g. a Homebrew-managed Python or another project's activated venv).  The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`, bypassing `uv` entirely:
 
 ```bash
-source .env && PYTHONPATH=. bin/harness run build --linear=CAL-NNN
+source .env && PYTHONPATH=. bin/harness run build --linear=ISSUE-ID
 ```
 
-**Why**: `uv run` warns and may use the wrong interpreter when `VIRTUAL_ENV` points at a path that doesn't match the project's `.venv` — see CAL-508.  `bin/harness` is immune to this because it never calls `uv`.
+**Why**: `uv run` warns and may use the wrong interpreter when `VIRTUAL_ENV` points at a path that doesn't match the project's `.venv`.  `bin/harness` is immune to this because it never calls `uv`.
 
 The old pattern still works when `VIRTUAL_ENV` is clean:
 
@@ -127,7 +127,7 @@ Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `spec`.
 
 This harness is decoupled from any one project. Specifically, it does **not**:
 
-- Embed Calibrate-specific pipeline knowledge — workflows are YAML, called by reference.
+- Embed project-specific pipeline knowledge — workflows are YAML, called by reference.
 - Carry business strategy, brand, or product specs.
 - Store project-specific manifests or change folders.
 
