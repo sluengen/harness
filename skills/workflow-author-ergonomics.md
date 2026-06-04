@@ -1,6 +1,6 @@
 # Workflow Author Ergonomics
 
-A reproducible test of whether `AUTHORING.md` is good enough on its own to compose a working workflow from a blank page. Replaces the one-shot human test originally specified by CAL-391 with a skill any agent can re-run on demand.
+A reproducible test of whether `AUTHORING.md` is good enough on its own to compose a working workflow from a blank page. Any agent can re-run this skill on demand.
 
 ## What this skill measures
 
@@ -36,7 +36,7 @@ Run the test as a fresh sub-agent dispatch from a Claude Code session. The orche
 ### Sub-agent prompt (parameterised)
 
 ```
-You are testing the authoring ergonomics of the calibrate-harness workflow system.
+You are testing the authoring ergonomics of the harness workflow system.
 
 Your ONLY reference is `AUTHORING.md` at the repo root. Do NOT read:
 - SPEC.md (design rationale — explicitly out of scope for this test)
@@ -166,7 +166,7 @@ What it misses:
 - **Implicit knowledge gaps.** An agent's training data fills in things a human author would have to learn.
 - **"Where do I even start" friction.** Agents are good at following protocol; humans need a clear on-ramp.
 
-A periodic human read-through, separate from this skill, can address those. CAL-391's mandate to bound v1 scope on a human test is satisfied differently — by *this skill running cleanly* + *AUTHORING.md being maintained against its findings*. If the skill ever starts producing blockers, the guide needs revision before the next release.
+A periodic human read-through, separate from this skill, can address those. The intent to bound v1 scope on a human test is satisfied differently — by *this skill running cleanly* + *AUTHORING.md being maintained against its findings*. If the skill ever starts producing blockers, the guide needs revision before the next release.
 
 ## Running this skill
 

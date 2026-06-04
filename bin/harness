@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bin/harness — thin wrapper that bypasses uv to avoid VIRTUAL_ENV conflicts.
 #
-# Problem (CAL-508): when VIRTUAL_ENV points at a foreign Python installation
+# Problem: when VIRTUAL_ENV points at a foreign Python installation
 # (e.g. a Homebrew-managed venv that is active in the outer shell), `uv run
 # harness` either fails silently with ModuleNotFoundError or emits:
 #

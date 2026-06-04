@@ -95,15 +95,17 @@ source .env && curl -s -X POST https://api.linear.app/graphql \
   -d '{"query":"query{teams{nodes{id key name}}}"}'
 ```
 
-Use the `id` of the team whose `key` is `CAL`.
+Use the `id` of the team you want to create the issue under (check the `key` field to identify it).
 
 **Projects for that team:**
 ```bash
 source .env && curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"query":"query{teams(filter:{key:{eq:\"CAL\"}}){nodes{projects{nodes{id name}}}}}"}'
+  -d '{"query":"query{teams{nodes{id key projects{nodes{id name}}}}}"}'
 ```
+
+Use the projects from the team whose `id` you identified in the previous step.
 
 ### Step 5 — Pick a project
 
@@ -158,11 +160,11 @@ Check that `success` is `true` in the response. If not, show the full response a
 ### Step 7 — Report
 
 ```
-Created: CAL-NNN
+Created: <ISSUE-ID>
 Project: <project name or "none">
 URL:     <linear url>
 
-Next: /start CAL-NNN
+Next: /start <ISSUE-ID>
 ```
 
 ## What the agent sees
@@ -173,6 +175,6 @@ A well-written description is the difference between a clean first pass and mult
 
 ## Related
 
-- `commands/start.md` — runs the build workflow for a given CAL-NNN
+- `commands/start.md` — runs the build workflow for a given issue ID
 - `workflows/build.yaml` — the workflow `/start` triggers
 - `prompts/build/implement.j2` — the prompt the implementing agent receives

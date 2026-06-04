@@ -1,4 +1,4 @@
-"""Tests for bin/harness shell wrapper — CAL-508.
+"""Tests for bin/harness shell wrapper.
 
 The wrapper must:
 - Exist at ``bin/harness`` relative to the project root.
@@ -8,7 +8,7 @@ The wrapper must:
 - Pass all positional arguments through to ``harness.cli`` unchanged.
 - Produce no ``uv`` VIRTUAL_ENV warning even when ``VIRTUAL_ENV`` is set.
 
-See SPEC §11 and CAL-508 for context.
+See SPEC §11 for context.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def test_wrapper_passes_help_flag() -> None:
 def test_wrapper_succeeds_with_foreign_virtual_env() -> None:
     """Running with VIRTUAL_ENV pointing at a non-project path must succeed.
 
-    This is the core regression test for CAL-508.  Without the wrapper, uv
+    This is the core regression test.  Without the wrapper, uv
     either silently uses the wrong interpreter (``ModuleNotFoundError``) or
     emits a warning and exits.  The wrapper bypasses uv entirely, so
     VIRTUAL_ENV is irrelevant.

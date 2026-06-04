@@ -69,7 +69,7 @@ def derive_state_schema(loaded: LoadedWorkflow) -> type[BaseState]:
             #   * steps with writes: [] (the sidecar pattern)
             #   * WorktreeStep — its writes (worktree_path, worktree_branch)
             #     are already declared on BaseState, so there is nothing to
-            #     add here (CAL-497).
+            #     add here.
             continue
         for spec in step.writes:
             name = spec.field

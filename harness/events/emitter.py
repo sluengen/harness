@@ -48,8 +48,7 @@ class EventEmitter:
         on_emit: Optional synchronous callback invoked after each successful
             INSERT + commit. Signature: ``(event_type, node_id, duration_ms)``.
             Used by :class:`~harness.engine.progress.ProgressReporter` to tap
-            the event stream for terminal output without a new persistence layer
-            (CAL-507).
+            the event stream for terminal output without a new persistence layer.
     """
 
     def __init__(

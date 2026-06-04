@@ -556,7 +556,7 @@ async def test_call_to_unrelated_tool_name_does_not_count_as_submit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# CAL-505 — MCP-prefixed submit name is accepted by execute()
+# MCP-prefixed submit name is accepted by execute()
 # ---------------------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-"""Docker image build + run integration test (H-029 / CAL-293).
+"""Docker image build + run integration test.
 
 Asserts:
 

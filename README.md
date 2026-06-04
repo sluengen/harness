@@ -143,10 +143,10 @@ harness/
 
 From v1.0 onward, harness's own follow-on work flows through harness:
 
-- All work items (bugs, features, improvements) → `harness run build --linear=<CAL-NNN>`
+- All work items (bugs, features, improvements) → `harness run build --linear=<ISSUE-ID>`
 - Domain assessments → `harness run steward --domain=<area>`
 
-The first dog-food runs are [CAL-497](https://linear.app/calibrate-coffee/issue/CAL-497) (engine: loader/worktree contract reconciliation) and [CAL-498](https://linear.app/calibrate-coffee/issue/CAL-498) (AUTHORING.md minor refinements from the run-004 cycle). If those ship cleanly through the harness, self-hosting is validated empirically.
+The first dog-food runs validated engine loader/worktree contract reconciliation and a series of AUTHORING.md refinements. If those ship cleanly through the harness, self-hosting is validated empirically.
 
 ## Tech stack
 
@@ -154,7 +154,6 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 
 ## Related
 
-- **Primary consumer:** [`calibrate-coffee`](https://github.com/sluengen/calibrate-coffee) — first repo to dog-food harness.
 - **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (workflow concepts, worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
 
 ## Changelog
@@ -179,8 +178,8 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 
 - PyPI publish + release pipeline
 - `harness init <dir>` scaffold for consuming repos
-- 7 minor AUTHORING.md refinements (CAL-498)
-- Loader/worktree contract reconciliation (CAL-497)
+- 7 minor AUTHORING.md refinements
+- Loader/worktree contract reconciliation
 
 **Migration notes (v1.0 → v1.1):** No breaking changes expected. PyPI install path will replace the git-URL install once published. The `harness init` scaffold is additive.
 

@@ -44,7 +44,7 @@ app = typer.Typer(
 
 @app.callback()
 def _root() -> None:
-    """Calibrate Harness root callback.
+    """Harness root callback.
 
     Forces Typer into multi-subcommand mode so subcommands like ``version`` are
     invoked as ``harness version`` (not promoted to the root).

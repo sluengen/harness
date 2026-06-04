@@ -261,8 +261,8 @@ def test_load_bugfix_workflow_inline_contract_round_trip(
 
     # Inline contract: fetch-issue declared `issue_id: string, title: string`.
     cls = loaded.contracts["fetch-issue"]
-    instance = cls(issue_id="CAL-1", title="hello")
-    assert instance.issue_id == "CAL-1"  # type: ignore[attr-defined]
+    instance = cls(issue_id="PROJ-1", title="hello")
+    assert instance.issue_id == "PROJ-1"  # type: ignore[attr-defined]
     with pytest.raises(ValidationError):
         cls(issue_id=123, title="hello")  # wrong type
 
@@ -700,7 +700,7 @@ steps:
 
 
 # ---------------------------------------------------------------------------
-# Worktree steps may declare writes: without a contract: (CAL-497)
+# Worktree steps may declare writes: without a contract:
 # ---------------------------------------------------------------------------
 
 
@@ -735,8 +735,10 @@ steps:
 def test_load_non_worktree_writes_without_contract_still_raises(
     project_root: Path, contracts_root: Path
 ) -> None:
-    """The AC14 guard still fires for non-worktree steps — CAL-497 exempts
-    only WorktreeStep, not all step types."""
+    """The AC14 guard still fires for non-worktree steps.
+
+    Worktree exemption applies only for WorktreeStep, not all step types.
+    """
     body = """\
 name: wf
 version: 1

@@ -210,7 +210,7 @@ class Executor:
             if step.writes:
                 # WorktreeStep: contract_cls is None (no entry in
                 # ctx.contracts), so validate against the node's actual
-                # result type (WorktreeCreateOutput) instead (CAL-497).
+                # result type (WorktreeCreateOutput) instead.
                 effective_cls = contract_cls if contract_cls is not None else type(result.contract)
                 self._validate_writes_against_contract(step, effective_cls)
                 state_after = await self._apply_writes(ctx, step, result)
@@ -277,7 +277,7 @@ class Executor:
           without going through the normal ``contract: → writes:`` path, so
           no contract is ever registered for them in ``ctx.contracts``.
           The executor uses ``type(result.contract)`` as the effective class
-          when validating and applying their writes (CAL-497).
+          when validating and applying their writes.
 
         Any other step with a non-empty ``writes:`` MUST have a registered
         contract.

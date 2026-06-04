@@ -203,14 +203,14 @@ def test_enum_integer() -> None:
 
 def test_pattern_matching() -> None:
     model_cls = compile_inline_contract(
-        {"id": {"type": "string", "pattern": r"^CAL-\d+$"}}
+        {"id": {"type": "string", "pattern": r"^PROJ-\d+$"}}
     )
-    assert model_cls.model_validate({"id": "CAL-270"}).id == "CAL-270"
+    assert model_cls.model_validate({"id": "PROJ-270"}).id == "PROJ-270"
 
 
 def test_pattern_not_matching() -> None:
     model_cls = compile_inline_contract(
-        {"id": {"type": "string", "pattern": r"^CAL-\d+$"}}
+        {"id": {"type": "string", "pattern": r"^PROJ-\d+$"}}
     )
     with pytest.raises(ValidationError):
         model_cls.model_validate({"id": "nope"})

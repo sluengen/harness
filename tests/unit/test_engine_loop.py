@@ -932,7 +932,7 @@ async def test_check_retry_loop_unknown_id_fails_with_clear_message(
 
 
 # ---------------------------------------------------------------------------
-# on_exhaust field — schema and engine behaviour (CAL-511)
+# on_exhaust field — schema and engine behaviour
 # ---------------------------------------------------------------------------
 
 
@@ -1006,7 +1006,7 @@ async def test_on_exhaust_cancel_default_still_raises(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Simulation tests — build workflow review-loop paths (CAL-511)
+# Simulation tests — build workflow review-loop paths
 # ---------------------------------------------------------------------------
 
 

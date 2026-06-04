@@ -172,11 +172,11 @@ def test_ac2_string_flag_maps_to_string_option(
             "--workflows-dir",
             str(tmp_path),
             "--linear",
-            "CAL-249",
+            "PROJ-249",
         ],
     )
     assert result.exit_code == 0, result.output
-    assert runner_spy.calls[0]["inputs"] == {"linear": "CAL-249"}
+    assert runner_spy.calls[0]["inputs"] == {"linear": "PROJ-249"}
 
 
 def test_ac2_integer_flag_parses_int(
@@ -450,11 +450,11 @@ def test_ac2_pattern_match_allows_invocation(
             "--workflows-dir",
             str(tmp_path),
             "--linear",
-            "CAL-249",
+            "PROJ-249",
         ],
     )
     assert result.exit_code == 0, result.output
-    assert runner_spy.calls[0]["inputs"] == {"linear": "CAL-249"}
+    assert runner_spy.calls[0]["inputs"] == {"linear": "PROJ-249"}
 
 
 # ---------------------------------------------------------------------------
@@ -684,7 +684,7 @@ def test_existing_version_command_still_runs(cli: CliRunner) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CAL-507 — --quiet flag
+# --quiet flag
 # ---------------------------------------------------------------------------
 
 

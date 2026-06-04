@@ -778,7 +778,7 @@ async def test_ac10_missing_contract_for_writing_step_raises(tmp_path: Path) -> 
 
 
 # ---------------------------------------------------------------------------
-# CAL-497 — WorktreeStep with writes: [...] needs no registered contract
+# WorktreeStep with writes: [...] needs no registered contract
 # ---------------------------------------------------------------------------
 
 
@@ -787,7 +787,7 @@ async def test_worktree_step_with_writes_succeeds_without_registered_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """WorktreeStep with ``writes: [worktree_path, worktree_branch]`` must
-    succeed even though no contract is registered in ctx.contracts (CAL-497).
+    succeed even though no contract is registered in ctx.contracts.
 
     The executor should validate the writes against ``WorktreeCreateOutput``
     (the node's result type) and project the values into state.
@@ -868,7 +868,7 @@ async def test_worktree_step_with_empty_writes_still_writes_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """WorktreeStep with ``writes: []`` (default) must not call update_state —
-    backward-compatibility check (CAL-497)."""
+    backward-compatibility check."""
     from pathlib import Path as FsPath
 
     db = tmp_path / "harness.db"

@@ -1,4 +1,4 @@
-# calibrate-harness dev compose — see SPEC.md §13.
+# harness dev compose — see SPEC.md §13.
 #
 # The harness is a one-shot CLI (not a long-running service). This compose file
 # exists to make local dev invocations short and consistent: it captures the
@@ -9,7 +9,7 @@
 #   docker compose -f docker/docker-compose.yml build harness
 #
 #   # Run a workflow against another repo (mount the host repo into /workspace).
-#   HARNESS_TARGET_REPO=/abs/path/to/calibrate-coffee \
+#   HARNESS_TARGET_REPO=/abs/path/to/your-repo \
 #     docker compose -f docker/docker-compose.yml run --rm harness \
 #       run steward --domain=architecture
 #
@@ -18,7 +18,7 @@
 
 services:
   harness:
-    image: calibrate-harness:dev
+    image: harness:dev
     build:
       context: ..
       dockerfile: docker/Dockerfile
