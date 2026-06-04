@@ -165,12 +165,12 @@ def list_command(
 
 
 def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
-    """Return True if ``branch`` is fully merged into ``main`` (or master).
+    """Return True if ``branch`` is fully merged into ``dev``, ``main``, or ``master``.
 
     ``--merged`` is conservative: an absent branch ref counts as not-merged
     so we never remove a worktree whose ref state we can't read.
     """
-    for base in ("main", "master"):
+    for base in ("dev", "main", "master"):
         proc = subprocess.run(
             [
                 "git", "-C", str(repo_root), "merge-base", "--is-ancestor",

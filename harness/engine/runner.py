@@ -154,7 +154,7 @@ class Runner:
         workflow_path: Path,
         inputs: dict[str, Any],
         *,
-        base_branch: str = "main",
+        base_branch: str = "dev",
         _node_overrides: dict[str, NodeRunner] | None = None,
     ) -> int:
         """Execute the workflow end-to-end and return the SPEC §11 exit code.

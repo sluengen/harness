@@ -167,7 +167,7 @@ def _build_dynamic_command(
         click.Option(
             ["--base", _BASE_BRANCH_KW],
             type=str,
-            default="main",
+            default="dev",
             show_default=True,
             help="Base branch the run is started against (passed to Runner.run).",
         )

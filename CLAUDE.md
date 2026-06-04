@@ -72,7 +72,7 @@ Notes:
 
 - TDD — tests before implementation. See `skills/test-driven-development.md`.
 - Atomic commits, each leaves the project working.
-- All work on feature branches off `main`. Never commit implementation directly to `main`.
+- All work on feature branches off `dev`. Never commit implementation directly to `main`.
 - Lint passes before tests run. Verification gate in `skills/verification-before-completion.md`.
 - Worktrees per `skills/worktree-isolation.md` for any multi-commit flow.
 

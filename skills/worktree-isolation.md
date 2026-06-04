@@ -33,7 +33,7 @@ WORKTREE=".worktrees/<H-NNN>"          # or: ".worktrees/session-$(date +%Y-%m-%
 BRANCH="harness/<H-NNN>-<short-slug>"  # or: "session/<timestamp>"
 
 git fetch origin
-git worktree add "$WORKTREE" -b "$BRANCH" main
+git worktree add "$WORKTREE" -b "$BRANCH" dev
 cd "$WORKTREE"
 ```
 
@@ -79,6 +79,6 @@ git push origin --delete harness/<H-NNN>-<short-slug>   # remote
 
 ## What this skill does NOT cover
 
-- Branch strategy (we branch off `main`, PR back to `main` — see CLAUDE.md).
+- Branch strategy (we branch off `dev`, PR back to `dev` — see CLAUDE.md).
 - Sub-agent worktree internals — those are managed by the Agent runtime when `isolation: "worktree"` is set.
 - The harness project's own worktree-node design (`harness/nodes/worktree.py`). That's the implementation; this skill is the *development discipline*. They're related but distinct.

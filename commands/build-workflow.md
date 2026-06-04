@@ -27,7 +27,7 @@ The agent doesn't need to read `SPEC.md` or `harness/` source — `AUTHORING.md`
 ```
 
 ```
-/build-workflow Fix a Linear ticket end-to-end: pull the ticket, set up a worktree off main,
+/build-workflow Fix a Linear ticket end-to-end: pull the ticket, set up a worktree off dev,
     have an agent investigate + apply a fix with tests, get a second-agent review,
     on PASS commit and push, on FAIL cancel
 ```
