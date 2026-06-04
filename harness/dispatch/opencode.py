@@ -150,7 +150,7 @@ def _classify_real_line(line: str) -> list[dict[str, Any]]:
 def _build_cmd(
     provider: str | None,
     model: str | None,
-    submit_tool_schema: dict[str, Any],  # noqa: ARG001 — reserved for future MCP injection
+    submit_tool_schema: dict[str, Any],  # noqa: ARG001 — MCP tool injection not yet supported by opencode
 ) -> list[str]:
     """Build the ``opencode run`` invocation.
 
@@ -159,11 +159,6 @@ def _build_cmd(
     - Only ``model`` set: ``--model model``
     - Only ``provider`` set: ``--model provider/default``
     - Neither set: no ``--model`` flag
-
-    # TODO: inject submit tool via MCP
-    The submit tool schema is accepted here for future use when opencode gains
-    MCP server support so the agent can call submit directly. For now, tool
-    capture happens via NDJSON parsing.
     """
     cmd: list[str] = ["opencode", "run", "--format", "json"]
 

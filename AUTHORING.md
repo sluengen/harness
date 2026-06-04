@@ -367,6 +367,8 @@ loop:
   until_bash: "[ -f $inputs.output_path ]"
 ```
 
+**Why not argv-style commands?** An earlier design considered replacing the `until_bash:` string with an argv list (e.g. `until_bash: ["test", "-f", "$state.path"]`) to make quoting and argument boundaries explicit. This was deferred: the single-string form is simpler for the common case (polling a file, calling a script), harness preprocessing handles `$state.*`/`$inputs.*` substitution before the shell sees the command, and the quoting pitfalls are documented above. If argv-style becomes necessary (e.g. for values that may contain spaces), a `until_script:` node reference will be a cleaner fit than extending `until_bash:`.
+
 ---
 
 ## 5. Standard prompts

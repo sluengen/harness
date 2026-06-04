@@ -45,7 +45,15 @@ and Linear webhook intake.
 
 ## Verification gate
 
-Run all three before merging — all must be clean:
+Run the canonical script before merging or tagging:
+
+```bash
+bash scripts/verify.sh
+```
+
+This runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke → workflow validation. See `RELEASING.md` for the full release checklist.
+
+Individual commands (if you need to run one step at a time):
 
 ```bash
 uv run ruff check .
@@ -58,6 +66,7 @@ Notes:
   test-file mypy errors are a known backlog.
 - `pytest` uses per-test timeout of 120 s (`pytest-timeout`); job-level CI
   timeout is 10 min.
+- Slow/integration tests are behind `@pytest.mark.slow` and `@pytest.mark.integration` — run `pytest -m 'not slow and not integration'` to skip them locally.
 
 ## Conventions
 

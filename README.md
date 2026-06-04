@@ -182,12 +182,18 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 - 7 minor AUTHORING.md refinements (CAL-498)
 - Loader/worktree contract reconciliation (CAL-497)
 
+**Migration notes (v1.0 → v1.1):** No breaking changes expected. PyPI install path will replace the git-URL install once published. The `harness init` scaffold is additive.
+
 ### v1.5 (planned)
 
 - `CodexAgent` and `OpencodeAgent` production wiring (subprocess + tool injection)
 - AI node multi-turn improvements
 
+**Migration notes (v1.1 → v1.5):** `CodexAgent` and `OpencodeAgent` currently raise `RuntimeError` unless a `proc_fn=` is passed (test-only). Production wiring lands in v1.5. Workflows using only `ClaudeAgent` are unaffected.
+
 ### v2 (planned)
 
 - Human-actor decision nodes with pause/resume
 - Decision pause/resume via CLI (`harness decision approve/reject`)
+
+**Migration notes (v1.5 → v2):** Decision nodes will gain a pause/resume lifecycle. Existing `decision` steps using synchronous `auto:` resolution are unaffected. Steps expecting immediate resolution will need to opt in to the new pause semantics.
