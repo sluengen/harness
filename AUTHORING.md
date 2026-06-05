@@ -557,6 +557,17 @@ harness logs <run-id> [--follow]    # tail the log
 harness events <run-id> [--type tool_called]   # filter events
 ```
 
+### Build workflow inputs
+
+The `build` workflow (used by `/start`) accepts two additional inputs for cross-repo execution:
+
+| Input | Flag | Purpose |
+|---|---|---|
+| `verify_command` | `--verify-command` | Shell command to use as the verification gate inside the target repo's worktree. Defaults to `bash scripts/verify.sh`. |
+| `branch_prefix` | `--branch-prefix` | Prefix for feature branches created in the target repo (e.g. `feature/` → `feature/SLT-42-title`). Defaults to no prefix. |
+
+These are only needed when `--repo` targets a repo other than the harness itself. See `CLAUDE.md` §Cross-repo execution for the full invocation pattern.
+
 ---
 
 ## 9. Validating a workflow
