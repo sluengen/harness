@@ -5,6 +5,15 @@ Trigger the build workflow for a Linear issue. The harness handles everything �
 ## Usage
 
 - `/start <ISSUE-ID>` — run the build workflow for the given Linear issue
+- `/start <ISSUE-ID> --repo PATH` — run the build workflow targeting a different repo
+
+### Cross-repo usage
+
+```bash
+/start SLT-42 --repo /path/to/slate
+```
+
+The harness runs from its own directory; `--repo` points it at the target codebase. Combine with `--verify-command` to override the verification gate and `--branch-prefix` to control branch naming in the target repo.
 
 ## Prerequisites
 
@@ -56,6 +65,15 @@ If the issue is already Done or has unresolved dependencies listed in the descri
 
 ```bash
 source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID>
+```
+
+When `--repo`, `--verify-command`, or `--branch-prefix` were supplied to `/start`, pass them through:
+
+```bash
+source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID> \
+  [--repo /path/to/target-repo] \
+  [--verify-command "bash scripts/verify.sh"] \
+  [--branch-prefix "feature/"]
 ```
 
 The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.

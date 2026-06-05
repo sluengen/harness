@@ -110,6 +110,30 @@ The old pattern still works when `VIRTUAL_ENV` is clean:
 source .env && PYTHONPATH=. uv run harness <args>   # safe only if VIRTUAL_ENV is unset
 ```
 
+## Cross-repo execution
+
+The harness can run workflows against a **target repo** that is separate from the harness itself. The harness is the runner; the target is the workspace. This is the normal pattern when using the harness to work on another project (e.g. `slate`, `api-service`).
+
+Full invocation:
+
+```bash
+source .env && PYTHONPATH=. bin/harness run build \
+  --linear=ISSUE-ID \
+  --repo /path/to/target-repo \
+  --verify-command "bash scripts/verify.sh" \
+  --branch-prefix "feature/"
+```
+
+- `--repo` — absolute path to the target repo; the harness creates worktrees and applies changes there.
+- `--verify-command` — shell command to run inside the target repo's worktree as the verification gate (replaces the harness's own `scripts/verify.sh`).
+- `--branch-prefix` — prefix for feature branches created in the target repo (e.g. `feature/` → `feature/SLT-42-my-title`).
+
+Dog-fooding the harness (working on the harness itself) is unchanged — omit `--repo` and the harness operates on its own working tree as before:
+
+```bash
+source .env && PYTHONPATH=. bin/harness run build --linear=HAR-99
+```
+
 ## Agent-agnostic layout
 
 The canonical location for agent definitions, skills, and commands is the repo root: `agents/`, `skills/`, `commands/`. These are plain markdown — any agent harness (Claude Code, Codex, OpenCode, etc.) that can read markdown can consume them.
