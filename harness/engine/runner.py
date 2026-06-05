@@ -1027,6 +1027,16 @@ class Runner:
                 f"worktree adapter received non-WorktreeStep: "
                 f"{type(step).__name__}"
             )
+            # Resolve repo_path from inputs when no explicit repo_root was
+            # given at construction time (CLI --repo takes precedence).
+            effective_repo_root = repo_root
+            repo_path_input = inputs.get("repo_path")
+            if (
+                repo_path_input is not None
+                and str(repo_path_input) not in ("", ".")
+                and repo_root == Path(".")
+            ):
+                effective_repo_root = Path(str(repo_path_input))
             if step.action == "create":
                 assert step.base is not None  # WorktreeStep validator
                 base = step.base
@@ -1036,10 +1046,14 @@ class Runner:
                 elif base.startswith("$state."):
                     field = base[len("$state."):]
                     base = str(getattr(state, field, base))
+                # Resolve branch_prefix from inputs (default "harness")
+                branch_prefix_raw = inputs.get("branch_prefix", "harness")
+                branch_prefix = str(branch_prefix_raw) if branch_prefix_raw else "harness"
                 return await worktree_node.create(
                     run_id=rid,
-                    repo_root=repo_root,
+                    repo_root=effective_repo_root,
                     base=base,
+                    branch_prefix=branch_prefix,
                 )
             # cleanup
             assert step.policy is not None  # WorktreeStep validator
@@ -1051,7 +1065,7 @@ class Runner:
                 )
             return await worktree_node.cleanup(
                 run_id=rid,
-                repo_root=repo_root,
+                repo_root=effective_repo_root,
                 worktree_path=state.worktree_path,
                 worktree_branch=state.worktree_branch,
                 base=state.base_branch,

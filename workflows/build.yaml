@@ -17,6 +17,21 @@ inputs:
     type: string
     default: dev
     flag: --base-branch
+  repo_path:
+    type: string
+    required: false
+    default: "."
+    flag: --repo-path
+  verify_command:
+    type: string
+    required: false
+    default: "bash scripts/verify.sh"
+    flag: --verify-command
+  branch_prefix:
+    type: string
+    required: false
+    default: "harness"
+    flag: --branch-prefix
 
 steps:
   - id: setup
