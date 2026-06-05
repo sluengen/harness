@@ -97,7 +97,7 @@ def _commit_and_push_step(loaded_build: LoadedWorkflow) -> ScriptStep:
 
 
 def test_build_workflow_fix_loop_inner_steps(loaded_build: LoadedWorkflow) -> None:
-    """The fix-loop block's inner steps are implement, set-in-review, review, gate-retry."""
+    """fix-loop inner steps include read-target-claude-md first, then implement, review chain."""
     fix_loop = next(
         s for s in loaded_build.workflow.steps if s.id == "fix-loop"
     )
@@ -105,7 +105,13 @@ def test_build_workflow_fix_loop_inner_steps(loaded_build: LoadedWorkflow) -> No
         f"fix-loop should be a LoopStep, got {type(fix_loop)}"
     )
     inner_ids = [s.id for s in fix_loop.loop.steps]
-    assert inner_ids == ["implement", "set-in-review", "review", "gate-retry"]
+    assert inner_ids == [
+        "read-target-claude-md",
+        "implement",
+        "set-in-review",
+        "review",
+        "gate-retry",
+    ]
 
 
 def test_build_workflow_review_contract_has_defer(loaded_build: LoadedWorkflow) -> None:
@@ -230,6 +236,64 @@ def test_build_workflow_fix_loop_inner_steps_include_set_in_review(
     assert implement_idx < set_in_review_idx < review_idx, (
         "set-in-review must appear between implement and review in fix-loop; "
         f"got order: {inner_ids}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# fix-loop — read-target-claude-md inserted before implement
+# ---------------------------------------------------------------------------
+
+
+def test_read_target_claude_md_is_first_in_fix_loop(
+    loaded_build: LoadedWorkflow,
+) -> None:
+    """read-target-claude-md must be the first step inside fix-loop."""
+    fix_loop = next(
+        s for s in loaded_build.workflow.steps if s.id == "fix-loop"
+    )
+    assert isinstance(fix_loop, LoopStep)
+    first_step = fix_loop.loop.steps[0]
+    assert first_step.id == "read-target-claude-md", (
+        f"Expected first inner step to be read-target-claude-md, got {first_step.id!r}"
+    )
+
+
+def test_read_target_claude_md_uses_repo_path_arg(
+    loaded_build: LoadedWorkflow,
+) -> None:
+    """read-target-claude-md must pass $inputs.repo_path as its argument."""
+    step = _get_loop_script_step(loaded_build, "read-target-claude-md")
+    assert "$inputs.repo_path" in step.args, (
+        "read-target-claude-md must pass $inputs.repo_path so it reads from the "
+        "target project root, not the harness root"
+    )
+
+
+def test_read_target_claude_md_writes_target_claude_md(
+    loaded_build: LoadedWorkflow,
+) -> None:
+    """read-target-claude-md must declare target_claude_md in writes."""
+    step = _get_loop_script_step(loaded_build, "read-target-claude-md")
+    write_fields = [w.field for w in step.writes]
+    assert "target_claude_md" in write_fields, (
+        "read-target-claude-md must write target_claude_md so it is available "
+        "to the implement and review prompts"
+    )
+
+
+def test_read_target_claude_md_falls_back_when_no_claude_md(
+    loaded_build: LoadedWorkflow,
+) -> None:
+    """read-target-claude-md command must not fail when CLAUDE.md is absent."""
+    step = _get_loop_script_step(loaded_build, "read-target-claude-md")
+    assert step.command is not None
+    # The 2>/dev/null || echo fallback makes the command always succeed.
+    assert "2>/dev/null" in step.command, (
+        "read-target-claude-md must suppress cat errors via 2>/dev/null"
+    )
+    assert "no CLAUDE.md found" in step.command or "echo" in step.command, (
+        "read-target-claude-md must produce a non-empty fallback output when "
+        "CLAUDE.md is absent"
     )
 
 

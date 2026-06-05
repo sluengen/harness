@@ -1,13 +1,18 @@
 {#
   implement-ticket.j2 — ticket-aware implementation prompt.
 
-  Ticket content is pre-fetched by the fetch-ticket step and available
-  in state. No external API calls needed.
+  Ticket content is pre-fetched by the fetch-ticket step and the target
+  project's CLAUDE.md is read by the read-target-claude-md step.
+  No external API calls needed inside this prompt.
 
-  Required state: ticket_title, ticket_description (written by fetch-ticket).
-  Required inputs: linear_id.
+  Required state: ticket_title, ticket_description (written by fetch-ticket);
+                  target_claude_md (written by read-target-claude-md);
+                  worktree_path (written by the worktree setup step).
+  Required inputs: linear_id, verify_command.
   submit_tool_name injected by the contract engine.
 #}
+Your working directory is `{{ state.worktree_path }}`. All file operations must happen inside it.
+
 {% if state.issues %}
 ## Previous review — issues to fix
 
@@ -31,10 +36,9 @@ Do not re-submit until every item above is addressed and verified.
 
 ## Step 1 — Implement
 
-Follow `skills/test-driven-development.md`:
-- Write failing tests first, then make them pass.
-- Keep the diff focused — no drive-by refactors or unrelated cleanup.
-- Write or update tests for every changed behaviour; run them and confirm they pass.
+Follow the conventions in the project's CLAUDE.md:
+
+{{ state.target_claude_md }}
 
 Before submitting, own the cleanup the reviewer would otherwise flag:
 - Update any spec or documentation that refers to code you just changed.
@@ -43,10 +47,10 @@ Before submitting, own the cleanup the reviewer would otherwise flag:
 
 ## Step 2 — Verify
 
-Run the full verification gate before submitting:
+Run the project's verification gate before submitting:
 
 ```bash
-{{ inputs.get('verify_command', 'bash scripts/verify.sh') }}
+{{ inputs.verify_command }}
 ```
 
 All commands must pass cleanly.
