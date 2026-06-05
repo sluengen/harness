@@ -297,6 +297,48 @@ def test_read_target_claude_md_falls_back_when_no_claude_md(
     )
 
 
+def test_read_target_claude_md_command_emits_valid_json(
+    loaded_build: LoadedWorkflow,
+    tmp_path: Path,
+) -> None:
+    """The command must emit valid JSON with a target_claude_md key when CLAUDE.md exists."""
+    if not shutil.which("jq"):
+        pytest.skip("jq not installed")
+    step = _get_loop_script_step(loaded_build, "read-target-claude-md")
+    assert step.command is not None
+    (tmp_path / "CLAUDE.md").write_text("# Project\n\nUse TDD.\n")
+    result = subprocess.run(
+        ["bash", "-c", step.command, "test", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"Command failed: {result.stderr}"
+    payload = json.loads(result.stdout)
+    assert "target_claude_md" in payload
+    assert "Use TDD." in payload["target_claude_md"]
+
+
+def test_read_target_claude_md_command_emits_valid_json_fallback(
+    loaded_build: LoadedWorkflow,
+    tmp_path: Path,
+) -> None:
+    """The command must emit valid JSON even when CLAUDE.md is absent."""
+    if not shutil.which("jq"):
+        pytest.skip("jq not installed")
+    step = _get_loop_script_step(loaded_build, "read-target-claude-md")
+    assert step.command is not None
+    # tmp_path has no CLAUDE.md — tests the fallback path
+    result = subprocess.run(
+        ["bash", "-c", step.command, "test", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"Command failed: {result.stderr}"
+    payload = json.loads(result.stdout)
+    assert "target_claude_md" in payload
+    assert payload["target_claude_md"]  # non-empty fallback message
+
+
 # ---------------------------------------------------------------------------
 # set-in-review — name-based state selection
 # ---------------------------------------------------------------------------
