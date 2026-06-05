@@ -496,137 +496,130 @@ async def test_event_sink_optional_no_error_when_absent() -> None:
 
 # ---------------------------------------------------------------------------
 # AC11 — NDJSON line parsing (_classify_real_line unit tests)
+# New codex exec --json event format (codex ≥ 0.137)
 # ---------------------------------------------------------------------------
 
 
-def _ndjson_function_call(
-    name: str,
-    call_id: str,
-    arguments: dict[str, Any],
-) -> str:
-    """Build a function_call NDJSON line (codex format)."""
-    return json.dumps(
-        {
-            "type": "function_call",
-            "id": call_id,
-            "function": {
-                "name": name,
-                "arguments": json.dumps(arguments),
-            },
-        }
-    )
+def _ndjson_item_completed_agent_message(text: str, item_id: str = "item_0") -> str:
+    """Build an item.completed / agent_message NDJSON line."""
+    return json.dumps({
+        "type": "item.completed",
+        "item": {"id": item_id, "type": "agent_message", "text": text},
+    })
 
 
-def _ndjson_function_call_output(
-    call_id: str,
+def _ndjson_item_started_command(command: str, item_id: str = "item_0") -> str:
+    """Build an item.started / command_execution NDJSON line."""
+    return json.dumps({
+        "type": "item.started",
+        "item": {
+            "id": item_id,
+            "type": "command_execution",
+            "command": command,
+            "aggregated_output": "",
+            "exit_code": None,
+            "status": "in_progress",
+        },
+    })
+
+
+def _ndjson_item_completed_command(
+    command: str,
     output: str = "OK",
-    exit_code: int | None = 0,
+    exit_code: int = 0,
+    item_id: str = "item_0",
 ) -> str:
-    """Build a function_call_output NDJSON line (codex format)."""
-    obj: dict[str, Any] = {
-        "type": "function_call_output",
-        "call_id": call_id,
-        "output": output,
-    }
-    if exit_code is not None:
-        obj["metadata"] = {"exit_code": exit_code}
-    return json.dumps(obj)
+    """Build an item.completed / command_execution NDJSON line."""
+    return json.dumps({
+        "type": "item.completed",
+        "item": {
+            "id": item_id,
+            "type": "command_execution",
+            "command": command,
+            "aggregated_output": output,
+            "exit_code": exit_code,
+            "status": "completed",
+        },
+    })
 
 
-def _ndjson_message(role: str, content: Any) -> str:
-    """Build a message NDJSON line (codex format)."""
+def _ndjson_turn_completed() -> str:
+    """Build a turn.completed NDJSON line."""
     return json.dumps(
-        {
-            "type": "message",
-            "role": role,
-            "content": content,
-        }
+        {"type": "turn.completed", "usage": {"input_tokens": 100, "output_tokens": 5}}
     )
 
 
-def test_classify_function_call_emits_tool_call() -> None:
-    """A function_call line with well-formed arguments JSON -> [tool_call]."""
-    line = _ndjson_function_call(
-        name="submit_node_id",
-        call_id="fc_abc",
-        arguments={"summary": "done"},
-    )
-    events = _classify_real_line(line)
-    assert len(events) == 1
-
-    tc = events[0]
-    assert tc["kind"] == "tool_call"
-    assert tc["name"] == "submit_node_id"
-    assert tc["tool_use_id"] == "fc_abc"
-    assert tc["input"] == {"summary": "done"}
-
-
-def test_classify_function_call_output_exit_code_0_not_error() -> None:
-    """A function_call_output with exit_code 0 -> [tool_result(is_error=False)]."""
-    line = _ndjson_function_call_output(call_id="fc_abc", output="result text", exit_code=0)
-    events = _classify_real_line(line)
-    assert len(events) == 1
-
-    tr = events[0]
-    assert tr["kind"] == "tool_result"
-    assert tr["tool_use_id"] == "fc_abc"
-    assert tr["content"] == "result text"
-    assert tr["is_error"] is False
-
-
-def test_classify_function_call_output_exit_code_nonzero_is_error() -> None:
-    """A function_call_output with exit_code != 0 -> [tool_result(is_error=True)]."""
-    line = _ndjson_function_call_output(call_id="fc_err", output="err msg", exit_code=1)
-    events = _classify_real_line(line)
-    assert len(events) == 1
-
-    tr = events[0]
-    assert tr["kind"] == "tool_result"
-    assert tr["tool_use_id"] == "fc_err"
-    assert tr["content"] == "err msg"
-    assert tr["is_error"] is True
-
-
-def test_classify_message_assistant_string_content_emits_text() -> None:
-    """A message event with role==assistant and string content -> [text]."""
-    line = _ndjson_message(role="assistant", content="I will now do the thing.")
+def test_classify_agent_message_emits_text() -> None:
+    """item.completed / agent_message with non-empty text -> [text]."""
+    line = _ndjson_item_completed_agent_message("I will now do the thing.")
     events = _classify_real_line(line)
     assert events == [{"kind": "text", "text": "I will now do the thing."}]
 
 
-def test_classify_message_non_assistant_role_is_ignored() -> None:
-    """A message event with a non-assistant role -> ignored."""
-    line = _ndjson_message(role="user", content="some user text")
+def test_classify_agent_message_empty_text_is_ignored() -> None:
+    """item.completed / agent_message with empty text -> [ignored]."""
+    line = _ndjson_item_completed_agent_message("")
     events = _classify_real_line(line)
     assert events == [{"kind": "ignored"}]
 
 
-def test_classify_function_call_malformed_arguments_is_ignored() -> None:
-    """A function_call with malformed arguments JSON string -> ignored."""
-    line = json.dumps(
-        {
-            "type": "function_call",
-            "id": "fc_bad",
-            "function": {
-                "name": "some_tool",
-                "arguments": "{not valid json",
-            },
-        }
+def test_classify_item_started_command_emits_tool_call() -> None:
+    """item.started / command_execution -> [tool_call] with name='shell'."""
+    line = _ndjson_item_started_command("/bin/zsh -lc 'ls'", item_id="item_0")
+    events = _classify_real_line(line)
+    assert len(events) == 1
+    tc = events[0]
+    assert tc["kind"] == "tool_call"
+    assert tc["name"] == "shell"
+    assert tc["tool_use_id"] == "item_0"
+    assert tc["input"] == {"command": "/bin/zsh -lc 'ls'"}
+
+
+def test_classify_item_completed_command_exit_0_not_error() -> None:
+    """item.completed / command_execution with exit_code 0 -> [tool_result(is_error=False)]."""
+    line = _ndjson_item_completed_command(
+        "/bin/zsh -lc 'ls'", output="file.py\n", exit_code=0, item_id="item_0"
     )
     events = _classify_real_line(line)
-    assert events == [{"kind": "ignored"}]
+    assert len(events) == 1
+    tr = events[0]
+    assert tr["kind"] == "tool_result"
+    assert tr["tool_use_id"] == "item_0"
+    assert tr["content"] == "file.py\n"
+    assert tr["is_error"] is False
 
 
-def test_classify_session_created_is_ignored() -> None:
-    """session_created events are ignored."""
-    line = json.dumps({"type": "session_created", "session_id": "sess_xyz"})
+def test_classify_item_completed_command_nonzero_exit_is_error() -> None:
+    """item.completed / command_execution with non-zero exit -> [tool_result(is_error=True)]."""
+    line = _ndjson_item_completed_command(
+        "/bin/zsh -lc 'false'", output="", exit_code=1, item_id="item_1"
+    )
+    events = _classify_real_line(line)
+    assert len(events) == 1
+    tr = events[0]
+    assert tr["kind"] == "tool_result"
+    assert tr["tool_use_id"] == "item_1"
+    assert tr["is_error"] is True
+
+
+def test_classify_turn_completed_emits_stop() -> None:
+    """turn.completed -> [stop]."""
+    line = _ndjson_turn_completed()
+    events = _classify_real_line(line)
+    assert events == [{"kind": "stop"}]
+
+
+def test_classify_thread_started_is_ignored() -> None:
+    """thread.started events are ignored."""
+    line = json.dumps({"type": "thread.started", "thread_id": "tid_xyz"})
     events = _classify_real_line(line)
     assert events == [{"kind": "ignored"}]
 
 
-def test_classify_session_stopped_is_ignored() -> None:
-    """session_stopped events are ignored."""
-    line = json.dumps({"type": "session_stopped", "session_id": "sess_xyz", "reason": "done"})
+def test_classify_turn_started_is_ignored() -> None:
+    """turn.started events are ignored."""
+    line = json.dumps({"type": "turn.started"})
     events = _classify_real_line(line)
     assert events == [{"kind": "ignored"}]
 
@@ -650,35 +643,12 @@ def test_classify_empty_line_is_ignored() -> None:
     assert events == [{"kind": "ignored"}]
 
 
-def test_classify_function_call_output_absent_metadata_defaults_not_error() -> None:
-    """A function_call_output with absent metadata -> [tool_result(is_error=False)]."""
-    line = json.dumps(
-        {
-            "type": "function_call_output",
-            "call_id": "fc_nometa",
-            "output": "some output",
-        }
-    )
-    events = _classify_real_line(line)
-    assert len(events) == 1
-
-    tr = events[0]
-    assert tr["kind"] == "tool_result"
-    assert tr["tool_use_id"] == "fc_nometa"
-    assert tr["content"] == "some output"
-    assert tr["is_error"] is False
-
-
-def test_classify_message_assistant_empty_string_is_ignored() -> None:
-    """A message event with assistant role and empty string content -> ignored."""
-    line = _ndjson_message(role="assistant", content="")
-    events = _classify_real_line(line)
-    assert events == [{"kind": "ignored"}]
-
-
-def test_classify_message_assistant_list_content_is_ignored() -> None:
-    """A message event with assistant role and list content -> ignored."""
-    line = _ndjson_message(role="assistant", content=[{"type": "text", "text": "hi"}])
+def test_classify_item_completed_unknown_item_type_is_ignored() -> None:
+    """item.completed with an unknown item.type -> [ignored]."""
+    line = json.dumps({
+        "type": "item.completed",
+        "item": {"id": "item_0", "type": "some_future_item_type"},
+    })
     events = _classify_real_line(line)
     assert events == [{"kind": "ignored"}]
 
@@ -689,18 +659,24 @@ def test_classify_message_assistant_list_content_is_ignored() -> None:
 
 
 def test_build_cmd_no_model_produces_base_flags() -> None:
-    """No model -> [\"codex\", \"--full-auto\", \"-q\"] with no --model flag."""
+    """No model -> codex exec --json ... --ephemeral - with no -m flag."""
     cmd = _build_cmd(model=None)
-    assert cmd == ["codex", "--full-auto", "-q"]
-    assert "--model" not in cmd
+    assert cmd[0] == "codex"
+    assert cmd[1] == "exec"
+    assert "--json" in cmd
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    assert "--ephemeral" in cmd
+    assert cmd[-1] == "-"
+    assert "-m" not in cmd
 
 
 def test_build_cmd_with_model_appends_model_flag() -> None:
-    """With model -> appends [\"--model\", <model_id>]."""
+    """With model -> appends [\"-m\", <model_id>] before the trailing dash."""
     cmd = _build_cmd(model="gpt-4o")
-    assert "--model" in cmd
-    model_idx = cmd.index("--model")
+    assert "-m" in cmd
+    model_idx = cmd.index("-m")
     assert cmd[model_idx + 1] == "gpt-4o"
+    assert cmd[-1] == "-"
 
 
 def test_build_cmd_always_starts_with_codex() -> None:
@@ -709,12 +685,12 @@ def test_build_cmd_always_starts_with_codex() -> None:
     assert cmd[0] == "codex"
 
 
-def test_build_cmd_always_includes_full_auto_and_quiet() -> None:
-    """``--full-auto`` and ``-q`` must always be present."""
+def test_build_cmd_always_includes_exec_and_json() -> None:
+    """``exec`` subcommand and ``--json`` flag must always be present."""
     for model in (None, "gpt-4o"):
         cmd = _build_cmd(model=model)
-        assert "--full-auto" in cmd
-        assert "-q" in cmd
+        assert "exec" in cmd
+        assert "--json" in cmd
 
 
 # ---------------------------------------------------------------------------
@@ -976,15 +952,16 @@ async def test_execute_augments_prompt_before_sending() -> None:
 def test_build_cmd_no_model_produces_base_flags_no_schema_param() -> None:
     """_build_cmd takes only model; SUBMIT_SCHEMA is no longer a parameter."""
     cmd = _build_cmd(model=None)
-    assert cmd == ["codex", "--full-auto", "-q"]
-    assert "--model" not in cmd
+    assert "exec" in cmd
+    assert "--json" in cmd
+    assert "-m" not in cmd
 
 
 def test_build_cmd_with_model_appends_model_flag_no_schema_param() -> None:
-    """_build_cmd(model=...) appends --model flag; no submit_tool_schema arg."""
+    """_build_cmd(model=...) appends -m flag; no submit_tool_schema arg."""
     cmd = _build_cmd(model="gpt-4o")
-    assert "--model" in cmd
-    model_idx = cmd.index("--model")
+    assert "-m" in cmd
+    model_idx = cmd.index("-m")
     assert cmd[model_idx + 1] == "gpt-4o"
 
 

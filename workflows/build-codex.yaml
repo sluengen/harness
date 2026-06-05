@@ -184,7 +184,7 @@ steps:
     type: script
     command: |
       git add -A >&2
-      git commit -m "$2" >&2
+      git commit --amend -m "$2" >&2
       git push -u origin "$1" >&2
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
     args: ["$state.worktree_branch", "$state.commit_message"]

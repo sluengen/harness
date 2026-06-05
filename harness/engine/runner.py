@@ -50,6 +50,7 @@ not via state fields.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import signal
@@ -893,6 +894,34 @@ class Runner:
             # Production callers inject ClaudeAgent; tests inject MockAgent.
             return self._agent
 
+        async def _checkpoint_worktree(worktree_path: Path, step_id: str) -> None:
+            """Commit any dirty worktree state so the work survives cleanup.
+
+            Called after every writes_files=True AI node. Creates a WIP commit
+            on the worktree branch; the final commit-and-push step amends it
+            with the reviewer's message. No-op when the worktree is clean.
+            """
+            status = await asyncio.create_subprocess_exec(
+                "git", "status", "--porcelain",
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await status.communicate()
+            if not stdout.strip():
+                return  # nothing to commit
+            for git_cmd in (
+                ["git", "add", "-A"],
+                ["git", "commit", "-m", f"wip: {step_id}"],
+            ):
+                proc = await asyncio.create_subprocess_exec(
+                    *git_cmd,
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await proc.wait()
+
         async def ai_adapter(
             step: Step, state: BaseState, ctx: Context
         ) -> NodeResult[Any]:
@@ -907,12 +936,15 @@ class Runner:
             override = ctx.contracts.get(step.id)
             step_agent = _resolve_step_agent(step.agent)
             ai_node = AINode(agent=step_agent, prompts_dir=prompts_dir)
-            return await ai_node.execute(
+            result = await ai_node.execute(
                 step=step,
                 state=state,
                 inputs=inputs,
                 contract_override=override,
             )
+            if step.writes_files and state.worktree_path is not None:
+                await _checkpoint_worktree(state.worktree_path, step.id)
+            return result
 
         async def script_adapter(
             step: Step, state: BaseState, ctx: Context
