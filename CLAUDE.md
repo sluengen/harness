@@ -26,7 +26,7 @@ and Linear webhook intake.
 | Loop blocks (`until:`, `until_bash:`) | ✅ Supported |
 | `$state.<field>` / `$inputs.<key>` substitution | ✅ Supported |
 | Linear webhook intake | ✅ Supported |
-| `CodexAgent` dispatch | ❌ Not supported in v1 |
+| `CodexAgent` dispatch | ✅ Supported for subprocess/text-submit workflows |
 | `OpencodeAgent` dispatch | ❌ Not supported in v1 |
 
 ## Tech stack
@@ -39,7 +39,7 @@ and Linear webhook intake.
 | CLI | Typer |
 | Templates | Jinja2 |
 | Workflows | YAML |
-| AI dispatch | `anthropic` SDK (Claude via `claude_agent_sdk`) |
+| AI dispatch | `anthropic` SDK (Claude via `claude_agent_sdk`); `codex` CLI for CodexAgent |
 | State + events | SQLite (via `aiosqlite`) |
 | Test / lint | pytest, ruff, mypy |
 

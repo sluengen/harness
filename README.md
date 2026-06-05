@@ -185,10 +185,10 @@ Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `c
 
 ### v1.5 (planned)
 
-- `CodexAgent` and `OpencodeAgent` production wiring (subprocess + tool injection)
+- `OpencodeAgent` production wiring (subprocess + tool injection)
 - AI node multi-turn improvements
 
-**Migration notes (v1.1 → v1.5):** `CodexAgent` and `OpencodeAgent` currently raise `RuntimeError` unless a `proc_fn=` is passed (test-only). Production wiring lands in v1.5. Workflows using only `ClaudeAgent` are unaffected.
+**Migration notes (v1.1 → v1.5):** `CodexAgent` is production-wired through the `codex` CLI and text-submit completion. `OpencodeAgent` still raises `RuntimeError` unless a `proc_fn=` is passed (test-only). Workflows using only `ClaudeAgent` are unaffected.
 
 ### v2 (planned)
 
