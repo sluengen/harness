@@ -4,8 +4,9 @@
   Evaluates the implementation against the originating Linear ticket.
   Reviewer also authors the commit message from what was actually built.
 
-  Required state: ticket_title, ticket_description (written by fetch-ticket).
-  Required inputs: linear_id.
+  Required state: ticket_title, ticket_description (written by fetch-ticket);
+                  target_claude_md (written by read-target-claude-md).
+  Required inputs: linear_id, verify_command.
   submit_tool_name injected by the contract engine.
 #}
 Review the implementation of Linear ticket {{ inputs.linear_id }} — **{{ state.ticket_title }}**.
@@ -14,9 +15,19 @@ Review the implementation of Linear ticket {{ inputs.linear_id }} — **{{ state
 
 {{ state.ticket_description }}
 
+## Project conventions
+
+The implementation must follow the conventions from the project's CLAUDE.md:
+
+{{ state.target_claude_md }}
+
 ## Review criteria
 
-Evaluate against: correctness relative to the acceptance criteria above, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Read the diff or relevant files, then identify issues.
+Evaluate against: correctness relative to the acceptance criteria above, adherence to
+the project conventions above, adequate test coverage, focused diff (no drive-by
+changes), no obvious regressions. Confirm that `{{ inputs.verify_command }}` passes
+(test failures or lint errors are FAIL). Read the diff or relevant files, then
+identify issues.
 
 Be concrete — point to file and line where possible. A clean review (no findings) is a valid result; do not invent issues to fill space.
 

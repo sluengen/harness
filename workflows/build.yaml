@@ -83,6 +83,15 @@ steps:
       on_exhaust: continue
       steps:
 
+        - id: read-target-claude-md
+          type: script
+          command: |
+            content=$(cat "$1/CLAUDE.md" 2>/dev/null || echo "(no CLAUDE.md found)") && jq -n --arg content "$content" '{"target_claude_md": $content}'
+          args: ["$inputs.repo_path"]
+          contract:
+            target_claude_md: string
+          writes: [target_claude_md]
+
         - id: implement
           type: ai
           agent: claude
