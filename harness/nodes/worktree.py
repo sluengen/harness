@@ -99,9 +99,9 @@ def _worktree_path_for(repo_root: Path, run_id: str) -> Path:
     return repo_root / ".worktrees" / "harness" / run_id
 
 
-def _branch_for(run_id: str) -> str:
+def _branch_for(run_id: str, prefix: str = "harness") -> str:
     """The canonical branch name for a given run id."""
-    return f"harness/{run_id}"
+    return f"{prefix}/{run_id}"
 
 
 class WorktreeNode:
@@ -122,6 +122,7 @@ class WorktreeNode:
         run_id: str,
         repo_root: Path,
         base: str,
+        branch_prefix: str = "harness",
     ) -> NodeResult[WorktreeCreateOutput]:
         """Create a worktree at ``<repo>/.worktrees/harness/<run_id>/`` from ``base``.
 
@@ -133,7 +134,7 @@ class WorktreeNode:
             * if ``git worktree add`` fails (e.g. unknown ``base``).
         """
         path = _worktree_path_for(repo_root, run_id)
-        branch = _branch_for(run_id)
+        branch = _branch_for(run_id, prefix=branch_prefix)
 
         if path.exists():
             raise WorktreeNodeError(

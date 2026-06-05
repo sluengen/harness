@@ -46,12 +46,10 @@ Before submitting, own the cleanup the reviewer would otherwise flag:
 Run the full verification gate before submitting:
 
 ```bash
-uv run ruff check .
-uv run mypy harness
-uv run pytest
+{{ inputs.get('verify_command', 'bash scripts/verify.sh') }}
 ```
 
-All three must be clean.
+All commands must pass cleanly.
 
 ## Step 3 — Submit
 

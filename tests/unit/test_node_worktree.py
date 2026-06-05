@@ -439,6 +439,27 @@ def test_ac16_node_type_is_worktree() -> None:
 
 
 # ---------------------------------------------------------------------------
+# branch_prefix parameter
+# ---------------------------------------------------------------------------
+
+
+async def test_create_branch_prefix_default(repo: Path) -> None:
+    """When branch_prefix is omitted, branch name starts with 'harness/'."""
+    node = WorktreeNode()
+    result = await node.create(run_id="run-x", repo_root=repo, base="main")
+    assert result.contract.worktree_branch == "harness/run-x"
+
+
+async def test_create_custom_branch_prefix(repo: Path) -> None:
+    """branch_prefix overrides the 'harness' prefix in the branch name."""
+    node = WorktreeNode()
+    result = await node.create(run_id="run-y", repo_root=repo, base="main", branch_prefix="slate")
+    assert result.contract.worktree_branch == "slate/run-y"
+    assert _branch_exists(repo, "slate/run-y")
+    assert not _branch_exists(repo, "harness/run-y")
+
+
+# ---------------------------------------------------------------------------
 # Index sync after merge_to_base — AC17
 # ---------------------------------------------------------------------------
 
