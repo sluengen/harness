@@ -40,6 +40,5 @@ venv/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# Agent tooling (generated per-machine, non-portable)
-/.codex/
-/.gemini/
+# .codex/ and .gemini/ are committed like .claude/ in this committed-mode repo.
+# Ignore only genuinely per-machine bits if any appear (e.g. an absolute-path hook config).
