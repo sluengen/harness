@@ -327,7 +327,7 @@ Hermes should not parse raw event logs to determine run state. The `harness stat
 | `completed_at` | ISO 8601? | `runs.completed_at` |
 | `duration_ms` | integer? | `runs.duration_ms` |
 | `exit_code` | integer? | `runs.exit_code` |
-| `failure_reason` | string? | latest `node_failed.data.reason` |
+| `failure_reason` | string? | `data.reason` from the latest `workflow_failed` event |
 | `failure_retryable` | bool? | derived from `failure_reason` |
 | `artifact_paths` | object? | from `runs.state_json` key fields |
 | `agent_session_ids` | list[str]? | from `tool_called` events |
