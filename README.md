@@ -122,7 +122,7 @@ Or use the `/build-workflow` slash command (Claude Code) — the agent reads `AU
 
 ```
 harness/
-├── agents/             ← agent role definitions (python-dev, reviewer)
+├── agents/             ← agent role definitions (dev, reviewer, architect, stewards)
 ├── skills/             ← reusable skills (TDD, scope discipline, workflow authoring)
 ├── commands/           ← user-invocable slash commands (start, build-workflow)
 ├── workflows/          ← workflow YAML files

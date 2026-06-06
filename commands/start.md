@@ -1,90 +1,29 @@
-# Start Task
+<!-- guidance:start@0.1.1 -->
+# /start — begin work on a ticket
 
-Trigger the build workflow for a Linear issue. The harness handles everything — worktree, implementation, review, commit, push.
+Usage: `/start <TICKET-ID>`
 
-## Usage
+Sets up an isolated workspace for a tracked ticket and drives it test-first through to a review-ready state. Implements the `spec-driven-development` flow.
 
-- `/start <ISSUE-ID>` — run the build workflow for the given Linear issue
-- `/start <ISSUE-ID> --repo PATH` — run the build workflow targeting a different repo
+## Steps
 
-### Cross-repo usage
+### 1. Open the ticket
+Fetch the ticket and print a brief (title, id, state, link). The invocation is repo-specific — see `CONTEXT.md` and the `linear-sync` skill. If the ticket is already Done, or names unmet dependencies, stop and report.
 
-```bash
-/start SLT-42 --repo /path/to/slate
-```
+### 2. Mark it In Progress
+Move the ticket to In Progress so the board reflects reality.
 
-The harness runs from its own directory; `--repo` points it at the target codebase. Combine with `--verify-command` to override the verification gate and `--branch-prefix` to control branch naming in the target repo.
+### 3. Branch and isolate
+Create a feature branch off the repo's integration branch (named in `CONTEXT.md`) and a worktree for it (`worktree-isolation`). All work happens here, never on the default branch.
 
-## Prerequisites
+### 4. Write or confirm the change spec
+Draft the change spec into the Linear issue following `spec-authoring` (`templates/change.md`): problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope. Keep it short; depth scales with size. Confirm it with the user if the scope is non-obvious. If the work turns out to be unconfirmed or too big for one change, stop and `/propose` it instead.
 
-Before running any commands, load the project environment:
+### 5. Build
+Dispatch the `dev` agent (or build directly) following `test-driven-development` and `code-quality`. One acceptance criterion at a time: RED, GREEN, REFACTOR.
 
-```bash
-source .env
-```
+### 6. Verify and stop at review-ready
+Run the repo's lint / type / test gate (`CONTEXT.md`), read the output, and confirm the change spec still matches what was built. Then hand to `/review`.
 
-`LINEAR_API_KEY` and other credentials live in `.env` at the repo root (gitignored). If the file is missing, create it:
-
-```bash
-# .env
-LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API → Personal API keys
-```
-
-> **No Linear CLI is installed.** All Linear interaction in this project goes through the GraphQL API directly — `curl` in shell scripts, `urllib.request` in Python. Do not search for a `linear` binary or attempt `npx linear`.
-
-`harness` is not installed globally in development — invoke it via `uv run` from the repo root:
-
-```bash
-# dev invocation pattern (used throughout these instructions)
-source .env && PYTHONPATH=. uv run harness <args>
-```
-
-## Instructions
-
-### Step 1 — Fetch the ticket
-
-```bash
-source .env && curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"<ISSUE-ID>\"){identifier title description state{name} labels{nodes{name}} url}}"}'
-```
-
-Print a brief for the user:
-
-```
-Task:   <title>
-Linear: <ISSUE-ID>
-URL:    <url>
-State:  <current state>
-```
-
-If the issue is already Done or has unresolved dependencies listed in the description, stop and report.
-
-### Step 2 — Run the build workflow
-
-```bash
-source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID>
-```
-
-When `--repo`, `--verify-command`, or `--branch-prefix` were supplied to `/start`, pass them through:
-
-```bash
-source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID> \
-  [--repo /path/to/target-repo] \
-  [--verify-command "bash scripts/verify.sh"] \
-  [--branch-prefix "feature/"]
-```
-
-The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.
-
-### Step 3 — Report the outcome
-
-Check the run result:
-
-```bash
-source .env && PYTHONPATH=. uv run harness status <run-id>
-source .env && PYTHONPATH=. uv run harness logs   <run-id>
-```
-
-Report whether the run completed, was cancelled by the gate (review FAIL), or failed with an error. Surface the reviewer's findings if the gate fired.
+## Pause conditions
+Stop and ask only when information is genuinely missing (`spec-driven-development` § blocked). Otherwise run through to review-ready without prompting at every step.

@@ -28,5 +28,30 @@
       "Bash(rm -rf ~)",
       "Bash(rm -rf $HOME*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/prompt-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/workflow-guard.js" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/guidance-freshness.js" }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/context-monitor.js" }
+        ]
+      }
+    ]
   }
 }
