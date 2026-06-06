@@ -17,7 +17,7 @@ harness run <workflow> [--base <branch>] [--quiet] [--workflows-dir <dir>] [<wor
 harness cancel <run-id>   [--json] [--db <path>]
 harness status <run-id>   [--json] [--db <path>]
 harness logs <run-id>     [--follow] [--node <id>] [--db <path>]
-harness events <run-id>   [--type <event_type>] [--json] [--db <path>]
+harness events <run-id>   [--type <event_type>] [--after-id <integer>] [--json] [--db <path>]
 harness validate <workflow.yaml>
 harness version
 harness worktrees list    [--json] [--repo-root <path>]
@@ -79,7 +79,17 @@ Reads the `runs` row for `run_id` from `.harness/harness.db`. Exits 2 if the run
 
 Default (human) output: `run_id`, `workflow_name`, `workflow_version`, `status`, `started_at`, `completed_at`, `exit_code` as key-value pairs.
 
-`--json` output: full row as a single JSON object. `state_json` and `inputs_json` are parsed and re-emitted as `state` and `inputs` (parsed objects, not strings).
+`--json` output: full row as a single JSON object. `state_json` and `inputs_json` are parsed and re-emitted as `state` and `inputs` (parsed objects, not strings). The following enriched fields are included for Hermes consumption (see `specs/hermes-orchestration.md` §Observability requirements):
+
+| Field | Type | Source |
+|---|---|---|
+| `current_node` | `string?` | `node_id` from the latest `node_started` event |
+| `failure_reason` | `string?` | `data.reason` from the latest `workflow_failed` event |
+| `failure_retryable` | `bool?` | derived from `failure_reason`; `null` if no failure |
+| `artifact_paths` | `object?` | non-null artifact fields from `state` (`worktree_path`, `worktree_branch`, `pr_url`, `report_path`) |
+| `agent_session_ids` | `list[str]?` | unique `session_id` values from `tool_called` event data |
+
+`failure_retryable` derivation: `false` for `ContractViolation*`, `loop_exhausted`, `cancelled`, `rejected`; `true` for all other reasons (transient errors).
 
 ---
 
@@ -94,6 +104,8 @@ Prints a compact timeline of events for a run: `<timestamp> <event_type> [node=<
 ## `harness events`
 
 Same event fetcher as `logs` but without `--follow`. `--type <event_type>` filters to a single event type. `--json` emits one JSON object per event, one per line (useful for `jq` piping).
+
+`--after-id <integer>` returns only events with `id > <integer>`. This enables efficient incremental polling: callers store the last-seen event `id` and pass it on the next call to receive only new events, without re-reading the full event log. Default is `0` (all events).
 
 ---
 
