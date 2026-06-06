@@ -1,6 +1,6 @@
 """CodexAgent — subprocess adapter wrapping the ``codex`` CLI (SPEC §4.7).
 
-Implements the ``Agent`` protocol by running ``codex --full-auto -q``
+Implements the ``Agent`` protocol by running ``codex exec --json``
 as a managed subprocess and parsing its NDJSON output stream. Primary use is
 OpenAI's agentic coding tool (github.com/openai/codex) — codex is OpenAI-native
 so there is no ``provider`` concept; pass ``model`` to select a specific
@@ -8,7 +8,8 @@ OpenAI model.
 
 Responsibilities:
 
-1. Build and launch ``codex --full-auto -q [--model <model_id>]`` with the
+1. Build and launch ``codex exec --json --dangerously-bypass-approvals-and-sandbox
+   --ephemeral [-m <model_id>] -`` with the
    prompt delivered via stdin (augmented with SUBMIT instructions for agents
    that don't support native tool injection).
 2. Parse the NDJSON stream line-by-line using ``_classify_real_line``, which
@@ -86,6 +87,7 @@ async def _default_proc_fn(
         stderr=asyncio.subprocess.DEVNULL,
         env=env,
         cwd=cwd,
+        limit=8 * 1024 * 1024,  # 8 MB — codex can emit large lines (file reads, diffs)
     )
     if process.stdin is None:  # pragma: no cover
         raise RuntimeError("subprocess stdin pipe was not created")
@@ -105,20 +107,19 @@ async def _default_proc_fn(
 
 
 def _classify_real_line(line: str) -> list[dict[str, Any]]:
-    """Parse one NDJSON line from ``codex --full-auto -q`` into
+    """Parse one NDJSON line from ``codex exec --json`` into
     zero or more adapter-dialect dicts.
 
-    Mapping:
-    - ``function_call`` with well-formed ``arguments`` JSON string ->
-      ``[tool_call]``
-    - ``function_call`` with malformed ``arguments`` -> ``[ignored]``
-    - ``function_call_output`` -> ``[tool_result]``; ``is_error`` is True when
-      ``metadata.exit_code != 0``; absent ``metadata`` defaults to not an error
-    - ``message`` with ``role == "assistant"`` and non-empty string ``content`` ->
-      ``[{"kind": "text", "text": ...}]``
-    - ``message`` with non-assistant role, list content, or empty content ->
-      ``[ignored]``
-    - ``session_created``, ``session_stopped``, unknown types -> ``[ignored]``
+    Mapping (codex exec --json event format):
+    - ``item.completed`` with ``item.type == "agent_message"`` and non-empty
+      ``item.text`` -> ``[{"kind": "text", "text": ...}]``
+    - ``item.started`` with ``item.type == "command_execution"`` ->
+      ``[{"kind": "tool_call", "name": "shell", ...}]``
+    - ``item.completed`` with ``item.type == "command_execution"`` ->
+      ``[{"kind": "tool_result", ...}]``; ``is_error`` is True when
+      ``item.exit_code`` is non-zero
+    - ``turn.completed`` -> ``[{"kind": "stop"}]``
+    - ``thread.started``, ``turn.started``, unknown types -> ``[ignored]``
     - Malformed or empty JSON -> ``[ignored]``
     """
     stripped = line.strip()
@@ -132,47 +133,50 @@ def _classify_real_line(line: str) -> list[dict[str, Any]]:
 
     event_type = obj.get("type")
 
-    if event_type == "function_call":
-        call_id: str = obj.get("id", "")
-        function: dict[str, Any] = obj.get("function", {})
-        name: str = function.get("name", "")
-        raw_args: str = function.get("arguments", "{}")
-        try:
-            input_args: dict[str, Any] = json.loads(raw_args)
-        except json.JSONDecodeError:
+    if event_type == "item.completed":
+        item: dict[str, Any] = obj.get("item", {})
+        item_type = item.get("type")
+        item_id: str = item.get("id", "")
+
+        if item_type == "agent_message":
+            text: str = item.get("text", "")
+            if text:
+                return [{"kind": "text", "text": text}]
             return [{"kind": "ignored"}]
 
-        tool_call: dict[str, Any] = {
-            "kind": "tool_call",
-            "name": name,
-            "tool_use_id": call_id,
-            "input": input_args,
-        }
-        return [tool_call]
+        if item_type == "command_execution":
+            output: str = item.get("aggregated_output", "")
+            exit_code = item.get("exit_code")
+            is_error: bool = exit_code is not None and exit_code != 0
+            return [{
+                "kind": "tool_result",
+                "tool_use_id": item_id,
+                "content": output,
+                "is_error": is_error,
+            }]
 
-    if event_type == "function_call_output":
-        call_id_out: str = obj.get("call_id", "")
-        output: str = obj.get("output", "")
-        metadata: dict[str, Any] = obj.get("metadata") or {}
-        exit_code = metadata.get("exit_code")
-        is_error: bool = exit_code is not None and exit_code != 0
-
-        tool_result: dict[str, Any] = {
-            "kind": "tool_result",
-            "tool_use_id": call_id_out,
-            "content": output,
-            "is_error": is_error,
-        }
-        return [tool_result]
-
-    if event_type == "message":
-        role: str = obj.get("role", "")
-        content = obj.get("content", "")
-        if role == "assistant" and isinstance(content, str) and content:
-            return [{"kind": "text", "text": content}]
         return [{"kind": "ignored"}]
 
-    # session_created, session_stopped, and all unknown types.
+    if event_type == "item.started":
+        item_s: dict[str, Any] = obj.get("item", {})
+        item_s_type = item_s.get("type")
+        item_s_id: str = item_s.get("id", "")
+
+        if item_s_type == "command_execution":
+            command: str = item_s.get("command", "")
+            return [{
+                "kind": "tool_call",
+                "name": "shell",
+                "tool_use_id": item_s_id,
+                "input": {"command": command},
+            }]
+
+        return [{"kind": "ignored"}]
+
+    if event_type == "turn.completed":
+        return [{"kind": "stop"}]
+
+    # thread.started, turn.started, and all unknown types.
     return [{"kind": "ignored"}]
 
 
@@ -257,17 +261,23 @@ def _extract_submit_from_text(text: str) -> dict[str, Any] | None:
 
 
 def _build_cmd(model: str | None) -> list[str]:
-    """Build the ``codex`` invocation.
+    """Build the ``codex exec`` invocation.
 
     Model flag logic:
-    - ``model`` set: ``--model <model_id>``
-    - ``model`` not set: no ``--model`` flag
+    - ``model`` set: ``-m <model_id>``
+    - ``model`` not set: no ``-m`` flag
     """
-    cmd: list[str] = ["codex", "--full-auto", "-q"]
+    cmd: list[str] = [
+        "codex", "exec",
+        "--json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--ephemeral",
+    ]
 
     if model is not None:
-        cmd.extend(["--model", model])
+        cmd.extend(["-m", model])
 
+    cmd.append("-")  # read prompt from stdin
     return cmd
 
 

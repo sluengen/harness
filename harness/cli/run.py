@@ -35,9 +35,10 @@ _DEFAULT_WORKFLOWS_DIR = Path("workflows")
 # kwarg name from the second non-dashed entry in a parameter's decl list,
 # so this string lands as the dict key for ``--base``.
 _BASE_BRANCH_KW = "_base_branch__"
+_REPO_ROOT_KW = "_repo_root__"
 
 
-def _build_runner(*, quiet: bool = False) -> Runner:
+def _build_runner(*, quiet: bool = False, repo_root: Path | None = None) -> Runner:
     """Construct the default :class:`Runner`.
 
     Lives at module scope so tests can monkeypatch it with a spy that
@@ -46,10 +47,15 @@ def _build_runner(*, quiet: bool = False) -> Runner:
 
     Args:
         quiet: When ``True``, suppress progress output to stderr.
+        repo_root: When provided, passed to Runner as the filesystem root
+            for git worktree operations.
     """
     from harness.dispatch.claude import ClaudeAgent
 
-    return Runner(agent=ClaudeAgent(), progress=not quiet)
+    kwargs: dict[str, Any] = {"agent": ClaudeAgent(), "progress": not quiet}
+    if repo_root is not None:
+        kwargs["repo_root"] = repo_root
+    return Runner(**kwargs)
 
 
 def run_command(
@@ -173,8 +179,20 @@ def _build_dynamic_command(
         )
     )
 
+    # Reserved --repo flag. When provided, sets repo_root on the Runner so
+    # worktree operations target the given directory instead of CWD.
+    params.append(
+        click.Option(
+            ["--repo", _REPO_ROOT_KW],
+            type=click.Path(path_type=Path),
+            default=None,
+            help="Filesystem root for git worktree operations. Defaults to the current directory.",
+        )
+    )
+
     def callback(**kw: Any) -> int:
         base_branch: str = kw.pop(_BASE_BRANCH_KW)
+        repo_root: Path | None = kw.pop(_REPO_ROOT_KW)
         for input_name, pattern in pattern_checks.items():
             value = kw.get(input_name)
             if value is None:
@@ -189,7 +207,7 @@ def _build_dynamic_command(
 
         inputs: dict[str, Any] = {k: v for k, v in kw.items() if v is not None}
 
-        runner = _build_runner(quiet=quiet)
+        runner = _build_runner(quiet=quiet, repo_root=repo_root)
         exit_code = asyncio.run(
             runner.run(workflow_path, inputs, base_branch=base_branch)
         )

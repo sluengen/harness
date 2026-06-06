@@ -736,3 +736,55 @@ def test_no_quiet_flag_passes_quiet_false_to_build_runner(
     )
     assert result.exit_code == 0, result.output
     assert captured_kw.get("quiet") is False
+
+
+# ---------------------------------------------------------------------------
+# --repo flag
+# ---------------------------------------------------------------------------
+
+
+def test_repo_flag_passes_repo_root_to_runner(
+    tmp_path: Path,
+    cli: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--repo PATH sets repo_root on the Runner passed to _build_runner."""
+    build_runner_kwargs: dict[str, Any] = {}
+    spy = _RunnerSpy(exit_code=0)
+
+    def fake_build_runner(**kw: Any) -> _RunnerSpy:
+        build_runner_kwargs.update(kw)
+        return spy
+
+    monkeypatch.setattr(cli_module, "_build_runner", fake_build_runner)
+
+    _minimal_workflow(tmp_path)
+    result = cli.invoke(
+        app,
+        ["run", "demo", "--workflows-dir", str(tmp_path), "--repo", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert build_runner_kwargs.get("repo_root") == tmp_path
+
+
+def test_repo_flag_absent_passes_none_repo_root(
+    tmp_path: Path,
+    cli: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --repo, repo_root is not set (None) in _build_runner."""
+    build_runner_kwargs: dict[str, Any] = {}
+    spy = _RunnerSpy(exit_code=0)
+
+    def fake_build_runner(**kw: Any) -> _RunnerSpy:
+        build_runner_kwargs.update(kw)
+        return spy
+
+    monkeypatch.setattr(cli_module, "_build_runner", fake_build_runner)
+
+    _minimal_workflow(tmp_path)
+    cli.invoke(
+        app,
+        ["run", "demo", "--workflows-dir", str(tmp_path)],
+    )
+    assert build_runner_kwargs.get("repo_root") is None

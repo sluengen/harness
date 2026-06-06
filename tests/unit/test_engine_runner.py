@@ -18,6 +18,7 @@ Each test maps to one acceptance criterion in the H-022 brief.
 from __future__ import annotations
 
 import json
+import subprocess as _subprocess
 import textwrap
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -1481,3 +1482,229 @@ async def test_per_node_agent_routing_claude_step_uses_claude_override(tmp_path:
     exit_code = await runner.run(wf, inputs={}, base_branch="main")
     assert exit_code == 0
     assert agents_called == ["claude"]
+
+
+# ---------------------------------------------------------------------------
+# branch_prefix wiring through runner inputs
+# ---------------------------------------------------------------------------
+
+
+def _git_cmd(repo: Path, *args: str) -> str:
+    """Synchronous git for test helpers."""
+    return _subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+
+def _make_git_repo(path: Path, branch: str = "main") -> Path:
+    """Create a minimal git repo with one commit at path."""
+    path.mkdir(parents=True, exist_ok=True)
+    _kw: dict[str, Any] = {"cwd": path, "check": True, "capture_output": True}
+    _subprocess.run(["git", "init", "-b", branch], **_kw)
+    _subprocess.run(["git", "config", "user.email", "test@example.com"], **_kw)
+    _subprocess.run(["git", "config", "user.name", "Test"], **_kw)
+    (path / "README.md").write_text("hello\n")
+    _subprocess.run(["git", "add", "README.md"], **_kw)
+    _subprocess.run(["git", "commit", "-m", "initial"], **_kw)
+    return path
+
+
+def _worktree_workflow(tmp_path: Path, *, branch_prefix: str | None = None) -> Path:
+    """A workflow that creates then cleans up a worktree.
+
+    If branch_prefix is given it is placed in the inputs block so the runner
+    can resolve it from $inputs.branch_prefix.
+    """
+    path = tmp_path / "wt_workflow.yaml"
+    if branch_prefix is not None:
+        body = textwrap.dedent(f"""\
+            name: wt-workflow
+            version: 1
+            inputs:
+              branch_prefix:
+                type: string
+                default: "{branch_prefix}"
+                required: false
+            steps:
+              - id: create
+                type: worktree
+                action: create
+                base: main
+                writes: [worktree_path, worktree_branch]
+              - id: teardown
+                type: worktree
+                action: cleanup
+                policy: delete_unconditionally
+        """)
+    else:
+        body = textwrap.dedent("""\
+            name: wt-workflow
+            version: 1
+            steps:
+              - id: create
+                type: worktree
+                action: create
+                base: main
+                writes: [worktree_path, worktree_branch]
+              - id: teardown
+                type: worktree
+                action: cleanup
+                policy: delete_unconditionally
+        """)
+    path.write_text(body)
+    return path
+
+
+@pytest.mark.slow
+async def test_runner_branch_prefix_wired_from_inputs(tmp_path: Path) -> None:
+    """When the workflow inputs include branch_prefix, the worktree branch
+    uses that prefix instead of 'harness'."""
+    repo = _make_git_repo(tmp_path / "repo")
+    db = tmp_path / "harness.db"
+    wf = _worktree_workflow(tmp_path, branch_prefix="myprefix")
+
+    runner = Runner(db_path=db, repo_root=repo, progress=False)
+    exit_code = await runner.run(wf, inputs={"branch_prefix": "myprefix"}, base_branch="main")
+    assert exit_code == 0
+
+    # After cleanup the worktree dir should be gone; verify run completed
+    row = await _fetch_single_run(db)
+    assert row["status"] == "completed"
+    # The branch was named myprefix/<run_id> and then deleted by delete_unconditionally
+    # We verify indirectly: if branch_prefix was ignored the default "harness" name would
+    # appear in state.worktree_branch; we check it starts with "myprefix/"
+    state = json.loads(row["state_json"])
+    assert state["worktree_branch"].startswith("myprefix/")
+
+
+@pytest.mark.slow
+async def test_runner_default_branch_prefix_is_harness(tmp_path: Path) -> None:
+    """Without branch_prefix in inputs, the worktree branch starts with 'harness/'."""
+    repo = _make_git_repo(tmp_path / "repo")
+    db = tmp_path / "harness.db"
+    wf = _worktree_workflow(tmp_path)
+
+    runner = Runner(db_path=db, repo_root=repo, progress=False)
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    assert row["status"] == "completed"
+    state = json.loads(row["state_json"])
+    assert state["worktree_branch"].startswith("harness/")
+
+
+@pytest.mark.slow
+async def test_runner_cross_repo_worktree_created_in_other_repo(tmp_path: Path) -> None:
+    """Runner(repo_root=other_repo) creates the worktree inside other_repo,
+    not in the current working directory."""
+    other_repo = _make_git_repo(tmp_path / "other_repo")
+    db = tmp_path / "harness.db"
+    wf = _worktree_workflow(tmp_path)
+
+    runner = Runner(db_path=db, repo_root=other_repo, progress=False)
+    exit_code = await runner.run(wf, inputs={}, base_branch="main")
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    state = json.loads(row["state_json"])
+    # The worktree_path stored in state should be under other_repo, not cwd
+    worktree_path_str: str = state["worktree_path"] or ""
+    assert worktree_path_str.startswith(str(other_repo))
+    # Confirm no .worktrees/ dir leaked into cwd (current dir is tmp_path)
+    assert not (tmp_path / ".worktrees").exists()
+
+
+@pytest.mark.slow
+async def test_runner_repo_path_input_wires_to_worktree(tmp_path: Path) -> None:
+    """inputs['repo_path'] sets the worktree root when no explicit repo_root
+    is given at Runner construction time."""
+    other_repo = _make_git_repo(tmp_path / "other_repo")
+    db = tmp_path / "harness.db"
+    wf = _worktree_workflow(tmp_path)
+
+    # Default Runner (repo_root=Path(".")) — repo_path from inputs should win.
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(
+        wf, inputs={"repo_path": str(other_repo)}, base_branch="main"
+    )
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    state = json.loads(row["state_json"])
+    worktree_path_str: str = state["worktree_path"] or ""
+    assert worktree_path_str.startswith(str(other_repo))
+
+
+@pytest.mark.slow
+async def test_runner_cli_repo_root_takes_precedence_over_repo_path_input(
+    tmp_path: Path,
+) -> None:
+    """CLI --repo (Runner.repo_root) wins over inputs['repo_path'] when both
+    are provided."""
+    cli_repo = _make_git_repo(tmp_path / "cli_repo")
+    input_repo = _make_git_repo(tmp_path / "input_repo")
+    db = tmp_path / "harness.db"
+    wf = _worktree_workflow(tmp_path)
+
+    runner = Runner(db_path=db, repo_root=cli_repo, progress=False)
+    exit_code = await runner.run(
+        wf, inputs={"repo_path": str(input_repo)}, base_branch="main"
+    )
+    assert exit_code == 0
+
+    row = await _fetch_single_run(db)
+    state = json.loads(row["state_json"])
+    worktree_path_str: str = state["worktree_path"] or ""
+    # CLI-provided repo_root wins; worktree should be inside cli_repo
+    assert worktree_path_str.startswith(str(cli_repo))
+
+
+@pytest.mark.slow
+async def test_runner_repo_path_input_wires_to_script_cwd_dot(tmp_path: Path) -> None:
+    """When inputs['repo_path'] is set and no explicit repo_root is given,
+    script steps with cwd='.' must run inside repo_path, not the harness CWD.
+
+    This mirrors the worktree adapter's repo_path_input override and ensures
+    main-repository git operations (attempt-merge, push-base) target the
+    correct directory in cross-repo workflows that use --repo-path.
+    """
+    other_repo = _make_git_repo(tmp_path / "other_repo")
+    db = tmp_path / "harness.db"
+
+    # Minimal workflow: one script step with cwd="." that writes its CWD
+    # to state so we can assert it's the repo_path, not the harness dir.
+    wf_path = tmp_path / "cwd_test.yaml"
+    wf_path.write_text(textwrap.dedent("""\
+        name: cwd-test
+        version: 1
+        inputs:
+          repo_path:
+            type: string
+            default: "."
+            required: false
+        steps:
+          - id: check-cwd
+            type: script
+            cwd: "."
+            command: |
+              printf '{"cwd_result": "%s"}' "$(pwd)"
+            contract:
+              cwd_result: string
+            writes: [cwd_result]
+    """))
+
+    # Default Runner (repo_root=Path(".")) — repo_path from inputs should win.
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(
+        wf_path,
+        inputs={"repo_path": str(other_repo)},
+        base_branch="main",
+    )
+    assert exit_code == 0, f"Expected exit_code=0, got {exit_code}"
+
+    row = await _fetch_single_run(db)
+    state = json.loads(row["state_json"])
+    cwd_result: str = state.get("cwd_result") or ""
+    assert Path(cwd_result).resolve() == other_repo.resolve(), (
+        f"Script with cwd='.' and repo_path='{other_repo}' should run in "
+        f"other_repo, but ran in {cwd_result!r}"
+    )

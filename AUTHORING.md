@@ -557,6 +557,17 @@ harness logs <run-id> [--follow]    # tail the log
 harness events <run-id> [--type tool_called]   # filter events
 ```
 
+### Build workflow inputs
+
+The `build` workflow (used by `/start`) accepts two additional inputs for cross-repo execution:
+
+| Input | Flag | Purpose |
+|---|---|---|
+| `verify_command` | `--verify-command` | Shell command to use as the verification gate inside the target repo's worktree. Defaults to `bash scripts/verify.sh`. |
+| `branch_prefix` | `--branch-prefix` | Prefix for feature branches created in the target repo (e.g. `feature/` → `feature/SLT-42-title`). Defaults to no prefix. |
+
+These are only needed when `--repo` targets a repo other than the harness itself. See `CLAUDE.md` §Cross-repo execution for the full invocation pattern.
+
 ---
 
 ## 9. Validating a workflow
@@ -596,7 +607,7 @@ Real ones, in roughly the order people hit them:
 | Inline contract for a list of objects written as `list[object]` | YAML syntax is `type: list` + `of: { field: type, ... }`. See §3 example 2. |
 | AI step has `prompt:` pointing at a file that doesn't exist | The loader resolves prompt paths relative to the workflow file's directory. Check the path or move the prompt. |
 | Forgot to fill in `template_vars` that a standard prompt requires | Read the `.j2` file's header comment — required vars are listed. `analyze.j2` needs `task`, `summarize.j2` needs `subject`, etc. |
-| Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `skills/verification-before-completion.md`. |
+| Bash output silently empty during local verification | The Claude Code Bash tool sometimes auto-backgrounds long-running commands. Redirect to `/tmp/<file>.txt` and `tail`. See `CONTEXT.md` (Gotchas). |
 | Want "do X on PASS, Y on FAIL" branching from a single `check` | The grammar has no multi-branch routing. `check.on_fail:` is single-direction (`cancel`/`continue`/`retry_loop:<id>`). Canonical workaround: gate with `on_fail: cancel`, put only the success-path cleanup downstream; the workflow halts before cleanup on failure. For richer branching, split into two workflows. |
 | Worktree left on disk after `on_fail: cancel` | When a workflow cancels, any `worktree.cleanup` step downstream of the cancel point never runs. Run `harness worktrees cleanup` periodically to remove stale worktrees, or add a dedicated cleanup step before the gate if immediate cleanup is needed on the failure path. |
 

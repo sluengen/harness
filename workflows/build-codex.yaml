@@ -2,10 +2,10 @@ name: build-codex
 version: 3
 description: >
   General-purpose build workflow for harness dog-fooding. Sets the Linear
-  ticket in-progress, fetches ticket content, implements changes in an
-  isolated worktree, runs a review loop (up to 3 iterations) to catch
-  fixable issues before shipping, commits and pushes on PASS or DEFER,
-  tears down locally, then marks the task done.
+  ticket in-progress, fetches ticket content, reads the target project's
+  CLAUDE.md, implements changes in an isolated worktree, runs a review loop
+  (up to 3 iterations) to catch fixable issues before shipping, commits and
+  merges to base on PASS or DEFER, tears down locally, then marks the task done.
 
   Identical to build.yaml except the review step uses agent: codex.
 
@@ -19,6 +19,21 @@ inputs:
     type: string
     default: dev
     flag: --base-branch
+  repo_path:
+    type: string
+    required: false
+    default: "."
+    flag: --repo-path
+  verify_command:
+    type: string
+    required: false
+    default: "bash scripts/verify.sh"
+    flag: --verify-command
+  branch_prefix:
+    type: string
+    required: false
+    default: "harness"
+    flag: --branch-prefix
 
 steps:
   - id: setup
@@ -62,6 +77,15 @@ steps:
       ticket_description: string
     writes: [ticket_title, ticket_description]
 
+  - id: read-target-claude-md
+    type: script
+    command: |
+      content=$(cat "$1/CLAUDE.md" 2>/dev/null || echo "(no CLAUDE.md found)") && jq -n --arg content "$content" '{"target_claude_md": $content}'
+    args: ["$inputs.repo_path"]
+    contract:
+      target_claude_md: string
+    writes: [target_claude_md]
+
   - id: fix-loop
     type: loop
     loop:
@@ -77,27 +101,6 @@ steps:
           prompt: prompts/implement-ticket.j2
           allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
           writes_files: true
-          writes: []
-
-        - id: set-in-review
-          type: script
-          command: |
-            NODES=$(curl -s -X POST https://api.linear.app/graphql \
-              -H "Authorization: $LINEAR_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id name type}}}}}\"}" \
-              | jq -c '.data.issue.team.states.nodes')
-            STATE_ID=$(printf '%s' "$NODES" \
-              | jq -r 'map(select(.type=="started")) | (map(select((.name | ascii_downcase) == "in review")) | first) // first | .id // empty')
-            if [ -n "$STATE_ID" ]; then
-              curl -s -X POST https://api.linear.app/graphql \
-                -H "Authorization: $LINEAR_API_KEY" \
-                -H "Content-Type: application/json" \
-                --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
-                > /dev/null
-            fi
-            printf '{}'
-          args: ["$inputs.linear_id"]
           writes: []
 
         - id: review
@@ -180,17 +183,140 @@ steps:
     args: ["$state.verdict", "$state.deferred_brief", "$inputs.linear_id"]
     writes: []
 
-  - id: commit-and-push
+  - id: set-in-review
+    type: script
+    command: |
+      NODES=$(curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"query\":\"query{issue(id:\\\"$1\\\"){team{states{nodes{id name type}}}}}\"}" \
+        | jq -c '.data.issue.team.states.nodes')
+      STATE_ID=$(printf '%s' "$NODES" \
+        | jq -r 'map(select(.type=="started")) | (map(select((.name | ascii_downcase) == "in review")) | first) // first | .id // empty')
+      if [ -n "$STATE_ID" ]; then
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          --data-raw "{\"query\":\"mutation{issueUpdate(id:\\\"$1\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" \
+          > /dev/null
+      fi
+      printf '{}'
+    args: ["$inputs.linear_id"]
+    writes: []
+
+  - id: commit
     type: script
     command: |
       git add -A >&2
-      git commit -m "$2" >&2
-      git push -u origin "$1" >&2
+      git commit --amend -m "$2" >&2
       printf '{"commit_sha": "%s"}' "$(git rev-parse HEAD)"
     args: ["$state.worktree_branch", "$state.commit_message"]
     contract:
       commit_sha: string
     writes: [commit_sha]
+
+  - id: attempt-merge
+    type: script
+    cwd: "."
+    command: |
+      git checkout "$1" >&2
+      if git merge --no-ff "$2" >&2; then
+        printf '{"merge_status": "clean", "conflict_files": ""}'
+      else
+        CONFLICTS=$(git diff --name-only --diff-filter=U | tr '\n' ',' | sed 's/,$//')
+        printf '{"merge_status": "conflict", "conflict_files": "%s"}' "$CONFLICTS"
+      fi
+    args: ["$inputs.base_branch", "$state.worktree_branch"]
+    contract:
+      merge_status:
+        type: string
+        enum: [clean, conflict]
+      conflict_files: string
+    writes: [merge_status, conflict_files]
+
+  - id: conflict-loop
+    type: loop
+    loop:
+      max_iterations: 2
+      until: 'state.merge_status == "clean"'
+      on_exhaust: continue
+      steps:
+
+        - id: gate-still-conflicted
+          type: check
+          expr: 'state.merge_status == "conflict"'
+          on_fail: "retry_loop:conflict-loop"
+
+        - id: resolve-conflicts
+          type: ai
+          agent: claude
+          model: sonnet
+          cwd: "."
+          prompt: prompts/build/resolve-conflicts.j2
+          allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+          writes_files: true
+          contract:
+            merge_status:
+              type: string
+              enum: [clean, conflict]
+            merge_commit_message: string
+          writes: [merge_status, merge_commit_message]
+
+        - id: gate-conflict-resolved
+          type: check
+          expr: 'state.merge_status == "clean"'
+          on_fail: "retry_loop:conflict-loop"
+
+  - id: notify-merge-exhausted
+    type: script
+    cwd: "."
+    command: |
+      MERGE_STATUS="$1"
+      LINEAR_ID="$2"
+      BRANCH="$3"
+      CONFLICTS="$4"
+      if [ "$MERGE_STATUS" = "conflict" ]; then
+        git push -u origin "$BRANCH" >&2
+        # Linear comment and Todo reset are best-effort; a credential or API
+        # failure leaves the ticket state unchanged but the rescue push above
+        # ensures the work is not lost. Gate-merge-clean handles cancellation.
+        TODO_STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "{\"query\":\"query{issue(id:\\\"${LINEAR_ID}\\\"){team{states{nodes{id type}}}}}\"}" \
+          | jq -r '.data.issue.team.states.nodes[] | select(.type=="unstarted") | .id' \
+          | head -1)
+        COMMENT=$(printf 'Merge conflict loop exhausted. Feature branch pushed for manual inspection: %s\n\nConflicting files: %s\n\nResolve manually and push.' "${BRANCH}" "${CONFLICTS}")
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg issue_id "$LINEAR_ID" --arg body "$COMMENT" \
+            '{"query":"mutation{commentCreate(input:{issueId:\($issue_id),body:\($body)}){success}}"}')" \
+          > /dev/null
+        curl -s -X POST https://api.linear.app/graphql \
+          -H "Authorization: $LINEAR_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg id "$LINEAR_ID" --arg state_id "$TODO_STATE_ID" \
+            '{"query":"mutation{issueUpdate(id:\($id),input:{stateId:\($state_id)}){success}}"}')" \
+          > /dev/null
+      fi
+      printf '{}'
+    args: ["$state.merge_status", "$inputs.linear_id", "$state.worktree_branch", "$state.conflict_files"]
+    writes: []
+
+  - id: gate-merge-clean
+    type: check
+    expr: 'state.merge_status == "clean"'
+    on_fail: cancel
+
+  - id: push-base
+    type: script
+    cwd: "."
+    command: |
+      git push origin "$1" >&2
+      printf '{}'
+    args: ["$inputs.base_branch"]
+    writes: []
 
   - id: teardown
     type: worktree

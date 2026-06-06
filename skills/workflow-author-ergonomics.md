@@ -27,7 +27,7 @@ It does NOT measure the *non-testable* slice — human cognitive friction, readi
 
 Run the test as a fresh sub-agent dispatch from a Claude Code session. The orchestrator:
 
-1. Dispatches `general-purpose` (or any catch-all agent) — NOT `python-dev`, NOT `architect`. Fresh context, no project-specific priors.
+1. Dispatches `general-purpose` (or any catch-all agent) — NOT `dev`, NOT `architect`. Fresh context, no project-specific priors.
 2. Provides the prompt below, parameterised with one *scenario* (defined later).
 3. Receives the agent's output and runs validation.
 4. Repeats for each scenario in the suite.
