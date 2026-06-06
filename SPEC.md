@@ -6,6 +6,26 @@
 
 ---
 
+## Spec index
+
+Subsystem and integration specs live in `specs/`. Read the relevant file before touching a module.
+
+| Spec | Covers |
+|------|--------|
+| [`specs/workflow-schema.md`](specs/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs |
+| [`specs/engine-executor.md`](specs/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots |
+| [`specs/engine-loop.md`](specs/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind |
+| [`specs/ai-node.md`](specs/ai-node.md) | AI node dispatch, structured output, failure modes |
+| [`specs/script-node.md`](specs/script-node.md) | Script node subprocess, env, contract |
+| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies |
+| [`specs/state-store.md`](specs/state-store.md) | SQLite schema, BaseState, state merge, snapshots |
+| [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output |
+| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review → gate → merge) |
+| [`specs/build-workflow-review-loop.md`](specs/build-workflow-review-loop.md) | Review-loop variant: loop until review passes |
+| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model |
+
+---
+
 ## 1. Mission
 
 Execute workflows deterministically. Decouple *what work gets done* (orchestration, agents, humans) from *how work runs* (this harness).
