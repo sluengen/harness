@@ -7,7 +7,6 @@ Follow this checklist before tagging any release. All items must be ticked befor
 - [ ] All work for the release is merged to `main`
 - [ ] `CHANGELOG` section in `README.md` is written and accurate
 - [ ] Version roadmap tables in `README.md` and `CLAUDE.md` reflect what shipped vs what's next
-- [ ] `SUPPORTED.md` is up to date with any newly supported or dropped surfaces
 
 ## Verification gate
 

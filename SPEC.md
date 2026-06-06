@@ -20,8 +20,7 @@ Subsystem and integration specs live in `specs/`. Read the relevant file before 
 | [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies |
 | [`specs/state-store.md`](specs/state-store.md) | SQLite schema, BaseState, state merge, snapshots |
 | [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output |
-| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review → gate → merge) |
-| [`specs/build-workflow-review-loop.md`](specs/build-workflow-review-loop.md) | Review-loop variant: loop until review passes |
+| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) |
 | [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model |
 
 ---
