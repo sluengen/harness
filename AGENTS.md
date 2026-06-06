@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.2.0 -->
+<!-- guidance:process-harness@0.2.1 -->
 # How work happens here (harness profile)
 
 This is the process for an **infrastructure / pipeline-harness repo** — a tool or library that other repos depend on, with no end-users and no product UI. It is a deliberate variant of the standard process: same skills and standards, a leaner flow, and design-doc specs instead of user-facing feature specs. Everything repo-specific is in [`CONTEXT.md`](CONTEXT.md); read that first.
@@ -46,4 +46,4 @@ Keeping the agent-led commands available here is deliberate: when a task does **
 
 ## When you are confused
 
-Open the ticket, read `CONTEXT.md`, then the design spec for the area you are touching. For a cross-cutting decision, the `architecture` skill and the existing ADRs.
+Open the ticket, read `CONTEXT.md`, then the design spec for the area you are touching. For a cross-cutting decision, the `architecture` skill and the architecture-principles spec.

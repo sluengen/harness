@@ -2,37 +2,40 @@
 profile: harness
 source:
   name: agents
-  ref: 5bc9d2a  # "fix(bootstrap): flag legacy-process artifacts on install (0.3.1)"
+  ref: a16c5f7  # "feat(ux-design): add the craft half of design as a skill"
 files:
-  skills/engineering-principles.md:  { version: 0.1.1, hash: 48d28cd00d14 }
+  skills/engineering-principles.md:  { version: 0.1.2, hash: 0a598a104f10 }
   skills/spec-driven-development.md: { version: 0.2.0, hash: 14d7eeca8cd2 }
-  skills/spec-authoring.md:          { version: 0.1.0, hash: 0ac85f5dc6fd }
+  skills/spec-authoring.md:          { version: 0.2.0, hash: e2063e40aa94 }
   skills/test-driven-development.md: { version: 0.1.0, hash: a1cbb24e0906 }
   skills/code-quality.md:            { version: 0.1.1, hash: e09d94724899 }
-  skills/code-review.md:             { version: 0.1.1, hash: ae7f89f97df9 }
-  skills/architecture.md:            { version: 0.1.0, hash: 91549df36cb4 }
+  skills/code-review.md:             { version: 0.1.3, hash: 79154610be31 }
+  skills/architecture.md:            { version: 0.2.0, hash: 91a48f4df26d }
   skills/systematic-debugging.md:    { version: 0.1.0, hash: 183f3ef188b2 }
-  skills/writing-quality.md:         { version: 0.1.0, hash: a9f60e22211d }
+  skills/writing-quality.md:         { version: 0.1.1, hash: c6dd77384bae }
   skills/worktree-isolation.md:      { version: 0.1.0, hash: e92b241a71fd }
-  skills/linear-sync.md:             { version: 0.1.3, hash: e54362ed832d }
-  skills/assessment-craft.md:        { version: 0.1.0, hash: 2d410cacfa55 }
+  skills/linear-sync.md:             { version: 0.2.1, hash: 6b51c85c4574 }
+  skills/assessment-craft.md:        { version: 0.1.1, hash: 074f3cf37855 }
   agents/dev.md:                     { version: 0.1.1, hash: 46e1035ec1c6 }
   agents/reviewer.md:                { version: 0.1.1, hash: 464bd8213dc1 }
-  agents/architect.md:               { version: 0.1.0, hash: 794843ded5af }
-  agents/code-steward.md:            { version: 0.1.0, hash: 04a757608ccb }
+  agents/architect.md:               { version: 0.2.0, hash: b2cde6f043b7 }
+  agents/code-steward.md:            { version: 0.1.1, hash: 8be48da6f731 }
   agents/harness-steward.md:         { version: 0.1.0, hash: 4f72c3af5c9b }
-  commands/propose.md:               { version: 0.1.0, hash: f09dc26cc786 }
+  commands/propose.md:               { version: 0.1.1, hash: cca5784b19aa }
   commands/start.md:                 { version: 0.1.1, hash: 35f30cd6d8dc }
   commands/review.md:                { version: 0.1.1, hash: 7f783c593240 }
   commands/ship.md:                  { version: 0.1.2, hash: 5393413b61ed }
   commands/assess.md:                { version: 0.1.1, hash: e816a95850b9 }
-  commands/update-guidance.md:       { version: 0.1.0, hash: 446477d2bca0 }
-  templates/proposal.md:             { version: 0.1.0, hash: 2bee370c24d6 }
+  commands/update-guidance.md:       { version: 0.1.1, hash: 5f4813a8f83a }
+  templates/proposal.md:             { version: 0.1.1, hash: a80aecbed6db }
   templates/change.md:               { version: 0.1.0, hash: 31321efe2ea5 }
-  templates/adr.md:                  { version: 0.1.0, hash: b1644a001c21 }
-  templates/CONTEXT.template.md:     { version: 0.1.4, hash: 2c371394ac57 }
+  templates/decision.md:             { version: 0.1.0, hash: 4055cc925a51 }
+  templates/infrastructure.md:       { version: 0.1.0, hash: 73e3b069f59e }
+  templates/architecture.md:         { version: 0.1.0, hash: a0670f82dbd6 }
+  templates/CONTEXT.template.md:     { version: 0.1.6, hash: 01e7cd90832a }
   hooks/prompt-guard.js:             { version: 0.1.0, hash: c098ad7bcde4 }
   hooks/workflow-guard.js:           { version: 0.1.0, hash: c0a76a87e40b }
   hooks/context-monitor.js:          { version: 0.1.0, hash: dcb4cf189cd4 }
-  hooks/guidance-freshness.js:       { version: 0.1.0, hash: d565c0786e44 }
-  process/harness.md:                { version: 0.2.0, hash: 9c45ec85e80c }
+  hooks/guidance-freshness.js:       { version: 0.2.0, hash: a9240e69ff59 }
+  process/harness.md:                { version: 0.2.1, hash: 9f1f2feb778c }
+  settings/harness.json:             { version: 0.1.0, hash: 09fd0ae3f36c }

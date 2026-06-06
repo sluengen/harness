@@ -1,7 +1,9 @@
-<!-- guidance:linear-sync@0.1.3 -->
+<!-- guidance:linear-sync@0.2.1 -->
 # Linear Sync
 
-The protocol for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue. The repo-specific parts — the access command, the workspace/team IDs, the label IDs — live in `CONTEXT.md`, never here. This skill is the *protocol*; `CONTEXT.md` is the *invocation*.
+The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue.
+
+**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific parts are the token (in an env file) and the workspace IDs (in `CONTEXT.md`). Do not conclude you lack access or that a tool is missing. The recipes are in [Accessing Linear](#accessing-linear-graphql-via-curl) below; if a repo ships a wrapper CLI, `CONTEXT.md` (`tools.linear_cli`) names it, but the curl below always works.
 
 (The rare repo not on Linear sets `linear: false` in `CONTEXT.md` and documents its local fallback there. Everything below assumes the standard: Linear is on.)
 
@@ -42,8 +44,50 @@ Keep the taxonomy flat and small. The shape (the actual IDs are in `CONTEXT.md`)
 4. **Blocked → Backlog with the question.** Park with the specific question stated, so it can be answered async.
 5. **Don't probe the CLI for usage.** The first positional arg to a create command is usually the title — `create --help` can file an issue titled "--help". Read the invocation in `CONTEXT.md`; do not guess at the tool.
 
-## Invocation
+## Accessing Linear (GraphQL via curl)
 
-Every Linear operation uses the command in `CONTEXT.md` (`tools.linear_cli`). **Source the env file named in `CONTEXT.md` (`env.file`) first** — it holds `LINEAR_API_KEY` (`env.linear_token`). The file name varies by repo; the variable name does not. Never echo or commit the token, and the env file must be gitignored. If `CONTEXT.md` says access is via raw GraphQL/curl, use that; do not search for a `linear` binary or assume an MCP tool exists unless `CONTEXT.md` says so.
+**Get the token.** Look for an env file holding `LINEAR_API_KEY`: the one named in `CONTEXT.md` (`env.file`), else `.env` / `.env.local` in the repo root. Source it (`set -a && source .env && set +a`). Never echo or commit the token; the env file must be gitignored.
 
-If `env.file` is unset or the token is missing, stop and ask — do not guess a filename or proceed without credentials.
+**If no `LINEAR_API_KEY` is found in any env file, that is the only blocker — stop and ask the user for one.** Do not conclude you lack access before checking the env files. (If `CONTEXT.md` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
+
+Every call posts to the same endpoint with the token in the `Authorization` header:
+
+```bash
+LINEAR() { curl -s -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
+  -d "{\"query\":\"$1\"}"; }
+```
+
+**Read an issue** (brief, description, labels, state):
+```bash
+LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } } }'
+```
+
+**Pull the Todo queue** for a team (the work to pick up):
+```bash
+LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }'
+```
+
+**Discover the workspace IDs you need once, then cache them in `CONTEXT.md`** (team id, workflow-state ids for status changes, label ids):
+```bash
+LINEAR 'query { teams { nodes { id key name } } }'
+LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name } } }'
+LINEAR 'query { issueLabels { nodes { id name } } }'
+```
+
+**Move an issue's status** (use the state id from the query above; the issue id may be the `<issue-id>` identifier):
+```bash
+LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-uuid>\" }) { success } }'
+```
+
+**Create an issue** (returns its identifier + url):
+```bash
+LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"] }) { issue { identifier url } } }'
+```
+
+**Comment** (PR links, blocker notes):
+```bash
+LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
+```
+
+The workspace-specific ids (team, states, labels) belong in `CONTEXT.md` so you do not re-discover them each run. The query shapes above do not — they are the same for every Linear workspace.

@@ -1,7 +1,7 @@
-<!-- guidance:writing-quality@0.1.0 -->
+<!-- guidance:writing-quality@0.1.1 -->
 # Writing Quality
 
-Eliminate predictable AI writing patterns from prose: specs, designs, ADRs, copy, commit bodies, handoffs. Not code or structured data.
+Eliminate predictable AI writing patterns from prose: specs, designs, decisions, copy, commit bodies, handoffs. Not code or structured data.
 
 **Core rule:** remove the layers between idea and reader. State the point. Trust the reader.
 

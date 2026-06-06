@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(*)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push * --force *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git push * --force-with-lease *)",
+      "Bash(git -C * push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(git -C * reset --hard *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf $HOME*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/prompt-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/workflow-guard.js" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/guidance-freshness.js" }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/context-monitor.js" }
+        ]
+      }
+    ]
+  }
+}

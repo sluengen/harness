@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@0.1.0 -->
+<!-- guidance:update-guidance@0.1.1 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -24,6 +24,8 @@ Also report **new** files the source added to this profile (offer to install) an
 
 ### 3. Apply
 Pull the clean PULLs automatically. For CONFLICTs, present the diff and ask. Never overwrite a LOCAL or CONFLICT file without confirmation. Never touch `CONTEXT.md` — it is repo-owned and not tracked as a distributable.
+
+**Re-derive the derived artifacts.** `AGENTS.md` is derived from the profile's process doc and `.claude/settings.json` from `settings/<profile>.json`. When either source pulled an update, regenerate its derived copy — but if the repo merged local content into `.claude/settings.json` (e.g. extra permissions), surface the settings change for a manual re-merge rather than clobbering it.
 
 ### 4. Rewrite the lock
 Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled. Leave LOCAL/CONFLICT entries as they are until resolved.

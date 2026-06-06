@@ -1,9 +1,9 @@
-<!-- guidance:spec-authoring@0.1.0 -->
+<!-- guidance:spec-authoring@0.2.0 -->
 # Spec Authoring
 
-How to write a spec that is actionable, consistent, and complete — including the **design**, not just acceptance criteria. Three kinds of spec serve three moments in a task's life. This skill defines each, what goes in it, and how they flow. `spec-driven-development` is the lifecycle; this is the craft.
+How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
 
-## The three specs
+## Lifecycle specs — three moments in a task's life
 
 | Spec | Answers | Lives in | When |
 |---|---|---|---|
@@ -13,6 +13,13 @@ How to write a spec that is actionable, consistent, and complete — including t
 
 They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (Linear issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
 
+## Reference specs — standing documentation
+
+Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `CONTEXT.md`):
+
+- **Infrastructure spec** (`templates/infrastructure.md`) — the operational reality: domains, hosting, services, deployment, accounts. The source of truth when making a deployment or configuration decision.
+- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering-principles` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `CONTEXT.md` and skips the file.
+
 ## What every spec shares
 
 - **Actionable.** A reader can act without asking — a decider can decide on a proposal, an implementer can build a change spec test-first.
@@ -21,35 +28,36 @@ They flow: a **proposal** (when needed) is decided and broken into one or more *
 - **Honest prose.** No TBDs standing in for decisions, no hedging. Follow `writing-quality`.
 - **Scaled to size.** A one-line bug fix is one line. Depth earns its place; do not pad.
 
+## Decisions live in the spec they govern
+
+**There is no separate `decisions/` folder and no standalone ADRs.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
+
+- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences).
+- A **cross-cutting** decision (governs many features) → recorded in the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
+
+Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding a decision means updating it in-place in its spec, with a dated note on what changed and why — not a new numbered file. (See `architecture` for when a choice is decision-worthy.)
+
 ## Proposal spec
 
-For an idea that is not yet confirmed work. The proposal is where you think it through before it costs build time. Sections (see `templates/proposal.md`):
+For an idea that is not yet confirmed work. Sections (see `templates/proposal.md`):
 
 - **Problem / motivation** — why this matters now.
 - **Options** — the approaches considered, with trade-offs. Not one blessed answer dressed as inevitable.
 - **Recommendation** — the proposed direction and why.
-- **Open decisions** — what must be decided, and by whom. A cross-cutting decision becomes an ADR (`architecture`).
+- **Open decisions** — what must be decided, and by whom. Once made, each decision is recorded in the spec it governs (the feature spec, or the architecture-principles spec if cross-cutting).
 - **Breakdown** — the change specs this would spawn, each sized to ship on its own.
 - **Risks / unknowns** — what could go wrong or is not yet understood.
 
-A proposal's outcome is explicit: **accepted** (spawns change specs + any ADRs), **rejected** (kept as the record of why), or **split** (replaced by smaller proposals). It does not sit half-decided.
+A proposal's outcome is explicit: **accepted** (spawns change specs; records its decisions into the relevant specs), **rejected** (kept as the record of why), or **split** (replaced by smaller proposals). It does not sit half-decided.
 
 ## Change spec
 
-A single, concrete piece of work. The Linear issue is its home (`linear-sync`) — this is what the builder builds and the reviewer reviews against. Sections (see `templates/change.md`):
-
-- **Problem** — why now, in a sentence or two.
-- **Approach** — how the change lands.
-- **Design** — the load-bearing part for anything non-trivial: data-model changes, the interface/API contract (shapes, status/error cases, auth), and behaviour scenarios (GIVEN/WHEN/THEN). Scale it: a small change needs a sentence, a cross-cutting one needs all three.
-- **Acceptance criteria** — specific, testable outcomes.
-- **Out of scope** — what this explicitly defers.
-
-If the design needs a cross-cutting decision, that belongs in a proposal + ADR first, not buried in the change spec.
+A single, concrete piece of work. The Linear issue is its home (`linear-sync`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
 
 ## Feature spec
 
-The canonical, as-built record of what the product does today. Written by the **reviewer** on PASS, from the diff — never by the builder (`spec-driven-development`). See `templates/feature.md`. It answers "how does X work?", grouped by user-visible behaviour, with the data model and interface surface that back it.
+The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (`spec-driven-development`). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
 
 ## Quality bar
 
-A spec is ready when its type is right (no proposal for a one-line fix; no big unconfirmed idea pushed straight to a change spec), its design is specified to the depth the work needs (an implementer would not have to invent a contract mid-build), every acceptance criterion is testable, and it holds no unresolved decision presented as settled. The reviewer checks change and feature specs against this bar (`code-review` Stage 1).
+A spec is ready when its type is right, its design is specified to the depth the work needs (an implementer would not have to invent a contract mid-build), the decisions behind it are recorded in place, every acceptance criterion is testable, and it holds no unresolved decision presented as settled. The reviewer checks change and feature specs against this bar (`code-review` Stage 1).

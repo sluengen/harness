@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.4 -->
+<!-- guidance:template-context@0.1.6 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -26,10 +26,13 @@ commands:
   typecheck: "{e.g. mypy . — or omit}"
   test:    "{e.g. pytest}"
   test_one: "{e.g. pytest path::test_name}"
+  verify:  "{the canonical combined gate, if the repo has one — e.g. bash scripts/verify.sh — or omit}"
   run:     "{e.g. docker compose up}"
 branches:
   integration: {e.g. dev}      # feature branches base from and merge here
   release: {e.g. main}         # how production is fed
+conventions:
+  commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
   linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"
   # Linear workspace/team IDs and label IDs live here, not in the linear-sync skill
@@ -37,8 +40,9 @@ paths:
   source: {e.g. app/}
   tests: {e.g. tests/}
   proposals: specs/proposals/       # proposal specs (pre-Linear, unconfirmed/large ideas)
-  feature_specs: specs/features/    # canonical, as-built feature specs
-  decisions: decisions/
+  feature_specs: specs/features/    # canonical, as-built feature specs (decisions embedded inline)
+  infrastructure: {e.g. specs/infrastructure.md — or omit}   # reference spec
+  architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here)
   design_system: {path or external repo — or omit}
 env:
   file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
@@ -55,20 +59,14 @@ env:
 
 ## Repo-specific principles
 
-{Principles that extend `engineering-principles` for this repo — the conventions a design is held to here that are not universal. Example: "the API owns all domain logic; clients never compute it." A principle that contradicts a universal one needs an ADR. Omit if none.}
-
-## Decisions index
-
-One line per ADR. Full text in `{decisions path}`.
-
-- ADR-001: {decision} — {one-line summary}
-- ADR-002: {decision} — {one-line summary}
+{A brief summary of the conventions a design is held to here that extend `engineering-principles`. Example: "the API owns all domain logic; clients never compute it." For a repo with rich architecture conventions, keep the full set in the architecture-principles spec (above) and point to it here. A principle that contradicts a universal one is itself a recorded decision. Omit if none.}
 
 ## Where deeper truth lives
 
-- **What the product does today** → `specs/features/`
+- **What the product does today, and why** → `specs/features/` (decisions embedded inline)
 - **Ideas not yet confirmed** → `specs/proposals/`
-- **Why things are the way they are** → `{decisions path}`
+- **How the system is built / cross-cutting decisions** → architecture-principles spec (if any)
+- **Operational reality** → infrastructure spec (if any)
 - **{Design system, if any}** → `{path or repo}`
 - **Linear (issues / in-flight work)** → {workspace link}
 

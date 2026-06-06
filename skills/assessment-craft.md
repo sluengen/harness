@@ -1,4 +1,4 @@
-<!-- guidance:assessment-craft@0.1.0 -->
+<!-- guidance:assessment-craft@0.1.1 -->
 # Assessment Craft
 
 Shared knowledge for every steward that periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. Loaded by `code-steward` and `harness-steward`.
@@ -28,7 +28,7 @@ Missing any of these means it is not a finding yet.
 | Severity | Definition |
 |---|---|
 | **Critical** | Security/data-integrity risk, a silent wiring failure, or a violation a current change is actively compounding. |
-| **High** | A clear principle/ADR/contract violation not yet causing problems but that will before the next touch in that area. |
+| **High** | A clear principle/decision/contract violation not yet causing problems but that will before the next touch in that area. |
 | **Medium** | Structural drift, duplicated knowledge, a weak test assertion, a stale doc that creates confusion. |
 | **Low** | Cleanup: minor drift, cosmetic inconsistency, an unused file, a dependency a minor version behind with no security reason. |
 

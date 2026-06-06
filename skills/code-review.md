@@ -1,4 +1,4 @@
-<!-- guidance:code-review@0.1.1 -->
+<!-- guidance:code-review@0.1.3 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -36,9 +36,9 @@ Only after Stage 1 passes.
 - **Completeness** — no TBDs, no unresolved questions.
 - **Testability** — every criterion is verifiable by a test, not subjective ("feels fast").
 - **Clarity** — an implementer could build it without asking. (And it reads cleanly: `writing-quality`.)
-- **Consistency** — no contradiction with existing specs or ADRs.
+- **Consistency** — no contradiction with existing specs or recorded decisions.
 
-**For frontend code, additionally:** design-system adoption and accessibility (see the `design-system` skill where the profile includes it).
+**For frontend code, additionally:** design-system adoption and accessibility (`design-system`), and that the surface handles all its states — empty, loading, error, and edge cases (0 / 1 / many / missing), not just the happy path (`ux-design`).
 
 ## Severity
 

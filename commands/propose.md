@@ -1,4 +1,4 @@
-<!-- guidance:propose@0.1.0 -->
+<!-- guidance:propose@0.1.1 -->
 # /propose — work an idea before it becomes work
 
 Usage: `/propose <idea>`
@@ -17,7 +17,7 @@ Fill the proposal following `spec-authoring`:
 - Problem / motivation — why now.
 - Options with trade-offs — real alternatives, not one inevitable answer.
 - Recommendation — the proposed direction, tied to `engineering-principles`.
-- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one becomes an ADR (`architecture`).
+- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec (`architecture`).
 - Breakdown — the change specs this would spawn, each shippable on its own.
 - Risks / unknowns.
 
@@ -30,8 +30,8 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 - **split** → replace with smaller proposals; stop.
 
 ### 4. On accepted, spin out the work
-- Write any ADRs the decisions require (`architecture`, `templates/adr.md`).
+- Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
 - Create a Linear issue per item in the breakdown (`linear-sync`), each with a change spec (`templates/change.md`). Link them back to the proposal.
 
 ## Report
-Print the proposal path, its status, the open decisions (and how they resolved), any ADRs written, and the Linear issues created from the breakdown.
+Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the Linear issues created from the breakdown.

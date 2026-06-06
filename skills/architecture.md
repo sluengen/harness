@@ -1,7 +1,7 @@
-<!-- guidance:architecture@0.1.0 -->
+<!-- guidance:architecture@0.2.0 -->
 # Architecture
 
-How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there (or to a repo principle in `CONTEXT.md`).
+How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
 
 ## What a design produces
 
@@ -11,31 +11,29 @@ A design is an artifact, not code. It answers *what* and *why* clearly enough th
 - **Data model** — entities, fields, relationships, invariants.
 - **Test strategy** — what to test, the key edge cases, the integration points. An implementer should be able to write a failing test from this.
 - **Security considerations** — validation rules at each boundary, the trust model, what data is exposed to whom.
-- **An ADR** when the decision is cross-cutting (see below).
+- **The decisions behind it**, recorded in place (see below).
 
 Prefer simple, proven patterns over clever ones. Design for the current scope; leave room to extend, but do not build the extension (`engineering-principles`: no speculation).
 
-## When to write an ADR
+## When a choice is decision-worthy
 
-Write an Architecture Decision Record when a choice is **cross-cutting and expensive to reverse** — one future work must honour without relitigating. Examples: a stack or storage choice, a deployment topology, a security posture, a data-model invariant, an API-versioning rule.
+Record a decision when a choice is **consequential and expensive to reverse** — one future work must honour without relitigating. Examples: a stack or storage choice, a deployment topology, a security posture, a data-model invariant, an API-versioning rule, a field-naming convention.
 
-Do **not** write an ADR for a routine choice that lives inside one feature. ADRs are for decisions whose scope crosses features. Use the [`adr` template](../templates/adr.md).
+Do **not** record a decision for a routine choice with no lasting consequence. The bar is: would a future contributor benefit from knowing *why*, and would relitigating it be costly?
 
-## Numbering and storage
+## Where the decision lives
 
-ADRs are numbered sequentially: list the decisions directory (path in `CONTEXT.md`, commonly `decisions/`), take the next free `ADR-NNN`. Do not reuse the number of a cancelled ADR — leave the gap. One decision per file: `ADR-NNN-short-title.md`.
+There are **no standalone ADRs and no `decisions/` folder**. A decision is recorded **in the spec it governs**, so the what and the why stay together (`spec-authoring` → "Decisions live in the spec they govern"):
 
-## Superseding an ADR
+- **Governs one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape).
+- **Cross-cutting** (governs many features, or the system's shape) → the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
 
-When a decision changes, do not edit the old ADR's substance. Supersede it, and complete all four steps or you leave stale context that misleads future work:
+A decision block records: **context** (what forced the choice), **decision** (what was chosen, stated plainly), **alternatives** (what was rejected and why — undocumented rejections get relitigated), and **consequences** (what it enables, costs, and forecloses).
 
-1. Set the old ADR's status to `Superseded by ADR-NNN`.
-2. Set the new ADR's `Supersedes: ADR-NNN`.
-3. Update the decisions index in `CONTEXT.md` so the one-line summary reflects the new decision.
-4. Grep the repo for references to the old decision (code comments, specs, other ADRs) and update them.
+## Superseding a decision
+
+When a decision changes, **update it in place** in its spec — do not leave a stale version elsewhere. Replace the decision text with the new choice, and add a dated note: *"Superseded YYYY-MM-DD: previously X; changed to Y because Z."* Then grep the repo for code/comments/specs that relied on the old decision and update them. The spec always shows the current decision with its history inline, not a chain of separate files to reconcile.
 
 ## Recording, not deciding alone
 
-Document the alternatives you rejected and why. Undocumented rejections get relitigated. A design that contradicts an existing ADR or a principle is a conscious trade-off: name it, and if it is cross-cutting, supersede the ADR rather than letting the contradiction sit silently.
-
-Write designs and ADRs to the standard of `writing-quality`: state the decision plainly, name the actors, cut the hedging.
+Document the alternatives you rejected and why. A design that contradicts a recorded decision or a principle is a conscious trade-off: name it, and update the decision in its spec rather than letting the contradiction sit silently. Write designs and decisions to the standard of `writing-quality`: state the decision plainly, name the actors, cut the hedging.

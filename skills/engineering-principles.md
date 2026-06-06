@@ -1,9 +1,9 @@
-<!-- guidance:engineering-principles@0.1.1 -->
+<!-- guidance:engineering-principles@0.1.2 -->
 # Engineering Principles
 
 The durable values every design, change, and review is measured against. The architect designs to them, the developer builds to them, the reviewer reviews against them. When the three load the same principles, "what you build" cannot drift from "what you are judged on."
 
-These are universal. Each repo extends them with its own principles in `CONTEXT.md` and records consequential, repo-specific choices as ADRs (see `architecture`). A repo principle never contradicts one here without an ADR that says so explicitly.
+These are universal. Each repo extends them with its own principles in `CONTEXT.md` and records consequential, repo-specific choices as decisions in the spec they govern (see `architecture`). A repo principle never contradicts one here without a recorded decision that says so explicitly.
 
 ## The principles
 
@@ -31,7 +31,7 @@ These are universal. Each repo extends them with its own principles in `CONTEXT.
 
 ## Trade-offs are conscious, not silent
 
-These principles pull against each other. Extension fights simplicity; validation fights minimalism. Resolving the tension is the work. What is not acceptable is resolving it silently: when a change knowingly relaxes a principle, that is a decision worth recording (an ADR for cross-cutting choices, a note in the change spec for local ones), not a drift to be discovered later.
+These principles pull against each other. Extension fights simplicity; validation fights minimalism. Resolving the tension is the work. What is not acceptable is resolving it silently: when a change knowingly relaxes a principle, that is a decision worth recording (in the architecture-principles spec for cross-cutting choices, the change spec for local ones), not a drift to be discovered later.
 
 ## How the reviewer uses this
 

@@ -1,9 +1,9 @@
-<!-- guidance:template-proposal@0.1.0 -->
+<!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: {short-slug}
 status: draft            # draft | under-decision | accepted | rejected | split
 date: YYYY-MM-DD
-related: []              # ADRs, feature specs, or other proposals
+related: []              # feature specs or other proposals
 ---
 
 # Proposal: {title}
@@ -27,11 +27,11 @@ The proposed direction and why it wins over the others. Connect to `engineering-
 
 ## Open decisions
 
-What must be decided before this becomes work, and by whom. A cross-cutting decision (one future work must honour) becomes an ADR — note it here and write the ADR (`architecture`).
+What must be decided before this becomes work, and by whom. A cross-cutting decision (one future work must honour) is recorded, once made, in the spec it governs (`architecture`).
 
-| Decision | Who decides | Becomes ADR? |
+| Decision | Who decides | Recorded in |
 |---|---|---|
-| {question} | {user / architect} | {yes → ADR-NNN / no} |
+| {question} | {user / architect} | {feature spec / architecture spec} |
 
 ## Breakdown
 
@@ -46,4 +46,4 @@ What could go wrong, what is not yet understood, what would invalidate the recom
 
 ---
 
-**Lifecycle.** A proposal ends in one explicit state: **accepted** (spawn the change specs as Linear issues, write any ADRs), **rejected** (keep this file as the record of why), or **split** (replace with smaller proposals). It does not sit half-decided. Lives in `specs/proposals/`.
+**Lifecycle.** A proposal ends in one explicit state: **accepted** (spawn the change specs as Linear issues; record its decisions in the relevant specs), **rejected** (keep this file as the record of why), or **split** (replace with smaller proposals). It does not sit half-decided. Lives in `specs/proposals/`.
