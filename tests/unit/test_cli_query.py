@@ -655,3 +655,237 @@ def test_db_flag_overrides_default(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
 
 
+# ---------------------------------------------------------------------------
+# harness status --json: enriched fields (current_node, failure_retryable,
+# artifact_paths, agent_session_ids)
+# ---------------------------------------------------------------------------
+
+
+def test_status_json_includes_current_node(tmp_path: Path) -> None:
+    """``current_node`` is populated from the latest ``node_started`` event."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="running")
+    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-a",
+                timestamp="2026-05-08T12:00:01Z")
+    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-b",
+                timestamp="2026-05-08T12:00:02Z")
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    # Latest node_started is step-b.
+    assert payload["current_node"] == "step-b"
+
+
+def test_status_json_current_node_is_none_when_no_node_started(tmp_path: Path) -> None:
+    """``current_node`` is None when no ``node_started`` events exist."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="running")
+    _seed_event(db_path, run_id="R1", event_type="workflow_started",
+                timestamp="2026-05-08T12:00:00Z")
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["current_node"] is None
+
+
+def test_status_json_failure_retryable_false_for_contract_violation(tmp_path: Path) -> None:
+    """``failure_retryable`` is False for ContractViolation failures."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="failed", exit_code=3)
+    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
+                data={"reason": "ContractViolation: not_called"})
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["failure_reason"] == "ContractViolation: not_called"
+    assert payload["failure_retryable"] is False
+
+
+def test_status_json_failure_retryable_false_for_loop_exhausted(tmp_path: Path) -> None:
+    """``failure_retryable`` is False for ``loop_exhausted`` failures."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
+    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
+                data={"reason": "loop_exhausted"})
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["failure_reason"] == "loop_exhausted"
+    assert payload["failure_retryable"] is False
+
+
+def test_status_json_failure_retryable_false_for_cancelled(tmp_path: Path) -> None:
+    """``failure_retryable`` is False for ``cancelled`` (user-initiated)."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="cancelled", exit_code=130)
+    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
+                data={"reason": "cancelled"})
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["failure_retryable"] is False
+
+
+def test_status_json_failure_retryable_true_for_transient_error(tmp_path: Path) -> None:
+    """``failure_retryable`` is True for generic (transient) failures."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
+    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
+                data={"reason": "ConnectionError"})
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["failure_reason"] == "ConnectionError"
+    assert payload["failure_retryable"] is True
+
+
+def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> None:
+    """``failure_retryable`` is None for a run that has not failed."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="completed", exit_code=0)
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["failure_reason"] is None
+    assert payload["failure_retryable"] is None
+
+
+def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None:
+    """``artifact_paths`` surfaces non-None artifact fields from ``state``."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    state = {
+        "run_id": "R1", "workflow_name": "build", "base_branch": "main",
+        "artifacts_dir": "/tmp/arts", "started_at": "2026-05-08T12:00:00Z",
+        "notes": [], "worktree_path": None,
+        "worktree_branch": "harness/R1",
+        "pr_url": "https://github.com/org/repo/pull/42",
+    }
+    _seed_run(db_path, run_id="R1", status="completed",
+              state_json=json.dumps(state))
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["artifact_paths"] is not None
+    assert payload["artifact_paths"]["pr_url"] == "https://github.com/org/repo/pull/42"
+    assert payload["artifact_paths"]["worktree_branch"] == "harness/R1"
+    # worktree_path is None in state, so it must not appear.
+    assert "worktree_path" not in payload["artifact_paths"]
+
+
+def test_status_json_artifact_paths_none_when_no_artifacts(tmp_path: Path) -> None:
+    """``artifact_paths`` is None when state has no artifact fields set."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="running", state_json="{}")
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["artifact_paths"] is None
+
+
+def test_status_json_agent_session_ids_from_tool_called_events(tmp_path: Path) -> None:
+    """``agent_session_ids`` collects unique session_id values from tool_called events."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="running")
+    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
+                data={"name": "Read", "session_id": "sess-abc"})
+    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
+                data={"name": "Write", "session_id": "sess-abc"})  # duplicate
+    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s2",
+                data={"name": "Bash", "session_id": "sess-xyz"})
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["agent_session_ids"] is not None
+    assert sorted(payload["agent_session_ids"]) == ["sess-abc", "sess-xyz"]
+
+
+def test_status_json_agent_session_ids_none_when_no_sessions(tmp_path: Path) -> None:
+    """``agent_session_ids`` is None when tool_called events carry no session_id."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="running")
+    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
+                data={"name": "Read", "input": {}})  # no session_id key
+
+    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["agent_session_ids"] is None
+
+
+# ---------------------------------------------------------------------------
+# harness events --after-id  (incremental polling)
+# ---------------------------------------------------------------------------
+
+
+def test_events_after_id_returns_only_newer_events(tmp_path: Path) -> None:
+    """``--after-id N`` returns only events with row id > N."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_event(db_path, run_id="R1", event_type="workflow_started",
+                timestamp="2026-05-08T12:00:00Z")
+    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="s1",
+                timestamp="2026-05-08T12:00:01Z")
+    _seed_event(db_path, run_id="R1", event_type="node_completed", node_id="s1",
+                timestamp="2026-05-08T12:00:02Z")
+
+    # Fetch all events once to discover their IDs.
+    all_result = runner.invoke(app, ["events", "R1", "--db", str(db_path), "--json"])
+    assert all_result.exit_code == 0
+    all_lines = [ln for ln in all_result.stdout.splitlines() if ln.strip()]
+    assert len(all_lines) == 3
+    first_id = json.loads(all_lines[0])["id"]
+
+    # --after-id first_id should return only the two events after the first.
+    incremental_result = runner.invoke(
+        app, ["events", "R1", "--db", str(db_path), "--json",
+              "--after-id", str(first_id)]
+    )
+    assert incremental_result.exit_code == 0, incremental_result.stdout
+    inc_lines = [ln for ln in incremental_result.stdout.splitlines() if ln.strip()]
+    assert len(inc_lines) == 2
+    types = [json.loads(ln)["event_type"] for ln in inc_lines]
+    assert types == ["node_started", "node_completed"]
+
+
+def test_events_after_id_zero_returns_all_events(tmp_path: Path) -> None:
+    """``--after-id 0`` (the default) returns all events."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_event(db_path, run_id="R1", event_type="workflow_started",
+                timestamp="2026-05-08T12:00:00Z")
+    _seed_event(db_path, run_id="R1", event_type="workflow_completed",
+                timestamp="2026-05-08T12:30:00Z")
+
+    result = runner.invoke(
+        app, ["events", "R1", "--db", str(db_path), "--json", "--after-id", "0"]
+    )
+    assert result.exit_code == 0, result.stdout
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    assert len(lines) == 2
+
+
+def test_events_after_id_past_last_returns_empty(tmp_path: Path) -> None:
+    """``--after-id`` larger than all event IDs returns no events."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_event(db_path, run_id="R1", event_type="workflow_started",
+                timestamp="2026-05-08T12:00:00Z")
+
+    result = runner.invoke(
+        app, ["events", "R1", "--db", str(db_path), "--json", "--after-id", "9999"]
+    )
+    assert result.exit_code == 0, result.stdout
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    assert len(lines) == 0
+
+

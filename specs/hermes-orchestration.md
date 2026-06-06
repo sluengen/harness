@@ -208,7 +208,7 @@ Output:
 ```
 
 CLI form: `harness events <run-id> --json`
-Follow/poll form: `harness logs <run-id> --follow` (Hermes polls by reissuing `harness events` with `--after-id`)
+Incremental-poll form: `harness events <run-id> --after-id <last-seen-id> --json` (returns only events with `id > last-seen-id`; store the last returned `id` to advance the cursor on the next call)
 
 Hermes consumes events to build compact progress summaries. Relevant event types for Hermes summarisation:
 
@@ -332,13 +332,11 @@ Hermes should not parse raw event logs to determine run state. The `harness stat
 | `artifact_paths` | object? | from `runs.state_json` key fields |
 | `agent_session_ids` | list[str]? | from `tool_called` events |
 
-`current_node` and `agent_session_ids` require a lightweight query against the events table. The existing `harness status --json` output should be extended to include them (see follow-up tickets).
+`current_node` and `agent_session_ids` require a lightweight query against the events table. Both are included in `harness status --json` output.
 
 ### Event streaming
 
 Hermes polls `harness events <run-id> --json` to build live progress updates. Polling interval: 2–5 seconds during active runs. The `id` field on each event row enables efficient incremental polling (store last-seen id, request `--after-id <id>` on the next poll).
-
-The `--after-id` flag does not currently exist; it is a follow-up implementation item (see §Follow-up tickets).
 
 ### Failure summaries
 
@@ -381,15 +379,9 @@ Implement the Option A bridge so Hermes can drive the harness as a subprocess.
 - Wire up Hermes to invoke `harness run`, capture `run_id`, and poll `harness status --json`.
 - Acceptance: Hermes can start a harness run, poll status, and surface completion to the user.
 
-### Ticket 2: Run status enrichment — current_node, agent_session_ids, after-id polling
+### ~~Ticket 2: Run status enrichment — current_node, agent_session_ids, after-id polling~~ ✓ shipped
 
-Extend `harness status --json` and `harness events` for Hermes consumption.
-
-- Add `current_node` to `harness status --json` output (query latest `node_started` event).
-- Add `agent_session_ids` to `harness status --json` output (query `tool_called` events with session metadata).
-- Add `--after-id <integer>` flag to `harness events` for incremental polling.
-- Add `failure_retryable` field derived from the failure reason.
-- Acceptance: Hermes can poll incrementally without re-reading the full event log.
+`harness status --json` now includes `current_node`, `failure_reason`, `failure_retryable`, `artifact_paths`, and `agent_session_ids`. `harness events` now accepts `--after-id <integer>` for incremental polling. See `specs/cli.md` §`harness status` and §`harness events` for the full field reference.
 
 ### Ticket 3: Container packaging — separate-container deployment (Option B)
 
