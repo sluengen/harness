@@ -1088,15 +1088,19 @@ class Runner:
         }
 
     def _resolve_prompts_dir(self, workflow_path: Path | None) -> Path:
-        """Pick the prompts dir: constructor override > repo root > ``.``.
+        """Pick the prompts dir: constructor override > workflow sibling > repo root.
 
-        Prompts live at ``prompts/`` next to ``workflows/`` at the repo root,
-        so the Jinja loader must be anchored there — not at ``workflow_path.parent``
-        (which is ``workflows/``). ``self._repo_root`` defaults to ``Path(".")``
-        which is the cwd at invocation time (the repo root for normal usage).
+        Prompts live at ``prompts/`` next to ``workflows/`` at the harness repo
+        root.  When ``workflow_path`` is known we can derive that root as
+        ``workflow_path.parent.parent`` — this stays anchored to the harness repo
+        even when ``--repo`` points at a different target repo (cross-repo runs).
+        ``self._repo_root`` is only used as a last-resort fallback for test
+        contexts that call the registry builder without a real workflow file.
         """
         if self._prompts_dir is not None:
             return self._prompts_dir
+        if workflow_path is not None:
+            return workflow_path.parent.parent
         return self._repo_root
 
     # ---- signal handling ------------------------------------------------- #
