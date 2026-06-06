@@ -13,14 +13,18 @@ they are marked ``@pytest.mark.slow`` to allow skipping on fast CI runs.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
-from harness.dispatch.mock import MockAgent
+from harness.dispatch.mock import MockAgent, RecordedCall
 from harness.engine.runner import Runner
+from harness.nodes.base import Attestation, NodeResult
 from harness.state.store import init_db
 from harness.workflow.loader import load_workflow
 from harness.workflow.schema import CheckStep, LoopStep, ScriptStep
@@ -801,4 +805,265 @@ async def test_clean_merge_end_to_end_via_runner(tmp_path: Path) -> None:
     # The resolve-conflicts AI step must NOT be called on the clean path
     assert agent.calls == [], (
         "resolve-conflicts AI step must NOT be called on the clean path"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Behavioral tests — conflict-loop orchestration
+# ---------------------------------------------------------------------------
+
+
+class _ConflictReturningAgent(MockAgent):
+    """Stand-in that always reports merge_status=conflict from resolve-conflicts."""
+
+    async def execute(  # type: ignore[override]
+        self,
+        prompt: str,
+        contract: type[BaseModel],
+        submit_tool_schema: dict[str, Any],
+        *,
+        allowed_tools: list[str],
+        cwd: Path | None,
+        timeout_s: int = 600,
+        stall_timeout_s: int = 300,
+        max_turns: int | None = None,
+    ) -> NodeResult[BaseModel]:
+        self.calls.append(
+            RecordedCall(
+                prompt=prompt,
+                contract=contract,
+                submit_tool_schema=submit_tool_schema,
+                allowed_tools=list(allowed_tools),
+                cwd=cwd,
+                timeout_s=timeout_s,
+                stall_timeout_s=stall_timeout_s,
+                max_turns=max_turns,
+            )
+        )
+        return NodeResult[BaseModel](
+            contract=contract.model_validate(
+                {"merge_status": "conflict", "merge_commit_message": "still conflicted"}
+            ),
+            attestation=Attestation(status="complete"),
+        )
+
+
+def _make_conflict_loop_only_workflow(tmp_path: Path, prompts_dir: Path) -> Path:
+    """Minimal workflow: set merge_status=conflict, run conflict-loop, gate-merge-clean.
+
+    No worktree or Linear calls — isolates conflict orchestration behavior.
+    """
+    wf_path = tmp_path / "conflict_loop_only.yaml"
+    wf_path.write_text(textwrap.dedent("""\
+        name: conflict-loop-only
+        version: 1
+        inputs: {}
+        steps:
+          - id: set-conflict
+            type: script
+            command: |
+              printf '{"merge_status": "conflict", "conflict_files": "foo.txt"}'
+            contract:
+              merge_status:
+                type: string
+                enum: [clean, conflict]
+              conflict_files: string
+            writes: [merge_status, conflict_files]
+
+          - id: conflict-loop
+            type: loop
+            loop:
+              max_iterations: 2
+              until: 'state.merge_status == "clean"'
+              on_exhaust: continue
+              steps:
+
+                - id: gate-still-conflicted
+                  type: check
+                  expr: 'state.merge_status == "conflict"'
+                  on_fail: "retry_loop:conflict-loop"
+
+                - id: resolve-conflicts
+                  type: ai
+                  agent: claude
+                  model: sonnet
+                  prompt: build/resolve-conflicts.j2
+                  allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+                  contract:
+                    merge_status:
+                      type: string
+                      enum: [clean, conflict]
+                    merge_commit_message: string
+                  writes: [merge_status, merge_commit_message]
+
+                - id: gate-conflict-resolved
+                  type: check
+                  expr: 'state.merge_status == "clean"'
+                  on_fail: "retry_loop:conflict-loop"
+
+          - id: gate-merge-clean
+            type: check
+            expr: 'state.merge_status == "clean"'
+            on_fail: cancel
+    """))
+
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    (prompts_dir / "build").mkdir(parents=True, exist_ok=True)
+    (prompts_dir / "build" / "resolve-conflicts.j2").write_text(
+        "Resolve conflicts in {{ state.conflict_files }}\n"
+    )
+    return wf_path
+
+
+@pytest.mark.slow
+async def test_conflict_loop_limits_ai_to_two_attempts(tmp_path: Path) -> None:
+    """conflict-loop caps resolve-conflicts at max_iterations=2 then cancels.
+
+    Verifies:
+    - resolve-conflicts is called exactly 2 times (max_iterations=2)
+    - exit_code == 1 (gate-merge-clean cancels after loop exhausts with conflict)
+    """
+    db = tmp_path / "harness.db"
+    await init_db(db)
+
+    prompts_dir = tmp_path / "prompts"
+    wf_path = _make_conflict_loop_only_workflow(tmp_path, prompts_dir)
+
+    agent = _ConflictReturningAgent()
+    runner = Runner(
+        agent=agent,
+        db_path=db,
+        prompts_dir=prompts_dir,
+        progress=False,
+    )
+    exit_code = await runner.run(wf_path, inputs={})
+
+    assert len(agent.calls) == 2, (
+        f"resolve-conflicts must be called exactly twice (max_iterations=2), "
+        f"but was called {len(agent.calls)} time(s)"
+    )
+    assert exit_code == 1, (
+        "Runner must exit with code 1 when conflict-loop exhausts without resolution"
+    )
+
+
+@pytest.mark.slow
+def test_notify_merge_exhausted_script_rescue_pushes_feature_branch(tmp_path: Path) -> None:
+    """notify-merge-exhausted git-pushes the feature branch to origin on the conflict path.
+
+    Uses a fake LINEAR_API_KEY intentionally — the git rescue push is the critical
+    operation; Linear comment and Todo reset are best-effort and not asserted here.
+    """
+    repo = tmp_path / "repo"
+    bare = tmp_path / "bare.git"
+    repo.mkdir()
+
+    _git(repo, "init", "-b", "dev")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    (repo / "README.md").write_text("initial\n")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "initial")
+
+    feature_branch = "harness/feat-conflict"
+    _git(repo, "checkout", "-b", feature_branch)
+    (repo / "conflict.txt").write_text("conflict work\n")
+    _git(repo, "add", "conflict.txt")
+    _git(repo, "commit", "-m", "conflict work")
+    _git(repo, "checkout", "dev")
+
+    # Bare remote; feature branch intentionally not pushed yet (local-only)
+    _git(repo, "init", "--bare", str(bare))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "origin", "dev")
+
+    loaded = load_workflow(_BUILD_WORKFLOW)
+    notify_step = _get_top_level_step(loaded, "notify-merge-exhausted")
+    assert notify_step.command is not None
+
+    # LINEAR_API_KEY is fake — curl calls fail silently, git push is real
+    env = {**os.environ, "LINEAR_API_KEY": "fake-key"}
+    result = subprocess.run(
+        [
+            "bash", "-c", notify_step.command, "harness-script",
+            "conflict", "HAR-TEST", feature_branch, "conflict.txt",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(repo),
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"notify-merge-exhausted script failed (exit {result.returncode}):\n{result.stderr}"
+    )
+
+    remote_refs = subprocess.run(
+        [
+            "git", "--git-dir", str(bare),
+            "for-each-ref", "--format=%(refname:short)", "refs/heads/",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    remote_branches = {b.strip() for b in remote_refs.stdout.splitlines() if b.strip()}
+    assert feature_branch in remote_branches, (
+        f"notify-merge-exhausted must rescue-push {feature_branch!r} to origin on conflict; "
+        f"remote branches found: {sorted(remote_branches)}"
+    )
+
+
+@pytest.mark.slow
+def test_notify_merge_exhausted_script_is_noop_on_clean_path(tmp_path: Path) -> None:
+    """notify-merge-exhausted skips git push and exits 0 when merge_status is clean."""
+    repo = tmp_path / "repo"
+    bare = tmp_path / "bare.git"
+    repo.mkdir()
+
+    _git(repo, "init", "-b", "dev")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    (repo / "README.md").write_text("initial\n")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "initial")
+
+    _git(repo, "init", "--bare", str(bare))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "origin", "dev")
+
+    loaded = load_workflow(_BUILD_WORKFLOW)
+    notify_step = _get_top_level_step(loaded, "notify-merge-exhausted")
+    assert notify_step.command is not None
+
+    env = {**os.environ, "LINEAR_API_KEY": "fake-key"}
+    result = subprocess.run(
+        [
+            "bash", "-c", notify_step.command, "harness-script",
+            "clean", "HAR-TEST", "harness/feat", "",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(repo),
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"notify-merge-exhausted should exit 0 on clean path "
+        f"(exit {result.returncode}):\n{result.stderr}"
+    )
+    remote_refs = subprocess.run(
+        [
+            "git", "--git-dir", str(bare),
+            "for-each-ref", "--format=%(refname:short)", "refs/heads/",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    remote_branches = {b.strip() for b in remote_refs.stdout.splitlines() if b.strip()}
+    assert remote_branches == {"dev"}, (
+        f"notify-merge-exhausted must not push anything on clean path; "
+        f"remote branches: {sorted(remote_branches)}"
+    )
+    assert result.stdout == "{}", (
+        f"notify-merge-exhausted must output '{{}}' on clean path, got: {result.stdout!r}"
     )

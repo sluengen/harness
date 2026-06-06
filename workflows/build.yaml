@@ -276,6 +276,9 @@ steps:
       CONFLICTS="$4"
       if [ "$MERGE_STATUS" = "conflict" ]; then
         git push -u origin "$BRANCH" >&2
+        # Linear comment and Todo reset are best-effort; a credential or API
+        # failure leaves the ticket state unchanged but the rescue push above
+        # ensures the work is not lost. Gate-merge-clean handles cancellation.
         TODO_STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
           -H "Authorization: $LINEAR_API_KEY" \
           -H "Content-Type: application/json" \

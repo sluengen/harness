@@ -53,8 +53,8 @@ attempt-merge                (merge local feature branch → base branch in main
 └─────────────────────────────────────────────────────────────────────┘   │
      │ (exit: merge_status == "clean" or loop exhausted)                   │
      ▼                                                                     │
-notify-merge-exhausted       (no-op on clean; rescue-pushes feature branch +
-     │                        posts comment + resets to Todo on exhaustion)
+notify-merge-exhausted       (no-op on clean; rescue-pushes feature branch on exhaustion;
+     │                        Linear comment + Todo reset are best-effort side effects)
 gate-merge-clean             (cancel on still-conflict)
      │                                                                     │
      ◄─────────────────────────────────────────────────────────────────────┘
