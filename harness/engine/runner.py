@@ -867,6 +867,21 @@ class Runner:
         # registry shape.
         rid = run_id if run_id is not None else ""
 
+        # When no explicit repo_root was provided at construction time
+        # (repo_root == Path(".")), fall back to inputs["repo_path"] so
+        # cross-repo workflows that use --repo-path (rather than the
+        # --repo CLI flag) still resolve cwd="." to the correct target
+        # repository. This mirrors the worktree adapter's override logic
+        # and applies to both AI and script steps.
+        _repo_path_input = inputs.get("repo_path")
+        effective_repo_root: Path = repo_root
+        if (
+            _repo_path_input is not None
+            and str(_repo_path_input) not in ("", ".")
+            and repo_root == Path(".")
+        ):
+            effective_repo_root = Path(str(_repo_path_input))
+
         script_node = ScriptNode()
         check_node = CheckNode()
         worktree_node = WorktreeNode()
@@ -898,7 +913,7 @@ class Runner:
             """Commit any dirty worktree state so the work survives cleanup.
 
             Called after every writes_files=True AI node. Creates a WIP commit
-            on the worktree branch; the final commit-and-push step amends it
+            on the worktree branch; the final commit step amends it
             with the reviewer's message. No-op when the worktree is clean.
             """
             status = await asyncio.create_subprocess_exec(
@@ -941,6 +956,7 @@ class Runner:
                 state=state,
                 inputs=inputs,
                 contract_override=override,
+                repo_root=effective_repo_root,
             )
             if step.writes_files and state.worktree_path is not None:
                 await _checkpoint_worktree(state.worktree_path, step.id)
@@ -967,6 +983,7 @@ class Runner:
                 state=state,
                 inputs=inputs,
                 contract_override=override,
+                repo_root=effective_repo_root,
             )
 
         async def check_adapter(
@@ -1027,16 +1044,6 @@ class Runner:
                 f"worktree adapter received non-WorktreeStep: "
                 f"{type(step).__name__}"
             )
-            # Resolve repo_path from inputs when no explicit repo_root was
-            # given at construction time (CLI --repo takes precedence).
-            effective_repo_root = repo_root
-            repo_path_input = inputs.get("repo_path")
-            if (
-                repo_path_input is not None
-                and str(repo_path_input) not in ("", ".")
-                and repo_root == Path(".")
-            ):
-                effective_repo_root = Path(str(repo_path_input))
             if step.action == "create":
                 assert step.base is not None  # WorktreeStep validator
                 base = step.base

@@ -1656,3 +1656,55 @@ async def test_runner_cli_repo_root_takes_precedence_over_repo_path_input(
     worktree_path_str: str = state["worktree_path"] or ""
     # CLI-provided repo_root wins; worktree should be inside cli_repo
     assert worktree_path_str.startswith(str(cli_repo))
+
+
+@pytest.mark.slow
+async def test_runner_repo_path_input_wires_to_script_cwd_dot(tmp_path: Path) -> None:
+    """When inputs['repo_path'] is set and no explicit repo_root is given,
+    script steps with cwd='.' must run inside repo_path, not the harness CWD.
+
+    This mirrors the worktree adapter's repo_path_input override and ensures
+    main-repository git operations (attempt-merge, push-base) target the
+    correct directory in cross-repo workflows that use --repo-path.
+    """
+    other_repo = _make_git_repo(tmp_path / "other_repo")
+    db = tmp_path / "harness.db"
+
+    # Minimal workflow: one script step with cwd="." that writes its CWD
+    # to state so we can assert it's the repo_path, not the harness dir.
+    wf_path = tmp_path / "cwd_test.yaml"
+    wf_path.write_text(textwrap.dedent("""\
+        name: cwd-test
+        version: 1
+        inputs:
+          repo_path:
+            type: string
+            default: "."
+            required: false
+        steps:
+          - id: check-cwd
+            type: script
+            cwd: "."
+            command: |
+              printf '{"cwd_result": "%s"}' "$(pwd)"
+            contract:
+              cwd_result: string
+            writes: [cwd_result]
+    """))
+
+    # Default Runner (repo_root=Path(".")) — repo_path from inputs should win.
+    runner = Runner(db_path=db, progress=False)
+    exit_code = await runner.run(
+        wf_path,
+        inputs={"repo_path": str(other_repo)},
+        base_branch="main",
+    )
+    assert exit_code == 0, f"Expected exit_code=0, got {exit_code}"
+
+    row = await _fetch_single_run(db)
+    state = json.loads(row["state_json"])
+    cwd_result: str = state.get("cwd_result") or ""
+    assert Path(cwd_result).resolve() == other_repo.resolve(), (
+        f"Script with cwd='.' and repo_path='{other_repo}' should run in "
+        f"other_repo, but ran in {cwd_result!r}"
+    )

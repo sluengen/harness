@@ -126,6 +126,7 @@ class AINode:
         state: BaseState,
         inputs: dict[str, Any],
         contract_override: builtins.type[BaseModel] | None = None,
+        repo_root: Path | None = None,
     ) -> NodeResult[BaseModel]:
         """Render, dispatch, and return the agent's :class:`NodeResult`.
 
@@ -140,6 +141,10 @@ class AINode:
                 once H-008 makes the loader pre-compile every contract into
                 ``step.contract`` itself, this parameter is expected to
                 disappear.
+            repo_root: When set, ``cwd="."`` in the step resolves to this
+                path instead of ``Path(".")``. Required for cross-repo
+                execution where agent operations must run in the target repo,
+                not the harness process directory.
 
         Raises:
             RuntimeError: prompt-template not found, render error,
@@ -151,7 +156,7 @@ class AINode:
         contract_cls = self._resolve_contract(step, contract_override)
         prompt_text = self._render_prompt(step, state, inputs)
         submit_schema = compile_to_tool_schema(contract_cls, node_id=step.id)
-        cwd = self._resolve_cwd(step, state)
+        cwd = self._resolve_cwd(step, state, repo_root=repo_root)
 
         result = await self._agent.execute(
             prompt_text,
@@ -274,10 +279,23 @@ class AINode:
             ) from e
 
     @staticmethod
-    def _resolve_cwd(step: AIStep, state: BaseState) -> Path | None:
-        """``step.cwd`` (treated as Path) wins; else state.worktree_path; else None."""
+    def _resolve_cwd(
+        step: AIStep,
+        state: BaseState,
+        *,
+        repo_root: Path | None = None,
+    ) -> Path | None:
+        """``step.cwd`` (treated as Path) wins; else state.worktree_path; else None.
+
+        When ``step.cwd == "."`` and ``repo_root`` is provided, returns
+        ``repo_root`` so cross-repo AI steps run in the target repo
+        instead of the harness process directory.
+        """
         if step.cwd is not None:
-            return Path(step.cwd)
+            cwd = Path(step.cwd)
+            if str(cwd) == "." and repo_root is not None:
+                return repo_root
+            return cwd
         if state.worktree_path is not None:
             return state.worktree_path
         return None
