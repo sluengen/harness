@@ -48,8 +48,10 @@ Choose exactly one:
   Use DEFER sparingly — only when a fix cannot reasonably land in this session. If in
   doubt, use FAIL.
 
-On FAIL: populate `issues` with each finding (file:line, description). Leave
-`commit_message` empty and `deferred_brief` empty.
+On FAIL: populate `issues` with each finding as a plain string (e.g.
+`"decisions/ADR-014.md:42 — missing rationale"`). Each element of `issues` must
+be a single string, not an object or dict. Leave `commit_message` empty and
+`deferred_brief` empty.
 
 On PASS: `issues` is empty. Write `commit_message`.
 
