@@ -46,7 +46,13 @@ Contract: `{target_claude_md: string}`.
 
 ### `fix-loop` (loop, max 3 iterations)
 
-Iterates `implement → review → gate-retry` until the review verdict is not FAIL, or until 3 iterations are exhausted (at which point the loop continues with `on_exhaust: continue`).
+Iterates `implement → verify → gate-verify → capture-diff → review → gate-retry` until the review verdict is not FAIL, or until 3 iterations are exhausted (at which point the loop continues with `on_exhaust: continue`).
+
+The verify step is a deterministic script gate — it runs the verify command and captures output into state before the review agent ever sees the change. If verify fails, `gate-verify` retries the loop immediately (skipping capture-diff and review), and the failure output is appended to `issues` so the implement agent sees it on the next iteration. This keeps destructive Bash access out of the review agent entirely.
+
+**Feedback fidelity across iterations.** The `review` step writes `issues` with `merge: replace`, so each iteration's `issues` reflects only the *current* review's findings — not the union of every prior round. The default list merge is append (`harness.state.store._merge`); left as the default, already-fixed findings would pile up across iterations and the implement agent (a fresh, stateless agent each round) would be told to re-fix them. The `verify` step keeps the default append merge so a verify-failure message rides alongside any still-outstanding review findings rather than clobbering them; the next successful review's replace clears the combined list.
+
+**Diff for the read-only reviewer.** Because the review agent has no Bash (it cannot run `git`), `capture-diff` records the branch's diff against the base into `state.diff` and `review-ticket.j2` embeds it. Without this the reviewer would have no reliable view of *what changed* and could not assess the "focused diff" criterion.
 
 #### `implement` (ai, inside fix-loop)
 
@@ -54,9 +60,25 @@ Dispatches a `claude/sonnet` agent in the worktree with `prompts/implement-ticke
 
 The prompt instructs the agent to follow `skills/test-driven-development.md`, run the full verification gate, and call the submit tool once when complete.
 
+#### `verify` (script, inside fix-loop)
+
+Runs `$inputs.verify_command` as a subprocess (cwd defaults to `worktree_path`). Captures `verify_exit_code` (int) and `verify_output` (string) into state. On failure, appends a "Verify gate failed" entry to `issues`. Allowed tools: none (pure shell).
+
+Contract: `{verify_exit_code: integer, verify_output: string, issues: list[string]}`.
+
+#### `gate-verify` (check, inside fix-loop)
+
+Evaluates `state.verify_exit_code == 0`. `on_fail: retry_loop:fix-loop`. Short-circuits to implement when verify fails — review is never called with a failing worktree.
+
+#### `capture-diff` (script, inside fix-loop)
+
+Runs `git diff <base_branch>...HEAD` in the worktree (cwd defaults to `worktree_path`) and writes the result to `state.diff`. The three-dot form diffs against the merge-base, so it captures exactly this branch's changes even if the base advanced during the run. Runs after `gate-verify` (so it only fires on a passing build) and before `review`. Allowed tools: none (pure shell).
+
+Contract: `{diff: string}`. Writes: `[diff]`.
+
 #### `review` (ai, inside fix-loop)
 
-Dispatches a `claude/sonnet` agent in the worktree with `prompts/review-ticket.j2`. Writes `verdict`, `issues`, `commit_message`, and `deferred_brief` to state.
+Dispatches a `claude/sonnet` (or `codex` in `build-codex`) agent in the worktree with `prompts/review-ticket.j2`. The prompt embeds `state.diff` (captured by `capture-diff`) and `state.verify_output` so the read-only agent sees what changed and that the gate passed. Writes `verdict`, `issues`, `commit_message`, and `deferred_brief` to state. The `issues` write uses `merge: replace` (see "Feedback fidelity" above). Allowed tools: `[Read, Grep, Glob]` — no Bash: verify already ran as a script step and the diff is supplied via state, so the agent never needs `git` (a prior run with Bash destructively deleted a branch).
 
 Contract:
 ```yaml
@@ -70,6 +92,8 @@ commit_message: string
 deferred_brief: string
 ```
 
+Writes: `[verdict, {field: issues, merge: replace}, commit_message, deferred_brief]`.
+
 #### `gate-retry` (check, inside fix-loop)
 
 Evaluates `state.verdict != "FAIL"`. `on_fail: retry_loop:fix-loop`. Retries the loop when verdict is FAIL.
@@ -80,7 +104,7 @@ No-op unless the loop exhausted with verdict still FAIL. On exhaustion: posts a 
 
 ### `gate-exhausted` (check)
 
-Evaluates `state.verdict != "FAIL"`. `on_fail: cancel`. Cancels the run if the fix-loop exhausted without a passing verdict.
+Evaluates `state.verdict in ("PASS", "DEFER")`. `on_fail: cancel`. Cancels the run if the fix-loop exhausted without an accepted verdict. Using `in ("PASS", "DEFER")` (rather than `!= "FAIL"`) correctly catches both review-FAIL exhaustion and the verify-only failure case where `verdict` was never set by review.
 
 ### `handle-deferred` (script)
 
@@ -194,8 +218,11 @@ Queries Linear for the "completed" state ID and transitions the ticket to done. 
 | `ticket_title` | `str` | `fetch-ticket` |
 | `ticket_description` | `str` | `fetch-ticket` |
 | `target_claude_md` | `str` | `read-target-claude-md` |
+| `verify_exit_code` | `int` | `verify` |
+| `verify_output` | `str` | `verify` |
+| `diff` | `str` | `capture-diff` |
 | `verdict` | `str` | `review` |
-| `issues` | `list[str]` | `review` |
+| `issues` | `list[str]` | `verify` (append), `review` (replace) |
 | `commit_message` | `str` | `review` |
 | `deferred_brief` | `str` | `review` |
 | `commit_sha` | `str` | `commit` |
@@ -211,11 +238,11 @@ Plus `BaseState` fields: `run_id`, `workflow_name`, `base_branch`, `artifacts_di
 
 ### `prompts/implement-ticket.j2`
 
-Instructs the agent to implement the changes for the ticket, showing the ticket title and description from state. Uses `target_claude_md` for repo context. Three phases: implement (TDD), verify, submit.
+Instructs the agent to implement the changes for the ticket, showing the ticket title and description from state. Uses `target_claude_md` for repo context. Three phases: implement (TDD), verify, submit. On a retry (`state.issues` non-empty) it renders an "Open findings from the previous attempt" block that frames each finding as a description of an *underlying* problem — directing the agent to fix the root cause and the whole class of problem, not just the literal text or the cited example. This counters the failure mode where a fresh, stateless retry agent makes a shallow, literal fix.
 
 ### `prompts/review-ticket.j2`
 
-Instructs the agent to review the implementation against the acceptance criteria. Evaluates correctness, test coverage, focused diff, regressions. Tags findings HIGH/MEDIUM/LOW. Writes a commit message describing what was built. Calls submit once with `verdict`, `issues`, `commit_message`, and `deferred_brief`.
+Instructs the agent to review the implementation against the acceptance criteria. Embeds `state.diff` ("Changes under review") and `state.verify_output` so the read-only agent works from the actual change. Evaluates correctness, test coverage, focused diff, regressions. On FAIL, each element of `issues` must be a self-contained, actionable finding — *where, what, why, and what a correct fix looks like* — because the implementer is a fresh agent that sees only these strings (no memory of the review). Writes a commit message describing what was built. Calls submit once with `verdict`, `issues`, `commit_message`, and `deferred_brief`.
 
 ### `prompts/build/resolve-conflicts.j2`
 

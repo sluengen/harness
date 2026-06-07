@@ -32,11 +32,15 @@ from pathlib import Path
 
 import pytest
 
+from harness.state.schema import BaseState
+from harness.state.store import _merge
+from harness.workflow.derive import derive_state_schema
 from harness.workflow.loader import LoadedWorkflow, load_workflow
-from harness.workflow.schema import LoopStep, ScriptStep
+from harness.workflow.schema import LoopStep, ScriptStep, Step
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BUILD_WORKFLOW = _REPO_ROOT / "workflows" / "build.yaml"
+_BUILD_CODEX_WORKFLOW = _REPO_ROOT / "workflows" / "build-codex.yaml"
 
 
 @pytest.fixture(scope="module")
@@ -115,9 +119,11 @@ def _commit_step(loaded_build: LoadedWorkflow) -> ScriptStep:
 
 
 def test_build_workflow_fix_loop_inner_steps(loaded_build: LoadedWorkflow) -> None:
-    """fix-loop inner steps: implement, review, gate-retry.
+    """fix-loop inner steps: implement, verify, gate-verify, capture-diff, review, gate-retry.
 
-    read-target-claude-md and set-in-review are now top-level steps.
+    read-target-claude-md and set-in-review are top-level steps. The verify gate
+    runs as a deterministic script step before review; capture-diff records the
+    branch diff into state so the read-only review agent can see what changed.
     """
     fix_loop = next(
         s for s in loaded_build.workflow.steps if s.id == "fix-loop"
@@ -128,6 +134,9 @@ def test_build_workflow_fix_loop_inner_steps(loaded_build: LoadedWorkflow) -> No
     inner_ids = [s.id for s in fix_loop.loop.steps]
     assert inner_ids == [
         "implement",
+        "verify",
+        "gate-verify",
+        "capture-diff",
         "review",
         "gate-retry",
     ]
@@ -508,4 +517,240 @@ def test_commit_has_no_git_push(loaded_build: LoadedWorkflow) -> None:
     assert "git push" not in step.command, (
         "commit step must not contain 'git push' — pushing is handled by "
         "push-base after the merge phase succeeds"
+    )
+
+
+# ---------------------------------------------------------------------------
+# fix-loop feedback fixes — applied to BOTH build.yaml and build-codex.yaml
+#
+# 1. review writes `issues` with merge: replace so review findings do not
+#    accumulate across retry iterations (default list merge is append).
+# 2. capture-diff records the branch diff into state so the read-only review
+#    agent (Read/Grep/Glob, no Bash) can see what changed.
+# ---------------------------------------------------------------------------
+
+_BUILD_WORKFLOWS = pytest.mark.parametrize(
+    "wf_path",
+    [_BUILD_WORKFLOW, _BUILD_CODEX_WORKFLOW],
+    ids=["build", "build-codex"],
+)
+
+
+def _fix_loop_inner(loaded: LoadedWorkflow) -> dict[str, Step]:
+    """Return {step_id: step} for the steps inside the fix-loop."""
+    fix_loop = next(s for s in loaded.workflow.steps if s.id == "fix-loop")
+    assert isinstance(fix_loop, LoopStep), (
+        f"fix-loop should be a LoopStep, got {type(fix_loop)}"
+    )
+    return {s.id: s for s in fix_loop.loop.steps}
+
+
+@_BUILD_WORKFLOWS
+def test_build_workflow_loads(wf_path: Path) -> None:
+    """Both build workflows parse and pass the loader's cross-step checks."""
+    loaded = load_workflow(wf_path)
+    assert loaded.workflow.name in ("build", "build-codex")
+
+
+@_BUILD_WORKFLOWS
+def test_review_issues_write_uses_replace_merge(wf_path: Path) -> None:
+    """The review step must write `issues` with merge: replace.
+
+    The default list merge is append (see harness.state.store._merge), which
+    made review findings accumulate across fix-loop iterations: by the last
+    iteration the implement agent saw already-fixed findings mixed with the
+    current ones, and notify-exhausted posted the whole pile to Linear.
+    Replace makes `issues` reflect only the current review's findings.
+    """
+    loaded = load_workflow(wf_path)
+    review = _fix_loop_inner(loaded)["review"]
+    issues_writes = [w for w in review.writes if w.field == "issues"]
+    assert issues_writes, f"{wf_path.name}: review step must write `issues`"
+    assert issues_writes[0].merge == "replace", (
+        f"{wf_path.name}: review must write `issues` with merge: replace so "
+        "review findings do not accumulate across fix-loop iterations"
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_verify_issues_write_still_appends(wf_path: Path) -> None:
+    """The verify step keeps default (append) merge for `issues`.
+
+    A verify failure short-circuits before review (gate-verify), so its
+    message must ride alongside the still-outstanding review findings rather
+    than replacing them. Only the review write uses replace.
+    """
+    loaded = load_workflow(wf_path)
+    verify = _fix_loop_inner(loaded)["verify"]
+    issues_writes = [w for w in verify.writes if w.field == "issues"]
+    assert issues_writes, f"{wf_path.name}: verify step must write `issues`"
+    assert issues_writes[0].merge is None, (
+        f"{wf_path.name}: verify must NOT use replace merge on `issues` — a "
+        "verify failure should append to (not clobber) outstanding findings"
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_capture_diff_step_present_before_review(wf_path: Path) -> None:
+    """capture-diff must run after gate-verify and before review, writing `diff`."""
+    loaded = load_workflow(wf_path)
+    fix_loop = next(s for s in loaded.workflow.steps if s.id == "fix-loop")
+    assert isinstance(fix_loop, LoopStep)
+    inner_ids = [s.id for s in fix_loop.loop.steps]
+    assert "capture-diff" in inner_ids, (
+        f"{wf_path.name}: fix-loop must contain a capture-diff step"
+    )
+    assert (
+        inner_ids.index("gate-verify")
+        < inner_ids.index("capture-diff")
+        < inner_ids.index("review")
+    ), (
+        f"{wf_path.name}: capture-diff must run after gate-verify and before "
+        f"review; got order {inner_ids}"
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_capture_diff_step_writes_diff_against_base(wf_path: Path) -> None:
+    """capture-diff writes only `diff` and diffs against the base branch."""
+    loaded = load_workflow(wf_path)
+    step = _fix_loop_inner(loaded)["capture-diff"]
+    assert isinstance(step, ScriptStep), (
+        f"{wf_path.name}: capture-diff should be a ScriptStep, got {type(step)}"
+    )
+    write_fields = [w.field for w in step.writes]
+    assert write_fields == ["diff"], (
+        f"{wf_path.name}: capture-diff must write only `diff`, got {write_fields}"
+    )
+    assert step.command is not None and "git diff" in step.command, (
+        f"{wf_path.name}: capture-diff must run `git diff`"
+    )
+    assert "$inputs.base_branch" in step.args, (
+        f"{wf_path.name}: capture-diff must diff against $inputs.base_branch"
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_capture_diff_command_emits_branch_diff(wf_path: Path, tmp_path: Path) -> None:
+    """The capture-diff command emits valid JSON whose `diff` holds the
+    branch's changes against the base branch (functional test against git)."""
+    if not shutil.which("jq") or not shutil.which("git"):
+        pytest.skip("git or jq not installed")
+    loaded = load_workflow(wf_path)
+    step = _fix_loop_inner(loaded)["capture-diff"]
+    assert isinstance(step, ScriptStep)
+    assert step.command is not None
+
+    def _git(*args: str) -> None:
+        subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
+        )
+
+    _git("init", "-q")
+    _git("config", "user.email", "t@example.com")
+    _git("config", "user.name", "Test")
+    (tmp_path / "f.py").write_text("original\n")
+    _git("add", "-A")
+    _git("commit", "-q", "-m", "base")
+    _git("branch", "base")
+    _git("checkout", "-q", "-b", "feature")
+    (tmp_path / "f.py").write_text("changed-by-implement\n")
+    _git("add", "-A")
+    _git("commit", "-q", "-m", "wip: implement")
+
+    # $0="cd", $1="base" — mirrors how the script node invokes the command.
+    result = subprocess.run(
+        ["bash", "-c", step.command, "cd", "base"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"capture-diff command failed: {result.stderr}"
+    payload = json.loads(result.stdout)
+    assert "diff" in payload
+    assert "changed-by-implement" in payload["diff"], (
+        f"{wf_path.name}: capture-diff must capture the branch's changes against "
+        f"the base; got: {payload['diff']!r}"
+    )
+
+
+def _apply_step_writes(
+    schema: type[BaseState], state: BaseState, step: Step, payload: dict[str, object]
+) -> BaseState:
+    """Apply a step's declared writes to state the way the executor does.
+
+    Mirrors harness.engine.executor.Executor._apply_writes: collect the
+    per-write merge overrides from the step's WriteSpecs, then run the real
+    harness.state.store._merge (the same function update_state calls).
+    """
+    overrides = {w.field: w.merge for w in step.writes if w.merge is not None}
+    merged = _merge(schema, state, payload, overrides)
+    return schema.model_validate(merged)
+
+
+@_BUILD_WORKFLOWS
+def test_issues_do_not_accumulate_across_fix_loop_iterations(wf_path: Path) -> None:
+    """End-to-end: with the shipped workflow's merge config, review findings
+    reflect only the current iteration — they do not pile up.
+
+    Drives the real derive + merge path with the merge overrides extracted
+    from the actual workflow steps. Before the fix (append merge) iteration 2
+    would see ['A', 'B', 'C']; with review using replace it sees ['C'].
+    """
+    loaded = load_workflow(wf_path)
+    schema = derive_state_schema(loaded)
+    inner = _fix_loop_inner(loaded)
+    verify, review = inner["verify"], inner["review"]
+
+    state: BaseState = schema.model_validate(
+        {
+            "run_id": "r",
+            "workflow_name": loaded.workflow.name,
+            "base_branch": "dev",
+            "artifacts_dir": "/tmp",
+            "started_at": "2026-01-01T00:00:00Z",
+            "notes": [],
+        }
+    )
+
+    # Iteration 1: verify passes (issues=[]), review FAILs with two findings.
+    state = _apply_step_writes(
+        schema, state, verify,
+        {"verify_exit_code": 0, "verify_output": "ok", "issues": []},
+    )
+    state = _apply_step_writes(
+        schema, state, review,
+        {"verdict": "FAIL", "issues": ["A", "B"], "commit_message": "", "deferred_brief": ""},
+    )
+    assert state.issues == ["A", "B"]  # type: ignore[attr-defined]
+
+    # Iteration 2: A and B fixed; verify passes; review FAILs with new finding C.
+    state = _apply_step_writes(
+        schema, state, verify,
+        {"verify_exit_code": 0, "verify_output": "ok", "issues": []},
+    )
+    state = _apply_step_writes(
+        schema, state, review,
+        {"verdict": "FAIL", "issues": ["C"], "commit_message": "", "deferred_brief": ""},
+    )
+    assert state.issues == ["C"], (  # type: ignore[attr-defined]
+        f"{wf_path.name}: review findings accumulated across iterations "
+        f"(got {state.issues!r}); the review `issues` write must use merge: replace"  # type: ignore[attr-defined]
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_review_step_has_no_bash(wf_path: Path) -> None:
+    """The review agent must stay read-only (no Bash).
+
+    A prior run gave review Bash and it destructively deleted a branch. The
+    diff now reaches review via the capture-diff state field, not by letting
+    the agent run git itself.
+    """
+    loaded = load_workflow(wf_path)
+    review = _fix_loop_inner(loaded)["review"]
+    allowed = list(getattr(review, "allowed_tools", []))
+    assert "Bash" not in allowed, (
+        f"{wf_path.name}: review must not have Bash in allowed_tools "
+        f"(got {allowed}); the diff is provided via state.diff instead"
     )

@@ -21,13 +21,32 @@ The implementation must follow the conventions from the project's CLAUDE.md:
 
 {{ state.target_claude_md }}
 
+## Verification gate
+
+The harness ran `{{ inputs.verify_command }}` as a deterministic script step before
+calling you — it **passed**. Output for reference (do not re-run):
+
+```
+{{ state.verify_output }}
+```
+{% if state.diff %}
+## Changes under review
+
+This is the diff of the work on this branch (the implementation's changes against the
+base). It is the primary subject of your review — assess these changes specifically.
+You have read-only tools (Read/Grep/Glob); use them to read surrounding files for
+context, but the change itself is below.
+
+```diff
+{{ state.diff }}
+```
+{% endif %}
 ## Review criteria
 
 Evaluate against: correctness relative to the acceptance criteria above, adherence to
 the project conventions above, adequate test coverage, focused diff (no drive-by
-changes), no obvious regressions. Confirm that `{{ inputs.verify_command }}` passes
-(test failures or lint errors are FAIL). Read the diff or relevant files, then
-identify issues.
+changes), no obvious regressions. Work from the diff above (reading surrounding files
+for context where needed), then identify issues.
 
 Be concrete — point to file and line where possible. A clean review (no findings) is a valid result; do not invent issues to fill space.
 
@@ -48,10 +67,18 @@ Choose exactly one:
   Use DEFER sparingly — only when a fix cannot reasonably land in this session. If in
   doubt, use FAIL.
 
-On FAIL: populate `issues` with each finding as a plain string (e.g.
-`"decisions/ADR-014.md:42 — missing rationale"`). Each element of `issues` must
-be a single string, not an object or dict. Leave `commit_message` empty and
-`deferred_brief` empty.
+On FAIL: populate `issues` with one finding per element. The implementer who fixes
+these is a **fresh agent with no memory of this review or any prior round** — it sees
+only these strings. So make each finding self-contained and actionable: state *where*
+(file:line), *what* is wrong, *why* it's wrong, and *what a correct fix looks like*.
+Prefer a sentence or two over a bare label — a terse pointer like
+`"store.py:472 — wrong merge"` forces the implementer to re-derive your reasoning and
+invites a shallow, literal fix. Write what you would tell a colleague picking this up
+cold. Example: `"harness/state/store.py:472 — _merge appends to list fields, so retry
+findings accumulate across iterations instead of replacing the prior set; the review
+write should use replace semantics so each round reflects only the current findings."`
+Each element must be a single string, not an object or dict. Leave `commit_message`
+and `deferred_brief` empty.
 
 On PASS: `issues` is empty. Write `commit_message`.
 
