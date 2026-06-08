@@ -127,13 +127,6 @@ steps:
               DB_URL="${HARNESS_TEST_DB_BASE_URL%/*}/${DB_NAME}"
               psql "$HARNESS_TEST_DB_BASE_URL" \
                 -c "CREATE DATABASE \"${DB_NAME}\";" 2>/dev/null || true
-              migrate_out=$(cd "$WORKTREE" && DATABASE_URL="$DB_URL" uv run alembic upgrade head 2>&1)
-              if [ $? -ne 0 ]; then
-                jq -n --argjson c 1 --arg o "$migrate_out" \
-                  --arg m "Alembic migration failed:"$'\n'"$migrate_out" \
-                  '{"verify_exit_code":$c,"verify_output":$o,"issues":[$m]}'
-                exit 0
-              fi
               output=$(cd "$WORKTREE" && DATABASE_URL="$DB_URL" eval "$VERIFY_CMD" 2>&1)
             else
               # Run verify.sh inside the worktree, not the main repo checkout.

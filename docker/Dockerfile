@@ -11,9 +11,13 @@
 #     harness:dev run steward --domain=architecture
 FROM python:3.11-slim
 
-# OS deps: git for worktree operations, ca-certificates for HTTPS to Anthropic / Linear.
+# OS deps:
+#   git              — worktree operations
+#   ca-certificates  — HTTPS to Anthropic / Linear
+#   jq               — required by every script node (set-in-progress, verify, …)
+#   postgresql-client — psql for per-run DATABASE_URL provisioning in the verify node
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates \
+        git ca-certificates jq postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # uv handles dependency resolution and the project venv inside the image.

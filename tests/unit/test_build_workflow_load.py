@@ -770,3 +770,54 @@ def test_implement_persists_session_review_stays_fresh(wf_path: Path) -> None:
     assert inner["review"].persist_session is False, (
         f"{wf_path.name}: review must stay fresh (persist_session: false)"
     )
+
+
+# ---------------------------------------------------------------------------
+# verify — DATABASE_URL injection and no-alembic contract
+# ---------------------------------------------------------------------------
+
+
+@_BUILD_WORKFLOWS
+def test_verify_exports_database_url_bound_to_db_url(wf_path: Path) -> None:
+    """The verify step must inject DATABASE_URL bound to the per-run DB_URL.
+
+    When HARNESS_TEST_DB_BASE_URL is configured, the harness provisions a
+    per-run database and exports DATABASE_URL to the verify command.  The
+    target owns schema setup (migrations); the harness only provisions the
+    empty database.
+    """
+    loaded = load_workflow(wf_path)
+    verify = _fix_loop_inner(loaded)["verify"]
+    assert isinstance(verify, ScriptStep), (
+        f"{wf_path.name}: verify must be a ScriptStep"
+    )
+    assert verify.command is not None
+    assert "DATABASE_URL=" in verify.command, (
+        f"{wf_path.name}: verify step must export DATABASE_URL to the verify "
+        "command so the target's tests can connect to the provisioned database"
+    )
+    assert "$DB_URL" in verify.command, (
+        f"{wf_path.name}: verify step must bind DATABASE_URL to the per-run "
+        "DB_URL variable so each branch gets an isolated database"
+    )
+
+
+@_BUILD_WORKFLOWS
+def test_verify_contains_no_alembic(wf_path: Path) -> None:
+    """The verify step must not invoke alembic.
+
+    The harness provisions an isolated, empty database and exports DATABASE_URL.
+    The target owns schema setup — the harness does not run migrations.
+    Baking a target-specific migration tool into the generic harness violates
+    separation of concerns.
+    """
+    loaded = load_workflow(wf_path)
+    verify = _fix_loop_inner(loaded)["verify"]
+    assert isinstance(verify, ScriptStep), (
+        f"{wf_path.name}: verify must be a ScriptStep"
+    )
+    assert verify.command is not None
+    assert "alembic" not in verify.command, (
+        f"{wf_path.name}: verify step must not invoke alembic — the target "
+        "owns schema setup; the harness only provisions the empty database"
+    )
