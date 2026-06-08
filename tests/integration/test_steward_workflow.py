@@ -102,6 +102,7 @@ class _ReflectingMockAgent(MockAgent):
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
+        session_key: str | None = None,
     ) -> NodeResult[BaseModel]:
         # Record the call so the test can assert dispatch order if needed.
         self.calls.append(object())  # type: ignore[arg-type]

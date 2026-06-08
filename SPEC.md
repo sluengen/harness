@@ -495,6 +495,7 @@ steps:
 | `writes`             | yes              | state fields this step is allowed to mutate                           |
 | `writes_files`       | no               | bool, true if the step mutates the filesystem                         |
 | `stall_timeout_s`    | ai               | kill node if no SDK event (tool_called/completed) for N seconds; default: `300` (5 min). Distinct from hard `timeout_s` wall. |
+| `persist_session`    | ai               | bool, resume the agent's conversation across re-executions (keyed by `step.id`) instead of running fresh; default `false`. Honoured by adapters that support session resume (ClaudeAgent); cleared by a `fresh_context: true` loop. |
 | `expr`               | check            | Python boolean expression over `state`                                |
 | `on_fail`            | check            | `cancel` \| `retry_loop:<id>` \| `continue`                           |
 | `loop`               | loop             | nested block with `max_iterations`, `steps`, and one of `until` / `until_bash` (see §10) |
@@ -865,7 +866,7 @@ The loop runs its `steps` in declared order, evaluates `until:` against state, r
 - If `until:` is true → continue to the next step in the parent.
 - If `max_iterations` reached without satisfying `until:` → workflow fails (exit 1) with a `loop_exhausted` event.
 
-`fresh_context: true` (optional) reinitialises the AI context per iteration. Useful for "self-correcting" loops where carrying prior reasoning hurts.
+`fresh_context: true` (optional) reinitialises the AI context per iteration. Useful for "self-correcting" loops where carrying prior reasoning hurts. It also clears any sessions stored by `persist_session: true` steps (via the adapter's `reset()`), so it overrides per-step session persistence.
 
 **Satisfaction predicate — `until:` or `until_bash:`.** A loop block must declare exactly one. `until:` is a Python boolean expression over `state` (the default shape). `until_bash:` is a shell command run via `bash -c` after each iteration; exit 0 means satisfied, any non-zero exit means not-yet-satisfied. `$state.<field>` / `$inputs.<key>` references inside the command are substituted before exec; missing references fail the workflow. A 300s wall-clock timeout caps each invocation — a timed-out command is treated as "not satisfied" and the `loop_iteration` event carries `data.until_bash_timeout=true`. Declaring both `until:` and `until_bash:` is rejected as ambiguous.
 

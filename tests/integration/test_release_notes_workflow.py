@@ -71,6 +71,7 @@ class _ReflectingMockAgent(MockAgent):
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
+        session_key: str | None = None,
     ) -> NodeResult[BaseModel]:
         self.calls.append(object())  # type: ignore[arg-type]
         if not self._payload_queue:

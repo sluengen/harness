@@ -48,6 +48,7 @@ Not all agent adapters support every AI step feature. The table below shows what
 | `cwd:` | ✓ | ✓ | ✓ |
 | `max_turns:` | ✓ | ✗ | ✗ |
 | `allowed_tools:` | ✓ | ✗ | ✗ |
+| `persist_session:` | ✓ | ✗ (ignored) | ✗ (ignored) |
 
 For production workflows, use `ClaudeAgent` or `CodexAgent`. The v1.5 `OpencodeAgent` adapter exists for future use and raises `RuntimeError` in production (no `proc_fn` wired).
 
@@ -65,7 +66,9 @@ Minimal example of each:
   writes: [summary]
 ```
 
-Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonnet`), `allowed_tools:` (defaults to `[Read, Grep, Glob]`; **replaces** the default when set — not additive), `cwd:`, `writes_files:` (default `false`), `stall_timeout_s:` (default `300`), `timeout_s:` (default `600`).
+Optional `ai` keys: `agent:` (defaults to `claude`), `model:` (defaults to `sonnet`), `allowed_tools:` (defaults to `[Read, Grep, Glob]`; **replaces** the default when set — not additive), `cwd:`, `writes_files:` (default `false`), `stall_timeout_s:` (default `300`), `timeout_s:` (default `600`), `max_turns:` (default unset — SDK default), `persist_session:` (default `false`).
+
+`persist_session: true` makes a supporting adapter (ClaudeAgent) resume the *same* conversation each time the step re-executes — keyed by `step.id` — so an agent inside a retry loop keeps the reasoning and history of its prior attempt instead of starting cold. Use it for an implement/fix step in a loop; leave it off (the default) for review/judge steps, which should evaluate fresh. A `fresh_context: true` loop clears stored sessions, overriding it. Adapters without resume support accept and ignore the flag.
 
 ```yaml
 # script — bash form (default runtime). `command:` runs the value as bash.

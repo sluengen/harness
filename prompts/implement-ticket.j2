@@ -14,16 +14,23 @@
 Your working directory is `{{ state.worktree_path }}`. All file operations must happen inside it.
 
 {% if state.issues %}
-## Previous review — issues to fix
+## Open findings from the previous attempt
 
-This is a retry. The previous implementation was rejected. Fix **all** of the following
-before re-submitting:
+This is a retry. A previous attempt was rejected — the verification gate failed, the
+reviewer found problems, or both. Each item below is a real problem to fix.
+
+Treat each finding as a description of an underlying issue, not a literal script. Read
+it, locate the root cause in the code, and fix that cause properly. Do not just
+pattern-match the wording: if a finding names one file or line as an example, fix the
+whole class of problem it points to, not only the cited instance. If you conclude a
+finding is already resolved or is mistaken, say so in your notes with the reason rather
+than silently skipping it.
 
 {% for issue in state.issues %}
 - {{ issue }}
 {% endfor %}
 
-Do not re-submit until every item above is addressed and verified.
+Resolve every finding above, then re-run the verification gate before submitting.
 
 ---
 {% endif %}

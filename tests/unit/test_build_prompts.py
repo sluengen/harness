@@ -56,12 +56,16 @@ def _implement_inputs(verify_command: str = "bash scripts/verify.sh") -> dict[st
 def _review_state(
     *,
     target_claude_md: str = "## Conventions\nUse TDD.",
+    verify_output: str = "All checks passed.",
+    diff: str = "",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         ticket_title="Fix the bug",
         ticket_description="The bug is in auth.py line 42.",
         issues=[],
         target_claude_md=target_claude_md,
+        verify_output=verify_output,
+        diff=diff,
     )
 
 
@@ -182,24 +186,44 @@ def test_implement_ticket_missing_verify_command_raises() -> None:
 
 
 def test_implement_ticket_retry_section_visible_when_issues_present() -> None:
-    """When state.issues is non-empty the 'Previous review' block must appear."""
+    """When state.issues is non-empty the open-findings block must appear."""
     env = _env()
     rendered = env.get_template("implement-ticket.j2").render(
         state=_implement_state(issues=["Missing test for edge case X"]),
         inputs=_implement_inputs(),
     )
-    assert "Previous review" in rendered
+    assert "Open findings" in rendered
     assert "Missing test for edge case X" in rendered
 
 
 def test_implement_ticket_retry_section_absent_when_no_issues() -> None:
-    """When state.issues is empty the 'Previous review' block must not appear."""
+    """When state.issues is empty the open-findings block must not appear."""
     env = _env()
     rendered = env.get_template("implement-ticket.j2").render(
         state=_implement_state(issues=[]),
         inputs=_implement_inputs(),
     )
-    assert "Previous review" not in rendered
+    assert "Open findings" not in rendered
+
+
+def test_implement_ticket_retry_framing_targets_root_cause() -> None:
+    """The retry framing must steer the agent to the underlying cause, not a
+    literal fix of only the cited example — guards the fix for the
+    'agent only actions exactly what is written' failure mode."""
+    env = _env()
+    rendered = env.get_template("implement-ticket.j2").render(
+        state=_implement_state(issues=["auth.py:42 — example finding"]),
+        inputs=_implement_inputs(),
+    )
+    lowered = rendered.lower()
+    assert "root cause" in lowered, (
+        "retry framing must tell the implementer to fix the root cause, "
+        "not just the literal text of the finding"
+    )
+    assert "class of problem" in lowered, (
+        "retry framing must tell the implementer to fix the whole class of "
+        "problem a finding points to, not only the cited instance"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +261,54 @@ def test_review_ticket_includes_verify_command() -> None:
     )
     assert "npm test" in rendered, (
         "review-ticket.j2 must include the verify_command from inputs"
+    )
+
+
+def test_review_ticket_includes_diff_when_present() -> None:
+    """When state.diff is non-empty the diff must be embedded in the prompt.
+
+    The reviewer is read-only (Read/Grep/Glob, no Bash) and cannot run
+    git itself, so the harness captures the diff into state and the prompt
+    must surface it for review."""
+    env = _env()
+    unique_diff = "diff --git a/foo.py b/foo.py\n+unique-diff-marker-123"
+    rendered = env.get_template("review-ticket.j2").render(
+        state=_review_state(diff=unique_diff),
+        inputs=_review_inputs(),
+    )
+    assert "unique-diff-marker-123" in rendered, (
+        "review-ticket.j2 must embed state.diff so the read-only reviewer "
+        "can see what changed"
+    )
+    assert "Changes under review" in rendered
+
+
+def test_review_ticket_omits_diff_section_when_empty() -> None:
+    """When state.diff is empty the diff section must not render (no empty fence)."""
+    env = _env()
+    rendered = env.get_template("review-ticket.j2").render(
+        state=_review_state(diff=""),
+        inputs=_review_inputs(),
+    )
+    assert "Changes under review" not in rendered
+
+
+def test_review_ticket_findings_guidance_demands_self_contained_findings() -> None:
+    """The FAIL guidance must tell the reviewer that findings are read by a
+    fresh agent with no memory, so each must be self-contained — guards the
+    fix for the 'terse one-line findings lose the reviewer's reasoning' mode."""
+    env = _env()
+    rendered = env.get_template("review-ticket.j2").render(
+        state=_review_state(),
+        inputs=_review_inputs(),
+    )
+    lowered = rendered.lower()
+    assert "no memory" in lowered, (
+        "review findings guidance must warn that the implementer is a fresh "
+        "agent with no memory of the review"
+    )
+    assert "self-contained" in lowered, (
+        "review findings guidance must require self-contained, actionable findings"
     )
 
 

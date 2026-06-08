@@ -101,13 +101,54 @@ steps:
           prompt: prompts/implement-ticket.j2
           allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
           writes_files: true
+          # Resume the same conversation across fix-loop retries so the agent
+          # keeps the reasoning + history of its prior attempt. Review is NOT
+          # persisted (codex reviewer, no flag) — each review judges fresh.
+          persist_session: true
           writes: []
+
+        - id: verify
+          type: script
+          command: |
+            set +e
+            output=$(eval "$1" 2>&1)
+            exit_code=$?
+            if [ "$exit_code" -ne 0 ]; then
+              msg="Verify gate failed (exit ${exit_code}):"$'\n'"${output}"
+              jq -n --argjson c "$exit_code" --arg o "$output" --arg m "$msg" \
+                '{"verify_exit_code":$c,"verify_output":$o,"issues":[$m]}'
+            else
+              jq -n --argjson c "$exit_code" --arg o "$output" \
+                '{"verify_exit_code":$c,"verify_output":$o,"issues":[]}'
+            fi
+          args: ["$inputs.verify_command"]
+          contract:
+            verify_exit_code: integer
+            verify_output: string
+            issues:
+              type: list
+              of: string
+          writes: [verify_exit_code, verify_output, issues]
+
+        - id: gate-verify
+          type: check
+          expr: 'state.verify_exit_code == 0'
+          on_fail: "retry_loop:fix-loop"
+
+        - id: capture-diff
+          type: script
+          command: |
+            diff_text=$(git diff "$1...HEAD" 2>/dev/null || true) && jq -n --arg d "$diff_text" '{diff: $d}'
+          args: ["$inputs.base_branch"]
+          contract:
+            diff: string
+          writes: [diff]
 
         - id: review
           type: ai
           agent: codex
           prompt: prompts/review-ticket.j2
-          allowed_tools: [Read, Grep, Glob, Bash]
+          allowed_tools: [Read, Grep, Glob]
           contract:
             verdict:
               type: string
@@ -117,7 +158,11 @@ steps:
               of: string
             commit_message: string
             deferred_brief: string
-          writes: [verdict, issues, commit_message, deferred_brief]
+          writes:
+            - verdict
+            - {field: issues, merge: replace}
+            - commit_message
+            - deferred_brief
 
         - id: gate-retry
           type: check
@@ -132,7 +177,7 @@ steps:
       LINEAR_ID="$2"
       BRANCH="$3"
       ISSUES="$4"
-      if [ "$VERDICT" = "FAIL" ]; then
+      if [ "$VERDICT" != "PASS" ] && [ "$VERDICT" != "DEFER" ]; then
         TODO_STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
           -H "Authorization: $LINEAR_API_KEY" \
           -H "Content-Type: application/json" \
@@ -157,7 +202,7 @@ steps:
 
   - id: gate-exhausted
     type: check
-    expr: 'state.verdict != "FAIL"'
+    expr: 'state.verdict in ("PASS", "DEFER")'
     on_fail: cancel
 
   - id: handle-deferred

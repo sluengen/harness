@@ -66,6 +66,7 @@ class _CompliantMockAgent(MockAgent):
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
+        session_key: str | None = None,
     ) -> NodeResult[BaseModel]:
         self.calls.append(
             RecordedCall(
@@ -77,6 +78,7 @@ class _CompliantMockAgent(MockAgent):
                 timeout_s=timeout_s,
                 stall_timeout_s=stall_timeout_s,
                 max_turns=max_turns,
+                session_key=session_key,
             )
         )
         if self.error is not None:
@@ -133,6 +135,7 @@ def _step(
     stall_timeout_s: int = 300,
     timeout_s: int = 600,
     max_turns: int | None = None,
+    persist_session: bool = False,
 ) -> AIStep:
     """Build an AIStep with reasonable defaults."""
     return AIStep(
@@ -148,6 +151,7 @@ def _step(
         stall_timeout_s=stall_timeout_s,
         timeout_s=timeout_s,
         max_turns=max_turns,
+        persist_session=persist_session,
     )
 
 
@@ -546,3 +550,42 @@ async def test_max_turns_none_by_default_passes_through(tmp_path: Path) -> None:
     await node.execute(step=_step(), state=_state(tmp_path), inputs={})
 
     assert agent.calls[0].max_turns is None
+
+
+# ---------------------------------------------------------------------------
+# session_key forwarded to agent based on step.persist_session
+# ---------------------------------------------------------------------------
+
+
+async def test_persist_session_forwards_step_id_as_session_key(tmp_path: Path) -> None:
+    """A step with persist_session=True makes AINode pass step.id as the
+    agent's session_key so the conversation resumes across re-executions."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = _CompliantMockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(
+        step=_step(id="implement", persist_session=True),
+        state=_state(tmp_path),
+        inputs={},
+    )
+
+    assert agent.calls[0].session_key == "implement"
+
+
+async def test_no_persist_session_passes_none_session_key(tmp_path: Path) -> None:
+    """Without persist_session (the default, e.g. the review step) AINode passes
+    session_key=None so the agent runs fresh each call."""
+    prompts = tmp_path / "prompts"
+    _write_prompt(prompts, "p.j2", "go\n")
+    agent = _CompliantMockAgent()
+    node = AINode(agent=agent, prompts_dir=prompts)
+
+    await node.execute(
+        step=_step(id="review", persist_session=False),
+        state=_state(tmp_path),
+        inputs={},
+    )
+
+    assert agent.calls[0].session_key is None

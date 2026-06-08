@@ -17,6 +17,7 @@ uv run --extra dev python -m harness.cli version
 
 echo "=== mock run ==="
 uv run --extra dev python -m harness.cli validate workflows/build.yaml
+uv run --extra dev python -m harness.cli validate workflows/build-codex.yaml
 
 echo ""
 echo "All checks passed."
