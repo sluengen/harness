@@ -8,7 +8,7 @@
   Required state: ticket_title, ticket_description (written by fetch-ticket);
                   target_claude_md (written by read-target-claude-md);
                   worktree_path (written by the worktree setup step).
-  Required inputs: linear_id, verify_command.
+  Required inputs: linear_id.
   submit_tool_name injected by the contract engine.
 #}
 Your working directory is `{{ state.worktree_path }}`. All file operations must happen inside it.
@@ -30,7 +30,7 @@ than silently skipping it.
 - {{ issue }}
 {% endfor %}
 
-Resolve every finding above, then re-run the verification gate before submitting.
+Resolve every finding above, then run `ruff check .` before submitting.
 
 ---
 {% endif %}
@@ -54,13 +54,13 @@ Before submitting, own the cleanup the reviewer would otherwise flag:
 
 ## Step 2 — Verify
 
-Run the project's verification gate before submitting:
+Run a quick lint check before submitting. The harness runs the full test suite as a separate automated gate after you submit — do not attempt to run it yourself.
 
 ```bash
-{{ inputs.verify_command }}
+ruff check .
 ```
 
-All commands must pass cleanly.
+Fix any lint errors before submitting.
 
 ## Step 3 — Submit
 

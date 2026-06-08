@@ -127,15 +127,24 @@ def test_implement_ticket_includes_target_claude_md() -> None:
     )
 
 
-def test_implement_ticket_includes_verify_command() -> None:
-    """The verify command must appear verbatim in the rendered prompt."""
+def test_implement_ticket_instructs_lint_only() -> None:
+    """Implement prompt must direct agent to run lint, not the full verify command.
+
+    The harness runs the full test suite as a separate automated gate; the
+    agent should only run a fast lint check before submitting so it does not
+    attempt to spin up databases or Docker.
+    """
     env = _env()
     rendered = env.get_template("implement-ticket.j2").render(
         state=_implement_state(),
         inputs=_implement_inputs(verify_command="make check"),
     )
-    assert "make check" in rendered, (
-        "implement-ticket.j2 must include the verify_command from inputs"
+    assert "ruff check" in rendered, (
+        "implement-ticket.j2 must instruct the agent to run ruff check ."
+    )
+    assert "make check" not in rendered, (
+        "implement-ticket.j2 must not pass verify_command to the agent — "
+        "full verification is the harness gate's responsibility"
     )
 
 
@@ -170,14 +179,17 @@ def test_implement_ticket_missing_target_claude_md_raises() -> None:
         )
 
 
-def test_implement_ticket_missing_verify_command_raises() -> None:
-    """UndefinedError when verify_command is absent from inputs."""
+def test_implement_ticket_renders_without_verify_command() -> None:
+    """Prompt must render cleanly even when verify_command is absent from inputs.
+
+    The agent no longer receives the verify_command — lint-only is hardcoded.
+    """
     env = _env()
     inputs_without = {"linear_id": "HAR-1"}  # no verify_command
-    with pytest.raises(UndefinedError):
-        env.get_template("implement-ticket.j2").render(
-            state=_implement_state(), inputs=inputs_without
-        )
+    rendered = env.get_template("implement-ticket.j2").render(
+        state=_implement_state(), inputs=inputs_without
+    )
+    assert "ruff check" in rendered
 
 
 # ---------------------------------------------------------------------------

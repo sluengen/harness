@@ -107,10 +107,39 @@ steps:
 
         - id: verify
           type: script
+          cwd: "."
           command: |
             set +e
-            output=$(eval "$1" 2>&1)
+            VERIFY_CMD="$1"
+            WORKTREE="$2"
+            BRANCH="$3"
+
+            _drop_db() {
+              [ -n "${DB_NAME:-}" ] && \
+                psql "$HARNESS_TEST_DB_BASE_URL" \
+                  -c "DROP DATABASE IF EXISTS \"${DB_NAME}\";" 2>/dev/null || true
+            }
+            trap _drop_db EXIT
+
+            if [ -n "${HARNESS_TEST_DB_BASE_URL:-}" ]; then
+              DB_SUFFIX=$(printf '%s' "$BRANCH" | tr '/.-' '___' | tr '[:upper:]' '[:lower:]' | cut -c1-50)
+              DB_NAME="ht_${DB_SUFFIX}"
+              DB_URL="${HARNESS_TEST_DB_BASE_URL%/*}/${DB_NAME}"
+              psql "$HARNESS_TEST_DB_BASE_URL" \
+                -c "CREATE DATABASE \"${DB_NAME}\";" 2>/dev/null || true
+              migrate_out=$(cd "$WORKTREE" && DATABASE_URL="$DB_URL" uv run alembic upgrade head 2>&1)
+              if [ $? -ne 0 ]; then
+                jq -n --argjson c 1 --arg o "$migrate_out" \
+                  --arg m "Alembic migration failed:"$'\n'"$migrate_out" \
+                  '{"verify_exit_code":$c,"verify_output":$o,"issues":[$m]}'
+                exit 0
+              fi
+              output=$(cd "$WORKTREE" && DATABASE_URL="$DB_URL" eval "$VERIFY_CMD" 2>&1)
+            else
+              output=$(cd "$WORKTREE" && eval "$VERIFY_CMD" 2>&1)
+            fi
             exit_code=$?
+
             if [ "$exit_code" -ne 0 ]; then
               msg="Verify gate failed (exit ${exit_code}):"$'\n'"${output}"
               jq -n --argjson c "$exit_code" --arg o "$output" --arg m "$msg" \
@@ -119,7 +148,7 @@ steps:
               jq -n --argjson c "$exit_code" --arg o "$output" \
                 '{"verify_exit_code":$c,"verify_output":$o,"issues":[]}'
             fi
-          args: ["$inputs.verify_command"]
+          args: ["$inputs.verify_command", "$state.worktree_path", "$state.worktree_branch"]
           contract:
             verify_exit_code: integer
             verify_output: string
