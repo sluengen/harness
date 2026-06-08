@@ -792,13 +792,10 @@ def test_verify_exports_database_url_bound_to_db_url(wf_path: Path) -> None:
         f"{wf_path.name}: verify must be a ScriptStep"
     )
     assert verify.command is not None
-    assert "DATABASE_URL=" in verify.command, (
-        f"{wf_path.name}: verify step must export DATABASE_URL to the verify "
-        "command so the target's tests can connect to the provisioned database"
-    )
-    assert "$DB_URL" in verify.command, (
-        f"{wf_path.name}: verify step must bind DATABASE_URL to the per-run "
-        "DB_URL variable so each branch gets an isolated database"
+    assert 'DATABASE_URL="$DB_URL"' in verify.command, (
+        f"{wf_path.name}: verify step must contain the exact assignment "
+        'DATABASE_URL="$DB_URL" so the per-run database URL is passed to '
+        "the verify command and not to some other variable"
     )
 
 
