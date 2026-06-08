@@ -136,7 +136,13 @@ steps:
               fi
               output=$(cd "$WORKTREE" && DATABASE_URL="$DB_URL" eval "$VERIFY_CMD" 2>&1)
             else
-              output=$(cd "$WORKTREE" && eval "$VERIFY_CMD" 2>&1)
+              # Run verify.sh inside the worktree, not the main repo checkout.
+              # Use the main repo's compose project name (derived from git's common
+              # dir) so `docker compose up -d --wait db` is a no-op against the
+              # already-running db container rather than spawning a new one that
+              # would conflict on :5432 and accumulate across retries.
+              COMPOSE_PROJECT=$(basename "$(dirname "$(cd "$WORKTREE" && git rev-parse --git-common-dir)")" | tr '[:upper:]' '[:lower:]')
+              output=$(cd "$WORKTREE" && COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT" eval "$VERIFY_CMD" 2>&1)
             fi
             exit_code=$?
 
