@@ -66,6 +66,16 @@ The prompt instructs the agent to follow `skills/test-driven-development.md`, ru
 
 Runs `$inputs.verify_command` as a subprocess (cwd defaults to `worktree_path`). Captures `verify_exit_code` (int) and `verify_output` (string) into state. On failure, appends a "Verify gate failed" entry to `issues`. Allowed tools: none (pure shell).
 
+**Database provisioning (`HARNESS_TEST_DB_BASE_URL` set).** When the env var `HARNESS_TEST_DB_BASE_URL` is configured, the verify node:
+1. Derives a per-run database name `ht_<branch>` (branch slug, max 50 chars, normalised to lowercase).
+2. Creates that database via `psql "$HARNESS_TEST_DB_BASE_URL" -c "CREATE DATABASE ..."`.
+3. Registers an EXIT trap (`_drop_db`) to drop the database on exit, so each run cleans up after itself and concurrent runs on distinct branches get distinct databases.
+4. Exports `DATABASE_URL="$DB_URL"` to the verify command's environment.
+
+**The target owns schema setup and migrations.** The harness provisions an empty database and exports `DATABASE_URL`; it does not run migrations. The target's verify command (e.g., `bash scripts/verify.sh`) is responsible for building the schema — via `Base.metadata.create_all`, an alembic stamp, or whatever tool the target uses. This keeps target-specific tooling out of the generic harness.
+
+**Docker-host fallback (`HARNESS_TEST_DB_BASE_URL` unset).** Sets `COMPOSE_PROJECT_NAME` derived from the main repo's git common dir so a `docker compose up -d --wait db` call in the target's verify script reuses the already-running container rather than spawning a conflicting one.
+
 Contract: `{verify_exit_code: integer, verify_output: string, issues: list[string]}`.
 
 #### `gate-verify` (check, inside fix-loop)
@@ -257,6 +267,8 @@ Instructs the agent to resolve git merge conflicts. Reads each conflicting file 
 - `set-in-progress`, `notify-exhausted`, `handle-deferred`, `set-in-review`, `push-base`, `notify-merge-exhausted`, and `close-task` all use `printf '{}'` to emit an empty JSON object. This is the `writes: []` sidecar pattern — no contract, no state writes.
 - The `commit` step sends git output to stderr (`>&2`) and only writes the JSON commit SHA to stdout, so the script contract can parse stdout cleanly.
 - `teardown` uses `delete_unconditionally` because the feature branch is merged locally and the base branch has been pushed to `origin`; the local feature branch is ephemeral.
+- When `HARNESS_TEST_DB_BASE_URL` is set, the verify node provisions a per-run database and exports `DATABASE_URL` to the verify command. The harness does **not** run migrations — schema setup is the target's responsibility. This separation keeps target-specific tooling (alembic, Django migrations, etc.) out of the generic harness container.
+- The harness container requires `jq` (used by every script node) and `postgresql-client` (`psql`, used by the verify DB-provisioning branch). Both must be present in the runtime image (`docker/Dockerfile`).
 - The remote feature branch is **never created on the success path**. On the conflict-exhaustion failure path, `notify-merge-exhausted` rescue-pushes the feature branch; cleanup of that branch is a manual step.
 - If `gate-exhausted` cancels the run (fix-loop exhaustion), `commit` and the entire merge phase never run. No merge, no push, no teardown.
 - If `gate-merge-clean` cancels the run (conflict-loop exhaustion), `push-base` and `teardown` never run. The worktree is left for inspection; `cleanup_skipped=True` appears on the `workflow_failed` event.
