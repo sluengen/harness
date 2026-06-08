@@ -231,6 +231,7 @@ class OpencodeAgent:
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,  # noqa: ARG002 — opencode CLI has no max_turns flag
+        session_key: str | None = None,  # noqa: ARG002 — opencode adapter has no session resume
     ) -> NodeResult[BaseModel]:
         """Run opencode and return ``NodeResult[contract]``.
 

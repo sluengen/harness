@@ -652,3 +652,134 @@ async def test_max_turns_none_leaves_sdk_default() -> None:
     )
 
     assert captured_options[0].max_turns is None
+
+
+# ---------------------------------------------------------------------------
+# Session persistence — resume across calls keyed by session_key (implement
+# step opts in via persist_session: true; review stays fresh)
+# ---------------------------------------------------------------------------
+
+
+def _stop_with_session(session_id: str) -> dict[str, Any]:
+    """A stop event carrying the SDK session id (as ResultMessage would)."""
+    return {"kind": "stop", "session_id": session_id}
+
+
+def _capturing_submit_query(
+    captured_options: list[Any], session_id: str = "sess-1"
+) -> Callable[..., AsyncIterator[dict[str, Any]]]:
+    """Fake query that records each call's options and yields a successful
+    submit + a stop event carrying ``session_id``."""
+
+    async def _query(
+        *, prompt: str, options: Any = None, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_options.append(options)
+        yield _tool_call_event("submit_node_id", {"summary": "done"})
+        yield _stop_with_session(session_id)
+
+    return _query
+
+
+async def test_session_key_first_call_fresh_second_call_resumes() -> None:
+    """With a session_key, the first call runs fresh (resume=None) and captures
+    the session id; the second call with the same key resumes it."""
+    captured_options: list[Any] = []
+    agent = ClaudeAgent(query_fn=_capturing_submit_query(captured_options, "sess-1"))
+
+    await agent.execute(
+        "p1", _SampleContract, SUBMIT_SCHEMA,
+        allowed_tools=[], cwd=None, session_key="implement",
+    )
+    await agent.execute(
+        "p2", _SampleContract, SUBMIT_SCHEMA,
+        allowed_tools=[], cwd=None, session_key="implement",
+    )
+
+    assert len(captured_options) == 2
+    assert captured_options[0].resume is None, "first call must start fresh"
+    assert captured_options[1].resume == "sess-1", "second call must resume the prior session"
+
+
+async def test_no_session_key_never_resumes() -> None:
+    """Without a session_key (the default, e.g. the review step) the agent never
+    resumes and stores no session."""
+    captured_options: list[Any] = []
+    agent = ClaudeAgent(query_fn=_capturing_submit_query(captured_options, "sess-1"))
+
+    await agent.execute("p1", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None)
+    await agent.execute("p2", _SampleContract, SUBMIT_SCHEMA, allowed_tools=[], cwd=None)
+
+    assert all(o.resume is None for o in captured_options)
+    assert agent._sessions == {}
+
+
+async def test_reset_clears_sessions_so_fresh_context_overrides_persist() -> None:
+    """reset() (called between fresh_context: true iterations) drops stored
+    sessions, so the next call starts fresh even with a session_key."""
+    captured_options: list[Any] = []
+    agent = ClaudeAgent(query_fn=_capturing_submit_query(captured_options, "sess-1"))
+
+    await agent.execute(
+        "p1", _SampleContract, SUBMIT_SCHEMA,
+        allowed_tools=[], cwd=None, session_key="implement",
+    )
+    assert agent._sessions == {"implement": "sess-1"}
+
+    agent.reset()
+    assert agent._sessions == {}
+
+    await agent.execute(
+        "p2", _SampleContract, SUBMIT_SCHEMA,
+        allowed_tools=[], cwd=None, session_key="implement",
+    )
+    assert captured_options[1].resume is None, "after reset the call must start fresh"
+
+
+async def test_contract_violation_does_not_store_session() -> None:
+    """A failed attempt (never submitted) must not store its session id, so the
+    next call does not resume a poisoned conversation."""
+    captured_options: list[Any] = []
+
+    async def _no_submit_query(
+        *, prompt: str, options: Any = None, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_options.append(options)
+        yield _text_event("thinking, but never submitting")
+        yield _stop_with_session("sess-bad")
+
+    agent = ClaudeAgent(query_fn=_no_submit_query)
+    with pytest.raises(ContractViolation):
+        await agent.execute(
+            "p1", _SampleContract, SUBMIT_SCHEMA,
+            allowed_tools=[], cwd=None, session_key="implement",
+        )
+
+    assert agent._sessions == {}, "session id must not be stored on a failed attempt"
+
+
+async def test_distinct_session_keys_do_not_cross_contaminate() -> None:
+    """Two keys on one agent instance (e.g. implement + a second persisted step)
+    keep independent threads — resuming one never leaks the other's session."""
+    captured_options: list[Any] = []
+    session_ids = iter(["A1", "B1", "A2"])  # session id yielded per call, in order
+
+    async def _query(
+        *, prompt: str, options: Any = None, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_options.append(options)
+        yield _tool_call_event("submit_node_id", {"summary": "done"})
+        yield _stop_with_session(next(session_ids))
+
+    agent = ClaudeAgent(query_fn=_query)
+    await agent.execute("alpha", _SampleContract, SUBMIT_SCHEMA,
+                        allowed_tools=[], cwd=None, session_key="a")  # stores a->A1
+    await agent.execute("beta", _SampleContract, SUBMIT_SCHEMA,
+                        allowed_tools=[], cwd=None, session_key="b")  # stores b->B1
+    await agent.execute("alpha-again", _SampleContract, SUBMIT_SCHEMA,
+                        allowed_tools=[], cwd=None, session_key="a")  # resumes a
+
+    assert captured_options[0].resume is None
+    assert captured_options[1].resume is None
+    # Third call (key "a") resumes "a"'s session "A1", not "b"'s "B1".
+    assert captured_options[2].resume == "A1"

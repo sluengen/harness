@@ -44,6 +44,7 @@ class RecordedCall:
     timeout_s: int
     stall_timeout_s: int
     max_turns: int | None = None
+    session_key: str | None = None
 
 
 def _empty_default_result() -> NodeResult[BaseModel]:
@@ -112,6 +113,7 @@ class MockAgent:
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
+        session_key: str | None = None,
     ) -> NodeResult[BaseModel]:
         self.calls.append(
             RecordedCall(
@@ -123,6 +125,7 @@ class MockAgent:
                 timeout_s=timeout_s,
                 stall_timeout_s=stall_timeout_s,
                 max_turns=max_turns,
+                session_key=session_key,
             )
         )
 

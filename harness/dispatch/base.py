@@ -59,7 +59,15 @@ class Agent(Protocol):
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
-    ) -> NodeResult[BaseModel]: ...
+        session_key: str | None = None,
+    ) -> NodeResult[BaseModel]:
+        """``session_key`` opts this call into session persistence: an adapter
+        that supports resume keeps one conversation per key and continues it
+        on the next call with the same key (the AI node passes ``step.id``
+        when the step sets ``persist_session: true``). ``None`` (default)
+        means a fresh call. Adapters without resume support accept and ignore
+        it."""
+        ...
 
 
 @runtime_checkable

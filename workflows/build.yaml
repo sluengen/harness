@@ -99,6 +99,10 @@ steps:
           prompt: prompts/implement-ticket.j2
           allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
           writes_files: true
+          # Resume the same conversation across fix-loop retries so the agent
+          # keeps the reasoning + history of its prior attempt. Review is NOT
+          # persisted (no flag) — each review should judge the diff fresh.
+          persist_session: true
           writes: []
 
         - id: verify

@@ -209,6 +209,7 @@ async def test_ac2_state_carries_base_fields_and_declared_writes(
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
             max_turns: int | None = None,
+            session_key: str | None = None,
         ) -> NodeResult[BaseModel]:
             self.calls.append(  # type: ignore[arg-type]
                 # parent class records via RecordedCall; we mimic by
@@ -1345,6 +1346,7 @@ async def test_per_node_agent_routing_codex_step_uses_codex_agent(tmp_path: Path
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
             max_turns: int | None = None,
+            session_key: str | None = None,
         ) -> NodeResult[BaseModel]:
             agents_called.append(self._name)
             return NodeResult[BaseModel](
@@ -1403,6 +1405,7 @@ async def test_per_node_agent_routing_falls_back_to_default_for_none(tmp_path: P
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
             max_turns: int | None = None,
+            session_key: str | None = None,
         ) -> NodeResult[BaseModel]:
             agents_called.append("default")
             return NodeResult[BaseModel](
@@ -1462,6 +1465,7 @@ async def test_per_node_agent_routing_claude_step_uses_claude_override(tmp_path:
             timeout_s: int = 600,
             stall_timeout_s: int = 300,
             max_turns: int | None = None,
+            session_key: str | None = None,
         ) -> NodeResult[BaseModel]:
             agents_called.append(self._name)
             return NodeResult[BaseModel](

@@ -187,6 +187,17 @@ class AIStep(_BaseStep):
     stall_timeout_s: int = 300
     timeout_s: int = 600
     max_turns: int | None = Field(default=None, ge=1)
+    persist_session: bool = False
+    """Carry the agent's conversation across loop iterations.
+
+    When ``True``, the agent adapter resumes the same session on each
+    re-execution of this step (keyed by ``step.id``) instead of starting
+    fresh — so a retried implement agent keeps the reasoning and history of
+    its prior attempt. Default ``False`` (fresh each call) preserves the
+    stateless behaviour reviewers and one-shot steps want. Honoured by
+    adapters that support session resume (ClaudeAgent); others ignore it.
+    A ``fresh_context: true`` loop clears stored sessions via ``reset()``.
+    """
 
 
 class ScriptStep(_BaseStep):

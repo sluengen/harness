@@ -333,6 +333,7 @@ class CodexAgent:
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,  # noqa: ARG002 — codex CLI has no max_turns flag
+        session_key: str | None = None,  # noqa: ARG002 — codex adapter has no session resume
     ) -> NodeResult[BaseModel]:
         """Run codex and return ``NodeResult[contract]``.
 

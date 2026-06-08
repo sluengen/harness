@@ -754,3 +754,19 @@ def test_review_step_has_no_bash(wf_path: Path) -> None:
         f"{wf_path.name}: review must not have Bash in allowed_tools "
         f"(got {allowed}); the diff is provided via state.diff instead"
     )
+
+
+@_BUILD_WORKFLOWS
+def test_implement_persists_session_review_stays_fresh(wf_path: Path) -> None:
+    """implement resumes its conversation across fix-loop retries
+    (persist_session=True); review stays fresh so it never anchors on a
+    prior verdict."""
+    loaded = load_workflow(wf_path)
+    inner = _fix_loop_inner(loaded)
+    assert inner["implement"].persist_session is True, (
+        f"{wf_path.name}: implement must set persist_session: true so a retry "
+        "keeps the reasoning/history of its prior attempt"
+    )
+    assert inner["review"].persist_session is False, (
+        f"{wf_path.name}: review must stay fresh (persist_session: false)"
+    )

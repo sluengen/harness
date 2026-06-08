@@ -215,7 +215,9 @@ def _classify_real_message(message: Any) -> list[dict[str, Any]]:
                     }
                 )
     elif isinstance(message, ResultMessage):
-        out.append({"kind": "stop"})
+        # ResultMessage carries the session_id of the turn that just ran;
+        # surface it so execute() can store it for a later resume.
+        out.append({"kind": "stop", "session_id": getattr(message, "session_id", None)})
     if not out:
         out.append({"kind": "ignored"})
     return out
@@ -255,19 +257,30 @@ class ClaudeAgent:
         self._model = model
         self._query_fn = query_fn  # None -> resolved lazily inside execute()
         self.notes: list[str] = []
+        # session_key -> SDK session_id, for steps that opt into resume via
+        # ``persist_session: true``. Keyed by the AI step's id so two steps
+        # sharing this one ClaudeAgent instance (e.g. implement + review in
+        # build.yaml) keep independent conversation threads. In-memory only:
+        # SDK sessions are local/ephemeral and do not survive a process
+        # restart, so this resets on a fresh run or a `harness resume`.
+        self._sessions: dict[str, str] = {}
 
     # ---- public API ------------------------------------------------------- #
 
     def reset(self) -> None:
-        """Drop the carried-over notes buffer.
+        """Drop carried-over notes and stored sessions.
 
         SPEC §10 fresh_context: the loop evaluator calls ``reset()``
         between iterations of a ``fresh_context: true`` loop. The
         per-call ``execute()`` already clears ``notes`` at its top, so
-        this is belt-and-braces for callers that read ``self.notes``
-        between iterations.
+        clearing it here is belt-and-braces for callers that read
+        ``self.notes`` between iterations. Clearing ``self._sessions`` is
+        load-bearing: it makes ``fresh_context: true`` override
+        ``persist_session`` so a loop that asks for fresh context truly
+        starts each iteration's agent from scratch.
         """
         self.notes = []
+        self._sessions = {}
 
     async def execute(
         self,
@@ -280,6 +293,7 @@ class ClaudeAgent:
         timeout_s: int = 600,
         stall_timeout_s: int = 300,
         max_turns: int | None = None,
+        session_key: str | None = None,
     ) -> NodeResult[BaseModel]:
         """Run the SDK loop and return ``NodeResult[contract]``.
 
@@ -288,6 +302,13 @@ class ClaudeAgent:
                 within this single node invocation.  ``None`` defers to the
                 SDK's own default.  Maps directly to
                 ``ClaudeAgentOptions.max_turns``.
+            session_key: When set, resume the stored SDK session for this key
+                (continuing the prior conversation) and, on success, store the
+                resulting session id back under it. ``None`` runs a fresh,
+                stateless query (the default — what reviewers and one-shot
+                steps want). The session id is captured only after the submit
+                payload validates, so a contract-violating attempt never
+                poisons the next call's resume.
 
         Raises:
             ContractViolation: F1/F2/F5 from SPEC §4.4 (and validation
@@ -303,6 +324,10 @@ class ClaudeAgent:
         # name in ToolUseBlock; the test seam uses the bare name directly.
         mcp_submit_name = f"mcp__{_SUBMIT_MCP_SERVER}__{bare_submit_name}"
         first_call: dict[str, Any] | None = None
+        # Resume the prior conversation for this key when one exists; capture
+        # the session id from the stream so we can store it after success.
+        resume_id = self._sessions.get(session_key) if session_key is not None else None
+        captured_session_id: str | None = None
         query_fn = self._query_fn or _resolve_real_query_fn()
 
         # Wall-clock cap. The executor wraps in its own ``asyncio.wait_for``
@@ -311,11 +336,15 @@ class ClaudeAgent:
             query_fn(
                 prompt=prompt,
                 options=self._build_options(
-                    allowed_tools, cwd, submit_tool_schema, max_turns
+                    allowed_tools, cwd, submit_tool_schema, max_turns, resume=resume_id
                 ),
             ),
             stall_timeout_s=stall_timeout_s,
         ):
+            sid = event.get("session_id")
+            if sid:
+                captured_session_id = sid
+
             kind = event.get("kind")
 
             if kind == "text":
@@ -364,6 +393,11 @@ class ClaudeAgent:
                 payload=first_call,
             ) from e
 
+        # Success: persist the session id so the next call with this key
+        # resumes this conversation. Only reached after the payload validated.
+        if session_key is not None and captured_session_id is not None:
+            self._sessions[session_key] = captured_session_id
+
         return NodeResult[BaseModel](
             contract=validated,
             attestation=Attestation(status="complete"),
@@ -382,6 +416,7 @@ class ClaudeAgent:
         cwd: Path | None,
         submit_tool_schema: dict[str, Any] | None = None,
         max_turns: int | None = None,
+        resume: str | None = None,
     ) -> Any:
         """Build the ``ClaudeAgentOptions`` for the underlying ``query`` call.
 
@@ -392,7 +427,9 @@ class ClaudeAgent:
         event before the MCP handler runs.
 
         ``max_turns`` is forwarded to ``ClaudeAgentOptions.max_turns`` when
-        provided; ``None`` leaves the SDK default unchanged.
+        provided; ``None`` leaves the SDK default unchanged. ``resume`` is
+        forwarded to ``ClaudeAgentOptions.resume`` to continue a prior session
+        when set.
 
         Imported lazily so this module loads without the SDK installed (tests
         provide ``query_fn`` and never call this).
@@ -431,6 +468,8 @@ class ClaudeAgent:
             kwargs["model"] = self._model
         if max_turns is not None:
             kwargs["max_turns"] = max_turns
+        if resume is not None:
+            kwargs["resume"] = resume
         return ClaudeAgentOptions(**kwargs)
 
     @staticmethod

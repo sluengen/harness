@@ -158,6 +158,11 @@ class AINode:
         submit_schema = compile_to_tool_schema(contract_cls, node_id=step.id)
         cwd = self._resolve_cwd(step, state, repo_root=repo_root)
 
+        # A step that opts into session persistence resumes one conversation
+        # per step.id across re-executions (e.g. fix-loop retries); otherwise
+        # session_key is None and the agent runs fresh each call.
+        session_key = step.id if step.persist_session else None
+
         result = await self._agent.execute(
             prompt_text,
             contract_cls,
@@ -167,6 +172,7 @@ class AINode:
             timeout_s=step.timeout_s,
             stall_timeout_s=step.stall_timeout_s,
             max_turns=step.max_turns,
+            session_key=session_key,
         )
 
         # Defensive guard: a well-behaved Agent (per protocol) returns a

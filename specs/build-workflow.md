@@ -54,9 +54,11 @@ The verify step is a deterministic script gate — it runs the verify command an
 
 **Diff for the read-only reviewer.** Because the review agent has no Bash (it cannot run `git`), `capture-diff` records the branch's diff against the base into `state.diff` and `review-ticket.j2` embeds it. Without this the reviewer would have no reliable view of *what changed* and could not assess the "focused diff" criterion.
 
+**Session continuity (implement only).** The `implement` step sets `persist_session: true`, so the agent adapter resumes the *same* conversation on each retry instead of starting fresh — the agent keeps the reasoning and history of its prior attempt and does not re-derive context from scratch. Sessions are keyed by `step.id` in the adapter, so the implement and review steps (which share one `ClaudeAgent` instance in `build.yaml`) keep independent threads. `review` deliberately omits the flag: each review should judge the diff fresh, without anchoring on its own prior verdict. The session id is captured only after a submit validates (a contract-violating attempt never poisons the next resume), is in-memory on the adapter (does not survive a process restart / `harness resume`), and is cleared by `reset()` so a `fresh_context: true` loop overrides persistence.
+
 #### `implement` (ai, inside fix-loop)
 
-Dispatches a `claude/sonnet` agent in the worktree with `prompts/implement-ticket.j2`. Allowed tools: `Read, Write, Edit, Bash, Grep, Glob`. Declares `writes_files: true` and `writes: []`.
+Dispatches a `claude/sonnet` agent in the worktree with `prompts/implement-ticket.j2`. Allowed tools: `Read, Write, Edit, Bash, Grep, Glob`. Declares `writes_files: true`, `persist_session: true` (resume across retries — see "Session continuity" above), and `writes: []`.
 
 The prompt instructs the agent to follow `skills/test-driven-development.md`, run the full verification gate, and call the submit tool once when complete.
 
