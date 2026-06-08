@@ -2,7 +2,7 @@
 profile: harness
 source:
   name: agents
-  ref: 70e4de4  # "refactor(skills): rename code-review -> review-discipline; harden freshness hook"
+  ref: 4008ed7  # "feat(commands): add /build and /build-codex workflow commands"
 files:
   skills/engineering-principles.md:  { version: 0.2.0, hash: 1c7d981391d4 }
   skills/spec-driven-development.md: { version: 0.3.1, hash: d330fae0ac70 }
@@ -27,6 +27,8 @@ files:
   commands/ship.md:                  { version: 0.1.2, hash: 5393413b61ed }
   commands/assess.md:                { version: 0.2.0, hash: 82b6a150ef21 }
   commands/update-guidance.md:       { version: 0.3.0, hash: 1ecb24266439 }
+  commands/build.md:                 { version: 1.0.0, hash: 7538e79b3c7a }
+  commands/build-codex.md:           { version: 1.0.0, hash: fcab89197d61 }
   templates/proposal.md:             { version: 0.1.1, hash: a80aecbed6db }
   templates/change.md:               { version: 0.1.0, hash: 31321efe2ea5 }
   templates/decision.md:             { version: 0.1.0, hash: 4055cc925a51 }
