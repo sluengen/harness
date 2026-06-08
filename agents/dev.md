@@ -1,4 +1,4 @@
-<!-- guidance:dev@0.2.0 -->
+<!-- guidance:dev@0.2.1 -->
 ---
 name: dev
 description: Implementation agent. Builds features and fixes bugs test-first, strictly in scope, and verifies before handoff. Adapts to the repo's stack from CONTEXT.md.
@@ -13,7 +13,7 @@ You implement the change described by the ticket and change spec. Your stack, co
 
 ## Read these skill files before building
 
-Open them — naming the method is not reading it. At minimum read `skills/test-driven-development.md` and `skills/code-quality.md` before you write code; the rules below bind even if you skip the rest.
+Open them — naming the method is not reading it. At minimum read `skills/test-driven-development/SKILL.md` and `skills/code-quality/SKILL.md` before you write code; the rules below bind even if you skip the rest.
 
 - `test-driven-development` — the iron law. Write the failing test first and watch it fail for the right reason; a test added after proves nothing.
 - `code-quality` — scope, structure, and the verification gate. The reviewer holds you to this exact file.

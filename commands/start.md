@@ -1,4 +1,4 @@
-<!-- guidance:start@0.2.0 -->
+<!-- guidance:start@0.2.1 -->
 # /start — begin work on a ticket
 
 Usage: `/start <TICKET-ID>`
@@ -20,7 +20,7 @@ Create a feature branch off the repo's integration branch (named in `CONTEXT.md`
 Draft the change spec into the Linear issue following `spec-authoring` (`templates/change.md`): problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope. Keep it short; depth scales with size. Confirm it with the user if the scope is non-obvious. If the work turns out to be unconfirmed or too big for one change, stop and `/propose` it instead.
 
 ### 5. Build
-Dispatch the `dev` agent (or build directly). **Before writing code, open and read `skills/test-driven-development.md` and `skills/code-quality.md`** — naming the method is not reading it. Then build one acceptance criterion at a time: RED, GREEN, REFACTOR, under the non-negotiable rules in `AGENTS.md` — test-first, a measurable criterion needs a test that measures it, and no completion claim without fresh evidence.
+Dispatch the `dev` agent (or build directly). **Before writing code, open and read `skills/test-driven-development/SKILL.md` and `skills/code-quality/SKILL.md`** — naming the method is not reading it. Then build one acceptance criterion at a time: RED, GREEN, REFACTOR, under the non-negotiable rules in `AGENTS.md` — test-first, a measurable criterion needs a test that measures it, and no completion claim without fresh evidence.
 
 ### 6. Verify and stop at review-ready
 Run the repo's lint / type / test gate (`CONTEXT.md`), read the output, and confirm the change spec still matches what was built. Then hand to `/review`.

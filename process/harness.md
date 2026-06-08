@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.3.0 -->
+<!-- guidance:process-harness@0.3.1 -->
 # How work happens here (harness profile)
 
 This is the process for an **infrastructure / pipeline-harness repo** — a tool or library that other repos depend on, with no end-users and no product UI. It is a deliberate variant of the standard process: same skills and standards, a leaner flow, and design-doc specs instead of user-facing feature specs. Everything repo-specific is in [`CONTEXT.md`](CONTEXT.md); read that first.
@@ -23,7 +23,7 @@ The three-spec model (`spec-authoring`) still applies: **proposal specs** (`spec
 2. Read the relevant design spec (`SPEC.md` or `specs/`) before changing behaviour — it is the contract.
 3. Write a change spec into the issue: problem, approach, design, acceptance criteria (`spec-authoring`).
 4. Branch into a worktree (`worktree-isolation`). Build test-first (`test-driven-development`), in scope (`code-quality`), to the principles (`engineering-principles`).
-5. Hand to review. The reviewer checks output and process (`code-review`), runs the verification gate independently, and — on PASS — updates the design spec to match what shipped.
+5. Hand to review. The reviewer checks output and process (`review-discipline`), runs the verification gate independently, and — on PASS — updates the design spec to match what shipped.
 6. Ship per the branch model (`/ship`, `CONTEXT.md`), close the ticket.
 
 The load-bearing rules throughout — non-negotiable, and written out here so they bind even if no skill file gets opened:
@@ -34,7 +34,7 @@ The load-bearing rules throughout — non-negotiable, and written out here so th
 
 ## Skills, agents, commands
 
-Same library as the standard profile, minus the design-system skill. The load-bearing ones: `spec-driven-development` (read its profile note), `engineering-principles`, `test-driven-development`, `code-quality`, `code-review`, `architecture`, `systematic-debugging`, `writing-quality`, `worktree-isolation`, `linear-sync`, `assessment-craft`.
+Same library as the standard profile, minus the design-system skill. The load-bearing ones: `spec-driven-development` (read its profile note), `engineering-principles`, `test-driven-development`, `code-quality`, `review-discipline`, `architecture`, `systematic-debugging`, `writing-quality`, `worktree-isolation`, `linear-sync`, `assessment-craft`.
 
 Agents: `dev`, `reviewer`, `architect`, `code-steward`, `system-steward`. Commands: `/propose`, `/start`, `/review`, `/ship`, `/assess`, `/update-guidance`.
 

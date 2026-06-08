@@ -1,4 +1,8 @@
-<!-- guidance:spec-authoring@0.2.0 -->
+---
+name: spec-authoring
+description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
+---
+<!-- guidance:spec-authoring@0.3.1 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -60,4 +64,4 @@ The canonical, as-built record of what the product does today, plus the decision
 
 ## Quality bar
 
-A spec is ready when its type is right, its design is specified to the depth the work needs (an implementer would not have to invent a contract mid-build), the decisions behind it are recorded in place, every acceptance criterion is testable, and it holds no unresolved decision presented as settled. The reviewer checks change and feature specs against this bar (`code-review` Stage 1).
+A spec is ready when its type is right, its design is specified to the depth the work needs (an implementer would not have to invent a contract mid-build), the decisions behind it are recorded in place, every acceptance criterion is testable, and it holds no unresolved decision presented as settled. The reviewer checks change and feature specs against this bar (`review-discipline` Stage 1).

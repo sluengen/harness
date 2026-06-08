@@ -1,4 +1,8 @@
-<!-- guidance:linear-sync@0.2.1 -->
+---
+name: linear-sync
+description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or discovering team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work.
+---
+<!-- guidance:linear-sync@0.3.0 -->
 # Linear Sync
 
 The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue.

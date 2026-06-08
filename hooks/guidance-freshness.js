@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.2.1
+// guidance:hook-guidance-freshness@0.3.0
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
+ *
+ * Everywhere: AGENTS.md/CLAUDE.md/GEMINI.md must stay byte-identical (one process doc
+ * under three names) — flags a regeneration that updated one but not the others.
  *
  * In the guidance SOURCE repo (registry.yaml present):
  *   - Version drift: a distributable/meta file whose header no longer matches its
@@ -25,9 +28,11 @@ const TTL_MS = 4 * 60 * 60 * 1000;
 const D_DRIFT = path.join(os.tmpdir(), "guidance-freshness-drift");
 const D_GENERIC = path.join(os.tmpdir(), "guidance-freshness-generic");
 const D_LEAK = path.join(os.tmpdir(), "guidance-freshness-leak");
+const D_ENTRY = path.join(os.tmpdir(), "guidance-freshness-entry");
 
 const DIST = /^(skills|agents|commands|templates|process|hooks|settings)\//;
 const META = /^(BOOTSTRAP\.md|registry\.yaml)$/;
+const ENTRY = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);      // triplicated entry files — must match
 const PROSE = /^(skills|agents|commands|process|templates)\//;       // universal prose — leak-checked
 // Ticket-ID shape (e.g. CAL-42), excluding obvious standards refs.
 const TICKET = /\b([A-Z]{2,5})-\d+\b/g;
@@ -55,6 +60,24 @@ function main() {
   if (input.tool_name !== "Write" && input.tool_name !== "Edit") return done();
   const cwd = process.cwd();
   const relPath = rel(cwd, (input.tool_input && input.tool_input.file_path) || "");
+
+  // Entry-file triplication: AGENTS.md / CLAUDE.md / GEMINI.md are three copies of one
+  // process doc and must stay byte-identical. Catch a regeneration that updated one but
+  // not the others (the classic /update-guidance miss).
+  if (ENTRY.has(relPath)) {
+    const present = [...ENTRY].map((f) => read(path.join(cwd, f))).filter(Boolean);
+    if (present.length >= 2 && present.some((c) => c !== present[0]) && !recently(D_ENTRY)) {
+      mark(D_ENTRY);
+      return done(
+        "[GUIDANCE-FRESHNESS] AGENTS.md, CLAUDE.md, and GEMINI.md must be byte-identical " +
+          "(three copies of one process doc) — they currently differ. If you are mid-regeneration " +
+          "(e.g. /update-guidance just rewrote one), update the other two now; otherwise a " +
+          "regeneration was skipped: re-derive all three from the process doc."
+      );
+    }
+    return done();
+  }
+
   const isDist = DIST.test(relPath), isMeta = META.test(relPath);
   if (!isDist && !isMeta) return done();
 

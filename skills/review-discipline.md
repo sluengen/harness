@@ -1,4 +1,8 @@
-<!-- guidance:code-review@0.1.3 -->
+---
+name: review-discipline
+description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
+---
+<!-- guidance:review-discipline@0.2.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.

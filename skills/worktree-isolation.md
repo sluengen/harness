@@ -1,4 +1,8 @@
-<!-- guidance:worktree-isolation@0.1.0 -->
+---
+name: worktree-isolation
+description: Use when starting any multi-commit task — set it up on its own branch in its own git worktree, never on the default branch. Load before making changes, so work is isolated, resumable, and the default branch stays clean.
+---
+<!-- guidance:worktree-isolation@0.2.0 -->
 # Worktree Isolation
 
 Any multi-commit task runs on its own branch in its own git worktree. This keeps parallel work from colliding, keeps the default branch clean, and makes an interrupted task resumable.

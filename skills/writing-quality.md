@@ -1,4 +1,8 @@
-<!-- guidance:writing-quality@0.1.1 -->
+---
+name: writing-quality
+description: Use when writing prose for the repo — specs, designs, decisions, copy, commit bodies, handoffs (not code or structured data). Load to eliminate predictable AI writing patterns and state things plainly.
+---
+<!-- guidance:writing-quality@0.2.0 -->
 # Writing Quality
 
 Eliminate predictable AI writing patterns from prose: specs, designs, decisions, copy, commit bodies, handoffs. Not code or structured data.
