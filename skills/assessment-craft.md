@@ -1,7 +1,7 @@
-<!-- guidance:assessment-craft@0.1.1 -->
+<!-- guidance:assessment-craft@0.1.2 -->
 # Assessment Craft
 
-Shared knowledge for every steward that periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. Loaded by `code-steward` and `harness-steward`.
+Shared knowledge for every steward that periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. Loaded by `code-steward` and `system-steward`.
 
 ## Posture — signal, not noise
 
@@ -52,4 +52,4 @@ Style preferences, formatting nits, complexity that is justified by the problem,
 
 ## Output
 
-Write a dated report (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `HARNESS-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.

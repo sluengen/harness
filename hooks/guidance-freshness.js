@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.2.0
+// guidance:hook-guidance-freshness@0.2.1
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -10,7 +10,7 @@
  *   - meta files (BOOTSTRAP.md, registry.yaml) are watched too, not just subdirs.
  *   - Leak guard: a universal prose file (skills/agents/commands/process/templates)
  *     containing a repo proper-noun — a ticket-ID-shaped token — which the
- *     universal/repo-specific rule forbids (AGENTS.md). What harness-steward greps
+ *     universal/repo-specific rule forbids (AGENTS.md). What system-steward greps
  *     for, surfaced inline.
  * In a CONSUMING repo (.guidance-lock.yaml present): editing installed guidance
  *   creates a local divergence; fix it upstream and /update-guidance.

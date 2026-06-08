@@ -1,4 +1,4 @@
-<!-- guidance:code-quality@0.1.1 -->
+<!-- guidance:code-quality@0.2.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`code-review` references this file, so the bar is identical on both sides).
@@ -88,6 +88,11 @@ Lint first, then type-check (if the language has a separate one), then tests. Ea
 | Tests pass | Full suite run, output shown |
 | Lint clean | Linter run, output shown |
 | Bug fixed | The regression test, shown passing |
+| Measurable criterion met ("≤ N queries", "< X ms") | A test that measures that quantity, shown asserting the bound |
 | Ready for review | All of the above that apply |
 
 Skipping a step is not efficiency. It is claiming something you have not checked.
+
+### A measurable criterion needs a measuring test
+
+When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CONTEXT.md`).

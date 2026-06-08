@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.2.1 -->
+<!-- guidance:process-harness@0.3.0 -->
 # How work happens here (harness profile)
 
 This is the process for an **infrastructure / pipeline-harness repo** — a tool or library that other repos depend on, with no end-users and no product UI. It is a deliberate variant of the standard process: same skills and standards, a leaner flow, and design-doc specs instead of user-facing feature specs. Everything repo-specific is in [`CONTEXT.md`](CONTEXT.md); read that first.
@@ -26,13 +26,17 @@ The three-spec model (`spec-authoring`) still applies: **proposal specs** (`spec
 5. Hand to review. The reviewer checks output and process (`code-review`), runs the verification gate independently, and — on PASS — updates the design spec to match what shipped.
 6. Ship per the branch model (`/ship`, `CONTEXT.md`), close the ticket.
 
-No completion claim without fresh evidence (`code-quality` Part C).
+The load-bearing rules throughout — non-negotiable, and written out here so they bind even if no skill file gets opened:
+
+- **Test-first.** Write the failing test before the code and watch it fail for the right reason (`test-driven-development`). A test added afterward proves nothing.
+- **A measurable criterion needs a measuring test.** Any acceptance criterion stated as a quantity — query count, response time, payload size, error rate — needs a test that measures that quantity and asserts the bound. A structural change is not evidence it worked (`code-quality` Part C).
+- **No completion claim without fresh evidence.** Run the gate (`CONTEXT.md`), read its output this session, and name the test that proves each acceptance criterion before you claim done (`code-quality` Part C).
 
 ## Skills, agents, commands
 
 Same library as the standard profile, minus the design-system skill. The load-bearing ones: `spec-driven-development` (read its profile note), `engineering-principles`, `test-driven-development`, `code-quality`, `code-review`, `architecture`, `systematic-debugging`, `writing-quality`, `worktree-isolation`, `linear-sync`, `assessment-craft`.
 
-Agents: `dev`, `reviewer`, `architect`, `code-steward`, `harness-steward`. Commands: `/propose`, `/start`, `/review`, `/ship`, `/assess`, `/update-guidance`.
+Agents: `dev`, `reviewer`, `architect`, `code-steward`, `system-steward`. Commands: `/propose`, `/start`, `/review`, `/ship`, `/assess`, `/update-guidance`.
 
 Domain-specific knowledge for *this* harness (its workflow schema, its CLI, how to author workflows) lives in the repo itself — in `CONTEXT.md` and the repo's own docs — not in the shared guidance. The guidance stays product-agnostic.
 
