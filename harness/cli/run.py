@@ -27,10 +27,6 @@ from harness.workflow.schema import InputSpec
 
 __all__ = ["run_command"]
 
-# Re-exported so existing importers (e.g. tests) can still reach the function
-# via ``harness.cli.run._resolve_workflows_dir``.
-__all__ += ["_resolve_workflows_dir"]
-
 
 # Internal kwarg name for the reserved ``--base`` flag. Namespaced so a
 # workflow input also called ``base`` (or wired to the ``--base`` flag)
