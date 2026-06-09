@@ -13,12 +13,17 @@ FROM python:3.11-slim
 
 # OS deps:
 #   git              — worktree operations
+#   curl             — Linear/API calls in script nodes
 #   ca-certificates  — HTTPS to Anthropic / Linear
 #   jq               — required by every script node (set-in-progress, verify, …)
 #   postgresql-client — psql for per-run DATABASE_URL provisioning in the verify node
+#   nodejs/npm       — required to install Claude Code CLI (claude_agent_sdk transport)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates jq postgresql-client \
+        git curl ca-certificates jq postgresql-client nodejs npm \
     && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI — required by claude_agent_sdk (SubprocessCLITransport).
+RUN npm install -g @anthropic-ai/claude-code
 
 # uv handles dependency resolution and the project venv inside the image.
 RUN pip install --no-cache-dir uv

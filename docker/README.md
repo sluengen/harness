@@ -152,48 +152,84 @@ itself (useful for nightly self-reviews).
 
 ## Thin shell wrapper (`~/bin/harness`)
 
-To call the containerised harness as if it were a native binary, install a
-thin wrapper on your `PATH`. Create `~/bin/harness` (or any directory that is
-on your `PATH`):
+**This is the recommended way to run the harness.** Install once; use from any
+directory with no flags or env-var setup.
+
+### What the wrapper does automatically
+
+- **`LINEAR_API_KEY`** — reads from a `.env` file in the current directory if
+  not already in the shell environment.
+- **Claude OAuth** — extracts the access token from the macOS Keychain
+  (`Claude Code-credentials`) on each invocation. No manual token setup or
+  `~/.claude` mount needed; the Keychain is the source of truth on macOS.
+- **TTY detection** — passes `-it` only when stdin is a real terminal, so the
+  same wrapper works in scripts and CI.
+
+### Installation
+
+Create `~/bin/harness`:
 
 ```bash
 #!/usr/bin/env bash
 # ~/bin/harness — thin wrapper around the harness Docker image.
 #
-# Usage: harness run build --linear=HAR-123
+# Usage: harness run build --linear=CAL-123
 #   (identical to the native CLI; the container mounts the current directory.)
+#
+# Auth: Claude Code authenticates via the macOS Keychain (OAuth). No API key needed.
+# Override the image with HARNESS_IMAGE=harness:some-tag harness run ...
 set -euo pipefail
 
 IMAGE="${HARNESS_IMAGE:-harness:dev}"
 
-exec docker run --rm -it \
+# Pull LINEAR_API_KEY from the shell or a local .env file.
+if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
+  LINEAR_API_KEY=$(grep -E '^LINEAR_API_KEY=' "$(pwd)/.env" | cut -d= -f2- | tr -d '\r')
+  export LINEAR_API_KEY
+fi
+
+# Pull Claude OAuth token from macOS Keychain (containers can't access Keychain directly).
+if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['claudeAiOauth']['accessToken'])" 2>/dev/null || true)
+  export CLAUDE_CODE_OAUTH_TOKEN
+fi
+
+exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
   -v "$HOME/.claude":/root/.claude:ro \
+  -v "$HOME/.claude.json":/root/.claude.json:ro \
   -e LINEAR_API_KEY \
-  ${ANTHROPIC_API_KEY:+-e ANTHROPIC_API_KEY} \
-  ${CLAUDE_CODE_OAUTH_TOKEN:+-e CLAUDE_CODE_OAUTH_TOKEN} \
+  -e CLAUDE_CODE_OAUTH_TOKEN \
   "$IMAGE" \
   "$@"
 ```
 
-Make it executable and place it on your `PATH`:
+Make it executable and ensure `~/bin` is on your `PATH`:
 
 ```bash
 chmod +x ~/bin/harness
-# Ensure ~/bin is on PATH (add to ~/.zshrc or ~/.bashrc if needed):
+# Add to ~/.zshrc or ~/.bashrc if not already present:
 export PATH="$HOME/bin:$PATH"
 ```
 
-Then run workflows from any directory:
+### Usage
 
 ```bash
-cd /path/to/your-repo
-harness run build --linear=HAR-123
+cd /path/to/any-repo
+harness run build --linear=CAL-123
 ```
 
 Set `HARNESS_IMAGE` to point at a specific tag or registry image if you are
 not using the locally-built `harness:dev`.
+
+### Token expiry
+
+The OAuth token extracted from the Keychain has an expiry. The wrapper fetches
+a fresh token on every invocation, so as long as your local Claude Code session
+is active the token will be valid. If you see auth errors, run `claude /login`
+on the host to refresh the Keychain entry.
 
 ## Notes / caveats
 

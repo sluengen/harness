@@ -16,37 +16,26 @@ Trigger the build workflow for a Linear issue. The harness handles everything �
 ### Cross-repo usage
 
 ```bash
-/harness run SLT-42 --repo /path/to/slate
+cd /path/to/slate
+/harness run SLT-42
 ```
 
-The harness runs from its own directory; `--repo` points it at the target codebase. Combine with `--verify-command` to override the verification gate and `--branch-prefix` to control branch naming in the target repo.
+`cd` to the target repo first — the Docker wrapper mounts CWD as `/workspace` inside the container. No `--repo` flag needed. Combine with `--verify-command` to override the verification gate and `--branch-prefix` to control branch naming.
 
 ### Prerequisites
 
-Before running any commands, load the project environment:
+`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, see `docker/README.md` — one `chmod +x` and a `PATH` line in `.zshrc`.
+
+`LINEAR_API_KEY` must be in a `.env` file at the target repo root (gitignored). The wrapper reads it automatically — no `source .env` needed.
 
 ```bash
-source .env
-```
-
-`LINEAR_API_KEY` and other credentials live in `.env` at the repo root (gitignored). If the file is missing, create it:
-
-```bash
-# .env
+# .env (in the target repo root)
 LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API → Personal API keys
 ```
 
-> **No Linear CLI is installed.** All Linear interaction in this project goes through the GraphQL API directly — `curl` in shell scripts, `urllib.request` in Python. Do not search for a `linear` binary or attempt `npx linear`.
+> **No Linear CLI is installed.** All Linear interaction goes through the GraphQL API directly — `curl` in shell scripts, `urllib.request` in Python. Do not search for a `linear` binary or attempt `npx linear`.
 
-`harness` is not installed globally in development — invoke it via `bin/harness` (preferred) or `uv run`:
-
-```bash
-# preferred — immune to VIRTUAL_ENV conflicts
-source .env && PYTHONPATH=. bin/harness run build --linear=<ISSUE-ID>
-
-# alternative — only when VIRTUAL_ENV is unset
-source .env && PYTHONPATH=. uv run harness run build --linear=<ISSUE-ID>
-```
+> **Claude auth is automatic.** The wrapper extracts the OAuth token from the macOS Keychain on each invocation. No `ANTHROPIC_API_KEY` or manual token setup needed.
 
 ### Instructions
 
@@ -73,25 +62,26 @@ If the issue is already Done or has unresolved dependencies listed in the descri
 **Step 2 — Run the build workflow**
 
 ```bash
-source .env && PYTHONPATH=. bin/harness run build --linear=<ISSUE-ID>
+harness run build --linear=<ISSUE-ID>
 ```
 
-When `--repo`, `--verify-command`, or `--branch-prefix` were supplied, pass them through:
+When `--verify-command` or `--branch-prefix` were supplied, pass them through:
 
 ```bash
-source .env && PYTHONPATH=. bin/harness run build --linear=<ISSUE-ID> \
-  [--repo /path/to/target-repo] \
+harness run build --linear=<ISSUE-ID> \
   [--verify-command "bash scripts/verify.sh"] \
   [--branch-prefix "feature/"]
 ```
 
 The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.
 
+> Cross-repo use: just `cd` to the target repo first — the wrapper mounts CWD as the workspace automatically. `--repo` is not needed with the container invocation.
+
 **Step 3 — Report the outcome**
 
 ```bash
-source .env && PYTHONPATH=. bin/harness status <run-id>
-source .env && PYTHONPATH=. bin/harness logs   <run-id>
+harness status <run-id>
+harness logs   <run-id>
 ```
 
 Report whether the run completed, was cancelled by the gate (review FAIL), or failed with an error. Surface the reviewer's findings if the gate fired.
@@ -136,7 +126,7 @@ The agent doesn't need to read `SPEC.md` or `harness/` source — `AUTHORING.md`
 
 The agent reports the workflow path and validation result. You can:
 
-- Run it: `bin/harness run <workflow-name> <inputs>`
+- Run it: `harness run <workflow-name> <inputs>`
 - Inspect it: `cat workflows/<name>.yaml`
 - Iterate: tell the agent what to change and re-invoke the skill, or edit directly
 

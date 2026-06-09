@@ -25,7 +25,7 @@ commands:
   test:    "uv run pytest"
   test_one: "uv run pytest <path/to/test_file.py::test_name>"
   verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke → workflow validation. Run before merge/tag.
-  run:     "source .env && PYTHONPATH=. bin/harness run build --linear=ISSUE-ID"
+  run:     "harness run build --linear=ISSUE-ID"   # ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
   release: main         # PRs from dev → main for releases
@@ -82,13 +82,13 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 
 ## Gotchas
 
-- **`bin/harness` is a dev-time workaround only.** It hard-codes `.venv/bin/python` relative to the repo root and therefore only works inside the harness repo checkout. For cross-repo use, install the harness natively (`uv tool install .` from the repo root) or use the Docker image (`docker run --rm -v $(pwd):/workspace harness:dev run <wf>`). See `docker/README.md` for a thin shell wrapper pattern.
-- **Use `bin/harness`, not `uv run harness`**, when `VIRTUAL_ENV` is already set in the shell (e.g. a Homebrew Python or another activated venv). The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`. `uv run` warns and may pick the wrong interpreter when `VIRTUAL_ENV` is foreign.
-- **Native install path**: `uv tool install .` (from the repo root) installs the `harness` console script on PATH and bundles the workflow YAMLs as package data under `harness.workflows`. Running `harness run build --help` from any directory then works without `--workflows-dir`.
+- **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo, run `harness run build --linear=ID`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, and extracts the Claude OAuth token from the macOS Keychain automatically. See `docker/README.md` for the full wrapper script and installation steps.
+- **`bin/harness` is dev-time only.** It hard-codes `.venv/bin/python` relative to the harness repo root and only works inside the harness checkout. Use it when iterating on harness source itself; use `~/bin/harness` for everything else.
+- **Cross-repo execution** — `cd` to the target repo and run `harness run build --linear=ID`. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. `--verify-command` and `--branch-prefix` are still accepted for custom gates and branch naming.
+- **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH and bundles workflow YAMLs as package data. Use when Docker is not available. Credentials and env vars must be set manually.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
 - **`mypy` scope is `harness intake`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
-- **Cross-repo execution** — when running the harness against a different repo, pass `--repo /path/to/target`, `--verify-command "..."`, and `--branch-prefix "feature/"`. Omitting `--repo` makes the harness operate on its own working tree (dog-fooding).
 - **Verification output can come back empty** in the Claude Code Bash tool (it auto-backgrounds long commands). Redirect to `/tmp/<file>.txt` and `tail` it.
 
 ## Python conventions
