@@ -19,11 +19,13 @@ CREATE TABLE runs (
   run_id              TEXT PRIMARY KEY,
   workflow_name       TEXT NOT NULL,
   workflow_version    INTEGER NOT NULL,
-  status              TEXT NOT NULL,  -- pending|running|completed|failed|cancelled|stalled|paused
+  status              TEXT NOT NULL,  -- open|pending|running|completed|failed|cancelled|stalled|paused
   state_json          TEXT NOT NULL,
   inputs_json         TEXT NOT NULL,
   base_branch         TEXT,
   worktree_branch     TEXT,
+  worktree_path       TEXT,           -- absolute path to the git worktree (set by harness start)
+  ticket              TEXT,           -- Linear ticket identifier, e.g. "CAL-570" (set by harness start)
   exit_code           INTEGER,
   started_at          TEXT NOT NULL,
   completed_at        TEXT,
@@ -50,9 +52,37 @@ CREATE TABLE run_snapshots (
   captured_at TEXT NOT NULL,
   UNIQUE (run_id, seq)
 );
+
+-- Partial unique index: prevents two concurrent `harness start` calls from
+-- inserting duplicate open rows for the same ticket (CAL-570).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_ticket_open
+  ON runs(ticket) WHERE status = 'open';
 ```
 
 WAL journal mode and `PRAGMA foreign_keys = ON` are set on every connection opened via `connect()`. `init_db()` creates all tables and indexes idempotently (`IF NOT EXISTS`).
+
+### `runs` column additions (migrations)
+
+New columns added after the initial schema are applied via `ALTER TABLE ... ADD COLUMN` in `_migrate()`. Each migration is idempotent.
+
+| Column | Type | Added by | Description |
+|---|---|---|---|
+| `pid` | `INTEGER` | H-2-006 | PID of the owning harness process; used by `harness cancel`. |
+| `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
+| `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
+
+### `status` values
+
+| Value | Set by | Meaning |
+|---|---|---|
+| `open` | `harness start` | Run initialised; ticket transitioned and worktree created; workflow not yet started. |
+| `pending` | `harness run` | Workflow accepted; executor not yet started. |
+| `running` | engine | At least one node has started. |
+| `completed` | engine | All nodes completed successfully. |
+| `failed` | engine | A node or workflow-level error terminated the run. |
+| `cancelled` | SIGTERM path | Run was cancelled by SIGTERM. |
+| `stalled` | engine | No progress within the stall timeout. |
+| `paused` | engine (v2) | Run awaiting a decision. |
 
 ---
 

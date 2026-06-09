@@ -100,7 +100,9 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "run_id", "workflow_name", "workflow_version", "status", "state_json",
         "inputs_json", "base_branch", "worktree_branch", "exit_code",
         "started_at", "completed_at", "duration_ms",
-        "pid",  # H-2-006: process ID for harness cancel
+        "pid",          # H-2-006: process ID for harness cancel
+        "ticket",       # CAL-570: Linear ticket identifier for ``harness start``
+        "worktree_path",  # CAL-570: worktree filesystem path for ``harness start``
     }
     assert set(cols.keys()) == expected
     assert cols["run_id"]["pk"] == 1

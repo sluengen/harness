@@ -32,6 +32,7 @@ from harness.cli.query import (
     status_command,
 )
 from harness.cli.run import run_command
+from harness.cli.start import start_command
 from harness.cli.validate import validate_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
@@ -68,6 +69,9 @@ app.command(name="cancel", help="Cancel a running workflow by sending SIGTERM.")
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
+app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
+    start_command
+)
 
 # Dynamic per-workflow `run` command. Uses context-settings to leave
 # workflow-specific args unparsed so `harness.cli.run` can build a Click
