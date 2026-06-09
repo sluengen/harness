@@ -98,11 +98,12 @@ docker run --rm -it \
 
 ## Other environment variables
 
-None are baked into the image. Pass via `-e VAR` or `--env-file`.
+Pass via `-e VAR` or `--env-file`.
 
 | Variable | Required | Notes |
 |----------|----------|-------|
 | `LINEAR_API_KEY` | yes (for workflows that fetch Linear) | Personal API key. |
+| `HARNESS_WORKFLOWS_DIR` | — | **Baked into the image** as `/opt/harness/workflows`. Override only when using custom workflows. |
 | `OPENAI_API_KEY` | optional | Used by OpenAI-compatible adapters (e.g. local Ollama via the OpenAI SDK). v1.5+. |
 | `OLLAMA_BASE_URL` | optional | Defaults to `http://host.docker.internal:11434/v1` so the container can reach Ollama running on the host. v1.5+. |
 
@@ -148,6 +149,51 @@ HARNESS_TARGET_REPO=/abs/path/to/your-repo \
 
 Omit `HARNESS_TARGET_REPO` to run the harness against the harness repo
 itself (useful for nightly self-reviews).
+
+## Thin shell wrapper (`~/bin/harness`)
+
+To call the containerised harness as if it were a native binary, install a
+thin wrapper on your `PATH`. Create `~/bin/harness` (or any directory that is
+on your `PATH`):
+
+```bash
+#!/usr/bin/env bash
+# ~/bin/harness — thin wrapper around the harness Docker image.
+#
+# Usage: harness run build --linear=HAR-123
+#   (identical to the native CLI; the container mounts the current directory.)
+set -euo pipefail
+
+IMAGE="${HARNESS_IMAGE:-harness:dev}"
+
+exec docker run --rm -it \
+  -v "$(pwd)":/workspace \
+  -w /workspace \
+  -v "$HOME/.claude":/root/.claude:ro \
+  -e LINEAR_API_KEY \
+  ${ANTHROPIC_API_KEY:+-e ANTHROPIC_API_KEY} \
+  ${CLAUDE_CODE_OAUTH_TOKEN:+-e CLAUDE_CODE_OAUTH_TOKEN} \
+  "$IMAGE" \
+  "$@"
+```
+
+Make it executable and place it on your `PATH`:
+
+```bash
+chmod +x ~/bin/harness
+# Ensure ~/bin is on PATH (add to ~/.zshrc or ~/.bashrc if needed):
+export PATH="$HOME/bin:$PATH"
+```
+
+Then run workflows from any directory:
+
+```bash
+cd /path/to/your-repo
+harness run build --linear=HAR-123
+```
+
+Set `HARNESS_IMAGE` to point at a specific tag or registry image if you are
+not using the locally-built `harness:dev`.
 
 ## Notes / caveats
 

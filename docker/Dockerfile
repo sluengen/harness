@@ -51,6 +51,10 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT=/opt/harness \
     # The image is fully built; suppress uv's implicit reinstall-on-run behaviour so
     # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
-    UV_NO_SYNC=1
+    UV_NO_SYNC=1 \
+    # Tell the harness CLI where to find workflow YAMLs inside the image. Without this
+    # the CLI would look for ./workflows relative to the container's CWD (/workspace,
+    # the mounted target repo), which does not contain the harness workflows.
+    HARNESS_WORKFLOWS_DIR=/opt/harness/workflows
 
 ENTRYPOINT ["uv", "run", "harness"]

@@ -1,0 +1,78 @@
+name: release
+version: 1
+description: >
+  Pull recent Linear tickets, summarise into release notes, write to disk,
+  and raise a GitHub PR from dev to main.
+
+inputs:
+  since_days:
+    type: integer
+    default: 7
+  output_path:
+    type: string
+    default: ""
+  repo:
+    type: string
+    flag: --repo
+    required: true
+
+steps:
+  - id: fetch-tickets
+    type: script
+    command: |
+      SINCE=$(python3 -c "from datetime import datetime,timedelta; print((datetime.utcnow()-timedelta(days=int('$1'))).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query($since:DateTimeOrDuration!){issues(filter:{completedAt:{gt:$since},state:{type:{eq:\"completed\"}}},first:100){nodes{id identifier title labels{nodes{name}}}}}","variables":{"since":"'"$SINCE"'"}}' \
+      | python3 -c "import json,sys; nodes=json.load(sys.stdin)['data']['issues']['nodes']; print(json.dumps({'tickets':[{'id':n['id'],'title':n['title'],'labels':[l['name'] for l in n['labels']['nodes']],'kind':next((l['name'].lower() for l in n['labels']['nodes'] if l['name'].lower() in ('bug','feature','improvement','chore')),'feature')} for n in nodes]}))"
+    args: ["$inputs.since_days"]
+    contract:
+      tickets:
+        type: list
+        of:
+          id: string
+          title: string
+          labels:
+            type: list
+            of: string
+          kind: string
+    writes: [tickets]
+
+  - id: summarise
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/summarize.j2
+    template_vars:
+      subject: "Linear tickets closed in the last $inputs.since_days days: $state.tickets"
+      length: "release-notes markdown grouped by type (Features, Bug fixes, Improvements)"
+    allowed_tools: [Read]
+    contract:
+      release_notes: string
+    writes: [release_notes]
+
+  - id: write-file
+    type: script
+    runtime: python
+    script: scripts/write_release_notes.py
+    args: ["--run-id", "$state.run_id", "--output-path", "$inputs.output_path"]
+    contract:
+      output_path: string
+    writes: [output_path]
+
+  - id: raise-pr
+    type: script
+    command: |
+      TODAY=$(date +%Y-%m-%d)
+      PR_URL=$(gh pr create \
+        --repo "$1" \
+        --title "Release — ${TODAY}" \
+        --body-file "$2" \
+        --base main \
+        --head dev)
+      printf '{"pr_url": "%s"}' "$PR_URL"
+    args: ["$inputs.repo", "$state.output_path"]
+    contract:
+      pr_url: string
+    writes: [pr_url]

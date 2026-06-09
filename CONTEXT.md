@@ -82,7 +82,9 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 
 ## Gotchas
 
+- **`bin/harness` is a dev-time workaround only.** It hard-codes `.venv/bin/python` relative to the repo root and therefore only works inside the harness repo checkout. For cross-repo use, install the harness natively (`uv tool install .` from the repo root) or use the Docker image (`docker run --rm -v $(pwd):/workspace harness:dev run <wf>`). See `docker/README.md` for a thin shell wrapper pattern.
 - **Use `bin/harness`, not `uv run harness`**, when `VIRTUAL_ENV` is already set in the shell (e.g. a Homebrew Python or another activated venv). The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`. `uv run` warns and may pick the wrong interpreter when `VIRTUAL_ENV` is foreign.
+- **Native install path**: `uv tool install .` (from the repo root) installs the `harness` console script on PATH and bundles the workflow YAMLs as package data under `harness.workflows`. Running `harness run build --help` from any directory then works without `--workflows-dir`.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
 - **`mypy` scope is `harness intake`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
