@@ -23,7 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI — required by claude_agent_sdk (SubprocessCLITransport).
-RUN npm install -g @anthropic-ai/claude-code
+# OpenAI Codex CLI — required by CodexAgent (codex exec --json).
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 # uv handles dependency resolution and the project venv inside the image.
 RUN pip install --no-cache-dir uv
