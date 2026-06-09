@@ -19,6 +19,11 @@ import pytest
 
 from harness.cli.run import _resolve_workflows_dir
 
+# Repo root is two levels above this file (tests/unit/ → tests/ → repo root).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_TOP_LEVEL_WORKFLOWS = _REPO_ROOT / "workflows"
+_PKG_WORKFLOWS = _REPO_ROOT / "harness" / "workflows"
+
 # ---------------------------------------------------------------------------
 # Step 1 — explicit path
 # ---------------------------------------------------------------------------
@@ -158,3 +163,43 @@ class TestPackageData:
         expected = {"build.yaml", "build-codex.yaml", "release.yaml", "steward.yaml"}
         found = {p.name for p in result.iterdir() if p.suffix == ".yaml"}
         assert expected <= found, f"Missing workflows: {expected - found}"
+
+
+# ---------------------------------------------------------------------------
+# Mirror equivalence — harness/workflows/ must match workflows/
+# ---------------------------------------------------------------------------
+
+
+class TestPackageMirror:
+    """Assert that ``harness/workflows/<name>.yaml`` is identical to
+    ``workflows/<name>.yaml`` for every file in the top-level directory.
+
+    ``harness/workflows/`` is a copy of ``workflows/`` used as installed
+    package data. If they drift, the installed harness silently runs the
+    wrong workflow definitions. This test is the single enforcement point.
+    """
+
+    def test_every_top_level_workflow_has_a_package_mirror(self) -> None:
+        """Every ``workflows/*.yaml`` has a matching file in ``harness/workflows/``."""
+        top_level = list(_TOP_LEVEL_WORKFLOWS.glob("*.yaml"))
+        assert top_level, "Expected at least one workflow YAML in workflows/"
+        for wf in top_level:
+            mirror = _PKG_WORKFLOWS / wf.name
+            assert mirror.is_file(), (
+                f"harness/workflows/{wf.name} is missing — "
+                f"add it to mirror workflows/{wf.name}"
+            )
+
+    def test_package_mirror_content_matches_top_level(self) -> None:
+        """Each ``harness/workflows/<name>.yaml`` has identical content to
+        the corresponding ``workflows/<name>.yaml``."""
+        for wf in _TOP_LEVEL_WORKFLOWS.glob("*.yaml"):
+            mirror = _PKG_WORKFLOWS / wf.name
+            if not mirror.is_file():
+                # test_every_top_level_workflow_has_a_package_mirror covers
+                # the missing-file case; skip here to avoid a double-failure.
+                continue
+            assert wf.read_text() == mirror.read_text(), (
+                f"harness/workflows/{wf.name} is out of sync with "
+                f"workflows/{wf.name} — update both files together"
+            )
