@@ -46,15 +46,15 @@ docker run --rm harness:dev version
 
 ## Authentication for AI nodes
 
-harness wraps `claude_agent_sdk`, which wraps Claude Code. Auth
-follows Claude Code's conventions — there are three paths, in order of
-preference:
+The harness image runs two AI agents — Claude Code and Codex — both using
+subscription OAuth (no API keys). The `~/bin/harness` wrapper handles all
+credential wiring automatically.
 
-### Option A — `CLAUDE_CODE_OAUTH_TOKEN` env var (recommended)
+### Claude Code — `CLAUDE_CODE_OAUTH_TOKEN`
 
 On macOS, OAuth credentials live in the Keychain — not in a file that can be
-mounted. Extract the token once per invocation and pass it as an env var.
-The thin shell wrapper (`~/bin/harness`) does this automatically.
+mounted. The wrapper extracts the token on each invocation and passes it as an
+env var.
 
 ```bash
 # Manually (or in CI):
@@ -72,36 +72,20 @@ docker run --rm -it \
 > to that directory during execution. A `:ro` mount causes silent stalls
 > where the agent runs for minutes then exits without calling submit.
 
-### Option B — `CLAUDE_CODE_OAUTH_TOKEN` env var
+### Codex — `~/.codex` volume mount
 
-For CI or any context where the `~/.claude` mount is awkward, generate a
-long-lived OAuth token once and pass it as an env var. **Subscription
-pricing**, no mount needed.
+Codex uses subscription auth (`auth_mode: chatgpt`) stored in
+`~/.codex/auth.json`. The wrapper mounts the directory into the container so
+the `codex` CLI can read its credentials. No `OPENAI_API_KEY` is needed or
+passed.
 
 ```bash
-# One-time on the host
-export CLAUDE_CODE_OAUTH_TOKEN="$(claude setup-token)"  # sk-ant-oat01-...
-
-# Then any container invocation
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
+  -v "$HOME/.codex":/root/.codex \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
-  run steward --domain=architecture
-```
-
-### Option C — `ANTHROPIC_API_KEY` (fallback, API rates)
-
-Pay-per-token, no subscription. Use only when neither OAuth path is
-available (e.g. CI without OAuth access). The SDK picks this up only if
-no OAuth source is found.
-
-```bash
-docker run --rm -it \
-  -v "$(pwd)":/workspace -w /workspace \
-  -e ANTHROPIC_API_KEY \
-  harness:dev \
-  run steward --domain=architecture
+  run build-codex --linear=CAL-123
 ```
 
 ## Other environment variables
@@ -111,9 +95,8 @@ Pass via `-e VAR` or `--env-file`.
 | Variable | Required | Notes |
 |----------|----------|-------|
 | `LINEAR_API_KEY` | yes (for workflows that fetch Linear) | Personal API key. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes (for Claude nodes) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
 | `HARNESS_WORKFLOWS_DIR` | — | **Baked into the image** as `/opt/harness/workflows`. Override only when using custom workflows. |
-| `OPENAI_API_KEY` | optional | Used by OpenAI-compatible adapters (e.g. local Ollama via the OpenAI SDK). v1.5+. |
-| `OLLAMA_BASE_URL` | optional | Defaults to `http://host.docker.internal:11434/v1` so the container can reach Ollama running on the host. v1.5+. |
 
 ## Invocation — running against another repo
 
@@ -170,6 +153,13 @@ directory with no flags or env-var setup.
 - **Claude OAuth** — extracts the access token from the macOS Keychain
   (`Claude Code-credentials`) on each invocation. No manual token setup or
   `~/.claude` mount needed; the Keychain is the source of truth on macOS.
+- **Codex OAuth** — mounts `~/.codex` into the container. Codex uses
+  subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
+  no `OPENAI_API_KEY` is required or passed.
+- **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
+  `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
+  container are attributed correctly.
+- **SSH credentials** — mounts `~/.ssh` read-only for `git push`.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
 
@@ -184,7 +174,11 @@ Create `~/bin/harness`:
 # Usage: harness run build --linear=CAL-123
 #   (identical to the native CLI; the container mounts the current directory.)
 #
-# Auth: Claude Code authenticates via the macOS Keychain (OAuth). No API key needed.
+# Auth:
+#   Claude Code  — OAuth token extracted from macOS Keychain on each invocation.
+#   Codex        — subscription OAuth; ~/.codex is mounted so the CLI can read
+#                  auth.json (same auth_mode as Claude, no API key needed).
+#
 # Override the image with HARNESS_IMAGE=harness:some-tag harness run ...
 set -euo pipefail
 
@@ -206,8 +200,14 @@ fi
 exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
+  -v "$HOME/.ssh":/root/.ssh:ro \
+  -v "$HOME/.codex":/root/.codex \
   -e LINEAR_API_KEY \
   -e CLAUDE_CODE_OAUTH_TOKEN \
+  -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
+  -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
+  -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
+  -e "GIT_COMMITTER_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
   "$IMAGE" \
   "$@"
 ```

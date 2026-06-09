@@ -82,7 +82,7 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 
 ## Gotchas
 
-- **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo, run `harness run build --linear=ID`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, and extracts the Claude OAuth token from the macOS Keychain automatically. See `docker/README.md` for the full wrapper script and installation steps.
+- **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo, run `harness run build --linear=ID`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, extracts the Claude OAuth token from the macOS Keychain, and mounts `~/.codex` for Codex subscription auth. See `docker/README.md` for the full wrapper script and installation steps.
 - **`bin/harness` is dev-time only.** It hard-codes `.venv/bin/python` relative to the harness repo root and only works inside the harness checkout. Use it when iterating on harness source itself; use `~/bin/harness` for everything else.
 - **Cross-repo execution** — `cd` to the target repo and run `harness run build --linear=ID`. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. `--verify-command` and `--branch-prefix` are still accepted for custom gates and branch naming.
 - **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH and bundles workflow YAMLs as package data. Use when Docker is not available. Credentials and env vars must be set manually.
