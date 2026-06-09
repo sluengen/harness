@@ -164,15 +164,36 @@ async def _migrate(db_path: Path) -> None:
 
     H-2-006: ``runs.pid INTEGER`` — process ID of the harness run process,
         used by ``harness cancel <run-id>`` to deliver SIGTERM.
+    CAL-570: ``runs.ticket TEXT`` — Linear ticket identifier (e.g. ``CAL-570``)
+        for runs opened via ``harness start``.
+    CAL-570: ``runs.worktree_path TEXT`` — filesystem path of the worktree
+        created by ``harness start`` (mirrors the ``worktree_path`` state field
+        but stored at the row level for observability without parsing state_json).
+    CAL-570: ``idx_runs_ticket_open`` partial unique index on ``(ticket)``
+        WHERE ``status='open'`` — prevents two concurrent ``harness start``
+        calls from inserting duplicate open rows for the same ticket.
     """
     async with aiosqlite.connect(db_path) as conn:
         await conn.execute("PRAGMA journal_mode = WAL")
         await conn.execute("PRAGMA foreign_keys = ON")
-        try:
-            await conn.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
-            await conn.commit()
-        except aiosqlite.OperationalError:
-            pass  # Column already present — fresh DB or migration already ran.
+        for ddl in (
+            "ALTER TABLE runs ADD COLUMN pid INTEGER",
+            "ALTER TABLE runs ADD COLUMN ticket TEXT",
+            "ALTER TABLE runs ADD COLUMN worktree_path TEXT",
+        ):
+            try:
+                await conn.execute(ddl)
+                await conn.commit()
+            except aiosqlite.OperationalError:
+                pass  # Column already present — fresh DB or migration already ran.
+
+        # Idempotent index creation for the partial unique constraint on open
+        # ticket rows.  ``CREATE UNIQUE INDEX IF NOT EXISTS`` is safe to re-run.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_ticket_open "
+            "ON runs(ticket) WHERE status = 'open'"
+        )
+        await conn.commit()
 
 
 # ---------------------------------------------------------------------------

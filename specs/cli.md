@@ -13,6 +13,7 @@ Provides a human- and machine-friendly interface for running workflows, querying
 ## Command surface
 
 ```
+harness start <ticket>    [--base <branch>] [--repo <path>] [--db <path>] [--json/--no-json]
 harness run <workflow> [--base <branch>] [--quiet] [--workflows-dir <dir>] [<workflow-inputs>...]
 harness cancel <run-id>   [--json] [--db <path>]
 harness status <run-id>   [--json] [--db <path>]
@@ -27,6 +28,64 @@ harness decision show <run-id>    [--json] [--db <path>]
 harness decision approve <run-id> [--comment <text>] [--workflows-dir <dir>] [--json]
 harness decision reject <run-id>  [--comment <text>] [--workflows-dir <dir>] [--json]
 ```
+
+---
+
+## `harness start`
+
+Opens a run for a Linear ticket. Intended for machine consumption — JSON output is the default and the only supported format.
+
+```
+harness start <ticket> [--base <branch>] [--repo <path>] [--db <path>] [--json/--no-json]
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--base` | `dev` | Base branch for the worktree. |
+| `--repo` | `.` (CWD) | Repo root for git worktree operations. |
+| `--db` | `<repo>/.harness/harness.db` | Path to the ledger database. Defaults to `DEFAULT_DB_PATH` relative to `--repo`. |
+| `--json/--no-json` | `--json` | Emit machine-readable JSON. Always on by default. |
+
+**Operation order (all-or-nothing):**
+
+1. Validate `LINEAR_API_KEY` is set.
+2. Fetch the Linear issue via `issue(id: <ticket>)`.
+3. Check for an existing open run (refuse duplicate).
+4. Create the git worktree at `.worktrees/harness/<run_id>/` on branch `harness/<run_id>`.
+5. Insert an `open` row into `runs` (see `specs/state-store.md`).
+6. Transition the ticket to In Progress (last — the only non-local side effect). On failure, delete the DB row and remove the worktree.
+
+**JSON output schema (`StartOutput`):**
+
+```json
+{
+  "run_id": "<26-char ULID>",
+  "ticket": {
+    "id": "<Linear UUID>",
+    "identifier": "<e.g. CAL-570>",
+    "title": "<ticket title>",
+    "description": "<ticket description, capped at 4096 chars>",
+    "url": "<https://linear.app/...>"
+  },
+  "worktree_path": "<absolute path to worktree>",
+  "worktree_branch": "harness/<run_id>",
+  "base_branch": "<base branch name>"
+}
+```
+
+`description` is capped at 4096 characters and suffixed with `... [truncated]` if the original exceeded that limit.
+
+If an open run already exists for the ticket, the command exits 0 and returns the existing run's `StartOutput` rather than opening a second run.
+
+**Exit codes:**
+
+| Code | Meaning |
+|---|---|
+| 0 | Run opened (or existing run returned). |
+| 1 | Unexpected error (worktree creation failed, DB error, etc.). |
+| 2 | Invocation error (missing ticket, Linear unreachable, transition failed). |
 
 ---
 
