@@ -50,19 +50,27 @@ harness wraps `claude_agent_sdk`, which wraps Claude Code. Auth
 follows Claude Code's conventions — there are three paths, in order of
 preference:
 
-### Option A — Mount your local Claude credentials (recommended)
+### Option A — `CLAUDE_CODE_OAUTH_TOKEN` env var (recommended)
 
-If you've run `claude /login` on the host, your OAuth credentials live at
-`~/.claude/`. Mount that into the container and `claude_agent_sdk` picks
-them up. **Subscription pricing.** Nothing else to set.
+On macOS, OAuth credentials live in the Keychain — not in a file that can be
+mounted. Extract the token once per invocation and pass it as an env var.
+The thin shell wrapper (`~/bin/harness`) does this automatically.
 
 ```bash
+# Manually (or in CI):
+CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credentials" -w \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['claudeAiOauth']['accessToken'])")
+
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.claude":/root/.claude:ro \
+  -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
   run steward --domain=architecture
 ```
+
+> **Do not mount `~/.claude` read-only.** Claude Code writes session state
+> to that directory during execution. A `:ro` mount causes silent stalls
+> where the agent runs for minutes then exits without calling submit.
 
 ### Option B — `CLAUDE_CODE_OAUTH_TOKEN` env var
 
@@ -198,8 +206,6 @@ fi
 exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  -v "$HOME/.claude":/root/.claude:ro \
-  -v "$HOME/.claude.json":/root/.claude.json:ro \
   -e LINEAR_API_KEY \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   "$IMAGE" \
