@@ -726,6 +726,68 @@ def test_decision_reject_json_output(
 
 
 # ---------------------------------------------------------------------------
+# harness decision approve / reject — HARNESS_WORKFLOWS_DIR resolution
+# ---------------------------------------------------------------------------
+
+
+def test_decision_approve_respects_harness_workflows_dir_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HARNESS_WORKFLOWS_DIR is honoured when ``--workflows-dir`` is not given.
+
+    ``decision approve`` must use the four-step resolution chain
+    (``_resolve_workflows_dir``) rather than the hardcoded
+    ``DEFAULT_WORKFLOWS_DIR``, so ``$HARNESS_WORKFLOWS_DIR`` wins when set.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    env_wf_dir = tmp_path / "custom_wf"
+    env_wf_dir.mkdir()
+    monkeypatch.setenv("HARNESS_WORKFLOWS_DIR", str(env_wf_dir))
+    monkeypatch.chdir(tmp_path)  # no ./workflows/ here — step 3 skips
+
+    spy = _ResumeRunnerSpy(exit_code=0)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(app, ["decision", "approve", "R1", "--db", str(db)])
+    assert result.exit_code == 0, result.output
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["workflows_dir"] == env_wf_dir
+
+
+def test_decision_reject_respects_harness_workflows_dir_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HARNESS_WORKFLOWS_DIR is honoured when ``--workflows-dir`` is not given.
+
+    Parallel to the approve test — verifies both commands use the same
+    resolution chain.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
+
+    env_wf_dir = tmp_path / "custom_wf"
+    env_wf_dir.mkdir()
+    monkeypatch.setenv("HARNESS_WORKFLOWS_DIR", str(env_wf_dir))
+    monkeypatch.chdir(tmp_path)  # no ./workflows/ here — step 3 skips
+
+    spy = _ResumeRunnerSpy(exit_code=1)
+
+    import harness.cli.decisions as decisions_mod
+
+    monkeypatch.setattr(decisions_mod, "_build_decision_runner", lambda db_path: spy)
+
+    result = runner.invoke(app, ["decision", "reject", "R1", "--db", str(db)])
+    assert result.exit_code == 1
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["workflows_dir"] == env_wf_dir
+
+
+# ---------------------------------------------------------------------------
 # runs.status enum recognises ``paused`` and ``stalled``.
 # ---------------------------------------------------------------------------
 

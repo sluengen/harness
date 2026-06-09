@@ -13,8 +13,6 @@ propagates the runner's exit code per SPEC §11.
 from __future__ import annotations
 
 import asyncio
-import importlib.resources
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -22,57 +20,16 @@ from typing import Any
 import click
 import typer
 
+from harness.cli._workflows import _resolve_workflows_dir
 from harness.engine.runner import Runner
 from harness.workflow.loader import WorkflowLoadError, load_workflow
 from harness.workflow.schema import InputSpec
 
 __all__ = ["run_command"]
 
-
-def _resolve_workflows_dir(explicit: Path | None) -> Path:
-    """Resolve the workflow directory using the four-step fallback chain.
-
-    Priority:
-    1. ``explicit`` — the ``--workflows-dir`` CLI flag when provided.
-    2. ``$HARNESS_WORKFLOWS_DIR`` environment variable.
-    3. ``Path("workflows")`` relative to CWD — preserved for in-repo dev use.
-    4. ``importlib.resources.files("harness.workflows")`` — bundled package
-       data available after ``uv tool install .`` or ``pip install .``.
-
-    Steps 3 and 4 are only selected when the candidate directory actually
-    exists. Steps 1 and 2 are trusted as-is (the caller supplied them
-    deliberately).
-
-    Returns:
-        A :class:`~pathlib.Path` for the resolved directory. If none of the
-        fallbacks locate an existing directory, returns ``Path("workflows")``
-        so callers surface the original "workflow not found" error.
-    """
-    if explicit is not None:
-        return explicit
-
-    env_val = os.environ.get("HARNESS_WORKFLOWS_DIR")
-    if env_val:
-        return Path(env_val)
-
-    cwd_local = Path("workflows")
-    if cwd_local.is_dir():
-        return cwd_local.resolve()
-
-    # Installed package data — available when harness is installed as a
-    # distribution package (uv tool install / pip install).
-    try:
-        pkg_ref = importlib.resources.files("harness.workflows")
-        pkg_path = Path(str(pkg_ref))
-        if pkg_path.is_dir():
-            return pkg_path
-    except Exception:  # noqa: BLE001, S110 — broad catch intentional; many failure modes
-        pass
-
-    # Final fallback: callers receive a "workflow not found" error if the
-    # directory does not exist at this path. This preserves the original
-    # error message rather than introducing a new one.
-    return Path("workflows")
+# Re-exported so existing importers (e.g. tests) can still reach the function
+# via ``harness.cli.run._resolve_workflows_dir``.
+__all__ += ["_resolve_workflows_dir"]
 
 
 # Internal kwarg name for the reserved ``--base`` flag. Namespaced so a

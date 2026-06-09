@@ -32,7 +32,8 @@ from typing import Any
 import aiosqlite
 import typer
 
-from harness.engine.runner import DEFAULT_WORKFLOWS_DIR, Runner
+from harness.cli._workflows import _resolve_workflows_dir
+from harness.engine.runner import Runner
 from harness.state import store
 
 __all__ = ["decisions_app", "decision_app"]
@@ -307,10 +308,14 @@ def decision_approve_command(
         "--db",
         help="Path to harness.db (defaults to .harness/harness.db).",
     ),
-    workflows_dir: Path = typer.Option(  # noqa: B008 — Typer pattern.
-        DEFAULT_WORKFLOWS_DIR,
+    workflows_dir: Path | None = typer.Option(  # noqa: B008 — Typer pattern.
+        None,
         "--workflows-dir",
-        help="Directory containing workflow YAML files.",
+        help=(
+            "Directory containing workflow YAML files. "
+            "Falls back to $HARNESS_WORKFLOWS_DIR, then ./workflows, "
+            "then bundled package data."
+        ),
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
@@ -340,13 +345,14 @@ def decision_approve_command(
             )
         raise typer.Exit(code=2)
 
+    resolved_dir = _resolve_workflows_dir(workflows_dir)
     decision_runner = _build_decision_runner(db_path)
     exit_code = asyncio.run(
         decision_runner.resume(
             run_id,
             approved=True,
             comment=comment,
-            workflows_dir=workflows_dir,
+            workflows_dir=resolved_dir,
         )
     )
 
@@ -368,10 +374,14 @@ def decision_reject_command(
         "--db",
         help="Path to harness.db (defaults to .harness/harness.db).",
     ),
-    workflows_dir: Path = typer.Option(  # noqa: B008 — Typer pattern.
-        DEFAULT_WORKFLOWS_DIR,
+    workflows_dir: Path | None = typer.Option(  # noqa: B008 — Typer pattern.
+        None,
         "--workflows-dir",
-        help="Directory containing workflow YAML files.",
+        help=(
+            "Directory containing workflow YAML files. "
+            "Falls back to $HARNESS_WORKFLOWS_DIR, then ./workflows, "
+            "then bundled package data."
+        ),
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
@@ -401,13 +411,14 @@ def decision_reject_command(
             )
         raise typer.Exit(code=2)
 
+    resolved_dir = _resolve_workflows_dir(workflows_dir)
     decision_runner = _build_decision_runner(db_path)
     exit_code = asyncio.run(
         decision_runner.resume(
             run_id,
             approved=False,
             comment=comment,
-            workflows_dir=workflows_dir,
+            workflows_dir=resolved_dir,
         )
     )
 
