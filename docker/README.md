@@ -159,7 +159,14 @@ directory with no flags or env-var setup.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
-- **SSH credentials** — mounts `~/.ssh` read-only for `git push`.
+- **SSH credentials** — mounts `~/.ssh` read-only (for `known_hosts`) **and
+  forwards the host ssh-agent** so `git push` over SSH works on the close verb.
+  On macOS the signing key is passphrase-protected in the Keychain and is *not*
+  usable from the mounted file, so the agent socket
+  (`/run/host-services/ssh-auth.sock`, provided by Docker Desktop) is forwarded
+  into the container instead. `GIT_SSH_COMMAND` is set with `-F /dev/null` so the
+  macOS `~/.ssh/config` (which carries `UseKeychain yes`, an option Linux ssh
+  rejects) is ignored; auth comes from the forwarded agent.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
 
@@ -197,13 +204,27 @@ if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
   export CLAUDE_CODE_OAUTH_TOKEN
 fi
 
+# Forward the host ssh-agent for `git push` over SSH (the close verb).
+# On macOS Docker Desktop exposes the host agent at a fixed path; the key itself
+# is Keychain-backed and not usable from the mounted file, so the agent socket is
+# what actually authenticates. Falls back to no-agent on hosts that lack it.
+SSH_AGENT_ARGS=()
+if [[ -S /run/host-services/ssh-auth.sock ]]; then
+  SSH_AGENT_ARGS=(
+    -v /run/host-services/ssh-auth.sock:/ssh-agent
+    -e SSH_AUTH_SOCK=/ssh-agent
+  )
+fi
+
 exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
   -v "$HOME/.ssh":/root/.ssh:ro \
   -v "$HOME/.codex":/root/.codex \
+  ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
   -e CLAUDE_CODE_OAUTH_TOKEN \
+  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
   -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
   -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \

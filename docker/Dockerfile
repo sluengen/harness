@@ -18,8 +18,10 @@ FROM python:3.11-slim
 #   jq               — required by every script node (set-in-progress, verify, …)
 #   postgresql-client — psql for per-run DATABASE_URL provisioning in the verify node
 #   nodejs/npm       — required to install Claude Code CLI (claude_agent_sdk transport)
+#   openssh-client   — `ssh` binary for `git push` over SSH on the close verb
+#                      (without it `git push` fails: "cannot run ssh: No such file or directory")
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates jq postgresql-client nodejs npm \
+        git curl ca-certificates jq postgresql-client nodejs npm openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI — required by claude_agent_sdk (SubprocessCLITransport).
