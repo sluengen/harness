@@ -213,9 +213,25 @@ def build_verb_argv(
     except WorkspaceNotAllowed as exc:
         raise LauncherError("repo_not_allowed", str(exc)) from exc
 
+    # The resolved repo path is the ONLY caller-derived value that enters the
+    # docker-option region (``-v <repo>:<repo>``, ``-w <repo>``,
+    # ``-e HARNESS_WORKSPACE_ROOTS=<repo>``). A ``:`` is a legal POSIX path
+    # character that survives ``Path.resolve()`` and the allowlist check, but it
+    # is *also* the ``-v src:dst[:opts]`` field separator — so a path like
+    # ``/work/repo:/etc`` would let the caller dictate the mount destination,
+    # defeating the "caller never specifies the mount" property. Reject it: a
+    # real repo path never contains a colon.
+    if ":" in repo:
+        raise LauncherError(
+            "repo_not_allowed",
+            f"repo path {repo!r} contains ':', which would inject docker mount "
+            "(-v/-e) option structure",
+        )
+
     # Construct the launch server-side. The only caller-derived value that enters
-    # the docker-option region is the *resolved* repo path (validated above);
-    # everything else the caller supplied lands after the image, as verb args.
+    # the docker-option region is the *resolved*, colon-free repo path (validated
+    # above); everything else the caller supplied lands after the image, as verb
+    # args.
     argv: list[str] = [
         "docker",
         "run",

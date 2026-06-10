@@ -236,6 +236,36 @@ def test_repo_empty_allowlist_fails_closed(repo: Path) -> None:
     assert excinfo.value.reason == "repo_not_allowed"
 
 
+def test_repo_with_colon_is_rejected_no_mount_injection(tmp_path: Path) -> None:
+    # A ``:`` is a legal path char that passes ``resolve()`` + the allowlist, but
+    # it is the ``-v src:dst[:opts]`` separator. A path like ``…/r:/etc:cached``
+    # would let the caller inject the mount *destination* into ``docker run -v``.
+    # It must be rejected (the load-bearing "caller never specifies the mount").
+    root = tmp_path / "work"
+    evil = root / "r:" / "etc:cached"
+    evil.mkdir(parents=True)
+    roots = [root.resolve()]
+    with pytest.raises(LauncherError) as excinfo:
+        _argv("start", {"repo": str(evil), "ticket": "CAL-1"}, roots)
+    assert excinfo.value.reason == "repo_not_allowed"
+
+
+def test_no_argv_token_carries_a_caller_injected_mount_destination(tmp_path: Path) -> None:
+    # Defence-in-depth assertion of the property itself: for any accepted repo,
+    # the only ``:`` in the whole argv is the single one inside the ``-v`` bind
+    # spec, and it splits that spec into two identical halves (src == dst). No
+    # caller value can add a second ``:``-delimited field.
+    root = tmp_path / "work"
+    repo = root / "repo"
+    repo.mkdir(parents=True)
+    argv = _argv("start", {"repo": str(repo), "ticket": "CAL-1"}, [root.resolve()])
+    v_idx = argv.index("-v")
+    bind = argv[v_idx + 1]
+    assert bind.count(":") == 1
+    src, dst = bind.split(":")
+    assert src == dst == str(repo.resolve())
+
+
 def test_repo_dotdot_escape_is_rejected(tmp_path: Path, roots: list[Path]) -> None:
     escaping = tmp_path / "work" / "repo" / ".." / ".." / "secret"
     (tmp_path / "secret").mkdir()
