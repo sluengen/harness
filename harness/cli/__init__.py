@@ -23,6 +23,7 @@ from __future__ import annotations
 import typer
 
 from harness.cli.cancel import cancel_command
+from harness.cli.close import close_command
 from harness.cli.decisions import decision_app, decisions_app
 from harness.cli.doctor import doctor_command
 from harness.cli.query import (
@@ -75,6 +76,9 @@ app.command(name="start", help="Open a run: fetch ticket, transition to In Progr
 )
 app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501
     review_command
+)
+app.command(name="close", help="Close a run: enforce the review gate, merge/push, transition ticket to Done.")(  # noqa: E501
+    close_command
 )
 
 # Dynamic per-workflow `run` command. Uses context-settings to leave
