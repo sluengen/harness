@@ -48,6 +48,7 @@ from typing import Any, Literal
 import typer
 from pydantic import BaseModel
 
+from harness.cli._repo import resolve_repo_root_or_exit
 from harness.events.emitter import EventEmitter
 from harness.linear import (
     LinearClient,
@@ -118,7 +119,7 @@ def close_command(
     ),
 ) -> None:
     """Enforce the gate, then merge/push the run, transition the ticket Done, close the run."""
-    repo_root = repo.resolve()
+    repo_root = resolve_repo_root_or_exit(repo)
     db_path = db if db is not None else repo_root / store.DEFAULT_DB_PATH
 
     try:

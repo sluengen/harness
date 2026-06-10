@@ -44,6 +44,7 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
+from harness.cli._repo import resolve_repo_root_or_exit
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
 from harness.linear import (
@@ -129,7 +130,7 @@ def start_command(
     ),
 ) -> None:
     """Open a run: validate ticket, transition to In Progress, create worktree, record ledger."""
-    repo_root = repo.resolve()
+    repo_root = resolve_repo_root_or_exit(repo)
     db_path = db if db is not None else repo_root / store.DEFAULT_DB_PATH
 
     try:
