@@ -96,6 +96,7 @@ Pass via `-e VAR` or `--env-file`.
 |----------|----------|-------|
 | `LINEAR_API_KEY` | yes (for workflows that fetch Linear) | Personal API key. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes (for Claude nodes) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
+| `HARNESS_WORKSPACE_ROOTS` | yes (verbs fail closed if unset) | Colon-separated allowlist of host roots a `--repo` may resolve under (CAL-584). The wrapper sets it to `/workspace` (the mounted CWD) automatically. |
 | `HARNESS_WORKFLOWS_DIR` | — | **Baked into the image** as `/opt/harness/workflows`. Override only when using custom workflows. |
 
 ## Invocation — running against another repo
@@ -197,6 +198,12 @@ if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
   export LINEAR_API_KEY
 fi
 
+# Workspace allowlist (CAL-584): the verbs reject any --repo outside
+# HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
+# mounts CWD as /workspace, so /workspace is the intended (and only) root.
+# Forward a host override if set, else default to /workspace.
+export HARNESS_WORKSPACE_ROOTS="${HARNESS_WORKSPACE_ROOTS:-/workspace}"
+
 # Pull Claude OAuth token from macOS Keychain (containers can't access Keychain directly).
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
   CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
@@ -223,6 +230,7 @@ exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$HOME/.codex":/root/.codex \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
+  -e HARNESS_WORKSPACE_ROOTS \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
