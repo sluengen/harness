@@ -34,6 +34,8 @@ EventType = Literal[
     "decision_timeout",
     # Agent contract violations — see SPEC §4.4 (e.g. agent calls submit twice).
     "decision_violation",
+    # Review verb (CAL-571) — codex review of HEAD, verdict bound to reviewed SHA.
+    "review",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

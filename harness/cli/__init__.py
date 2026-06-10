@@ -31,6 +31,7 @@ from harness.cli.query import (
     runs_command,
     status_command,
 )
+from harness.cli.review import review_command
 from harness.cli.run import run_command
 from harness.cli.start import start_command
 from harness.cli.validate import validate_command
@@ -71,6 +72,9 @@ app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
     start_command
+)
+app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501
+    review_command
 )
 
 # Dynamic per-workflow `run` command. Uses context-settings to leave
