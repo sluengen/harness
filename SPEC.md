@@ -918,7 +918,44 @@ harness decision approve <run-id>         [--comment="..."]         # v2
 harness decision reject  <run-id>         [--comment="..."]         # v2
 harness validate <workflow.yaml>          # static validation, no execution
 harness version                           [--json]
+
+# Harness-as-tool verbs (proposal harness-as-tool.md — agent calls these)
+harness start  <ticket>   [--base <b>] [--repo <p>] [--db <p>] [--json]
+harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 ```
+
+#### Harness-as-tool verbs
+
+`start` / `review` (and a future `close`) are the audited, one-shot verbs an
+orchestrating agent calls — see `specs/proposals/harness-as-tool.md`. They
+operate over the SQLite ledger, not the workflow engine.
+
+**`harness review`** runs the configured reviewer (codex) against the worktree's
+current HEAD and records a `review` event bound to the exact SHA reviewed — the
+load-bearing correctness detail behind decision **D2** (the future `close` gate
+refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused).
+
+- Resolves *the current run* — the `status='open'` run whose `worktree_path`
+  equals `--repo` (CWD by default), or the run named by `--run-id`. No open run
+  resolved → exit 2.
+- Captures `git rev-parse HEAD` in that worktree as `reviewed_sha`.
+- Invokes `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral -`
+  with the review prompt on stdin and scans stdout for the first `SUBMIT: <json>`
+  line. The JSON carries `verdict` (`pass`|`fail`|`defer`), `issues[]`, and
+  optional `commit_message` / `deferred_brief`. A missing, malformed, or
+  unknown-verdict SUBMIT line is recorded as `verdict='fail'` with the sentinel
+  issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a
+  bad reviewer, it records the failure.
+- Appends a `review` event (`harness.events.schema` event type `review`) whose
+  `data_json` holds `run_id`, `reviewed_sha`, `verdict`, `issues`, optional
+  `commit_message` / `deferred_brief`, and `created_at`.
+- **Context economy:** prints only the bounded verdict — `verdict`, `issues`,
+  `reviewed_sha`, `run_id`. Codex's full stdout / reasoning stays inside the
+  verb and never enters the printed or returned JSON, keeping the agent's
+  context budget bounded. A recorded `fail` is still a *successful review*
+  (exit 0); deciding what to do with a verdict is the agent's job, not the
+  verb's. Exit codes mirror `start`: 0 success, 1 unexpected error, 2 no open
+  run resolved.
 
 The `decisions` / `decision` surface is **reserved in v1** — the verbs exist as no-ops or "not yet implemented" errors, but the names won't change in v2. Callers can plan for them.
 
