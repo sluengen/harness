@@ -87,7 +87,7 @@ The run lifecycle under the **verb model** (proposal [`harness-as-tool`](proposa
 | `stalled` | engine (legacy) | No progress within the stall timeout. |
 | `paused` | engine (v2, legacy) | Run awaiting a decision. |
 
-> **Known type drift (follow-up).** `open` and `closed` are written to `runs.status` via direct SQL in `harness/cli/start.py` and `harness/cli/close.py`, but the `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` still enumerates only the legacy engine statuses and does **not** yet include `open`/`closed`. The `runs.status` column is plain `TEXT` (no `CHECK`), so the values persist correctly; the gap is only in the type-safe seam used by readers. Reconciling the `RunStatus` literal is a code follow-up (out of scope for the CAL-575 docs reconciliation).
+The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the verb-model statuses (`open`/`closed`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`/`close` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
 
 ### Review verdict and the reviewed SHA (verb model)
 
@@ -124,7 +124,7 @@ class BaseState(BaseModel):
 
 `extra="forbid"` means an agent that hallucinates an unknown field is rejected at validation time. The per-workflow derived class subclasses `BaseState` and adds one field per name in the workflow's `writes:` declarations, defaulting scalars to `None` and lists to `[]`.
 
-Run statuses are typed as `RunStatus = Literal["pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]`.
+Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the verb-model statuses (`open`/`closed`) followed by the retired-engine statuses (see the status table above).
 
 ---
 
