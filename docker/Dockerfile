@@ -43,8 +43,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # Layer 2: runtime sources. Tests are intentionally excluded (see .dockerignore).
 COPY harness/ ./harness/
-COPY workflows/ ./workflows/
-COPY prompts/ ./prompts/
 
 # Install the harness package itself into the venv so `uv run harness`
 # resolves the console script declared in pyproject.toml (project.scripts.harness).
@@ -57,10 +55,6 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT=/opt/harness \
     # The image is fully built; suppress uv's implicit reinstall-on-run behaviour so
     # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
-    UV_NO_SYNC=1 \
-    # Tell the harness CLI where to find workflow YAMLs inside the image. Without this
-    # the CLI would look for ./workflows relative to the container's CWD (/workspace,
-    # the mounted target repo), which does not contain the harness workflows.
-    HARNESS_WORKFLOWS_DIR=/opt/harness/workflows
+    UV_NO_SYNC=1
 
 ENTRYPOINT ["uv", "run", "harness"]

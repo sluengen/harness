@@ -14,10 +14,7 @@ uv run --extra dev pytest --durations=20
 
 echo "=== CLI smoke ==="
 uv run --extra dev python -m harness.cli version
-
-echo "=== mock run ==="
-uv run --extra dev python -m harness.cli validate workflows/build.yaml
-uv run --extra dev python -m harness.cli validate workflows/build-codex.yaml
+uv run --extra dev python -m harness.cli --help >/dev/null
 
 echo ""
 echo "All checks passed."

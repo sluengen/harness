@@ -53,8 +53,8 @@ from harness.linear import (
     LinearRequestError,
     linear_api_key,
 )
-from harness.nodes.worktree import WorktreeNode, WorktreeNodeError
 from harness.state import store
+from harness.worktree import WorktreeNode, WorktreeNodeError
 
 __all__ = ["start_command", "StartOutput", "TicketContext"]
 
@@ -204,8 +204,8 @@ async def _run_start(
         # No local state created yet — no rollback needed.
         raise _StartError(f"worktree creation failed: {exc}", 1) from exc
 
-    worktree_path = str(result.contract.worktree_path)
-    worktree_branch = result.contract.worktree_branch
+    worktree_path = str(result.worktree_path)
+    worktree_branch = result.worktree_branch
 
     # 6. Insert open run row (local side effect, keyed on canonical identifier).
     started_at = datetime.now(UTC).isoformat()

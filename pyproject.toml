@@ -10,13 +10,8 @@ authors = [{ name = "Scott Luengen" }]
 dependencies = [
     "pydantic>=2.5",
     "typer>=0.9",
-    "jinja2>=3.1",
-    "pyyaml>=6.0",
-    "anthropic>=0.40",
-    "claude-agent-sdk>=0.1",
     "aiosqlite>=0.19",
     "ulid-py>=1.1",
-    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -38,12 +33,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["harness"]
-# Explicitly include workflow YAML files so they are bundled as package data
-# regardless of VCS tracking state. Accessible at runtime via
-# ``importlib.resources.files("harness.workflows")``.
-include = [
-    "/harness/workflows/*.yaml",
-]
 
 [tool.ruff]
 line-length = 100

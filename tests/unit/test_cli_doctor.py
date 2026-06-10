@@ -75,12 +75,22 @@ def test_check_db_warns_when_not_found(tmp_path: Path) -> None:
     assert "not found" in msg.lower() or "first run" in msg.lower()
 
 
-def test_check_adapters_returns_pass_with_matrix() -> None:
-    from harness.cli.doctor import check_adapters
+def test_check_reviewer_passes_when_codex_present() -> None:
+    from harness.cli.doctor import check_reviewer
 
-    status, msg = check_adapters()
+    status, msg = check_reviewer(codex_path="/usr/local/bin/codex")
     assert status == "PASS"
-    assert "ClaudeAgent" in msg
+    assert "codex" in msg.lower()
+
+
+def test_check_reviewer_warns_when_codex_missing() -> None:
+    from harness.cli.doctor import check_reviewer
+
+    # An explicit empty path forces the not-found branch deterministically
+    # (passing None would trigger a real PATH lookup).
+    status, msg = check_reviewer(codex_path="")
+    assert status == "WARN"
+    assert "codex" in msg.lower()
 
 
 def test_check_cli_passes_when_version_exits_zero() -> None:
@@ -134,7 +144,7 @@ def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:
     out = result.stdout
     assert "auth" in out
     assert "db" in out
-    assert "adapters" in out
+    assert "reviewer" in out
     assert "cli" in out
 
 

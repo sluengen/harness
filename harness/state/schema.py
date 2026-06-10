@@ -1,14 +1,11 @@
 """Framework-defined state base — see SPEC §6.
 
-Every workflow produces a derived state class that subclasses
-:class:`BaseState`. The derivation step (H-009,
-:func:`harness.workflow.derive.derive_state_schema`) walks a
-:class:`~harness.workflow.loader.LoadedWorkflow`, takes the union of
-every step's ``writes:`` declarations, and adds one field per name on
-top of the fields declared here.
+:class:`BaseState` holds the framework-defined run fields. It predates the
+verb model (CAL-574 retired the workflow engine that derived per-workflow
+state subclasses on top of this base); the run-state shape is now this base
+directly.
 
-The seven framework-supplied fields are populated by the engine when a
-run begins:
+The framework-supplied fields populated when a run begins:
 
 * ``run_id`` — opaque identifier for this run.
 * ``workflow_name`` — :attr:`Workflow.name`.

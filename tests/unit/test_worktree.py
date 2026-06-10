@@ -1,6 +1,8 @@
-"""Tests for harness.nodes.worktree — see SPEC §4.6, §9.
+"""Tests for harness.worktree (re-homed from harness.nodes.worktree) — SPEC §9.
 
-Real git is exercised against tmp_path repos; subprocess is NOT mocked.
+Real git is exercised against tmp_path repos; subprocess is NOT mocked. Since
+CAL-574 the worktree lifecycle returns its output models directly (no
+``NodeResult`` wrapper) — the verbs call it as a standalone helper.
 """
 
 from __future__ import annotations
@@ -11,8 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.nodes.base import NodeResult
-from harness.nodes.worktree import (
+from harness.worktree import (
     WorktreeCleanupOutput,
     WorktreeCreateOutput,
     WorktreeNode,
@@ -63,7 +64,7 @@ def _branch_exists(repo_root: Path, name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Contracts (smoke)
+# Output models (smoke)
 # ---------------------------------------------------------------------------
 
 
@@ -108,7 +109,7 @@ async def test_ac1_create_produces_worktree_directory(repo: Path) -> None:
         text=True,
     )
     assert proc.stdout.strip() == "true"
-    assert result.contract.worktree_path == expected_path
+    assert result.worktree_path == expected_path
 
 
 async def test_ac2_worktree_on_run_branch(repo: Path) -> None:
@@ -145,17 +146,14 @@ async def test_ac3_worktree_starts_at_base_sha(repo: Path) -> None:
     assert wt_sha == base_sha
 
 
-async def test_ac4_node_result_contract_and_attestation(repo: Path) -> None:
-    """AC4: NodeResult.contract has path/branch; attestation status is `complete`."""
+async def test_ac4_create_output_carries_path_and_branch(repo: Path) -> None:
+    """AC4: create returns a WorktreeCreateOutput with path/branch."""
     node = WorktreeNode()
-    result: NodeResult[WorktreeCreateOutput] = await node.create(
-        run_id="run-4", repo_root=repo, base="main"
-    )
+    result = await node.create(run_id="run-4", repo_root=repo, base="main")
 
-    dump = result.contract.model_dump()
+    dump = result.model_dump()
     assert dump["worktree_branch"] == "harness/run-4"
     assert dump["worktree_path"] == repo / ".worktrees" / "harness" / "run-4"
-    assert result.attestation.status == "complete"
 
 
 async def test_ac5_concurrent_runs_do_not_collide(repo: Path) -> None:
@@ -206,7 +204,7 @@ async def test_ac8_merge_to_base_ff_advances_base(repo: Path) -> None:
     """AC8: merge_to_base ff-merges base, removes worktree dir, deletes branch."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-m", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Make a commit inside the worktree.
     (wt / "feature.txt").write_text("data\n")
@@ -227,16 +225,16 @@ async def test_ac8_merge_to_base_ff_advances_base(repo: Path) -> None:
     assert main_sha == wt_tip
     assert not wt.exists()
     assert not _branch_exists(repo, "harness/run-m")
-    assert cleanup.contract.worktree_removed is True
-    assert cleanup.contract.branch_removed is True
-    assert cleanup.contract.base_advanced is True
+    assert cleanup.worktree_removed is True
+    assert cleanup.branch_removed is True
+    assert cleanup.base_advanced is True
 
 
 async def test_ac9_merge_to_base_diverged_raises(repo: Path) -> None:
     """AC9: ff impossible — raise; worktree + branch preserved for investigation."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-d", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Commit on the worktree branch.
     (wt / "feature.txt").write_text("data\n")
@@ -271,7 +269,7 @@ async def test_ac10_leave_for_inspection_removes_dir_keeps_branch(repo: Path) ->
     """AC10: worktree dir removed, branch preserved."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-l", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     cleanup = await node.cleanup(
         run_id="run-l",
@@ -284,16 +282,16 @@ async def test_ac10_leave_for_inspection_removes_dir_keeps_branch(repo: Path) ->
 
     assert not wt.exists()
     assert _branch_exists(repo, "harness/run-l")
-    assert cleanup.contract.worktree_removed is True
-    assert cleanup.contract.branch_removed is False
-    assert cleanup.contract.base_advanced is False
+    assert cleanup.worktree_removed is True
+    assert cleanup.branch_removed is False
+    assert cleanup.base_advanced is False
 
 
 async def test_ac11_leave_for_inspection_idempotent(repo: Path) -> None:
     """AC11: re-running on an already-removed worktree does not crash."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-l2", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # First call: removes dir.
     await node.cleanup(
@@ -314,8 +312,8 @@ async def test_ac11_leave_for_inspection_idempotent(repo: Path) -> None:
         policy="leave_for_inspection",
     )
 
-    assert second.contract.worktree_removed is False
-    assert second.contract.branch_removed is False
+    assert second.worktree_removed is False
+    assert second.branch_removed is False
     assert _branch_exists(repo, "harness/run-l2")
 
 
@@ -328,7 +326,7 @@ async def test_ac12_delete_unconditionally_with_uncommitted_changes(repo: Path) 
     """AC12: worktree + branch removed even when worktree has uncommitted edits."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-x", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Uncommitted change.
     (wt / "dirty.txt").write_text("dirty\n")
@@ -344,16 +342,16 @@ async def test_ac12_delete_unconditionally_with_uncommitted_changes(repo: Path) 
 
     assert not wt.exists()
     assert not _branch_exists(repo, "harness/run-x")
-    assert cleanup.contract.worktree_removed is True
-    assert cleanup.contract.branch_removed is True
-    assert cleanup.contract.base_advanced is False
+    assert cleanup.worktree_removed is True
+    assert cleanup.branch_removed is True
+    assert cleanup.base_advanced is False
 
 
 async def test_ac13_delete_unconditionally_force_deletes_ahead_branch(repo: Path) -> None:
     """AC13: branch ahead of base is force-deleted."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-a", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
     (wt / "feature.txt").write_text("data\n")
     _git(wt, "add", "feature.txt")
     _git(wt, "commit", "-m", "feat")
@@ -402,7 +400,7 @@ async def test_ac15_cleanup_prunes_worktree_metadata(repo: Path, policy: str) ->
     create_result = await node.create(
         run_id=f"run-prune-{policy}", repo_root=repo, base="main"
     )
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     if policy == "merge_to_base":
         # ff-merge needs at least the same SHA, which it already has — no-op merge OK.
@@ -429,16 +427,6 @@ async def test_ac15_cleanup_prunes_worktree_metadata(repo: Path, policy: str) ->
 
 
 # ---------------------------------------------------------------------------
-# Protocol conformance — AC16
-# ---------------------------------------------------------------------------
-
-
-def test_ac16_node_type_is_worktree() -> None:
-    """AC16: WorktreeNode declares `type: Literal['worktree']`."""
-    assert WorktreeNode().type == "worktree"
-
-
-# ---------------------------------------------------------------------------
 # branch_prefix parameter
 # ---------------------------------------------------------------------------
 
@@ -447,14 +435,14 @@ async def test_create_branch_prefix_default(repo: Path) -> None:
     """When branch_prefix is omitted, branch name starts with 'harness/'."""
     node = WorktreeNode()
     result = await node.create(run_id="run-x", repo_root=repo, base="main")
-    assert result.contract.worktree_branch == "harness/run-x"
+    assert result.worktree_branch == "harness/run-x"
 
 
 async def test_create_custom_branch_prefix(repo: Path) -> None:
     """branch_prefix overrides the 'harness' prefix in the branch name."""
     node = WorktreeNode()
     result = await node.create(run_id="run-y", repo_root=repo, base="main", branch_prefix="slate")
-    assert result.contract.worktree_branch == "slate/run-y"
+    assert result.worktree_branch == "slate/run-y"
     assert _branch_exists(repo, "slate/run-y")
     assert not _branch_exists(repo, "harness/run-y")
 
@@ -473,7 +461,7 @@ async def test_ac17_merge_to_base_index_synced_after_cleanup(repo: Path) -> None
     """
     node = WorktreeNode()
     create_result = await node.create(run_id="run-idx", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Commit a new file inside the worktree so the merge advances HEAD.
     (wt / "feature.txt").write_text("new file\n")
@@ -512,7 +500,7 @@ async def test_ac18_merge_to_base_dirty_working_tree_raises(repo: Path) -> None:
     modifications to tracked files."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-dirty-wt", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Commit on the worktree branch so ff-merge would otherwise succeed.
     (wt / "feature.txt").write_text("data\n")
@@ -541,7 +529,7 @@ async def test_ac19_merge_to_base_dirty_index_raises(repo: Path) -> None:
     """AC19: merge_to_base refuses when the base index has staged changes."""
     node = WorktreeNode()
     create_result = await node.create(run_id="run-dirty-idx", repo_root=repo, base="main")
-    wt = create_result.contract.worktree_path
+    wt = create_result.worktree_path
 
     # Commit on the worktree branch so ff-merge would otherwise succeed.
     (wt / "feature.txt").write_text("data\n")
