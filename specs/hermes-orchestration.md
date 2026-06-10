@@ -442,7 +442,7 @@ On `status: completed`, Hermes reads `artifact_paths` from the status object and
 
 ## Follow-up implementation tickets
 
-Three tickets are required to move from spec to shipped:
+These tickets move the spec to shipped (Ticket 2 is already done):
 
 ### Ticket 1: Hermes-to-harness bridge — subprocess + JSON protocol (Option A)
 
@@ -466,6 +466,15 @@ Define the Dockerfile and compose/task-definition shape for Option B deployment.
 - Document the env var injection strategy for secret scoping (which secrets go to which container).
 - Add `HARNESS_WORKSPACE_ROOTS` allowlist enforcement to the CLI.
 - Acceptance: `docker compose up` starts both containers; Hermes can drive a harness run against a repo mounted on the shared volume.
+
+### Ticket 4: Host launcher — narrow control socket for verb-container launch ([CAL-579](https://linear.app/calibrate-coffee/issue/CAL-579))
+
+Build the host-side launcher chosen over DooD in §Runtime topology. Hermes drives verbs through a narrow control socket; the launcher constructs each `docker run` itself so the caller never specifies the mount, privilege, image, or env.
+
+- Expose a control socket (not `/var/run/docker.sock`) offering only the §Interface verb operations: start / status / events / cancel / decision.
+- Construct each verb container server-side; pick mounts from the `HARNESS_WORKSPACE_ROOTS` allowlist (depends on Ticket 3); inject scoped per-run credentials.
+- One-shot sibling containers (max one container deep; no DinD); thin local form factor (e.g. `harness serve --local`).
+- Acceptance: with only the control socket mounted, Hermes can run a verb end-to-end; a test asserts a caller-supplied host path / privilege flag is rejected (host-escape vector closed); a test asserts mounts outside `HARNESS_WORKSPACE_ROOTS` are rejected.
 
 ---
 
