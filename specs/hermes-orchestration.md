@@ -125,9 +125,83 @@ A harness daemon exposes a REST or gRPC API. Multiple Hermes instances submit ru
 
 ---
 
+## Runtime topology
+
+Hermes runs in a container, but it does not invoke the harness directly. It launches **headless Claude Code sessions**, and those sessions are the harness's actual client: the session does the majority of the file work itself and calls harness verbs for the bounded parts the harness owns. This section pins down where each process runs, who holds host-daemon authority, and how a working tree shared between the session and the harness stays consistent.
+
+### Invariants
+
+Two rules keep the runtime flat instead of deeply nested:
+
+1. **No Docker-in-Docker.** Every container is a sibling on the host daemon. Nothing that issues `docker run` does so from inside another container's daemon.
+2. **A verb is exactly one container deep.** The agent a verb dispatches (Codex / Claude) runs as a *subprocess* inside the verb container, never as a further nested container (SPEC §4.7). The feared "Codex CLI → one-shot container → Claude → Hermes container" stack never forms, because the inner agent adds no container layer.
+
+```
+Hermes container  ── isolated; NO host docker socket
+│
+├── Hermes ............ planning / conversation. Spawns sessions. Holds no host authority.
+│
+├── headless Claude Code session(s)  ← spawned by Hermes as an in-container subprocess.
+│        │                              THE harness client. Edits the working tree directly
+│        │                              and invokes harness verbs for bounded sub-tasks.
+│        │  holds: (1) launcher control socket   (2) read-WRITE workspace mount
+│        ▼
+└── launcher control socket  ── NARROW capability: exposes only the harness verb API
+         │                      (start/status/events/cancel/decision). NOT /var/run/docker.sock.
+         ▼
+════════ container boundary ════════
+HOST
+│
+├── launcher  ── sole holder of host-daemon authority. Thin broker: translates verb
+│        │       requests into `docker run harness <verb> …` and relays status/events back.
+│        ▼
+└── harness verb  ── ONE-SHOT container, sibling at host root. Mounts the shared workspace.
+         └── Codex / Claude agent ── SUBPROCESS inside this one container (no further layer)
+```
+
+Worst-case depth for any unit of work is **one container**. Hermes and a running verb are peers on the host daemon, not parent and child.
+
+### Where each process runs
+
+- **Hermes** — in its container. Planning and conversation only. Spawns sessions; holds no host-daemon authority.
+- **Claude Code session** — spawned by Hermes as an in-container subprocess. Trivial to launch (no host authority required to fork a local process). This is the harness client: it edits the working tree directly and invokes harness verbs.
+- **Launcher** — a thin host process, the sole holder of host-daemon authority. Translates verb requests into `docker run`.
+- **Harness verb** — a one-shot container, sibling at host root. Mounts the shared workspace; dispatches its agent as a subprocess.
+
+The session need not leave the Hermes container. Putting it on the host would force Hermes to hold host-spawn authority — exactly what this topology denies it.
+
+### The launch capability is narrow, not the docker socket
+
+What crosses the boundary into the Hermes container is a **launcher control socket** exposing only the verb operations in §Interface (start / status / events / cancel / decision). It is **not** `/var/run/docker.sock`. Code inside the Hermes container can launch harness verbs; it cannot launch arbitrary containers, inspect siblings, or reach the host daemon.
+
+**Why not just mount the docker socket (DooD).** Mounting `/var/run/docker.sock` is simpler — no shim to build — and was considered, then rejected. The docker socket is root-equivalent on the host: anything that reaches it can run `docker run -v /:/host --privileged …`, mount the whole host filesystem, read every other container's injected secrets, and persist on the host. On a developer's personal machine that is the entire home directory — `~/.ssh`, cloud credentials, browser sessions, every repo not explicitly mounted. The container boundary, which otherwise limits a session to the repos it was handed, becomes cosmetic. (Rootless does not save this on a single-user box: the daemon still runs as that user, so a mounted home exposes the same keys. Rootless mitigates host-root escalation, not "read my own secrets.")
+
+**The deciding factor is who holds the capability.** The launch path is exercised on behalf of two runtimes with very different risk profiles. The Claude Code session is Anthropic's first-party agent, with comparatively narrow lateral initiative. Hermes is a third-party (Nous) runtime — higher supply-chain and vendor risk (a smaller vendor) and, by design, an orchestration layer built for broad initiative. The container boundary around Hermes is doing real work; DooD deletes it. We are not protecting the repo — the session edits it by design — we are protecting everything on the host that is *not* the repo from a higher-risk third-party runtime.
+
+**The load-bearing property** the launcher uniquely provides — and DooD and off-the-shelf socket proxies do not — is that **the caller never specifies the mount, the privilege, or the env.** The caller says "run verb X on repo Y"; the launcher picks the image, the mounts (from the workspace allowlist), and the scoped credentials. That closes the host-escape vectors (`-v /:/host`, `--privileged`, `exec` into siblings) at the source. A socket proxy filters API verbs but typically still lets the caller pass host bind mounts, so it does not close the filesystem-escape vector; only constructing the `docker run` server-side does.
+
+At single-machine scale the launcher is a thin local helper (≈100 lines, or `harness serve --local`), not the multi-tenant broker of Option C. Per-run credential isolation — a headline launcher benefit on multi-tenant hosts — is near-worthless on a single-user machine, so the justification here is host-filesystem containment, not credential scoping.
+
+### The harness stays one-shot; the launcher is the only persistent process
+
+SPEC §16 lists "long-running daemon / server" as a non-goal, and the bridge-transport question below previously flagged that a socket bridge "implies a daemon." It does not imply a *harness* daemon. The harness remains one-shot — each verb is `docker run … && exit`. The persistent process is the **launcher**: a separate, minimal host broker whose only jobs are (a) accept verb requests on the control socket, (b) issue `docker run` with the right mounts and env, (c) relay status and events back. It carries no workflow logic, no engine code, and no run state. The non-goal holds — we did not turn the harness into a service; we added a small privileged spawner beside it.
+
+### Shared workspace and path equivalence
+
+The Claude Code session and the harness verbs operate on the **same on-disk files**, read-write. The session does most of the editing; verbs mutate the same tree for the parts they own. Two constraints follow:
+
+- **The workspace must be mounted at the identical absolute path on the host, inside the Hermes container, and inside every verb container.** Bind-mount sources are resolved by the *host* daemon, not by the calling container: when the launcher runs `docker run -v <path>:<path>`, `<path>` must exist on the host at that path. If the session refers to `/workspace/<repo>/…`, the host mounts the same volume at `/workspace/<repo>/…`, and verbs mount it there too, then a path the session passes through the control socket resolves identically inside the verb container. Diverging mount points silently break file references across the boundary, with no error — make `/workspace` (or the configured root) the canonical path everywhere.
+- **Single-writer discipline per subtree.** Because the session and a verb can both write the same files, a file-mutating verb owns the working tree for the duration of its run. Verbs are synchronous from the session's point of view: it invokes a verb, waits for terminal status, then resumes its own edits. The session must not edit the same subtree while a mutating verb is in flight. Concurrent verbs stay isolated from each other through the existing worktree mechanism (SPEC §9) — each runs in `.worktrees/harness/<run-id>/` on the shared volume. A verb meant to collaborate in-place on the main tree (rather than in a worktree) must be the sole writer for its window.
+
+### Relationship to the Option A/B/C decision
+
+This topology is the concrete form of **Option B** for the Hermes-launches-Claude-Code model. It refines the earlier "harness as a long-lived sibling container" reading: the harness is not a persistent pod sibling driven over a socket — it is one-shot verb containers spawned on demand by the host launcher, and the interface client is the Claude Code session inside the Hermes container, not the Hermes process itself. Option C (harness as a shared multi-tenant service) is unchanged as the future path; the launcher does not foreclose it — a remote launcher endpoint is its natural evolution.
+
+---
+
 ## Hermes-to-harness interface
 
-The interface must remain stable even as the underlying transport evolves (subprocess → socket → HTTP). Hermes should never call internal harness Python APIs directly.
+Throughout this section, **Hermes** is shorthand for *the harness client*; in the deployed topology that client is the Claude Code session Hermes launches (see §Runtime topology), not the Hermes process itself. The interface must remain stable even as the underlying transport evolves (subprocess → socket → HTTP). The client should never call internal harness Python APIs directly.
 
 ### Transport options
 
@@ -352,17 +426,17 @@ On `status: completed`, Hermes reads `artifact_paths` from the status object and
 
 ---
 
-## Open questions (deferred)
+## Open questions
 
-1. **Bridge transport for Option B.** Unix socket with a thin HTTP layer is the preferred target. Does the harness run a persistent daemon, or does Hermes invoke `harness run` as a long-lived subprocess and poll the DB? A persistent daemon avoids subprocess overhead for status queries but adds a process management requirement. Decision deferred to the bridge implementation ticket.
+1. ~~**Bridge transport for Option B.**~~ **Resolved — see §Runtime topology.** The bridge is a **launcher control socket** mounted into the Hermes container, exposing only the verb API (start / status / events / cancel / decision). A thin host **launcher** services it by issuing `docker run harness <verb>` per request and relaying status and events back. The harness runs no persistent daemon; the launcher is the only long-lived process and carries no workflow logic.
 
-2. **Daemon mode.** The harness is currently a CLI that runs, completes, and exits. A Unix socket bridge implies a daemon. The simplest v2 path: Hermes spawns `harness run` as a background subprocess and polls status via `harness status`. A full daemon is Option C infrastructure.
+2. ~~**Daemon mode.**~~ **Resolved — see §Runtime topology.** The harness stays one-shot: each verb is `docker run … && exit`. The socket bridge implies a *launcher* daemon, not a *harness* daemon — a separate minimal host broker for container spawning and status relay. SPEC §16's "no long-running server" non-goal is preserved for the harness itself.
 
-3. **Concurrent run limit.** Should the harness enforce a per-repo or global concurrent-run limit? Worktrees are safe to run concurrently (distinct branches), but agent API costs and git lock contention could argue for a soft cap. Defer until measured.
+3. **Concurrent run limit.** Mechanism resolved, policy deferred. The launcher is the natural enforcement point — it sees every `docker run` and can cap concurrency per-repo or globally before spawning. Worktrees keep concurrent runs safe (distinct branches), so the cap is about agent API cost and git-lock contention, not correctness. Defer the actual limit until measured; the launcher gives it a home when needed.
 
-4. **Per-run credential scoping.** For multi-user deployments, each run may need distinct `ANTHROPIC_API_KEY` / `LINEAR_API_KEY` values. The current model is one env per harness container. Credential injection per-run requires the daemon bridge or a subprocess-per-run model with env injection.
+4. **Per-run credential scoping.** Mechanism resolved, policy deferred. Because the launcher issues `docker run` per verb, it injects per-run env (`ANTHROPIC_API_KEY` / `LINEAR_API_KEY`) at spawn time — each verb container gets its own scoped credentials with no harness daemon required. Who maps a user/session to a credential set (the policy) is deferred to a multi-user deployment ticket.
 
-5. **Workspace root allowlist management.** Who configures `HARNESS_WORKSPACE_ROOTS`? Currently proposed as a container-level env var set at deploy time. If Hermes needs to dynamically mount new repos, the allowlist model needs a provisioning API.
+5. **Workspace root allowlist management.** Enforcement point resolved, provisioning deferred. The launcher issues every mount, so it enforces `HARNESS_WORKSPACE_ROOTS` (combined with the path-equivalence rule in §Runtime topology). Static configuration is a launcher-level env var set at deploy time. Dynamic mounting of new repos at run time still needs a provisioning API — deferred until a workflow requires it.
 
 ---
 
