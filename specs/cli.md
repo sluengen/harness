@@ -14,6 +14,7 @@ Provides a human- and machine-friendly interface for running workflows, querying
 
 ```
 harness start <ticket>    [--base <branch>] [--repo <path>] [--db <path>] [--json/--no-json]
+harness close <ticket>    [--repo <path>] [--run-id <id>] [--db <path>] [--json/--no-json]
 harness run <workflow> [--base <branch>] [--quiet] [--workflows-dir <dir>] [<workflow-inputs>...]
 harness cancel <run-id>   [--json] [--db <path>]
 harness status <run-id>   [--json] [--db <path>]
@@ -86,6 +87,71 @@ If an open run already exists for the ticket, the command exits 0 and returns th
 | 0 | Run opened (or existing run returned). |
 | 1 | Unexpected error (worktree creation failed, DB error, etc.). |
 | 2 | Invocation error (missing ticket, Linear unreachable, transition failed). |
+
+---
+
+## `harness close`
+
+The enforcement linchpin (proposal `harness-as-tool.md` decision **D2** — bind the passing review to HEAD). Closes a run for a Linear ticket — but only when a run was started **and** the current worktree tree passed review. This is what makes interactive use auditable and unattended (Hermes-triggered) dispatch trustworthy: a merge can never land on an unreviewed or stale tree. JSON output is the default and intended format.
+
+```
+harness close <ticket> [--repo <path>] [--run-id <id>] [--db <path>] [--json/--no-json]
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--repo` | `.` (CWD) | Worktree root to close; resolves the open run by `worktree_path`. |
+| `--run-id` | — | Explicit run to close. Defaults to the open run whose worktree is `--repo`. |
+| `--db` | `<repo>/.harness/harness.db` | Path to the ledger database. Defaults to `DEFAULT_DB_PATH` relative to `--repo`. |
+| `--json/--no-json` | `--json` | Emit machine-readable JSON. Always on by default. |
+
+**The gate (both conjuncts required):**
+
+1. There is a `status='open'` `runs` row for the ticket (resolved by `--run-id` or by `worktree_path == --repo`).
+2. There exists a `review` event for that run with `verdict='pass'` whose `reviewed_sha` equals `git rev-parse HEAD` of the run's worktree.
+
+**Refusal reasons.** On a gate failure the command exits non-zero and emits a structured refusal carrying a `reason` of exactly one of:
+
+| `reason` | Meaning |
+|---|---|
+| `no_run` | No open run for the ticket/worktree. |
+| `no_passing_review` | No `review` event with `verdict='pass'` at all. |
+| `stale_review` | A pass exists but only for a different SHA (HEAD advanced past the reviewed tree). |
+
+**Operation order (on a passing gate):** each step's output stays inside the verb and never enters the printed JSON (context-economy).
+
+1. Resolve the open run; capture worktree HEAD.
+2. Enforce the gate (above). On refusal, exit before any side effect.
+3. Validate `LINEAR_API_KEY` is set (before any local side effect).
+4. `git` commit any uncommitted changes in the worktree (only if dirty).
+5. `git merge --no-ff` the run branch into `base_branch`, then `git push origin <base_branch>`.
+6. Transition the Linear ticket to Done (`type=='completed'` state, preferring one named "Done").
+7. Flip the `runs` row to `status='closed'` and emit a `close` audit event.
+
+**JSON output schema (`CloseOutput`)** — a compact result; git merge/push chatter is never included:
+
+```json
+{
+  "run_id": "<26-char ULID>",
+  "ticket": "<e.g. CAL-572>",
+  "reviewed_sha": "<HEAD SHA that passed review>",
+  "merged": true,
+  "ticket_done": true,
+  "status": "closed"
+}
+```
+
+On a refusal the output is `{"error": "<message>", "reason": "<no_run|no_passing_review|stale_review>"}`.
+
+**Exit codes:**
+
+| Code | Meaning |
+|---|---|
+| 0 | Close succeeded; the compact result JSON is printed. |
+| 1 | Unexpected error (git failure, push failure, DB error, Linear error). |
+| 2 | Gate refusal (`no_run` / `no_passing_review` / `stale_review`) or missing `LINEAR_API_KEY`. |
 
 ---
 

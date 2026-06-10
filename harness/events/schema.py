@@ -36,6 +36,8 @@ EventType = Literal[
     "decision_violation",
     # Review verb (CAL-571) — codex review of HEAD, verdict bound to reviewed SHA.
     "review",
+    # Close verb (CAL-572) — gate passed, run merged/closed, ticket Done.
+    "close",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))
