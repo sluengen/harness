@@ -19,7 +19,7 @@ CREATE TABLE runs (
   run_id              TEXT PRIMARY KEY,
   workflow_name       TEXT NOT NULL,
   workflow_version    INTEGER NOT NULL,
-  status              TEXT NOT NULL,  -- open|pending|running|completed|failed|cancelled|stalled|paused
+  status              TEXT NOT NULL,  -- open|closed (verb lifecycle) | pending|running|completed|failed|cancelled|stalled|paused (legacy engine)
   state_json          TEXT NOT NULL,
   inputs_json         TEXT NOT NULL,
   base_branch         TEXT,
@@ -73,16 +73,34 @@ New columns added after the initial schema are applied via `ALTER TABLE ... ADD 
 
 ### `status` values
 
+The run lifecycle under the **verb model** (proposal [`harness-as-tool`](proposals/harness-as-tool.md)) is just two states: a run is `open` from `harness start` until `harness close` flips it to `closed`. The remaining statuses below belong to the legacy deterministic engine (retired in CAL-574) and are documented for historical rows.
+
 | Value | Set by | Meaning |
 |---|---|---|
-| `open` | `harness start` | Run initialised; ticket transitioned and worktree created; workflow not yet started. |
-| `pending` | `harness run` | Workflow accepted; executor not yet started. |
-| `running` | engine | At least one node has started. |
-| `completed` | engine | All nodes completed successfully. |
-| `failed` | engine | A node or workflow-level error terminated the run. |
+| `open` | `harness start` | Run initialised; ticket transitioned to In Progress and worktree created. The verb run is in progress (implement → review → close). The partial unique index `idx_runs_ticket_open` keeps at most one `open` run per ticket. |
+| `closed` | `harness close` | Gate passed (a `verdict=pass` whose reviewed SHA == HEAD); branch merged + pushed, ticket transitioned to Done, run finalised. Terminal state of the verb lifecycle. |
+| `pending` | `harness run` (legacy) | Workflow accepted; executor not yet started. |
+| `running` | engine (legacy) | At least one node has started. |
+| `completed` | engine (legacy) | All nodes completed successfully. |
+| `failed` | engine (legacy) | A node or workflow-level error terminated the run. |
 | `cancelled` | SIGTERM path | Run was cancelled by SIGTERM. |
-| `stalled` | engine | No progress within the stall timeout. |
-| `paused` | engine (v2) | Run awaiting a decision. |
+| `stalled` | engine (legacy) | No progress within the stall timeout. |
+| `paused` | engine (v2, legacy) | Run awaiting a decision. |
+
+> **Known type drift (follow-up).** `open` and `closed` are written to `runs.status` via direct SQL in `harness/cli/start.py` and `harness/cli/close.py`, but the `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` still enumerates only the legacy engine statuses and does **not** yet include `open`/`closed`. The `runs.status` column is plain `TEXT` (no `CHECK`), so the values persist correctly; the gap is only in the type-safe seam used by readers. Reconciling the `RunStatus` literal is a code follow-up (out of scope for the CAL-575 docs reconciliation).
+
+### Review verdict and the reviewed SHA (verb model)
+
+The review gate's load-bearing datum — the **SHA a passing review was bound to** — is **not** a `runs` column. `harness review` appends a `review` event to the `events` table whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, created_at }` (and optional `commit_message` / `deferred_brief`). `harness close` enforces the gate by querying for a `review` event with `verdict='pass'` whose `reviewed_sha` equals the worktree's current HEAD:
+
+```sql
+SELECT json_extract(data_json, '$.reviewed_sha')
+FROM events
+WHERE run_id = ? AND event_type = 'review'
+  AND json_extract(data_json, '$.verdict') = 'pass';
+```
+
+Storing the reviewed SHA on the append-only event (rather than mutating a `runs` column) keeps the full review history auditable and is why no schema migration was needed to support D2 — the `events` table already holds arbitrary JSON. `close` then emits a terminal `close` event carrying `{ run_id, ticket, merged_sha, closed_at }`.
 
 ---
 

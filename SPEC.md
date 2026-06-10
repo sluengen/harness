@@ -1,8 +1,10 @@
 # Harness — Design Specification
 
-**Version:** 0.6 (planning)
-**Status:** Under revision. No code lands until this is approved.
-**Guiding principle:** *Build a deterministic execution engine, not an agent framework.*
+**Version:** 0.7
+**Status:** Current for §1–2 (the verb model). §3–14 below describe the **retired** deterministic workflow engine and are superseded — see the banner at §3.
+**Guiding principle:** *The harness is a set of deterministic, audited verbs an agent calls — not a pipeline that drives agents.*
+
+> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling three deterministic verbs — `start` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model. The deterministic workflow engine (§3–14) was retired in CAL-574.
 
 ---
 
@@ -10,82 +12,94 @@
 
 Subsystem and integration specs live in `specs/`. Read the relevant file before touching a module.
 
+**Current (verb model):**
+
 | Spec | Covers |
 |------|--------|
-| [`specs/workflow-schema.md`](specs/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs |
-| [`specs/engine-executor.md`](specs/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots |
-| [`specs/engine-loop.md`](specs/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind |
-| [`specs/ai-node.md`](specs/ai-node.md) | AI node dispatch, structured output, failure modes |
-| [`specs/script-node.md`](specs/script-node.md) | Script node subprocess, env, contract |
-| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies |
-| [`specs/state-store.md`](specs/state-store.md) | SQLite schema, BaseState, state merge, snapshots |
-| [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output |
-| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) |
-| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model |
+| [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
+| [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
+| [`specs/state-store.md`](specs/state-store.md) | SQLite ledger: `runs`/`events` schema, the open/closed run lifecycle, reviewed-SHA on the review event |
+| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies (re-homed as a verb helper) |
+
+**Superseded (retired deterministic engine — historical):**
+
+| Spec | Covers | Status |
+|------|--------|--------|
+| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model | Control half superseded by `harness-as-tool`; observability half survives |
+| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop |
+| [`specs/workflow-schema.md`](specs/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs | Engine retired (CAL-574) |
+| [`specs/engine-executor.md`](specs/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots | Engine retired (CAL-574) |
+| [`specs/engine-loop.md`](specs/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574) |
+| [`specs/ai-node.md`](specs/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574) |
+| [`specs/script-node.md`](specs/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574) |
+| [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`) |
 
 ---
 
 ## 1. Mission
 
-Execute workflows deterministically. Decouple *what work gets done* (orchestration, agents, humans) from *how work runs* (this harness).
+Give an agent a small set of **deterministic, audited verbs** to drive a ticket end-to-end, and **enforce that review happened** before anything merges. The agent owns *what work gets done and how* (orchestration + implementation); the harness owns *the durable record and the gate*.
+
+Decouple judgement (the agent's: read the ticket, write the code, decide how to fix a finding, when to re-review) from the **audit trail and enforcement** (the harness's: a `runs` ledger, a review verdict bound to a git SHA, a `close` gate that refuses an unreviewed merge).
 
 ### Core principles
 
-1. **Strict separation of concerns.** External layer decides what to run. Harness decides how it runs.
-2. **Deterministic execution.** Control flow does not depend on LLM outputs. All branching, looping, and termination are defined in code or YAML.
-3. **LLMs as bounded functions.** AI nodes execute tightly scoped tasks against declared contracts. The workflow declares the bounded *tool set* available to a node; the LLM chooses which tools to use within that set — that's where its creative problem-solving applies. **The YAML defines what to do with each step's output; the LLM provides typed answers to declared questions.** An LLM contributing a `decision: bool` to a gate is the LLM answering a question, not deciding the route — the YAML's `on_reject:` decides the route. Control flow shape is deterministic and lives in YAML, not in model judgement.
-4. **Reproducibility.** Same inputs → same execution behaviour. Container provides consistent runtime.
-5. **CLI is a public contract.** The harness is invoked by humans, agents, and meta-orchestrators through the same CLI surface. Stable flags, stable exit codes, stable JSON output.
-6. **Data flows via the workflow, not the agent.** External data (Linear issues, Notion content, GitHub state) is fetched by deterministic upstream nodes and passed to AI nodes via state and template variables. AI nodes do not reach out to MCP servers, plugin systems, or external APIs at runtime. This keeps token cost predictable (no model burning context deciding what to fetch), keeps state explicit (the run record shows exactly what the agent saw), and keeps the agent-harness layer thin (no MCP servers to configure per-adapter, no asymmetry between Claude Code / codex / opencode features to paper over).
+1. **The agent orchestrates; the harness records and gates.** There is **one execution model** — a Claude session runs `start → implement → review → (fix → review)* → close`, calling the verbs and doing the implementation itself — with **two triggers**: a human (`/harness run <ticket>`) or Hermes. The harness does not own the build loop and does not spawn its own implementing/reviewing agents.
+2. **Determinism lives in the verbs, not the journey.** Each verb (`start`, `review`, `close`) is a one-shot, audited, reproducible operation over the ledger. The orchestration *between* verbs varies with the agent and is deliberately not reproducible — that trade buys full context retention (the agent that reads the ticket is the one that writes the code) and graceful degradation (a verb failure drops to manual driving).
+3. **Enforcement is a gate inside `close`, bound to the reviewed tree.** `review` records the git SHA it reviewed; `close` refuses unless the ledger holds a `start` for the ticket **and** a `verdict=pass` whose reviewed SHA equals the worktree's current HEAD. This closes the stale-pass hole and makes unattended (Hermes-triggered) dispatch trustworthy — when no human is watching, the gate *is* the guarantee that nothing merges unreviewed.
+4. **Routing discipline — every git/ticket mutation goes through a verb.** The ledger is a complete audit trail only if nothing hand-rolls a `git merge`/`push` or a Linear mutation for the run lifecycle. The `/harness run` skill forbids it; `close` validates against the ledger as a backstop.
+5. **The verb surface is a public contract.** The harness is invoked by humans and by Hermes through the same verbs (`start` / `review` / `close` / `status` / `events` / `cancel`). Stable flags, stable exit codes, stable JSON output, structured refusals. Each verb runs as a one-shot container exactly as the human's `~/bin/harness` does.
+6. **Reproducibility applies to the verbs, not the end-to-end run.** We deliberately give up same-inputs→same-journey reproducibility (the original §2 goal). Autonomy is not a separate deterministic engine — it is Hermes occupying the trigger slot a human would. The container still provides a consistent runtime for each verb.
 
 ---
 
 ## 2. High-Level Architecture
 
+One execution model, two triggers. A trigger launches a per-session Claude runtime; that session orchestrates and implements, shelling out to one-shot verb containers; the verbs are the only thing that touches the ledger and git/ticket state.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  External layer (orchestration)                                 │
-│  - Linear webhook / Discord intake / Cron / Claude Code agent   │
-│  - Decides WHAT to run                                          │
-│  - Invokes harness via CLI                                      │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ harness run <workflow> [flags]
+┌─────────────────────────────────────────────────────────────────────┐
+│  TRIGGER                                                            │
+│   • a human  ( /harness run CAL-42 )                                │
+│   • Hermes   ( Nous' persistent agent: built-in cron dispatcher )   │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            │ launch a session for a ticket
                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Harness (this project)                                         │
-│  - Loads YAML workflow + Pydantic state schema                  │
-│  - Walks steps in declared order                                │
-│  - Dispatches AI / script / check / worktree nodes              │
-│  - Validates contracts, writes state, emits events              │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ subprocess / SDK
+┌─────────────────────────────────────────────────────────────────────┐
+│  Claude session — orchestrator + implementer  (per-session)         │
+│   start → [implement] → review → (fix → review)* → close            │
+│   context retained; the agent that reads the ticket writes the code │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            │ shells out to verbs (one-shot `docker run`)
                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Execution environment (inside container)                       │
-│  - Mounted project directory at /workspace                      │
-│  - Worktree per run (when workflow opts in via worktree node)   │
-│  - Agent harness: claude_agent_sdk / codex / opencode (subproc) │
-│  - SQLite state + event log at /workspace/.harness/             │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Harness — the tool:  start / review / close  +  ledger  +  gate    │
+│   • each verb a one-shot container over the host-mounted worktree   │
+│   • SQLite ledger (runs/events) at /workspace/.harness/             │
+│   • close gate: refuse unless a HEAD-bound passing review exists    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data flow per run
+A human typing `/harness run CAL-42` and Hermes dispatching CAL-42 produce the **identical** execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot container spawned **outside** the runtime, exactly as `~/bin/harness` is already a `docker run`. The agent must not run inside a verb container; that would make it per-call and reintroduce the lost-context problem.
 
-1. Caller invokes `harness run feature --linear PROJ-249 --base staging`.
-2. Harness generates a `run_id` (ULID).
-3. Harness loads `workflows/feature.yaml` + its declared `state_schema`.
-4. Harness initialises state, writes a `runs` row, emits `workflow_started`.
-5. For each node in declared order:
-   a. Resolve dependencies from prior state.
-   b. Render prompt template (Jinja) with state.
-   c. Dispatch to agent / script / check / worktree handler.
-   d. Validate output against the node's `contract`.
-   e. Apply `writes:` declarations to state. Reject any other state mutation.
-   f. Emit `node_completed`.
-6. On loop blocks, re-execute step list until `until:` condition evaluates true on state.
-7. On workflow completion, write `completed_at`, emit `workflow_completed`, exit 0.
+### Verb lifecycle per run
 
-The engine never asks an LLM what to do next. The YAML decides.
+1. A trigger launches a Claude session for `<ticket>` and issues `/harness run <ticket>`.
+2. **`start <ticket>`** — validate the ticket, transition it to In Progress, create a worktree off the base branch (default `dev`), open a `runs` ledger row (`status=open`, ULID `run_id`). Emits `StartOutput` (run_id, ticket context, worktree path/branch).
+3. **implement** — the session writes code + tests in the worktree, test-first, in scope. No verb is involved; the agent uses its own tools.
+4. **`review --run-id <id>`** — run codex against the worktree HEAD; record a `review` event carrying `{ verdict, issues, reviewed_sha }` bound to that SHA. The session sees only the bounded verdict; codex's full reasoning stays inside the verb.
+   - `fail` → fix the root cause, commit, re-run `review` (the `(fix → review)*` loop). Each review binds to the new HEAD.
+   - `defer` → file a follow-up for the out-of-scope finding, then close.
+   - `pass` → proceed to close.
+5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA == current HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+
+The harness never decides what to build or how. The session does; the verbs record it and gate the merge.
+
+---
+
+---
+
+> **§3–14 below describe the retired deterministic workflow engine.** They are kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement below as superseded by §1–2. The current schema reference is [`specs/state-store.md`](specs/state-store.md); the current command contract is [`commands/harness.md`](commands/harness.md).
 
 ---
 

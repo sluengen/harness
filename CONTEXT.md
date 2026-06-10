@@ -10,7 +10,7 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: HAR   # team prefix — workspace/team UUID unknown; run /harness ingest or check Linear settings to confirm
+  linear: CAL   # team prefix — Calibrate-coffee (CAL); harness work lives in the "Harness v3" project
 layers:
   linear: true
   design_system: false
@@ -78,7 +78,7 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 - **Workflow YAML grammar** → `AUTHORING.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
-- **Linear (issues / in-flight work)** → linear.app (team: HAR)
+- **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
 
 ## Gotchas
 

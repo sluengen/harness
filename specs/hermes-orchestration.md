@@ -1,5 +1,13 @@
 # Hermes Orchestration — architecture decision, interface spec, deployment model
 
+> **Superseded 2026-06-11** by proposal [`harness-as-tool`](proposals/harness-as-tool.md) (accepted 2026-06-09; orchestration-inversion decision recorded in [`architecture-principles`](architecture-principles.md)).
+>
+> The **control half** of this spec is superseded: Hermes no longer *drives and monitors a deterministic harness run* (start-run / cancel / resume-decision as ways to walk a YAML workflow), and the "harness is the thing Hermes runs" framing is dropped. Under the verb model there is **one execution model** — a Claude session that orchestrates *and* implements, calling the `start` / `review` / `close` verbs — with **two triggers**: a human (`/harness run <ticket>`) or Hermes. Hermes is [Nous Research's Hermes](https://hermes-agent.nousresearch.com): a persistent containerised agent with a built-in cron dispatcher. It occupies the *trigger* slot a human would otherwise occupy — it launches a per-session agent runtime and reads the ledger back; it does not implement, manage worktrees, run codex, or do gitops, and it never writes the harness DB.
+>
+> The separate-runtime + sibling-container deployment + async-bridge design below (subprocess → socket → HTTP, polling, deferred daemon) is **dropped**. The remaining integration is a thin **launch handle** (`claude` + `/harness run <ticket>`) plus the container-invocation topology — specified as a follow-up (CAL-576), with the host-side launcher in CAL-579.
+>
+> **What survives:** the **observability half** — the run status object, the event stream, and artifact paths (`harness status` / `events --json`, `harness/cli/query.py`). Hermes still consumes these read-only to know whether a session started, passed review, and closed (or stalled). Read the sections below only for that observability surface; treat every "Hermes drives the run" statement as historical.
+
 Hermes is the planning and conversational agent. The harness is the deterministic execution engine. This spec defines how they divide responsibilities, how they communicate, and how they should be deployed together.
 
 ---
