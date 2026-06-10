@@ -2,8 +2,8 @@
 
 Scope is deliberately narrow: walk ``<repo_root>/.worktrees/harness/`` on
 disk, then for ``cleanup`` shell out to ``git worktree remove`` so the index
-and ref state stay consistent. The engine has its own
-:class:`harness.nodes.worktree.WorktreeNode` helper for run-time cleanup;
+and ref state stay consistent. The ``start`` verb has its own
+:class:`harness.worktree.WorktreeNode` helper for run-time worktree lifecycle;
 this CLI surface is for operator-driven housekeeping and stays decoupled.
 
 Filters for ``cleanup``:

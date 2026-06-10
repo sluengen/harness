@@ -20,7 +20,6 @@ import asyncio
 import json
 import subprocess
 import sys
-import textwrap
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -555,44 +554,6 @@ def test_worktrees_cleanup_no_filter_removes_nothing(tmp_path: Path) -> None:
     # Exit 0 (nothing to do) — the worktree survives.
     assert result.exit_code == 0, result.stdout
     assert wt.exists()
-
-
-# ---------------------------------------------------------------------------
-# harness validate <workflow.yaml>
-# ---------------------------------------------------------------------------
-
-
-def test_validate_known_good_workflow_prints_ok(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "workflows" / "demo.yaml"
-    workflow_yaml.parent.mkdir(parents=True, exist_ok=True)
-    workflow_yaml.write_text(textwrap.dedent("""\
-        name: demo
-        version: 1
-        description: demo
-        steps:
-          - id: hello
-            type: check
-            expr: "1 + 1 == 2"
-    """))
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
-    assert result.exit_code == 0, result.stdout
-    assert "OK" in result.stdout
-    assert "demo" in result.stdout
-    assert "1" in result.stdout
-
-
-def test_validate_invalid_workflow_exits_2(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "workflows" / "bad.yaml"
-    workflow_yaml.parent.mkdir(parents=True, exist_ok=True)
-    workflow_yaml.write_text("this: is: not: valid\n")
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
-    assert result.exit_code == 2
-
-
-def test_validate_missing_file_exits_2(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "absent.yaml"
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
-    assert result.exit_code == 2
 
 
 # ---------------------------------------------------------------------------

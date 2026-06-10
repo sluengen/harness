@@ -1,11 +1,13 @@
-"""Worktree node — create/cleanup with three policies — see SPEC §4.6, §9.
+"""Worktree lifecycle — create/cleanup with three policies — see SPEC §9.
 
-This node owns git worktree lifecycle for a run. Two actions:
+This module owns the git worktree lifecycle for a run. It was re-homed here
+from the retired ``harness.nodes`` package (CAL-574): the verbs call it
+directly as a standalone helper — there is no longer a workflow engine routing
+a step's ``action:`` to a node. Two operations:
 
 * ``create`` — make a new worktree at ``<repo>/.worktrees/harness/<run_id>/``
-  on a fresh branch ``harness/<run_id>`` starting at ``base``. The contract
-  carries ``worktree_path`` / ``worktree_branch`` so the executor can apply
-  them to state via ``writes:``.
+  on a fresh branch ``harness/<run_id>`` starting at ``base``. ``harness start``
+  reads ``worktree_path`` / ``worktree_branch`` off the returned output.
 * ``cleanup`` — apply one of three policies:
     - ``merge_to_base``: fast-forward ``base`` to the worktree branch's tip,
       then delete the worktree directory and the branch. Anything other
@@ -16,10 +18,8 @@ This node owns git worktree lifecycle for a run. Two actions:
     - ``delete_unconditionally``: ``git worktree remove --force`` and
       ``git branch -D``; tolerates uncommitted changes and ahead-branches.
 
-The node never reaches into ``harness.state`` directly — its only outputs
-are the two contracts; the executor wires those into state.
-
-SPEC: §4.3 (Node protocol), §4.6 (worktree node), §9 (worktree isolation).
+The helper never reaches into ``harness.state`` directly — its only outputs are
+the two Pydantic result models the caller consumes.
 """
 
 from __future__ import annotations
@@ -29,8 +29,6 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
-
-from harness.nodes.base import Attestation, NodeResult
 
 __all__ = [
     "CleanupPolicy",
@@ -53,11 +51,10 @@ class WorktreeNodeError(RuntimeError):
 
 
 class WorktreeCreateOutput(BaseModel):
-    """Contract for ``action: create``.
+    """Result of ``create``.
 
-    The two fields map 1:1 onto :class:`harness.state.schema.BaseState`'s
-    ``worktree_path`` / ``worktree_branch``; the executor extracts them via
-    the step's ``writes:`` declaration.
+    ``harness start`` reads ``worktree_path`` / ``worktree_branch`` directly off
+    this output when recording the run.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -67,12 +64,7 @@ class WorktreeCreateOutput(BaseModel):
 
 
 class WorktreeCleanupOutput(BaseModel):
-    """Contract for ``action: cleanup``.
-
-    Reports what the policy actually did. No state writes — the executor
-    does not project this contract onto the run state, but the result is
-    surfaced in the event log for debugging.
-    """
+    """Result of ``cleanup`` — reports what the policy actually did."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -107,14 +99,9 @@ def _branch_for(run_id: str, prefix: str = "harness") -> str:
 class WorktreeNode:
     """Stateless wrapper around ``git worktree`` for harness runs.
 
-    Conforms structurally to :class:`harness.nodes.base.Node`. The class
-    is split into ``create`` and ``cleanup`` rather than a single dispatch
-    method so callers (and tests) can pick the right shape directly. The
-    executor will route the workflow step's ``action:`` to the matching
-    method.
+    The class is split into ``create`` and ``cleanup`` rather than a single
+    dispatch method so callers (and tests) can pick the right shape directly.
     """
-
-    type: Literal["worktree"] = "worktree"
 
     async def create(
         self,
@@ -123,7 +110,7 @@ class WorktreeNode:
         repo_root: Path,
         base: str,
         branch_prefix: str = "harness",
-    ) -> NodeResult[WorktreeCreateOutput]:
+    ) -> WorktreeCreateOutput:
         """Create a worktree at ``<repo>/.worktrees/harness/<run_id>/`` from ``base``.
 
         Raises
@@ -166,15 +153,9 @@ class WorktreeNode:
                 f"git worktree add failed (base={base!r}): {stderr.strip()}"
             )
 
-        return NodeResult(
-            contract=WorktreeCreateOutput(
-                worktree_path=path,
-                worktree_branch=branch,
-            ),
-            attestation=Attestation(
-                status="complete",
-                reasoning=f"created worktree {branch} at {path}",
-            ),
+        return WorktreeCreateOutput(
+            worktree_path=path,
+            worktree_branch=branch,
         )
 
     async def cleanup(
@@ -186,7 +167,7 @@ class WorktreeNode:
         worktree_branch: str,
         base: str | None,
         policy: CleanupPolicy,
-    ) -> NodeResult[WorktreeCleanupOutput]:
+    ) -> WorktreeCleanupOutput:
         """Apply the cleanup ``policy``. ``base`` is required for ``merge_to_base``."""
         if policy == "merge_to_base":
             return await self._cleanup_merge_to_base(
@@ -206,7 +187,7 @@ class WorktreeNode:
                 worktree_path=worktree_path,
                 worktree_branch=worktree_branch,
             )
-        # Defensive: schema already restricts the literal, but stay strict.
+        # Defensive: callers pass a fixed literal, but stay strict.
         raise WorktreeNodeError(f"unknown cleanup policy: {policy!r}")
 
     # ------------------------------------------------------------------
@@ -220,7 +201,7 @@ class WorktreeNode:
         worktree_path: Path,
         worktree_branch: str,
         base: str | None,
-    ) -> NodeResult[WorktreeCleanupOutput]:
+    ) -> WorktreeCleanupOutput:
         if base is None:
             raise WorktreeNodeError("merge_to_base requires `base`")
 
@@ -306,16 +287,10 @@ class WorktreeNode:
             repo_root, worktree_branch, force=False
         )
 
-        return NodeResult(
-            contract=WorktreeCleanupOutput(
-                worktree_removed=worktree_removed,
-                branch_removed=branch_removed,
-                base_advanced=True,
-            ),
-            attestation=Attestation(
-                status="complete",
-                reasoning=f"ff-merged {worktree_branch} into {base}; cleaned up",
-            ),
+        return WorktreeCleanupOutput(
+            worktree_removed=worktree_removed,
+            branch_removed=branch_removed,
+            base_advanced=True,
         )
 
     async def _cleanup_leave(
@@ -323,21 +298,15 @@ class WorktreeNode:
         *,
         repo_root: Path,
         worktree_path: Path,
-    ) -> NodeResult[WorktreeCleanupOutput]:
+    ) -> WorktreeCleanupOutput:
         if not worktree_path.exists():
             # Idempotent re-cleanup: nothing to remove. We still prune so any
             # stale metadata from a prior partial removal is cleared.
             await _git(repo_root, "worktree", "prune")
-            return NodeResult(
-                contract=WorktreeCleanupOutput(
-                    worktree_removed=False,
-                    branch_removed=False,
-                    base_advanced=False,
-                ),
-                attestation=Attestation(
-                    status="complete",
-                    reasoning="worktree already absent; left branch untouched",
-                ),
+            return WorktreeCleanupOutput(
+                worktree_removed=False,
+                branch_removed=False,
+                base_advanced=False,
             )
 
         worktree_removed = await self._git_worktree_remove(
@@ -345,16 +314,10 @@ class WorktreeNode:
         )
         await _git(repo_root, "worktree", "prune")
 
-        return NodeResult(
-            contract=WorktreeCleanupOutput(
-                worktree_removed=worktree_removed,
-                branch_removed=False,
-                base_advanced=False,
-            ),
-            attestation=Attestation(
-                status="complete",
-                reasoning="removed worktree dir; preserved branch for inspection",
-            ),
+        return WorktreeCleanupOutput(
+            worktree_removed=worktree_removed,
+            branch_removed=False,
+            base_advanced=False,
         )
 
     async def _cleanup_delete(
@@ -363,7 +326,7 @@ class WorktreeNode:
         repo_root: Path,
         worktree_path: Path,
         worktree_branch: str,
-    ) -> NodeResult[WorktreeCleanupOutput]:
+    ) -> WorktreeCleanupOutput:
         worktree_removed = await self._git_worktree_remove(
             repo_root, worktree_path, force=True
         )
@@ -372,16 +335,10 @@ class WorktreeNode:
             repo_root, worktree_branch, force=True
         )
 
-        return NodeResult(
-            contract=WorktreeCleanupOutput(
-                worktree_removed=worktree_removed,
-                branch_removed=branch_removed,
-                base_advanced=False,
-            ),
-            attestation=Attestation(
-                status="complete",
-                reasoning="force-removed worktree and branch",
-            ),
+        return WorktreeCleanupOutput(
+            worktree_removed=worktree_removed,
+            branch_removed=branch_removed,
+            base_advanced=False,
         )
 
     # ------------------------------------------------------------------

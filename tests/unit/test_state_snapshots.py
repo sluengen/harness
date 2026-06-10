@@ -14,8 +14,9 @@ Tests cover:
 * read_latest_snapshot (AC7..AC9) — returns ``None`` when no snapshots
   exist, returns the row with the highest ``seq`` for a run, and ignores
   snapshots from other runs.
-* Executor integration (AC10..AC11) — each successful node completion
-  produces exactly one snapshot row; failed nodes produce none.
+
+The executor-integration tests were removed with the workflow engine
+(CAL-574); the snapshot store itself is retained as a kept ledger helper.
 """
 
 from __future__ import annotations
@@ -319,129 +320,6 @@ async def test_ac11_init_db_creates_snapshot_indexes(tmp_path: Path) -> None:
     indexes = await _index_names(db_path)
     assert "idx_snapshots_run" in indexes
     assert "idx_snapshots_run_seq" in indexes
-
-
-# ---------------------------------------------------------------------------
-# AC12 — executor writes one snapshot per successful node completion
-# ---------------------------------------------------------------------------
-
-
-async def test_ac12_executor_writes_snapshot_on_node_complete(tmp_path: Path) -> None:
-    """After each successful node, the executor inserts exactly one snapshot row."""
-    from unittest.mock import AsyncMock
-
-    from pydantic import create_model as _cm
-
-    from harness.engine.executor import Context, Executor
-    from harness.nodes.base import Attestation, NodeResult
-    from harness.state.store import connect, init_db
-    from harness.workflow.schema import AIStep, WriteSpec
-
-    db_path = tmp_path / "h.db"
-    await init_db(db_path)
-
-    # Seed the runs row with minimal valid state.
-    schema = _make_schema(summary=(str | None, None))
-    initial = schema.model_validate(_base_state_kwargs() | {"summary": None})
-    async with connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
-            "state_json, inputs_json, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("R1", "wf", 1, "running", initial.model_dump_json(), "{}", "2026-05-08T00:00:00Z"),
-        )
-        await conn.commit()
-
-    # Build a minimal step.
-    contract_cls = _cm("SummaryContract", summary=(str, ...))  # type: ignore[call-overload]
-    contract_instance = contract_cls(summary="hello")
-
-    step = AIStep(
-        id="summarise",
-        type="ai",
-        agent="claude",
-        prompt="prompts/noop.j2",
-        writes=[WriteSpec(field="summary")],
-    )
-
-    mock_runner = AsyncMock(
-        return_value=NodeResult(
-            contract=contract_instance,
-            attestation=Attestation(status="complete"),
-        )
-    )
-
-    ctx = Context(
-        run_id="R1",
-        db_path=db_path,
-        contracts={"summarise": contract_cls},
-        state_schema=schema,
-        nodes={"ai": mock_runner},
-        workflow_name="wf",
-    )
-
-    executor = Executor()
-    await executor.execute(step, ctx)
-
-    # Exactly one snapshot row should exist after one successful completion.
-    rows = await _snapshot_rows(db_path)
-    assert len(rows) == 1
-    assert rows[0]["node_id"] == "summarise"
-    assert rows[0]["seq"] == 1
-    persisted = json.loads(rows[0]["state_json"])
-    assert persisted["summary"] == "hello"
-
-
-# ---------------------------------------------------------------------------
-# AC13 — executor does NOT write snapshot when node fails
-# ---------------------------------------------------------------------------
-
-
-async def test_ac13_executor_does_not_write_snapshot_on_node_failure(tmp_path: Path) -> None:
-    """A node that raises must not leave a snapshot row."""
-    from unittest.mock import AsyncMock
-
-    from harness.engine.executor import Context, Executor
-    from harness.state.store import connect, init_db
-    from harness.workflow.schema import AIStep
-
-    db_path = tmp_path / "h.db"
-    await init_db(db_path)
-
-    schema = _make_schema()
-    initial = schema.model_validate(_base_state_kwargs())
-    async with connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
-            "state_json, inputs_json, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("R1", "wf", 1, "running", initial.model_dump_json(), "{}", "2026-05-08T00:00:00Z"),
-        )
-        await conn.commit()
-
-    step = AIStep(
-        id="boom",
-        type="ai",
-        agent="claude",
-        prompt="prompts/noop.j2",
-        writes=[],
-    )
-
-    boom_runner = AsyncMock(side_effect=RuntimeError("exploded"))
-
-    ctx = Context(
-        run_id="R1",
-        db_path=db_path,
-        contracts={},
-        state_schema=schema,
-        nodes={"ai": boom_runner},
-        workflow_name="wf",
-    )
-
-    executor = Executor()
-    with pytest.raises(RuntimeError, match="exploded"):
-        await executor.execute(step, ctx)
-
-    rows = await _snapshot_rows(db_path)
-    assert len(rows) == 0
 
 
 # ---------------------------------------------------------------------------

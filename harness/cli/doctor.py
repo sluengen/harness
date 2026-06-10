@@ -72,18 +72,20 @@ def check_db(db_path: Path | None = None) -> tuple[str, str]:
     )
 
 
-def check_adapters() -> tuple[str, str]:
-    """Import ClaudeAgent and print its capability matrix."""
-    from harness.dispatch.claude import ClaudeAgent
+def check_reviewer(codex_path: str | None = None) -> tuple[str, str]:
+    """Report whether the ``codex`` reviewer binary is on PATH.
 
-    cap = ClaudeAgent.capability
-    matrix = (
-        f"ClaudeAgent: submit={'✓' if cap.supports_submit_tool else '✗'} "
-        f"cwd={'✓' if cap.supports_cwd else '✗'} "
-        f"max_turns={'✓' if cap.supports_max_turns else '✗'} "
-        f"tools={'✓' if cap.supports_tool_allowlist else '✗'}"
-    )
-    return ("PASS", matrix)
+    The ``review`` verb shells out to ``codex exec``; a missing binary is not
+    fatal to the rest of the CLI (hence WARN, not FAIL), but it means review
+    will fail until codex is installed.
+    """
+    import shutil
+
+    if codex_path is None:
+        codex_path = shutil.which("codex")
+    if codex_path:
+        return ("PASS", f"codex reviewer found at {codex_path}")
+    return ("WARN", "codex not found on PATH — `harness review` will fail until installed")
 
 
 def check_cli(
@@ -132,7 +134,7 @@ def doctor_command(
         ("auth", check_auth()),
         ("git", check_git()),
         ("db", check_db(db_path)),
-        ("adapters", check_adapters()),
+        ("reviewer", check_reviewer()),
         ("cli", check_cli()),
     ]
 

@@ -779,7 +779,7 @@ def test_worktree_failure_leaves_no_db_row_and_no_transition(
     repo: Path, db_path: Path
 ) -> None:
     """If worktree creation fails, no DB row is inserted and no transition is attempted."""
-    from harness.nodes.worktree import WorktreeNodeError
+    from harness.worktree import WorktreeNodeError
 
     stub = _make_linear_stub()
     with (
