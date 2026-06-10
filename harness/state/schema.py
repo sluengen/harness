@@ -38,11 +38,24 @@ __all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
 
 # Canonical run-status enum — see SPEC §12. The SQLite column is ``TEXT NOT
 # NULL`` without a CHECK constraint, so this Literal is the type-safe seam:
-# engine writers + CLI readers import :data:`RUN_STATUSES` to validate the
-# string they read out of the DB. ``paused`` and ``stalled`` belong to the
-# v1.5 lifecycle additions (H-025) and are admitted here even though the v2
-# decision flow that produces ``paused`` runs is not yet wired.
+# writers + CLI readers import :data:`RUN_STATUSES` to validate the string
+# they read out of the DB.
+#
+# Two lifecycles are folded into one set:
+#
+# * Verb model (current) — ``harness start`` opens a run as ``open`` and
+#   ``harness close`` finalizes it to ``closed`` (CAL-583). These are the
+#   statuses live code writes today.
+# * Retired deterministic engine — ``pending``/``running``/``completed``/
+#   ``failed``/``cancelled``/``stalled``/``paused`` were the per-node engine
+#   states (``paused``/``stalled`` were the v1.5/H-025 lifecycle additions).
+#   CAL-574 retired the engine; these are kept so historical rows still
+#   validate (removing them is out of scope).
 RunStatus = Literal[
+    # verb model
+    "open",
+    "closed",
+    # retired deterministic engine
     "pending",
     "running",
     "completed",
