@@ -46,6 +46,16 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.fixture(autouse=True)
+def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Permit the tmp test tree through the ``HARNESS_WORKSPACE_ROOTS`` gate (CAL-584).
+
+    These verb tests predate the allowlist and point ``--repo`` at paths under
+    ``tmp_path``; without a configured root the gate fails closed.
+    """
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A throw-away git repo with one commit on ``dev``."""

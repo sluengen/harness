@@ -364,6 +364,8 @@ Configuration (container-level env var): `HARNESS_WORKSPACE_ROOTS=/workspace:/da
 
 The engine normalises all target paths with `os.path.realpath()` before the allowlist check to prevent symlink traversal.
 
+**Implemented** in `harness/workspace.py` ([CAL-584](https://linear.app/calibrate-coffee/issue/CAL-584)): the `--repo` acceptance point shared by `start`/`review`/`close` resolves the candidate and each root with `Path.resolve()`, accepts only path-segment descendants of a configured root (a string-prefix sibling like `/work/repo-evil` is rejected for root `/work/repo`), and fails closed when `HARNESS_WORKSPACE_ROOTS` is unset/empty — rejecting with exit 2 and a stderr message naming the path.
+
 ### Path normalisation
 
 Every path passed to the harness — `--repo`, `cwd` in step YAML, artifact paths — is normalised to an absolute path and checked to lie within the resolved target repo root before use. Script nodes and worktree nodes inherit the normalised path.
@@ -472,7 +474,7 @@ Define the Dockerfile and compose/task-definition shape for Option B deployment.
 - Produce a harness container image with the harness binary and its dependencies; no Hermes code.
 - Define a compose file (or ECS task definition) with both containers sharing a named workspace volume.
 - Document the env var injection strategy for secret scoping (which secrets go to which container).
-- Add `HARNESS_WORKSPACE_ROOTS` allowlist enforcement to the CLI.
+- ~~Add `HARNESS_WORKSPACE_ROOTS` allowlist enforcement to the CLI.~~ ✓ shipped ([CAL-584](https://linear.app/calibrate-coffee/issue/CAL-584)) — the "Ticket 3 survivor"; see §Target repo allowlist. `harness/workspace.py` is the launcher prerequisite for Ticket 4.
 - Acceptance: `docker compose up` starts both containers; Hermes can drive a harness run against a repo mounted on the shared volume.
 
 ### Ticket 4: Host launcher — narrow control socket for verb-container launch ([CAL-579](https://linear.app/calibrate-coffee/issue/CAL-579))
