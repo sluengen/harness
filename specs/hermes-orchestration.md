@@ -486,6 +486,8 @@ Build the host-side launcher chosen over DooD in §Runtime topology. Hermes driv
 - One-shot sibling containers (max one container deep; no DinD); thin local form factor (e.g. `harness serve --local`).
 - Acceptance: with only the control socket mounted, Hermes can run a verb end-to-end; a test asserts a caller-supplied host path / privilege flag is rejected (host-escape vector closed); a test asserts mounts outside `HARNESS_WORKSPACE_ROOTS` are rejected.
 
+**Implemented** in `harness/launcher.py` + `harness/cli/serve.py` ([CAL-579](https://linear.app/calibrate-coffee/issue/CAL-579)). The launcher speaks newline-delimited JSON over an `AF_UNIX` socket (`harness serve --local`), exposing exactly `{start, status, events, cancel, decision}` and nothing else — an unknown op is refused before any `docker run`. `build_verb_argv()` constructs each launch server-side: the only caller-derived value entering the docker-option region is the *resolved* repo path (checked through `harness/workspace.py`'s allowlist), mounted at an identical host/container path (`-v <repo>:<repo> -w <repo>`); everything else the caller supplies lands after the image as harness-verb arguments, so `--privileged` / `-v /:/host` / a rogue image / a caller-set env are not expressible. Params are an allowlist per op (any extra key — `privileged`, `volumes`, `image`, `env`, …  — is rejected as `bad_params`), and per-run credentials are injected by name (`-e NAME`) so secret values never enter the argv. Every launch is `docker run --rm` — a one-shot, unprivileged sibling removed on exit. Covered by `tests/unit/test_launcher.py`, `tests/unit/test_cli_serve.py`, and the over-the-wire `tests/integration/test_launcher_socket.py`.
+
 ---
 
 ## Notable constraints
