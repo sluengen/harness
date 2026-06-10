@@ -1,4 +1,4 @@
-<!-- guidance:build-codex@1.0.0 -->
+<!-- guidance:build-codex@1.2.0 -->
 # /build-codex — implement, verify, and review a Linear ticket (Codex review)
 
 Usage: `/build-codex <TICKET-ID>`
@@ -46,9 +46,20 @@ git worktree add -b "$worktree_branch" "$worktree_path" "$base_branch"
 
 ---
 
-## 2. Fix loop — up to 3 iterations
+## 2. Fix loop
 
-Track `issues` (list, starts empty) and `verdict`. On each iteration: implement → verify → review. Exit the loop when verdict is PASS or DEFER. If 3 iterations complete without that, go to **§4 Exhausted**.
+Track `issues` (list, starts empty) and `verdict`. On each iteration: implement → verify → review. Exit the loop when verdict is PASS or DEFER.
+
+The first 3 iterations run unconditionally. If the 3rd review still returns FAIL, do **not** abandon by default — solving issues often exposes new ones, and a run that looks stuck at round 3 frequently lands at round 4 or 5. Instead, run the **convergence check** below before each further iteration, and again before every iteration after that. Keep going while the loop is converging; go to **§4 Abandoned** the moment it is not.
+
+### Convergence check — before every iteration past the 3rd
+
+Compare the latest review's findings against the prior rounds and decide:
+
+- **Converging** — the work is getting closer. Findings are shrinking in count or severity, and anything new is a genuinely new problem exposed by fixing an earlier one. Run another iteration.
+- **Not converging** — the loop is stuck. The same or equivalent findings keep returning, previously resolved items are re-raised, or the findings hold steady round after round with no net progress. Go to **§4 Abandoned**.
+
+Write one line of reasoning for the verdict each time, naming which findings are new versus carried over, so the judgement stays honest rather than optimistic.
 
 ### Implement
 
@@ -78,7 +89,7 @@ Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has
 *CLAUDE_MD*
 
 *Before finishing:*
-*- Update any spec or documentation that refers to code you just changed*
+*- Update any spec or documentation that refers to code you just changed — except the feature/as-built spec (`specs/features/`), which the reviewer records, not you*
 *- Fix obvious inefficiencies introduced or exposed by the change (e.g. N+1 queries)*
 *- Remove dead code, stale comments, or placeholder markers on things you just shipped*
 
@@ -168,6 +179,8 @@ Act on verdict: PASS or DEFER → **§3 Ship**; FAIL → restart the iteration.
 
 ## 3. Ship
 
+**Record the as-built spec.** The reviewed diff is the source of truth; now record what actually shipped — the durable as-built record. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) The edit is included in the commit below.
+
 **Handle DEFER.** If verdict is DEFER, fetch the team ID then create a child ticket:
 
 ```bash
@@ -220,16 +233,25 @@ curl -s -X POST https://api.linear.app/graphql \
 
 ---
 
-## 4. Exhausted
+## 4. Abandoned
 
-3 iterations completed without a PASS or DEFER. Comment on the ticket:
+The convergence check determined the loop is stuck. The work so far is still worth investigating — why a run fails is a signal, and the partial implementation may be salvageable. **Preserve it: do not tear down the worktree.**
+
+**Commit the work to the run branch and push it** so it survives and can be picked up elsewhere:
+
+```bash
+cd "$worktree_path" && git add -A && git commit -m "wip(TICKET_ID): build abandoned, not converging — see ticket"
+git push -u origin "$worktree_branch"
+```
+
+**Comment on the ticket** — include the branch so the work is findable:
 
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
   -d "$(jq -n --arg id "TICKET_ID" \
-    --arg body "Build loop exhausted after 3 iterations. Branch: WORKTREE_BRANCH.\n\nFindings:\nISSUES" \
+    --arg body "Build loop abandoned — not converging. Work committed and pushed to WORKTREE_BRANCH for investigation.\n\nFindings:\nISSUES" \
     '{"query":"mutation{commentCreate(input:{issueId:$id,body:$body}){success}}"}')" > /dev/null
 ```
 
-Reset the ticket to Todo (same pattern as set-in-progress, targeting `type=="unstarted"`). Teardown the worktree. Report the findings to the user.
+Reset the ticket to Todo (same pattern as set-in-progress, targeting `type=="unstarted"`). **Leave the worktree and branch in place.** Report the findings and the branch name to the user.
