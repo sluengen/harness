@@ -1,30 +1,24 @@
 # /harness — Harness pipeline commands
 
-Commands that launch or interact with the **harness pipeline itself**. These are distinct from the agent-led workflow commands (`/start`, `/review`, `/ship`); they trigger the automated execution engine.
+Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
 
 ---
 
 ## /harness run \<ISSUE-ID\>
 
-Trigger the build workflow for a Linear issue. The harness handles everything — worktree, implementation, review, commit, push.
+Drive a Linear ticket end-to-end by orchestrating the three harness verbs: **start → implement → review → (fix → review)\* → close**.
+
+This is **not** a wrapper that hands the ticket to a black-box workflow. *You* — the orchestrating Claude session — run the loop: you call each verb, you write the code and tests inline in the worktree, you read each verdict and act on it. The verbs own every git and tracker mutation; you own the implementation and the control flow between them.
+
+**Why the verbs, and nothing else, touch state (D5):** each verb appends to a single `runs` ledger — `start` opens the row, `review` records a verdict bound to the reviewed SHA, `close` enforces the gate and finalizes. That ledger is the whole audit trail. If you hand-roll a `git merge`, a `git push`, or a Linear GraphQL mutation to move state yourself, the ledger no longer reflects reality and the gate can no longer protect the merge. So: **never** run raw git state-transitions or Linear CURL for the lifecycle in this loop — route every mutation through a verb.
 
 ### Usage
 
-- `/harness run <ISSUE-ID>` — run the build workflow for the given Linear issue
-- `/harness run <ISSUE-ID> --repo PATH` — run the build workflow targeting a different repo
-
-### Cross-repo usage
-
-```bash
-cd /path/to/slate
-/harness run SLT-42
-```
-
-`cd` to the target repo first — the Docker wrapper mounts CWD as `/workspace` inside the container. No `--repo` flag needed. Combine with `--verify-command` to override the verification gate and `--branch-prefix` to control branch naming.
+- `/harness run <ISSUE-ID>` — orchestrate the build loop for the given Linear ticket
 
 ### Prerequisites
 
-`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, see `docker/README.md` — one `chmod +x` and a `PATH` line in `.zshrc`.
+`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, see `docker/README.md` — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
 
 `LINEAR_API_KEY` must be in a `.env` file at the target repo root (gitignored). The wrapper reads it automatically — no `source .env` needed.
 
@@ -33,58 +27,75 @@ cd /path/to/slate
 LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API → Personal API keys
 ```
 
-> **No Linear CLI is installed.** All Linear interaction goes through the GraphQL API directly — `curl` in shell scripts, `urllib.request` in Python. Do not search for a `linear` binary or attempt `npx linear`.
+> **No Linear CLI is installed**, and you do not call Linear directly in this loop anyway — the verbs do. (`start` transitions the ticket to In Progress; `close` transitions it Done.) Do not search for a `linear` binary or hand-roll GraphQL mutations to move ticket state.
 
 > **Claude auth is automatic.** The wrapper extracts the OAuth token from the macOS Keychain on each invocation. No `ANTHROPIC_API_KEY` or manual token setup needed.
 
-### Instructions
+### The loop
 
-**Step 1 — Fetch the ticket**
-
-```bash
-source .env && curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"<ISSUE-ID>\"){identifier title description state{name} labels{nodes{name}} url}}"}'
-```
-
-Print a brief for the user:
-
-```
-Task:   <title>
-Linear: <ISSUE-ID>
-URL:    <url>
-State:  <current state>
-```
-
-If the issue is already Done or has unresolved dependencies listed in the description, stop and report.
-
-**Step 2 — Run the build workflow**
+**Step 1 — `start`.** Open the run and the worktree:
 
 ```bash
-harness run build --linear=<ISSUE-ID>
+harness start <ISSUE-ID>            # [--base dev] [--repo .]
 ```
 
-When `--verify-command` or `--branch-prefix` were supplied, pass them through:
+It validates the ticket, transitions it to In Progress, creates the worktree, and opens a `runs` ledger row. It emits one JSON object (`StartOutput`):
+
+```json
+{ "run_id": "...", "ticket": { "identifier": "...", "title": "...", "description": "...", "url": "..." },
+  "worktree_path": "...", "worktree_branch": "...", "base_branch": "..." }
+```
+
+Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`). `cd` into `worktree_path`. Read `ticket.title` and `ticket.description` — that is your spec for this run. (Default base is `dev`; pass `--base` only to override.)
+
+**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate locally as you go.
+
+**Step 3 — `review`.** When the implementation is ready, review the current worktree HEAD:
 
 ```bash
-harness run build --linear=<ISSUE-ID> \
-  [--verify-command "bash scripts/verify.sh"] \
-  [--branch-prefix "feature/"]
+harness review --run-id <run_id>    # [--repo .]
 ```
 
-The workflow handles the rest: worktree, implement, review, gate, commit, push, merge.
+Codex reviews the diff against HEAD and records a verdict bound to that SHA. You see only the bounded result (`ReviewOutput`) — Codex's full reasoning stays inside the verb:
 
-> Cross-repo use: just `cd` to the target repo first — the wrapper mounts CWD as the workspace automatically. `--repo` is not needed with the container invocation.
+```json
+{ "verdict": "pass|fail|defer", "issues": [ ... ], "reviewed_sha": "...", "run_id": "..." }
+```
 
-**Step 3 — Report the outcome**
+Act on `verdict`:
+
+- **`fail`** — fix the listed `issues` in the worktree (fix the root cause, not just the cited line), then **re-run `harness review`**. This is the `(fix → review)*` loop; repeat until the verdict is `pass` or `defer`. Each new review binds to the new HEAD.
+- **`defer`** — the implementation is shippable, but the review surfaced a genuinely out-of-scope finding (needs its own spec or a redesign). Handle the finding by **filing a follow-up** — use `/harness ingest` to create a child ticket capturing it — then proceed to close.
+- **`pass`** — proceed to close.
+
+**Step 4 — `close`.** Finalize through the gate:
 
 ```bash
-harness status <run-id>
-harness logs   <run-id>
+harness close <ISSUE-ID> --run-id <run_id>    # [--repo .]
 ```
 
-Report whether the run completed, was cancelled by the gate (review FAIL), or failed with an error. Surface the reviewer's findings if the gate fired.
+`close` enforces the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commits, merges, pushes, transitions the ticket Done, and marks the run closed. On success it emits `CloseOutput`:
+
+```json
+{ "run_id": "...", "ticket": "...", "reviewed_sha": "...", "merged": true, "ticket_done": true, "status": "..." }
+```
+
+### Gate-refusal handling
+
+If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The `reason` is one of:
+
+- **`no_run`** — no `start` row exists for this ticket. You skipped `start`, or are closing the wrong ticket. Run `harness start` first.
+- **`no_passing_review`** — no `verdict=pass` is on record. You have not run `review`, or its last verdict was `fail`/`defer`. Run `harness review` and reach `pass`.
+- **`stale_review`** — there is a passing review, but HEAD moved after it (you committed more work). The passing verdict no longer covers what would merge. **Re-run `harness review`** on the current HEAD to re-establish a fresh `pass`, then close again.
+
+A gate refusal is the gate doing its job. **Do not work around it** — do not hand-roll the merge/push/transition to "finish" the run. If the refusal is something you cannot resolve by re-running a verb (e.g. an unexpected error, or a verb that itself fails), **surface it to the human / Hermes** with the `reason` and the `run_id`; do not improvise a bypass.
+
+### Context economy / compaction
+
+The plan you are following lives only in this session's context — the ledger and the worktree are the durable record. If context is lost or compacted mid-run:
+
+- **Re-orient via the ledger.** Run `harness status <run-id> [--json]` to get the run's terminal-state summary, and inspect the worktree (`git status`, `git log`, the diff) to see what is already implemented. The ledger + worktree are the source of truth — trust them over a half-remembered plan.
+- **Checkpoint intent before you risk losing it.** Commit WIP in the worktree and/or write the remaining plan into the ticket or a scratch note, so the one thing that lives only in context survives a compaction. (A `CLAUDE.md` "Compact Instructions" section is an optional refinement, not required.)
 
 ---
 
@@ -223,5 +234,6 @@ Next: /harness run <ISSUE-ID>
 
 ### Related
 
-- `/harness run` — runs the build workflow for a given issue ID
-- `workflows/build.yaml` — the workflow `/harness run` triggers
+- `/harness run` — orchestrates the `start → review → close` verb loop for a given ticket
+- `harness/cli/start.py`, `harness/cli/review.py`, `harness/cli/close.py` — the three verbs `/harness run` drives
+- `specs/proposals/harness-as-tool.md` — the proposal behind the verb-loop model
