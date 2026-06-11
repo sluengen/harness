@@ -123,7 +123,7 @@ def doctor_command(
     ),
 ) -> None:
     """Run system health checks."""
-    from harness.cli.query import _resolve_db_path
+    from harness.cli._query_common import _resolve_db_path
 
     db_path = _resolve_db_path(db)
 
