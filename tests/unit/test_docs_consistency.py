@@ -15,7 +15,6 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 BOOTSTRAP_DOCS = [
     REPO_ROOT / "README.md",
     REPO_ROOT / "CLAUDE.md",
-    REPO_ROOT / "AUTHORING.md",
 ]
 
 STALE_PHRASES = [

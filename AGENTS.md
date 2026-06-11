@@ -42,9 +42,9 @@ Domain-specific knowledge for *this* harness (its workflow schema, its CLI, how 
 
 ## Command namespacing
 
-The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`) and mean the same agent-led process here as in every other repo. The harness repo also has its **own** commands — launching the harness on a ticket, authoring a workflow, ingesting — and those would collide on the bare names (the harness's own "start" means *run the harness pipeline*, not *begin the agent-led process*).
+The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`) and mean the same agent-led process here as in every other repo. The harness repo also has its **own** commands — launching the harness on a ticket and ingesting — and those would collide on the bare names (the harness's own "start" means *run the harness pipeline*, not *begin the agent-led process*).
 
-Resolve it by **namespacing the harness's own commands under `/harness <verb>`** (e.g. `/harness run`, `/harness build-workflow`, `/harness ingest`). The bare names stay with the universal commands. This is not just to avoid confusion: the bootstrap installs the guidance's `/start` at `commands/start.md`, so the harness's own `start` must move out of that path first (the bootstrap refuses to clobber it — see `BOOTSTRAP.md` step 2).
+Resolve it by **namespacing the harness's own commands under `/harness <verb>`** (e.g. `/harness run`, `/harness ingest`). The bare names stay with the universal commands. This is not just to avoid confusion: the bootstrap installs the guidance's `/start` at `commands/start.md`, so the harness's own `start` must move out of that path first (the bootstrap refuses to clobber it — see `BOOTSTRAP.md` step 2).
 
 Keeping the agent-led commands available here is deliberate: when a task does **not** fit the harness's own pipeline shape, run it through the standard `/start → /review → /ship` flow as a backup.
 
