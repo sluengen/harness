@@ -30,7 +30,6 @@ hermetic yet exercises the real verbs, the real gate, and the real ledger.
 from __future__ import annotations
 
 import json
-import socket
 import subprocess
 import tempfile
 import threading
@@ -47,6 +46,7 @@ from harness.cli import app
 from harness.cli import close as close_mod
 from harness.cli import review as review_mod
 from harness.launcher import ControlServer, RunResult
+from harness.launcher_client import LauncherClient, verb_argv_to_request
 from harness.trigger import AgentLaunch, HermesTrigger
 
 pytestmark = pytest.mark.integration
@@ -181,27 +181,20 @@ def _verb_patches(stack: ExitStack, *, review_verdict: str) -> mock.MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# The control socket transport (a fresh connection per request, one line each).
+# The control socket transport. The agent-runtime stand-in and the trigger both
+# drive verbs through the *real* production client (harness.launcher_client) over
+# the socket — the same path docker/entrypoint.sh installs in agent-mode.
 # ---------------------------------------------------------------------------
 
 
-def _request(socket_path: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.connect(str(socket_path))
-        client.sendall((json.dumps(payload) + "\n").encode())
-        client.shutdown(socket.SHUT_WR)
-        chunks: list[bytes] = []
-        while True:
-            chunk = client.recv(4096)
-            if not chunk:
-                break
-            chunks.append(chunk)
-    result: dict[str, Any] = json.loads(b"".join(chunks))
-    return result
+def _call(socket_path: Path, argv: list[str], repo: Path) -> dict[str, Any]:
+    """Issue one ``harness <verb> …`` over the socket via the production client."""
+    request = verb_argv_to_request(argv, repo=str(repo))
+    return LauncherClient(socket_path).request(str(request["op"]), request["params"])
 
 
-def _verb(socket_path: Path, op: str, **params: str) -> dict[str, Any]:
-    resp = _request(socket_path, {"op": op, "params": params})
+def _verb(socket_path: Path, argv: list[str], repo: Path) -> dict[str, Any]:
+    resp = _call(socket_path, argv, repo)
     assert resp["ok"] is True, resp
     return resp
 
@@ -239,7 +232,7 @@ def test_end_to_end_demo_launch_handle_via_socket_and_ledger(
         *outside* this session). The ``run_id`` is threaded start→review→close in
         local state — context retained because this is one session (AC-2).
         """
-        start_resp = _verb(socket_path, "start", repo=str(repo), ticket=ticket, base="dev")
+        start_resp = _verb(socket_path, ["start", ticket, "--base", "dev"], repo)
         start = json.loads(start_resp["stdout"])
         run_id = start["run_id"]
         worktree = Path(start["worktree_path"])
@@ -249,11 +242,11 @@ def test_end_to_end_demo_launch_handle_via_socket_and_ledger(
         _git(worktree, "add", "feature.txt")
         _git(worktree, "commit", "-m", "implement CAL-585")
 
-        review = json.loads(_verb(socket_path, "review", repo=str(repo), run_id=run_id)["stdout"])
+        review = json.loads(_verb(socket_path, ["review", "--run-id", run_id], repo)["stdout"])
         assert review["verdict"] == "pass", review
 
         close = json.loads(
-            _verb(socket_path, "close", repo=str(repo), run_id=run_id, ticket=ticket)["stdout"]
+            _verb(socket_path, ["close", ticket, "--run-id", run_id], repo)["stdout"]
         )
         observed["run_id"] = run_id
         observed["merged"] = close.get("merged")
@@ -262,12 +255,12 @@ def test_end_to_end_demo_launch_handle_via_socket_and_ledger(
 
     # The trigger reads the ledger *over the same socket*, read-only.
     def read_status(run_id: str) -> Mapping[str, Any]:
-        out = _verb(socket_path, "status", repo=str(repo), run_id=run_id)["stdout"]
+        out = _verb(socket_path, ["status", run_id], repo)["stdout"]
         parsed: Mapping[str, Any] = json.loads(out)
         return parsed
 
     def read_events(run_id: str) -> Sequence[Mapping[str, Any]]:
-        out = _verb(socket_path, "events", repo=str(repo), run_id=run_id)["stdout"]
+        out = _verb(socket_path, ["events", run_id], repo)["stdout"]
         return [json.loads(line) for line in out.splitlines() if line.strip()]
 
     try:
@@ -328,7 +321,7 @@ def test_gate_refuses_close_without_passing_review(
         with ExitStack() as stack:
             merge = _verb_patches(stack, review_verdict="fail")
             start = json.loads(
-                _verb(socket_path, "start", repo=str(repo), ticket=TICKET, base="dev")["stdout"]
+                _verb(socket_path, ["start", TICKET, "--base", "dev"], repo)["stdout"]
             )
             run_id = start["run_id"]
             worktree = Path(start["worktree_path"])
@@ -338,16 +331,13 @@ def test_gate_refuses_close_without_passing_review(
 
             # Review records a FAIL — no passing verdict on record.
             review = json.loads(
-                _verb(socket_path, "review", repo=str(repo), run_id=run_id)["stdout"]
+                _verb(socket_path, ["review", "--run-id", run_id], repo)["stdout"]
             )
             assert review["verdict"] == "fail"
 
             # close over the socket: the request itself is well-formed (ok), but
             # the verb refuses the gate with no_passing_review (exit code 2).
-            resp = _request(
-                socket_path,
-                {"op": "close", "params": {"repo": str(repo), "run_id": run_id, "ticket": TICKET}},
-            )
+            resp = _call(socket_path, ["close", TICKET, "--run-id", run_id], repo)
     finally:
         server.shutdown()
         server.server_close()

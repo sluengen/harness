@@ -167,6 +167,85 @@ def test_rogue_params_are_rejected(rogue: dict[str, str], repo: Path, roots: lis
     assert excinfo.value.reason == "bad_params"
 
 
+# ---------------------------------------------------------------------------
+# Launcher-controlled credential mounts (review codex + close ssh push)
+# ---------------------------------------------------------------------------
+
+
+def test_verb_container_mounts_launcher_credentials(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # The launcher mounts its own ~/.codex (review's codex auth) and ~/.ssh
+    # (close's push) into every verb container — the same surface the
+    # ~/bin/harness wrapper supplies, so launcher-spawned verbs can authenticate.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "review", "params": {"repo": str(repo), "run_id": "R1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+    )
+    assert f"{home / '.codex'}:/root/.codex" in argv
+    assert f"{home / '.ssh'}:/root/.ssh:ro" in argv
+    # The repo mount is still first, so the path-equivalence assertions hold.
+    assert argv[argv.index("-v") + 1] == f"{repo.resolve()}:{repo.resolve()}"
+
+
+def test_credentials_come_from_launcher_home_not_a_caller_param(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # There is no param through which a caller can change the credential mount;
+    # supplying one is a bad_params refusal, and the mount tracks the launcher's
+    # home regardless.
+    home = tmp_path / "home"
+    home.mkdir()
+    with pytest.raises(LauncherError) as excinfo:
+        build_verb_argv(
+            {"op": "review", "params": {"repo": str(repo), "run_id": "R1", "codex": "/evil"}},
+            image="harness:dev",
+            roots=roots,
+            host_env={},
+            home=home,
+        )
+    assert excinfo.value.reason == "bad_params"
+
+
+def test_ssh_agent_forwarded_when_socket_available(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+        ssh_auth_sock="/run/host-services/ssh-auth.sock",
+    )
+    assert "/run/host-services/ssh-auth.sock:/ssh-agent" in argv
+    assert "SSH_AUTH_SOCK=/ssh-agent" in argv
+
+
+def test_ssh_agent_absent_when_no_socket(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+        ssh_auth_sock=None,
+    )
+    assert not any("ssh-agent" in tok for tok in argv)
+    assert "SSH_AUTH_SOCK=/ssh-agent" not in argv
+
+
 def test_caller_image_string_never_reaches_argv(repo: Path, roots: list[Path]) -> None:
     # Even though `image` is rejected as a param, prove the constructed image is
     # the launcher's, not anything the caller could smuggle.

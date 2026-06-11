@@ -84,6 +84,25 @@ def test_agent_mode_requires_a_ticket(bin_dir: Path) -> None:
     assert "STUB" not in proc.stdout
 
 
+def test_agent_mode_installs_launcher_socket_client_shim(bin_dir: Path) -> None:
+    # Decision #1: the agent runtime routes verbs through the launcher socket,
+    # not the docker socket. The entrypoint must put a `harness` shim ahead on
+    # PATH that calls the launcher client — proven by capturing `claude`'s PATH.
+    stub = bin_dir / "claude"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'shim="$(command -v harness)"\n'
+        'echo "HARNESS=$shim"\n'
+        'cat "$shim"\n'
+    )
+    stub.chmod(0o755)
+    proc = _run(["agent", "CAL-585"], bin_dir)
+    assert proc.returncode == 0, proc.stderr
+    # A `harness` is resolvable and it routes to the launcher client (not docker).
+    assert "HARNESS=" in proc.stdout
+    assert "harness.launcher_client" in proc.stdout
+
+
 def test_verb_mode_runs_a_single_one_shot_verb(bin_dir: Path) -> None:
     # `verb start CAL-1 --repo /x` → `uv run harness start CAL-1 --repo /x`.
     proc = _run(["verb", "start", "CAL-1", "--repo", "/x"], bin_dir)

@@ -70,6 +70,8 @@ __all__ = [
     "OPERATIONS",
     "DEFAULT_IMAGE",
     "INJECTED_ENV",
+    "HOST_SSH_AGENT_SOCKET",
+    "GIT_SSH_COMMAND",
     "RunResult",
     "Runner",
     "LauncherError",
@@ -92,6 +94,63 @@ DEFAULT_IMAGE = "harness:dev"
 #: Secrets the launcher injects per run, by name (value pulled from the
 #: launcher's own environment by docker). The caller can set none of these.
 INJECTED_ENV: tuple[str, ...] = ("LINEAR_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
+
+#: Credential mounts the launcher adds to *every* verb container, server-side —
+#: mirroring the documented ``~/bin/harness`` wrapper (``docker/README.md``).
+#: ``review`` shells out to codex (needs the subscription auth in ``~/.codex``)
+#: and ``close`` does ``git push`` over SSH (needs ``~/.ssh`` + the forwarded
+#: agent). Like the mount and the image, these are the *launcher's* choice, not
+#: the caller's — there is no param through which a caller can change or suppress
+#: them, so they do not weaken the "caller never specifies the mount" property.
+CODEX_AUTH_SUBDIR = ".codex"
+SSH_SUBDIR = ".ssh"
+
+#: Where Docker Desktop exposes the host ssh-agent to containers (macOS). The
+#: wrapper forwards this so ``git push`` over SSH on ``close`` can authenticate;
+#: the key itself is Keychain-backed and unusable from the mounted file, so the
+#: agent socket is what actually authenticates.
+HOST_SSH_AGENT_SOCKET = "/run/host-services/ssh-auth.sock"
+
+#: ``GIT_SSH_COMMAND`` the verb container runs git with — identical to the
+#: wrapper, so host-key handling matches between the two launch paths.
+GIT_SSH_COMMAND = (
+    "ssh -F /dev/null -o StrictHostKeyChecking=accept-new "
+    "-o UserKnownHostsFile=/root/.ssh/known_hosts"
+)
+
+
+def _credential_mount_argv(home: Path, ssh_auth_sock: str | None) -> list[str]:
+    """The launcher-controlled credential mounts/env for a verb container.
+
+    ``home`` is the launcher's home directory (its ``~/.codex`` / ``~/.ssh``);
+    ``ssh_auth_sock`` is the host ssh-agent socket to forward, or ``None`` to
+    skip agent forwarding (no agent available). All values are launcher-trusted,
+    never caller-derived.
+    """
+    args: list[str] = [
+        "-v",
+        f"{home / CODEX_AUTH_SUBDIR}:/root/.codex",
+        "-v",
+        f"{home / SSH_SUBDIR}:/root/.ssh:ro",
+        "-e",
+        f"GIT_SSH_COMMAND={GIT_SSH_COMMAND}",
+    ]
+    if ssh_auth_sock:
+        args += ["-v", f"{ssh_auth_sock}:/ssh-agent", "-e", "SSH_AUTH_SOCK=/ssh-agent"]
+    return args
+
+
+def _default_ssh_auth_sock(host_env: Mapping[str, str]) -> str | None:
+    """Resolve the host ssh-agent socket to forward, mirroring the wrapper.
+
+    Prefers Docker Desktop's fixed host-services path when it is a live socket,
+    else the launcher's own ``SSH_AUTH_SOCK``; ``None`` when neither is present
+    (agent forwarding is then skipped — ``close`` push relies on key files).
+    """
+    if Path(HOST_SSH_AGENT_SOCKET).is_socket():
+        return HOST_SSH_AGENT_SOCKET
+    candidate = host_env.get("SSH_AUTH_SOCK", "").strip()
+    return candidate or None
 
 #: Required params per operation. Every key here must be present.
 _REQUIRED: dict[str, tuple[str, ...]] = {
@@ -189,15 +248,22 @@ def build_verb_argv(
     image: str,
     roots: list[Path],
     host_env: Mapping[str, str],
+    home: Path | None = None,
+    ssh_auth_sock: str | None = None,
 ) -> list[str]:
     """Construct the full ``docker run`` argv for ``request``, server-side.
 
     Raises :class:`LauncherError` on any rejection — an unknown op, a param
     outside the op's allowlist, a missing/ill-typed param, or a repo outside
     ``roots``. On success the returned argv is a one-shot, unprivileged sibling
-    launch whose only bind mount is the allowlist-resolved repo at an identical
-    host/container path, with scoped credentials injected by name.
+    launch: the allowlist-resolved repo bind-mounted at an identical
+    host/container path, plus the *launcher-controlled* credential mounts every
+    verb needs (``~/.codex`` for ``review``'s codex, ``~/.ssh`` + the forwarded
+    ssh-agent for ``close``'s push) and the scoped secrets injected by name.
+    ``home`` defaults to the launcher's home; ``ssh_auth_sock`` forwards the host
+    ssh-agent when given. None of these are caller-derived.
     """
+    home = Path.home() if home is None else home
     op = request.get("op")
     if not isinstance(op, str) or op not in OPERATIONS:
         raise LauncherError("unknown_operation", f"unknown operation: {op!r}")
@@ -258,6 +324,10 @@ def build_verb_argv(
         "-e",
         f"{WORKSPACE_ROOTS_ENV}={repo}",
     ]
+    # Launcher-controlled credential mounts (codex auth, ssh, ssh-agent) — the
+    # same surface the ~/bin/harness wrapper supplies, so launcher-spawned
+    # `review`/`close` containers can authenticate. Caller-uncontrollable.
+    argv += _credential_mount_argv(home, ssh_auth_sock)
     for name in INJECTED_ENV:
         if name in host_env:
             argv += ["-e", name]
@@ -282,11 +352,17 @@ class ControlServer:
         image: str = DEFAULT_IMAGE,
         roots: list[Path] | None = None,
         host_env: Mapping[str, str] | None = None,
+        home: Path | None = None,
+        ssh_auth_sock: str | None = None,
     ) -> None:
         self.host_env: Mapping[str, str] = os.environ if host_env is None else host_env
         self.runner: Runner = _docker_runner if runner is None else runner
         self.image = image
         self.roots = allowed_roots(self.host_env) if roots is None else roots
+        self.home = Path.home() if home is None else home
+        self.ssh_auth_sock = (
+            _default_ssh_auth_sock(self.host_env) if ssh_auth_sock is None else ssh_auth_sock
+        )
 
     def dispatch(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Validate + launch ``request``; return the structured response dict."""
@@ -296,6 +372,8 @@ class ControlServer:
                 image=self.image,
                 roots=self.roots,
                 host_env=self.host_env,
+                home=self.home,
+                ssh_auth_sock=self.ssh_auth_sock,
             )
         except LauncherError as exc:
             return {"ok": False, "reason": exc.reason, "error": str(exc)}

@@ -26,6 +26,18 @@ case "$mode" in
       echo "harness entrypoint: agent mode requires a ticket id (agent <TICKET>)" >&2
       exit 2
     fi
+    # Decision #1: the agent runtime holds the launcher control socket, never the
+    # docker socket. Put a `harness` shim ahead on PATH that routes every verb
+    # the /harness run loop issues (start/review/close/status/events/…) through
+    # the socket client, so the loop spawns each verb as a one-shot sibling
+    # *outside* this runtime without any docker authority here.
+    shim_dir="$(mktemp -d)"
+    cat > "$shim_dir/harness" <<'SHIM'
+#!/usr/bin/env bash
+exec uv run python -m harness.launcher_client "$@"
+SHIM
+    chmod +x "$shim_dir/harness"
+    export PATH="$shim_dir:$PATH"
     # Decision #2: the autonomous path runs the agent runtime headless; Claude
     # Code drives start → implement → review* → close non-interactively.
     exec claude -p "/harness run $ticket"
