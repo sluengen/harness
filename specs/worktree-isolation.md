@@ -82,6 +82,8 @@ Runs `git worktree remove --force <path>` and `git branch -D <branch>`. Tolerate
 
 Every run gets a unique branch derived from its ULID run-id. No collisions between concurrent runs.
 
+The `.worktrees/harness` path root has a single source — `harness.identity.WORKTREES_SUBDIR`. `harness.worktree.worktree_path(repo_root, run_id)` and `harness.cli.worktrees` both derive their repo-rooted paths from it, so a layout change is one edit (CAL-590). `worktree_path` does not validate the run-id (the lifecycle helper takes whatever id the caller created); `identity.worktree_dir` does.
+
 The worktree adapter in `harness/engine/runner.py` resolves `$inputs.<key>` and `$state.<field>` references in the `base:` field at runtime before calling `WorktreeNode.create`.
 
 ---
