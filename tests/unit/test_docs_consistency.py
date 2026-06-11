@@ -113,3 +113,61 @@ def test_superseded_spec_has_in_file_banner(spec: Path) -> None:
         "in-file supersede banner near the top. Prepend a dated banner of the "
         "form '> **Superseded YYYY-MM-DD** by …' (see hermes-orchestration.md)."
     )
+
+
+# --- D5 routing-discipline scope (ADH-1, CAL-596) -----------------------------
+#
+# The architecture-principles "Routing discipline" principle once claimed that
+# *every* git and ticket mutation goes through a verb. That overstated the
+# guarantee: the agent-led backup flow (`/start` → `/review` → `/ship`)
+# hand-rolls a Linear lifecycle transition outside the verbs and outside the
+# `runs` ledger, by design. These two tests pin the prose to that reality —
+# one anchors the reality (the backup flow really does hand-roll the
+# transition), the other forbids the unqualified claim from creeping back.
+
+ARCH_PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
+LINEAR_SYNC = REPO_ROOT / "skills" / "linear-sync.md"
+
+#: The exact unqualified assertion ADH-1 (CAL-596) flagged as overstated.
+_UNQUALIFIED_D5_CLAIM = "Every git and ticket mutation goes through a verb."
+
+
+def _routing_discipline_section() -> str:
+    """Body of the '### Routing discipline' subsection of the principles spec."""
+    text = ARCH_PRINCIPLES.read_text()
+    marker = "### Routing discipline"
+    start = text.index(marker)
+    rest = text[start + len(marker) :]
+    # The section runs until the next heading of equal-or-higher level.
+    end = re.search(r"\n#{1,3} ", rest)
+    return rest[: end.start()] if end else rest
+
+
+def test_backup_flow_hand_rolls_linear_transition() -> None:
+    """The reality ADH-1 documents: the agent-led backup flow hand-rolls a Linear
+    lifecycle transition outside the verbs. If this stops being true, the
+    run-lifecycle carve-out in architecture-principles.md is stale — revisit it.
+    """
+    text = LINEAR_SYNC.read_text()
+    assert "issueUpdate" in text and "stateId" in text, (
+        "skills/linear-sync.md no longer shows a hand-rolled issueUpdate/stateId "
+        "transition. Re-check whether architecture-principles.md still needs its "
+        "run-lifecycle carve-out (ADH-1, CAL-596)."
+    )
+
+
+def test_routing_discipline_scoped_to_run_lifecycle() -> None:
+    """ADH-1: the routing-discipline principle must scope its guarantee to the
+    run lifecycle, not claim that *every* ticket mutation goes through a verb —
+    the backup flow is a standing counterexample."""
+    section = _routing_discipline_section()
+    assert _UNQUALIFIED_D5_CLAIM not in section, (
+        "architecture-principles.md 'Routing discipline' still makes the "
+        f"unqualified claim {_UNQUALIFIED_D5_CLAIM!r}. The agent-led backup flow "
+        "hand-rolls a Linear transition outside the verbs, so this overstates the "
+        "guarantee — scope it to run-lifecycle mutations (ADH-1, CAL-596)."
+    )
+    assert "run-lifecycle" in section or "run lifecycle" in section, (
+        "architecture-principles.md 'Routing discipline' must scope the guarantee "
+        "to run-lifecycle mutations (ADH-1, CAL-596)."
+    )
