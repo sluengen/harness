@@ -21,7 +21,7 @@ dev = [
     "pytest-cov>=4.1",
     "pytest-timeout>=2.3",
     "ruff>=0.1.6",
-    "mypy>=1.7",
+    "mypy>=2.0.0",
 ]
 
 [project.scripts]
@@ -72,9 +72,4 @@ markers = [
     "slow: marks tests as slow (deselect with -m 'not slow')",
     "integration: marks tests that require external services or a real Docker environment",
     "docker: marks tests that require a running Docker daemon",
-]
-
-[dependency-groups]
-dev = [
-    "mypy>=2.0.0",
 ]
