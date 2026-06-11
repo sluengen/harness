@@ -16,9 +16,10 @@ single object for ``status --json``) so callers can pipe into ``jq``.
 consumption (see ``specs/hermes-orchestration.md`` §Observability
 requirements):
 
-* ``current_node`` — step.id of the latest ``node_started`` event.
 * ``failure_reason`` — ``data.reason`` from the latest ``workflow_failed``
-  event; ``None`` if the run has not failed.
+  event; ``None`` if the run has not failed. The sole live emitter of
+  ``workflow_failed`` is ``harness cancel`` (``reason='cancelled'``) — the
+  engine that once emitted it was retired in CAL-574.
 * ``failure_retryable`` — ``True`` for transient failures; ``False`` for
   contract violations, cancellation, and loop exhaustion; ``None`` if no
   failure.
@@ -144,19 +145,17 @@ async def _fetch_run_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
 async def _fetch_enriched_status(db_path: Path, run_id: str) -> dict[str, Any]:
     """Fetch enriched status fields that require event-table queries.
 
-    Uses a single connection for all three queries to avoid redundant
+    Uses a single connection for both queries to avoid redundant
     connection setup on every status call.
 
     Returns a dict with:
-    ``current_node``      — ``str | None``: ``node_id`` of the latest
-                            ``node_started`` event.
     ``failure_reason``    — ``str | None``: ``data.reason`` from the latest
-                            ``workflow_failed`` event.
+                            ``workflow_failed`` event (emitted by
+                            ``harness cancel`` with ``reason='cancelled'``).
     ``agent_session_ids`` — ``list[str] | None``: unique ``session_id`` values
                             from ``tool_called`` event data payloads.
     """
     result: dict[str, Any] = {
-        "current_node": None,
         "failure_reason": None,
         "agent_session_ids": None,
     }
@@ -164,17 +163,6 @@ async def _fetch_enriched_status(db_path: Path, run_id: str) -> dict[str, Any]:
         return result
 
     async with aiosqlite.connect(db_path) as conn:
-        # current_node: node_id of the most recent node_started event.
-        async with conn.execute(
-            "SELECT node_id FROM events "
-            "WHERE run_id = ? AND event_type = 'node_started' "
-            "ORDER BY id DESC LIMIT 1",
-            (run_id,),
-        ) as cur:
-            row = await cur.fetchone()
-            if row is not None:
-                result["current_node"] = row[0]
-
         # failure_reason: data.reason from the most recent workflow_failed event.
         async with conn.execute(
             "SELECT data_json FROM events "
@@ -254,7 +242,6 @@ def status_command(
         payload.pop("state_json", None)
         payload.pop("inputs_json", None)
         # Enriched fields from the events table (Hermes observability).
-        payload["current_node"] = enriched.get("current_node")
         failure_reason: str | None = enriched.get("failure_reason")
         payload["failure_reason"] = failure_reason
         payload["failure_retryable"] = _derive_failure_retryable(failure_reason)

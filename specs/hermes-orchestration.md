@@ -280,7 +280,6 @@ Output (structured):
   workflow_version    integer
   target_repo_path    string     (from inputs_json)
   status              enum       queued | running | waiting | failed | completed | cancelled | stalled | paused
-  current_node        string?    step.id of the currently executing node
   started_at          ISO 8601
   completed_at        ISO 8601?
   duration_ms         integer?
@@ -429,7 +428,6 @@ Hermes should not parse raw event logs to determine run state. The `harness stat
 | `workflow_version` | integer | `runs.workflow_version` |
 | `target_repo_path` | string | `runs.inputs_json.repo` |
 | `status` | enum | `runs.status` |
-| `current_node` | string? | latest `node_started` event |
 | `started_at` | ISO 8601 | `runs.started_at` |
 | `completed_at` | ISO 8601? | `runs.completed_at` |
 | `duration_ms` | integer? | `runs.duration_ms` |
@@ -439,7 +437,7 @@ Hermes should not parse raw event logs to determine run state. The `harness stat
 | `artifact_paths` | object? | from `runs.state_json` key fields |
 | `agent_session_ids` | list[str]? | from `tool_called` events |
 
-`current_node` and `agent_session_ids` require a lightweight query against the events table. Both are included in `harness status --json` output.
+`failure_reason` and `agent_session_ids` require a lightweight query against the events table. Both are included in `harness status --json` output.
 
 ### Event streaming
 
@@ -488,7 +486,7 @@ Implement the Option A bridge so Hermes can drive the harness as a subprocess.
 
 ### ~~Ticket 2: Run status enrichment — current_node, agent_session_ids, after-id polling~~ ✓ shipped
 
-`harness status --json` now includes `current_node`, `failure_reason`, `failure_retryable`, `artifact_paths`, and `agent_session_ids`. `harness events` now accepts `--after-id <integer>` for incremental polling. See `specs/cli.md` §`harness status` and §`harness events` for the full field reference.
+`harness status --json` now includes `failure_reason`, `failure_retryable`, `artifact_paths`, and `agent_session_ids`. `harness events` now accepts `--after-id <integer>` for incremental polling. See `specs/cli.md` §`harness status` and §`harness events` for the full field reference. (`current_node` was also shipped here but removed in CAL-589: it derived from `node_started`, which the retired engine was the only producer of — it was always `null` under the verb model.)
 
 ### Ticket 3: Container packaging — separate-container deployment (Option B)
 
