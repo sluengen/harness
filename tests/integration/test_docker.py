@@ -20,11 +20,20 @@ critical path stays small once ``pyproject.toml`` / ``uv.lock`` are stable.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
 import subprocess
+import tempfile
+import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from harness.launcher import ControlServer
+from harness.launcher_client import LauncherClient, verb_argv_to_request
+from harness.state import store
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
@@ -150,3 +159,79 @@ def test_docker_agent_mode_requires_a_ticket(built_image: str) -> None:
         f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
     assert "agent mode requires a ticket" in result.stderr, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# AC-1, real container boundary: the launcher spawns a genuine one-shot verb
+# container in response to a control-socket request. Unlike the hermetic demo
+# (tests/integration/test_hermes_demo.py), this uses the REAL docker runner and
+# the REAL image — proving the socket → `docker run --rm <image> <verb>` →
+# bounded-result path the agent runtime relies on, without a live LLM/Linear.
+# ---------------------------------------------------------------------------
+
+
+def _sync(coro: Any) -> Any:
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _seed_open_run(db_path: Path, repo: Path, run_id: str) -> None:
+    async def _insert() -> None:
+        await store.init_db(db_path)
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO runs ("
+                "run_id, workflow_name, workflow_version, status, state_json, "
+                "inputs_json, base_branch, worktree_path, worktree_branch, "
+                "ticket, started_at, pid"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id, "", 0, "open", "{}", "{}", "dev", str(repo),
+                    f"harness/{run_id}", "CAL-585", "2026-06-11T00:00:00Z", 1234,
+                ),
+            )
+            await conn.commit()
+
+    _sync(_insert())
+
+
+def test_launcher_spawns_real_verb_container_over_socket(
+    built_image: str, tmp_path: Path
+) -> None:
+    """A `status` request over the launcher socket runs a REAL one-shot
+    `docker run --rm harness:dev status …` container that reads the mounted
+    ledger and returns the run row — the actual container boundary, end to end."""
+    workdir = tmp_path / "work"
+    repo = workdir / "repo"
+    repo.mkdir(parents=True)
+    run_id = "01JRUNDOCKERXXXXXXXXXXXX01"
+    _seed_open_run(repo / ".harness" / "harness.db", repo, run_id)
+
+    # Real ControlServer: the default docker runner actually shells out.
+    server_obj = ControlServer(
+        image=built_image,
+        roots=[workdir.resolve()],
+        host_env={},
+        home=tmp_path / "home",
+    )
+    with tempfile.TemporaryDirectory(dir="/tmp", prefix="hns-") as sd:
+        socket_path = Path(sd) / "control.sock"
+        server = server_obj.create_server(socket_path)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            req = verb_argv_to_request(["status", run_id, "--json"], repo=str(repo))
+            resp = LauncherClient(socket_path).request(str(req["op"]), req["params"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    assert resp["ok"] is True, resp
+    assert resp["exit_code"] == 0, resp
+    row = json.loads(resp["stdout"])
+    assert row["run_id"] == run_id
+    assert row["status"] == "open"

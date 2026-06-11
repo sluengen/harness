@@ -25,6 +25,13 @@ hermetic yet exercises the real verbs, the real gate, and the real ledger.
   is the one ``review`` and ``close`` are bound to (context retained).
 * **AC-3** — the trigger determines the outcome solely by reading the ledger
   (``status`` / ``events``); its readback writes nothing to the DB.
+
+This demo is hermetic by the human's settled strategy (no live ``claude -p`` /
+Linear / codex run; "local stand-in"). The *real* Docker container boundary —
+the launcher building and running an actual one-shot verb container in response
+to a socket request, and the real image's agent/verb entrypoint dispatch — is
+covered separately, with real ``docker run``, in
+``tests/integration/test_docker.py`` (``@pytest.mark.docker``).
 """
 
 from __future__ import annotations
