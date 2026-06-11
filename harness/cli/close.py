@@ -6,34 +6,43 @@ impossible unless a run was *started* and the *current tree* passed review.
 That is what makes interactive use auditable and unattended (Hermes-triggered)
 dispatch trustworthy — a merge can never land on an unreviewed or stale tree.
 
-The gate has two conjuncts:
+The gate has three conjuncts:
 
 1. There is an ``status='open'`` ``runs`` row for the ticket (resolved by
    ``--run-id`` or by ``worktree_path == --repo``).
-2. There exists a ``review`` event for that run with ``verdict='pass'`` whose
+2. The run's worktree is clean (``git status --porcelain`` is empty) — so what
+   merges is exactly what HEAD, and therefore the review, covers. The verb does
+   **not** auto-commit a dirty tree: uncommitted edits are not in HEAD, so a
+   pass for HEAD never reviewed them, and ``stale_review`` cannot catch
+   edit-without-committing (HEAD is unchanged). A guardrail self-enforces its
+   invariant rather than trusting the caller to have committed (CAL-586 /
+   CODE-1; CODE-INSIGHT-2).
+3. There exists a ``review`` event for that run with ``verdict='pass'`` whose
    ``reviewed_sha`` equals ``git rev-parse HEAD`` of the run's worktree.
 
 On pass, the verb performs the side effects in order (each kept *inside* the
 verb so its output never enters the printed JSON — the context-economy
 guarantee):
 
-1. ``git`` commit any uncommitted changes in the worktree.
-2. ``git merge --no-ff`` the run branch into ``base_branch``.
-3. ``git push`` the base branch.
-4. Transition the Linear ticket to Done.
-5. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
+1. ``git merge --no-ff`` the run branch into ``base_branch``.
+2. ``git push`` the base branch.
+3. Transition the Linear ticket to Done.
+4. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
 
 On a gate failure the verb exits non-zero with a structured refusal carrying a
 ``reason`` of exactly one of:
 
 * ``no_run`` — no open run for the ticket/worktree.
+* ``dirty_worktree`` — the worktree has uncommitted changes; commit and
+  re-review before close.
 * ``no_passing_review`` — no ``review`` event with ``verdict='pass'`` at all.
 * ``stale_review`` — a pass exists but for a different SHA (HEAD advanced).
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
 * 1 — unexpected error (git failure, push failure, DB error, Linear error).
-* 2 — gate refusal (``no_run`` / ``no_passing_review`` / ``stale_review``).
+* 2 — gate refusal (``no_run`` / ``dirty_worktree`` / ``no_passing_review`` /
+  ``stale_review``).
 """
 
 from __future__ import annotations
@@ -62,7 +71,7 @@ from harness.state import store
 __all__ = ["close_command", "CloseOutput"]
 
 # The structured refusal reasons — exactly one is reported on a gate failure.
-RefusalReason = Literal["no_run", "no_passing_review", "stale_review"]
+RefusalReason = Literal["no_run", "dirty_worktree", "no_passing_review", "stale_review"]
 
 
 class CloseOutput(BaseModel):
@@ -178,12 +187,34 @@ async def _run_close(
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
 
-    # 3. Enforce the review gate: a pass whose reviewed_sha == HEAD.
+    # 3. Refuse a dirty worktree. The gate binds to HEAD, but uncommitted edits
+    #    are not in HEAD — a pass for HEAD never reviewed them. ``stale_review``
+    #    catches commit-after-review (HEAD advanced); it cannot catch
+    #    edit-without-committing (HEAD unchanged). So the close verb must
+    #    self-enforce a clean tree rather than auto-commit unreviewed content
+    #    (CAL-586 / CODE-1; CODE-INSIGHT-2: a guardrail self-enforces).
+    try:
+        dirty = await asyncio.to_thread(_status_porcelain, Path(worktree_path))
+    except _CloseError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _CloseError(
+            f"failed to read git status for worktree {worktree_path}: {exc}", 1
+        ) from exc
+    if dirty:
+        raise _CloseError(
+            f"worktree {worktree_path} has uncommitted changes; commit and "
+            f"re-review before close",
+            2,
+            reason="dirty_worktree",
+        )
+
+    # 4. Enforce the review gate: a pass whose reviewed_sha == HEAD.
     gate = await _evaluate_gate(db_path, resolved_run_id, head_sha)
     if gate is not None:
         raise _CloseError(gate[1], 2, reason=gate[0])
 
-    # 4. Validate Linear is configured before any local side effect, so a
+    # 5. Validate Linear is configured before any local side effect, so a
     #    missing key does not leave a half-merged tree.
     try:
         api_key = linear_api_key()
@@ -191,13 +222,12 @@ async def _run_close(
         raise _CloseError(str(exc), 2) from exc
     client = LinearClient(api_key=api_key)
 
-    # 5. Merge + push (sync git, offloaded to a thread).  Output is captured and
+    # 6. Merge + push (sync git, offloaded to a thread).  Output is captured and
     #    discarded inside the verb — it never enters the printed JSON.
     try:
         await asyncio.to_thread(
             _merge_and_push,
             repo_root=repo_root,
-            worktree_path=Path(worktree_path),
             base_branch=base_branch,
             worktree_branch=worktree_branch,
         )
@@ -206,13 +236,13 @@ async def _run_close(
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
 
-    # 6. Transition the ticket to Done (remote side effect).
+    # 7. Transition the ticket to Done (remote side effect).
     try:
         await client.transition_to_done(ticket)
     except (LinearNotFound, LinearRequestError) as exc:
         raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
 
-    # 7. Flip the run row to closed and record the close event (audit trail).
+    # 8. Flip the run row to closed and record the close event (audit trail).
     closed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     try:
         await _mark_run_closed(db_path, resolved_run_id)
@@ -349,19 +379,42 @@ def _rev_parse_head(worktree_path: Path) -> str:
     return result.stdout.strip()
 
 
+def _status_porcelain(worktree_path: Path) -> str:
+    """Return ``git status --porcelain`` output for ``worktree_path`` (stripped).
+
+    A non-empty result means the worktree has uncommitted changes (staged,
+    unstaged, or untracked). Sync — run in a thread. Raises :class:`_CloseError`
+    on a git failure so the caller reports an exit-1 error, not a false-clean.
+    """
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "-C", str(worktree_path), "status", "--porcelain"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise _CloseError(
+            f"git status failed for {worktree_path}: {result.stderr.strip()}",
+            1,
+        )
+    return result.stdout.strip()
+
+
 def _merge_and_push(
     *,
     repo_root: Path,
-    worktree_path: Path,
     base_branch: str,
     worktree_branch: str,
 ) -> str:
-    """Commit pending work, merge the run branch into ``base``, push.
+    """Merge the run branch into ``base`` and push.
 
-    Runs entirely inside the verb (sync git, offloaded via ``asyncio.to_thread``).
-    Returns the concatenated git output so the caller may log it, but that
-    output is deliberately *not* propagated into the printed JSON
-    (context-economy).  Raises :class:`_CloseError` on any git failure.
+    The worktree is guaranteed clean by the time this runs — ``_run_close``
+    refuses a dirty tree (``dirty_worktree``) before any side effect, so there
+    is nothing to commit here. Runs entirely inside the verb (sync git,
+    offloaded via ``asyncio.to_thread``). Returns the concatenated git output so
+    the caller may log it, but that output is deliberately *not* propagated into
+    the printed JSON (context-economy). Raises :class:`_CloseError` on any git
+    failure.
     """
     output: list[str] = []
 
@@ -380,19 +433,8 @@ def _merge_and_push(
                 1,
             )
 
-    # 1. Commit any uncommitted changes in the worktree (only if dirty).
-    status = subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(worktree_path), "status", "--porcelain"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if status.stdout.strip():
-        _run(worktree_path, "add", "-A")
-        _run(worktree_path, "commit", "-m", f"chore: finalize {worktree_branch}")
-
-    # 2. Merge the run branch into base, then push base — operated from the
-    #    main repo checkout so the base branch's working tree is what advances.
+    # Merge the run branch into base, then push base — operated from the main
+    # repo checkout so the base branch's working tree is what advances.
     _run(repo_root, "checkout", base_branch)
     _run(repo_root, "merge", "--no-ff", worktree_branch, "-m", f"Merge {worktree_branch}")
     _run(repo_root, "push", "origin", base_branch)

@@ -67,14 +67,21 @@ def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A throw-away git repo with one commit on ``dev``."""
+    """A throw-away git repo with one commit on ``dev``.
+
+    ``.harness/`` is gitignored exactly as in the real repo (.gitignore:24) so
+    the ledger DB the verbs create under it never registers as a dirty worktree
+    — the ``dirty_worktree`` gate (CAL-586) keys off ``git status --porcelain``,
+    which excludes ignored paths.
+    """
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     _git(repo_root, "init", "-b", "dev")
     _git(repo_root, "config", "user.email", "test@example.com")
     _git(repo_root, "config", "user.name", "Test")
+    (repo_root / ".gitignore").write_text(".harness/\n.worktrees/\n")
     (repo_root / "README.md").write_text("hello\n")
-    _git(repo_root, "add", "README.md")
+    _git(repo_root, "add", ".gitignore", "README.md")
     _git(repo_root, "commit", "-m", "initial")
     return repo_root
 
@@ -280,6 +287,60 @@ def test_ac2_stale_review_when_head_advanced(repo: Path, db_path: Path) -> None:
     assert payload["reason"] == "stale_review"
 
     # No merge, no Done, run still open.
+    merge.assert_not_called()
+    stub.transition_to_done.assert_not_called()
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+# ---------------------------------------------------------------------------
+# AC-dirty: pass-then-edit-without-committing → refusal dirty_worktree (CAL-586)
+# ---------------------------------------------------------------------------
+
+
+def test_dirty_worktree_refused_when_uncommitted_edits(repo: Path, db_path: Path) -> None:
+    """A pass for HEAD does NOT cover uncommitted edits — close must refuse.
+
+    CAL-586 / CODE-1: the gate binds to HEAD, but ``_merge_and_push`` used to
+    auto-commit a dirty worktree, merging content that no review ever saw.
+    ``stale_review`` catches commit-after-review; it does NOT catch
+    edit-without-committing because HEAD is unchanged. The dirty tree must be
+    refused outright (``dirty_worktree``) before any merge.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    # Edit the worktree WITHOUT committing — HEAD still equals the reviewed SHA.
+    (repo / "sneaky.txt").write_text("unreviewed content\n")
+    assert _head_sha(repo) == head  # the pass still nominally matches HEAD
+
+    stub = _make_linear_stub()
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code != 0
+    payload = json.loads(result.output)
+    assert payload["reason"] == "dirty_worktree"
+
+    # No merge, no Done, run still open — the unreviewed edit never lands.
+    merge.assert_not_called()
+    stub.transition_to_done.assert_not_called()
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+def test_dirty_worktree_refused_with_modified_tracked_file(repo: Path, db_path: Path) -> None:
+    """Modifying a tracked file (not just adding an untracked one) is also refused."""
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    (repo / "README.md").write_text("hello\nedited after review\n")
+    assert _head_sha(repo) == head
+
+    stub = _make_linear_stub()
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code != 0
+    assert json.loads(result.output)["reason"] == "dirty_worktree"
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
