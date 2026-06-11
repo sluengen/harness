@@ -220,8 +220,7 @@ Default (human) output: `run_id`, `workflow_name`, `workflow_version`, `status`,
 
 | Field | Type | Source |
 |---|---|---|
-| `current_node` | `string?` | `node_id` from the latest `node_started` event |
-| `failure_reason` | `string?` | `data.reason` from the latest `workflow_failed` event |
+| `failure_reason` | `string?` | `data.reason` from the latest `workflow_failed` event (emitted by `harness cancel`, `reason='cancelled'`) |
 | `failure_retryable` | `bool?` | derived from `failure_reason`; `null` if no failure |
 | `artifact_paths` | `object?` | non-null artifact fields from `state` (`worktree_path`, `worktree_branch`, `pr_url`, `report_path`) |
 | `agent_session_ids` | `list[str]?` | unique `session_id` values from `tool_called` event data |

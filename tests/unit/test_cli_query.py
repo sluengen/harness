@@ -28,6 +28,7 @@ from typing import Any
 from typer.testing import CliRunner
 
 from harness.cli import app
+from harness.cli.query import _derive_failure_retryable
 from harness.state import store
 
 runner = CliRunner()
@@ -617,93 +618,64 @@ def test_db_flag_overrides_default(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness status --json: enriched fields (current_node, failure_retryable,
-# artifact_paths, agent_session_ids)
+# harness status --json: enriched fields (failure_retryable, artifact_paths,
+# agent_session_ids)
+#
+# ``failure_retryable`` derives purely from ``failure_reason``; it is unit-
+# tested against the function directly below. The live DB→status wiring (a
+# ``workflow_failed`` event surfacing as ``failure_reason``/``failure_retryable``)
+# is covered end-to-end by ``test_cancel_surfaces_failure_reason_in_status`` in
+# ``test_cli_cancel.py`` — ``harness cancel`` is the sole live emitter of
+# ``workflow_failed``. We do not manufacture synthetic ``workflow_failed`` events
+# here (that was the CODE-4 / CAL-589 false-green pattern).
 # ---------------------------------------------------------------------------
 
 
-def test_status_json_includes_current_node(tmp_path: Path) -> None:
-    """``current_node`` is populated from the latest ``node_started`` event."""
+def test_status_json_omits_current_node(tmp_path: Path) -> None:
+    """``current_node`` is no longer emitted (CAL-589).
+
+    It derived from ``node_started``, which only the engine retired in CAL-574
+    ever emitted — always ``null`` under the verb model. This locks its removal:
+    the field must be absent from the ``status --json`` payload (this test fails
+    against the parent implementation, which still emitted it).
+    """
     db_path = tmp_path / ".harness" / "harness.db"
     _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-a",
-                timestamp="2026-05-08T12:00:01Z")
-    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-b",
-                timestamp="2026-05-08T12:00:02Z")
 
     result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
-    # Latest node_started is step-b.
-    assert payload["current_node"] == "step-b"
+    assert "current_node" not in payload
 
 
-def test_status_json_current_node_is_none_when_no_node_started(tmp_path: Path) -> None:
-    """``current_node`` is None when no ``node_started`` events exist."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="workflow_started",
-                timestamp="2026-05-08T12:00:00Z")
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["current_node"] is None
+def test_derive_failure_retryable_false_for_contract_violation() -> None:
+    """ContractViolation* reasons need prompt repair — not retryable."""
+    assert _derive_failure_retryable("ContractViolation: not_called") is False
 
 
-def test_status_json_failure_retryable_false_for_contract_violation(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ContractViolation failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=3)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "ContractViolation: not_called"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "ContractViolation: not_called"
-    assert payload["failure_retryable"] is False
+def test_derive_failure_retryable_false_for_loop_exhausted() -> None:
+    """``loop_exhausted`` means the budget was spent — not retryable."""
+    assert _derive_failure_retryable("loop_exhausted") is False
 
 
-def test_status_json_failure_retryable_false_for_loop_exhausted(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ``loop_exhausted`` failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "loop_exhausted"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "loop_exhausted"
-    assert payload["failure_retryable"] is False
+def test_derive_failure_retryable_false_for_cancelled() -> None:
+    """``cancelled`` is an intentional termination — not retryable."""
+    assert _derive_failure_retryable("cancelled") is False
 
 
-def test_status_json_failure_retryable_false_for_cancelled(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ``cancelled`` (user-initiated)."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="cancelled", exit_code=130)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "cancelled"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_retryable"] is False
+def test_derive_failure_retryable_false_for_rejected() -> None:
+    """``rejected`` is a human termination — not retryable."""
+    assert _derive_failure_retryable("rejected") is False
 
 
-def test_status_json_failure_retryable_true_for_transient_error(tmp_path: Path) -> None:
-    """``failure_retryable`` is True for generic (transient) failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "ConnectionError"})
+def test_derive_failure_retryable_true_for_transient_error() -> None:
+    """Generic (transient) failures are retryable."""
+    assert _derive_failure_retryable("ConnectionError") is True
 
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "ConnectionError"
-    assert payload["failure_retryable"] is True
+
+def test_derive_failure_retryable_none_when_no_failure() -> None:
+    """No ``failure_reason`` → no retryable verdict."""
+    assert _derive_failure_retryable(None) is None
 
 
 def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> None:
