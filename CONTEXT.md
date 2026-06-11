@@ -49,7 +49,7 @@ A set of **deterministic, audited verbs an agent calls** to drive a Linear ticke
 
 ## Architecture
 
-The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch. The Linear webhook intake lives in `intake/`. (`workflows/` and `contracts/` are empty stubs left from the retired engine.)
+The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch. The Linear webhook intake lives in `intake/`.
 
 Three verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
