@@ -67,7 +67,7 @@ New columns added after the initial schema are applied via `ALTER TABLE ... ADD 
 
 | Column | Type | Added by | Description |
 |---|---|---|---|
-| `pid` | `INTEGER` | H-2-006 | PID of the owning harness process; used by `harness cancel`. |
+| `pid` | `INTEGER` | H-2-006 | Vestigial. Once held the owning process PID for the engine-era SIGTERM `harness cancel`; that path was removed in CAL-587, so `harness start` no longer writes it (always `NULL`). Retained as a dormant column to avoid a destructive migration on existing DBs. |
 | `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
 | `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
 
@@ -83,7 +83,7 @@ The run lifecycle under the **verb model** (proposal [`harness-as-tool`](proposa
 | `running` | engine (legacy) | At least one node has started. |
 | `completed` | engine (legacy) | All nodes completed successfully. |
 | `failed` | engine (legacy) | A node or workflow-level error terminated the run. |
-| `cancelled` | SIGTERM path | Run was cancelled by SIGTERM. |
+| `cancelled` | `harness cancel` | Run abandoned (close-without-merge). The verb marks the in-flight run cancelled, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`. Also set by the intake reconciler (`intake.cancel_run`) for legacy `running`/`pending` rows. |
 | `stalled` | engine (legacy) | No progress within the stall timeout. |
 | `paused` | engine (v2, legacy) | Run awaiting a decision. |
 

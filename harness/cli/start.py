@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -345,8 +344,8 @@ async def _insert_open_run(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, "
             "state_json, inputs_json, base_branch, worktree_path, "
-            "worktree_branch, ticket, started_at, pid"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "worktree_branch, ticket, started_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 "",          # workflow_name — not yet known at open time
@@ -359,7 +358,6 @@ async def _insert_open_run(
                 worktree_branch,
                 ticket,
                 started_at,
-                os.getpid(),
             ),
         )
         await conn.commit()

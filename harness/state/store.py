@@ -162,8 +162,11 @@ async def _migrate(db_path: Path) -> None:
     idempotent: the ``OperationalError`` raised when a column already exists
     is silently swallowed.
 
-    H-2-006: ``runs.pid INTEGER`` — process ID of the harness run process,
-        used by ``harness cancel <run-id>`` to deliver SIGTERM.
+    H-2-006: ``runs.pid INTEGER`` — vestigial. Once held the harness run
+        process PID for the engine-era SIGTERM ``harness cancel``; that path was
+        removed in CAL-587, so ``harness start`` no longer writes it (the column
+        is always ``NULL``). The migration is retained so existing DBs keep the
+        column rather than forcing a destructive ``DROP COLUMN``.
     CAL-570: ``runs.ticket TEXT`` — Linear ticket identifier (e.g. ``CAL-570``)
         for runs opened via ``harness start``.
     CAL-570: ``runs.worktree_path TEXT`` — filesystem path of the worktree
