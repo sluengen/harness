@@ -30,12 +30,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from harness.identity import WORKTREES_SUBDIR
+
 __all__ = [
+    "WORKTREES_SUBDIR",
     "CleanupPolicy",
     "WorktreeCleanupOutput",
     "WorktreeCreateOutput",
     "WorktreeNode",
     "WorktreeNodeError",
+    "worktree_path",
 ]
 
 
@@ -86,9 +90,15 @@ async def _git(repo: Path, *args: str) -> tuple[int, str, str]:
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 
-def _worktree_path_for(repo_root: Path, run_id: str) -> Path:
-    """The canonical worktree location for a given run id."""
-    return repo_root / ".worktrees" / "harness" / run_id
+def worktree_path(repo_root: Path, run_id: str) -> Path:
+    """The canonical worktree location for a run: ``<repo>/.worktrees/harness/<run_id>``.
+
+    Derives from :data:`harness.identity.WORKTREES_SUBDIR` so the layout has one
+    source. Unlike :func:`harness.identity.worktree_dir`, this does **not**
+    validate ``run_id`` as a ULID — the lifecycle helper operates on whatever id
+    the caller created.
+    """
+    return repo_root / WORKTREES_SUBDIR / run_id
 
 
 def _branch_for(run_id: str, prefix: str = "harness") -> str:
@@ -120,7 +130,7 @@ class WorktreeNode:
               reuse an existing worktree — that would mask state bugs)
             * if ``git worktree add`` fails (e.g. unknown ``base``).
         """
-        path = _worktree_path_for(repo_root, run_id)
+        path = worktree_path(repo_root, run_id)
         branch = _branch_for(run_id, prefix=branch_prefix)
 
         if path.exists():
