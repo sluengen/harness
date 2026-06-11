@@ -1,7 +1,7 @@
 <!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
-last_updated: 2026-06-11
+last_updated: 2026-06-11  # CAL-599: add self-enforcing-guardrails principle
 ---
 
 # Architecture Principles
@@ -23,6 +23,10 @@ How this system is built — the technical principles that govern design *here*.
 ### Enforcement
 
 **Process enforcement is a gate inside `close`, bound to the reviewed tree.** `review` records the git SHA it reviewed; `close` refuses to merge unless the ledger holds a `start` for the ticket **and** a `verdict=pass` whose reviewed SHA equals the worktree's current HEAD. This closes the stale-pass hole and is the safety rail that makes unattended (Hermes-triggered) dispatch trustworthy. *Derived from: product requirement — no ticket merges unreviewed.*
+
+### Self-enforcing guardrails
+
+**A deterministic guardrail must self-enforce its invariant, never assume the calling agent established the precondition.** An invariant the caller can violate by accident is not enforced. A verb that depends on a precondition checks it itself and refuses on violation — it does not auto-correct the tree into compliance, and it does not trust an upstream step to have held the line. The concrete instance: `close` refuses a `dirty_worktree` rather than auto-committing, because uncommitted edits are not in HEAD and so were never reviewed — and `stale_review` (which catches commit-*after*-review by an advanced HEAD) cannot catch edit-*without*-committing (HEAD is unchanged). Auto-committing would silently merge unreviewed content; trusting the agent to have committed leaves the invariant to chance. *Derived from: CODE-INSIGHT-2 (evidence CODE-1 / CAL-586) and the Enforcement principle above — the gate's correctness depends on the tree it binds to being exactly what was reviewed.*
 
 ### Routing discipline
 
