@@ -16,13 +16,12 @@ Run `scripts/verify.sh` and confirm every check passes:
 bash scripts/verify.sh
 ```
 
-The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version`) → workflow validation (`harness validate workflows/build.yaml`).
+The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version` and `harness --help`).
 
 - [ ] `ruff check .` — zero errors
 - [ ] `mypy harness intake` — zero errors
 - [ ] `pytest` — all tests pass, no unexpected skips
-- [ ] CLI smoke (`harness version`) — prints a version string
-- [ ] Workflow validation (`harness validate`) — no static errors
+- [ ] CLI smoke — `harness version` prints a version string and `harness --help` exits cleanly
 
 ## Tagging
 

@@ -936,17 +936,18 @@ harness version                           [--json]
 # Harness-as-tool verbs (proposal harness-as-tool.md — agent calls these)
 harness start  <ticket>   [--base <b>] [--repo <p>] [--db <p>] [--json]
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
+harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 ```
 
 #### Harness-as-tool verbs
 
-`start` / `review` (and a future `close`) are the audited, one-shot verbs an
+`start` / `review` / `close` are the audited, one-shot verbs an
 orchestrating agent calls — see `specs/proposals/harness-as-tool.md`. They
 operate over the SQLite ledger, not the workflow engine.
 
 **`harness review`** runs the configured reviewer (codex) against the worktree's
 current HEAD and records a `review` event bound to the exact SHA reviewed — the
-load-bearing correctness detail behind decision **D2** (the future `close` gate
+load-bearing correctness detail behind decision **D2** (the `close` gate
 refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused).
 
 - Resolves *the current run* — the `status='open'` run whose `worktree_path`
