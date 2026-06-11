@@ -60,7 +60,10 @@ def _request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.connect(str(socket_path))
         client.sendall((json.dumps(payload) + "\n").encode())
-        client.shutdown(socket.SHUT_WR)
+        # No half-close after sending: the request line is newline-framed, and
+        # the server writes its response then closes (signalling EOF). Tearing
+        # down the write side here would race the server's close and raise
+        # ENOTCONN under load (CAL-605). recv loops to EOF below.
         chunks: list[bytes] = []
         while True:
             chunk = client.recv(4096)
@@ -69,6 +72,58 @@ def _request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]
             chunks.append(chunk)
     result: dict[str, object] = json.loads(b"".join(chunks))
     return result
+
+
+def test_request_does_not_half_close_its_write_side(socket_path: Path) -> None:
+    """Regression for CAL-605: ``_request`` must not half-close after sending.
+
+    The original helper called ``shutdown(SHUT_WR)`` after ``sendall``; under
+    load that raced the server's close and raised ``ENOTCONN`` (a sporadic gate
+    exit 1). The fix removes it — the request is newline-framed and the response
+    is read to EOF, so the half-close is unnecessary.
+
+    This detects the half-close *behaviorally* and deterministically, with no
+    dependence on the platform's ``shutdown`` error semantics: a
+    ``shutdown(SHUT_WR)`` delivers EOF to the server's read side in-stream,
+    right after the request bytes. So after the server reads the newline-framed
+    request, one more ``recv`` returns ``b""`` immediately iff the client
+    half-closed (bug), or blocks until a short timeout iff the write side is
+    still open (fixed). The server reports which it observed; the test asserts
+    the client did *not* half-close. Reintroducing ``shutdown(SHUT_WR)`` flips
+    ``half_closed`` to ``True`` and fails this test.
+    """
+    ready = threading.Event()
+
+    def serve() -> None:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
+            srv.bind(str(socket_path))
+            srv.listen(1)
+            ready.set()
+            conn, _ = srv.accept()
+            with conn:
+                buf = b""
+                while not buf.endswith(b"\n"):
+                    part = conn.recv(4096)
+                    if not part:
+                        break
+                    buf += part
+                # Probe the client's write side: EOF now == it half-closed.
+                conn.settimeout(0.5)
+                try:
+                    half_closed = conn.recv(4096) == b""
+                except (TimeoutError, OSError):
+                    half_closed = False
+                conn.settimeout(None)
+                conn.sendall((json.dumps({"half_closed": half_closed}) + "\n").encode())
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    assert ready.wait(5)
+    try:
+        resp = _request(socket_path, {"op": "ping"})
+        assert resp == {"half_closed": False}
+    finally:
+        thread.join(5)
 
 
 def test_full_verb_cycle_over_the_socket(repo: Path, tmp_path: Path, socket_path: Path) -> None:
