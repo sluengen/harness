@@ -30,7 +30,7 @@ How this system is built — the technical principles that govern design *here*.
 
 ### Routing discipline
 
-**Every git and ticket mutation goes through a verb.** The audit trail (the `runs` ledger) is complete only if nothing hand-rolls a `git merge`/`push` or a Linear GraphQL mutation for the run lifecycle. Guidance-mandated in the `/harness run` skill, with `close` validating against the ledger as a backstop. *Derived from: the audit-trail guarantee above.*
+**Every *run-lifecycle* git and ticket mutation goes through a verb.** The audit trail (the `runs` ledger) is complete only if nothing in the verb loop hand-rolls a `git merge`/`push` or a Linear GraphQL mutation for the run lifecycle. Guidance-mandated in the `/harness run` skill, with `close` validating against the ledger as a backstop. The scope is the run lifecycle, not *all* mutations: the agent-led backup flow (`/start` → `/review` → `/ship`) sits outside this guarantee by design — it hand-rolls its Linear lifecycle transition (`issueUpdate … stateId` in `skills/linear-sync.md`) and is not recorded in the `runs` ledger. That is acceptable precisely because it is the non-harness path, run only when a task does not fit the verb loop; it never merges through `close`, so the gate it bypasses is one it was never meant to hold. *Derived from: the audit-trail guarantee above.*
 
 ## Cross-cutting decisions
 
