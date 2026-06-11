@@ -335,14 +335,14 @@ Input:
 
 Output:
   run_id              string
-  outcome             "cancelled" | "not_running"
+  outcome             "cancelled"
 
 Exit code: 0 on accepted, 2 if run not found or already terminal.
 ```
 
 CLI form: `harness cancel <run-id>`
 
-Cancellation is cooperative. The harness delivers SIGTERM to the running process; the runner's signal handler emits `workflow_failed` with `reason='cancelled'`, runs cleanup nodes (worktree teardown), and exits 130.
+Cancellation is *abandon / close-without-merge* (CAL-587), not a signal: the harness marks the in-flight run `status='cancelled'`, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'` (so `failure_reason='cancelled'` surfaces in run status). There is no process to signal — `harness start` writes a ledger row and exits. A terminal run cannot be cancelled (exit 2).
 
 #### 5. Fetch artifacts
 

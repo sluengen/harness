@@ -179,20 +179,30 @@ The default `ClaudeAgent` is constructed at dispatch time via `_build_runner`. `
 
 ## `harness cancel`
 
-Delivers a SIGTERM to the process running the workflow identified by `run-id`.
-The process PID is recorded in the `runs.pid` column at run-start (H-2-006).
+Abandons the in-flight run identified by `run-id` — the *close-without-merge*
+terminal transition under the verb model (CAL-587). It signals no process: the
+engine-era `harness run` daemon it used to SIGTERM no longer exists, and
+`harness start` writes a ledger row then exits, so `runs.pid` named no live
+process. Instead `cancel` marks the run `status='cancelled'`, stamps
+`completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`
+(so `harness status` reports `failure_reason='cancelled'`,
+`failure_retryable=false`).
+
+A run is cancellable only from an explicit in-flight allowlist — `open` (verb
+model) plus the legacy `running` / `pending` / `paused` / `stalled` the retired
+engine and the intake reconciler still mark. The allowlist (not a terminal
+denylist) means an unknown or future status is refused, never silently
+overwritten. The status flip and the `workflow_failed` event are written in one
+transaction, so a cancelled run always carries its cancellation event.
 
 Errors (exit 2):
 - Run not found in the DB.
-- Run exists but status is not `running` (already completed, failed, cancelled, or paused).
-- Run was started before H-2-006 and has no recorded PID (`runs.pid IS NULL`).
-- The recorded PID belongs to a process that is no longer alive (stale PID).
-- Insufficient permission to signal the process.
+- Run is already terminal (`closed`, `cancelled`, `completed`, or `failed`) —
+  there is nothing to abandon.
+- Run has an unrecognised status (outside the canonical `RUN_STATUSES`).
 
-On success (exit 0): prints a confirmation line (or `--json` object) and exits.
-The running `harness run` process handles the SIGTERM by converting it to
-`KeyboardInterrupt`, which flows through the normal cancellation path:
-`workflow_failed` with `reason='cancelled'`, `status='cancelled'`, exit 130.
+On success (exit 0): marks the run cancelled, records the event, and prints a
+confirmation line (or `--json` object).
 
 `--json` output:
 - Success: `{"run_id": "<id>", "outcome": "cancelled"}`
@@ -263,7 +273,7 @@ Duration format: `30m`, `12h`, `7d` (minutes, hours, days). `s` (seconds) is als
 | 2 | Invocation error (bad flags, unknown run-id, workflow YAML invalid) |
 | 3 | Contract violation (LLM output failed validation after retry exhaustion) |
 | 4 | Paused awaiting decision (v2 — reserved) |
-| 130 | SIGINT / SIGTERM / KeyboardInterrupt (running workflow cancelled) |
+| 130 | SIGINT / KeyboardInterrupt (legacy engine). The `cancel` verb does not signal a process — it exits 0/2 (see `harness cancel`). |
 
 ---
 

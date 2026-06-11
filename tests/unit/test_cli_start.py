@@ -949,3 +949,37 @@ def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> Non
 
     rows = fetch_runs(expected_db)
     assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# CAL-587: start no longer writes the vestigial runs.pid column
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
+    """The open run row leaves ``pid`` NULL.
+
+    ``pid`` only ever served the engine-era ``harness cancel`` SIGTERM path,
+    which was dead on arrival under the verb model (``start`` writes the row and
+    exits, so the PID never named a live process). CAL-587 removed the write.
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+
+    async def _fetch_pid() -> Any:
+        async with store.connect(db_path) as conn:
+            cur = await conn.execute("SELECT pid FROM runs")
+            row = await cur.fetchone()
+        return row[0] if row is not None else "no-row"
+
+    assert _sync(_fetch_pid()) is None
