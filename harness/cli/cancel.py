@@ -11,10 +11,13 @@ branches.  CAL-587 redefines the verb for the contract it actually serves:
 1. Resolve the ``runs`` row for ``run-id``.
 2. Refuse if the run is already terminal (``closed`` / ``cancelled`` /
    ``completed`` / ``failed``) — there is nothing to abandon.
-3. Mark the run ``status='cancelled'`` and stamp ``completed_at`` (mirroring
-   ``intake.cancel_run``), then emit a ``workflow_failed`` event with
-   ``reason='cancelled'`` so ``harness status`` surfaces
-   ``failure_reason='cancelled'`` (and ``failure_retryable=False``).
+3. In **one transaction**, mark the run ``status='cancelled'`` + stamp
+   ``completed_at`` (mirroring ``intake.cancel_run``) *and* append a
+   ``workflow_failed`` event with ``reason='cancelled'``. Both land together or
+   not at all — a run marked ``cancelled`` with no cancellation event is an
+   inconsistent ledger that retry cannot repair (a terminal run refuses
+   re-cancel). ``harness status`` then surfaces ``failure_reason='cancelled'``
+   (and ``failure_retryable=False``).
 
 This keeps the public verb contract (SPEC §5) and the launcher ``cancel`` op
 honest: the verb now does what its name promises and leaves an auditable mark
@@ -35,7 +38,7 @@ from pathlib import Path
 
 import typer
 
-from harness.events.emitter import EventEmitter
+from harness.events.schema import EVENT_TYPES
 from harness.state import store
 
 __all__ = ["cancel_command"]
@@ -45,6 +48,13 @@ __all__ = ["cancel_command"]
 #: ``pending`` / ``paused`` / ``stalled`` the retired engine and intake path
 #: still write) is in-flight and therefore cancellable.
 _TERMINAL_STATUSES: tuple[str, ...] = ("closed", "cancelled", "completed", "failed")
+
+#: The cancellation event. ``workflow_failed`` with ``reason='cancelled'`` is the
+#: canonical mark (a member of :data:`EVENT_TYPES`) that ``harness status`` reads
+#: to derive ``failure_reason='cancelled'`` / ``failure_retryable=False``.
+_CANCEL_EVENT_TYPE = "workflow_failed"
+_CANCEL_REASON = "cancelled"
+assert _CANCEL_EVENT_TYPE in EVENT_TYPES  # guard against a future rename drift
 
 
 def _resolve_db_path(db: Path | None) -> Path:
@@ -69,44 +79,61 @@ async def _run_cancel(db_path: Path, run_id: str) -> None:
         raise _CancelError(f"no run with run_id={run_id!r}", 2)
 
     completed_at = datetime.now(UTC).isoformat()
+    event_ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    event_data = json.dumps({"reason": _CANCEL_REASON})
+
     async with store.connect(db_path) as conn:
-        cur = await conn.execute("SELECT status FROM runs WHERE run_id = ?", (run_id,))
-        row = await cur.fetchone()
-        if row is None:
-            raise _CancelError(f"no run with run_id={run_id!r}", 2)
-
-        status = str(row[0])
-        if status in _TERMINAL_STATUSES:
-            raise _CancelError(
-                f"run {run_id!r} is already terminal (status={status!r}); "
-                "only an in-flight run can be cancelled",
-                2,
+        # The status flip and the audit event must land together: a run marked
+        # `cancelled` with no cancellation event is an inconsistent ledger that
+        # retry cannot repair (a terminal run refuses re-cancel). So both writes
+        # share one transaction — commit once, or roll back together.
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = await conn.execute(
+                "SELECT status FROM runs WHERE run_id = ?", (run_id,)
             )
+            row = await cur.fetchone()
+            if row is None:
+                raise _CancelError(f"no run with run_id={run_id!r}", 2)
 
-        # Guard the transition on the exact status we observed — optimistic
-        # concurrency. If a close/cancel raced in between the read above and
-        # here, the status differs, zero rows change, and we refuse rather than
-        # overwrite a terminal state (and emit no event).
-        update = await conn.execute(
-            "UPDATE runs SET status = 'cancelled', completed_at = ? "
-            "WHERE run_id = ? AND status = ?",
-            (completed_at, run_id, status),
-        )
-        if update.rowcount == 0:
-            raise _CancelError(
-                f"run {run_id!r} changed state concurrently; only an in-flight "
-                "run can be cancelled",
-                2,
+            status = str(row[0])
+            if status in _TERMINAL_STATUSES:
+                raise _CancelError(
+                    f"run {run_id!r} is already terminal (status={status!r}); "
+                    "only an in-flight run can be cancelled",
+                    2,
+                )
+
+            # Guard the transition on the exact status we observed — optimistic
+            # concurrency. If a close/cancel raced in between the read above and
+            # here, the status differs and zero rows change: refuse rather than
+            # overwrite a terminal state.
+            update = await conn.execute(
+                "UPDATE runs SET status = 'cancelled', completed_at = ? "
+                "WHERE run_id = ? AND status = ?",
+                (completed_at, run_id, status),
             )
-        await conn.commit()
+            if update.rowcount == 0:
+                raise _CancelError(
+                    f"run {run_id!r} changed state concurrently; only an in-flight "
+                    "run can be cancelled",
+                    2,
+                )
 
-    # Emit the terminal event AFTER the status flip commits, so a failed write
-    # never leaves a `workflow_failed` event on a run that is still open.
-    await EventEmitter(db_path).emit(
-        run_id=run_id,
-        event_type="workflow_failed",
-        data={"reason": "cancelled"},
-    )
+            # Append the cancellation event in the same transaction (mirrors
+            # EventEmitter's INSERT; inlined here so it shares the commit).
+            await conn.execute(
+                "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+                "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, None, _CANCEL_EVENT_TYPE, event_ts, None, event_data),
+            )
+            await conn.commit()
+        except _CancelError:
+            await conn.rollback()
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await conn.rollback()
+            raise _CancelError(f"failed to record cancellation: {exc}", 1) from exc
 
 
 def cancel_command(

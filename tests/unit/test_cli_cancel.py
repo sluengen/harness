@@ -264,3 +264,40 @@ def test_cancel_success_json(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["run_id"] == "R1"
     assert payload["outcome"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Atomicity — the status flip and the audit event land together or not at all
+# ---------------------------------------------------------------------------
+
+
+def _drop_events_table(db_path: Path) -> None:
+    """Drop the ``events`` table so the cancellation event INSERT fails."""
+
+    async def _drop() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute("DROP TABLE events")
+            await conn.commit()
+
+    _run_sync(_drop())
+
+
+def test_cancel_event_write_failure_rolls_back_status(tmp_path: Path) -> None:
+    """If the cancellation event cannot be written, the status flip is rolled back.
+
+    A run marked ``cancelled`` with no ``workflow_failed`` event is an
+    inconsistent ledger that retry cannot repair (a terminal run refuses
+    re-cancel). The transition and the event must be atomic: when the event
+    INSERT fails the run stays ``open`` and cancel exits non-zero (exit 1).
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="open")
+    _drop_events_table(db)
+
+    result = cli_runner.invoke(app, ["cancel", "R1", "--json", "--db", str(db)])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "error" in payload
+    # The status flip must NOT have persisted — the run is still abandonable.
+    assert _fetch_row(db, "R1")["status"] == "open"  # type: ignore[index]
