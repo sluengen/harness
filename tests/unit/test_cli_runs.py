@@ -208,6 +208,29 @@ def test_runs_failed_groups_different_reasons_separately(tmp_path: Path) -> None
     assert "FB" in out
 
 
+def test_runs_failed_entry_line_has_no_trailing_residue(tmp_path: Path) -> None:
+    """A failed-run entry renders exactly run_id / workflow / started_at — no
+    trailing format slot (guards against re-introducing engine-era residue like
+    the removed empty ``node_info`` interpolation)."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(
+        db_path, run_id="F1", workflow_name="wf", status="failed",
+        started_at="2026-06-01T10:00:00Z",
+    )
+    _seed_event(
+        db_path, run_id="F1", event_type="workflow_failed",
+        data={"reason": "ContractViolation"},
+    )
+
+    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
+    assert result.exit_code == 0, result.stdout
+
+    entry_lines = [
+        line for line in result.stdout.splitlines() if "F1" in line
+    ]
+    assert entry_lines == ["  F1  wf  2026-06-01T10:00:00Z"]
+
+
 def test_runs_failed_no_failures_shows_message(tmp_path: Path) -> None:
     db_path = tmp_path / ".harness" / "harness.db"
     _seed_run(db_path, run_id="R1", status="completed")

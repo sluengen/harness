@@ -531,10 +531,9 @@ def runs_command(
             header = reason if reason else "(unknown reason)"
             typer.echo(header)
             for entry in entries:
-                node_info = ""
                 typer.echo(
                     f"  {entry['run_id']}  {entry['workflow_name']}  "
-                    f"{entry['started_at']}{node_info}"
+                    f"{entry['started_at']}"
                 )
         return
 
