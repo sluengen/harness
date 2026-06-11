@@ -46,6 +46,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Layer 2: runtime sources. Tests are intentionally excluded (see .dockerignore).
 COPY harness/ ./harness/
 
+# The two-entrypoint dispatch script (decision #3 — one image, two entrypoints).
+# .dockerignore excludes docker/ wholesale, then re-includes just this file.
+COPY docker/entrypoint.sh /opt/harness/entrypoint.sh
+RUN chmod +x /opt/harness/entrypoint.sh
+
 # Install the harness package itself into the venv so `uv run harness`
 # resolves the console script declared in pyproject.toml (project.scripts.harness).
 RUN uv sync --frozen --no-dev
@@ -59,4 +64,8 @@ ENV PYTHONUNBUFFERED=1 \
     # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
     UV_NO_SYNC=1
 
-ENTRYPOINT ["uv", "run", "harness"]
+# One image, two entrypoints: the script dispatches `agent <TICKET>` (headless
+# per-session agent runtime) vs. `verb <args…>` / bare-verb (one-shot verb).
+# Bare-verb stays backward compatible with the launcher / ~/bin/harness wrapper,
+# which pass `start …` directly with no mode selector.
+ENTRYPOINT ["/opt/harness/entrypoint.sh"]

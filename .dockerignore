@@ -46,5 +46,8 @@ scripts/
 SPEC.md
 CLAUDE.md
 
-# The Dockerfile itself doesn't belong inside the image.
+# The Dockerfile itself doesn't belong inside the image, but the entrypoint
+# dispatch script (decision #3 — one image, two entrypoints) is COPYed in, so
+# re-include just that one file from the otherwise-excluded docker/ tree.
 docker/
+!docker/entrypoint.sh

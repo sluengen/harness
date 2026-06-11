@@ -78,8 +78,13 @@ __all__ = [
 ]
 
 #: The complete operation surface exposed over the control socket. There is no
-#: other path — an op outside this set is refused (AC-5).
-OPERATIONS: frozenset[str] = frozenset({"start", "status", "events", "cancel", "decision"})
+#: other path — an op outside this set is refused (AC-5). The three lifecycle
+#: verbs (``start`` / ``review`` / ``close``) are all here so the agent runtime,
+#: which holds the control socket but never the docker socket, can spawn *each*
+#: verb as a one-shot sibling container outside itself (CAL-585 AC-1).
+OPERATIONS: frozenset[str] = frozenset(
+    {"start", "review", "close", "status", "events", "cancel", "decision"}
+)
 
 #: Default verb image; overridable via ``HARNESS_IMAGE`` by the CLI.
 DEFAULT_IMAGE = "harness:dev"
@@ -91,6 +96,8 @@ INJECTED_ENV: tuple[str, ...] = ("LINEAR_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
 #: Required params per operation. Every key here must be present.
 _REQUIRED: dict[str, tuple[str, ...]] = {
     "start": ("repo", "ticket"),
+    "review": ("repo", "run_id"),
+    "close": ("repo", "run_id", "ticket"),
     "status": ("repo", "run_id"),
     "events": ("repo", "run_id"),
     "cancel": ("repo", "run_id"),
@@ -100,6 +107,8 @@ _REQUIRED: dict[str, tuple[str, ...]] = {
 #: Optional params per operation. Anything outside required ∪ optional is rejected.
 _OPTIONAL: dict[str, tuple[str, ...]] = {
     "start": ("base",),
+    "review": (),
+    "close": (),
     "status": (),
     "events": (),
     "cancel": (),
@@ -156,6 +165,12 @@ def _verb_command(op: str, params: Mapping[str, str], repo: str) -> list[str]:
         if "base" in params:
             cmd += ["--base", params["base"]]
         return cmd
+    if op == "review":
+        # Bound to the run by id; the verb reads the run's worktree HEAD from the
+        # ledger. ``--repo`` locates the ledger DB (and is the allowlist mount).
+        return ["review", "--run-id", params["run_id"], "--repo", repo]
+    if op == "close":
+        return ["close", params["ticket"], "--run-id", params["run_id"], "--repo", repo]
     if op == "status":
         return ["status", params["run_id"], "--json"]
     if op == "events":
