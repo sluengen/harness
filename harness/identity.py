@@ -18,7 +18,12 @@ import ulid
 
 _CROCKFORD_ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
-_WORKTREE_ROOT = Path(".worktrees/harness")
+# The single source of the harness worktree layout: every run gets a directory
+# under ``<repo>/.worktrees/harness/`` on branch ``harness/<run_id>``. Public so
+# ``harness.worktree`` and ``harness.cli.worktrees`` build their (repo-rooted)
+# paths from it rather than re-spelling the literal — change the layout here once
+# (CAL-590).
+WORKTREES_SUBDIR = Path(".worktrees/harness")
 _ARTIFACTS_ROOT = Path(".harness/artifacts")
 _LOG_ROOT = Path(".harness/logs")
 
@@ -36,7 +41,7 @@ def generate_run_id() -> str:
 def worktree_dir(run_id: str) -> Path:
     """Path of the worktree directory for a run, relative to the project root."""
     _validate(run_id)
-    return _WORKTREE_ROOT / run_id
+    return WORKTREES_SUBDIR / run_id
 
 
 def worktree_branch(run_id: str) -> str:

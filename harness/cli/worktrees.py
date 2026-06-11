@@ -27,6 +27,8 @@ from pathlib import Path
 
 import typer
 
+from harness.identity import WORKTREES_SUBDIR
+
 worktrees_app = typer.Typer(
     help="Inspect or clean up worktrees under .worktrees/harness/",
     no_args_is_help=True,
@@ -66,7 +68,7 @@ def _parse_duration(text: str) -> timedelta:
 
 
 def _worktrees_root(repo_root: Path) -> Path:
-    return repo_root / ".worktrees" / "harness"
+    return repo_root / WORKTREES_SUBDIR
 
 
 def _discover_worktrees(repo_root: Path) -> list[dict[str, object]]:
