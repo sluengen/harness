@@ -72,7 +72,10 @@ def _argv(op: str, params: dict[str, str], roots: list[Path], **kw: object) -> l
 
 
 def test_operations_surface_is_exactly_the_named_verbs() -> None:
-    assert frozenset({"start", "status", "events", "cancel", "decision"}) == OPERATIONS
+    assert (
+        frozenset({"start", "review", "close", "status", "events", "cancel", "decision"})
+        == OPERATIONS
+    )
 
 
 @pytest.mark.parametrize("op", ["run", "exec", "build", "commit", "shell", "", "RUN"])
@@ -103,6 +106,8 @@ def _params_for(op: str, repo: Path) -> dict[str, str]:
         return {**base, "ticket": "CAL-1"}
     if op == "decision":
         return {**base, "run_id": "R1", "value": "approve"}
+    if op == "close":
+        return {**base, "run_id": "R1", "ticket": "CAL-1"}
     return {**base, "run_id": "R1"}
 
 
@@ -160,6 +165,85 @@ def test_rogue_params_are_rejected(rogue: dict[str, str], repo: Path, roots: lis
     with pytest.raises(LauncherError) as excinfo:
         _argv("start", params, roots)
     assert excinfo.value.reason == "bad_params"
+
+
+# ---------------------------------------------------------------------------
+# Launcher-controlled credential mounts (review codex + close ssh push)
+# ---------------------------------------------------------------------------
+
+
+def test_verb_container_mounts_launcher_credentials(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # The launcher mounts its own ~/.codex (review's codex auth) and ~/.ssh
+    # (close's push) into every verb container — the same surface the
+    # ~/bin/harness wrapper supplies, so launcher-spawned verbs can authenticate.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "review", "params": {"repo": str(repo), "run_id": "R1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+    )
+    assert f"{home / '.codex'}:/root/.codex" in argv
+    assert f"{home / '.ssh'}:/root/.ssh:ro" in argv
+    # The repo mount is still first, so the path-equivalence assertions hold.
+    assert argv[argv.index("-v") + 1] == f"{repo.resolve()}:{repo.resolve()}"
+
+
+def test_credentials_come_from_launcher_home_not_a_caller_param(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # There is no param through which a caller can change the credential mount;
+    # supplying one is a bad_params refusal, and the mount tracks the launcher's
+    # home regardless.
+    home = tmp_path / "home"
+    home.mkdir()
+    with pytest.raises(LauncherError) as excinfo:
+        build_verb_argv(
+            {"op": "review", "params": {"repo": str(repo), "run_id": "R1", "codex": "/evil"}},
+            image="harness:dev",
+            roots=roots,
+            host_env={},
+            home=home,
+        )
+    assert excinfo.value.reason == "bad_params"
+
+
+def test_ssh_agent_forwarded_when_socket_available(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+        ssh_auth_sock="/run/host-services/ssh-auth.sock",
+    )
+    assert "/run/host-services/ssh-auth.sock:/ssh-agent" in argv
+    assert "SSH_AUTH_SOCK=/ssh-agent" in argv
+
+
+def test_ssh_agent_absent_when_no_socket(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={},
+        home=home,
+        ssh_auth_sock=None,
+    )
+    assert not any("ssh-agent" in tok for tok in argv)
+    assert "SSH_AUTH_SOCK=/ssh-agent" not in argv
 
 
 def test_caller_image_string_never_reaches_argv(repo: Path, roots: list[Path]) -> None:
@@ -317,6 +401,32 @@ def test_start_maps_to_start_verb_with_repo_and_base(repo: Path, roots: list[Pat
     resolved = str(repo.resolve())
     tail = argv[argv.index("harness:dev") + 1 :]
     assert tail == ["start", "CAL-1", "--repo", resolved, "--base", "dev"]
+
+
+def test_review_maps_to_review_verb_bound_to_run(repo: Path, roots: list[Path]) -> None:
+    # AC-1: review is spawnable through the narrow socket as a one-shot sibling,
+    # bound to the run by --run-id (the run's worktree HEAD is what it reviews).
+    argv = _argv("review", {"repo": str(repo), "run_id": "R1"}, roots)
+    resolved = str(repo.resolve())
+    tail = argv[argv.index("harness:dev") + 1 :]
+    assert tail == ["review", "--run-id", "R1", "--repo", resolved]
+
+
+def test_close_maps_to_close_verb_with_ticket_and_run(repo: Path, roots: list[Path]) -> None:
+    # AC-1: close is spawnable through the narrow socket; the gate runs inside
+    # the verb container, not in the caller.
+    argv = _argv("close", {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}, roots)
+    resolved = str(repo.resolve())
+    tail = argv[argv.index("harness:dev") + 1 :]
+    assert tail == ["close", "CAL-1", "--run-id", "R1", "--repo", resolved]
+
+
+def test_close_requires_ticket_param(repo: Path, roots: list[Path]) -> None:
+    # close needs the ticket id (the Linear Done transition targets it); omitting
+    # it is a bad_params refusal before any container launch.
+    with pytest.raises(LauncherError) as excinfo:
+        _argv("close", {"repo": str(repo), "run_id": "R1"}, roots)
+    assert excinfo.value.reason == "bad_params"
 
 
 def test_status_maps_to_status_json(repo: Path, roots: list[Path]) -> None:
