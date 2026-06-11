@@ -30,6 +30,7 @@ def test_package_tree_contains_only_source() -> None:
         path.relative_to(_REPO_ROOT)
         for path in _PACKAGE.rglob("*")
         if path.is_file()
+        and not path.name.startswith(".")  # skip OS/editor dotfile cruft (e.g. .DS_Store)
         and "__pycache__" not in path.parts
         and path.suffix not in _ALLOWED_SUFFIXES
         and path.name not in _ALLOWED_NAMES
