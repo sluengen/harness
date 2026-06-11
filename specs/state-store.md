@@ -83,7 +83,7 @@ The run lifecycle under the **verb model** (proposal [`harness-as-tool`](proposa
 | `running` | engine (legacy) | At least one node has started. |
 | `completed` | engine (legacy) | All nodes completed successfully. |
 | `failed` | engine (legacy) | A node or workflow-level error terminated the run. |
-| `cancelled` | `harness cancel` | Run abandoned (close-without-merge). The verb marks the in-flight run cancelled, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`. Also set by the intake reconciler (`intake.cancel_run`) for legacy `running`/`pending` rows. |
+| `cancelled` | `harness cancel` | Run abandoned (close-without-merge). The verb marks the in-flight run cancelled, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`. It also abandons legacy `running`/`pending` rows historical engine-era runs left behind. |
 | `stalled` | engine (legacy) | No progress within the stall timeout. |
 | `paused` | engine (v2, legacy) | Run awaiting a decision. |
 

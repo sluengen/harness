@@ -15,7 +15,7 @@ branches.  CAL-587 redefines the verb for the contract it actually serves:
    unrecognised status — an allowlist, not a denylist, so an unknown or future
    status is never silently overwritten.
 3. In **one transaction**, mark the run ``status='cancelled'`` + stamp
-   ``completed_at`` (mirroring ``intake.cancel_run``) *and* append a
+   ``completed_at`` *and* append a
    ``workflow_failed`` event with ``reason='cancelled'``. Both land together or
    not at all — a run marked ``cancelled`` with no cancellation event is an
    inconsistent ledger that retry cannot repair (a terminal run refuses

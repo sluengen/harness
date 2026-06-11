@@ -125,7 +125,6 @@ harness/
 ├── skills/        ← reusable skills (TDD, scope discipline, review discipline, …)
 ├── commands/      ← user-invocable slash commands (start, review, ship, /harness …)
 ├── harness/       ← the Python package: cli/ verbs, state/ ledger, worktree, codex dispatch
-├── intake/        ← Linear webhook receiver → routes triggers
 ├── specs/         ← design specs (SPEC.md is the index); proposals/ for unconfirmed ideas
 ├── docker/        ← container build + entrypoint + the ~/bin/harness wrapper
 ├── tests/         ← unit + integration tests
@@ -157,4 +156,4 @@ Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude
 
 ### v1.0.0 (2026-05-27) — historical (deterministic engine)
 
-The original release shipped the deterministic YAML workflow engine (workflow loader, derived state, six node types, three-layer retry, executor, runner), the `claude_agent_sdk` adapter, dynamic per-workflow CLI subcommands, the Docker image, the AUTHORING.md author guide, and the Linear webhook intake. The engine was superseded by the verb model above and retired in CAL-574; this entry is kept for history.
+The original release shipped the deterministic YAML workflow engine (workflow loader, derived state, six node types, three-layer retry, executor, runner), the `claude_agent_sdk` adapter, dynamic per-workflow CLI subcommands, the Docker image, and the AUTHORING.md author guide. It also shipped a Linear webhook intake — a sibling listener that fired the engine on ticket events. The engine was superseded by the verb model above and retired in CAL-574; the webhook listener lingered until it too was retired in CAL-601. This entry is kept for history.

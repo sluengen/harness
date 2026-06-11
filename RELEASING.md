@@ -19,7 +19,7 @@ bash scripts/verify.sh
 The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version` and `harness --help`).
 
 - [ ] `ruff check .` — zero errors
-- [ ] `mypy harness intake` — zero errors
+- [ ] `mypy harness` — zero errors
 - [ ] `pytest` — all tests pass, no unexpected skips
 - [ ] CLI smoke — `harness version` prints a version string and `harness --help` exits cleanly
 
