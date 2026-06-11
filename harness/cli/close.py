@@ -57,6 +57,7 @@ from typing import Any, Literal
 import typer
 from pydantic import BaseModel
 
+from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit
 from harness.events.emitter import EventEmitter
 from harness.linear import (
@@ -181,9 +182,7 @@ async def _run_close(
 
     # 2. Capture HEAD of the run's worktree — the SHA the gate binds to.
     try:
-        head_sha = await asyncio.to_thread(_rev_parse_head, Path(worktree_path))
-    except _CloseError:
-        raise
+        head_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
 
@@ -361,22 +360,6 @@ async def _mark_run_closed(db_path: Path, run_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _rev_parse_head(worktree_path: Path) -> str:
-    """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread)."""
-    result = subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(worktree_path), "rev-parse", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise _CloseError(
-            f"git rev-parse HEAD failed for {worktree_path}: {result.stderr.strip()}",
-            1,
-        )
-    return result.stdout.strip()
 
 
 def _status_porcelain(worktree_path: Path) -> str:
