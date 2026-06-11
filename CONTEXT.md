@@ -21,7 +21,7 @@ stack:
 commands:
   install: "uv sync --extra dev"
   lint:    "uv run ruff check ."
-  typecheck: "uv run mypy harness intake"
+  typecheck: "uv run mypy harness"
   test:    "uv run pytest"
   test_one: "uv run pytest <path/to/test_file.py::test_name>"
   verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke. Run before merge/tag.
@@ -49,7 +49,7 @@ A set of **deterministic, audited verbs an agent calls** to drive a Linear ticke
 
 ## Architecture
 
-The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch. The Linear webhook intake lives in `intake/`.
+The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch.
 
 Three verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
@@ -88,7 +88,7 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 - **Cross-repo execution** — `cd` to the target repo and run the verbs there. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. (`--repo` and `--base` are accepted when invoking the verbs directly outside the wrapper.)
 - **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH. Use when Docker is not available. Credentials and env vars must be set manually.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
-- **`mypy` scope is `harness intake`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
+- **`mypy` scope is `harness`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
 - **Verification output can come back empty** in the Claude Code Bash tool (it auto-backgrounds long commands). Redirect to `/tmp/<file>.txt` and `tail` it.
 

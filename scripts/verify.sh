@@ -7,7 +7,7 @@ echo "=== ruff ==="
 uv run --extra dev ruff check .
 
 echo "=== mypy ==="
-uv run --extra dev mypy harness intake
+uv run --extra dev mypy harness
 
 echo "=== pytest ==="
 uv run --extra dev pytest --durations=20

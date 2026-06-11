@@ -190,7 +190,7 @@ process. Instead `cancel` marks the run `status='cancelled'`, stamps
 
 A run is cancellable only from an explicit in-flight allowlist — `open` (verb
 model) plus the legacy `running` / `pending` / `paused` / `stalled` the retired
-engine and the intake reconciler still mark. The allowlist (not a terminal
+engine still marks. The allowlist (not a terminal
 denylist) means an unknown or future status is refused, never silently
 overwritten. The status flip and the `workflow_failed` event are written in one
 transaction, so a cancelled run always carries its cancellation event.

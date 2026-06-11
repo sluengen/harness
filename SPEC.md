@@ -1250,8 +1250,7 @@ Explicit list of things this project does **not** do, even on request:
 - Multi-tenancy / multi-project state in one DB. One DB per project mount.
 - Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them.
 - LLM-driven workflow generation.
-- General-purpose agent framework. This is an execution engine for *bounded* AI tasks. If a use case wants an autonomous agent, this isn't the tool.
-- **Tracker writes from the engine.** The harness reads from trackers (Linear, GitHub) for intake and status checks. Writing back — updating ticket status, posting PR comments, transitioning workflow state — is the agent's job (via its tool calls inside an AI node) or an explicit `script` node's job. The engine itself never writes to a tracker. This boundary keeps the engine portable and prevents implicit coupling to any one tracker's state machine.
+- General-purpose agent framework. The harness is a set of deterministic verbs an agent calls, not a framework that runs agents. If a use case wants an autonomous agent that spawns its own work, this isn't the tool.
 
 ---
 
@@ -1275,7 +1274,7 @@ These are deliberately unresolved. Pick before code lands.
 
    The risk is bounded: the only real contention point is bursty event writes from many concurrent runs, which WAL serialises with millisecond-class lock acquisition. Acceptable for v1's expected workload (1–3 concurrent runs locally). If usage grows beyond that, switch to PostgreSQL — the schema is portable.
 
-4. **Discord intake — built-in or external?** Initial bias: external. The harness exposes the CLI; a separate `intake/discord.py` script (in this repo or a sibling) listens to Discord and shells out. Keeps the harness boundary clean.
+4. **External trigger source (Discord, etc.) — built-in or external?** *Resolved: external.* The harness exposes the CLI and does not listen; any process that watches a source and shells out to a verb lives in a sibling repo or in Hermes, never in this tool. The engine-era webhook listener that violated this boundary was retired in CAL-601.
 
 5. **Prompt-cache strategy.** Anthropic cache breakpoints could materially cut token cost for steward runs that re-read the same context daily. Defer to v0.2 once we have real token-cost data.
 

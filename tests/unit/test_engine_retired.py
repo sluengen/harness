@@ -17,6 +17,7 @@ dependency on the engine, or that resurrects a deleted module, fails here.
 from __future__ import annotations
 
 import importlib
+import re
 from pathlib import Path
 
 import pytest
@@ -178,3 +179,111 @@ def test_artifact_keys_are_declared_state_fields() -> None:
         "run — they are dead enrichment. Add the field to BaseState (and a verb "
         "that writes it) before surfacing it, or drop it from _ARTIFACT_KEYS."
     )
+
+
+# ---------------------------------------------------------------------------
+# CAL-601 — the engine-era Linear webhook intake (``intake/``) is retired.
+# ---------------------------------------------------------------------------
+#
+# ``intake/linear_webhook.py`` was an HTTP server that *listened* for Linear
+# webhooks and autonomously *spawned* work — the engine-era "the harness is
+# autonomous" pattern the verb model rejects (SPEC §47/§52: triggers are
+# external; the harness does not listen). CAL-574 retired the engine but missed
+# this standalone sibling module, which has shelled out to the deleted
+# ``harness run`` ever since. CAL-601 removes it. This guard is the executable
+# completeness check: the module is gone, and no living doc / build-config
+# re-introduces a reference to it.
+#
+# Scope note: this guard is deliberately *intake-specific*. The wider
+# retirement-completeness guard (the engine-era ``harness run <workflow>`` /
+# ``harness validate`` CLI surface and the SPEC §4/§11 prose) is CAL-603's
+# deliverable, sequenced after this change — see CAL-603's 2026-06-12 decision.
+
+INTAKE_MODULES = ["intake", "intake.linear_webhook"]
+
+
+@pytest.mark.parametrize("module", INTAKE_MODULES)
+def test_intake_package_not_importable(module: str) -> None:
+    """The Linear webhook intake package is no longer importable."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module)
+
+
+def test_intake_files_removed() -> None:
+    """The intake module and its (false-green) test file are gone from disk."""
+    assert not (_REPO_ROOT / "intake").exists()
+    assert not (_REPO_ROOT / "tests" / "unit" / "test_linear_webhook.py").exists()
+
+
+# Matches a reference to the *module* — its path, a dotted import of one of its
+# attributes (``intake.cancel_run``), the ``python -m`` form, or the mypy scope
+# that named it — not the English word "intake" (e.g. "Linear is intake",
+# "Stage 1: intake / worktree"), which legitimately survives. The dot/slash is
+# load-bearing: prose never writes ``intake.`` or ``intake/``.
+_INTAKE_MODULE_PATTERN = re.compile(
+    r"intake/|intake\.[A-Za-z_]|python -m intake|harness intake\b"
+)
+
+# Discover every living doc / spec / build-config rather than name a hand-picked
+# allowlist — an incomplete six-file allowlist let ``specs/state-store.md``'s
+# ``intake.cancel_run`` reference slip through review (CAL-601). Discovery scans
+# all tracked Markdown plus the two build configs that named the module.
+#
+# Point-in-time records are history, not living guidance, and are excluded:
+# ``assessments/`` (dated code assessments) and ``lessons/`` (captured run
+# logs). Hidden / generated trees (``.venv``, ``.git``, ``.pytest_cache`` …)
+# and vendored ``node_modules`` are excluded too.
+_HISTORY_SEGMENTS = {"assessments", "lessons"}
+_EXTRA_CONFIG_DOCS = ["pyproject.toml", "scripts/verify.sh"]
+
+
+def _living_doc_relpaths() -> list[str]:
+    """All living Markdown docs + build configs a regression would touch."""
+    rels: list[str] = []
+    for path in sorted(_REPO_ROOT.rglob("*.md")):
+        parts = path.relative_to(_REPO_ROOT).parts
+        if any(
+            p in _HISTORY_SEGMENTS or p == "node_modules" or p.startswith(".")
+            for p in parts
+        ):
+            continue
+        rels.append(str(path.relative_to(_REPO_ROOT)))
+    rels.extend(_EXTRA_CONFIG_DOCS)
+    return rels
+
+
+@pytest.mark.parametrize("relpath", _living_doc_relpaths())
+def test_living_docs_have_no_intake_module_reference(relpath: str) -> None:
+    """No living doc / build-config references the retired intake module."""
+    text = (_REPO_ROOT / relpath).read_text()
+    matches = _INTAKE_MODULE_PATTERN.findall(text)
+    assert not matches, f"{relpath} still references retired intake module: {matches}"
+
+
+def _living_source_relpaths() -> list[str]:
+    """Tracked package source (``harness/``) — the shipped, living code.
+
+    ``tests/`` is excluded on purpose: this guard and its fixtures legitimately
+    spell the retired names (``INTAKE_MODULES``, the pattern literals), so
+    scanning them would self-trip.
+    """
+    pkg = _REPO_ROOT / "harness"
+    return [
+        str(p.relative_to(_REPO_ROOT))
+        for p in sorted(pkg.rglob("*.py"))
+        if "__pycache__" not in p.parts
+    ]
+
+
+@pytest.mark.parametrize("relpath", _living_source_relpaths())
+def test_living_source_has_no_intake_module_reference(relpath: str) -> None:
+    """No living package source narrates the retired intake module.
+
+    The ``ModuleNotFoundError`` import guards above cannot catch a *prose*
+    reference — a docstring or comment that names ``intake.cancel_run`` is a
+    dangling pointer no import check sees. This closes that gap for the shipped
+    package (caught a stale ``cancel.py`` docstring in CAL-601 review).
+    """
+    text = (_REPO_ROOT / relpath).read_text()
+    matches = _INTAKE_MODULE_PATTERN.findall(text)
+    assert not matches, f"{relpath} still references retired intake module: {matches}"
