@@ -1,5 +1,7 @@
 # Engine Executor — per-node execution, contract validation, state writes, snapshots
 
+> **Superseded 2026-06-11** — this spec describes the **retired deterministic workflow engine**, deleted in CAL-574 (proposal [`harness-as-tool`](proposals/harness-as-tool.md), decision D1). The harness no longer walks a YAML workflow: a single Claude session orchestrates *and* implements, calling the `start` / `review` / `close` verbs over the SQLite ledger. Current references: [`SPEC.md`](../SPEC.md) §1–2, [`state-store.md`](state-store.md), [`commands/harness.md`](../commands/harness.md). Kept for historical reference only.
+
 The `Executor` wraps a single step end-to-end: resolve dependencies, dispatch to the node, validate the result, apply writes to state, snapshot, emit lifecycle events.
 
 ---

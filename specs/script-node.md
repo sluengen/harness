@@ -1,5 +1,7 @@
 # Script Node — subprocess wrapper, variable substitution, contract override
 
+> **Superseded 2026-06-11** — this spec describes the **retired deterministic workflow engine**, deleted in CAL-574 (proposal [`harness-as-tool`](proposals/harness-as-tool.md), decision D1). The harness no longer walks a YAML workflow: a single Claude session orchestrates *and* implements, calling the `start` / `review` / `close` verbs over the SQLite ledger. Current references: [`SPEC.md`](../SPEC.md) §1–2, [`state-store.md`](state-store.md), [`commands/harness.md`](../commands/harness.md). Kept for historical reference only.
+
 The script node runs a bash or Python subprocess, captures stdout/stderr/exit code, and returns a typed result. Non-zero exit codes raise immediately.
 
 ---
