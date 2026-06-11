@@ -222,7 +222,7 @@ Default (human) output: `run_id`, `workflow_name`, `workflow_version`, `status`,
 |---|---|---|
 | `failure_reason` | `string?` | `data.reason` from the latest `workflow_failed` event (emitted by `harness cancel`, `reason='cancelled'`) |
 | `failure_retryable` | `bool?` | derived from `failure_reason`; `null` if no failure |
-| `artifact_paths` | `object?` | non-null artifact fields from `state` (`worktree_path`, `worktree_branch`, `pr_url`, `report_path`) |
+| `artifact_paths` | `object?` | non-null artifact fields from `state` (`worktree_path`, `worktree_branch`) |
 | `agent_session_ids` | `list[str]?` | unique `session_id` values from `tool_called` event data |
 
 `failure_retryable` derivation: `false` for `ContractViolation*`, `loop_exhausted`, `cancelled`, `rejected`; `true` for all other reasons (transient errors).

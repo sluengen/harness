@@ -24,8 +24,8 @@ requirements):
   contract violations, cancellation, and loop exhaustion; ``None`` if no
   failure.
 * ``artifact_paths`` — dict of non-None artifact fields from ``state``
-  (``worktree_path``, ``worktree_branch``, ``pr_url``, ``report_path``);
-  ``None`` when no artifacts are recorded.
+  (``worktree_path``, ``worktree_branch``); ``None`` when no artifacts are
+  recorded.
 * ``agent_session_ids`` — list of unique ``session_id`` values from
   ``tool_called`` event data; ``None`` when no session IDs are present.
 """
@@ -102,8 +102,6 @@ def _derive_failure_retryable(failure_reason: str | None) -> bool | None:
 _ARTIFACT_KEYS: tuple[str, ...] = (
     "worktree_path",
     "worktree_branch",
-    "pr_url",
-    "report_path",
 )
 
 

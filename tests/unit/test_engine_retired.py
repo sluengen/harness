@@ -151,3 +151,30 @@ def test_steward_agent_task_present() -> None:
     assert "summary" in lowered
     assert "findings" in lowered
     assert "report" in lowered
+
+
+# ---------------------------------------------------------------------------
+# AC-4 — status --json surfaces only artifact fields the state schema declares.
+#
+# ``_ARTIFACT_KEYS`` drives the ``artifact_paths`` enrichment in
+# ``status --json``. Because ``BaseState`` sets ``extra="forbid"``, a validated
+# state can only ever carry keys that ``BaseState`` declares — any other key is
+# dead enrichment that no live run can populate, kept green only by a test that
+# fabricates the field. This guard turns the CAL-600 "no synthetic data masking
+# dead surface" principle into a failing test (would have caught CAL-607).
+# ---------------------------------------------------------------------------
+
+
+def test_artifact_keys_are_declared_state_fields() -> None:
+    """Every ``_ARTIFACT_KEYS`` entry is a field the state schema declares."""
+    from harness.cli.query import _ARTIFACT_KEYS
+    from harness.state.schema import BaseState
+
+    declared = set(BaseState.model_fields)
+    undeclared = [k for k in _ARTIFACT_KEYS if k not in declared]
+    assert not undeclared, (
+        f"_ARTIFACT_KEYS contains keys no state class declares: {undeclared}. "
+        "BaseState forbids extra fields, so these can never populate from a real "
+        "run — they are dead enrichment. Add the field to BaseState (and a verb "
+        "that writes it) before surfacing it, or drop it from _ARTIFACT_KEYS."
+    )

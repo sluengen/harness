@@ -296,7 +296,7 @@ Output (structured):
   exit_code           integer?
   failure_reason      string?
   failure_retryable   bool?
-  artifact_paths      object?    { worktree_path, worktree_branch, pr_url, report_path, ... }
+  artifact_paths      object?    { worktree_path, worktree_branch }
   agent_session_ids   list[str]? session identifiers from dispatched agent nodes
 ```
 
@@ -363,9 +363,7 @@ Key artifact paths (present on the state after the relevant workflow nodes compl
 |---|---|---|
 | Worktree path | `worktree_path` | Available during run; cleaned up on `merge_to_base` |
 | Worktree branch | `worktree_branch` | Persists after cleanup if `leave_for_inspection` |
-| PR URL | `pr_url` | Set by the workflow's PR-creation script node |
 | Review output | `review_output` | Set by review workflows |
-| Steward report | `report_path` | Set by steward workflows |
 
 #### 6. Resume decision (human-gate nodes)
 
@@ -463,7 +461,7 @@ When `status` is `failed` or `cancelled`, Hermes should surface to the user:
 
 ### Artifact discovery
 
-On `status: completed`, Hermes reads `artifact_paths` from the status object and presents relevant links to the user (PR URL, report path, branch name). Hermes does not scan the workspace directory for artifacts; it relies on the harness to surface them via the status output.
+On `status: completed`, Hermes reads `artifact_paths` from the status object and presents the relevant paths to the user (worktree path, branch name). Hermes does not scan the workspace directory for artifacts; it relies on the harness to surface them via the status output.
 
 ---
 
