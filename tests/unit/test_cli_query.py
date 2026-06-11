@@ -691,14 +691,18 @@ def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> N
 
 
 def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None:
-    """``artifact_paths`` surfaces non-None artifact fields from ``state``."""
+    """``artifact_paths`` surfaces non-None artifact fields from ``state``.
+
+    Only schema-declared artifact fields are injected — ``BaseState`` forbids
+    extra keys, so a real ``state`` blob can never carry anything else (guarded
+    by ``test_artifact_keys_are_declared_state_fields``).
+    """
     db_path = tmp_path / ".harness" / "harness.db"
     state = {
         "run_id": "R1", "workflow_name": "build", "base_branch": "main",
         "artifacts_dir": "/tmp/arts", "started_at": "2026-05-08T12:00:00Z",
         "notes": [], "worktree_path": None,
         "worktree_branch": "harness/R1",
-        "pr_url": "https://github.com/org/repo/pull/42",
     }
     _seed_run(db_path, run_id="R1", status="completed",
               state_json=json.dumps(state))
@@ -707,7 +711,6 @@ def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["artifact_paths"] is not None
-    assert payload["artifact_paths"]["pr_url"] == "https://github.com/org/repo/pull/42"
     assert payload["artifact_paths"]["worktree_branch"] == "harness/R1"
     # worktree_path is None in state, so it must not appear.
     assert "worktree_path" not in payload["artifact_paths"]
