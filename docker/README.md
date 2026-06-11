@@ -10,7 +10,10 @@ A self-contained Python 3.11-slim image with the harness pre-installed via
 SQLite state database (`.harness/harness.db`) live on the host filesystem.
 
 The image is **not** a long-running service. The harness CLI is a one-shot
-process: each `docker run` invokes one workflow and exits.
+process: each `docker run` invokes one verb (or one headless agent run) and
+exits. The entrypoint selects the role — `agent <TICKET>` drives the full
+`/harness run` loop headless, `verb <args…>` (or a bare verb) runs a single
+`start` / `review` / `close` / read command.
 
 ## Files
 
@@ -44,9 +47,10 @@ docker run --rm harness:dev version
 # → harness 0.1.0
 ```
 
-## Authentication for AI nodes
+## Authentication
 
-The harness image runs two AI agents — Claude Code and Codex — both using
+The harness image uses two agents — Claude Code (agent mode, which drives the
+`/harness run` loop) and Codex (the `review` verb's reviewer) — both via
 subscription OAuth (no API keys). The `~/bin/harness` wrapper handles all
 credential wiring automatically.
 
@@ -65,7 +69,7 @@ docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
-  run steward --domain=architecture
+  start CAL-123
 ```
 
 > **Do not mount `~/.claude` read-only.** Claude Code writes session state
@@ -85,7 +89,7 @@ docker run --rm -it \
   -v "$HOME/.codex":/root/.codex \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
-  run build-codex --linear=CAL-123
+  review --run-id 01J...
 ```
 
 ## Other environment variables
@@ -94,17 +98,15 @@ Pass via `-e VAR` or `--env-file`.
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `LINEAR_API_KEY` | yes (for workflows that fetch Linear) | Personal API key. |
-| `CLAUDE_CODE_OAUTH_TOKEN` | yes (for Claude nodes) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
+| `LINEAR_API_KEY` | yes (`start` / `close` fetch and transition the ticket) | Personal API key. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes (agent mode, and any Claude use) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
 | `HARNESS_WORKSPACE_ROOTS` | yes (verbs fail closed if unset) | Colon-separated allowlist of host roots a `--repo` may resolve under (CAL-584). The wrapper sets it to `/workspace` (the mounted CWD) automatically. |
-| `HARNESS_WORKFLOWS_DIR` | — | **Baked into the image** as `/opt/harness/workflows`. Override only when using custom workflows. |
 
 ## Invocation — running against another repo
 
-Mount the target repo at `/workspace` and tell the harness to run a workflow.
-The harness reads workflow YAMLs that ship inside the image
-(`/opt/harness/workflows/`), but writes state and worktrees to `/workspace`
-(i.e. the host filesystem).
+Mount the target repo at `/workspace` and call a verb (or agent mode). The
+harness writes the worktree and SQLite ledger under `/workspace` (i.e. the host
+filesystem).
 
 ### Plain `docker run`
 
@@ -112,17 +114,17 @@ The harness reads workflow YAMLs that ship inside the image
 # In one terminal — build once.
 docker build -t harness:dev -f docker/Dockerfile .
 
-# In another terminal — run a workflow against your-repo.
+# In another terminal — open a run against your-repo.
 cd /abs/path/to/your-repo
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.claude":/root/.claude:ro \
   -e LINEAR_API_KEY \
   harness:dev \
-  run steward --domain=architecture
+  start CAL-123
 ```
 
-(Replace the `-v "$HOME/.claude":/root/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication-for-ai-nodes) section above.)
+(Replace the `-v "$HOME/.claude":/root/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above.)
 
 ### Via compose
 
@@ -133,10 +135,10 @@ project on disk.
 # Build once.
 docker compose -f docker/docker-compose.yml build harness
 
-# Run a workflow against another repo on disk.
+# Open a run against another repo on disk.
 HARNESS_TARGET_REPO=/abs/path/to/your-repo \
   docker compose -f docker/docker-compose.yml run --rm harness \
-    run steward --domain=architecture
+    start CAL-123
 ```
 
 Omit `HARNESS_TARGET_REPO` to run the harness against the harness repo
@@ -179,7 +181,7 @@ Create `~/bin/harness`:
 #!/usr/bin/env bash
 # ~/bin/harness — thin wrapper around the harness Docker image.
 #
-# Usage: harness run build --linear=CAL-123
+# Usage: harness start CAL-123   (then review / close — the verb loop)
 #   (identical to the native CLI; the container mounts the current directory.)
 #
 # Auth:
@@ -187,7 +189,7 @@ Create `~/bin/harness`:
 #   Codex        — subscription OAuth; ~/.codex is mounted so the CLI can read
 #                  auth.json (same auth_mode as Claude, no API key needed).
 #
-# Override the image with HARNESS_IMAGE=harness:some-tag harness run ...
+# Override the image with HARNESS_IMAGE=harness:some-tag harness start ...
 set -euo pipefail
 
 IMAGE="${HARNESS_IMAGE:-harness:dev}"
@@ -253,7 +255,7 @@ export PATH="$HOME/bin:$PATH"
 
 ```bash
 cd /path/to/any-repo
-harness run build --linear=CAL-123
+harness start CAL-123          # then: harness review --run-id <id> → harness close CAL-123
 ```
 
 Set `HARNESS_IMAGE` to point at a specific tag or registry image if you are
@@ -271,16 +273,10 @@ on the host to refresh the Keychain entry.
 - **Image is self-contained.** Source is `COPY`'d in, not bind-mounted, so
   the running container is reproducible. For local iteration on harness
   code, rebuild the image or run the harness natively with `uv run`.
-- **Workflow scripts.** Workflows that invoke local `scripts/*.py` (e.g.
-  `release-notes`, `steward`) resolve script paths relative to the working
-  directory — i.e. the mounted target repo at `/workspace`. The target
-  repo must therefore contain a matching `scripts/` tree, or the workflow
-  YAML must reference scripts via an absolute path inside the image
-  (planned for a later harness milestone — see SPEC §6).
 - **Linux host networking.** `host.docker.internal` is auto-provisioned on
   Docker Desktop (macOS / Windows). On Linux, the compose file's
-  `extra_hosts: host.docker.internal:host-gateway` adds it explicitly so
-  the same Ollama URL works everywhere.
+  `extra_hosts: host.docker.internal:host-gateway` adds it explicitly so a
+  host-served endpoint resolves the same way everywhere.
 - **No tests inside the image.** `tests/` is in `.dockerignore`; runtime
   images don't ship test files. The integration test in
   `tests/integration/test_docker.py` runs on the host and shells out to
