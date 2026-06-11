@@ -188,14 +188,18 @@ process. Instead `cancel` marks the run `status='cancelled'`, stamps
 (so `harness status` reports `failure_reason='cancelled'`,
 `failure_retryable=false`).
 
-A run is cancellable in any in-flight state — `open` (verb model) plus the
-legacy `running` / `pending` / `paused` / `stalled` the retired engine and the
-intake reconciler still mark. Terminal runs cannot be abandoned.
+A run is cancellable only from an explicit in-flight allowlist — `open` (verb
+model) plus the legacy `running` / `pending` / `paused` / `stalled` the retired
+engine and the intake reconciler still mark. The allowlist (not a terminal
+denylist) means an unknown or future status is refused, never silently
+overwritten. The status flip and the `workflow_failed` event are written in one
+transaction, so a cancelled run always carries its cancellation event.
 
 Errors (exit 2):
 - Run not found in the DB.
 - Run is already terminal (`closed`, `cancelled`, `completed`, or `failed`) —
   there is nothing to abandon.
+- Run has an unrecognised status (outside the canonical `RUN_STATUSES`).
 
 On success (exit 0): marks the run cancelled, records the event, and prints a
 confirmation line (or `--json` object).

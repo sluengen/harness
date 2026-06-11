@@ -181,6 +181,22 @@ def test_cancel_refusal_json(tmp_path: Path) -> None:
     assert "error" in payload
 
 
+def test_cancel_unrecognised_status_refused(tmp_path: Path) -> None:
+    """Exits 2 and leaves the row untouched for a status outside the allowlist.
+
+    The cancellable set is an explicit allowlist, not a terminal denylist — an
+    unknown or future status must be refused, never silently overwritten to
+    ``cancelled``.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="bogus")
+    result = cli_runner.invoke(app, ["cancel", "R1", "--db", str(db)])
+    assert result.exit_code == 2
+    # The unrecognised status is preserved; nothing was overwritten or emitted.
+    assert _fetch_row(db, "R1") == {"status": "bogus", "completed_at": None}
+    assert _fetch_events(db, "R1", "workflow_failed") == []
+
+
 # ---------------------------------------------------------------------------
 # Success cases — abandon an in-flight run
 # ---------------------------------------------------------------------------
@@ -241,6 +257,15 @@ def test_cancel_legacy_running_run_abandoned(tmp_path: Path) -> None:
     """A legacy ``running`` run (intake-marked) is still abandonable."""
     db = tmp_path / "harness.db"
     _seed_run(db, run_id="R1", status="running")
+    result = cli_runner.invoke(app, ["cancel", "R1", "--db", str(db)])
+    assert result.exit_code == 0, result.output
+    assert _fetch_row(db, "R1")["status"] == "cancelled"  # type: ignore[index]
+
+
+def test_cancel_legacy_paused_run_abandoned(tmp_path: Path) -> None:
+    """A legacy ``paused`` run is on the in-flight allowlist and abandonable."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="paused")
     result = cli_runner.invoke(app, ["cancel", "R1", "--db", str(db)])
     assert result.exit_code == 0, result.output
     assert _fetch_row(db, "R1")["status"] == "cancelled"  # type: ignore[index]

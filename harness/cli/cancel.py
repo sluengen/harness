@@ -9,8 +9,11 @@ was dead on arrival and the old SIGTERM path could only ever hit its refusal
 branches.  CAL-587 redefines the verb for the contract it actually serves:
 
 1. Resolve the ``runs`` row for ``run-id``.
-2. Refuse if the run is already terminal (``closed`` / ``cancelled`` /
-   ``completed`` / ``failed``) — there is nothing to abandon.
+2. Cancel only from an explicit in-flight allowlist (``open`` plus the legacy
+   ``running`` / ``pending`` / ``paused`` / ``stalled``). Refuse a terminal run
+   (``closed`` / ``cancelled`` / ``completed`` / ``failed``) and refuse an
+   unrecognised status — an allowlist, not a denylist, so an unknown or future
+   status is never silently overwritten.
 3. In **one transaction**, mark the run ``status='cancelled'`` + stamp
    ``completed_at`` (mirroring ``intake.cancel_run``) *and* append a
    ``workflow_failed`` event with ``reason='cancelled'``. Both land together or
@@ -40,14 +43,20 @@ import typer
 
 from harness.events.schema import EVENT_TYPES
 from harness.state import store
+from harness.state.schema import RUN_STATUSES
 
 __all__ = ["cancel_command"]
 
-#: Statuses from which a run can no longer be abandoned — already finalised.
-#: Everything else (``open`` under the verb model, plus the legacy ``running`` /
-#: ``pending`` / ``paused`` / ``stalled`` the retired engine and intake path
-#: still write) is in-flight and therefore cancellable.
-_TERMINAL_STATUSES: tuple[str, ...] = ("closed", "cancelled", "completed", "failed")
+#: In-flight statuses a run can be abandoned *from* — an explicit allowlist, not
+#: a terminal denylist. The verb model only ever writes ``open``; the rest are
+#: legacy engine / intake states that may still appear on historical rows. An
+#: allowlist means an unknown or future status is **refused**, never silently
+#: overwritten to ``cancelled``.
+_CANCELLABLE_STATUSES: frozenset[str] = frozenset(
+    {"open", "running", "pending", "paused", "stalled"}
+)
+# The allowlist must stay a subset of the canonical run-status set.
+assert _CANCELLABLE_STATUSES <= RUN_STATUSES
 
 #: The cancellation event. ``workflow_failed`` with ``reason='cancelled'`` is the
 #: canonical mark (a member of :data:`EVENT_TYPES`) that ``harness status`` reads
@@ -97,10 +106,19 @@ async def _run_cancel(db_path: Path, run_id: str) -> None:
                 raise _CancelError(f"no run with run_id={run_id!r}", 2)
 
             status = str(row[0])
-            if status in _TERMINAL_STATUSES:
+            if status not in _CANCELLABLE_STATUSES:
+                # Refuse anything not on the allowlist. Distinguish a known
+                # terminal run from an unrecognised status for a clearer
+                # message, but never overwrite either.
+                if status in RUN_STATUSES:
+                    raise _CancelError(
+                        f"run {run_id!r} is already terminal (status={status!r}); "
+                        "only an in-flight run can be cancelled",
+                        2,
+                    )
                 raise _CancelError(
-                    f"run {run_id!r} is already terminal (status={status!r}); "
-                    "only an in-flight run can be cancelled",
+                    f"run {run_id!r} has an unrecognised status {status!r}; "
+                    "refusing to cancel",
                     2,
                 )
 
