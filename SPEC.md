@@ -265,13 +265,25 @@ alone. Event types live in `harness.events.schema`.
 ticket and transition its state. `harness.identity` generates the run ID (a
 ULID) and propagates it across the verbs.
 
-### 4.9 `harness.launcher`, `harness.workspace`
+### 4.9 `harness.launcher`, `harness.workspace`, `harness.trigger`
 
 `harness serve` runs a narrow host control socket (`harness.launcher` /
 `harness.launcher_client`) that spawns verb containers on request.
 `harness.workspace` enforces the `--repo` allowlist (`HARNESS_WORKSPACE_ROOTS`,
 CAL-584), failing closed when unset so a verb cannot operate outside the mounted
 workspace.
+
+`harness.trigger` is the local stand-in for the launch handle (CAL-585): the
+*trigger slot* occupant — a human (`/harness run`) or Hermes on the autonomous
+path. Its job is deliberately tiny: **launch** the per-session agent runtime
+headless (`claude -p "/harness run <ticket>"`, `agent_run_command`), then **read
+the outcome solely from the ledger** (`harness status` / `harness events`,
+read-only). The trigger never implements, manages worktrees, runs codex, does
+gitops, or writes the harness DB; the writing verbs (`start` / `review` /
+`close`) are issued by the agent runtime, not the trigger. The launch and ledger
+readers are injected (`HermesTrigger`) so a test can substitute an in-process
+runtime and demonstrate the handle end-to-end. See
+[`specs/hermes-orchestration.md`](specs/hermes-orchestration.md).
 ---
 
 ## 5. YAML Workflow Schema
