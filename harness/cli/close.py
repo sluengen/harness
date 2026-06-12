@@ -58,6 +58,7 @@ from pydantic import BaseModel
 from harness._time import iso_z
 from harness.cli._git import rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit
+from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 from harness.linear import (
     LinearClient,
@@ -170,7 +171,7 @@ async def _run_close(
 ) -> CloseOutput:
     """Drive the close flow; raise :class:`_CloseError` on gate failure or error."""
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
-    resolved = await _resolve_open_run(db_path, repo_root, run_id)
+    resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
         raise _CloseError(
             f"no open run found for worktree {repo_root} (ticket {ticket})",
@@ -309,41 +310,6 @@ async def _evaluate_gate(
 # ---------------------------------------------------------------------------
 # Async DB helpers
 # ---------------------------------------------------------------------------
-
-
-async def _resolve_open_run(
-    db_path: Path,
-    repo_root: Path,
-    run_id: str | None,
-) -> tuple[str, str, str, str] | None:
-    """Return ``(run_id, worktree_path, base_branch, worktree_branch)`` or ``None``.
-
-    With an explicit ``run_id`` the row must be ``status='open'``.  Otherwise the
-    open run is matched by ``worktree_path`` equal to the resolved repo —
-    mirroring ``harness review``'s ``_resolve_open_run`` query style.
-    """
-    if not db_path.exists():
-        return None
-
-    if run_id is not None:
-        query = (
-            "SELECT run_id, worktree_path, base_branch, worktree_branch "
-            "FROM runs WHERE run_id = ? AND status = 'open'"
-        )
-        params: tuple[str, ...] = (run_id,)
-    else:
-        query = (
-            "SELECT run_id, worktree_path, base_branch, worktree_branch "
-            "FROM runs WHERE worktree_path = ? AND status = 'open'"
-        )
-        params = (str(repo_root),)
-
-    async with store.connect(db_path) as conn, conn.execute(query, params) as cur:
-        row = await cur.fetchone()
-
-    if row is None:
-        return None
-    return str(row[0]), str(row[1]), str(row[2]), str(row[3])
 
 
 async def _mark_run_closed(db_path: Path, run_id: str) -> None:

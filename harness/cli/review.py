@@ -51,6 +51,7 @@ from pydantic import BaseModel
 from harness._time import iso_z
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit
+from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 from harness.state import store
 
@@ -293,14 +294,14 @@ async def _run_review(
 ) -> ReviewOutput:
     """Drive the review flow; raise :class:`_ReviewError` on failure."""
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
-    resolved = await _resolve_open_run(db_path, repo_root, run_id)
+    resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
         raise _ReviewError(
             f"no open run found for worktree {repo_root} "
             f"(run_id={run_id!r})" if run_id else f"no open run found for worktree {repo_root}",
             2,
         )
-    resolved_run_id, worktree_path = resolved
+    resolved_run_id, worktree_path = resolved[0], resolved[1]
 
     # 2. Capture HEAD at review time — the load-bearing SHA binding (D2).
     try:
@@ -357,37 +358,3 @@ async def _run_review(
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
     )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-async def _resolve_open_run(
-    db_path: Path,
-    repo_root: Path,
-    run_id: str | None,
-) -> tuple[str, str] | None:
-    """Return ``(run_id, worktree_path)`` for the open run, or ``None``.
-
-    With an explicit ``run_id`` the row must be ``status='open'``.  Otherwise
-    the open run is matched by ``worktree_path`` equal to the resolved repo —
-    mirroring ``harness start``'s ``_find_open_run`` query style.
-    """
-    if not db_path.exists():
-        return None
-
-    if run_id is not None:
-        query = "SELECT run_id, worktree_path FROM runs WHERE run_id = ? AND status = 'open'"
-        params: tuple[str, ...] = (run_id,)
-    else:
-        query = "SELECT run_id, worktree_path FROM runs WHERE worktree_path = ? AND status = 'open'"
-        params = (str(repo_root),)
-
-    async with store.connect(db_path) as conn, conn.execute(query, params) as cur:
-        row = await cur.fetchone()
-
-    if row is None:
-        return None
-    return str(row[0]), str(row[1])
