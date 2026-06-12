@@ -14,7 +14,9 @@ AC-5 (over the wire): an operation outside the named surface is refused.
 from __future__ import annotations
 
 import json
+import os
 import socket
+import stat
 import tempfile
 import threading
 from collections.abc import Iterator
@@ -177,6 +179,37 @@ def test_full_verb_cycle_over_the_socket(repo: Path, tmp_path: Path, socket_path
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_control_socket_is_owner_only(repo: Path, tmp_path: Path, socket_path: Path) -> None:
+    """CAL-617: the bound control socket must be owner-only (no group/other bits).
+
+    On macOS (the documented target, where ``$XDG_RUNTIME_DIR`` is unset) the
+    socket falls back to ``~/.harness/control.sock``, and ``AF_UNIX`` honours
+    mode bits there — so another local account/process could ``connect()`` and
+    drive verb launches. ``create_server`` must restrict the socket to ``0600``,
+    matching the ``0700`` protection the Linux ``$XDG_RUNTIME_DIR`` path gets
+    for free.
+    """
+    server_obj = ControlServer(
+        runner=_RecordingRunner(),
+        image="harness:dev",
+        roots=[(tmp_path / "work").resolve()],
+        host_env={},
+    )
+    # A *non-existent* nested parent, so create_server must create it — this
+    # exercises the mkdir mode, not the test fixture's pre-made temp dir.
+    nested = socket_path.parent / "rt" / "control.sock"
+    server = server_obj.create_server(nested)
+    try:
+        mode = os.stat(nested).st_mode
+        assert stat.S_ISSOCK(mode), oct(mode)
+        assert mode & 0o077 == 0, oct(mode)
+        # The parent dir create_server makes is owner-only too.
+        parent_mode = os.stat(nested.parent).st_mode
+        assert parent_mode & 0o077 == 0, oct(parent_mode)
+    finally:
+        server.server_close()
 
 
 def test_repo_outside_allowlist_refused_over_the_socket(
