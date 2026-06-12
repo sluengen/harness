@@ -1,4 +1,4 @@
-"""Run ID generation and propagation — see SPEC §8.
+"""Run ID generation and propagation — see SPEC §4.8.
 
 A single ULID generated at workflow start propagates to every surface (worktree
 dir, branch, state row, event log, artifacts dir, log file). One ID, one grep.

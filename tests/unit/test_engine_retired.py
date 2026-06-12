@@ -374,3 +374,39 @@ def test_living_source_has_no_intake_module_reference(relpath: str) -> None:
     text = (_REPO_ROOT / relpath).read_text()
     matches = _INTAKE_MODULE_PATTERN.findall(text)
     assert not matches, f"{relpath} still references retired intake module: {matches}"
+
+
+# ---------------------------------------------------------------------------
+# CAL-632 — live module docstrings cite their as-built §4.x home, not a
+# retired SPEC section.
+#
+# The SPEC.md currency map (header + the §3 banner) declares §1–2, §4 and §11
+# current, and §3, §5–§10, §12–§14 the retired deterministic engine. Two live
+# modules opened their docstring with a cross-ref into the retired range
+# (``worktree.py`` → §9, ``identity.py`` → §8) when each has a verbatim as-built
+# home in §4 (§4.5 ``harness.worktree``, §4.8 ``harness.identity``). A reader
+# following the stale cite lands in retired engine prose. Same defect class as
+# the shipped CAL-629 (``_time.py`` → §12). This guard locks the two clean
+# fixes; the wider cluster (§6/§7/§12 cites with no clean §4.x home) is CAL-633.
+# ---------------------------------------------------------------------------
+
+# (module import path, as-built §4.x home it must cite, retired § it must not).
+_DOCSTRING_SECTION_CASES = [
+    ("harness.worktree", "4.5", "9"),
+    ("harness.identity", "4.8", "8"),
+]
+
+
+@pytest.mark.parametrize("module, current, retired", _DOCSTRING_SECTION_CASES)
+def test_module_docstring_cites_asbuilt_section(
+    module: str, current: str, retired: str
+) -> None:
+    """Each module docstring cross-refs its current §4.x home, not a retired §."""
+    doc = importlib.import_module(module).__doc__ or ""
+    assert f"SPEC §{current}" in doc, (
+        f"{module} docstring should cite its as-built home SPEC §{current}; got: {doc!r}"
+    )
+    assert not re.search(rf"SPEC §{retired}\b", doc), (
+        f"{module} docstring still cites retired SPEC §{retired} — point it at "
+        f"§{current} (the as-built home; §{retired} describes the retired engine)."
+    )
