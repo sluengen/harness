@@ -1,2 +1,2 @@
-"""Harness — deterministic workflow execution engine. See SPEC.md."""
+"""Harness — deterministic, audited verbs an agent calls to drive a ticket. See SPEC.md."""
 __version__ = "0.1.0"

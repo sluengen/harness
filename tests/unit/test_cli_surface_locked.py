@@ -89,6 +89,56 @@ def test_no_retired_engine_command_registered() -> None:
     assert RETIRED_COMMANDS.isdisjoint(_registered_surface())
 
 
+# --- CLI identity prose lock --------------------------------------------------
+# CAL-634 (CODE-1 / CODE-3). The surface locks above guard command *names*; they
+# never guarded the prose that describes what the tool *is*. The top-level
+# ``--help`` banner (``harness/cli/__init__.py``) and the package docstring
+# (``harness/__init__.py``) both still called the harness a "deterministic
+# workflow execution engine/harness" — the retired engine model SPEC §1
+# explicitly inverted ("a set of deterministic, audited verbs an agent calls —
+# *not* a pipeline that drives agents"; the engine was deleted in CAL-574, §3
+# banner). The ``--help`` banner is a public-contract surface (SPEC §1.5), so a
+# user reading it was told the opposite of the current model. This locks the
+# live identity prose to the verb model.
+
+#: Retired deterministic-engine framing that must not describe the live tool.
+_RETIRED_FRAMING = re.compile(r"workflow execution|\bengine\b", re.I)
+
+
+def test_cli_help_banner_describes_the_verb_model() -> None:
+    """The ``harness --help`` banner names the verb model, not the retired engine.
+
+    Asserts on ``app.info.help`` — the exact source string Typer renders as the
+    banner — so the check is not subject to terminal-width wrapping.
+    """
+    from harness.cli import app
+
+    banner = app.info.help or ""
+    assert not _RETIRED_FRAMING.search(banner), (
+        f"`harness --help` banner still uses retired engine framing: {banner!r}. "
+        "The engine was retired (CAL-574); describe the verb model (SPEC §1) "
+        "instead — e.g. 'deterministic, audited verbs an agent calls'."
+    )
+    assert "verb" in banner.lower(), (
+        f"`harness --help` banner should name the verb model: {banner!r}."
+    )
+
+
+def test_package_docstring_describes_the_verb_model() -> None:
+    """The ``harness`` package docstring names the verb model, not the engine."""
+    import harness
+
+    doc = harness.__doc__ or ""
+    assert not _RETIRED_FRAMING.search(doc), (
+        f"`harness` package docstring still uses retired engine framing: {doc!r}. "
+        "Describe the verb model (SPEC §1) — 'deterministic, audited verbs an "
+        "agent calls'."
+    )
+    assert "verb" in doc.lower(), (
+        f"`harness` package docstring should name the verb model: {doc!r}."
+    )
+
+
 # --- Launcher operation surface ⊆ registered CLI surface ----------------------
 # CAL-616 (CODE-1). The CAL-603 lock above guards the *CLI* registration; it
 # never guarded the *launcher* — so a launcher operation drifted into advertising
