@@ -7,7 +7,7 @@ containers) yet exercises the real transport: bind the UDS, connect, send a
 request line, read the response line.
 
 AC-1: with only the control socket, a client can ``start`` a run, poll
-``status`` / ``events``, ``cancel``, and submit a ``decision``.
+``status`` / ``events``, and ``cancel``.
 AC-5 (over the wire): an operation outside the named surface is refused.
 """
 
@@ -158,14 +158,6 @@ def test_full_verb_cycle_over_the_socket(repo: Path, tmp_path: Path, socket_path
             socket_path, {"op": "cancel", "params": {"repo": str(repo), "run_id": "R1"}}
         )
         assert resp["ok"] is True
-
-        # decision
-        resp = _request(
-            socket_path,
-            {"op": "decision", "params": {"repo": str(repo), "run_id": "R1", "value": "approve"}},
-        )
-        assert resp["ok"] is True
-        assert json.loads(str(resp["stdout"]))["verb"] == "decision"
 
         # AC-5 over the wire: an unnamed operation is refused, runner untouched.
         before = len(runner.calls)

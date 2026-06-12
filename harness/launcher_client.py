@@ -122,15 +122,6 @@ def verb_argv_to_request(argv: Sequence[str], *, repo: str) -> dict[str, Any]:
         }
     if verb in ("status", "events", "cancel"):
         return {"op": verb, "params": {"repo": repo, "run_id": _need_pos(0, "run-id")}}
-    if verb == "decision":
-        return {
-            "op": "decision",
-            "params": {
-                "repo": repo,
-                "run_id": _need_pos(0, "run-id"),
-                "value": _need_pos(1, "value"),
-            },
-        }
     raise UnsupportedVerb(f"verb {verb!r} is not exposed over the launcher socket")
 
 

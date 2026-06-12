@@ -43,11 +43,6 @@ def test_run_id_positional_ops(verb: str) -> None:
     assert req == {"op": verb, "params": {"repo": REPO, "run_id": "R1"}}
 
 
-def test_decision_maps_to_decision_op() -> None:
-    req = verb_argv_to_request(["decision", "R1", "approve"], repo=REPO)
-    assert req == {"op": "decision", "params": {"repo": REPO, "run_id": "R1", "value": "approve"}}
-
-
 def test_repo_and_db_flags_are_dropped_in_favour_of_the_mount() -> None:
     # The agent's CWD is the mounted workspace; a --repo/--db the loop passes is
     # ignored — the launcher sets the repo/ledger path server-side.
@@ -66,12 +61,13 @@ def test_every_mapped_op_is_a_real_launcher_operation() -> None:
         ["status", "R1"],
         ["events", "R1"],
         ["cancel", "R1"],
-        ["decision", "R1", "approve"],
     ):
         assert verb_argv_to_request(argv, repo=REPO)["op"] in OPERATIONS
 
 
-@pytest.mark.parametrize("argv", [[], ["run", "build"], ["doctor"], ["serve", "--local"]])
+@pytest.mark.parametrize(
+    "argv", [[], ["run", "build"], ["doctor"], ["serve", "--local"], ["decision", "R1", "approve"]]
+)
 def test_unsupported_verb_is_rejected(argv: list[str]) -> None:
     with pytest.raises(UnsupportedVerb):
         verb_argv_to_request(argv, repo=REPO)

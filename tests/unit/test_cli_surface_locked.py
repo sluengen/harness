@@ -89,6 +89,42 @@ def test_no_retired_engine_command_registered() -> None:
     assert RETIRED_COMMANDS.isdisjoint(_registered_surface())
 
 
+# --- Launcher operation surface ⊆ registered CLI surface ----------------------
+# CAL-616 (CODE-1). The CAL-603 lock above guards the *CLI* registration; it
+# never guarded the *launcher* — so a launcher operation drifted into advertising
+# the retired ``decision`` command, which every request would launch as a
+# container running ``harness decision …`` that Typer rejects (exit 2): dead,
+# always-failing surface on the security boundary. This closes the symmetric gap
+# on the launcher side.
+
+
+def _launcher_launched_commands() -> set[str]:
+    """The CLI command each launcher operation actually launches.
+
+    Sourced from the launcher's own ``_verb_command`` map — the first token of
+    the verb argv — so the guard tracks what the control socket *dispatches*,
+    not operation names that merely happen to match a CLI command.
+    """
+    from harness.launcher import _OPTIONAL, _REQUIRED, OPERATIONS, _verb_command
+
+    launched: set[str] = set()
+    for op in OPERATIONS:
+        params = dict.fromkeys((*_REQUIRED[op], *_OPTIONAL[op]), "x")
+        launched.add(_verb_command(op, params, params["repo"])[0])
+    return launched
+
+
+def test_every_launcher_op_launches_a_registered_cli_command() -> None:
+    """Every op the launcher dispatches must launch a registered CLI command.
+
+    A launcher operation whose verb argv names an unregistered command is dead
+    surface on the control boundary — the container exits 2 every time. Keeping
+    the launched-command set a subset of the registered surface is the symmetric
+    partner of ``test_registered_surface_is_the_as_built_verb_set``.
+    """
+    assert _launcher_launched_commands() <= _registered_surface()
+
+
 # --- Documented surface == registered -----------------------------------------
 
 #: A ``harness <verb>`` invocation that is **not** the ``/harness run`` slash
