@@ -17,8 +17,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests._gitutil import tracked_files_under
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PACKAGE = _REPO_ROOT / "harness"
 
 # Source and typing markers are the only things allowed inside the import package.
 _ALLOWED_SUFFIXES = {".py", ".pyi"}
@@ -42,15 +43,18 @@ def _is_placeholder_module(path: Path) -> bool:
 
 
 def test_package_tree_contains_only_source() -> None:
-    """No process artifacts or other non-source files live under ``harness/``."""
+    """No process artifacts or other non-source files live under ``harness/``.
+
+    The file set is the *tracked* tree (``git ls-files``), not a working-tree
+    walk: untracked OS cruft (``.DS_Store``) and build bytecode
+    (``__pycache__``) are excluded by construction, so the guard no longer needs
+    to hand-roll dotfile / ``__pycache__`` skips and cannot be tripped by local
+    cruft (CAL-619).
+    """
     strays = [
         path.relative_to(_REPO_ROOT)
-        for path in _PACKAGE.rglob("*")
-        if path.is_file()
-        and not path.name.startswith(".")  # skip OS/editor dotfile cruft (e.g. .DS_Store)
-        and "__pycache__" not in path.parts
-        and path.suffix not in _ALLOWED_SUFFIXES
-        and path.name not in _ALLOWED_NAMES
+        for path in tracked_files_under("harness")
+        if path.suffix not in _ALLOWED_SUFFIXES and path.name not in _ALLOWED_NAMES
     ]
     assert not strays, (
         "Non-source files leaked into the importable harness/ package "
@@ -69,14 +73,16 @@ def test_package_tree_has_no_placeholder_modules() -> None:
     real module — a package whose sole content is an empty ``__init__.py`` is itself
     vestigial and is flagged.
     """
+    tracked_py = {path for path in tracked_files_under("harness") if path.suffix == ".py"}
     placeholders = []
-    for path in _PACKAGE.rglob("*.py"):
-        if "__pycache__" in path.parts or not _is_placeholder_module(path):
+    for path in tracked_py:
+        if not _is_placeholder_module(path):
             continue
         if path.name == "__init__.py":
+            pkg_dir = path.parent
             has_real_module = any(
-                sibling.name != "__init__.py" and "__pycache__" not in sibling.parts
-                for sibling in path.parent.rglob("*.py")
+                other.name != "__init__.py" and pkg_dir in other.parents
+                for other in tracked_py
             )
             if has_real_module:
                 continue  # legitimate package marker

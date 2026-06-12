@@ -17,10 +17,13 @@ dependency on the engine, or that resurrects a deleted module, fails here.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import re
 from pathlib import Path
 
 import pytest
+
+from tests._gitutil import tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -117,14 +120,14 @@ def test_cli_app_exposes_verbs_not_run() -> None:
 
 @pytest.mark.parametrize("yaml_name", ["build.yaml", "build-codex.yaml"])
 def test_build_yaml_removed(yaml_name: str) -> None:
-    """The deterministic build workflows no longer exist on disk."""
-    assert not (_REPO_ROOT / "workflows" / yaml_name).exists()
-    assert not (_REPO_ROOT / "harness" / "workflows" / yaml_name).exists()
+    """The deterministic build workflows no longer exist in the tracked tree."""
+    assert tracked_files_under(f"workflows/{yaml_name}") == set()
+    assert tracked_files_under(f"harness/workflows/{yaml_name}") == set()
 
 
 def test_workflow_package_dir_removed() -> None:
-    """The bundled-workflow package directory is gone."""
-    assert not (_REPO_ROOT / "harness" / "workflows").exists()
+    """The bundled-workflow package directory is gone from the tracked tree."""
+    assert tracked_files_under("harness/workflows") == set()
 
 
 # ---------------------------------------------------------------------------
@@ -264,15 +267,39 @@ INTAKE_MODULES = ["intake", "intake.linear_webhook"]
 
 @pytest.mark.parametrize("module", INTAKE_MODULES)
 def test_intake_package_not_importable(module: str) -> None:
-    """The Linear webhook intake package is no longer importable."""
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(module)
+    """No real intake module is importable — robust to a stale ``__pycache__``.
+
+    A bare leftover ``intake/__pycache__`` (bytecode for the deleted source)
+    makes ``intake`` resolvable as a PEP 420 *namespace* package — no
+    ``__init__.py`` required — which fails a plain ``import intake`` guard on an
+    otherwise-clean checkout (the second half of CODE-3, alongside
+    ``test_intake_files_removed``). The retirement contract is narrower: no
+    importable intake *source*. So we assert the module either does not resolve
+    at all, or resolves only as an empty namespace package (``origin`` is
+    ``None`` — no code to run). A surviving ``intake/__init__.py`` or
+    ``intake/*.py`` has a concrete ``origin`` and still fails here.
+    """
+    try:
+        spec = importlib.util.find_spec(module)
+    except ModuleNotFoundError:
+        spec = None  # a parent package is itself gone — nothing importable
+    assert spec is None or spec.origin in (None, "namespace"), (
+        f"{module} resolves to importable source at {spec.origin!r}; "
+        "the intake package source must be gone from the import path."
+    )
 
 
 def test_intake_files_removed() -> None:
-    """The intake module and its (false-green) test file are gone from disk."""
-    assert not (_REPO_ROOT / "intake").exists()
-    assert not (_REPO_ROOT / "tests" / "unit" / "test_linear_webhook.py").exists()
+    """The intake module and its (false-green) test file are gone from the tracked tree.
+
+    Asserting over the *tracked* set, not ``Path.exists()``, is deliberate: a
+    stale ``intake/__pycache__`` left over from the deleted source kept the
+    working-tree directory alive and turned this guard red on a clean checkout
+    (CODE-3). ``git ls-files`` reports only the committed tree, so leftover
+    bytecode no longer fools the check.
+    """
+    assert tracked_files_under("intake") == set()
+    assert tracked_files_under("tests/unit/test_linear_webhook.py") == set()
 
 
 # Matches a reference to the *module* — its path, a dotted import of one of its
