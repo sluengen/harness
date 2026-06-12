@@ -26,10 +26,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from harness._time import iso_z
 from harness.events.schema import EVENT_TYPES, EventType
 from harness.state import store
 
@@ -90,7 +90,7 @@ class EventEmitter:
                 f"unknown event_type {event_type!r}; expected one of {sorted(EVENT_TYPES)}"
             )
 
-        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        timestamp = iso_z()
         data_json = json.dumps(data if data is not None else {})
 
         async with store.connect(self._db_path) as conn:

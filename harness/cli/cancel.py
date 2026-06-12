@@ -41,6 +41,7 @@ from pathlib import Path
 
 import typer
 
+from harness._time import iso_z
 from harness.events.schema import EVENT_TYPES
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
@@ -88,7 +89,7 @@ async def _run_cancel(db_path: Path, run_id: str) -> None:
         raise _CancelError(f"no run with run_id={run_id!r}", 2)
 
     completed_at = datetime.now(UTC).isoformat()
-    event_ts = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    event_ts = iso_z()
     event_data = json.dumps({"reason": _CANCEL_REASON})
 
     async with store.connect(db_path) as conn:

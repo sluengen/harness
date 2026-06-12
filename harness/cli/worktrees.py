@@ -27,6 +27,7 @@ from pathlib import Path
 
 import typer
 
+from harness._time import iso_z, parse_iso_z
 from harness.cli._git import run_git
 from harness.identity import WORKTREES_SUBDIR
 
@@ -94,7 +95,7 @@ def _discover_worktrees(repo_root: Path) -> list[dict[str, object]]:
             {
                 "run_id": child.name,
                 "path": str(child),
-                "last_modified": mtime.isoformat().replace("+00:00", "Z"),
+                "last_modified": iso_z(mtime),
                 "branch": branch_by_path.get(child.resolve(), None),
             }
         )
@@ -214,9 +215,7 @@ def cleanup_command(
 
     for item in items:
         path = Path(str(item["path"]))
-        last_modified = datetime.fromisoformat(
-            str(item["last_modified"]).replace("Z", "+00:00")
-        )
+        last_modified = parse_iso_z(str(item["last_modified"]))
         branch = item.get("branch")
 
         should_remove = False
