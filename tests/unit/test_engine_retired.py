@@ -113,6 +113,31 @@ def test_cli_app_exposes_verbs_not_run() -> None:
     assert "validate" not in names
 
 
+def test_package_docstring_describes_verb_model_not_engine() -> None:
+    """The package's own docstring names the current verb model, not the retired engine.
+
+    CAL-574 retired the deterministic workflow engine; SPEC §1–2 and CONTEXT.md
+    now describe the harness as "deterministic, audited verbs an agent calls — not
+    an engine that drives agents." A live docstring that still calls the package a
+    "workflow execution engine" re-asserts the retired model as the package's
+    *current* identity (CODE-1, 2026-06-13 assessment). Other live modules frame the
+    engine correctly in the past tense ("the engine was retired in CAL-574"); only the
+    top-level package self-description regressed. This guard is scoped to that single
+    package docstring — the broader retired-§ docstring-cite class is CAL-633/CAL-636.
+    """
+    import harness
+
+    doc = harness.__doc__ or ""
+    assert "execution engine" not in doc.lower(), (
+        "harness/__init__.py still calls the package a 'workflow execution engine' — "
+        "the model retired in CAL-574. Describe the current verb model instead."
+    )
+    assert "verb" in doc.lower(), (
+        "the package docstring should name the current verb model "
+        "(SPEC §1–2: deterministic, audited verbs an agent calls)."
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-2 — build*.yaml and the workflow-walking modules are removed.
 # ---------------------------------------------------------------------------
