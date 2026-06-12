@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.2.0 -->
+<!-- guidance:review-discipline@0.3.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -35,6 +35,7 @@ Only after Stage 1 passes.
 - **Security** — input validated at the boundary, no injection-prone string building, no dangerous eval/exec on input, no secrets in code, paths sanitised.
 - **Principles** — does the change violate a named `engineering-principles` tenet? Cite the principle, not a preference.
 - **Structure** — size, layer boundaries, rule-of-three duplication, composition. Apply the `code-quality` Part B thresholds. Pre-existing violations in untouched files are not findings; only flag if this change makes them worse.
+- **Dead surface after a deletion** — when a change retires a subsystem but keeps its module as a re-homed helper, each remaining public function needs a *production* caller, not just a test. Grep each one across the source tree, excluding its own module and tests (`grep -rn <fn> <src>/ | grep -v <its-module>`); one reached only by its own unit test is dead surface masquerading as a helper, its passing test hiding the rot rather than justifying it. Delete it with its tests.
 
 **For specs and designs:**
 - **Completeness** — no TBDs, no unresolved questions.
