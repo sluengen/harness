@@ -27,10 +27,13 @@ import typer
 
 from harness.cli._query_common import _resolve_db_path, _safe_json_loads
 
-# A run is "in progress" while its status sits in this set. Anything else is
-# terminal and ``logs --follow`` should exit on the next poll. SPEC §12 lists
-# the canonical statuses.
-_IN_PROGRESS_STATUSES: frozenset[str] = frozenset({"pending", "running"})
+# A run is "in progress" while its status sits in this set, so ``logs --follow``
+# keeps tailing; any other status is terminal and the loop exits on the next
+# poll. ``open`` is the live verb-model status — ``harness start`` writes it and
+# ``review``/``close`` resolve a run by ``status='open'``; the retired engine's
+# ``pending``/``running`` are kept so a historical run still tails. See
+# :data:`harness.state.schema.RunStatus` for the canonical status split.
+_IN_PROGRESS_STATUSES: frozenset[str] = frozenset({"open", "pending", "running"})
 
 # How often ``--follow`` polls for new events. 500ms per the task brief —
 # kept as a module constant so tests can monkey-patch if needed.

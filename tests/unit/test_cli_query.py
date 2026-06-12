@@ -27,7 +27,7 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from harness.cli import app
+from harness.cli import app, query_events
 from harness.cli.query import _derive_failure_retryable
 from harness.state import store
 
@@ -650,6 +650,69 @@ def test_logs_follow_exits_when_run_is_terminal(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     # Should exit promptly once it sees a terminal state on the first poll.
     assert elapsed < 5.0
+    assert "workflow_started" in result.stdout
+    assert "workflow_completed" in result.stdout
+
+
+def test_logs_follow_tails_open_run_until_closed(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``--follow`` keeps polling while a run is ``open`` (the verb model's live
+    status) and tails events that arrive across polls, exiting only once the run
+    becomes ``closed``.
+
+    Regression for CAL-640: ``_IN_PROGRESS_STATUSES`` was the retired engine's
+    ``{"pending", "running"}`` and omitted ``open``, so the first poll saw a
+    live run as terminal and the loop returned after one pass — ``--follow``
+    never tailed any live run. This test seeds an ``open`` run with one event,
+    lands a second event mid-follow, then closes the run; it fails against the
+    engine-era set (the second event is never tailed and the loop polls once)
+    and passes once ``open`` is in the in-progress set.
+    """
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="open")
+    _seed_event(
+        db_path, run_id="R1", event_type="workflow_started",
+        timestamp="2026-05-08T12:00:00Z",
+    )
+
+    # Drive the loop deterministically: no real sleeping between polls.
+    monkeypatch.setattr(query_events, "_FOLLOW_POLL_INTERVAL_SECONDS", 0)
+
+    # Drive the run's lifecycle through the status polls. On the first poll the
+    # run is still ``open`` and a second event lands; on the second poll it has
+    # ``closed`` so the loop exits. Events are fetched before the status check,
+    # so the second event must arrive while the loop still believes the run is
+    # live for it to be tailed — exactly what the bug prevented.
+    calls = {"n": 0}
+
+    async def fake_fetch_status(db: Path, run_id: str) -> str | None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # Land a second event mid-follow, on the loop's own event loop (the
+            # sync seeder would spin up a nested loop and fail). Insert it before
+            # reporting the run still ``open`` so the next poll can tail it.
+            await _seed_event_async(
+                db_path, run_id="R1", node_id=None,
+                event_type="workflow_completed",
+                timestamp="2026-05-08T12:30:00Z",
+                duration_ms=None, data=None,
+            )
+            return "open"
+        return "closed"
+
+    monkeypatch.setattr(query_events, "_fetch_status", fake_fetch_status)
+
+    result = runner.invoke(
+        app, ["logs", "R1", "--db", str(db_path), "--follow"]
+    )
+    assert result.exit_code == 0, result.stdout
+    # The loop polled past the first ``open`` status instead of exiting on it.
+    assert calls["n"] >= 2, (
+        f"follow exited after {calls['n']} poll(s) — it treated `open` as "
+        "terminal and never tailed the live run"
+    )
+    # Both the initial event and the one that arrived mid-follow are tailed.
     assert "workflow_started" in result.stdout
     assert "workflow_completed" in result.stdout
 
