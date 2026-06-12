@@ -1,18 +1,20 @@
-# State Store — SQLite schema, BaseState, state merge, snapshots
+# State Store — SQLite schema, BaseState, connection helper
 
-Per-run state lives in SQLite as a JSON blob on the `runs` row. Writes are validated, merged, and snapshotted through a set of free functions in `harness/state/store.py`.
+Per-run state lives in SQLite: the `runs` / `events` tables are the whole audit trail. `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`.
 
 ---
 
 ## Purpose
 
-Provides the single source of truth for run state. All state mutations go through `update_state`; direct mutation of the `state_json` column from outside this module is forbidden. The store also manages a per-completion snapshot table for the v2 resume path.
+Provides the ledger that is the single source of truth for the run lifecycle. The `runs` row records each run from `harness start` to `harness close`; the append-only `events` table carries the review verdict (and its reviewed SHA) the close gate validates against. `store.py` exposes only the connection helper, the schema, and the migrations — the verbs own the reads and writes.
+
+> The engine-era per-node state machinery (`read_state` / `update_state` / `restore_state`) and the never-shipped v2-resume snapshot layer (`write_snapshot` / `read_latest_snapshot` + the `run_snapshots` table) were removed in CAL-613: they had no production caller after the deterministic engine was retired (CAL-574). Under the verb model the agent session — not a rehydrated state row — holds run context. The `runs.state_json` column survives (written as `"{}"` by `harness start`, surfaced as `state` in `harness status --json`) but is no longer merged or snapshotted.
 
 ---
 
 ## SQLite schema
 
-Three tables in `.harness/harness.db`:
+Two tables in `.harness/harness.db`:
 
 ```sql
 CREATE TABLE runs (
@@ -41,16 +43,6 @@ CREATE TABLE events (
   timestamp   TEXT NOT NULL,
   duration_ms INTEGER,
   data_json   TEXT NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE run_snapshots (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id      TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-  node_id     TEXT NOT NULL,
-  seq         INTEGER NOT NULL,
-  state_json  TEXT NOT NULL,
-  captured_at TEXT NOT NULL,
-  UNIQUE (run_id, seq)
 );
 
 -- Partial unique index: prevents two concurrent `harness start` calls from
@@ -128,50 +120,8 @@ Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "run
 
 ---
 
-## State merge rules
-
-`update_state` applies type-driven merge per field:
-
-| Field annotation | Merge behaviour |
-|---|---|
-| `list[...]` | Append: incoming list is extended onto the existing list |
-| Scalar (`str`, `int`, `bool`, `float`, Pydantic model, `Literal`) | Overwrite: last writer wins |
-| `dict[...]` | Rejected (`StateStoreError`): dict-merge semantics deferred to v1.5 |
-| Unknown field | Rejected (`StateStoreError`) |
-
-Per-write overrides: `merge_overrides` maps field name to `"replace"`, which forces unconditional overwrite regardless of field type. Used by steps with `{field: name, merge: replace}` in their `writes:` list.
-
-The full read-modify-write happens inside a single `BEGIN IMMEDIATE` transaction so concurrent writers serialise at SQLite's write-lock layer.
-
-### Notes bounding
-
-The `notes` field is the only list subject to automatic caps:
-- Entry count cap: max 100 entries; oldest dropped first.
-- Character budget cap: max 50,000 characters total; oldest entries dropped until under budget.
-
-Both caps run on every write. Other workflow-declared list fields append without caps.
-
----
-
-## Snapshots
-
-After each node completes successfully, the executor calls `write_snapshot(run_id, node_id, state)`. This appends a row to `run_snapshots` with the full `state_json` at that point. `seq` is computed as `MAX(seq) + 1` inside a `BEGIN IMMEDIATE` transaction.
-
-`read_latest_snapshot(run_id, schema)` returns the state at the highest-`seq` row, or `None` if no snapshots exist yet. The v2 resume machinery reads this instead of the mutable `runs.state_json` column.
-
----
-
 ## Connection helper
 
 `connect(db_path)` is an `@asynccontextmanager` that opens an `aiosqlite` connection, sets WAL and foreign keys, yields the connection, and closes it on exit. All callers use it as `async with connect(path) as conn`.
 
 `DEFAULT_DB_PATH = Path(".harness/harness.db")` is the single-DB-per-project default.
-
----
-
-## Notable constraints
-
-- No-op writes (empty `fields` dict) return the current state without touching the DB or emitting an event.
-- `update_state` emits a `state_changed` event on success (unless `emit_event=False`). The event carries only `{"fields": [<changed names>]}`, not the full new state.
-- Dict fields are explicitly rejected. Any attempt to write a `dict`-annotated field raises `StateStoreError` immediately.
-- `restore_state(run_id, state)` performs a verbatim overwrite of `runs.state_json` without any merge. It is the only sanctioned path for resume operations that must restore an exact snapshot. Like `update_state`, it is the sole place where direct SQL against `state_json` is permitted.

@@ -182,6 +182,66 @@ def test_artifact_keys_are_declared_state_fields() -> None:
 
 
 # ---------------------------------------------------------------------------
+# CAL-613 — the engine-era per-node state/snapshot surface is removed.
+# ---------------------------------------------------------------------------
+#
+# ``harness.state.store`` was re-homed as a verb helper (it survives in
+# VERB_MODULES above as an import-clean re-home). But its *public functions* —
+# ``read_state`` / ``update_state`` / ``restore_state`` / ``write_snapshot`` /
+# ``read_latest_snapshot`` plus the ``run_snapshots`` table — were the retired
+# engine's per-node state machine and the never-shipped v2-resume snapshot
+# layer (SPEC §6/§7, superseded). They had no production caller after CAL-574;
+# the verb model holds context in the agent session, not a rehydrated state row
+# (CAL-585 AC-2). A module surviving "imports cleanly" is not the same as its
+# whole API surviving — a function exercised only by its own unit test is dead
+# surface, not a helper. This guard asserts the dead surface is gone (the
+# connection + schema + migration surface stays).
+
+
+def test_dead_state_surface_removed() -> None:
+    """The engine-era state read/write + snapshot functions are gone from store."""
+    from harness.state import store
+
+    removed = [
+        "read_state",
+        "update_state",
+        "restore_state",
+        "write_snapshot",
+        "read_latest_snapshot",
+        "StateStoreError",
+        "store_connection",
+        "NOTES_MAX_ENTRIES",
+        "NOTES_MAX_CHARS",
+    ]
+    present = [name for name in removed if hasattr(store, name)]
+    assert not present, (
+        f"harness.state.store still exposes retired engine-era state surface: {present}. "
+        "These functions had no production caller after CAL-574 — delete them with their tests."
+    )
+
+    # The connection + schema + migration surface is what survives.
+    for name in ("connect", "init_db", "DEFAULT_DB_PATH"):
+        assert hasattr(store, name), f"store.{name} must survive — it is the live ledger surface"
+
+
+async def test_run_snapshots_table_not_created(tmp_path: Path) -> None:
+    """init_db no longer creates the never-shipped run_snapshots snapshot table."""
+    from harness.state import store
+
+    db_path = tmp_path / "harness.db"
+    await store.init_db(db_path)
+    async with store.connect(db_path) as conn, conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ) as cur:
+        tables = {row[0] async for row in cur}
+    assert "run_snapshots" not in tables, (
+        "run_snapshots is the retired v2-resume snapshot table with no production writer; "
+        f"init_db must not create it. Found tables: {sorted(tables)}"
+    )
+    assert {"runs", "events"} <= tables, "the runs + events ledger tables must survive"
+
+
+# ---------------------------------------------------------------------------
 # CAL-601 — the engine-era Linear webhook intake (``intake/``) is retired.
 # ---------------------------------------------------------------------------
 #
