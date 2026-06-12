@@ -49,13 +49,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 import typer
 from pydantic import BaseModel
 
+from harness._time import iso_z
 from harness.cli._git import rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit
 from harness.events.emitter import EventEmitter
@@ -241,7 +241,7 @@ async def _run_close(
         raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
 
     # 8. Flip the run row to closed and record the close event (audit trail).
-    closed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    closed_at = iso_z()
     try:
         await _mark_run_closed(db_path, resolved_run_id)
         await EventEmitter(db_path).emit(

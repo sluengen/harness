@@ -42,13 +42,13 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 import typer
 from pydantic import BaseModel
 
+from harness._time import iso_z
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit
 from harness.events.emitter import EventEmitter
@@ -327,7 +327,7 @@ async def _run_review(
 
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
-    created_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    created_at = iso_z()
     event_data: dict[str, Any] = {
         "run_id": resolved_run_id,
         "reviewed_sha": reviewed_sha,
