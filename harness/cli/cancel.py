@@ -22,7 +22,7 @@ branches.  CAL-587 redefines the verb for the contract it actually serves:
    re-cancel). ``harness status`` then surfaces ``failure_reason='cancelled'``
    (and ``failure_retryable=False``).
 
-This keeps the public verb contract (SPEC §5) and the launcher ``cancel`` op
+This keeps the public verb contract (SPEC §1) and the launcher ``cancel`` op
 honest: the verb now does what its name promises and leaves an auditable mark
 on the one ledger that is the whole audit trail.
 
