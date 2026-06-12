@@ -43,6 +43,7 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
+from harness.cli._git import run_git
 from harness.cli._repo import resolve_repo_root_or_exit
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
@@ -381,27 +382,17 @@ async def _delete_run_row(db_path: Path, run_id: str) -> None:
 
 
 def _cleanup_worktree_sync(repo_root: Path, worktree_path: str) -> None:
-    """Best-effort cleanup: remove the worktree if a later step failed."""
-    import subprocess
+    """Best-effort cleanup: remove the worktree if a later step failed.
 
+    Each step ignores ``run_git``'s result — a failed rollback must not mask the
+    original error that triggered it.
+    """
     path = Path(worktree_path)
     if not path.exists():
         return
-    subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(path)],
-        check=False,
-        capture_output=True,
-    )
+    run_git(repo_root, "worktree", "remove", "--force", str(path))
     # Also prune the stale worktree entry from git's index.
-    subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(repo_root), "worktree", "prune"],
-        check=False,
-        capture_output=True,
-    )
+    run_git(repo_root, "worktree", "prune")
     # Remove the branch if it was created.
     branch = _branch_for(path.name)
-    subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(repo_root), "branch", "-D", branch],
-        check=False,
-        capture_output=True,
-    )
+    run_git(repo_root, "branch", "-D", branch)

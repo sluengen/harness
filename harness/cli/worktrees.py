@@ -27,6 +27,7 @@ from pathlib import Path
 
 import typer
 
+from harness.cli._git import run_git
 from harness.identity import WORKTREES_SUBDIR
 
 worktrees_app = typer.Typer(
@@ -104,13 +105,7 @@ def _git_worktree_branches(repo_root: Path) -> dict[Path, str]:
     """Parse ``git worktree list --porcelain`` and return a map of
     absolute worktree path to branch name."""
     try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        proc = run_git(repo_root, "worktree", "list", "--porcelain", timeout=15)
     except (OSError, subprocess.SubprocessError):
         return {}
     if proc.returncode != 0:
@@ -173,14 +168,7 @@ def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
     so we never remove a worktree whose ref state we can't read.
     """
     for base in ("dev", "main", "master"):
-        proc = subprocess.run(
-            [
-                "git", "-C", str(repo_root), "merge-base", "--is-ancestor",
-                branch, base,
-            ],
-            check=False,
-            capture_output=True,
-        )
+        proc = run_git(repo_root, "merge-base", "--is-ancestor", branch, base)
         if proc.returncode == 0:
             return True
     return False
@@ -188,12 +176,7 @@ def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
 
 def _remove_worktree(repo_root: Path, path: Path) -> tuple[bool, str]:
     """Invoke ``git worktree remove`` and report success/failure."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    proc = run_git(repo_root, "worktree", "remove", "--force", str(path))
     if proc.returncode != 0:
         return False, proc.stderr.strip() or proc.stdout.strip()
     return True, ""

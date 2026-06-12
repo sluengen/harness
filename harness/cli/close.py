@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -57,7 +56,7 @@ from typing import Any, Literal
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import rev_parse_head
+from harness.cli._git import rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit
 from harness.events.emitter import EventEmitter
 from harness.linear import (
@@ -369,12 +368,7 @@ def _status_porcelain(worktree_path: Path) -> str:
     unstaged, or untracked). Sync — run in a thread. Raises :class:`_CloseError`
     on a git failure so the caller reports an exit-1 error, not a false-clean.
     """
-    result = subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(worktree_path), "status", "--porcelain"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = run_git(worktree_path, "status", "--porcelain")
     if result.returncode != 0:
         raise _CloseError(
             f"git status failed for {worktree_path}: {result.stderr.strip()}",
@@ -402,12 +396,7 @@ def _merge_and_push(
     output: list[str] = []
 
     def _run(cwd: Path, *args: str) -> None:
-        result = subprocess.run(  # noqa: S603, S607
-            ["git", "-C", str(cwd), *args],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        result = run_git(cwd, *args)
         output.append(result.stdout)
         output.append(result.stderr)
         if result.returncode != 0:
