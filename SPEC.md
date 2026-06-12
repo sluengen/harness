@@ -158,8 +158,7 @@ harness/
 │   │   ├── schema.py          ← Workflow / Step Pydantic models (engine-side)
 │   │   ├── derive.py          ← derive workflow state schema from collected writes/contracts
 │   │   └── prompt.py          ← Jinja2 prompt rendering
-│   ├── identity.py            ← run_id generation, propagation
-│   └── log.py                 ← structured logging
+│   └── identity.py            ← run_id generation, propagation
 ├── workflows/                 ← YAML workflow definitions (yours go here)
 │   ├── release-notes.yaml     ← shipped: pull Linear, summarise, write file
 │   └── steward.yaml           ← shipped: domain steward review
