@@ -408,12 +408,20 @@ class ControlServer:
         The caller runs :meth:`~socketserver.BaseServer.serve_forever` (the CLI)
         or drives it from a thread (tests). A stale socket file at
         ``socket_path`` is removed first; the parent directory is created.
+
+        The socket (and any directory we create for it) is restricted to the
+        owner. On Linux the ``$XDG_RUNTIME_DIR`` home is ``0700`` for free; on
+        macOS (the documented target) the ``~/.harness`` fallback is not, and
+        ``AF_UNIX`` honours mode bits there — so a world-connectable socket
+        would let another local account drive verb launches (CAL-617).
         """
         path = Path(socket_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if path.exists() or path.is_socket():
             path.unlink()
-        return _ControlSocketServer(str(path), self)
+        server = _ControlSocketServer(str(path), self)
+        os.chmod(path, 0o600)
+        return server
 
 
 class _ControlSocketServer(socketserver.ThreadingUnixStreamServer):
