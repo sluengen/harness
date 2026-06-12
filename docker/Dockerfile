@@ -8,16 +8,16 @@
 #   docker run --rm \
 #     -v "$(pwd)":/workspace -w /workspace \
 #     -e ANTHROPIC_API_KEY -e LINEAR_API_KEY \
-#     harness:dev run steward --domain=architecture
+#     harness:dev start CAL-123
 FROM python:3.11-slim
 
 # OS deps:
 #   git              — worktree operations
-#   curl             — Linear/API calls in script nodes
+#   curl             — Linear / API calls
 #   ca-certificates  — HTTPS to Anthropic / Linear
-#   jq               — required by every script node (set-in-progress, verify, …)
-#   postgresql-client — psql for per-run DATABASE_URL provisioning in the verify node
-#   nodejs/npm       — required to install Claude Code CLI (claude_agent_sdk transport)
+#   jq               — JSON wrangling in the verbs and helper scripts
+#   postgresql-client — psql for per-run DATABASE_URL provisioning
+#   nodejs/npm       — required to install the Claude Code CLI
 #   openssh-client   — `ssh` binary for `git push` over SSH on the close verb
 #                      (without it `git push` fails: "cannot run ssh: No such file or directory")
 RUN apt-get update && apt-get install -y --no-install-recommends \

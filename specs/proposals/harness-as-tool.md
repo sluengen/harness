@@ -16,7 +16,7 @@ The harness is hard to operationalise, and the difficulty is structural, not inc
 
 That shape produces four recurring costs, all observed in practice:
 
-- **Brittle mechanics.** Every git and Linear operation is hand-encoded as `script` nodes inside [build.yaml](../../workflows/build.yaml) (GraphQL CURL for state transitions, `git merge --no-ff`, push). When one breaks mid-run, the whole run fails, and there is no agent in the loop to adapt — the orchestrator is a YAML walker, not a problem-solver.
+- **Brittle mechanics.** Every git and Linear operation is hand-encoded as `script` nodes inside `build.yaml` (GraphQL CURL for state transitions, `git merge --no-ff`, push). When one breaks mid-run, the whole run fails, and there is no agent in the loop to adapt — the orchestrator is a YAML walker, not a problem-solver.
 - **Lost context.** The implementing agent is a *fresh subprocess* with no conversational history. Everything it needs must be re-fetched and re-passed through state. The agent that understood the ticket is not the agent that writes the code.
 - **All-or-nothing failure.** A harness fault takes the run down. There is no graceful degradation to "let the agent just drive it manually."
 - **A whole second runtime to build.** The deterministic model only works if something supervises it. `specs/hermes-orchestration.md` specs that supervisor as a separate runtime with sibling-container deployment, secret scoping, and an async bridge (subprocess → socket → HTTP, plus polling and a deferred daemon question). None of that is built, and all of it exists only to let one process watch another process do the work.
@@ -47,7 +47,7 @@ Keep the harness as the top-level process, but have it hand control back to the 
 
 **Adopt Option C.** Make the agent the sole orchestrator and turn the harness into a toolbox of deterministic verbs plus a ledger and a gate. This is the "harness is a tool, not a pipeline" framing taken to its conclusion, and it is *more* aligned with the harness's own principles than the current code:
 
-- `SPEC.md` §1 already names **"external layer decides what to run; harness decides how it runs,"** and the §2 diagram lists **"Claude Code agent"** as an external orchestrator. Option C is that picture taken seriously. What violates the principle today is [build.yaml](../../workflows/build.yaml) — one workflow that absorbed the whole orchestration the spec reserved for the external layer.
+- `SPEC.md` §1 already names **"external layer decides what to run; harness decides how it runs,"** and the §2 diagram lists **"Claude Code agent"** as an external orchestrator. Option C is that picture taken seriously. What violates the principle today is `build.yaml` — one workflow that absorbed the whole orchestration the spec reserved for the external layer.
 - `SPEC.md` §4.7's **"rent the loop, own the deterministic layer above it"** argues against reimplementing the agent tool-loop. Orchestrating a build — deciding how to fix a finding, when to re-review, whether codex is wrong — *is* tool-loop work. Option A reimplements it as a YAML walker; Option C rents it from the agent and keeps determinism where it belongs: the verbs.
 
 ### Resolved architecture: one execution model, two triggers

@@ -141,6 +141,21 @@ def fetch_runs(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch_all_runs(db_path))
 
 
+async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
+    if not db_path.exists():
+        return []
+    async with store.connect(db_path) as conn:
+        conn.row_factory = None  # raw tuples
+        async with conn.execute("SELECT run_id, event_type FROM events") as cur:
+            cols = [d[0] for d in cur.description]  # type: ignore[union-attr]
+            rows = await cur.fetchall()
+    return [dict(zip(cols, row, strict=True)) for row in rows]
+
+
+def fetch_events(db_path: Path) -> list[dict[str, Any]]:
+    return _sync(_fetch_all_events(db_path))
+
+
 # ---------------------------------------------------------------------------
 # AC-1: creates exactly one open runs row with the right fields
 # ---------------------------------------------------------------------------
@@ -174,6 +189,30 @@ def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     # run_id must be a 26-char ULID
     assert row["run_id"] is not None
     assert len(row["run_id"]) == 26
+
+
+@pytest.mark.slow
+def test_start_emits_no_event_open_run_is_the_runs_row(
+    repo: Path, db_path: Path
+) -> None:
+    """``start`` records the open run as the ``runs`` row, not an event (SPEC §4.7).
+
+    Only ``review`` and ``close`` append events, so a run is reconstructed from
+    the ``runs`` row **plus** its events — not from the event log alone.
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert len(fetch_runs(db_path)) == 1  # the open run is recorded …
+    assert fetch_events(db_path) == []  # … but start emits no event
 
 
 # ---------------------------------------------------------------------------
