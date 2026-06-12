@@ -1,6 +1,9 @@
-# Code Steward assessment — harness — 2026-06-12 (reassessment 5)
+# Code Steward assessment — harness — 2026-06-12 (reassessment 6)
 
-**Domain:** `code` · **Branch assessed:** `assess/code-2026-06-12e` off `origin/dev` @ `8b87e7d` · **Trigger:** scheduled assessment fallback (fifth pass of the day, after CAL-586–629 shipped).
+> Filed as report #6 (not #5): an unmerged sibling PR (CAL-629, PR #78) already holds
+> `2026-06-12-code-reassessment-5.md`. Renamed to avoid a merge collision on `dev`.
+
+**Domain:** `code` · **Branch assessed:** `assess/code-2026-06-12e` off `origin/dev` @ `ef1f76f` · **Trigger:** scheduled assessment fallback (fifth code-steward pass of the day, after CAL-586–629 shipped).
 
 **Summary:** This is the fifth code-steward pass on `dev` today and the codebase remains genuinely healthy — ruff clean, mypy clean (32 source files, 0 errors), fast suite 527 passed / 47 deselected, exit 0. All eight dimensions swept fresh against the four prior reports. One new, wholly-contained finding survives the high saturation bar: a Low-severity duplicated open-run resolution query shared by `review` and `close`. Everything else is either already filed/shipped, deliberately-excluded tested surface, or a justified split. **One Low finding. No insights.**
 
