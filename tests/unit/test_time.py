@@ -20,7 +20,7 @@ from harness._time import iso_z, parse_iso_z
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: A trailing-``Z`` ISO-8601 UTC timestamp, optional fractional seconds. Matches
-#: the form documented in ``harness/events/emitter.py`` (SPEC §12).
+#: the form co-documented in ``harness/events/emitter.py`` and ``harness/_time.py``.
 _ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 
 
@@ -72,4 +72,22 @@ def test_z_substitution_lives_only_in_the_time_helper() -> None:
     assert offenders == [], (
         "the Z-suffix substitution must live only in harness/_time.py; "
         f"found re-inlined in: {offenders}"
+    )
+
+
+def test_time_module_does_not_cite_the_retired_schema_section() -> None:
+    """``_time.py`` must not anchor its *format* prose to the retired SPEC §12.
+
+    SPEC §12 (*SQLite Schema*) documents the events/runs table **schema** and is
+    in the retired block (superseded by ``specs/state-store.md``; banner at
+    ``SPEC.md`` §3). It contains nothing about the trailing-``Z`` *format*, which
+    is co-documented in ``harness/events/emitter.py`` (correctly carrying no
+    §-cite). This module is the format's sole home, so its docstring must not
+    point readers at a retired section for content that section does not cover —
+    the cross-reference is the emitter, not §12.
+    """
+    source = (_REPO_ROOT / "harness" / "_time.py").read_text()
+    assert "§12" not in source, (
+        "harness/_time.py cites the retired SPEC §12 for the timestamp format; "
+        "§12 documents the schema, not the format — cross-reference the emitter."
     )
