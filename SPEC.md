@@ -91,7 +91,7 @@ A human typing `/harness run CAL-42` and Hermes dispatching CAL-42 produce the *
    - `fail` → fix the root cause, commit, re-run `review` (the `(fix → review)*` loop). Each review binds to the new HEAD.
    - `defer` → file a follow-up for the out-of-scope finding, then close.
    - `pass` → proceed to close.
-5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA == current HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA == current HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
 
 The harness never decides what to build or how. The session does; the verbs record it and gate the merge.
 

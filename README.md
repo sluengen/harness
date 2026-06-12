@@ -40,7 +40,7 @@ harness verbs:  start / review / close   +   SQLite ledger   +   close gate
 
 ### Routing discipline
 
-The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle. Every git and ticket state transition goes through a verb; `close` validates against the ledger as a backstop. A gate refusal is structured (`no_run` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle. Every git and ticket state transition goes through a verb; `close` validates against the ledger as a backstop. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
 
 ## Install
 
@@ -151,7 +151,7 @@ Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude
 
 - **Orchestration boundary inverted** (proposal [`harness-as-tool`](./specs/proposals/harness-as-tool.md), accepted 2026-06-09). The harness no longer drives the build; a Claude session orchestrates and implements, calling three deterministic verbs.
 - **Verbs:** `start` (open run + worktree + ticket → In Progress), `review` (Codex verdict bound to the reviewed SHA), `close` (gate → merge/push → ticket Done). Plus read commands: `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version`.
-- **Ledger + gate:** a single SQLite `runs`/`events` ledger is the audit trail; `close` refuses any merge without a HEAD-bound passing review (`no_run` / `no_passing_review` / `stale_review`).
+- **Ledger + gate:** a single SQLite `runs`/`events` ledger is the audit trail; `close` refuses any merge without a HEAD-bound passing review (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`).
 - **Deterministic YAML workflow engine retired** (CAL-574): the engine runner/executor/loop/retry, the node protocol, the workflow schema, and the `build*.yaml` workflows were deleted. Worktree lifecycle, Codex dispatch, the SQLite store, and the git/Linear helpers were re-homed as verb helpers.
 
 ### v1.0.0 (2026-05-27) — historical (deterministic engine)
