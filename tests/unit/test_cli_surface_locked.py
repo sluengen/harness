@@ -89,6 +89,26 @@ def test_no_retired_engine_command_registered() -> None:
     assert RETIRED_COMMANDS.isdisjoint(_registered_surface())
 
 
+def test_top_level_help_describes_the_verb_model_not_the_retired_engine() -> None:
+    """The top-level ``harness --help`` prose describes the verb model.
+
+    CAL-639 (CODE-1). ``harness --help`` (and ``harness`` with no args) prints
+    the Typer app's ``help`` string as its first line. It had drifted to the
+    engine-era ``"Deterministic workflow execution harness"`` — the YAML
+    workflow engine retired in CAL-574 — contradicting the module docstring,
+    the README tagline, and SPEC §11. The surface lock above guards the
+    *command set*; this guards the most-visible line of *prose*.
+    """
+    from harness.cli import app
+
+    help_text = (app.info.help or "").lower()
+    # No retired-engine phrasing.
+    assert "workflow execution" not in help_text
+    # Describes the current verb model and cites the CLI design section.
+    assert "verb" in help_text
+    assert "spec.md" in help_text
+
+
 # --- Launcher operation surface ⊆ registered CLI surface ----------------------
 # CAL-616 (CODE-1). The CAL-603 lock above guards the *CLI* registration; it
 # never guarded the *launcher* — so a launcher operation drifted into advertising

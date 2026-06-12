@@ -40,7 +40,7 @@ from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
 
 app = typer.Typer(
-    help="Deterministic workflow execution harness — see SPEC.md",
+    help="Deterministic, audited verbs an agent calls to drive a ticket — see SPEC.md §11",
     no_args_is_help=True,
 )
 
