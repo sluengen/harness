@@ -1,4 +1,4 @@
-"""Worktree lifecycle — create/cleanup with three policies — see SPEC §9.
+"""Worktree lifecycle — create/cleanup with three policies — see SPEC §4.5.
 
 This module owns the git worktree lifecycle for a run. It was re-homed here
 from the retired ``harness.nodes`` package (CAL-574): the verbs call it
