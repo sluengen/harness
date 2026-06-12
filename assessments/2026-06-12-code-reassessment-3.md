@@ -28,6 +28,7 @@
   - `SPEC.md:234` (§4.4) — as-built spec correctly lists all four including `dirty_worktree`.
 - **Why:** As-built divergence (area 9). `/harness run` instructs the agent to act on the refusal `reason` and "do not work around it". If `close` refuses with `dirty_worktree` (uncommitted edits in the worktree — a real, reachable refusal, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`), the orchestrating agent reading only `commands/harness.md` has no documented handling path and may misclassify it as an "unexpected error". SPEC §4.4 and the code agree on four reasons; this contract doc is the lone outlier.
 - **How:** Add a fourth bullet to `commands/harness.md:85-89`, e.g. "**`dirty_worktree`** — the worktree has uncommitted changes; what would merge was never reviewed. Commit (or discard) the edits, re-run `harness review` to bind a fresh pass to the new HEAD, then close again." Insert it before `no_passing_review` to match the code's enumeration order.
+- **Actioned (CAL-626):** fixed in `commands/harness.md`, `SPEC.md:94`, and — folded in during review after the reviewer flagged the identical omission — `README.md:43` and `README.md:154`, so every as-built doc surface listing the refusal-reason set now matches the four-reason `RefusalReason` literal. `specs/cli.md` is left alone (banner-marked superseded).
 
 ---
 
