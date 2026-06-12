@@ -205,12 +205,10 @@ harness doctor                  # environment health checks (see caveat below)
 ```
 
 `harness version` returning a version is the smoke test that the install
-resolves. `harness doctor` reports on git / db / reviewer / cli wiring, but its
-**auth** row only passes on `ANTHROPIC_API_KEY` or a mounted `~/.claude/` — it
-does **not** recognise the `CLAUDE_CODE_OAUTH_TOKEN` the recommended wrapper
-injects, so under the wrapper that one row reads `FAIL` even when Claude auth is
-correctly wired. Treat the auth row as a known false-negative for the
-OAuth-token path; the wrapper's Keychain extraction (step 4) is the real check.
+resolves. `harness doctor` reports on git / db / reviewer / cli wiring; its
+**auth** row passes on any of `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or
+a mounted `~/.claude/` — so under the recommended wrapper (which injects
+`CLAUDE_CODE_OAUTH_TOKEN`) the auth row reads `PASS`.
 
 A repo is onboarded once `harness version` resolves, `.env` holds a valid
 `LINEAR_API_KEY`, the guidance bundle is installed (`.guidance-lock.yaml`

@@ -24,6 +24,29 @@ def test_check_auth_passes_when_api_key_in_env() -> None:
     assert "ANTHROPIC_API_KEY" in msg
 
 
+def test_check_auth_passes_when_oauth_token_in_env() -> None:
+    from harness.cli.doctor import check_auth
+
+    # The recommended ~/bin/harness Docker wrapper injects CLAUDE_CODE_OAUTH_TOKEN
+    # (extracted from the macOS Keychain) and mounts neither ANTHROPIC_API_KEY nor
+    # ~/.claude — so the OAuth token alone must satisfy the auth check.
+    status, msg = check_auth(env={"CLAUDE_CODE_OAUTH_TOKEN": "tok-test"}, claude_dir=None)
+    assert status == "PASS"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
+
+
+def test_check_auth_does_not_pass_on_empty_oauth_token(tmp_path: Path) -> None:
+    from harness.cli.doctor import check_auth
+
+    # The wrapper exports CLAUDE_CODE_OAUTH_TOKEN as an empty string when Keychain
+    # extraction fails; a present-but-empty token is no usable credential, so the
+    # check must not PASS on it.
+    status, _msg = check_auth(
+        env={"CLAUDE_CODE_OAUTH_TOKEN": ""}, claude_dir=tmp_path / "nonexistent"
+    )
+    assert status == "FAIL"
+
+
 def test_check_auth_passes_when_claude_dir_exists(tmp_path: Path) -> None:
     from harness.cli.doctor import check_auth
 
@@ -39,6 +62,11 @@ def test_check_auth_fails_when_neither_present(tmp_path: Path) -> None:
 
     status, msg = check_auth(env={}, claude_dir=tmp_path / "nonexistent")
     assert status == "FAIL"
+    # The FAIL message must name all three recognised credentials so the operator
+    # knows every way to satisfy the check.
+    assert "ANTHROPIC_API_KEY" in msg
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
+    assert "~/.claude" in msg
 
 
 def test_check_git_passes_on_clean_output() -> None:

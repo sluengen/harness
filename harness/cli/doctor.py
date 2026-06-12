@@ -20,7 +20,14 @@ def check_auth(
     env: dict[str, str] | None = None,
     claude_dir: Path | None = None,
 ) -> tuple[str, str]:
-    """Pass if ANTHROPIC_API_KEY is set OR ~/.claude/ exists."""
+    """Pass if ANTHROPIC_API_KEY is set, CLAUDE_CODE_OAUTH_TOKEN is non-empty, OR ~/.claude/ exists.
+
+    ``CLAUDE_CODE_OAUTH_TOKEN`` is the credential the recommended ``~/bin/harness``
+    Docker wrapper injects (extracted from the macOS Keychain); the wrapper mounts
+    neither ``ANTHROPIC_API_KEY`` nor ``~/.claude``, so the token alone must pass.
+    The wrapper forwards the variable as an empty string when Keychain extraction
+    fails, so require a non-empty value — a present-but-empty token is no credential.
+    """
     if env is None:
         import os
 
@@ -30,9 +37,15 @@ def check_auth(
 
     if "ANTHROPIC_API_KEY" in env:
         return ("PASS", "ANTHROPIC_API_KEY set")
+    if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return ("PASS", "CLAUDE_CODE_OAUTH_TOKEN set")
     if claude_dir.exists():
         return ("PASS", f"{claude_dir} exists (Claude Code OAuth)")
-    return ("FAIL", "neither ANTHROPIC_API_KEY nor ~/.claude/ found — see README §Authentication")
+    return (
+        "FAIL",
+        "none of ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, or ~/.claude/ found "
+        "— see README §Authentication",
+    )
 
 
 def check_git(porcelain_output: str | None = None) -> tuple[str, str]:
