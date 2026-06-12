@@ -1,4 +1,4 @@
-"""Append-only event log writer — see SPEC §4.9.
+"""Append-only event log writer — see SPEC §4.7.
 
 One row per ``emit()`` call into the ``events`` table created by
 ``harness.state.store``. No buffering, no batching, no listeners — just an
@@ -73,7 +73,7 @@ class EventEmitter:
             run_id: The owning run's ULID. Must reference an existing
                 ``runs.run_id`` — the foreign key raises
                 ``sqlite3.IntegrityError`` otherwise.
-            event_type: One of the canonical SPEC §4.9 event types. Unknown
+            event_type: One of the canonical SPEC §4.7 event types. Unknown
                 values raise ``ValueError`` before any DB write.
             node_id: Optional step/node identifier. ``None`` is stored as SQL
                 NULL.
@@ -82,7 +82,7 @@ class EventEmitter:
                 NULL.
 
         Raises:
-            ValueError: ``event_type`` is not in the canonical SPEC §4.9 set.
+            ValueError: ``event_type`` is not in the canonical SPEC §4.7 set.
             sqlite3.IntegrityError: ``run_id`` does not exist in ``runs``.
         """
         if event_type not in EVENT_TYPES:

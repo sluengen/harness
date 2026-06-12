@@ -1,4 +1,4 @@
-"""Event type literals — see SPEC §4.9.
+"""Event type literals — see SPEC §4.7.
 
 The canonical set of event types the engine emits. Defined here as a
 ``Literal`` so static type-checkers reject typos at call sites and the runtime
