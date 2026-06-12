@@ -97,6 +97,26 @@ def test_retired_modules_are_gone(module: str) -> None:
         importlib.import_module(module)
 
 
+def test_cancel_docstring_cites_current_verb_contract_section() -> None:
+    """``cancel.py`` cites the *current* §1 for the public verb contract.
+
+    CAL-638 (CODE-2). The ``harness.cli.cancel`` module docstring summarised the
+    verb's purpose as keeping "the public verb contract (SPEC §5)". §5 is part of
+    the retired deterministic-engine block (superseded per SPEC.md's status
+    banner); the public-verb-contract principle lives in the *current* §1 Core
+    principles (#5, "The verb surface is a public contract"). This is a cite-only
+    drift, distinct from the parked retired-§ docstring cluster (CAL-633/636):
+    §1 is the unambiguous, uncontested home for *this* phrase. The companion
+    ``SPEC §11`` exit-codes cite is correct (§11 CLI Design is current) and is
+    intentionally left untouched.
+    """
+    src = (_REPO_ROOT / "harness" / "cli" / "cancel.py").read_text()
+    # The retired §5 cite for the verb contract is gone.
+    assert "public verb contract (SPEC §5)" not in src
+    # It now cites the current §1 home.
+    assert "public verb contract (SPEC §1)" in src
+
+
 def test_cli_app_exposes_verbs_not_run() -> None:
     """The CLI app keeps the verb surface and drops the YAML ``run`` command."""
     from harness.cli import app
