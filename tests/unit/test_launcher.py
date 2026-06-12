@@ -73,12 +73,12 @@ def _argv(op: str, params: dict[str, str], roots: list[Path], **kw: object) -> l
 
 def test_operations_surface_is_exactly_the_named_verbs() -> None:
     assert (
-        frozenset({"start", "review", "close", "status", "events", "cancel", "decision"})
+        frozenset({"start", "review", "close", "status", "events", "cancel"})
         == OPERATIONS
     )
 
 
-@pytest.mark.parametrize("op", ["run", "exec", "build", "commit", "shell", "", "RUN"])
+@pytest.mark.parametrize("op", ["run", "exec", "build", "commit", "shell", "", "RUN", "decision"])
 def test_unknown_operation_is_rejected(op: str, repo: Path, roots: list[Path]) -> None:
     with pytest.raises(LauncherError) as excinfo:
         _argv(op, {"repo": str(repo), "run_id": "R1"}, roots)
@@ -104,8 +104,6 @@ def _params_for(op: str, repo: Path) -> dict[str, str]:
     base = {"repo": str(repo)}
     if op == "start":
         return {**base, "ticket": "CAL-1"}
-    if op == "decision":
-        return {**base, "run_id": "R1", "value": "approve"}
     if op == "close":
         return {**base, "run_id": "R1", "ticket": "CAL-1"}
     return {**base, "run_id": "R1"}
@@ -439,12 +437,6 @@ def test_cancel_maps_to_cancel(repo: Path, roots: list[Path]) -> None:
     argv = _argv("cancel", {"repo": str(repo), "run_id": "R1"}, roots)
     tail = argv[argv.index("harness:dev") + 1 :]
     assert tail == ["cancel", "R1"]
-
-
-def test_decision_maps_to_decision_verb(repo: Path, roots: list[Path]) -> None:
-    argv = _argv("decision", {"repo": str(repo), "run_id": "R1", "value": "approve"}, roots)
-    tail = argv[argv.index("harness:dev") + 1 :]
-    assert tail == ["decision", "R1", "approve"]
 
 
 # ---------------------------------------------------------------------------

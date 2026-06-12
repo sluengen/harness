@@ -42,7 +42,7 @@ Design choices (autonomous, recorded here as the as-built record):
   (``-e NAME``), so docker reads the value from the launcher's own environment
   and the secret never lands in the argv (or in ``ps`` output).
 
-Everything the caller controls (ticket id, run id, decision value) lands *after*
+Everything the caller controls (ticket id, run id) lands *after*
 the image in the argv, i.e. as arguments to the harness verb — never as
 ``docker run`` options. A ticket literally named ``--privileged`` is an argument
 to ``harness start``, not a docker flag.
@@ -85,7 +85,7 @@ __all__ = [
 #: which holds the control socket but never the docker socket, can spawn *each*
 #: verb as a one-shot sibling container outside itself (CAL-585 AC-1).
 OPERATIONS: frozenset[str] = frozenset(
-    {"start", "review", "close", "status", "events", "cancel", "decision"}
+    {"start", "review", "close", "status", "events", "cancel"}
 )
 
 #: Default verb image; overridable via ``HARNESS_IMAGE`` by the CLI.
@@ -160,7 +160,6 @@ _REQUIRED: dict[str, tuple[str, ...]] = {
     "status": ("repo", "run_id"),
     "events": ("repo", "run_id"),
     "cancel": ("repo", "run_id"),
-    "decision": ("repo", "run_id", "value"),
 }
 
 #: Optional params per operation. Anything outside required ∪ optional is rejected.
@@ -171,7 +170,6 @@ _OPTIONAL: dict[str, tuple[str, ...]] = {
     "status": (),
     "events": (),
     "cancel": (),
-    "decision": (),
 }
 
 
@@ -236,8 +234,6 @@ def _verb_command(op: str, params: Mapping[str, str], repo: str) -> list[str]:
         return ["events", params["run_id"], "--json"]
     if op == "cancel":
         return ["cancel", params["run_id"]]
-    if op == "decision":
-        return ["decision", params["run_id"], params["value"]]
     # Unreachable: callers validate op against OPERATIONS first.
     raise LauncherError("unknown_operation", f"unknown operation: {op!r}")
 
