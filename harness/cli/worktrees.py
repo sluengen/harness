@@ -10,7 +10,8 @@ Filters for ``cleanup``:
 
 * ``--age <duration>`` — remove worktrees whose directory mtime is older
   than the supplied duration (``30m``, ``12h``, ``7d``).
-* ``--merged`` — remove worktrees whose branch is fully merged into ``main``.
+* ``--merged`` — remove worktrees whose branch is fully merged into
+  ``dev``, ``main``, or ``master`` (the integration/release bases).
 
 Without filters, ``cleanup`` is a no-op (it prints "kept" lines so the
 operator sees what would have been candidate). The conservative default
@@ -162,7 +163,7 @@ def list_command(
 # ---------------------------------------------------------------------------
 
 
-def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
+def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     """Return True if ``branch`` is fully merged into ``dev``, ``main``, or ``master``.
 
     ``--merged`` is conservative: an absent branch ref counts as not-merged
@@ -196,7 +197,9 @@ def cleanup_command(
         None, "--age", help="Remove worktrees older than this (e.g. 30m / 12h / 7d)."
     ),
     merged: bool = typer.Option(
-        False, "--merged", help="Remove worktrees whose branch is merged into main."
+        False,
+        "--merged",
+        help="Remove worktrees whose branch is merged into dev, main, or master.",
     ),
 ) -> None:
     """Remove worktrees matching ``--age`` / ``--merged``."""
@@ -221,7 +224,7 @@ def cleanup_command(
         should_remove = False
         if cutoff is not None and last_modified < cutoff:
             should_remove = True
-        if merged and isinstance(branch, str) and _branch_merged_into_main(
+        if merged and isinstance(branch, str) and _branch_merged_into_base(
             repo_root, branch
         ):
             should_remove = True

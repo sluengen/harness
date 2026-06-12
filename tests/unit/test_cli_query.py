@@ -557,6 +557,58 @@ def test_worktrees_cleanup_no_filter_removes_nothing(tmp_path: Path) -> None:
     assert wt.exists()
 
 
+def test_worktrees_cleanup_merged_removes_branch_merged_into_dev(
+    tmp_path: Path,
+) -> None:
+    """``--merged`` treats a branch merged into ``dev`` as a removal candidate.
+
+    ``dev`` is this repo's integration branch, so a worktree whose branch has
+    landed on ``dev`` (the common case) must be cleaned up. This locks the real
+    check — ``dev``, ``main``, *and* ``master`` — that the ``--merged`` help and
+    docstring describe.
+    """
+    repo_root = tmp_path
+    subprocess.run(
+        ["git", "init", "-q", "-b", "dev", str(repo_root)], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "config", "user.email", "t@t"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "config", "user.name", "t"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty",
+         "-q", "-m", "init"], check=True
+    )
+    # A worktree whose branch points at the same commit as dev is "merged".
+    wt = repo_root / ".worktrees" / "harness" / "R-merged"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-merged", str(wt)],
+        check=True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    assert "R-merged" in result.stdout
+
+
+def test_worktrees_cleanup_help_lists_all_merge_bases() -> None:
+    """The ``--merged`` help text must match the real check, not just ``main``.
+
+    The implementation tests the branch against ``dev``, ``main``, and
+    ``master``; the user-facing help must not understate that to ``main`` alone.
+    """
+    result = runner.invoke(app, ["worktrees", "cleanup", "--help"])
+    assert result.exit_code == 0, result.stdout
+    assert "dev" in result.stdout
+
+
 # ---------------------------------------------------------------------------
 # Subprocess smoke — the entrypoint still wires up under `python -m harness.cli`
 # ---------------------------------------------------------------------------
