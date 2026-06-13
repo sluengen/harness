@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Four Loops — our operating model</title>
+<style>
+  :root{
+    --ink:#0e1430; --ink-2:#3c4467; --muted:#6b7396;
+    --line:#e6e8f2; --card:#ffffff; --bg:#f5f6fb;
+    --build:#0f9d6e;  --build-soft:#e6f6f0; --build-ink:#0a5e44;
+    --product:#3b5bdb; --product-soft:#e9edfd; --product-ink:#23348f;
+    --quality:#d97706; --quality-soft:#fdf1df; --quality-ink:#8a4b06;
+    --strategy:#7c3aed; --strategy-soft:#f1eafd; --strategy-ink:#4c1d95;
+    --shadow:0 1px 2px rgba(16,24,64,.05), 0 10px 30px rgba(16,24,64,.06);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 80% -10%, #eef1ff 0, rgba(238,241,255,0) 60%),
+      radial-gradient(1000px 500px at -10% 10%, #eafff6 0, rgba(234,255,246,0) 55%),
+      var(--bg);
+    color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1160px; margin:0 auto; padding:40px 24px 64px}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    background:linear-gradient(150deg,#0c1230 0%, #141c44 55%, #101736 100%);
+    border-radius:22px; padding:38px 38px 26px; color:#eaecf8;
+    box-shadow:0 24px 60px rgba(12,18,48,.28); position:relative; overflow:hidden;
+  }
+  .hero::before{content:""; position:absolute; inset:0;
+    background:radial-gradient(700px 300px at 85% 0,rgba(124,58,237,.20),transparent 60%),
+               radial-gradient(700px 320px at 5% 100%,rgba(15,157,110,.18),transparent 60%);
+    pointer-events:none}
+  .eyebrow{position:relative; text-transform:uppercase; letter-spacing:.16em; font-size:12px;
+    font-weight:700; color:#9aa6e6; margin:0 0 10px}
+  .hero h1{position:relative; margin:0; font-size:40px; line-height:1.08; letter-spacing:-.02em; font-weight:800}
+  .hero h1 .accent{background:linear-gradient(90deg,#34d399,#60a5fa,#a78bfa);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
+  .thesis{position:relative; max-width:780px; margin:16px 0 4px; font-size:17px; color:#c9d0f2}
+  .thesis b{color:#fff; font-weight:650}
+
+  .diagram{position:relative; margin:14px auto 6px; max-width:660px}
+  .diagram svg{width:100%; height:auto; display:block}
+
+  .hero-legend{position:relative; display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center;
+    margin-top:8px; font-size:12.5px; color:#aab2dd}
+  .hero-legend span{display:inline-flex; align-items:center; gap:7px}
+  .lg-solid,.lg-dash{width:26px; height:0; border-top:2.5px solid #8b93c4}
+  .lg-dash{border-top:2.5px dashed #8b93c4}
+  .lg-ring{width:13px;height:13px;border:2.5px solid #8b93c4;border-radius:50%;border-top-color:transparent;transform:rotate(20deg)}
+  .lg-rings{width:13px;height:13px;border-radius:50%;border:2px solid #8b93c4;box-shadow:0 0 0 3px rgba(139,147,196,.32)}
+  .lg-dring{width:14px;height:14px;border-radius:50%;border:2px dashed #cf8a2f}
+
+  /* ---------- SECTION ---------- */
+  .section{margin-top:46px}
+  .section h2{font-size:13px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted);
+    margin:0 0 18px; font-weight:700}
+
+  /* ---------- LOOP CARDS ---------- */
+  .loops{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
+  .loop{
+    --accent:#888; --accent-soft:#eee; --accent-ink:#333;
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:22px 22px 20px; box-shadow:var(--shadow); position:relative; overflow:hidden;
+  }
+  .loop::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--accent)}
+  .loop--build{--accent:var(--build); --accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
+  .loop--product{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .loop--quality{--accent:var(--quality); --accent-soft:var(--quality-soft); --accent-ink:var(--quality-ink)}
+  .loop--strategy{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
+
+  .loop__head{display:flex; align-items:flex-start; gap:14px}
+  .loop__num{flex:0 0 auto; width:40px; height:40px; border-radius:11px; background:var(--accent);
+    color:#fff; font-weight:800; font-size:18px; display:grid; place-items:center;
+    box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent)}
+  .loop__title{flex:1 1 auto; min-width:0}
+  .loop__title h3{margin:0; font-size:19px; letter-spacing:-.01em}
+  .loop__title .role{margin:2px 0 0; font-size:13px; color:var(--muted); font-weight:600}
+  .cadence{flex:0 0 auto; display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:700;
+    color:var(--accent-ink); background:var(--accent-soft); border-radius:999px; padding:6px 12px; white-space:nowrap}
+  .cadence .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+
+  .grid2{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:16px 0 2px}
+  .grid2 dt{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; padding-top:2px}
+  .grid2 dd{margin:0; font-size:14px; color:var(--ink-2)}
+
+  .steps{list-style:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 4px; padding:0; margin:14px 0 0}
+  .steps li{display:inline-flex; align-items:center}
+  .steps li>span{background:var(--accent-soft); color:var(--accent-ink); font-size:12.5px; font-weight:650;
+    padding:6px 11px; border-radius:9px}
+  .steps li:not(.repeat):not(:last-child)::after{content:"→"; color:var(--accent); opacity:.55; font-weight:800; margin-left:4px}
+  .steps li.repeat>span{background:transparent; color:var(--accent); font-weight:800; border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent)}
+
+  .loop__foot{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:18px;
+    padding-top:16px; border-top:1px solid var(--line)}
+  .cmds{display:flex; flex-wrap:wrap; gap:6px}
+  .cmds code{font:600 12.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--accent-ink);
+    background:var(--accent-soft); border-radius:7px; padding:6px 9px}
+  .status{margin-left:auto; display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:650;
+    color:var(--ink-2); background:#f4f5fa; border:1px solid var(--line); border-radius:999px; padding:5px 11px}
+  .status .pip{width:8px;height:8px;border-radius:50%}
+  .pip--auto{background:var(--build)} .pip--part{background:var(--quality)} .pip--plan{background:#9aa3c7} .pip--human{background:var(--strategy)}
+
+  /* ---------- TRIGGER / SCHEDULING ---------- */
+  .trigger{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 26px 24px; box-shadow:var(--shadow)}
+  .trigger h3{margin:0 0 4px; font-size:20px; letter-spacing:-.01em}
+  .trigger .lede{margin:0 0 20px; color:var(--ink-2); max-width:840px}
+  .tgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:16px}
+  .tcard{border:1px solid var(--line); border-radius:13px; padding:16px 16px 14px; background:#fbfcff}
+  .tcard.is-now{border-color:#bfe6d6; background:#f3fbf8}
+  .tcard h4{margin:0 0 6px; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .tcard h4 code{font:700 12.5px/1 ui-monospace,Menlo,monospace; background:#eef1fb; color:#23348f; padding:4px 7px; border-radius:6px}
+  .tcard h4 small{font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+    color:#0a5e44; background:#d8f2e8; padding:3px 7px; border-radius:999px}
+  .tcard h4 small.later{color:var(--muted); background:#eef0f6}
+  .tcard p{margin:0; font-size:13.5px; color:var(--ink-2)}
+  .pill-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
+  .pill{font-size:12px;font-weight:650;color:var(--ink-2);background:#f4f5fa;border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+  .pill b{color:var(--ink)}
+  .callout{margin-top:20px; border-left:4px solid var(--build); background:var(--build-soft);
+    border-radius:0 12px 12px 0; padding:14px 18px; color:var(--build-ink); font-size:14px}
+  .callout b{color:var(--build-ink)}
+  .callout code{background:#d4efe4; padding:2px 6px; border-radius:5px; font-size:12.5px}
+
+  /* ---------- SPECS ---------- */
+  .section-intro{margin:-4px 0 18px; color:var(--ink-2); max-width:900px; font-size:15px}
+  .section-intro b{color:var(--ink)} .section-intro code{font-size:12.5px;background:#eef1fb;color:#23348f;padding:2px 6px;border-radius:5px}
+  .spec-flow{display:flex; flex-wrap:wrap; align-items:stretch; gap:0; margin-bottom:18px}
+  .spec-stage{flex:1 1 250px; position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden;
+    --accent:#888; --accent-soft:#eee; --accent-ink:#333}
+  .spec-stage::before{content:""; position:absolute; left:0; top:0; right:0; height:4px; background:var(--accent)}
+  .spec--proposal{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
+  .spec--change{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .spec--design{--accent:var(--build); --accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
+  .spec-kicker{display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--accent-ink); background:var(--accent-soft); padding:4px 9px; border-radius:999px}
+  .spec-stage h4{margin:12px 0 3px; font-size:17px; letter-spacing:-.01em}
+  .spec-stage h4 small{font-weight:600; font-size:11.5px; color:var(--muted)}
+  .spec-q{margin:0 0 13px; font-size:13.5px; font-style:italic; color:var(--muted)}
+  .spec-meta{margin:0 0 12px; display:grid; gap:7px}
+  .spec-meta>div{display:grid; grid-template-columns:76px 1fr; gap:4px 10px; align-items:baseline}
+  .spec-meta dt{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; margin:0}
+  .spec-meta dd{margin:0; font-size:13px; color:var(--ink-2)}
+  .spec-stage code, .spec-card code{font:600 11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+    background:#f4f5fa; border:1px solid var(--line); border-radius:5px; padding:2px 6px; color:var(--ink-2)}
+  .states{display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin:0 0 11px}
+  .states span{font-size:11px; font-weight:650; color:var(--accent-ink); background:var(--accent-soft); border-radius:6px; padding:4px 8px}
+  .states .arr{background:none; color:var(--muted); padding:4px 1px; font-weight:800}
+  .states .end{background:#fff; border:1px dashed color-mix(in srgb,var(--accent) 50%, transparent)}
+  .spec-note{margin:0; font-size:12.5px; color:var(--muted); line-height:1.55}
+  .spec-arrow{flex:0 0 72px; display:flex; align-items:center; justify-content:center; color:var(--ink-2);
+    font-size:10.5px; font-weight:650; text-align:center; padding:6px 5px}
+  .spec-arrow span{display:block; max-width:92px}
+  .spec-arrow span::before{content:"→"; display:block; font-size:20px; color:#c4cbe0; line-height:1; margin-bottom:2px}
+  .spec-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .spec-card{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:#64748b}
+  .spec-card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent)}
+  .spec--ref{--accent:var(--quality)}
+  .spec--decision{--accent:#64748b}
+  .spec-card h4{margin:0 0 8px; font-size:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .spec-tag{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    background:#f1f3f8; padding:3px 7px; border-radius:999px}
+  .spec-card p{margin:0 0 9px; font-size:13.5px; color:var(--ink-2)}
+  .spec-card .spec-note{margin-top:9px}
+
+  footer{margin-top:34px; color:var(--muted); font-size:12.5px; text-align:center}
+  footer code{font-family:ui-monospace,Menlo,monospace}
+
+  @media (max-width:780px){
+    .wrap{padding:24px 16px 48px}
+    .hero{padding:26px 20px 18px}
+    .hero h1{font-size:30px}
+    .loops,.tgrid{grid-template-columns:1fr}
+    .cadence{order:3}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <p class="eyebrow">How we build · operating model</p>
+    <h1>The <span class="accent">Four Loops</span></h1>
+    <p class="thesis">
+      Four <b>nested</b> loops, one inside the next. The innermost — <b>Build</b> — spins fastest and does the work;
+      each loop that encloses it runs on a <b>longer cycle</b> and steers the ones within. <b>Intent flows inward</b>
+      (strategy becomes specs becomes tasks becomes code); <b>feedback flows back outward</b>. Ring size = cycle length.
+    </p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 920 812" role="img" aria-label="Four concentric loops: Build at the core, enclosed by Product, Quality and Strategy, sized by cycle length">
+        <defs>
+          <marker id="arw2" markerWidth="10" markerHeight="10" refX="7.5" refY="4" orient="auto">
+            <path d="M0,0 L9,4 L0,8 Z" fill="#46507a"/>
+          </marker>
+          <marker id="rot" markerWidth="9" markerHeight="9" refX="4.5" refY="4" orient="auto">
+            <path d="M0,0 L9,4 L0,8 Z" fill="context-stroke"/>
+          </marker>
+        </defs>
+
+        <!-- concentric bands (largest first so inner overlays) -->
+        <circle cx="460" cy="400" r="304" fill="#f1eafd" stroke="#7c3aed" stroke-width="2.5"/>
+        <circle cx="460" cy="400" r="230" fill="#fdf1df" stroke="#d97706" stroke-width="2.5" stroke-dasharray="9 7"/>
+        <circle cx="460" cy="400" r="156" fill="#e9edfd" stroke="#3b5bdb" stroke-width="2.5"/>
+        <circle cx="460" cy="400" r="82"  fill="#d6f2e8" stroke="#0f9d6e" stroke-width="3"/>
+
+        <!-- per-ring rotation motif (upper-right, away from labels) -->
+        <g fill="none" stroke-width="2.6">
+          <path d="M 514.9,339.1 A 82 82 0 0 1 537.1,372.0"   stroke="#0f9d6e" marker-end="url(#rot)"/>
+          <path d="M 564.4,284.1 A 156 156 0 0 1 606.6,346.6" stroke="#3b5bdb" marker-end="url(#rot)"/>
+          <path d="M 613.9,229.1 A 230 230 0 0 1 676.2,321.3" stroke="#d97706" marker-end="url(#rot)"/>
+          <path d="M 663.4,174.1 A 304 304 0 0 1 745.8,296.0" stroke="#7c3aed" marker-end="url(#rot)"/>
+        </g>
+
+        <!-- intent inward (left) / feedback outward (right) -->
+        <g stroke="#46507a" stroke-width="2.6" fill="none">
+          <path d="M 170,400 L 372,400" marker-end="url(#arw2)"/>
+          <path d="M 548,400 L 756,400" stroke-dasharray="7 5" marker-end="url(#arw2)"/>
+        </g>
+        <g font-size="12.5" font-weight="650" text-anchor="middle">
+          <g><rect x="197" y="367" width="146" height="22" rx="7" fill="#11183a"/><text x="270" y="382" fill="#dfe4fb">intent flows inward</text></g>
+          <g><rect x="571" y="367" width="164" height="22" rx="7" fill="#11183a"/><text x="653" y="382" fill="#dfe4fb">feedback flows outward</text></g>
+        </g>
+
+        <!-- Quality feeds Build's queue directly — a maintenance band, not a steering layer -->
+        <path d="M 300,560 L 401,459" stroke="#d97706" stroke-width="2.2" stroke-dasharray="6 5" fill="none" marker-end="url(#rot)"/>
+        <g><rect x="299" y="511" width="120" height="20" rx="6" fill="#ffffff" stroke="#f0c890"/><text x="359" y="525" font-size="11" font-weight="700" fill="#a9701f" text-anchor="middle">findings → Build</text></g>
+
+        <!-- ring labels, stacked at 12 o'clock down into the core -->
+        <g text-anchor="middle">
+          <text x="460" y="131" font-size="16" font-weight="800" fill="#4c1d95" letter-spacing=".04em">STRATEGY</text>
+          <text x="460" y="148" font-size="11" font-weight="600" fill="#6d4bb0">Periodic · human-led</text>
+
+          <text x="460" y="205" font-size="16" font-weight="800" fill="#8a4b06" letter-spacing=".04em">QUALITY</text>
+          <text x="460" y="222" font-size="11" font-weight="600" fill="#a9701f">Weekly / on idle · maintenance band</text>
+
+          <text x="460" y="279" font-size="16" font-weight="800" fill="#23348f" letter-spacing=".04em">PRODUCT</text>
+          <text x="460" y="296" font-size="11" font-weight="600" fill="#4d63c8">Daily · human + Claude</text>
+
+          <text x="460" y="390" font-size="19" font-weight="800" fill="#0a5e44" letter-spacing=".03em">BUILD</text>
+          <text x="460" y="408" font-size="11.5" font-weight="700" fill="#0f7d59">Hourly · autonomous</text>
+          <text x="460" y="424" font-size="10" font-weight="600" fill="#3a8f72">the engine · pulls from Linear</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="hero-legend">
+      <span><i class="lg-rings"></i> ring size = cycle length (Build hourly → Strategy periodic)</span>
+      <span><i class="lg-solid"></i> intent flows inward</span>
+      <span><i class="lg-dash"></i> feedback flows outward</span>
+      <span><i class="lg-dring"></i> dashed = Quality maintenance band (feeds Build, doesn't steer)</span>
+    </div>
+  </section>
+
+  <!-- ===================== LOOP DETAIL ===================== -->
+  <section class="section">
+    <h2>The four loops, in detail</h2>
+    <div class="loops">
+
+      <!-- BUILD -->
+      <article class="loop loop--build">
+        <div class="loop__head">
+          <div class="loop__num">1</div>
+          <div class="loop__title"><h3>The Build Loop</h3><p class="role">Execution engine · the core</p></div>
+          <span class="cadence"><i class="dot"></i> Hourly</span>
+        </div>
+        <dl class="grid2">
+          <dt>Trigger</dt><dd>A scheduled Claude routine that <b>autonomously picks</b> which task to work on.</dd>
+          <dt>Driver</dt><dd>Autonomous — Claude, unattended.</dd>
+        </dl>
+        <ul class="steps">
+          <li><span>Pick a wholly-defined task from Linear</span></li>
+          <li><span>Build it test-first (TDD)</span></li>
+          <li><span>Review the implementation</span></li>
+          <li><span>Close out</span></li>
+          <li class="repeat"><span>↻</span></li>
+        </ul>
+        <div class="loop__foot">
+          <div class="cmds"><code>/build</code><code>/start</code><code>harness</code></div>
+          <span class="status"><i class="pip pip--auto"></i> Automated · the harness app is the tool inside this loop</span>
+        </div>
+      </article>
+
+      <!-- PRODUCT -->
+      <article class="loop loop--product">
+        <div class="loop__head">
+          <div class="loop__num">2</div>
+          <div class="loop__title"><h3>The Product Loop</h3><p class="role">Defines what to build · encloses Build</p></div>
+          <span class="cadence"><i class="dot"></i> Daily</span>
+        </div>
+        <dl class="grid2">
+          <dt>Trigger</dt><dd>The product owner (human) working with Claude.</dd>
+          <dt>Driver</dt><dd>Human + Claude.</dd>
+        </dl>
+        <ul class="steps">
+          <li><span>Define detailed specs &amp; designs</span></li>
+          <li><span>Decompose into tasks → Build queue</span></li>
+          <li><span>When a spec's tasks are all done</span></li>
+          <li><span>Original author reviews the as-built code</span></li>
+          <li class="repeat"><span>↻</span></li>
+        </ul>
+        <div class="loop__foot">
+          <div class="cmds"><code>/propose</code></div>
+          <span class="status"><i class="pip pip--part"></i> As-built review still closed by hand (find the old chat)</span>
+        </div>
+      </article>
+
+      <!-- QUALITY -->
+      <article class="loop loop--quality">
+        <div class="loop__head">
+          <div class="loop__num">3</div>
+          <div class="loop__title"><h3>The Quality Loop</h3><p class="role">Keeps the system healthy</p></div>
+          <span class="cadence"><i class="dot"></i> Weekly / on idle</span>
+        </div>
+        <dl class="grid2">
+          <dt>Trigger</dt><dd>A weekly Claude routine with fixed scope — <b>or</b> the hourly Build routine when it has nothing to do.</dd>
+          <dt>Driver</dt><dd>Autonomous — Claude.</dd>
+        </dl>
+        <ul class="steps">
+          <li><span>Build idle → assess code</span></li>
+          <li><span>Weekly → assess system (broader)</span></li>
+          <li><span>File findings as Linear tasks</span></li>
+          <li><span>→ back to Build queue</span></li>
+          <li class="repeat"><span>↻</span></li>
+        </ul>
+        <div class="loop__foot">
+          <div class="cmds"><code>/assess code</code><code>/assess system</code></div>
+          <span class="status"><i class="pip pip--plan"></i> Planned: coverage, architecture drift &amp; tech-debt variants</span>
+        </div>
+      </article>
+
+      <!-- STRATEGY -->
+      <article class="loop loop--strategy">
+        <div class="loop__head">
+          <div class="loop__num">4</div>
+          <div class="loop__title"><h3>The Strategy Loop</h3><p class="role">Sets direction · the outer ring</p></div>
+          <span class="cadence"><i class="dot"></i> Periodic</span>
+        </div>
+        <dl class="grid2">
+          <dt>Trigger</dt><dd>Human-run, on no fixed period — assisted by agent research.</dd>
+          <dt>Driver</dt><dd>Human, with agent research.</dd>
+        </dl>
+        <ul class="steps">
+          <li><span>Review product strategy &amp; approach</span></li>
+          <li><span>Review technical design</span></li>
+          <li><span>Spawn entirely new Product loops</span></li>
+          <li class="repeat"><span>↻</span></li>
+        </ul>
+        <div class="loop__foot">
+          <div class="cmds"><code>research</code><code>(human-led)</code></div>
+          <span class="status"><i class="pip pip--human"></i> Human-driven — the rudder for everything inside</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ===================== TRIGGERING ===================== -->
+  <section class="section">
+    <h2>How the loops are triggered</h2>
+    <div class="trigger">
+      <h3>Scheduled locally — by choice</h3>
+      <p class="lede">
+        Claude Code can schedule these routines itself; the only question is <i>where</i> they run. The Build loop drives the
+        local harness Docker app (it needs the Mac Keychain token and your <code>~/.codex</code> auth), so the autonomous
+        loops run <b>on this machine</b>. That's a deliberate choice — and local scheduling is actually finer-grained than the cloud.
+      </p>
+      <div class="tgrid">
+        <div class="tcard is-now">
+          <h4>Local routines <small>today</small></h4>
+          <p>A local trigger (launchd / cron, a desktop scheduled task, or a kept-open <code>/loop</code> session) fires each run on your Mac with full local credentials. Granularity down to 1 minute, so Hourly Build and Weekly Quality are trivial. Trade-off: the machine has to be awake.</p>
+        </div>
+        <div class="tcard">
+          <h4><code>/schedule</code> Cloud routines <small class="later">if ever needed</small></h4>
+          <p>Cloud Routines run on Anthropic's infrastructure even with the laptop closed — but each run is a fresh clone that can't reach the local harness app. The escape hatch for laptop-off operation: you'd run Build via the agent-led <code>/start → /review → /ship</code> flow instead of the Docker app.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <b>Version the logic, not the schedule.</b> Each loop's prompt lives in the repo as a slash command
+        (<code>/build</code>, <code>/assess</code>, <code>/propose</code>); the scheduled routine is a thin trigger that just calls it.
+        That gives you the <b>consistent, versioned, shareable repo of routines</b> you're after — the command logic is
+        git-controlled and reviewable, whether the trigger fires locally or in the cloud.
+      </div>
+
+      <div class="pill-row">
+        <span class="pill"><b>Machine must be awake</b> for a local routine to fire</span>
+        <span class="pill"><b>Runs as you</b> — local Keychain + <code style="font-size:11px">~/.codex</code> creds</span>
+        <span class="pill"><b>State lives in Linear</b> → survives between runs</span>
+        <span class="pill"><b>Sub-hourly possible</b> locally (cloud is 1-hour min)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SPECS ===================== -->
+  <section class="section">
+    <h2>The specs — types &amp; lifecycles</h2>
+    <p class="section-intro">
+      Specs come in two families. <b>Lifecycle specs</b> flow with a task — an idea becomes confirmed work becomes the
+      permanent record. <b>Reference specs</b> document standing parts of the system. And <b>decisions</b> are recorded
+      inside whichever spec governs them — there is no separate <code>decisions/</code> folder.
+    </p>
+
+    <div class="spec-flow">
+      <!-- proposal -->
+      <div class="spec-stage spec--proposal">
+        <span class="spec-kicker">Lifecycle · before work</span>
+        <h4>Proposal spec</h4>
+        <p class="spec-q">"Should we do this — and how big is it?"</p>
+        <dl class="spec-meta">
+          <div><dt>Lives in</dt><dd><code>specs/proposals/&lt;slug&gt;.md</code></dd></div>
+          <div><dt>Raised</dt><dd>via <code>/propose</code>, by whoever sees the need</dd></div>
+          <div><dt>Holds</dt><dd>Problem · Options · Recommendation · Open decisions · Breakdown · Risks</dd></div>
+        </dl>
+        <div class="states">
+          <span>draft</span><span class="arr">→</span><span>under-decision</span><span class="arr">→</span>
+          <span class="end">accepted</span><span class="end">rejected</span><span class="end">split</span>
+        </div>
+        <p class="spec-note">Only when work is unconfirmed, risky, or too big for one change. Ends in one explicit state — never half-decided.</p>
+      </div>
+
+      <div class="spec-arrow"><span>accepted: spawns change specs</span></div>
+
+      <!-- change -->
+      <div class="spec-stage spec--change">
+        <span class="spec-kicker">Lifecycle · in flight</span>
+        <h4>Change spec</h4>
+        <p class="spec-q">"What exactly will this one piece of work do?"</p>
+        <dl class="spec-meta">
+          <div><dt>Lives in</dt><dd>the <b>Linear issue</b> — no separate file</dd></div>
+          <div><dt>Written by</dt><dd>the builder</dd></div>
+          <div><dt>Holds</dt><dd>Problem · Approach · Design (data / interface / scenarios) · Acceptance criteria · Out of scope</dd></div>
+        </dl>
+        <div class="states">
+          <span>In Progress</span><span class="arr">→</span><span>In Review</span><span class="arr">→</span><span>Done</span>
+        </div>
+        <p class="spec-note">Edited in place the moment scope shifts — silent divergence is a process violation. Stays on the issue as history after ship.</p>
+      </div>
+
+      <div class="spec-arrow"><span>on PASS: reviewer records it</span></div>
+
+      <!-- feature -->
+      <div class="spec-stage spec--design">
+        <span class="spec-kicker">Lifecycle · the record</span>
+        <h4>Feature spec <small>· the as-built source of truth</small></h4>
+        <p class="spec-q">"What does the product do today?"</p>
+        <dl class="spec-meta">
+          <div><dt>Lives in</dt><dd><code>specs/features/&lt;feature&gt;.md</code></dd></div>
+          <div><dt>Written by</dt><dd>the <b>reviewer</b>, on PASS, from the diff — never the builder</dd></div>
+          <div><dt>Holds</dt><dd>Behaviour (by surface) · Data model · Interface surface · Known limitations · embedded Decisions</dd></div>
+        </dl>
+        <div class="states">
+          <span class="end">permanent · as-built record</span>
+        </div>
+        <p class="spec-note">The central source of truth, grouped by user-visible behaviour. The reviewer records reality as the last commit before merge — the agent that promises is not the one that records delivery.</p>
+      </div>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-card spec--ref">
+        <h4>Architecture-principles <span class="spec-tag">Reference · standing</span></h4>
+        <p>How the system is built — the technical principles governing design here, extending the universal engineering-principles. Also the home for <b>cross-cutting decisions</b>.</p>
+        <code>specs/architecture-principles.md</code>
+        <p class="spec-note">Updated when the architecture changes, not per task.</p>
+      </div>
+      <div class="spec-card spec--ref">
+        <h4>Infrastructure <span class="spec-tag">Reference · standing</span></h4>
+        <p>The operational reality — repo, CI, packaging, accounts, secrets. The source of truth for a deployment or configuration decision.</p>
+        <code>specs/infrastructure.md</code>
+        <p class="spec-note">Now instantiated for the harness — repo, GitHub Actions CI, the Docker wrapper, Linear, and where each credential lives. Updated when infra changes, not per task.</p>
+      </div>
+      <div class="spec-card spec--decision">
+        <h4>Decisions <span class="spec-tag">embedded · not a folder</span></h4>
+        <p>No standalone ADRs. A consequential decision is recorded <b>inside the spec it governs</b> — a local one in its design spec, a cross-cutting one in architecture-principles.</p>
+        <code>Context · Decision · Alternatives · Consequences</code>
+        <p class="spec-note">Superseding updates it in place with a dated note — the spec carries its history inline.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Internal working model · drafted 2026-06-13 · loops 1 &amp; 3 run as local scheduled routines on this machine; loops 2 &amp; 4 are human-initiated.<br>
+    Scheduling reflects current Claude Code capabilities — local scheduled tasks, <code>/loop</code>, and cloud <code>/schedule</code> routines.
+  </footer>
+
+</div>
+</body>
+</html>
