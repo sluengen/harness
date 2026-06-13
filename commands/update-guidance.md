@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@0.3.0 -->
+<!-- guidance:update-guidance@0.4.0 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -30,8 +30,15 @@ Pull the clean PULLs automatically. For CONFLICTs, present the diff and ask. Nev
 ### 4. Rewrite the lock
 Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled. Leave LOCAL/CONFLICT entries as they are until resolved.
 
-### 5. Verify and report
-**Verify the derived artifacts first:** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` must be byte-identical to each other (`diff` them). If any differs, the step-3 re-derivation was skipped — regenerate it now; do not report done with the three out of sync. Then print the counts: pulled, left local, conflicts awaiting decision, already current. Name each non-current file so the user knows what changed, and confirm the three entry files match.
+### 5. Verify
+**Verify the derived artifacts first:** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` must be byte-identical to each other (`diff` them). If any differs, the step-3 re-derivation was skipped — regenerate it now; do not proceed with the three out of sync.
+
+### 6. Commit, integrate, and report
+A guidance pull is maintenance, not feature work: it carries no ticket, spec, or review gate, so it lands without ceremony — don't make the user ask for the commit. Commit the pulled files, the re-derived artifacts, and the rewritten lock, then integrate per the repo's branch model (`CONTEXT.md` `branches`) exactly as `/ship` does — fast-forward or merge to the integration branch and push if the model pushes. Never force-push; never push to a protected branch unless `CONTEXT.md` says that is the path.
+
+Commit only what resolved cleanly. Leave any unresolved CONFLICT/LOCAL files out of the commit and name them for the user to handle — do not block the clean pulls on them. If nothing was pulled (everything already current), there is nothing to commit: say so and stop.
+
+Then print the counts: pulled, left local, conflicts awaiting decision, already current. Name each non-current file, confirm the three entry files match, and report the integration target and merge/push result.
 
 ## Note
 If you find a bug in an installed guidance file, do not just patch it locally (that creates a LOCAL divergence forever). Fix it in the source, bump its version there, then `/update-guidance` here — so every repo benefits.

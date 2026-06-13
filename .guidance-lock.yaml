@@ -2,7 +2,7 @@
 profile: harness
 source:
   name: agents
-  ref: 9b27612  # "feat(commands): assess commits report directly, no per-run PR"
+  ref: 35ed6cc  # "feat(commands): update-guidance commits and integrates the pull"
 files:
   skills/engineering-principles.md:  { version: 0.2.0, hash: 1c7d981391d4 }
   skills/spec-driven-development.md: { version: 0.3.1, hash: d330fae0ac70 }
@@ -26,7 +26,7 @@ files:
   commands/review.md:                { version: 0.1.2, hash: 570514138a12 }
   commands/ship.md:                  { version: 0.1.2, hash: 5393413b61ed }
   commands/assess.md:                { version: 0.3.0, hash: e91716840d07 }
-  commands/update-guidance.md:       { version: 0.3.0, hash: 1ecb24266439 }
+  commands/update-guidance.md:       { version: 0.4.0, hash: 40b65aa1d897 }
   commands/build.md:                 { version: 1.2.0, hash: 783c1420bb91 }
   commands/build-codex.md:           { version: 1.2.0, hash: 3e1e60cb60eb }
   templates/proposal.md:             { version: 0.1.1, hash: a80aecbed6db }
