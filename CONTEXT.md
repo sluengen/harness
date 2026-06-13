@@ -88,7 +88,7 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 - **Cross-repo execution** — `cd` to the target repo and run the verbs there. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. (`--repo` and `--base` are accepted when invoking the verbs directly outside the wrapper.)
 - **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH. Use when Docker is not available. Credentials and env vars must be set manually.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
-- **`mypy` scope is `harness`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
+- **`mypy` scope is `harness`** — tests are excluded from the type check. Test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
 - **Verification output can come back empty** in the Claude Code Bash tool (it auto-backgrounds long commands). Redirect to `/tmp/<file>.txt` and `tail` it.
 
