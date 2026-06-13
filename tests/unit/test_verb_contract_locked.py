@@ -1,0 +1,257 @@
+"""Verb-contract lock — the surface is a versioned interface (CAL-649, decision D3).
+
+The `/harness <verb>` JSON output and the `close` refusal-reason enum are the
+machine-readable **app contract** that orchestrating agents — and, once the
+stopgap commands become thin clients over the harness app, consuming repos —
+parse. The "Surface is a versioned interface" principle
+(``specs/architecture-principles.md``) makes that contract a versioned one: a
+change to it is a *major*-level interface event that must surface as a deliberate
+version decision on the exposing surface unit, never an unannounced break.
+
+This guard mirrors the CLI-surface-lock (CAL-603, ``test_cli_surface_locked.py``):
+that one locks the *command names*; this one locks the *verb output shape* and
+the *refusal-reason enum*. It binds to the **JSON the production CLI actually
+emits** — each verb is driven through ``CliRunner`` with its orchestration mocked,
+and the asserted keys come from the command's real ``stdout`` (the
+``typer.echo(output.model_dump_json())`` line), not from re-serializing a model in
+the test. So a serialization alias, a custom serializer, a field exclusion (e.g. a
+switch to ``model_dump_json(exclude_none=True)``), or a payload wrap before
+``typer.echo`` is caught — not only a renamed attribute. A change fails the test
+until the pinned snapshot below is deliberately updated — and that update is
+exactly where the patch/minor/major decision is made. A golden snapshot cannot
+mechanically force a header bump (nothing can), but it guarantees the contract
+change is *visible in review* rather than silent drift.
+
+``test_docs_consistency.py`` checks docs are present; the surface-lock checks the
+command set; this checks the *data* an agent reads back off each verb.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from pathlib import Path
+from typing import get_args
+from unittest.mock import AsyncMock
+
+import pytest
+from pydantic import BaseModel
+from typer.testing import CliRunner
+
+from harness.cli import app
+from harness.cli.close import CloseOutput, RefusalReason
+from harness.cli.review import ReviewOutput, Verdict
+from harness.cli.start import StartOutput, TicketContext
+from harness.state import store
+
+REPO_ROOT = Path(__file__).parent.parent.parent
+PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
+
+cli_runner = CliRunner()
+
+
+# --- Verb output keys (emitted by the production CLI) -------------------------
+
+#: One minimal-but-valid output instance per verb — the canned return the mocked
+#: orchestration hands back, so the command serializes and echoes it through its
+#: real ``typer.echo(output.model_dump_json())`` path.
+_INSTANCES: dict[str, BaseModel] = {
+    "start": StartOutput(
+        run_id="r",
+        ticket=TicketContext(identifier="CAL-1"),
+        worktree_path="/w",
+        worktree_branch="b",
+        base_branch="dev",
+    ),
+    "review": ReviewOutput(verdict="pass", issues=[], reviewed_sha="sha", run_id="r"),
+    "close": CloseOutput(
+        run_id="r",
+        ticket="CAL-1",
+        reviewed_sha="sha",
+        merged=True,
+        ticket_done=True,
+        status="closed",
+    ),
+}
+
+#: The CLI argv that drives each verb to its emission path (the success path is
+#: reached because its orchestration is mocked to return ``_INSTANCES[verb]``).
+#: ``--repo``/``--db`` are filled with the tmp paths at call time.
+_ARGV: dict[str, list[str]] = {
+    "start": ["start", "CAL-1"],
+    "review": ["review"],
+    "close": ["close", "CAL-1"],
+}
+
+#: The module attribute (the async orchestration entry) each command awaits via
+#: ``asyncio.run`` before echoing the result. Mocking it isolates the *emission*.
+_ORCH: dict[str, str] = {
+    "start": "harness.cli.start._run_start",
+    "review": "harness.cli.review._run_review",
+    "close": "harness.cli.close._run_close",
+}
+
+#: The locked top-level JSON keys each verb emits, as-built
+#: (``harness/cli/{start,review,close}.py``). Adding, dropping, or renaming a key
+#: — whether via a field, an alias, a serializer, or an exclusion — is an
+#: output-contract change: a *major*-level event under the "Surface is a versioned
+#: interface" principle. Update this snapshot only alongside that deliberate
+#: version decision.
+EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
+    "start": {"run_id", "ticket", "worktree_path", "worktree_branch", "base_branch"},
+    "review": {"verdict", "issues", "reviewed_sha", "run_id"},
+    "close": {"run_id", "ticket", "reviewed_sha", "merged", "ticket_done", "status"},
+}
+
+#: ``StartOutput.ticket`` serializes to a nested object; its keys are part of the
+#: start output JSON a consumer parses (``ticket.identifier`` etc.), so the nested
+#: contract is locked too — an unlocked nested object is a silent gap.
+EXPECTED_TICKET_CONTEXT_KEYS = {"id", "identifier", "title", "description", "url"}
+
+
+def _emit_via_cli(
+    verb: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, object]:
+    """Drive ``verb`` through the real CLI with its orchestration mocked; return
+    the JSON object the command actually echoed to stdout."""
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+    monkeypatch.setattr(_ORCH[verb], AsyncMock(return_value=_INSTANCES[verb]))
+    db = tmp_path / "harness.db"
+    asyncio.run(store.init_db(db))
+    result = cli_runner.invoke(
+        app, [*_ARGV[verb], "--repo", str(tmp_path), "--db", str(db)]
+    )
+    assert result.exit_code == 0, result.output
+    return json.loads(result.output)
+
+
+@pytest.mark.parametrize("verb", sorted(EXPECTED_VERB_OUTPUT_KEYS))
+def test_verb_emits_locked_output_keys(
+    verb: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each verb's *real CLI stdout* exposes exactly its locked top-level key set.
+
+    Reads the JSON the production ``typer.echo(output.model_dump_json())`` emits,
+    so aliases / serializers / exclusions / a payload wrap are in scope. Fails on
+    any added / dropped / renamed emitted key — version the exposing surface unit
+    (major bump) and update ``EXPECTED_VERB_OUTPUT_KEYS`` in the same change.
+    """
+    emitted = _emit_via_cli(verb, tmp_path, monkeypatch)
+    assert set(emitted) == EXPECTED_VERB_OUTPUT_KEYS[verb]
+
+
+def test_start_emits_locked_nested_ticket_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``start``'s real CLI stdout nests a ``ticket`` object with exactly its
+    locked key set (the nested contract a consumer parses)."""
+    emitted = _emit_via_cli("start", tmp_path, monkeypatch)
+    assert set(emitted["ticket"]) == EXPECTED_TICKET_CONTEXT_KEYS  # type: ignore[arg-type]
+
+
+# --- Refusal-reason enum + emitted refusal payload ----------------------------
+
+#: The structured ``close`` refusal reasons (``harness/cli/close.py``). Exactly
+#: one is emitted in the ``{"reason": ...}`` JSON on a gate failure, and an
+#: orchestrating agent branches on the value — so the enum is interface. Adding,
+#: dropping, or renaming a reason is a *major*-level event.
+EXPECTED_REFUSAL_REASONS = {
+    "no_run",
+    "dirty_worktree",
+    "no_passing_review",
+    "stale_review",
+}
+
+
+def test_refusal_reason_enum_matches_the_locked_contract() -> None:
+    """The ``close`` refusal-reason type holds exactly the locked members.
+
+    Fails on any added / dropped / renamed reason — a refusal-reason change is an
+    interface change (major); version the exposing unit and update the snapshot.
+    """
+    assert set(get_args(RefusalReason)) == EXPECTED_REFUSAL_REASONS
+
+
+#: The ``review`` verdict values (``harness/cli/review.py``). An orchestrating
+#: agent branches on ``pass`` / ``fail`` / ``defer`` exactly as it branches on a
+#: refusal reason, so the *values* — not just the ``verdict`` key — are interface.
+#: Adding, dropping, or renaming a verdict is a *major*-level event.
+EXPECTED_REVIEW_VERDICTS = {"pass", "fail", "defer"}
+
+
+def test_review_verdict_enum_matches_the_locked_contract() -> None:
+    """The ``review`` verdict type holds exactly the locked values.
+
+    The output-key lock pins the ``verdict`` *key*; this pins its *values*, so a
+    new or renamed verdict cannot drift silently past the suite.
+    """
+    assert set(get_args(Verdict)) == EXPECTED_REVIEW_VERDICTS
+
+
+def test_close_emits_a_locked_refusal_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``close`` on a no-open-run worktree emits a ``reason`` that is a locked
+    member — binding the emitted ``{"reason": ...}`` payload to the enum snapshot,
+    not just the ``Literal`` type. Self-contained: an empty initialized ledger
+    refuses with ``no_run`` before any Linear or git side effect.
+    """
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+    db = tmp_path / "harness.db"
+    asyncio.run(store.init_db(db))
+
+    result = cli_runner.invoke(
+        app,
+        ["close", "CAL-1", "--repo", str(tmp_path), "--db", str(db)],
+    )
+    assert result.exit_code != 0
+    reason = json.loads(result.output)["reason"]
+    assert reason in EXPECTED_REFUSAL_REASONS
+    assert reason == "no_run"
+
+
+# --- Drift detection self-test ------------------------------------------------
+# Proves the lock actually catches a change, rather than only asserting the
+# current snapshot matches itself: a perturbed emitted-key set / refusal set must
+# be flagged by the same set-equality the locks above rely on.
+
+
+def test_the_lock_catches_an_added_key() -> None:
+    """An emitted-key set with an extra key does not equal its locked snapshot."""
+    drifted = EXPECTED_VERB_OUTPUT_KEYS["close"] | {"leaked"}
+    assert drifted != EXPECTED_VERB_OUTPUT_KEYS["close"]
+
+
+def test_the_lock_catches_a_renamed_refusal_reason() -> None:
+    """A refusal-reason set with a renamed member is flagged."""
+    renamed = (EXPECTED_REFUSAL_REASONS - {"no_run"}) | {"missing_run"}
+    assert renamed != EXPECTED_REFUSAL_REASONS
+
+
+# --- The semver principle is recorded (AC-1) ----------------------------------
+
+#: AC-1: the "Surface is a versioned interface" semver principle is recorded as a
+#: first-class principle (not only inside the merge decision block) with all three
+#: bump levels named. A structural check so deleting it fails the suite.
+_PRINCIPLE_HEADING = re.compile(r"^### Surface is a versioned interface\b", re.M)
+
+
+def test_versioned_interface_principle_is_recorded() -> None:
+    """``architecture-principles.md`` records the semver principle with all three
+    bump levels (patch / minor / major) named."""
+    text = PRINCIPLES.read_text()
+    heading = _PRINCIPLE_HEADING.search(text)
+    assert heading, (
+        "The 'Surface is a versioned interface' principle is missing from "
+        "specs/architecture-principles.md (CAL-649 AC-1)."
+    )
+    # Scope to the principle's own section so the three levels are asserted in
+    # context, not matched incidentally elsewhere in the spec.
+    start = heading.start()
+    nxt = re.search(r"^### ", text[start + 3 :], re.M)
+    section = text[start : start + 3 + nxt.start()] if nxt else text[start:]
+    for level in ("patch", "minor", "major"):
+        assert level in section.lower(), (
+            f"The versioned-interface principle must name the '{level}' bump level."
+        )
