@@ -5,6 +5,9 @@
       "Write",
       "Edit",
       "Bash(*)",
+      "Bash(git push origin dev)",
+      "Bash(git push origin HEAD:dev)",
+      "Bash(git push origin *:dev)",
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.python.org)",
@@ -27,6 +30,12 @@
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~)",
       "Bash(rm -rf $HOME*)"
+    ]
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Pushing reviewed work to the `dev` integration branch (e.g. `git push origin dev`, `git push origin HEAD:dev`, `git push origin <sha>:dev`) is allowed. In this repo `dev` is the integration branch and the agent led review action is the merge gate, so a direct push of an already-reviewed commit does not bypass review. Force-pushes to dev remain blocked."
     ]
   },
   "hooks": {
