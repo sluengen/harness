@@ -33,9 +33,8 @@ STALE_PHRASES = [
 # --- BOOTSTRAP.md must be shipped (CAL-620) -----------------------------------
 #
 # CLAUDE.md / AGENTS.md / GEMINI.md / RELEASING.md all link to BOOTSTRAP.md as
-# the repeatable-onboarding doc, and `.guidance-lock.yaml` names it as the file
-# that writes the lock. A doc you reference but do not ship sends anyone who
-# follows the pointer to a 404, so the repo must actually carry it.
+# the repeatable-onboarding doc. A doc you reference but do not ship sends anyone
+# who follows the pointer to a 404, so the repo must actually carry it.
 #
 # The guard judges the *committed* tree (``git ls-files``), not the working
 # tree, per the CAL-619 git-aware-guard principle: a BOOTSTRAP.md that exists
@@ -48,9 +47,8 @@ def test_bootstrap_md_is_tracked() -> None:
     """BOOTSTRAP.md is referenced across the docs; it must be a committed file."""
     assert BOOTSTRAP_DOC.resolve() in tracked_files_under("BOOTSTRAP.md"), (
         "BOOTSTRAP.md is referenced by CLAUDE.md / AGENTS.md / GEMINI.md / "
-        "RELEASING.md and named as the writer of .guidance-lock.yaml, but git "
-        "does not track it. Ship the onboarding doc you reference (CAL-620; the "
-        "CAL-619 git-aware-guard principle)."
+        "RELEASING.md, but git does not track it. Ship the onboarding doc you "
+        "reference (CAL-620; the CAL-619 git-aware-guard principle)."
     )
 
 

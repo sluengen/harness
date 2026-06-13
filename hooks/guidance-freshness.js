@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.0
+// guidance:hook-guidance-freshness@0.3.2
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -10,7 +10,7 @@
  *   - Version drift: a distributable/meta file whose header no longer matches its
  *     registry version. JSON settings carry no header — the registry version is
  *     authoritative, so they get the generic bump reminder instead.
- *   - meta files (BOOTSTRAP.md, registry.yaml) are watched too, not just subdirs.
+ *   - meta files (INSTALLER.md, registry.yaml) are watched too, not just subdirs.
  *   - Leak guard: a universal prose file (skills/agents/commands/process/templates)
  *     containing a repo proper-noun — a ticket-ID-shaped token — which the
  *     universal/repo-specific rule forbids (AGENTS.md). What system-steward greps
@@ -31,7 +31,7 @@ const D_LEAK = path.join(os.tmpdir(), "guidance-freshness-leak");
 const D_ENTRY = path.join(os.tmpdir(), "guidance-freshness-entry");
 
 const DIST = /^(skills|agents|commands|templates|process|hooks|settings)\//;
-const META = /^(BOOTSTRAP\.md|registry\.yaml)$/;
+const META = /^(INSTALLER\.md|registry\.yaml)$/;
 const ENTRY = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);      // triplicated entry files — must match
 const PROSE = /^(skills|agents|commands|process|templates)\//;       // universal prose — leak-checked
 // Ticket-ID shape (e.g. CAL-42), excluding obvious standards refs.
@@ -48,6 +48,12 @@ function headerVersion(c) { const m = c.match(/guidance:[\w-]+@([\d.]+)/); retur
 function registryVersion(reg, relPath) {
   const m = reg.match(new RegExp(relPath.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + ":\\s*\\{[^}]*version:\\s*([\\d.]+)"));
   return m ? m[1] : null;
+}
+// A path is managed by the source only if it appears as a key in registry.yaml
+// (files: or meta:). A file under a surface dir but absent from the registry is
+// repo-owned (e.g. commands/harness.md) — not distributed guidance.
+function registryMember(reg, relPath) {
+  return new RegExp("(^|\\n)\\s*" + relPath.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + ":\\s*\\{").test(reg);
 }
 function leakedIds(content) {
   const hits = new Set();
@@ -86,6 +92,21 @@ function main() {
 
   // SOURCE repo
   if (registry) {
+    // Repo-owned files under a surface dir but excluded from the copy-list
+    // (e.g. commands/harness.md) are not distributed guidance — source-mode
+    // checks must not apply to them. Identify them without naming any repo fact:
+    // a non-member that carries no `guidance:` header AND is not a `.json` is
+    // repo-owned, so skip it. The `.json` carve-out matters because settings
+    // JSON is the one *headerless* distributable type (the registry version is
+    // authoritative) — a new, unregistered settings file must still draw the
+    // register reminder. A non-member that carries a header is likewise a new
+    // guidance file not yet registered — keep checking it. Meta files
+    // (registry.yaml, INSTALLER.md) are always checked (isDist is false for
+    // them), so a malformed registry that drops its own meta entry can't silence
+    // the reminder for the very file being broken.
+    if (isDist && !registryMember(registry, relPath) &&
+        !relPath.endsWith(".json") &&
+        !headerVersion(read(path.join(cwd, relPath)))) return done();
     // Leak guard on universal prose files.
     if (PROSE.test(relPath)) {
       const ids = leakedIds(read(path.join(cwd, relPath)));
