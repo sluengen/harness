@@ -28,7 +28,9 @@ on the one ledger that is the whole audit trail.
 
 Exit codes (SPEC §11):
 * 0  — run abandoned; ``{"run_id": ..., "outcome": "cancelled"}``.
-* 2  — invocation error: unknown run-id, or the run is already terminal.
+* 2  — invocation error: unknown run-id, a run already terminal, or a run
+       whose status is not on the in-flight allowlist (an unknown/future
+       status is refused, never silently overwritten).
 * 1  — unexpected error (DB failure).
 """
 
