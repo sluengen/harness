@@ -22,9 +22,10 @@ Linear HTTP, SQLite, worktree git — is awaited rather than spread across
 repeated ``asyncio.run`` calls.
 
 Exit codes (SPEC §11):
-* 0   — success; JSON context printed (new or existing run).
+* 0   — success; JSON context printed (a new run, or the existing run
+        surfaced for a duplicate start of the same ticket — step 4).
 * 1   — unexpected error (worktree creation failed, DB error, etc.).
-* 2   — invocation error: missing ticket, duplicate run, Linear unreachable.
+* 2   — invocation error: missing ``LINEAR_API_KEY``, missing ticket, Linear unreachable.
 
 The ``--json`` flag is accepted for forward-compatibility but JSON is always
 the output format — the command has no human-readable fallback because it is
