@@ -13,6 +13,8 @@ ever hit its refusal paths).  The redefined contract:
 * Exits 2 (invocation error) when the run does not exist.
 * Exits 2 when the run is already terminal (``closed`` / ``cancelled`` /
   ``completed`` / ``failed``) — there is nothing to abandon.
+* Exits 2 when the run's status is not on the in-flight allowlist — an unknown
+  or future status is refused, never silently overwritten to ``cancelled``.
 * Exits 0 and abandons the run for any in-flight status (``open`` plus the
   legacy ``running`` / ``pending`` the intake path still marks), with no PID
   required.
@@ -345,3 +347,44 @@ def test_cancel_uses_shared_resolve_db_path() -> None:
     from harness.cli import _query_common, cancel
 
     assert cancel._resolve_db_path is _query_common._resolve_db_path
+
+
+# ---------------------------------------------------------------------------
+# As-built contract — the docstring exit-code block matches the behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_docstring_exit_codes_match_contract() -> None:
+    """The module docstring's exit-2 entry must cover every exit-2 refusal.
+
+    ``cancel`` refuses with exit 2 for *three* distinct causes, not two: an
+    unknown run-id, a run already terminal, **and** a run whose status is
+    outside the in-flight allowlist (an unknown / future status — the
+    allowlist-not-denylist design, proven by
+    ``test_cancel_unrecognised_status_refused``). Guards against the exit-2
+    line drifting back to enumerating only the first two causes and leaving a
+    reader of the contract unaware that an unrecognised status also exits 2.
+    """
+    from harness.cli import cancel
+
+    doc = cancel.__doc__ or ""
+    exit_block = doc[doc.index("Exit codes") :]
+
+    # Collect the whole exit-2 entry: the ``* 2`` bullet plus any wrapped
+    # continuation lines, stopping at the next bullet. The corrected wording
+    # spans a continuation line, so a single-line check would miss it.
+    lines = exit_block.splitlines()
+    start = next(
+        i for i, line in enumerate(lines) if line.lstrip().startswith("* 2")
+    )
+    entry_lines = [lines[start]]
+    for line in lines[start + 1 :]:
+        if line.lstrip().startswith("* ") or not line.strip():
+            break
+        entry_lines.append(line)
+    entry = " ".join(part.strip() for part in entry_lines)
+
+    assert "allowlist" in entry, (
+        "the exit-2 entry must document the unrecognised/non-allowlist-status "
+        "refusal that test_cancel_unrecognised_status_refused proves exits 2"
+    )
