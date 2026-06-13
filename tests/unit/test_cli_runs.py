@@ -240,6 +240,89 @@ def test_runs_failed_no_failures_shows_message(tmp_path: Path) -> None:
     assert "no failure" in result.stdout.lower() or "(no failures)" in result.stdout
 
 
+async def _seed_raw_event_async(
+    db_path: Path,
+    *,
+    run_id: str,
+    event_type: str,
+    data_json: str,
+    timestamp: str = "2026-06-01T10:00:00Z",
+) -> None:
+    """Insert an event with a verbatim ``data_json`` payload.
+
+    Unlike :func:`_seed_event` (which ``json.dumps`` a dict), this seeds the
+    column with the exact bytes given — so a malformed/non-dict blob can be
+    exercised.
+    """
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, None, event_type, timestamp, None, data_json),
+        )
+        await conn.commit()
+
+
+def _seed_raw_event(db_path: Path, **kwargs: Any) -> None:
+    _run_sync(_seed_raw_event_async(db_path, **kwargs))
+
+
+def test_runs_failed_malformed_data_json_lands_under_unknown(tmp_path: Path) -> None:
+    """A ``workflow_failed`` event with a malformed (non-JSON) ``data_json``
+    must not crash the grouping — the run lands under ``(unknown reason)``.
+
+    Locks the tolerant-decode equivalence: the shared ``_safe_json_loads``
+    surfaces an undecodable blob as the empty reason, exactly as the inline
+    ``try/except (TypeError, ValueError)`` did before the dedup.
+    """
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="FM", status="failed", workflow_name="wf")
+    _seed_raw_event(
+        db_path, run_id="FM", event_type="workflow_failed",
+        data_json="not-valid-json",
+    )
+
+    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
+    assert result.exit_code == 0, result.stdout
+    assert "(unknown reason)" in result.stdout
+    assert "FM" in result.stdout
+
+
+def test_runs_failed_non_dict_data_json_lands_under_unknown(tmp_path: Path) -> None:
+    """A ``data_json`` that decodes to valid-but-non-dict JSON (e.g. a bare
+    string) also lands under ``(unknown reason)`` — ``reason`` is only read
+    from a dict payload."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="FN", status="failed", workflow_name="wf")
+    _seed_raw_event(
+        db_path, run_id="FN", event_type="workflow_failed",
+        data_json='"just a string"',
+    )
+
+    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
+    assert result.exit_code == 0, result.stdout
+    assert "(unknown reason)" in result.stdout
+    assert "FN" in result.stdout
+
+
+def test_runs_uses_shared_safe_json_loads() -> None:
+    """``runs`` decodes the ``workflow_failed`` ``data_json`` blob via the
+    shared ``_query_common._safe_json_loads`` — the same tolerant decoder
+    ``status`` / ``events`` use — not a private hand-rolled copy.
+
+    Binding the same function object keeps the decode policy single-sourced
+    (mirrors ``test_cancel_uses_shared_resolve_db_path`` for ``_resolve_db_path``).
+    Once the shared helper owns the decode, the module-scope ``import json`` is
+    dead and must not linger.
+    """
+    from harness.cli import _query_common, query_runs
+
+    assert query_runs._safe_json_loads is _query_common._safe_json_loads
+    assert not hasattr(query_runs, "json"), (
+        "query_runs should not import json directly; decode via _safe_json_loads"
+    )
+
+
 def test_runs_missing_db_exits_zero_empty(tmp_path: Path) -> None:
     """Missing DB should exit 0 with empty/no output (not an error condition)."""
     db_path = tmp_path / ".harness" / "harness.db"
