@@ -128,63 +128,9 @@ query FetchIssue($id: String!) {
                 workflow state is configured on the issue's team, or the
                 ``issueUpdate`` mutation did not report ``success: true``.
         """
-        states_query = """
-query IssueStates($id: String!) {
-  issue(id: $id) {
-    id
-    team {
-      states {
-        nodes {
-          id
-          name
-          type
-        }
-      }
-    }
-  }
-}
-"""
-        data = await self._request(states_query, {"id": identifier})
-        issue = (data.get("data") or {}).get("issue")
-        if issue is None:
-            raise LinearNotFound(f"Linear issue {identifier!r} not found")
-
-        issue_id: str = issue["id"]
-        nodes: list[dict[str, Any]] = (
-            (issue.get("team") or {})
-            .get("states", {})
-            .get("nodes", [])
+        await self._transition(
+            identifier, state_type="started", preferred_name="in progress"
         )
-
-        # Mirror build-codex.yaml: prefer a state named "in progress";
-        # fall back to first started-type state.
-        started = [n for n in nodes if n.get("type") == "started"]
-        if not started:
-            raise LinearRequestError(
-                f"Linear issue {identifier!r} has no 'started' workflow state configured; "
-                "cannot transition to In Progress"
-            )
-
-        ip_named = [
-            n for n in started if (n.get("name") or "").lower() == "in progress"
-        ]
-        target = ip_named[0] if ip_named else started[0]
-        state_id: str = target["id"]
-
-        mutation = """
-mutation TransitionIssue($id: String!, $stateId: String!) {
-  issueUpdate(id: $id, input: {stateId: $stateId}) {
-    success
-  }
-}
-"""
-        result = await self._request(mutation, {"id": issue_id, "stateId": state_id})
-        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
-        if not success:
-            raise LinearRequestError(
-                f"Linear issueUpdate mutation did not report success for {identifier!r}; "
-                f"response: {result!r}"
-            )
 
     async def transition_to_done(self, identifier: str) -> None:
         """Transition issue ``identifier`` to its completed (Done) state.
@@ -198,6 +144,27 @@ mutation TransitionIssue($id: String!, $stateId: String!) {
         Raises:
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error, no ``completed``
+                workflow state is configured on the issue's team, or the
+                ``issueUpdate`` mutation did not report ``success: true``.
+        """
+        await self._transition(
+            identifier, state_type="completed", preferred_name="done"
+        )
+
+    async def _transition(
+        self, identifier: str, *, state_type: str, preferred_name: str
+    ) -> None:
+        """Move issue ``identifier`` to a workflow state of ``state_type``.
+
+        Shared implementation behind :meth:`transition_to_in_progress` and
+        :meth:`transition_to_done`.  Queries the team's workflow states, selects
+        a state literally named ``preferred_name`` (case-insensitive) if present
+        else the first state of ``state_type``, then fires an ``issueUpdate``
+        mutation.  Mirrors ``build-codex.yaml``.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, no ``state_type``
                 workflow state is configured on the issue's team, or the
                 ``issueUpdate`` mutation did not report ``success: true``.
         """
@@ -229,16 +196,17 @@ query IssueStates($id: String!) {
             .get("nodes", [])
         )
 
-        # Prefer a state named "done"; fall back to first completed-type state.
-        completed = [n for n in nodes if n.get("type") == "completed"]
-        if not completed:
+        candidates = [n for n in nodes if n.get("type") == state_type]
+        if not candidates:
             raise LinearRequestError(
-                f"Linear issue {identifier!r} has no 'completed' workflow state configured; "
-                "cannot transition to Done"
+                f"Linear issue {identifier!r} has no {state_type!r} workflow state configured; "
+                f"cannot transition to {preferred_name.title()}"
             )
 
-        done_named = [n for n in completed if (n.get("name") or "").lower() == "done"]
-        target = done_named[0] if done_named else completed[0]
+        named = [
+            n for n in candidates if (n.get("name") or "").lower() == preferred_name
+        ]
+        target = named[0] if named else candidates[0]
         state_id: str = target["id"]
 
         mutation = """
