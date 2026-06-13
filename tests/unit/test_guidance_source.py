@@ -9,9 +9,10 @@ landed, and stays landed:
   ``.guidance-lock.yaml`` is gone. A source repo owns the copy-list and does not
   self-lock (D5).
 * **AC-2** — the installed surface is held to the registry: skill paths are the
-  flat *installed* shape (D2), every surface file's ``guidance:<id>@<version>``
-  header equals its registry version, and the freshness hook runs in SOURCE mode
-  on a surface edit (keyed on ``registry.yaml``, not the absent lock).
+  Agent Skills ``skills/<id>/SKILL.md`` shape (D2, reversed 2026-06-13; CAL-658),
+  every surface file's ``guidance:<id>@<version>`` header equals its registry
+  version, and the freshness hook runs in SOURCE mode on a surface edit (keyed on
+  ``registry.yaml``, not the absent lock).
 * **AC-3** — the ``.claude/`` discovery symlinks still resolve.
 
 The presence/absence guards judge the **committed** tree (CAL-619): a clean
@@ -102,21 +103,20 @@ def test_registry_lists_skills() -> None:
     )
 
 
-def test_registry_skill_paths_are_flat() -> None:
-    """Skill paths are the flat *installed* shape ``skills/<id>.md`` (D2).
+def test_registry_skill_paths_are_nested() -> None:
+    """Skill paths are the Agent Skills ``skills/<id>/SKILL.md`` shape (D2; CAL-658).
 
-    The ``agents`` source kept skills as ``skills/<id>/SKILL.md``; the harness
-    root holds the flat installed shape, and the freshness hook's version-drift
-    lookup keys on exactly that path, so the registry must use it too.
+    D2 was reversed (2026-06-13) from the flat ``skills/<id>.md`` to the
+    directory-per-skill ``skills/<id>/SKILL.md`` structure — the source's shape,
+    the spec, and where the Claude Code ecosystem is going. The freshness hook's
+    version-drift lookup keys on exactly the registry path, and ``.claude/skills``
+    discovery expects ``skills/*/SKILL.md``, so the registry must use it too.
     """
-    bad = [
-        p
-        for p in _registry_files()
-        if p.startswith("skills/") and not re.fullmatch(r"skills/[\w-]+\.md", p)
-    ]
+    skill_paths = [p for p in _registry_files() if p.startswith("skills/")]
+    bad = [p for p in skill_paths if not re.fullmatch(r"skills/[\w-]+/SKILL\.md", p)]
     assert not bad, (
-        f"skill paths must be the flat installed shape skills/<id>.md (D2), not "
-        f"the source's skills/<id>/SKILL.md: {bad}"
+        f"skill paths must be the Agent Skills shape skills/<id>/SKILL.md (D2, "
+        f"reversed 2026-06-13; CAL-658), not the flat skills/<id>.md: {bad}"
     )
 
 

@@ -1,4 +1,4 @@
-<!-- guidance:bootstrap@0.4.2 -->
+<!-- guidance:bootstrap@0.4.3 -->
 # Bootstrap the guidance into a repo
 
 > Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
@@ -56,8 +56,8 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 > profile: harness
 > source: { name: harness, ref: <git sha or "local"> }
 > files:
->   skills/code-quality.md: { version: 0.4.0, hash: <sha256-first12> }
->   # ... one line per installed file (paths are the installed/flat shape)
+>   skills/code-quality/SKILL.md: { version: 0.4.0, hash: <sha256-first12> }
+>   # ... one line per installed file (skills are the Agent Skills shape skills/<id>/SKILL.md)
 > ```
 >
 > **6. Reconcile `.gitignore` for the visibility mode.** Never ignore `CONTEXT.md` in either mode. Do not remove unrelated ignores.
