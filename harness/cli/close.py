@@ -40,9 +40,11 @@ On a gate failure the verb exits non-zero with a structured refusal carrying a
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
-* 1 — unexpected error (git failure, push failure, DB error, Linear error).
+* 1 — unexpected error (git failure, push failure, DB error, or a Linear
+  transition/request error while marking the ticket Done).
 * 2 — gate refusal (``no_run`` / ``dirty_worktree`` / ``no_passing_review`` /
-  ``stale_review``).
+  ``stale_review``), or Linear is unconfigured (a missing ``LINEAR_API_KEY``);
+  the latter carries no ``reason`` and is checked before any side effect.
 """
 
 from __future__ import annotations

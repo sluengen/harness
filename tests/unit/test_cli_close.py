@@ -35,6 +35,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli import close as close_mod
 from harness.events.emitter import EventEmitter
+from harness.linear import LinearConfigError
 from harness.state import store
 
 cli_runner = CliRunner()
@@ -400,6 +401,91 @@ def test_ac4_no_open_run(repo: Path, db_path: Path) -> None:
 
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Unconfigured Linear: missing LINEAR_API_KEY → exit 2, no reason, no side effect
+# ---------------------------------------------------------------------------
+
+
+def test_close_exits_2_when_linear_unconfigured(repo: Path, db_path: Path) -> None:
+    """A missing ``LINEAR_API_KEY`` exits 2 with no ``reason`` — not exit 1.
+
+    The key check (close.py step 5) runs *after* the gate passes but *before*
+    any side effect, so an unset key on an otherwise-closeable run refuses
+    cleanly without half-merging a tree. ``LinearConfigError`` is not a gate
+    refusal, so the JSON carries an ``error`` but no ``reason``. Pins the exit-2
+    branch the docstring exit-code block must document (guarded by
+    ``test_close_docstring_exit_codes_match_contract``).
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub()
+    merge = MagicMock(return_value=None)
+
+    with (
+        patch("harness.cli.close.LinearClient", return_value=stub),
+        patch(
+            "harness.cli.close.linear_api_key",
+            side_effect=LinearConfigError("LINEAR_API_KEY is not set"),
+        ),
+        patch.object(close_mod, "_merge_and_push", merge),
+    ):
+        result = cli_runner.invoke(
+            app,
+            [
+                "close",
+                "CAL-572",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert "error" in payload
+    assert "reason" not in payload  # a config error is not a gate refusal
+
+    # The gate passed, but the unset key blocks before any side effect.
+    merge.assert_not_called()
+    stub.transition_to_done.assert_not_called()
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+def test_close_docstring_exit_codes_match_contract() -> None:
+    """The module docstring's exit-code block must match the tested behaviour.
+
+    ``close`` raises exit 2 not only for the four gate refusals but also when
+    Linear is unconfigured (a missing ``LINEAR_API_KEY`` →
+    :class:`LinearConfigError`, close.py step 5). That config error is *not* a
+    gate refusal and carries no ``reason``; it must not be documented as a
+    generic "Linear error" under exit 1. Guards against the exit-2 entry
+    drifting back to a gate-refusal-only list and the exit-1 entry claiming a
+    Linear configuration error exits 1 — both falsified by
+    ``test_close_exits_2_when_linear_unconfigured``.
+    """
+    doc = close_mod.__doc__ or ""
+    exit_block = doc[doc.index("Exit codes") :]
+    # The exit-2 entry is the last bullet; it runs from "* 2" to the end of the
+    # block, spanning its continuation lines. The exit-1 entry runs from "* 1"
+    # up to "* 2".
+    two_entry = exit_block[exit_block.index("* 2") :]
+    one_entry = exit_block[exit_block.index("* 1") : exit_block.index("* 2")]
+
+    assert "LINEAR_API_KEY" in two_entry, (
+        "exit 2 covers a missing LINEAR_API_KEY (LinearConfigError), not just "
+        "the four gate-refusal reasons; document it in the exit-2 entry"
+    )
+    assert "Linear error" not in one_entry, (
+        "a missing/unconfigured Linear key exits 2, not 1; the exit-1 entry "
+        "must not claim a generic 'Linear error' exits 1"
+    )
 
 
 # ---------------------------------------------------------------------------
