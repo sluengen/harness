@@ -246,3 +246,28 @@ def test_runs_missing_db_exits_zero_empty(tmp_path: Path) -> None:
 
     result = runner.invoke(app, ["runs", "--db", str(db_path)])
     assert result.exit_code == 0, result.stdout
+
+
+def test_runs_docstring_exit_codes_match_contract() -> None:
+    """The module docstring's exit-code block must match the tested behaviour.
+
+    ``runs`` is a list command with no run-id: a missing DB is the empty case
+    (exit 0), not an invocation error. The run-id read commands
+    (``status``/``events``) exit 2 on a missing DB because the run cannot be
+    found, and that wording must not leak into ``runs``. Guards against the
+    docstring drifting back to the copied "missing DB → exit 2" claim that
+    ``test_runs_missing_db_exits_zero_empty`` proves false.
+    """
+    from harness.cli import query_runs
+
+    doc = query_runs.__doc__ or ""
+    exit_block = doc[doc.index("Exit codes") :]
+    two_line = next(
+        line for line in exit_block.splitlines() if line.lstrip().startswith("* 2")
+    )
+    assert "missing DB" not in two_line, (
+        "runs exits 0 (not 2) on a missing DB; remove the copied claim"
+    )
+    assert "missing or empty DB" in exit_block, (
+        "docstring should document the exit-0 missing/empty-DB case"
+    )

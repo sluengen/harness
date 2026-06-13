@@ -5,8 +5,10 @@ Async DB access is wrapped in :func:`asyncio.run` at the command boundary
 because Typer dispatches synchronously.
 
 Exit codes (SPEC §11):
-* 0 — succeeded; produced output.
-* 2 — invocation error: missing DB, bad flags.
+* 0 — succeeded. A missing or empty DB is the empty case, not an error:
+  ``runs`` lists rows by query (no run-id), so it prints nothing and exits 0.
+* 2 — invocation error: bad flags. (Unlike the run-id read commands
+  ``status``/``events``, a missing DB is not an error here.)
 """
 
 from __future__ import annotations
