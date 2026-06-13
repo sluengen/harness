@@ -13,11 +13,14 @@ section, so a retired-§ grep-guard would not catch it. This guard is the
 executable form of the fix — the events module source must cite §4.7 for the
 event surface and must not cite §4.9 at all.
 
-Scope note: ``schema.py`` line ~35 cites §4.4 for the retired
-``decision_violation`` event type. That cite is deliberately *out of scope*
-here (it is the CAL-633 retired-cite judgement call) — this guard only governs
-the §4.7-vs-§4.9 confusion, so it asserts §4.9 is absent and §4.7 is present
-without touching the §4.4 reference.
+It also locks the **§4.4** class (originally deferred by the CAL-635 fix):
+``schema.py`` once cited §4.4 for the retired ``decision_violation`` event type,
+but the verb-model rewrite made §4.4 ``harness.cli.close`` (the close gate) —
+which documents nothing about contract violations. ``decision_violation`` is an
+engine-era type emitted by no live code (live verbs emit only ``review`` /
+``close``); it is kept in the Literal so historical rows validate, and its
+comment is now a retired-engine label citing no live section. The guard asserts
+the events source carries no §4.4 cite so the wrong pointer cannot return.
 """
 
 from __future__ import annotations
@@ -43,6 +46,21 @@ def test_events_source_does_not_cite_wrong_section(relpath: str) -> None:
         f"{relpath} cites SPEC §4.9, which documents harness.launcher / "
         "harness.workspace / harness.trigger — not events. The event-log writer "
         "and its event types live in §4.7; cite that instead."
+    )
+
+
+@pytest.mark.parametrize("relpath", _EVENTS_SOURCES)
+def test_events_source_does_not_cite_close_section(relpath: str) -> None:
+    """No events module source cites §4.4 — that section is harness.cli.close.
+
+    ``decision_violation`` is a retired engine-era type emitted by no live code;
+    its comment must label it as such, not point at the close-verb section.
+    """
+    text = (_REPO_ROOT / relpath).read_text()
+    assert "§4.4" not in text, (
+        f"{relpath} cites SPEC §4.4, which documents harness.cli.close (the "
+        "close gate) — not contract violations or any event type. The retired "
+        "decision_violation type cites no live section; relabel it instead."
     )
 
 

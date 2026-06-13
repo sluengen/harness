@@ -32,7 +32,11 @@ EventType = Literal[
     "decision_made",
     "decision_received",
     "decision_timeout",
-    # Agent contract violations — see SPEC §4.4 (e.g. agent calls submit twice).
+    # Retired deterministic engine — this agent-contract-violation type (e.g. an
+    # agent calls submit twice) was emitted by the per-node engine that CAL-574
+    # retired; live verbs emit only ``review`` / ``close`` below. Kept so
+    # historical rows still validate (cf. the retired ``RunStatus`` values in
+    # ``harness/state/schema.py``); no live code emits it.
     "decision_violation",
     # Review verb (CAL-571) — codex review of HEAD, verdict bound to reviewed SHA.
     "review",
