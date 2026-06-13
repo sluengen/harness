@@ -57,7 +57,7 @@ from pydantic import BaseModel
 
 from harness._time import iso_z
 from harness.cli._git import rev_parse_head, run_git
-from harness.cli._repo import resolve_repo_root_or_exit
+from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 from harness.linear import (
@@ -130,7 +130,7 @@ def close_command(
 ) -> None:
     """Enforce the gate, then merge/push the run, transition the ticket Done, close the run."""
     repo_root = resolve_repo_root_or_exit(repo)
-    db_path = db if db is not None else repo_root / store.DEFAULT_DB_PATH
+    db_path = resolve_verb_db_path(db, repo_root)
 
     try:
         output = asyncio.run(
