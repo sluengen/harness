@@ -1022,3 +1022,45 @@ def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
         return row[0] if row is not None else "no-row"
 
     assert _sync(_fetch_pid()) is None
+
+
+# ---------------------------------------------------------------------------
+# AC-docstring-contract: the exit-code block must match tested behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_start_docstring_exit_codes_match_contract() -> None:
+    """The module docstring's exit-code block must match the tested behaviour.
+
+    A duplicate ``start`` for the same ticket surfaces the existing run on
+    exit 0 (proven by ``test_canonical_identifier_dedupes_mixed_case``), so
+    "duplicate run" must not appear on the exit-2 line as an invocation error.
+    Guards against the docstring drifting back to the false "duplicate run →
+    exit 2" claim that ``test_canonical_identifier_dedupes_mixed_case`` and the
+    ``_find_open_run`` short-circuit (``start.py`` step 4) prove wrong.
+    """
+    from harness.cli import start
+
+    doc = start.__doc__ or ""
+    exit_block = doc[doc.index("Exit codes") :]
+
+    # Collect the WHOLE exit-2 entry — the ``* 2`` line plus any wrapped
+    # continuation lines, stopping at the next bullet or a blank line — so the
+    # claim cannot slip past the guard by wrapping onto a continuation line.
+    lines = exit_block.splitlines()
+    start_idx = next(
+        i for i, line in enumerate(lines) if line.lstrip().startswith("* 2")
+    )
+    entry = [lines[start_idx]]
+    for line in lines[start_idx + 1 :]:
+        if not line.strip() or line.lstrip().startswith("* "):
+            break
+        entry.append(line)
+    two_entry = " ".join(entry)
+    assert "duplicate" not in two_entry.lower(), (
+        "a duplicate start surfaces the existing run on exit 0, not 2; "
+        "remove the false claim from the exit-2 entry"
+    )
+    assert "existing run" in exit_block, (
+        "docstring should document the exit-0 existing-run (duplicate start) case"
+    )
