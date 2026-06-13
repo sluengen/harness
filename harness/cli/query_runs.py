@@ -1,8 +1,8 @@
 """``harness runs`` — list recent runs (optionally grouped by failure).
 
-SPEC §11 names the command; SPEC §12 documents the row shape. Async DB access
-is wrapped in :func:`asyncio.run` at the command boundary because Typer
-dispatches synchronously.
+SPEC §11 names the command; ``specs/state-store.md`` documents the row shape.
+Async DB access is wrapped in :func:`asyncio.run` at the command boundary
+because Typer dispatches synchronously.
 
 Exit codes (SPEC §11):
 * 0 — succeeded; produced output.

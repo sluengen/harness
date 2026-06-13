@@ -34,8 +34,8 @@ import aiosqlite
 DEFAULT_DB_PATH = Path(".harness/harness.db")
 
 
-# Schema per SPEC §12. Idempotent — every CREATE uses ``IF NOT EXISTS``. Re-running
-# this script on an existing DB is a no-op.
+# Schema per ``specs/state-store.md``. Idempotent — every CREATE uses
+# ``IF NOT EXISTS``. Re-running this script on an existing DB is a no-op.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
   run_id              TEXT PRIMARY KEY,

@@ -1,4 +1,4 @@
-"""Framework-defined state base — see SPEC §6.
+"""Framework-defined state base — see ``specs/state-store.md`` ("BaseState").
 
 :class:`BaseState` holds the framework-defined run fields. It predates the
 verb model (CAL-574 retired the workflow engine that derived per-workflow
@@ -16,10 +16,10 @@ The framework-supplied fields populated when a run begins:
 * ``artifacts_dir`` — where the run writes prompt transcripts, review
   artifacts, etc.
 * ``started_at`` — UTC timestamp the run was started.
-* ``notes`` — auto-populated, framework-managed log line buffer
-  (SPEC §7 "Notes — framework-provided, auto-populated"). The bounded
-  merge logic that appends to this list lives in H-010; H-009 only
-  declares the field.
+* ``notes`` — auto-populated, framework-managed log line buffer (see
+  ``specs/state-store.md`` for the ``BaseState`` field set). This module
+  declares the field; the engine-era bounded-merge writer that appended to
+  it was removed with the rest of the dead state surface in CAL-613.
 
 ``extra="forbid"`` is set so an agent that hallucinates an unknown
 state field is rejected rather than silently persisted.
@@ -36,7 +36,8 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
 
 
-# Canonical run-status enum — see SPEC §12. The SQLite column is ``TEXT NOT
+# Canonical run-status enum — see ``specs/state-store.md`` ("status values").
+# The SQLite column is ``TEXT NOT
 # NULL`` without a CHECK constraint, so this Literal is the type-safe seam:
 # writers + CLI readers import :data:`RUN_STATUSES` to validate the string
 # they read out of the DB.
@@ -73,7 +74,7 @@ RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
 class BaseState(BaseModel):
     """Framework-defined fields prepended to every derived state class.
 
-    See module docstring and SPEC §6 for the full rationale.
+    See module docstring and ``specs/state-store.md`` for the full rationale.
     """
 
     model_config = ConfigDict(extra="forbid")

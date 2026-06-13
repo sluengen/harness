@@ -5,7 +5,7 @@ One row per ``emit()`` call into the ``events`` table created by
 append-only writer the engine calls at every workflow/node/tool/state
 transition.
 
-Schema (SPEC §12)::
+Schema (``specs/state-store.md``)::
 
     events(
       id INTEGER PRIMARY KEY AUTOINCREMENT,

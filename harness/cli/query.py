@@ -11,9 +11,9 @@ locate:
 * :mod:`harness.cli._query_common` — the ``--db`` resolution and tolerant
   JSON decode the commands share.
 
-SPEC §11 names the commands; SPEC §12 documents the row shapes. ``harness.cli``
-imports the four command callables from here, so Typer registration is
-unaffected by the split.
+SPEC §11 names the commands; ``specs/state-store.md`` documents the row shapes.
+``harness.cli`` imports the four command callables from here, so Typer
+registration is unaffected by the split.
 """
 
 from __future__ import annotations

@@ -3,8 +3,9 @@
 Both commands read the same ``events`` table through one fetcher
 (:func:`_fetch_events`); ``events`` is the JSON-stable form (one object per
 line for ``--json``) while ``logs`` is the human timeline (with ``--follow``
-tailing until the run becomes terminal). SPEC §11 names the commands; SPEC §12
-documents the event row shape. Async DB access is wrapped in
+tailing until the run becomes terminal). SPEC §11 names the commands;
+``specs/state-store.md`` documents the event row shape. Async DB access is
+wrapped in
 :func:`asyncio.run` at each command boundary because Typer dispatches
 synchronously.
 

@@ -1,8 +1,8 @@
 """``harness status`` — a run's terminal-state summary.
 
-SPEC §11 names the command; SPEC §12 documents the row shape. Async DB access
-is wrapped in :func:`asyncio.run` at the command boundary because Typer
-dispatches synchronously.
+SPEC §11 names the command; ``specs/state-store.md`` documents the row shape.
+Async DB access is wrapped in :func:`asyncio.run` at the command boundary
+because Typer dispatches synchronously.
 
 ``harness status <id> --json`` is extended with enriched fields for Hermes
 consumption (see ``specs/hermes-orchestration.md`` §Observability
