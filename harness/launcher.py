@@ -118,14 +118,75 @@ GIT_SSH_COMMAND = (
     "-o UserKnownHostsFile=/root/.ssh/known_hosts"
 )
 
+#: Env-var names a GitHub push token may arrive under, in preference order. On a
+#: host without ssh-agent forwarding (no ``/run/host-services/ssh-auth.sock`` and
+#: no usable on-disk key — e.g. a Keychain-backed signing key), ``close``'s push
+#: over SSH cannot authenticate; the launcher forwards the first of these present
+#: by *name* so the verb container can push github over tokenized https instead.
+#: ``GH_TOKEN`` is the ``gh`` CLI's own var, so ``export GH_TOKEN=$(gh auth
+#: token)`` in the wrapper is enough to engage the fallback. (CAL-622)
+GITHUB_TOKEN_ENV_NAMES: tuple[str, ...] = ("GITHUB_TOKEN", "GH_TOKEN")
 
-def _credential_mount_argv(home: Path, ssh_auth_sock: str | None) -> list[str]:
+
+def _github_token_name(host_env: Mapping[str, str]) -> str | None:
+    """The first GitHub-token env var present (non-empty) in ``host_env``, or None.
+
+    Returns the variable *name*, never its value — the value is forwarded to the
+    container by name (``-e NAME``) and so never enters argv.
+    """
+    for name in GITHUB_TOKEN_ENV_NAMES:
+        if host_env.get(name, "").strip():
+            return name
+    return None
+
+
+def _tokenized_https_argv(token_name: str) -> list[str]:
+    """``GIT_CONFIG_*`` env making the verb container push github over tokenized
+    https, plus the token forwarded by *name*.
+
+    The close-push fallback when ssh-agent forwarding is unavailable (CAL-622):
+    git reads these ``GIT_CONFIG_COUNT`` / ``GIT_CONFIG_KEY_n`` /
+    ``GIT_CONFIG_VALUE_n`` vars on every invocation, so ``close``'s ``git push``
+    is reconfigured with no verb-code change. Two ``insteadOf`` rules rewrite the
+    github ssh remote (scp-form ``git@github.com:`` and ``ssh://git@github.com/``)
+    to https, and a credential helper supplies ``x-access-token`` + the token
+    read from ``$<token_name>`` at push time. The token *value* never enters argv
+    — only its env-var name is forwarded (``-e <token_name>``), so it stays out of
+    the process table exactly as the INJECTED_ENV secrets do; the helper runs
+    inside the one-shot container and writes nothing to the host.
+    """
+    # A git credential helper: on `get`, emit the static username and the token
+    # from the container env. `!`-prefixed → run as a shell command by git.
+    helper = (
+        f'!f() {{ test "$1" = get && '
+        f"echo username=x-access-token && "
+        f'echo "password=${token_name}"; }}; f'
+    )
+    configs: list[tuple[str, str]] = [
+        ("url.https://github.com/.insteadOf", "git@github.com:"),
+        ("url.https://github.com/.insteadOf", "ssh://git@github.com/"),
+        ("credential.https://github.com.helper", helper),
+    ]
+    args: list[str] = ["-e", f"GIT_CONFIG_COUNT={len(configs)}"]
+    for i, (key, value) in enumerate(configs):
+        args += ["-e", f"GIT_CONFIG_KEY_{i}={key}", "-e", f"GIT_CONFIG_VALUE_{i}={value}"]
+    # Forward the token by name — docker reads its value from the launcher's env.
+    args += ["-e", token_name]
+    return args
+
+
+def _credential_mount_argv(
+    home: Path, ssh_auth_sock: str | None, github_token_name: str | None
+) -> list[str]:
     """The launcher-controlled credential mounts/env for a verb container.
 
-    ``home`` is the launcher's home directory (its ``~/.codex`` / ``~/.ssh``);
-    ``ssh_auth_sock`` is the host ssh-agent socket to forward, or ``None`` to
-    skip agent forwarding (no agent available). All values are launcher-trusted,
-    never caller-derived.
+    ``home`` is the launcher's home directory (its ``~/.codex`` / ``~/.ssh``).
+    ``ssh_auth_sock`` is the host ssh-agent socket to forward (the preferred
+    transport for ``close``'s push), or ``None`` when no agent is available.
+    ``github_token_name`` is the env-var name of a GitHub token to fall back to
+    when there is no agent — the launcher prefers the agent and only configures
+    the tokenized-https push when ``ssh_auth_sock`` is absent. All values are
+    launcher-trusted, never caller-derived.
     """
     args: list[str] = [
         "-v",
@@ -137,6 +198,8 @@ def _credential_mount_argv(home: Path, ssh_auth_sock: str | None) -> list[str]:
     ]
     if ssh_auth_sock:
         args += ["-v", f"{ssh_auth_sock}:/ssh-agent", "-e", "SSH_AUTH_SOCK=/ssh-agent"]
+    elif github_token_name:
+        args += _tokenized_https_argv(github_token_name)
     return args
 
 
@@ -144,13 +207,20 @@ def _default_ssh_auth_sock(host_env: Mapping[str, str]) -> str | None:
     """Resolve the host ssh-agent socket to forward, mirroring the wrapper.
 
     Prefers Docker Desktop's fixed host-services path when it is a live socket,
-    else the launcher's own ``SSH_AUTH_SOCK``; ``None`` when neither is present
-    (agent forwarding is then skipped — ``close`` push relies on key files).
+    else the launcher's own ``SSH_AUTH_SOCK`` *when that too is a live socket*;
+    ``None`` when neither is a live socket. Both candidates are verified with
+    ``is_socket()`` so a stale/invalid ``SSH_AUTH_SOCK`` (a path that no longer
+    points at a running agent) resolves to ``None`` rather than a dead path —
+    otherwise it would both be mounted into the container and wrongly suppress
+    the tokenized-https push fallback (CAL-622). When ``None``, agent forwarding
+    is skipped and ``close``'s push falls back to https/token or key files.
     """
     if Path(HOST_SSH_AGENT_SOCKET).is_socket():
         return HOST_SSH_AGENT_SOCKET
     candidate = host_env.get("SSH_AUTH_SOCK", "").strip()
-    return candidate or None
+    if candidate and Path(candidate).is_socket():
+        return candidate
+    return None
 
 #: Required params per operation. Every key here must be present.
 _REQUIRED: dict[str, tuple[str, ...]] = {
@@ -323,7 +393,16 @@ def build_verb_argv(
     # Launcher-controlled credential mounts (codex auth, ssh, ssh-agent) — the
     # same surface the ~/bin/harness wrapper supplies, so launcher-spawned
     # `review`/`close` containers can authenticate. Caller-uncontrollable.
-    argv += _credential_mount_argv(home, ssh_auth_sock)
+    # Prefer the forwarded ssh-agent; only when it is absent does a GitHub token
+    # engage the tokenized-https push fallback (CAL-622). The token is a bearer
+    # push credential, so it is scoped to the only verb that pushes — `close`.
+    # It is never injected into `review`, which runs codex unsandboxed and has no
+    # need to push: keeping the push credential out of that container denies
+    # reviewed repository content any path to exfiltrate it.
+    github_token_name = (
+        _github_token_name(host_env) if op == "close" and not ssh_auth_sock else None
+    )
+    argv += _credential_mount_argv(home, ssh_auth_sock, github_token_name)
     for name in INJECTED_ENV:
         if name in host_env:
             argv += ["-e", name]

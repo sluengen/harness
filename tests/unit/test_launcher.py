@@ -244,6 +244,197 @@ def test_ssh_agent_absent_when_no_socket(
     assert "SSH_AUTH_SOCK=/ssh-agent" not in argv
 
 
+# ---------------------------------------------------------------------------
+# Close-push transport fallback — tokenized https when ssh-agent is absent
+# (CAL-622). The launcher prefers the forwarded ssh-agent; when it is
+# unavailable AND a GitHub token is in the launcher's env, it configures the
+# verb container to push github over tokenized https instead, forwarding the
+# token by *name* so its value never enters argv.
+# ---------------------------------------------------------------------------
+
+
+def _close_argv(
+    roots: list[Path],
+    repo: Path,
+    *,
+    host_env: dict[str, str],
+    ssh_auth_sock: str | None,
+    home: Path,
+) -> list[str]:
+    return build_verb_argv(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env=host_env,
+        home=home,
+        ssh_auth_sock=ssh_auth_sock,
+    )
+
+
+def test_tokenized_https_fallback_when_no_agent_and_token_present(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # No ssh-agent socket, but a GitHub token is in the launcher's env: the
+    # container is configured to push over tokenized https — an insteadOf rewrite
+    # of the github ssh remote plus a credential helper that reads the token at
+    # push time — and the token is forwarded by name (`-e GITHUB_TOKEN`).
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = _close_argv(
+        roots, repo, host_env={"GITHUB_TOKEN": "ghp_secret"}, ssh_auth_sock=None, home=home
+    )
+    joined = " ".join(argv)
+    # The git config is delivered via GIT_CONFIG_* env, so no verb code changes.
+    assert "GIT_CONFIG_COUNT=3" in argv
+    assert any(t.startswith("GIT_CONFIG_KEY_") and "insteadOf" in t for t in argv)
+    assert "GIT_CONFIG_VALUE_0=git@github.com:" in argv
+    assert any(t.startswith("GIT_CONFIG_VALUE_") and "ssh://git@github.com/" in t for t in argv)
+    assert any(t.startswith("GIT_CONFIG_KEY_") and ".helper" in t for t in argv)
+    # The helper reads the token from $GITHUB_TOKEN, and the token is forwarded
+    # by name only — its VALUE never appears anywhere in argv.
+    assert "GITHUB_TOKEN" in argv  # `-e GITHUB_TOKEN`, value pulled by docker
+    assert "$GITHUB_TOKEN" in joined or "${GITHUB_TOKEN}" in joined
+    assert "ghp_secret" not in joined
+    # Tokenized https is the *fallback*: no ssh-agent forwarding in this mode.
+    assert not any("ssh-agent" in t for t in argv)
+    assert "SSH_AUTH_SOCK=/ssh-agent" not in argv
+
+
+def test_ssh_agent_preferred_over_token_when_both_present(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # ssh-agent forwarding is the preferred transport; when the socket is
+    # available the https fallback is NOT configured even if a token is present.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = _close_argv(
+        roots,
+        repo,
+        host_env={"GITHUB_TOKEN": "ghp_secret"},
+        ssh_auth_sock="/run/host-services/ssh-auth.sock",
+        home=home,
+    )
+    assert "/run/host-services/ssh-auth.sock:/ssh-agent" in argv
+    assert "SSH_AUTH_SOCK=/ssh-agent" in argv
+    assert not any(t.startswith("GIT_CONFIG_") for t in argv)
+    assert "ghp_secret" not in " ".join(argv)
+
+
+def test_no_token_no_agent_leaves_push_to_key_files(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # Neither an agent socket nor a token: behaviour is unchanged — no https
+    # config, no agent — and close's push falls back to on-disk key files.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = _close_argv(roots, repo, host_env={}, ssh_auth_sock=None, home=home)
+    assert not any(t.startswith("GIT_CONFIG_") for t in argv)
+    assert not any("ssh-agent" in t for t in argv)
+
+
+def test_tokenized_https_uses_gh_token_alias(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # GH_TOKEN (the `gh` CLI's own var) is accepted as an alias; the helper then
+    # reads $GH_TOKEN and the token is forwarded under that name.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = _close_argv(roots, repo, host_env={"GH_TOKEN": "x"}, ssh_auth_sock=None, home=home)
+    joined = " ".join(argv)
+    assert "GH_TOKEN" in argv
+    assert "$GH_TOKEN" in joined or "${GH_TOKEN}" in joined
+    assert "GITHUB_TOKEN" not in joined
+
+
+def test_token_scoped_to_close_never_injected_into_review(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # The token is a bearer push credential and only `close` pushes. Even with no
+    # agent and a token present, `review` (which runs codex unsandboxed) must NOT
+    # receive the token or the https config — denying reviewed repo content any
+    # path to exfiltrate it.
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = build_verb_argv(
+        {"op": "review", "params": {"repo": str(repo), "run_id": "R1"}},
+        image="harness:dev",
+        roots=roots,
+        host_env={"GITHUB_TOKEN": "ghp_secret"},
+        home=home,
+        ssh_auth_sock=None,
+    )
+    assert not any(t.startswith("GIT_CONFIG_") for t in argv)
+    assert "GITHUB_TOKEN" not in argv
+    assert "ghp_secret" not in " ".join(argv)
+
+
+def test_empty_token_value_is_not_treated_as_present(
+    repo: Path, roots: list[Path], tmp_path: Path
+) -> None:
+    # An env var set to an empty/whitespace string is not a usable token: the
+    # fallback must not engage (it would forward an empty credential).
+    home = tmp_path / "home"
+    home.mkdir()
+    argv = _close_argv(roots, repo, host_env={"GITHUB_TOKEN": "  "}, ssh_auth_sock=None, home=home)
+    assert not any(t.startswith("GIT_CONFIG_") for t in argv)
+
+
+def test_stale_ssh_auth_sock_resolves_to_none_not_a_dead_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A non-empty but stale SSH_AUTH_SOCK (no live agent behind it) must resolve
+    # to None: otherwise it is mounted as a dead path AND wrongly suppresses the
+    # tokenized-https push fallback. Patch is_socket False everywhere (no
+    # host-services socket, the env path is stale) — the resolver returns None.
+    from harness import launcher
+
+    monkeypatch.setattr(launcher.Path, "is_socket", lambda self: False)
+    assert launcher._default_ssh_auth_sock({"SSH_AUTH_SOCK": "/tmp/stale.sock"}) is None
+
+
+def test_live_env_ssh_auth_sock_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # When the host-services socket is absent but the inherited SSH_AUTH_SOCK is a
+    # live socket, it is used (agent forwarding preferred over the https fallback).
+    from harness import launcher
+
+    monkeypatch.setattr(
+        launcher.Path, "is_socket", lambda self: str(self) == "/tmp/live.sock"
+    )
+    assert (
+        launcher._default_ssh_auth_sock({"SSH_AUTH_SOCK": "/tmp/live.sock"})
+        == "/tmp/live.sock"
+    )
+
+
+def test_stale_agent_lets_token_fallback_engage_end_to_end(
+    repo: Path, roots: list[Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Integration of the two: a launcher inheriting a stale SSH_AUTH_SOCK and a
+    # token resolves no live agent, so a `close` launch gets the tokenized-https
+    # fallback rather than a dead agent mount.
+    from harness import launcher
+
+    monkeypatch.setattr(launcher.Path, "is_socket", lambda self: False)
+    home = tmp_path / "home"
+    home.mkdir()
+    server = ControlServer(
+        runner=_RecordingRunner(),
+        image="harness:dev",
+        roots=roots,
+        host_env={"SSH_AUTH_SOCK": "/tmp/stale.sock", "GITHUB_TOKEN": "ghp_secret"},
+        home=home,
+    )
+    server.dispatch(
+        {"op": "close", "params": {"repo": str(repo), "run_id": "R1", "ticket": "CAL-1"}}
+    )
+    argv = server.runner.calls[0]  # type: ignore[attr-defined]
+    assert any(t.startswith("GIT_CONFIG_") for t in argv)
+    assert "GITHUB_TOKEN" in argv
+    assert not any("ssh-agent" in t for t in argv)
+    assert "/tmp/stale.sock" not in " ".join(argv)
+    assert "ghp_secret" not in " ".join(argv)
+
+
 def test_caller_image_string_never_reaches_argv(repo: Path, roots: list[Path]) -> None:
     # Even though `image` is rejected as a param, prove the constructed image is
     # the launcher's, not anything the caller could smuggle.
