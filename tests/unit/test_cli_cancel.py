@@ -326,3 +326,22 @@ def test_cancel_event_write_failure_rolls_back_status(tmp_path: Path) -> None:
     assert "error" in payload
     # The status flip must NOT have persisted — the run is still abandonable.
     assert _fetch_row(db, "R1")["status"] == "open"  # type: ignore[index]
+
+
+# ---------------------------------------------------------------------------
+# Single-source-of-truth — the --db resolution is the one shared helper
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_uses_shared_resolve_db_path() -> None:
+    """``cancel`` resolves ``--db`` via the shared ``_query_common`` helper.
+
+    ``_query_common`` is the stated home for ``_resolve_db_path`` (the ``--db``
+    resolution every read-side command performs); ``query_status`` /
+    ``query_runs`` / ``query_events`` / ``doctor`` all import it from there.
+    Binding the same function object — not a private copy — keeps that the one
+    source of truth and prevents the resolution logic from drifting per command.
+    """
+    from harness.cli import _query_common, cancel
+
+    assert cancel._resolve_db_path is _query_common._resolve_db_path

@@ -42,6 +42,7 @@ from pathlib import Path
 import typer
 
 from harness._time import iso_z
+from harness.cli._query_common import _resolve_db_path
 from harness.events.schema import EVENT_TYPES
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
@@ -65,13 +66,6 @@ assert _CANCELLABLE_STATUSES <= RUN_STATUSES
 _CANCEL_EVENT_TYPE = "workflow_failed"
 _CANCEL_REASON = "cancelled"
 assert _CANCEL_EVENT_TYPE in EVENT_TYPES  # guard against a future rename drift
-
-
-def _resolve_db_path(db: Path | None) -> Path:
-    """``--db`` override or the default ``.harness/harness.db`` under CWD."""
-    if db is not None:
-        return db
-    return Path.cwd() / store.DEFAULT_DB_PATH
 
 
 class _CancelError(Exception):
