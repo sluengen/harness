@@ -2,7 +2,7 @@
 name: test-driven-development
 description: Use at the start of any implementation task — building a feature, fixing a bug, or writing production code. Enforces the test-first iron law — write the failing test before the implementation, watch it fail for the right reason, then write the minimal code to pass. Load before writing code, not after.
 ---
-<!-- guidance:test-driven-development@0.3.0 -->
+<!-- guidance:test-driven-development@0.4.0 -->
 # Test-Driven Development
 
 Applies to all implementation work. Not a suggestion. It is how code gets written here.
@@ -20,6 +20,8 @@ If you write implementation before its test, delete it and start over. No except
 One minimal test that demonstrates the desired behaviour. Clear name stating what it tests. One acceptance criterion per test. Test real behaviour, not mocks, unless an external dependency forces it.
 
 **Use real inputs, not invented ones.** Drive the test with data the production code actually produces. A test that fabricates inputs or events no live code path ever emits proves nothing about the real system — it can stay green while the branch it claims to cover never runs in production, holding dead code falsely verified. Derive fixtures from what the code under test (or its real upstream) writes, not from what you imagine it writes.
+
+**Cover the active loop, not just its exit.** A poll/retry/follow loop needs a test that proves it stays in the loop for the live state, separate from the terminal-exit test. A single test seeding the terminal state proves only the exit — a loop that never iterates passes it. Seed the live state, advance it mid-loop, and assert the loop acted on the intermediate state before exiting.
 
 ### Verify RED — confirm it fails correctly
 

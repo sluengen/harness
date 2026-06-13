@@ -31,7 +31,7 @@ files:
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.2.0, profiles: [harness] }
   skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.3.1, profiles: [harness] }
   skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.3.1, profiles: [harness] }
-  skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.3.0, profiles: [harness] }
+  skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.4.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.4.0, profiles: [harness] }
   skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.3.0, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.3.0, profiles: [harness] }
