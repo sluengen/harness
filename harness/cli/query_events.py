@@ -118,7 +118,9 @@ def _format_event_compact(evt: dict[str, Any]) -> str:
 
 def events_command(
     run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
-    db: Path | None = typer.Option(None, "--db", help="Path to harness.db."),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
+    ),
     event_type: str | None = typer.Option(
         None, "--type", help="Filter to a single event_type."
     ),
@@ -156,7 +158,9 @@ def events_command(
 
 def logs_command(
     run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
-    db: Path | None = typer.Option(None, "--db", help="Path to harness.db."),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
+    ),
     node: str | None = typer.Option(
         None, "--node", help="Filter to events for a single node id."
     ),

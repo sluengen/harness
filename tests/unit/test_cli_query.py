@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 import sys
 import time
@@ -940,3 +941,31 @@ def test_events_after_id_past_last_returns_empty(tmp_path: Path) -> None:
     assert len(lines) == 0
 
 
+
+def _db_help_text(command: str) -> str:
+    """Return the ``--help`` output for ``command`` with rich box-drawing
+    borders stripped and whitespace collapsed, so an option's help string can
+    be matched without caring how the renderer wrapped it across lines."""
+    out = runner.invoke(app, [command, "--help"]).stdout
+    return re.sub(r"\s+", " ", re.sub(r"[│|]", " ", out))
+
+
+def test_events_db_help_documents_default(tmp_path: Path) -> None:
+    """``events --help`` documents the ``--db`` default like its siblings.
+
+    Every read-side command resolves ``--db`` through the same
+    ``_resolve_db_path`` default (``$cwd/.harness/harness.db``); the help text
+    must say so, as ``status``/``runs``/``doctor`` already do.
+    """
+    assert (
+        "Path to harness.db (defaults to .harness/harness.db)"
+        in _db_help_text("events")
+    )
+
+
+def test_logs_db_help_documents_default(tmp_path: Path) -> None:
+    """``logs --help`` documents the ``--db`` default, matching its siblings."""
+    assert (
+        "Path to harness.db (defaults to .harness/harness.db)"
+        in _db_help_text("logs")
+    )
