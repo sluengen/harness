@@ -1,7 +1,7 @@
 """``harness close <TICKET>`` — gate on a HEAD-bound pass, then merge/close.
 
 The close verb is the enforcement linchpin of the harness-as-tool model
-(proposal ``harness-as-tool.md`` decision **D5**): closing a ticket must be
+(proposal ``harness-as-tool.md`` decision **D2**): closing a ticket must be
 impossible unless a run was *started* and the *current tree* passed review.
 That is what makes interactive use auditable and unattended (Hermes-triggered)
 dispatch trustworthy — a merge can never land on an unreviewed or stale tree.
