@@ -1,7 +1,7 @@
 <!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
-last_updated: 2026-06-13  # CAL-646: merge guidance repo into harness (decision)
+last_updated: 2026-06-13  # CAL-647: record the app vs. installed-surface boundary principle
 ---
 
 # Architecture Principles
@@ -31,6 +31,16 @@ How this system is built — the technical principles that govern design *here*.
 ### Routing discipline
 
 **Every *run-lifecycle* git and ticket mutation goes through a verb.** The audit trail (the `runs` ledger) is complete only if nothing in the verb loop hand-rolls a `git merge`/`push` or a Linear GraphQL mutation for the run lifecycle. Guidance-mandated in the `/harness run` skill, with `close` validating against the ledger as a backstop. The scope is the run lifecycle, not *all* mutations: the agent-led backup flow (`/start` → `/review` → `/ship`) sits outside this guarantee by design — it hand-rolls its Linear lifecycle transition (`issueUpdate … stateId` in `skills/linear-sync.md`) and is not recorded in the `runs` ledger. That is acceptable precisely because it is the non-harness path, run only when a task does not fit the verb loop; it never merges through `close`, so the gate it bypasses is one it was never meant to hold. *Derived from: the audit-trail guarantee above.*
+
+### App vs. installed surface
+
+**One repo holds two things that must never bleed into each other: the harness *app*, and the *surface* it installs into other repos.** After the guidance merge the boundary is a convention inside a single tree rather than a repo wall, so it is recorded here to stay enforceable.
+
+- **App** — `harness/ docker/ bin/ scripts/ specs/ tests/`. This is the harness itself: its Python, its container, its launcher, its build/verify scripts, its design specs, its test suite. The app **never** installs into a target repo.
+- **Surface** — *exactly* the `files:` membership of `registry.yaml`: `commands/ skills/ agents/ templates/ hooks/ process/ settings/`, plus the artifacts the installer derives in the target tree (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md` and `.claude/settings.json`). Nothing is surface unless `registry.yaml` lists it.
+- **Discriminator** — *must it be in the target repo's tree for that repo's local tooling to find or run it?* Yes → surface; no → app. **Default to the app**: a file is surface only when it earns its way onto the registry.
+
+Two boundary cases the enumeration must keep straight: `commands/harness.md` is a **repo-owned command kept *out* of the registry** — it drives the harness's own pipeline, so it lives in the source tree but is not part of the installed surface; and `scripts/` is **app** today (`scripts/verify.sh` is the app's own gate), not surface. The app has zero coupling to the surface, and the footprint test (CAL-648) is what mechanically holds this line by asserting `registry.yaml`'s `files:` excludes every app path. *Derived from: the "Merge the guidance repo into the harness" decision below (D1/D2/D5) and `specs/proposals/merge-guidance-into-harness.md` breakdown item 2.*
 
 ## Cross-cutting decisions
 
