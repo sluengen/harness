@@ -14,14 +14,13 @@ Exit codes (SPEC §11):
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
 import typer
 
-from harness.cli._query_common import _resolve_db_path
+from harness.cli._query_common import _resolve_db_path, _safe_json_loads
 
 
 async def _fetch_recent_runs(
@@ -70,14 +69,8 @@ async def _fetch_failed_runs_grouped(
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         d = dict(row)
-        reason = ""
-        raw = d.get("event_data_json")
-        if raw:
-            try:
-                parsed = json.loads(raw)
-                reason = str(parsed.get("reason", "")) if isinstance(parsed, dict) else ""
-            except (TypeError, ValueError):
-                reason = ""
+        parsed = _safe_json_loads(d.get("event_data_json"))
+        reason = str(parsed.get("reason", "")) if isinstance(parsed, dict) else ""
         entry = {
             "run_id": d["run_id"],
             "workflow_name": d["workflow_name"],
