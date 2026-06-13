@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.3.1 -->
+<!-- guidance:process-harness@0.3.2 -->
 # How work happens here (harness profile)
 
 This is the process for an **infrastructure / pipeline-harness repo** — a tool or library that other repos depend on, with no end-users and no product UI. It is a deliberate variant of the standard process: same skills and standards, a leaner flow, and design-doc specs instead of user-facing feature specs. Everything repo-specific is in [`CONTEXT.md`](CONTEXT.md); read that first.
@@ -47,6 +47,8 @@ The universal guidance commands own the **bare names** (`/start`, `/review`, `/s
 Resolve it by **namespacing the harness's own commands under `/harness <verb>`** (e.g. `/harness run`, `/harness ingest`). The bare names stay with the universal commands. This is not just to avoid confusion: the bootstrap installs the guidance's `/start` at `commands/start.md`, so the harness's own `start` must move out of that path first (the bootstrap refuses to clobber it — see `BOOTSTRAP.md` step 2).
 
 Keeping the agent-led commands available here is deliberate: when a task does **not** fit the harness's own pipeline shape, run it through the standard `/start → /review → /ship` flow as a backup.
+
+The harness is the **source** of the universal `/build` and `/build-codex` commands, so it carries their full canonical bodies for distribution — but it does **not** run them on its own tickets. In this repo, drive a ticket end-to-end with `/harness run` (the audited verb loop whose `review` already does the Codex review), or the `/start → /review → /ship` backup above. Do not invoke `/build` or `/build-codex` here.
 
 ## When you are confused
 
