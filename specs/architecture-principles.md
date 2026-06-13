@@ -1,7 +1,7 @@
 <!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
-last_updated: 2026-06-11  # CAL-599: add self-enforcing-guardrails principle
+last_updated: 2026-06-13  # CAL-646: merge guidance repo into harness (decision)
 ---
 
 # Architecture Principles
@@ -52,3 +52,20 @@ Decisions whose scope crosses features live here as Decision blocks (`templates/
 **Consequences.** Keeps full context (the orchestrator is the implementer); removes mechanical toil from the agent's hands without losing the audit trail; degrades gracefully (a verb failure drops to Option-B manual driving). Gives up end-to-end reproducibility — SPEC principles #2/#4 now apply to the verbs, not the journey (own this; it is acceptable because we are not running deterministic autonomy). Softens enforcement from "cannot skip" to "caught at the gate"; the gate's correctness therefore hinges on `review`/`close` binding to the **same** SHA (D2) — if they do not, the gate is theatre. Requires retiring the engine, which also removes `release.yaml`/`steward.yaml` (never run; both convert cleanly to verb-shaped agent tasks). Audit completeness depends on routing discipline (D5): a hand-rolled commit or Linear mutation leaves a hole in the ledger. Hermes' separate-runtime + async-bridge design is superseded (D3); the remaining integration is a thin launch handle (follow-up CAL-576) plus a host-side launcher that exposes the verb operations without the docker socket (CAL-579).
 
 **Supersedes.** The harness-as-orchestrator framing in `SPEC.md` §1–2 (reconciled to the verb model, CAL-575) and the control half of `specs/hermes-orchestration.md` (dated supersede note, CAL-575).
+
+### Decision: Merge the guidance repo into the harness — one source, app/surface boundary, branch-based distribution
+
+*Decided 2026-06-13.*
+
+**Context.** The harness was a *consumer* of a separate shared-guidance ("agents") repo: it carried installed copies of the universal commands/skills and a `.guidance-lock.yaml` pinning `source: agents`, while the agents repo held `registry.yaml` (the copy-list, serving a `standard` and a `harness` profile) and the installer. Cross-cutting changes — a harness change needing a guidance/doc change, or distributing the harness's own `/harness run` through a channel it did not own (CAL-624) — could not be made atomic. The product-agnostic, many-consumers premise that justified the split is speculative: there is one consumer (the author), and the guidance is a stopgap the harness is meant to absorb. Two repos institutionalised a separation the roadmap intends to erase.
+
+**Decision.** Adopt **Option C** of proposal [`merge-guidance-into-harness`](proposals/merge-guidance-into-harness.md): collapse the two into one source tree by **promoting the harness to be the guidance source**, with a durable boundary between the harness **app** (`harness/ docker/ bin/ scripts/ specs/ tests/` — never installed into a target repo) and the installed **surface** (`commands/ skills/ agents/ templates/ hooks/ process/ settings/` + derived `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` — installed via `registry.yaml`). The sub-decisions: **D1** harness becomes the source; **D2** surface at root in flat/installed shape, `registry.yaml` is the copy-list, no `surface/` tree (it would break the `.claude/` discovery symlinks); **D3** the surface is a *versioned interface* — the `guidance:<id>@x.y.z` header is the per-unit version, semver-governed (minor = invisible implementation swap, major = interface change), with a test locking the verb JSON / refusal-reason contract; **D4** clean copy-in; **D5** the harness owns `registry.yaml` + the installer and is **source-only** (drops its own `.guidance-lock.yaml`; the app's release tag is a separate version line walled off by a footprint test); **D6** all guidance comes home (both profiles) and the agents repo is **retired**; **D7** distribution is branch-based and pulled from GitHub — the harness authors and dogfoods on `dev`, external repos pull `main`, and `/update-guidance` + bootstrap fetch the harness repo at a branch ref (`source: { repo, branch, ref }`).
+
+**Alternatives.**
+- *Option A — stay split (agents source + harness consumer)* — preserves a product-agnostic source in principle, but pays the cross-cutting tax every change and maintains a separation the roadmap removes. Inferior with one consumer.
+- *Option B — fully fuse, no internal boundary* — discards the working `registry.yaml` ↔ `.guidance-lock.yaml` + source/consumer freshness-hook mechanism to save a boundary that costs almost nothing to keep. Destructive of working infrastructure.
+- *Option D — keep two repos + cross-repo sync tooling* — lipstick; straddling changes still are not atomic.
+
+**Consequences.** Cross-cutting changes become one PR / one review / one atomic commit. The boundary is preserved structurally — the app has **zero coupling** to the surface (verified), and a **footprint test** asserts `registry.yaml`'s `files:` excludes every app path, eliminating (not merely mitigating) version entanglement. The harness's own role changes from consumer to source: it runs the freshness hook in SOURCE mode and carries no lock. Target-repo install footprint is unchanged (the channel, not the repo count, gates it). New coupling to own: branch-based release ties guidance to the app's `dev → main` cadence — a guidance-only hotfix cannot ship independently of an app release unless an independent promotion path / tag-based ref is added (deferred to the D7 work, CAL-653). The agents repo is retired (CAL-652). Spawned as **CAL-646 … CAL-653**.
+
+**Supersedes.** The "guidance stays in a separate product-agnostic repo" framing in `CLAUDE.md` and `CONTEXT.md` (reconciled to the one-repo source model, CAL-651). CAL-624 (distribute `/harness run` via the agents-repo channel) is subsumed (CAL-650).
