@@ -111,10 +111,12 @@ under `/harness` first.
 
 The guidance bundle — the universal `/start`, `/review`, `/ship`, `/propose`,
 `/assess`, `/update-guidance` commands plus the skills, agents, hooks, and the
-`harness` process doc — installs from the **agents repo** (the guidance source).
-**Do not hand-roll the install here.** The source repo carries the canonical,
-versioned installer (`guidance:bootstrap`, the agents repo's own `BOOTSTRAP.md`);
-run *that* from inside this repo and select the **`harness` profile**. It is the
+`harness` process doc — installs from **this repo**: the harness *is* the
+guidance source (the guidance repo was merged in). **Do not hand-roll the
+install here.** This repo carries the canonical, versioned installer —
+[`INSTALLER.md`](INSTALLER.md) (`guidance:bootstrap`), the copy-in bootstrap
+prompt; run *that* from inside the target repo, point it at this harness
+checkout as the guidance source, and select the **`harness` profile**. It is the
 single source of truth for the copy-in mechanics, so this doc does not restate
 them — it does, in one pass:
 
@@ -135,17 +137,17 @@ them — it does, in one pass:
 Use the harness's recommended **`committed`** visibility mode so a cloud / CI
 runner has the guidance (the installer defaults private repos to it).
 
-> **`/harness run` is not yet in that bundle.** `commands/harness.md` (the
+> **`/harness run` is not in that bundle.** `commands/harness.md` (the
 > `/harness run` and `/harness ingest` commands) is **repo-owned here** — it
-> ships in the harness repo, not in `registry.yaml`, so the agents installer does
-> not copy it into a *consuming* repo. Distributing it (and this onboarding doc)
-> through the agents channel is the dependent ticket **CAL-624**. Until that
-> lands, a consuming repo gets `/harness run` by copying `commands/harness.md`
-> from the harness repo directly.
+> ships in the harness repo but is deliberately excluded from `registry.yaml`,
+> so the installer does not copy it into a *consuming* repo (a boundary the
+> footprint guard locks in, **CAL-650**). Until `/harness run` is distributed as
+> a surface unit, a consuming repo gets it by copying `commands/harness.md` from
+> the harness repo directly.
 
 Thereafter, **do not hand-edit installed guidance files** (that creates a
 permanent local divergence) — run [`/update-guidance`](commands/update-guidance.md)
-to pull a newer agents-repo ref, which rewrites the lock.
+to pull a newer harness guidance ref, which rewrites the lock.
 
 ### Step 4 — wire credentials
 
@@ -216,16 +218,16 @@ present), and `commands/start.md` belongs to the guidance's `/start`.
 
 ---
 
-## The onboarding snippet (the unit for the agents repo to distribute)
+## The onboarding snippet (the unit a consuming repo needs)
 
-The unit packaged for the agents repo to distribute is **this file plus the
-`/harness run` command** ([`commands/harness.md`](commands/harness.md)). The
-command is already self-contained — it documents the full `start → review →
-(fix → review)* → close` loop, the gate-refusal reasons, and context-economy
-recovery — so a consuming repo gets a working pipeline command the moment it
-lands. Wiring this unit into `registry.yaml` so the agents installer copies it
-into a consuming repo is the dependent ticket **CAL-624**; today the unit lives
-here, copied across by hand (see the [step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml)
+The unit a consuming repo needs is **this file plus the `/harness run` command**
+([`commands/harness.md`](commands/harness.md)). The command is already
+self-contained — it documents the full `start → review → (fix → review)* →
+close` loop, the gate-refusal reasons, and context-economy recovery — so a
+consuming repo gets a working pipeline command the moment it lands. Because
+`commands/harness.md` is repo-owned and excluded from `registry.yaml` (CAL-650),
+the installer does not copy it; today a consuming repo copies it across by hand
+(see the [step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml)
 note).
 
 Put this minimal snippet in the consuming repo's **`CONTEXT.md`** — the
@@ -271,7 +273,7 @@ code and the guidance bundle — per your install method:
 
 **Guidance bundle**
 
-- Run `/update-guidance` to pull the new agents-repo ref. It rewrites
+- Run `/update-guidance` to pull the new harness guidance ref. It rewrites
   `.guidance-lock.yaml` with the updated versions and hashes; review the diff
   before committing.
 

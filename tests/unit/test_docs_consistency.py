@@ -195,3 +195,69 @@ def test_routing_discipline_scoped_to_run_lifecycle() -> None:
         "architecture-principles.md 'Routing discipline' must scope the guarantee "
         "to run-lifecycle mutations (ADH-1, CAL-596)."
     )
+
+
+# --- One-repo source model (CAL-651) ------------------------------------------
+#
+# The guidance repo was merged into the harness: the harness *is* the guidance
+# source (Decision: "Merge the guidance repo into the harness", D1/D6). The live
+# operational docs must therefore not describe a *separate* agents source repo
+# the install pulls from — that two-repo framing is stale.
+
+#: Operational docs an onboarding agent reads as current fact. CHANGELOG.md is
+#: excluded on purpose: it is a dated history and legitimately records the
+#: agents-repo *retirement* as a past event. specs/ and assessments/ are decision
+#: and audit records, likewise historical.
+ONE_REPO_DOCS = [
+    REPO_ROOT / "BOOTSTRAP.md",
+    REPO_ROOT / "CONTEXT.md",
+    REPO_ROOT / "README.md",
+    REPO_ROOT / "INSTALLER.md",
+]
+
+#: Phrases that assert a separate agents *source* repo (the two-repo world). The
+#: `agents` directory (`agents/`, "agent role definitions") is never a match —
+#: only "agents" bound to repo/channel/installer/source is the stale claim.
+_TWO_REPO_RE = re.compile(r"agents[\s-](repo|channel|installer|source)", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("doc", ONE_REPO_DOCS, ids=lambda p: p.name)
+def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
+    """AC-1: no live doc claims a separate agents *source* repo (CAL-651).
+
+    The harness is the guidance source now; the install pulls from this repo and
+    runs the in-repo installer (INSTALLER.md), not an external agents repo.
+    """
+    if not doc.exists():
+        pytest.skip(f"{doc.name} not found")
+    hits = sorted({m.group(0) for m in _TWO_REPO_RE.finditer(doc.read_text())})
+    assert not hits, (
+        f"{doc.name} still describes a separate agents source repo: {hits!r}. "
+        "The guidance repo was merged into the harness (D1/D6) — the harness is "
+        "the source. Point the install at the in-repo installer (INSTALLER.md) "
+        "and drop the agents-repo framing (CAL-651, AC-1)."
+    )
+
+
+# --- CHANGELOG freshness anchor (CAL-651, AC-2) -------------------------------
+
+CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
+
+
+def test_changelog_present_and_referenced_by_freshness_hook() -> None:
+    """AC-2: CHANGELOG.md exists and the SOURCE-mode freshness hook nags toward it.
+
+    The freshness hook (SOURCE mode) tells an author to record a version bump in
+    CHANGELOG.md. If the hook points there, the file must exist or the pointer is
+    a dead end.
+    """
+    assert CHANGELOG.resolve() in tracked_files_under("CHANGELOG.md"), (
+        "CHANGELOG.md must be a committed root file — the SOURCE-mode freshness "
+        "hook nags authors toward it (CAL-651, AC-2)."
+    )
+    assert "CHANGELOG.md" in FRESHNESS_HOOK.read_text(), (
+        "hooks/guidance-freshness.js no longer references CHANGELOG.md. The "
+        "SOURCE-mode bump reminder must point authors at the changelog (CAL-651, "
+        "AC-2)."
+    )
