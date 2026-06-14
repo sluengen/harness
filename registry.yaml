@@ -55,8 +55,8 @@ files:
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.3.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.4.0, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.2.0, profiles: [harness] }
-  commands/build-codex.md:            { id: build-codex,              version: 1.2.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.2.1, profiles: [harness] }
+  commands/build-codex.md:            { id: build-codex,              version: 1.2.1, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.1, profiles: [harness] }

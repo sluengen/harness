@@ -1,4 +1,4 @@
-<!-- guidance:build@1.2.0 -->
+<!-- guidance:build@1.2.1 -->
 # /build — implement, verify, and review a Linear ticket
 
 Usage: `/build <TICKET-ID>`
@@ -111,10 +111,10 @@ If it exits non-zero: add a finding to `issues` — `"Verify gate failed (exit C
 
 ### Review
 
-Capture the diff:
+Capture the diff. The implement agent does not commit, so the patch lives in the working tree — stage it (so new, untracked files are included) and diff the index against the worktree's `HEAD` (the immutable commit it was created from; do not diff against the moving `$base_branch` ref, or an integration branch that advances mid-run folds unrelated upstream changes into the review):
 
 ```bash
-cd "$worktree_path" && git diff "$base_branch"...HEAD 2>/dev/null
+cd "$worktree_path" && git add -A && git diff --cached HEAD 2>/dev/null
 ```
 
 Perform the review yourself. You have the diff above and Read/Grep access to surrounding files for context.
@@ -148,7 +148,7 @@ TEAM_ID=$(curl -s -X POST https://api.linear.app/graphql \
 curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
   -d "$(jq -n --arg t "$TEAM_ID" --arg title "DEFERRED_BRIEF" --arg p "TICKET_ID" \
-    '{"query":"mutation{issueCreate(input:{teamId:$t,title:$title,parentId:$p}){success}}"}')" > /dev/null
+    '{query:"mutation($t:String!,$title:String!,$p:String){issueCreate(input:{teamId:$t,title:$title,parentId:$p}){success}}",variables:{t:$t,title:$title,p:$p}}')" > /dev/null
 ```
 
 **Set In Review.** Same pattern as set-in-progress, targeting a started-type state whose name matches "in review".
@@ -208,7 +208,7 @@ curl -s -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
   -d "$(jq -n --arg id "TICKET_ID" \
     --arg body "Build loop abandoned — not converging. Work committed and pushed to WORKTREE_BRANCH for investigation.\n\nFindings:\nISSUES" \
-    '{"query":"mutation{commentCreate(input:{issueId:$id,body:$body}){success}}"}')" > /dev/null
+    '{query:"mutation($id:String!,$body:String!){commentCreate(input:{issueId:$id,body:$body}){success}}",variables:{id:$id,body:$body}}')" > /dev/null
 ```
 
 Reset the ticket to Todo (same pattern as set-in-progress, targeting `type=="unstarted"`). **Leave the worktree and branch in place.** Report the findings and the branch name to the user.
