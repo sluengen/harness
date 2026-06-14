@@ -202,9 +202,10 @@ fi
 
 # Workspace allowlist (CAL-584): the verbs reject any --repo outside
 # HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
-# mounts CWD as /workspace, so /workspace is the intended (and only) root.
-# Forward a host override if set, else default to /workspace.
-export HARNESS_WORKSPACE_ROOTS="${HARNESS_WORKSPACE_ROOTS:-/workspace}"
+# mounts CWD as /workspace, so /workspace is the only valid root *inside the
+# container*. Do NOT forward a host-side value: a host path (e.g. an exported
+# HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
+# container and would reject the mounted repo, breaking cross-repo runs. Pin it.
 
 # Pull Claude OAuth token from macOS Keychain (containers can't access Keychain directly).
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
@@ -232,7 +233,7 @@ exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$HOME/.codex":/root/.codex \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
-  -e HARNESS_WORKSPACE_ROOTS \
+  -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
