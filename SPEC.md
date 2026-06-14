@@ -12,14 +12,27 @@
 
 Subsystem and integration specs live in `specs/`. Read the relevant file before touching a module.
 
-**Current (verb model):**
+**Current — as-built record (verb model):**
+
+The `feature_specs` layer is on (`CONTEXT.md`), so the canonical as-built record of each current subsystem is a feature spec in `specs/features/` (`templates/feature.md` shape). Read the relevant feature spec before touching its subsystem.
+
+| Feature spec | Covers |
+|------|--------|
+| [`specs/features/verb-model.md`](specs/features/verb-model.md) | The `start` / `review` / `close` lifecycle and the close gate (the central feature) |
+| [`specs/features/run-ledger.md`](specs/features/run-ledger.md) | The SQLite ledger: `runs` / `events`, the open/closed lifecycle, the reviewed-SHA gate datum |
+| [`specs/features/worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) | The isolated worktree per run: create off base, cleanup policies, path/branch conventions |
+| [`specs/features/cli-surface.md`](specs/features/cli-surface.md) | The fixed command surface: verbs, read/inspection, ops, exit codes, JSON |
+
+**Design references (the model and deeper module detail the feature specs build on):**
+
+The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) have been re-homed to [`specs/retired/`](specs/retired/) (CAL-661). The remaining design docs are kept at the top of `specs/` because live docstrings still cite them (`state-store.md`) or they carry surviving/cross-referenced content (`hermes-orchestration.md`'s observability half, `build-workflow.md`, `cli.md`). Folding `state-store.md` / `worktree-isolation.md` under their feature specs and re-homing the rest — with the ~27 docstring cites repointed — is the deferred relocation half, tracked as **CAL-693**.
 
 | Spec | Covers |
 |------|--------|
 | [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
 | [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
-| [`specs/state-store.md`](specs/state-store.md) | SQLite ledger: `runs`/`events` schema, the open/closed run lifecycle, reviewed-SHA on the review event |
-| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies (re-homed as a verb helper) |
+| [`specs/state-store.md`](specs/state-store.md) | SQLite schema reference: full DDL, migrations, `BaseState` (detail behind [`run-ledger.md`](specs/features/run-ledger.md)) |
+| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Worktree helper reference: create/cleanup mechanics (detail behind [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md)) |
 
 **Superseded (retired deterministic engine — historical):**
 
@@ -27,11 +40,11 @@ Subsystem and integration specs live in `specs/`. Read the relevant file before 
 |------|--------|--------|
 | [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model | Control half superseded by `harness-as-tool`; observability half survives |
 | [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop |
-| [`specs/workflow-schema.md`](specs/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs | Engine retired (CAL-574) |
-| [`specs/engine-executor.md`](specs/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots | Engine retired (CAL-574) |
-| [`specs/engine-loop.md`](specs/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574) |
-| [`specs/ai-node.md`](specs/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574) |
-| [`specs/script-node.md`](specs/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574) |
+| [`specs/retired/workflow-schema.md`](specs/retired/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/engine-executor.md`](specs/retired/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/engine-loop.md`](specs/retired/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/ai-node.md`](specs/retired/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/script-node.md`](specs/retired/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`) |
 
 ---

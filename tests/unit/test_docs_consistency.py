@@ -103,7 +103,9 @@ def _superseded_specs() -> list[Path]:
             if specs:
                 break
             continue
-        for match in re.finditer(r"specs/([A-Za-z0-9_-]+\.md)", line):
+        # A superseded row may point at a doc re-homed under specs/retired/
+        # (CAL-661) or still at the top level of specs/.
+        for match in re.finditer(r"specs/((?:retired/)?[A-Za-z0-9_-]+\.md)", line):
             candidate = REPO_ROOT / "specs" / match.group(1)
             if candidate not in specs:
                 specs.append(candidate)
