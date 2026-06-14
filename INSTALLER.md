@@ -1,4 +1,4 @@
-<!-- guidance:bootstrap@0.4.4 -->
+<!-- guidance:bootstrap@0.4.5 -->
 # Bootstrap the guidance into a repo
 
 > Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
@@ -16,8 +16,8 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 
 > You are installing the shared agent guidance into this repo.
 >
-> **1. Locate the source, note the single surface, pick a visibility mode.**
-> Find the guidance source (path given to you, or clone `<source repo>` to a temp dir) and read its `registry.yaml`. Then:
+> **1. Locate the source (GitHub `main`), note the single surface, pick a visibility mode.**
+> The guidance source is the harness **GitHub** repo. Clone it at the released branch — `git clone --branch main --depth 1 https://github.com/sluengen/harness.git` to a temp dir (`registry.yaml` records the canonical cloneable `source.repo` and `source.branch`) — and read its `registry.yaml`. External repos install from `main`; the harness itself authors and dogfoods the surface on `dev`, so a non-harness repo pulls `main`, never in-flight `dev`. (A local path may be given instead when iterating on the source.) Then:
 > - **Surface:** there is **one surface** — a single profile under `profiles:` (the `standard`/`harness` split is retired). Install that one surface; do not look for a repo-type profile to choose between. Repo-type variation — feature specs, design system — is set **after** install via this repo's `CONTEXT.md` `layers:` block (step 4), not by selecting a profile.
 > - **Visibility mode:** `committed` (all guidance in git; enables cloud execution; default for private repos) or `local` (only `CONTEXT.md` in git; internals bootstrapped locally; default for public repos). Determine the repo's visibility with `gh repo view --json visibility` if available, else ask; default the mode from it.
 > Confirm the visibility mode with me if it is ambiguous.
@@ -49,12 +49,15 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 > - **Env file + Linear token:** look for `.env`, `.env.local`, `.env.*`. Grep them for `LINEAR_API_KEY` — match the *variable name*, never echo the value. Record the file in `env.file` and the variable in `env.linear_token`. If the token sits in a different file than the tooling will source, note it and offer to consolidate **with my confirmation** — never move a secret silently. If the repo is on Linear (`linear: true`) but no token is found, flag it for me to add; do not invent one.
 > Fill what you can confidently infer. For everything you cannot — the tracker invocation and IDs, the branch model, the layer flags, repo-specific principles, gotchas — **ask me, one focused batch of questions.** Do not invent facts. Set the `profile:` and `visibility:` fields to match the choices from step 1.
 >
-> **5. Write `.guidance-lock.yaml`** at the repo root recording, for every file installed: its path, version (from `registry.yaml`), and a short content hash. Record the chosen profile and the source ref. Schema:
+> **5. Write `.guidance-lock.yaml`** at the repo root recording, for every file installed: its path, version (from `registry.yaml`), and a short content hash. Record the chosen profile and the source **you actually installed from** — so `/update-guidance` re-fetches that same source, not a different one. For the standard GitHub install, that is the registry's `repo` + `branch` plus the `ref` SHA you cloned. For the local-checkout path, record the **local checkout** instead (`repo:` its path, `branch:` its branch, `ref: local`) — do *not* write the GitHub `main` remote, or the next update silently switches the consumer to `main`, which may differ from the locally tested guidance. Schema:
 >
 > ```yaml
 > # guidance lock — written by the installer, updated by /update-guidance
 > profile: harness
-> source: { name: harness, ref: <git sha or "local"> }
+> # GitHub install (the default): the cloneable remote + released branch + cloned SHA.
+> source: { repo: https://github.com/sluengen/harness.git, branch: main, ref: <git sha> }
+> # Local-checkout install instead: record the checkout you installed from.
+> #   source: { repo: /abs/path/to/harness, branch: <its-branch>, ref: local }
 > files:
 >   skills/code-quality/SKILL.md: { version: 0.4.0, hash: <sha256-first12> }
 >   # ... one line per installed file (skills are the Agent Skills shape skills/<id>/SKILL.md)
