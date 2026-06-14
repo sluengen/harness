@@ -2,7 +2,7 @@
 name: spec-driven-development
 description: Use at the start of a tracked task to follow the spec-driven flow from idea to shipped-and-recorded with minimal ceremony — when each spec (proposal, change, feature) is produced and what handoff means. The spine the other skills hang off.
 ---
-<!-- guidance:spec-driven-development@0.3.1 -->
+<!-- guidance:spec-driven-development@0.3.2 -->
 # Spec-Driven Development
 
 How a task flows from "idea" to "shipped and recorded" with the least ceremony that still guarantees quality. This is the spine the other skills hang off. How to *write* each spec is in `spec-authoring`; this is *when* each one is produced.
@@ -43,6 +43,6 @@ Steps 4 and 6 are gated by the verification rule in `code-quality`: no "done", "
 
 If you cannot proceed because information is missing, do not guess. State the specific question on the Linear issue, move it back to the backlog, and stop. A wrong assumption shipped is more expensive than a question asked.
 
-## Profile note
+## Layer note
 
-The harness/infrastructure profile uses a leaner flow (build → review, with design-doc specs rather than user-facing feature specs). See `process/harness.md` in that profile.
+The as-built record's shape is a per-repo choice, not a profile: with the `feature_specs` layer on the record is a feature spec in `specs/features/`; off, it is the design doc / `SPEC.md`. See `CONTEXT.md` `layers:` for what a given repo uses, and `process/harness.md` for the one shared flow.
