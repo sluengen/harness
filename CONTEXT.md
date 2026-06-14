@@ -37,7 +37,7 @@ paths:
   source: harness/
   tests: tests/
   proposals: specs/proposals/
-  features: specs/features/   # as-built feature specs (feature_specs layer on); migration of the current record is CAL-661
+  features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
   decisions: specs/   # ADRs not yet separated into decisions/; design docs in specs/
 env:
   file: .env
