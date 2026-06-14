@@ -1,3 +1,7 @@
+# size: one cohesive concern — the narrow host launch boundary keeps its
+# allowlist check, per-verb ``docker run`` argv construction, and the
+# unix-socket ControlServer co-located, so the security-critical "narrow
+# capability, not the docker socket" property cannot drift apart across files.
 """Host launcher — the narrow control socket for verb-container launch (CAL-579).
 
 The Hermes runtime drives the harness from inside its own container but must
