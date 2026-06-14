@@ -34,8 +34,18 @@ git push origin v<X.Y.Z>
 - [ ] Tag message matches the version number
 - [ ] Tag is pushed to `origin`
 
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds `docker/Dockerfile` and publishes `ghcr.io/sluengen/harness:<version>` (built-in `GITHUB_TOKEN`, `packages: write`). The workflow is inert until the tag is pushed.
+
 ## Post-release
 
 - [ ] GitHub Release created from the tag with the changelog section pasted in
 - [ ] Consuming repos updated to the new tag — see `BOOTSTRAP.md §Updating` for the per-install-method steps (git checkout + Docker rebuild, or pip upgrade)
 - [ ] Linear milestone closed or next milestone opened
+
+### First GHCR publish only (one-time, manual)
+
+The image package does not exist until the first tagged release pushes it. After that first publish, a human must do these once (deferred from CAL-623 — they need a live package / the GitHub UI and cannot be scripted in CI):
+
+- [ ] In the package settings, enable **"Inherit access from repository"** so `sluengen/harness` collaborators get matching pull access (keep the package **private**).
+- [ ] Verify access: a collaborator `docker login ghcr.io` + `docker pull ghcr.io/sluengen/harness:<version>` succeeds; an anonymous pull is denied.
+- [ ] Flip the `~/bin/harness` wrapper default `HARNESS_IMAGE` to `ghcr.io/sluengen/harness:<version>` and update `BOOTSTRAP.md` — only once a pullable image exists, so existing local users aren't broken.
