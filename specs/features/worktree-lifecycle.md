@@ -2,7 +2,7 @@
 feature: worktree-lifecycle
 status: implemented
 last_updated: 2026-06-14
-linear: [CAL-590, CAL-661]
+linear: [CAL-590, CAL-661, CAL-693]
 ---
 
 # Worktree lifecycle — isolated branch per run
@@ -39,7 +39,7 @@ linear: [CAL-590, CAL-661]
 
 ### Housekeeping — `harness worktrees`
 
-`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged]` removes the worktree *directories* matching the filters with `git worktree remove --force` (then surfaces what it removed); it **retains the branch**. It is an operator tool, decoupled from the per-run lifecycle, and does not use the `CleanupPolicy` machinery below.
+`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged]` removes the worktree *directories* matching the filters with `git worktree remove --force` (then surfaces what it removed); it **retains the branch**. It is an operator tool, decoupled from the per-run lifecycle, and uses direct git.
 
 ## Data model
 
@@ -54,13 +54,14 @@ Every run gets a unique branch derived from its ULID `run_id`, so concurrent run
 
 ## Known limitations
 
-- **The `CleanupPolicy` machinery is dormant.** `WorktreeNode.cleanup(policy=...)` — `merge_to_base` (fast-forward the base to the branch tip), `leave_for_inspection` (remove the worktree, keep the branch), `delete_unconditionally` (`git worktree remove --force`) — survives in `harness/worktree.py` from the engine era but **no live verb calls it**; it is exercised only by `tests/unit/test_worktree.py`. The live paths use direct git (`start` rollback, `close` merge, `worktrees cleanup`). This dormant code is a candidate for retirement.
 - `close` leaves the worktree on disk; reclaiming it is the operator's `harness worktrees cleanup`, not an automatic step.
 - `WorktreeNode.create` does not validate the `run_id` it is handed; `harness.identity.worktree_dir` is the validating entry point.
 
+> The engine-era `CleanupPolicy` machinery (`WorktreeNode.cleanup` — `merge_to_base` / `leave_for_inspection` / `delete_unconditionally`) was **retired in CAL-693**: it had no live caller (the live paths use direct git — `start` rollback, `close` merge, `worktrees cleanup`) and was exercised only by its own tests. Only `WorktreeNode.create` survives.
+
 ## Cross-references
 
-- [`specs/worktree-isolation.md`](../worktree-isolation.md) — the detailed worktree helper reference (note: still describes the engine-era node wrapper)
+- [`specs/retired/worktree-isolation.md`](../retired/worktree-isolation.md) — the engine-era `WorktreeNode` reference (historical; the `cleanup` machinery it documents is retired)
 - [verb-model.md](verb-model.md) — `start` creates the worktree, `close` merges the branch
 - [run-ledger.md](run-ledger.md) — where `worktree_path` / `worktree_branch` are recorded
 - [cli-surface.md](cli-surface.md) — the `worktrees` housekeeping commands

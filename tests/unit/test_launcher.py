@@ -78,6 +78,35 @@ def test_operations_surface_is_exactly_the_named_verbs() -> None:
     )
 
 
+# The live design doc must name the *same* operation surface the launcher
+# enforces. ``specs/hermes-orchestration.md`` §Runtime topology documents the
+# control-socket operations in prose; if that list drifts from
+# :data:`OPERATIONS` (e.g. it kept the engine-era ``decision`` op or omitted
+# ``review`` / ``close``), a reader is misled about what the socket exposes.
+# CAL-693: tie the documented surface to the code.
+_HERMES_DOC = Path(__file__).resolve().parents[2] / "specs" / "hermes-orchestration.md"
+
+
+def test_runtime_topology_doc_lists_exactly_the_launcher_operations() -> None:
+    """The §Runtime topology operation list equals ``launcher.OPERATIONS``."""
+    import re
+
+    text = _HERMES_DOC.read_text()
+    # The canonical sentence naming the control-socket operations carries the
+    # surface as a backticked list in parentheses.
+    sentence = next(
+        ln for ln in text.splitlines()
+        if "launcher control socket" in ln and "verb operations" in ln
+    )
+    documented = set(re.findall(r"`([a-z]+)`", sentence.split("(", 1)[1]))
+    assert documented == set(OPERATIONS), (
+        f"specs/hermes-orchestration.md §Runtime topology documents the control-socket "
+        f"operations as {sorted(documented)}, but harness.launcher.OPERATIONS is "
+        f"{sorted(OPERATIONS)}. Keep the live as-built doc in lockstep with the code "
+        "(no engine-era `decision`; `review`/`close` are real ops)."
+    )
+
+
 @pytest.mark.parametrize("op", ["run", "exec", "build", "commit", "shell", "", "RUN", "decision"])
 def test_unknown_operation_is_rejected(op: str, repo: Path, roots: list[Path]) -> None:
     with pytest.raises(LauncherError) as excinfo:

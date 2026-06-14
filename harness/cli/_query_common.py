@@ -7,7 +7,7 @@ concern owns another's helper:
 * :func:`_resolve_db_path` — the ``--db`` resolution every command performs.
 * :func:`_safe_json_loads` — tolerant JSON decode for the row/event blobs.
 
-SPEC §11 names the commands; ``specs/state-store.md`` documents the row shapes.
+SPEC §11 names the commands; ``specs/features/run-ledger.md`` documents the row shapes.
 All share the same DB resolution path: a ``--db`` flag overriding the default
 ``$cwd/.harness/harness.db``.
 """

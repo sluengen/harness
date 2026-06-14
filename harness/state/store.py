@@ -16,7 +16,7 @@ The engine-era per-node state machinery (``read_state`` / ``update_state`` /
 (``write_snapshot`` / ``read_latest_snapshot`` + the ``run_snapshots`` table)
 were removed in CAL-613 — they had no production caller after the deterministic
 engine was retired in CAL-574. The current schema reference is
-``specs/state-store.md``.
+``specs/features/run-ledger.md``.
 
 Module-level functions (rather than a ``StateStore`` class) match the
 existing style — the single-db-per-project model means there's no state
@@ -34,7 +34,7 @@ import aiosqlite
 DEFAULT_DB_PATH = Path(".harness/harness.db")
 
 
-# Schema per ``specs/state-store.md``. Idempotent — every CREATE uses
+# Schema per ``specs/features/run-ledger.md``. Idempotent — every CREATE uses
 # ``IF NOT EXISTS``. Re-running this script on an existing DB is a no-op.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (

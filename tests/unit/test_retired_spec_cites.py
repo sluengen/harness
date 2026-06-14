@@ -27,8 +27,9 @@ Acceptance criteria (this ticket):
   (it would fail were the sweep below incomplete).
 * **AC-2** — the existing retired-§ cluster (§6/§7 in ``state/schema.py``; §12
   in ``state/store.py``, ``events/emitter.py``, and the ``cli/query*`` family)
-  is swept — repointed to ``specs/state-store.md``, the current schema
-  reference named by the SPEC §3 banner. Proven by the same test passing now.
+  is swept — repointed to ``specs/features/run-ledger.md``, the current schema
+  reference (the SPEC §3 banner names it; CAL-693 folded the former
+  ``specs/state-store.md`` into the run-ledger feature spec). Proven by the same test passing now.
 """
 
 from __future__ import annotations
@@ -92,7 +93,7 @@ _NO_MATCH = [
     "SPEC §1.",                # current, sentence-terminated
     "§4.4",                    # current subsection
     "SPEC §120",               # not a real section; 12 followed by a digit
-    "specs/state-store.md",    # the repointed target — no §, must not self-flag
+    "specs/features/run-ledger.md",  # the repointed target — no §, must not self-flag
     "see §Observability",      # non-numeric section label (hermes spec)
 ]
 
@@ -111,7 +112,7 @@ def test_no_live_harness_source_cites_a_retired_spec_section() -> None:
     """No git-tracked ``harness/**/*.py`` cites a retired SPEC section.
 
     Retired sections (§3, §5–§10, §12–§14) describe the deleted deterministic
-    engine; the current schema reference is ``specs/state-store.md`` and the
+    engine; the current schema reference is ``specs/features/run-ledger.md`` and the
     current command/module homes are §4 / §11. A cite into a retired section
     must be repointed, not introduced.
     """
@@ -125,5 +126,5 @@ def test_no_live_harness_source_cites_a_retired_spec_section() -> None:
     assert not violations, (
         "live harness/ source cites a retired SPEC section (§3, §5–§10, "
         "§12–§14 are superseded — the current schema reference is "
-        "specs/state-store.md):\n  " + "\n  ".join(violations)
+        "specs/features/run-ledger.md):\n  " + "\n  ".join(violations)
     )

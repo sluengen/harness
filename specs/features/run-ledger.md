@@ -2,7 +2,7 @@
 feature: run-ledger
 status: implemented
 last_updated: 2026-06-14
-linear: [CAL-570, CAL-583, CAL-613, CAL-661]
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -62,11 +62,106 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 | `runs` | `run_id` (PK, ULID), `status`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, `started_at`, `completed_at` | One row per run; the open/closed lifecycle |
 | `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the `review` and `close` events |
 
-New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`); `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** in [`specs/state-store.md`](../state-store.md).
+New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`); `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** below.
 
 ## Interface surface
 
 `store.py` exposes only the connection helper, the schema, and the migrations — the verbs own the reads and writes. `connect(db_path)` is an `@asynccontextmanager` (`async with connect(path) as conn`) that opens an `aiosqlite` connection, sets WAL and foreign keys, yields, and closes on exit. `DEFAULT_DB_PATH = Path(".harness/harness.db")`. The ledger is surfaced read-only through `harness status` / `harness events` / `harness runs` (see [cli-surface.md](cli-surface.md)).
+
+## Schema reference
+
+The full SQLite schema, migrations, status values, and the `BaseState` model — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
+
+> The engine-era per-node state machinery (`read_state` / `update_state` / `restore_state`) and the never-shipped v2-resume snapshot layer (`write_snapshot` / `read_latest_snapshot` + the `run_snapshots` table) were removed in CAL-613: they had no production caller after the deterministic engine was retired (CAL-574). Under the verb model the agent session — not a rehydrated state row — holds run context. The `runs.state_json` column survives (written as `"{}"` by `harness start`, surfaced as `state` in `harness status --json`) but is no longer merged or snapshotted.
+
+### SQLite DDL
+
+Two tables in `.harness/harness.db`:
+
+```sql
+CREATE TABLE runs (
+  run_id              TEXT PRIMARY KEY,
+  workflow_name       TEXT NOT NULL,
+  workflow_version    INTEGER NOT NULL,
+  status              TEXT NOT NULL,  -- open|closed (verb lifecycle) | pending|running|completed|failed|cancelled|stalled|paused (legacy engine)
+  state_json          TEXT NOT NULL,
+  inputs_json         TEXT NOT NULL,
+  base_branch         TEXT,
+  worktree_branch     TEXT,
+  worktree_path       TEXT,           -- absolute path to the git worktree (set by harness start)
+  ticket              TEXT,           -- Linear ticket identifier, e.g. "CAL-570" (set by harness start)
+  exit_code           INTEGER,
+  started_at          TEXT NOT NULL,
+  completed_at        TEXT,
+  duration_ms         INTEGER,
+  pid                 INTEGER   -- vestigial; always NULL (engine-era SIGTERM cancel path removed in CAL-587)
+);
+
+CREATE TABLE events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id      TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  node_id     TEXT,
+  event_type  TEXT NOT NULL,
+  timestamp   TEXT NOT NULL,
+  duration_ms INTEGER,
+  data_json   TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Partial unique index: prevents two concurrent `harness start` calls from
+-- inserting duplicate open rows for the same ticket (CAL-570).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_ticket_open
+  ON runs(ticket) WHERE status = 'open';
+```
+
+WAL journal mode and `PRAGMA foreign_keys = ON` are set on every connection opened via `connect()`. `init_db()` creates all tables and indexes idempotently (`IF NOT EXISTS`).
+
+### `runs` column additions (migrations)
+
+New columns added after the initial schema are applied via `ALTER TABLE ... ADD COLUMN` in `_migrate()`. Each migration is idempotent.
+
+| Column | Type | Added by | Description |
+|---|---|---|---|
+| `pid` | `INTEGER` | H-2-006 | Vestigial. Once held the owning process PID for the engine-era SIGTERM `harness cancel`; that path was removed in CAL-587, so `harness start` no longer writes it (always `NULL`). Retained as a dormant column to avoid a destructive migration on existing DBs. |
+| `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
+| `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
+
+### `status` values
+
+Under the **verb model** (proposal [`harness-as-tool`](../proposals/harness-as-tool.md)) a run has three **live** statuses: `open` (from `harness start`) and its two terminal states — `closed` (`harness close` passed its gate) and `cancelled` (`harness cancel` abandoned it). The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalled` / `paused`) belong to the legacy deterministic engine (retired in CAL-574) and survive only so historical rows validate.
+
+| Value | Set by | Meaning |
+|---|---|---|
+| `open` | `harness start` | **Live.** Run initialised; ticket transitioned to In Progress and worktree created. The verb run is in progress (implement → review → close). The partial unique index `idx_runs_ticket_open` keeps at most one `open` run per ticket. |
+| `closed` | `harness close` | **Live.** Gate passed (a `verdict=pass` whose reviewed SHA == HEAD); branch merged + pushed, ticket transitioned to Done, run finalised. Terminal state of the verb lifecycle. |
+| `cancelled` | `harness cancel` | **Live.** Run abandoned (close-without-merge). The verb marks the in-flight run cancelled, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`. It also abandons legacy `running`/`pending` rows historical engine-era runs left behind. |
+| `pending` | `harness run` (legacy) | Workflow accepted; executor not yet started. |
+| `running` | engine (legacy) | At least one node has started. |
+| `completed` | engine (legacy) | All nodes completed successfully. |
+| `failed` | engine (legacy) | A node or workflow-level error terminated the run. |
+| `stalled` | engine (legacy) | No progress within the stall timeout. |
+| `paused` | engine (v2, legacy) | Run awaiting a decision. |
+
+The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the live verb-model statuses (`open` / `closed` / `cancelled`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`/`close`/`cancel` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
+
+### `BaseState`
+
+Framework-defined fields prepended to every derived state class (largely vestigial under the verb model — no per-workflow state is derived; the agent session holds context):
+
+```python
+class BaseState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    workflow_name: str
+    base_branch: str
+    worktree_path: Path | None = None
+    worktree_branch: str | None = None
+    artifacts_dir: Path
+    started_at: datetime
+    notes: list[str] = Field(default_factory=list)
+```
+
+`extra="forbid"` means an agent that hallucinates an unknown field is rejected at validation time. Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the live verb-model statuses (`open` / `closed` / `cancelled`) interleaved with the retired-engine statuses (see the status table above).
 
 ## Known limitations
 
@@ -79,6 +174,5 @@ D5 (all run-lifecycle state goes through the ledger so the close gate can valida
 
 ## Cross-references
 
-- [`specs/state-store.md`](../state-store.md) — the full SQLite DDL, migrations, and `BaseState` schema reference
 - [verb-model.md](verb-model.md) — the verbs that read and write the ledger
 - [cli-surface.md](cli-surface.md) — the read-only ledger inspection commands

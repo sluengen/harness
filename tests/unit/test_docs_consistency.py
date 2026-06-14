@@ -73,7 +73,7 @@ SPEC_INDEX = REPO_ROOT / "SPEC.md"
 _SUPERSEDED_TABLE_MARKER = "**Superseded (retired deterministic engine"
 
 #: A spec file carries a banner if one of its first lines is a blockquote of the
-#: form ``> **Superseded YYYY-MM-DD** …`` (the format `hermes-orchestration.md`
+#: form ``> **Superseded YYYY-MM-DD** …`` (the format `hermes-control-model.md`
 #: established). The date requirement is what makes it a *dated* banner.
 _BANNER_RE = re.compile(r"^>\s*\*\*Superseded\s+\d{4}-\d{2}-\d{2}")
 
@@ -123,7 +123,7 @@ def test_superseded_table_is_parseable() -> None:
         "workflow-schema.md",
         "build-workflow.md",
         "cli.md",
-        "hermes-orchestration.md",
+        "hermes-control-model.md",
     } <= names
 
 
@@ -137,7 +137,7 @@ def test_superseded_spec_has_in_file_banner(spec: Path) -> None:
     assert any(_BANNER_RE.match(line) for line in head), (
         f"{spec.name} is marked superseded in the SPEC.md index but has no "
         "in-file supersede banner near the top. Prepend a dated banner of the "
-        "form '> **Superseded YYYY-MM-DD** by …' (see hermes-orchestration.md)."
+        "form '> **Superseded YYYY-MM-DD** by …' (see hermes-control-model.md)."
     )
 
 
