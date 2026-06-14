@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.4.0 -->
+<!-- guidance:code-quality@0.5.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -50,7 +50,7 @@ Defaults below. A repo may override the numbers in `CONTEXT.md`; the principles 
 
 | Unit | Soft (consider splitting) | Hard (split, or justify in a comment) |
 |---|---|---|
-| Module / component / file | 300 lines | 500 lines |
+| Module / component / file | 300 lines | 500 lines (justify or ticket — see Part C) |
 | Single function / handler | 40 lines | 60 lines |
 
 Declarative files (schemas, type definitions, token maps) get a higher ceiling: their length is field lists, not logic.
@@ -104,3 +104,7 @@ When an acceptance criterion is stated as a quantity — "uses N queries instead
 ### A green suite is only evidence if its inputs are real
 
 A passing test proves nothing when it feeds the code inputs or events no production path emits: it exercises a branch the live system never reaches and reports false confidence. Before a green run counts as evidence, confirm each test drives on what real code actually produces, not on synthesized data (`test-driven-development`).
+
+### A file over the hard limit is an auditable choice, not silent drift
+
+A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
