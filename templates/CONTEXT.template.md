@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.6 -->
+<!-- guidance:template-context@0.1.7 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -8,15 +8,19 @@ Agent-facing context for **{repo name}**. This is the one file allowed to name t
 <!-- The block below is structured so the pipeline harness can parse and inject it.
      Keep it accurate; agents and tooling both rely on it. -->
 ```yaml
-profile: standard              # standard | harness
+profile: harness               # the single registry profile (one surface); repo type is set by layers below, not by a profile
 visibility: committed          # committed (all guidance in git; enables cloud execution; default private) | local (only this file in git; internals bootstrapped locally; default public)
 repo:
   name: {repo name}
   linear: {Linear workspace/team — or 'none' for the rare repo not on Linear}
+# Layers carry repo-type variation — what the retired standard/harness profiles'
+# `default_layers` used to encode is now per-repo config here. A product repo:
+# feature_specs: true (+ design_system: true if it has one). An infra / pipeline
+# repo: both false (design-doc / SPEC.md is the as-built record).
 layers:                        # which optional guidance layers this repo uses
   linear: true                 # the standard; set false only if this repo is not on Linear
-  design_system: false
-  feature_specs: true
+  design_system: false         # on → frontend uses the design system; engages the design-system skill (ux-design applies to any user-facing surface regardless)
+  feature_specs: true          # on → as-built record is specs/features/ via templates/feature.md; off → design doc / SPEC.md
 stack:
   language: {e.g. Python 3.11 / TypeScript}
   framework: {e.g. FastAPI / React}

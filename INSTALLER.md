@@ -1,4 +1,4 @@
-<!-- guidance:bootstrap@0.4.3 -->
+<!-- guidance:bootstrap@0.4.4 -->
 # Bootstrap the guidance into a repo
 
 > Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
@@ -16,15 +16,15 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 
 > You are installing the shared agent guidance into this repo.
 >
-> **1. Locate the source, pick a profile, pick a visibility mode.**
-> Find the guidance source (path given to you, or clone `<source repo>` to a temp dir) and read its `registry.yaml`. Then decide:
-> - **Profile:** read the registry's `profiles:` block and pick the one whose `description` matches this repo. Only the profiles that block defines are installable — do not assume a profile that is not listed there (the source publishes a profile only once every file it needs is present).
+> **1. Locate the source, note the single surface, pick a visibility mode.**
+> Find the guidance source (path given to you, or clone `<source repo>` to a temp dir) and read its `registry.yaml`. Then:
+> - **Surface:** there is **one surface** — a single profile under `profiles:` (the `standard`/`harness` split is retired). Install that one surface; do not look for a repo-type profile to choose between. Repo-type variation — feature specs, design system — is set **after** install via this repo's `CONTEXT.md` `layers:` block (step 4), not by selecting a profile.
 > - **Visibility mode:** `committed` (all guidance in git; enables cloud execution; default for private repos) or `local` (only `CONTEXT.md` in git; internals bootstrapped locally; default for public repos). Determine the repo's visibility with `gh repo view --json visibility` if available, else ask; default the mode from it.
-> Confirm both with me if either is ambiguous.
+> Confirm the visibility mode with me if it is ambiguous.
 >
 > **2. Check for collisions, then copy the profile's files in.**
 > First, **never overwrite a pre-existing non-guidance file.** For every target path, if a file already exists there and does **not** carry a `guidance:` header (it is the repo's own, not a prior install), stop and resolve it — do not clobber it. **Exception — registry-managed JSON settings** (`settings/*.json`) carry no header by design (the registry version is authoritative), so header-presence can't distinguish a prior install from a repo-owned file. Use the **lock**: if `.guidance-lock.yaml` records this path, it is a prior install you may update; if no lock records it, treat an existing file as a potential repo-owned collision and stop to resolve it — never overwrite an unmarked settings file on a first install (registry membership alone does not prove the file came from us). The common case for the no-clobber rule is commands: the universal guidance commands own the bare names (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`), so a repo's own command at one of those paths (e.g. a harness repo whose `commands/start.md` launches the harness) must be **namespaced under a repo prefix first** (e.g. `/harness …` — see `process/harness.md`) before the guidance installs its version. The same no-clobber rule applies to any path.
-> Then, for every entry in `registry.yaml` whose `profiles` includes the chosen profile, copy the file to the same path, **preserving its `guidance:` header verbatim**. This covers `skills/`, `agents/`, `commands/`, `templates/`, and the profile's process doc. (Re-running over a prior install is fine — those files carry the header and are yours to update.)
+> Then, for every entry in `registry.yaml` whose `profiles` includes the single profile (the one surface), copy the file to the same path, **preserving its `guidance:` header verbatim**. This covers `skills/`, `agents/`, `commands/`, `templates/`, and the process doc. (Re-running over a prior install is fine — those files carry the header and are yours to update.)
 >
 > **Flag legacy-process artifacts.** A repo set up under an older process may carry artifacts the new model has retired:
 > - A **`manifest.yaml`** (the new model uses Linear; there is no manifest — see `linear-sync`).
