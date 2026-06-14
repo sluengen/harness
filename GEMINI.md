@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.0 -->
+<!-- guidance:process-harness@0.4.1 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -15,7 +15,7 @@ A repo turns capabilities on or off in its `CONTEXT.md` `layers:` block. The pro
 | `design_system` | Frontend work uses the repo's design system; the `design-system` skill applies. | No design system; `design-system` does not engage. (`ux-design` is **not** gated by this layer — it applies wherever there is a user-facing surface.) |
 | `linear` | Linear is the task queue and front door. | The repo's own tracker stands in for the Linear steps. |
 
-This repo's settings are in its `CONTEXT.md`. An **infrastructure / pipeline-harness** repo (a tool other repos depend on, no end-users, no product UI) runs with `feature_specs: false` and `design_system: false` — the lean flow, design-doc specs. A **product** repo typically sets `feature_specs: true`.
+This repo's settings are in its `CONTEXT.md`. `design_system` is off wherever there is no design system. `feature_specs` is a per-repo choice about the **shape of the as-built record**: a **product** repo typically turns it on; an infrastructure tool may leave it off and let its design docs stand as the record. The harness itself sets `feature_specs: true` — it dogfoods the feature-spec record it publishes.
 
 ## The shape of a task
 

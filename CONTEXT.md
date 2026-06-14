@@ -14,7 +14,7 @@ repo:
 layers:
   linear: true
   design_system: false
-  feature_specs: false
+  feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
 stack:
   language: Python 3.11+
   framework: Pydantic 2 / Typer / aiosqlite
@@ -37,6 +37,7 @@ paths:
   source: harness/
   tests: tests/
   proposals: specs/proposals/
+  features: specs/features/   # as-built feature specs (feature_specs layer on); migration of the current record is CAL-661
   decisions: specs/   # ADRs not yet separated into decisions/; design docs in specs/
 env:
   file: .env

@@ -612,3 +612,58 @@ def test_claude_discovery_symlink_resolves(name: str) -> None:
     assert link.resolve().is_dir(), (
         f".claude/{name} symlink does not resolve to a directory"
     )
+
+
+# --- CAL-660: the harness turns on its own feature_specs layer ----------------
+#
+# The harness publishes the feature-spec skill, so it dogfoods it: its own
+# per-repo config sets ``feature_specs: true`` and its as-built record lives in
+# ``specs/features/`` (the migration of the record is CAL-661). No surface text
+# may keep pinning the harness to design-doc specs or to a profile.
+
+HARNESS_CONTEXT = REPO_ROOT / "CONTEXT.md"
+
+#: Surface docs that must not pin the harness to design-doc specs (AC-2/AC-3).
+_DESIGN_DOC_DOCS = [
+    PROCESS_DOC,
+    REPO_ROOT / "skills" / "spec-driven-development" / "SKILL.md",
+]
+#: A line claiming the harness uses design-doc specs (the stale, now-false claim).
+_HARNESS_DESIGN_DOC_RE = re.compile(r"harness.*design[- ]doc spec", re.IGNORECASE)
+
+
+def test_harness_context_enables_feature_specs() -> None:
+    """AC-1: the harness's own CONTEXT.md turns on feature_specs at specs/features/.
+
+    The flip is per-repo config, not a profile: the layers block sets
+    ``feature_specs: true`` and points the as-built record at ``specs/features/``.
+    """
+    text = HARNESS_CONTEXT.read_text()
+    assert re.search(r"feature_specs:\s*true", text), (
+        "the harness CONTEXT.md layers: must set feature_specs: true — the harness "
+        "dogfoods the feature-spec surface it publishes (CAL-660, AC-1)."
+    )
+    assert "specs/features" in text, (
+        "the harness CONTEXT.md must declare the specs/features/ path for its "
+        "as-built record (CAL-660, AC-1)."
+    )
+
+
+def test_surface_does_not_pin_harness_to_design_docs() -> None:
+    """AC-2/AC-3: no surface doc states the harness uses design-doc specs.
+
+    With ``feature_specs`` on, the universal process doc and the spec-driven-
+    development skill must not present the harness (or a "harness profile") as a
+    design-doc-spec repo — that is the divergence and the resurrected profile
+    language this ticket removes. The generic Off-branch layer description stays;
+    it does not name the harness.
+    """
+    offenders: list[str] = []
+    for path in _DESIGN_DOC_DOCS:
+        for i, line in enumerate(path.read_text().splitlines(), 1):
+            if _HARNESS_DESIGN_DOC_RE.search(line):
+                offenders.append(f"{path.name}:{i}: {line.strip()}")
+    assert not offenders, (
+        "surface docs still pin the harness to design-doc specs; the harness sets "
+        f"feature_specs: true (CAL-660, AC-2/AC-3): {offenders}"
+    )
