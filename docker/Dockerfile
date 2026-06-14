@@ -11,6 +11,11 @@
 #     harness:dev start CAL-123
 FROM python:3.11-slim
 
+# Link the published image to its source repo so GHCR connects the package to
+# sluengen/harness and "Inherit access from repository" can govern who may pull
+# it (CAL-623). The registry tag is published by .github/workflows/release.yml.
+LABEL org.opencontainers.image.source=https://github.com/sluengen/harness
+
 # OS deps:
 #   git              — worktree operations
 #   curl             — Linear / API calls
