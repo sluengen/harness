@@ -115,10 +115,12 @@ The guidance bundle — the universal `/start`, `/review`, `/ship`, `/propose`,
 guidance source (the guidance repo was merged in). **Do not hand-roll the
 install here.** This repo carries the canonical, versioned installer —
 [`INSTALLER.md`](INSTALLER.md) (`guidance:bootstrap`), the copy-in bootstrap
-prompt; run *that* from inside the target repo, point it at this harness
-checkout as the guidance source, and select the **`harness` profile**. It is the
-single source of truth for the copy-in mechanics, so this doc does not restate
-them — it does, in one pass:
+prompt; run *that* from inside the target repo, point it at the guidance source
+— the harness GitHub repo at the released branch
+(`https://github.com/sluengen/harness.git`, `main`; a non-harness repo always
+pulls `main`, never in-flight `dev`), or a local harness checkout when iterating
+on the source — and select the **`harness` profile**. It is the single source of truth for the copy-in
+mechanics, so this doc does not restate them — it does, in one pass:
 
 - enforces the [step 2](#step-2--make-room-for-the-guidances-start) no-clobber
   rule (it refuses to overwrite a repo-owned `commands/start.md`);

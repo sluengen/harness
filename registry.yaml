@@ -1,4 +1,4 @@
-# guidance:registry@0.5.0
+# guidance:registry@0.5.1
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -12,7 +12,16 @@ registry_format: 1
 
 source:
   name: harness
-  # repo: git@github.com:<owner>/harness.git   # set when this repo has a remote
+  # The authoritative guidance source (CAL-653). `repo` is a cloneable git remote:
+  # the installer clones it and /update-guidance fetches it at `branch` below, so
+  # it must carry a scheme (`git clone <repo>` must work, not be read as a local
+  # path). Consumers record both in their own .guidance-lock.yaml
+  # `source: { repo, branch, ref }`.
+  repo: https://github.com/sluengen/harness.git
+  # External repos pull the released `main`; the harness authors + dogfoods the
+  # surface on `dev` (the canary), and the `dev → main` promotion is the release
+  # (D7). A guidance-only fix rides the app's dev→main cadence — accepted at N=1.
+  branch: main
 
 profiles:
   # ONE surface, one profile. The standard-vs-harness profile split is retired
@@ -64,7 +73,7 @@ files:
   commands/review.md:                 { id: review,                   version: 0.1.2, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.3.0, profiles: [harness] }
-  commands/update-guidance.md:        { id: update-guidance,          version: 0.4.0, profiles: [harness] }
+  commands/update-guidance.md:        { id: update-guidance,          version: 0.5.0, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.2.1, profiles: [harness] }
   commands/build-codex.md:            { id: build-codex,              version: 1.2.1, profiles: [harness] }
 
@@ -94,5 +103,5 @@ files:
 # Source-managed + version-stamped, but NOT installed into a repo (the installer and the registry itself).
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
-  INSTALLER.md:                        { id: bootstrap,                version: 0.4.4 }
-  registry.yaml:                      { id: registry,                 version: 0.5.0 }
+  INSTALLER.md:                        { id: bootstrap,                version: 0.4.5 }
+  registry.yaml:                      { id: registry,                 version: 0.5.1 }
