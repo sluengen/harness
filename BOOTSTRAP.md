@@ -191,15 +191,19 @@ never commits them:
 # holds LINEAR_API_KEY — keep every variant out of git
 .env
 .env.*
-# SQLite ledger (harness.db) + worktrees — host-local run state
+# SQLite ledger (harness.db) — host-local run state
 .harness/
+# run worktrees, created at <repo>/.worktrees/harness/<run-id>/
+.worktrees/
 # local virtualenv (native install)
 .venv/
 ```
 
-(Comments must be on their own lines — git treats a trailing `#` as part of the
-pattern, so `.env  # …` would *not* ignore `.env` and a later `git add .` could
-stage the key.)
+`.harness/` (the ledger) and `.worktrees/` (the run worktrees) are **separate**
+directories — ignore both, or a `git add .` after a run can stage worktree
+contents. (Comments must be on their own lines — git treats a trailing `#` as
+part of the pattern, so `.env  # …` would *not* ignore `.env` and a later
+`git add .` could stage the key.)
 
 ### Step 6 — verify the install
 
@@ -231,6 +235,19 @@ consuming repo gets a working pipeline command the moment it lands. Because
 the installer does not copy it; today a consuming repo copies it across by hand
 (see the [step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml)
 note).
+
+> **You don't strictly need the command file to drive a non-harness repo
+> (CAL-675).** The verbs are repo-agnostic — `~/bin/harness` mounts the caller's
+> CWD at `/workspace` — so an orchestrating agent already holding the
+> `/harness run` loop in context can `cd` into the target repo and call
+> `harness start / review / close` directly, with **no `commands/harness.md`
+> installed there**. Copying the command in is the convenience that makes the
+> loop discoverable in that repo; driving the verbs directly is the minimum.
+> Either way the only per-repo setup is a `.env` with `LINEAR_API_KEY` and the
+> two `.gitignore` lines from [step 5](#step-5--scaffold-env-and-gitignore).
+> (A *native*, non-wrapper invocation also needs `HARNESS_WORKSPACE_ROOTS`
+> exported — the wrapper sets it to `/workspace` for you; see
+> [`docker/README.md`](docker/README.md) §"Thin shell wrapper".)
 
 Put this minimal snippet in the consuming repo's **`CONTEXT.md`** — the
 repo-owned file that is never a distributable, so a local addition there creates

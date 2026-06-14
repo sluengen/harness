@@ -263,3 +263,89 @@ def test_changelog_present_and_referenced_by_freshness_hook() -> None:
         "SOURCE-mode bump reminder must point authors at the changelog (CAL-651, "
         "AC-2)."
     )
+
+
+# --- Cross-repo execution (CAL-675) -------------------------------------------
+#
+# `/harness run` is universal across repo types: one harness checkout (+ the
+# `~/bin/harness` wrapper) drives a Linear ticket in *any* repo, because the
+# verbs are repo-agnostic — the wrapper mounts the target repo's CWD at
+# /workspace and the verbs operate there. These guards keep that capability and
+# the docs that promise it honest:
+#   - the wrapper must pin HARNESS_WORKSPACE_ROOTS to the in-container /workspace
+#     (a host-side value is a host path, meaningless inside, and would reject the
+#     mounted repo — the exact regression a review of CAL-675 caught); and
+#   - the onboarding doc must tell a consuming repo to ignore *both* run-state
+#     directories (.harness/ ledger and .worktrees/ worktrees), which sit at
+#     different paths.
+
+DOCKER_README = REPO_ROOT / "docker" / "README.md"
+
+#: The wrapper enables cross-repo execution with two moves: mount the caller's
+#: CWD at /workspace, and pin the fail-closed allowlist (workspace.py, CAL-584)
+#: to that same /workspace so the mounted repo is admitted.
+_WRAPPER_MOUNTS_CWD_RE = re.compile(r'-v\s+"\$\(pwd\)":/workspace')
+#: The fix must be a *literal* /workspace, not a forwarded host value. The
+#: ``${HARNESS_WORKSPACE_ROOTS:-/workspace}`` default and a bare
+#: ``-e HARNESS_WORKSPACE_ROOTS`` both forward whatever the host exported — a
+#: host path the container's verbs then reject. Pin ``=/workspace`` instead.
+_WRAPPER_PINS_ALLOWLIST_RE = re.compile(r"-e\s+HARNESS_WORKSPACE_ROOTS=/workspace")
+_WRAPPER_FORWARDS_HOST_RE = re.compile(
+    # bare `-e HARNESS_WORKSPACE_ROOTS \` (env-passthrough), or the old
+    # `export HARNESS_WORKSPACE_ROOTS="${HARNESS_WORKSPACE_ROOTS:-…}"` default —
+    # the optional quote after `=` is what made the original guard miss the
+    # real (quoted) export line.
+    r'-e\s+HARNESS_WORKSPACE_ROOTS\s*\\|HARNESS_WORKSPACE_ROOTS="?\$\{HARNESS_WORKSPACE_ROOTS'
+)
+
+
+def test_wrapper_pins_allowlist_to_container_workspace() -> None:
+    """The cross-repo claim is backed by the documented wrapper (CAL-675).
+
+    `/harness run` runs cross-repo only because the ``~/bin/harness`` wrapper
+    (canonical text in ``docker/README.md``) mounts the caller's CWD at
+    ``/workspace`` *and* sets the ``HARNESS_WORKSPACE_ROOTS`` allowlist to that
+    same in-container ``/workspace`` — so the fail-closed guard in
+    ``workspace.py`` (CAL-584) admits the mounted repo. The allowlist must be a
+    **literal** ``/workspace``: forwarding the host's value (the old
+    ``${HARNESS_WORKSPACE_ROOTS:-/workspace}`` default / bare
+    ``-e HARNESS_WORKSPACE_ROOTS``) leaks a host path into the container, which
+    then rejects ``/workspace`` and breaks every verb — the regression a review
+    of CAL-675 caught. Lock both the mount and the pin.
+    """
+    text = DOCKER_README.read_text()
+    assert _WRAPPER_MOUNTS_CWD_RE.search(text), (
+        "docker/README.md's wrapper no longer mounts the CWD at /workspace "
+        '(`-v "$(pwd)":/workspace`). That mount is what makes the verbs '
+        "repo-agnostic — without it the cross-repo claim (CAL-675) is false."
+    )
+    assert _WRAPPER_PINS_ALLOWLIST_RE.search(text), (
+        "docker/README.md's wrapper no longer pins "
+        "`-e HARNESS_WORKSPACE_ROOTS=/workspace`. It must set the in-container "
+        "allowlist to a literal /workspace (CAL-584/CAL-675)."
+    )
+    assert not _WRAPPER_FORWARDS_HOST_RE.search(text), (
+        "docker/README.md's wrapper forwards the host's HARNESS_WORKSPACE_ROOTS "
+        "into the container (bare `-e HARNESS_WORKSPACE_ROOTS` or a "
+        "`${HARNESS_WORKSPACE_ROOTS:-…}` default). Inside the container the repo "
+        "is /workspace, so a host path rejects it — pin `=/workspace` instead "
+        "(CAL-675 regression)."
+    )
+
+
+def test_bootstrap_ignores_both_run_state_dirs() -> None:
+    """AC-3 (CAL-675): the onboarding doc tells a consuming repo to ignore both
+    run-state directories.
+
+    A run writes the SQLite ledger to ``<repo>/.harness/`` and its worktrees to
+    ``<repo>/.worktrees/harness/`` — *different* paths. BOOTSTRAP step 5 must
+    list both in the `.gitignore` it scaffolds, or a `git add .` after a run can
+    stage worktree contents in the consuming repo (the rough edge the cross-repo
+    smoke surfaced).
+    """
+    text = BOOTSTRAP_DOC.read_text()
+    assert ".worktrees/" in text and ".harness/" in text, (
+        "BOOTSTRAP.md must tell a consuming repo to gitignore both `.harness/` "
+        "(ledger) and `.worktrees/` (run worktrees) — they sit at different "
+        "paths, so ignoring only one leaves the other committable (CAL-675, AC-3)."
+    )
