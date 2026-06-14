@@ -35,6 +35,8 @@ from tests._gitutil import tracked_files_under
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "registry.yaml"
+PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
+CONTEXT_TEMPLATE = REPO_ROOT / "templates" / "CONTEXT.template.md"
 
 
 def _tracked(rel: str) -> bool:
@@ -73,6 +75,25 @@ def _registry_files() -> dict[str, dict[str, object]]:
     return out
 
 
+def _registry_profile_names() -> list[str]:
+    """The profile keys declared under the registry's ``profiles:`` block.
+
+    A profile key is a two-space-indented ``name:`` line (no further nesting,
+    no inline value) between ``\\nprofiles:`` and the following ``\\nfiles:``
+    block. Comment and blank lines are skipped. Kept regex-only for the same
+    reason as :func:`_registry_files` — PyYAML is not a declared dependency.
+    """
+    text = REGISTRY.read_text()
+    start = text.index("\nprofiles:")
+    end = text.index("\nfiles:", start)
+    names: list[str] = []
+    for line in text[start:end].splitlines():
+        m = re.fullmatch(r"  (?P<name>[A-Za-z0-9_-]+):\s*", line)
+        if m:
+            names.append(m.group("name"))
+    return names
+
+
 # --- AC-1: source repo owns the copy-list, does not self-lock -----------------
 
 
@@ -89,6 +110,190 @@ def test_guidance_lock_removed() -> None:
     assert not _tracked(".guidance-lock.yaml"), (
         ".guidance-lock.yaml is a CONSUMER artifact. The harness is source-only / "
         "not self-bootstrapped (D5) — remove it (CAL-646 AC-1)."
+    )
+
+
+# --- CAL-652: one surface, no standard/harness profile split ------------------
+#
+# The standard-vs-harness profile split is retired (specs/architecture-principles.md,
+# "maturity-only", 2026-06-13): one surface, one profile; repo-type variation
+# (feature_specs, design_system) is per-repo CONTEXT.md ``layers:`` config, not a
+# profile. These guards keep a second profile (and the retired standard-only
+# process/settings files) from creeping back into the registry.
+
+
+def test_registry_has_single_profile() -> None:
+    """``registry.yaml`` declares exactly one profile, and not ``standard`` (CAL-652, AC-1)."""
+    names = _registry_profile_names()
+    assert names == ["harness"], (
+        "the standard/harness profile split is retired — one surface, one profile "
+        f"(specs/architecture-principles.md, 'maturity-only'). Got profiles: {names}. "
+        "Do not re-introduce a second profile; repo-type variation is per-repo "
+        "CONTEXT.md layers: config (CAL-652, AC-1)."
+    )
+
+
+def test_registry_lists_no_standard_only_files() -> None:
+    """No retired standard-only files reappear in the copy-list (CAL-652, AC-1/AC-3).
+
+    The standard process doc and settings were folded into the single surface —
+    ``process/standard.md`` is absorbed into ``process/harness.md`` and
+    ``settings/standard.json`` was byte-identical to ``settings/harness.json``.
+    Re-listing either would re-create the split.
+    """
+    paths = set(_registry_files())
+    assert "process/standard.md" not in paths, (
+        "process/standard.md is retired; its content is folded into the single "
+        "process doc process/harness.md (CAL-652, AC-1)."
+    )
+    assert "settings/standard.json" not in paths, (
+        "settings/standard.json is retired (it was byte-identical to "
+        "settings/harness.json, the single settings file) (CAL-652, AC-1)."
+    )
+
+
+def test_imported_product_skills_are_home() -> None:
+    """The product-only skills brought home (D6) are listed and present (CAL-652, AC-3).
+
+    design-system and ux-design were the standard-profile-only skills; with the
+    agents repo retired they live in the one surface. design-system engages only
+    where the CONTEXT.md ``design_system`` layer is on (install-time gating is
+    CAL-675); ux-design applies to any user-facing surface, independent of that
+    layer.
+    """
+    files = _registry_files()
+    for skill in ("skills/design-system/SKILL.md", "skills/ux-design/SKILL.md"):
+        assert skill in files, f"{skill} must be listed in registry.yaml (CAL-652, AC-3)"
+        assert (REPO_ROOT / skill).exists(), f"{skill} must be present in the tree (CAL-652, AC-3)"
+
+
+def test_imported_feature_template_is_home() -> None:
+    """The feature-spec template brought home (D6) is listed and present (CAL-652, AC-3).
+
+    ``templates/feature.md`` is the as-built record template a repo uses when its
+    ``feature_specs`` layer is on; with the agents repo retired it lives in the
+    one surface.
+    """
+    assert "templates/feature.md" in _registry_files(), (
+        "templates/feature.md must be listed in registry.yaml (CAL-652, AC-3)"
+    )
+    assert (REPO_ROOT / "templates" / "feature.md").exists(), (
+        "templates/feature.md must be present in the tree (CAL-652, AC-3)"
+    )
+
+
+def test_process_doc_does_not_gate_ux_design_on_design_system() -> None:
+    """ux-design applies to ANY user-facing surface, not only when design_system is on.
+
+    The merged process doc (CAL-652, AC-1) must not couple ux-design to the
+    design_system layer: the imported skill (skills/ux-design/SKILL.md) applies to
+    any user-facing interface, design system or not — only design-system is
+    layer-gated. Regression guard for the CAL-652 review finding that the merge
+    dropped this standard-process behavior.
+    """
+    rows = [
+        ln
+        for ln in PROCESS_DOC.read_text().splitlines()
+        if re.match(r"\|\s*`ux-design`", ln)
+    ]
+    assert rows, "process/harness.md has no ux-design skills-table row to check"
+    row = rows[0]
+    assert "user-facing" in row, (
+        f"the ux-design row must tie the skill to any user-facing surface; got: {row!r}"
+    )
+    # The regression coupled ux-design to the layer ("only when design_system …").
+    # Mentioning the layer to say ux-design is *independent* of it is fine; gating
+    # on it is not.
+    assert not re.search(r"only when[^|]*design_system", row), (
+        "the ux-design row must NOT gate the skill on the design_system layer — "
+        f"ux-design applies regardless of a design system; got: {row!r}"
+    )
+
+
+def test_process_doc_harness_build_rule_is_conditional() -> None:
+    """The harness-only '/build' prohibition must be conditional on repo identity.
+
+    process/harness.md is the single distributed process doc — it installs as
+    every consumer's AGENTS.md. An unconditional "this repo is the harness; do
+    not invoke /build" would misinstruct every non-harness repo, breaking the
+    per-repo execution-option design (CAL-652). The harness steer must be gated on
+    CONTEXT.md repo identity, and the agent-led /build option must stay available
+    elsewhere. Regression guard for the CAL-652 review finding.
+    """
+    text = PROCESS_DOC.read_text()
+    assert "Do not invoke `/build` or `/build-codex` here." not in text, (
+        "process/harness.md unconditionally forbids /build; as the single "
+        "distributed process doc this misinstructs non-harness repos. Gate the "
+        "rule on CONTEXT.md repo identity (CAL-652)."
+    )
+    assert "If this repo is the harness" in text and "`repo.name`" in text, (
+        "the harness-only execution rule must be conditional on CONTEXT.md repo "
+        "identity ('If this repo is the harness ... repo.name') (CAL-652)."
+    )
+    assert re.search(r"elsewhere[^.\n]*`/build`", text), (
+        "the process doc must preserve /build / /build-codex as the normal option "
+        "for non-harness repos (CAL-652)."
+    )
+
+
+#: A line that GATES something on the design_system layer: a gating phrase
+#: ("only when/where", "gated on") adjacent to the design_system layer name.
+#: Lines that say a skill is *independent* of the layer are exempted by the
+#: caller (they legitimately name both while decoupling them).
+_LAYER_GATE_RE = re.compile(
+    r"(?:only when|only where|gated on)[^|\n]*design_system"
+    r"|design_system[^|\n]*(?:only when|only where|gated on)"
+)
+
+
+def test_no_canonical_file_gates_ux_design_on_design_system() -> None:
+    """ux-design is never gated on the design_system layer in canonical metadata.
+
+    The fix must hold across every canonical home, not just the process-doc
+    skills table: the merged process doc, the ``registry.yaml`` copy-list
+    comments, and the CHANGELOG record all describe the skills. ux-design applies
+    to any user-facing surface regardless of a design system; only design-system
+    is layer-gated (skills/ux-design/SKILL.md). A line that names ux-design while
+    gating it on the design_system layer is the regression — unless it is
+    explicitly decoupling them (``independent``). Guards the CAL-652 review
+    finding across canonical metadata.
+    """
+    canonical = {
+        "process/harness.md": PROCESS_DOC,
+        "registry.yaml": REGISTRY,
+        "CHANGELOG.md": REPO_ROOT / "CHANGELOG.md",
+    }
+    offenders: list[str] = []
+    for name, path in canonical.items():
+        for i, line in enumerate(path.read_text().splitlines(), 1):
+            if "ux-design" not in line or "independent" in line:
+                continue
+            if _LAYER_GATE_RE.search(line):
+                offenders.append(f"{name}:{i}: {line.strip()}")
+    assert not offenders, (
+        "ux-design must not be gated on the design_system layer (it applies to "
+        f"any user-facing surface; only design-system is layer-gated): {offenders}"
+    )
+
+
+def test_context_template_documents_layer_mapping() -> None:
+    """AC-2: the CONTEXT template documents the feature_specs/design_system layer mapping.
+
+    The old profiles' ``default_layers`` are now per-repo ``CONTEXT.md`` layers;
+    the scaffold must teach that mapping and drop the standard|harness profile
+    choice.
+    """
+    text = CONTEXT_TEMPLATE.read_text()
+    assert "standard | harness" not in text, (
+        "the CONTEXT template still offers a standard|harness profile choice; the "
+        "profile split is retired (CAL-652, AC-2)."
+    )
+    assert re.search(r"feature_specs:.*#.*specs/features", text), (
+        "the CONTEXT template must document the feature_specs layer (records to "
+        "specs/features/) (CAL-652, AC-2)."
+    )
+    assert re.search(r"design_system:.*#.*design system", text), (
+        "the CONTEXT template must document the design_system layer (CAL-652, AC-2)."
     )
 
 
