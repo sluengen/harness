@@ -1,5 +1,7 @@
 # Worktree Isolation — WorktreeNode, branch lifecycle, cleanup policies
 
+> **Superseded 2026-06-14** — this is the engine-era `WorktreeNode` reference. The live worktree behaviour (create off base, `close` merges the branch, `harness worktrees` housekeeping) is the as-built record in [`specs/features/worktree-lifecycle.md`](../features/worktree-lifecycle.md). Only `WorktreeNode.create` survives as a verb helper; the `cleanup` `CleanupPolicy` machinery and the engine-era load-time validation / runner adapter described below were **retired in CAL-693** (no live caller). Kept for historical reference only.
+
 The worktree node manages git worktree lifecycle for a run: create an isolated branch, optionally merge it back, then remove it.
 
 ---

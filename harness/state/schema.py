@@ -1,4 +1,4 @@
-"""Framework-defined state base — see ``specs/state-store.md`` ("BaseState").
+"""Framework-defined state base — see ``specs/features/run-ledger.md`` ("BaseState").
 
 :class:`BaseState` holds the framework-defined run fields. It predates the
 verb model (CAL-574 retired the workflow engine that derived per-workflow
@@ -17,7 +17,7 @@ The framework-supplied fields populated when a run begins:
   artifacts, etc.
 * ``started_at`` — UTC timestamp the run was started.
 * ``notes`` — auto-populated, framework-managed log line buffer (see
-  ``specs/state-store.md`` for the ``BaseState`` field set). This module
+  ``specs/features/run-ledger.md`` for the ``BaseState`` field set). This module
   declares the field; the engine-era bounded-merge writer that appended to
   it was removed with the rest of the dead state surface in CAL-613.
 
@@ -36,7 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
 
 
-# Canonical run-status enum — see ``specs/state-store.md`` ("status values").
+# Canonical run-status enum — see ``specs/features/run-ledger.md`` ("status values").
 # The SQLite column is ``TEXT NOT
 # NULL`` without a CHECK constraint, so this Literal is the type-safe seam:
 # writers + CLI readers import :data:`RUN_STATUSES` to validate the string
@@ -74,7 +74,7 @@ RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
 class BaseState(BaseModel):
     """Framework-defined fields prepended to every derived state class.
 
-    See module docstring and ``specs/state-store.md`` for the full rationale.
+    See module docstring and ``specs/features/run-ledger.md`` for the full rationale.
     """
 
     model_config = ConfigDict(extra="forbid")

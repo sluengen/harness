@@ -1,6 +1,6 @@
 # Build Workflow — steps, prompts, verdict loop, merge phase
 
-> **Superseded 2026-06-11** — the `build` YAML workflow described here was **replaced by the `/harness run` verb loop**; the deterministic engine that ran it was retired in CAL-574 (proposal [`harness-as-tool`](proposals/harness-as-tool.md)). The current build process is the agent-orchestrated `start → review → close` loop in [`commands/harness.md`](../commands/harness.md). Kept for historical reference only.
+> **Superseded 2026-06-11** — the `build` YAML workflow described here was **replaced by the `/harness run` verb loop**; the deterministic engine that ran it was retired in CAL-574 (proposal [`harness-as-tool`](../proposals/harness-as-tool.md)). The current build process is the agent-orchestrated `start → review → close` loop in [`commands/harness.md`](../../commands/harness.md). Kept for historical reference only.
 
 The `build` workflow is the primary dog-fooding workflow for the harness itself. It takes a Linear ticket ID, implements the changes in an isolated worktree, reviews them, commits the implementation, merges to the base branch, tears down the worktree, then marks the ticket done.
 

@@ -1,6 +1,6 @@
 # Engine Loop — LoopExecutor, LoopExhausted, RetryLoopRequested
 
-> **Superseded 2026-06-11** — this spec describes the **retired deterministic workflow engine**, deleted in CAL-574 (proposal [`harness-as-tool`](../proposals/harness-as-tool.md), decision D1). The harness no longer walks a YAML workflow: a single Claude session orchestrates *and* implements, calling the `start` / `review` / `close` verbs over the SQLite ledger. Current references: [`SPEC.md`](../../SPEC.md) §1–2, [`state-store.md`](../state-store.md), [`commands/harness.md`](../../commands/harness.md). Kept for historical reference only.
+> **Superseded 2026-06-11** — this spec describes the **retired deterministic workflow engine**, deleted in CAL-574 (proposal [`harness-as-tool`](../proposals/harness-as-tool.md), decision D1). The harness no longer walks a YAML workflow: a single Claude session orchestrates *and* implements, calling the `start` / `review` / `close` verbs over the SQLite ledger. Current references: [`SPEC.md`](../../SPEC.md) §1–2, [`run-ledger.md`](../features/run-ledger.md), [`commands/harness.md`](../../commands/harness.md). Kept for historical reference only.
 
 The loop block evaluator runs a `LoopStep`'s child steps repeatedly until a satisfaction predicate becomes true or `max_iterations` is reached.
 

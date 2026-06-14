@@ -3,7 +3,7 @@
 proposal: harness-as-tool
 status: accepted            # draft | under-decision | accepted | rejected | split
 date: 2026-06-09
-related: [SPEC.md, specs/hermes-orchestration.md, specs/build-workflow.md, commands/harness.md]
+related: [SPEC.md, specs/retired/hermes-control-model.md, specs/retired/build-workflow.md, commands/harness.md]
 ---
 
 # Proposal: Harness as agent tool — invert the orchestration boundary
@@ -12,14 +12,14 @@ related: [SPEC.md, specs/hermes-orchestration.md, specs/build-workflow.md, comma
 
 ## Problem / motivation
 
-The harness is hard to operationalise, and the difficulty is structural, not incidental. The current design (`SPEC.md` §1–2, `specs/hermes-orchestration.md`) makes the **harness the orchestrator**: it owns the entire build loop (fetch ticket → set in-progress → worktree → implement → review → loop → commit → merge → close) as a deterministic run, and it *spawns its own* `ClaudeAgent` / `CodexAgent` sessions to do the implementing and reviewing. An external agent only launches the run and polls it for status.
+The harness is hard to operationalise, and the difficulty is structural, not incidental. The current design (`SPEC.md` §1–2, `specs/retired/hermes-control-model.md`) makes the **harness the orchestrator**: it owns the entire build loop (fetch ticket → set in-progress → worktree → implement → review → loop → commit → merge → close) as a deterministic run, and it *spawns its own* `ClaudeAgent` / `CodexAgent` sessions to do the implementing and reviewing. An external agent only launches the run and polls it for status.
 
 That shape produces four recurring costs, all observed in practice:
 
 - **Brittle mechanics.** Every git and Linear operation is hand-encoded as `script` nodes inside `build.yaml` (GraphQL CURL for state transitions, `git merge --no-ff`, push). When one breaks mid-run, the whole run fails, and there is no agent in the loop to adapt — the orchestrator is a YAML walker, not a problem-solver.
 - **Lost context.** The implementing agent is a *fresh subprocess* with no conversational history. Everything it needs must be re-fetched and re-passed through state. The agent that understood the ticket is not the agent that writes the code.
 - **All-or-nothing failure.** A harness fault takes the run down. There is no graceful degradation to "let the agent just drive it manually."
-- **A whole second runtime to build.** The deterministic model only works if something supervises it. `specs/hermes-orchestration.md` specs that supervisor as a separate runtime with sibling-container deployment, secret scoping, and an async bridge (subprocess → socket → HTTP, plus polling and a deferred daemon question). None of that is built, and all of it exists only to let one process watch another process do the work.
+- **A whole second runtime to build.** The deterministic model only works if something supervises it. `specs/retired/hermes-control-model.md` specs that supervisor as a separate runtime with sibling-container deployment, secret scoping, and an async bridge (subprocess → socket → HTTP, plus polling and a deferred daemon question). None of that is built, and all of it exists only to let one process watch another process do the work.
 
 Meanwhile, the workflow that actually gets used is the opposite: a Claude session orchestrates *manually* — runs the scripts, implements inline, launches codex, loops, cleans up. It works because an interactive agent is genuinely good at orchestration. What it lacks is an **audit trail** and an **enforced review gate**: nothing records that the process was followed, and nothing stops the agent from skipping review.
 
@@ -78,7 +78,7 @@ A human typing `/harness run HAR-42` and Hermes dispatching HAR-42 produce the *
 
 ### Hermes, corrected: the trigger, not the runtime
 
-The old `specs/hermes-orchestration.md` casts Hermes as the thing that *drives and monitors a deterministic harness run*. That role is dissolved. Hermes is [Nous Research's Hermes](https://hermes-agent.nousresearch.com) — a **persistent containerised agent assistant with a built-in dispatcher and cron** — so work selection and scheduling already exist. It replaces the human's job of **deciding what work gets done and triggering a session for it.** It does not implement, manage worktrees, run codex, or do gitops — a Claude session does, using the harness.
+The old `specs/retired/hermes-control-model.md` casts Hermes as the thing that *drives and monitors a deterministic harness run*. That role is dissolved. Hermes is [Nous Research's Hermes](https://hermes-agent.nousresearch.com) — a **persistent containerised agent assistant with a built-in dispatcher and cron** — so work selection and scheduling already exist. It replaces the human's job of **deciding what work gets done and triggering a session for it.** It does not implement, manage worktrees, run codex, or do gitops — a Claude session does, using the harness.
 
 | Hermes owns | Hermes does NOT own |
 |---|---|
@@ -101,7 +101,7 @@ Because the dispatcher already exists, the follow-up is small: specify the launc
 |---|---|---|
 | **D1 — Keep a headless/autonomous deterministic mode?** | **Resolved: retire it entirely.** No deterministic workflow engine. Autonomy comes from Hermes triggering a session, not a YAML walker. *Consequence:* the engine also serves `release.yaml` and `steward.yaml` — those convert to agent-tasks/verbs too (Breakdown 5). | architecture-principles spec + `SPEC.md` non-goals |
 | **D2 — How strict is the `close` gate?** | **Resolved: bind the passing review to HEAD.** `review` records the git SHA it reviewed; `close` requires a `verdict=pass` whose SHA equals the worktree's current HEAD. Closes the stale-pass hole and underwrites unattended dispatch (D3). | the `close`-verb design spec + architecture |
-| **D3 — Fate of the Hermes runtime + bridge?** | **Resolved: Hermes moves up a layer.** Hermes (Nous' persistent containerised agent — *built-in* dispatcher + cron) occupies the trigger slot a human would; integration is a thin launch handle (`claude` + `/harness run <ticket>`), not a dispatcher to build. The separate-runtime + async-bridge design in `hermes-orchestration.md` is superseded by a dated note; the launch-handle detail is a follow-up (change spec). | `specs/hermes-orchestration.md` (dated supersede note) + architecture |
+| **D3 — Fate of the Hermes runtime + bridge?** | **Resolved: Hermes moves up a layer.** Hermes (Nous' persistent containerised agent — *built-in* dispatcher + cron) occupies the trigger slot a human would; integration is a thin launch handle (`claude` + `/harness run <ticket>`), not a dispatcher to build. The separate-runtime + async-bridge design (now in `specs/retired/hermes-control-model.md`) is superseded by a dated note; the launch-handle detail is a follow-up (change spec). | `specs/retired/hermes-control-model.md` (dated supersede note) + architecture |
 | **D4 — Collapse the duplicate process encodings?** | Follows from C. The process lives in one rewritten `/harness run` skill (what the agent follows) + the verbs (what enforces). Retire `build.yaml`/`build-codex.yaml`; reconcile `/build` and `/build-codex`. | architecture + the affected command specs |
 | **D5 — Routing-discipline enforcement.** The audit trail is complete only if *every* git/ticket mutation goes through a verb. | Follows from C. Guidance-mandated (the skill forbids hand-rolled git/CURL), with `close` validating that HEAD's commit history matches what the ledger recorded as a backstop. | architecture |
 
@@ -116,7 +116,7 @@ Each item is shippable on its own. Spawned 2026-06-09: **1→[CAL-570](https://l
 3. **`harness close <TICKET>` verb + gate** — enforce (`start` exists + a `verdict=pass` whose SHA == HEAD, per D2), then commit/merge/push + close ticket + mark run closed; structured refusal otherwise. The enforcement linchpin. *(Depends on 1–2.)*
 4. **Rewrite the `/harness run` skill** — the agent orchestrates `start → implement → review* → close`, implements inline, routes all git/ticket ops through verbs (D5). Reconcile/retire `/build` and `/build-codex` (D4). *(Depends on 1–3.)*
 5. **Retire the workflow engine** — delete the YAML-walking orchestration (`engine/runner|executor|loop|retry`, the node *protocol*, workflow schema, contract/derive machinery, `build*.yaml`); **re-home the mechanics that the verbs need** (worktree lifecycle, codex dispatch, git/Linear helpers, state/ledger store) as plain helpers. Convert `release.yaml` (gitops + AI release notes) and `steward.yaml` (agent review that writes a file) into agent-tasks or small verbs — both were never run and fit the verb model cleanly. *(Can be staged: re-home for the verbs first, delete the walker last.)*
-6. **Spec reconciliation** — `SPEC.md` §1–2 to the one-model/two-triggers + verb surface; dated supersede note in `specs/hermes-orchestration.md` (D3); record the orchestration-inversion decision in the architecture-principles spec; confirm the `runs`/events schema stores reviewed-SHA + the open/closed run lifecycle (add fields if not).
+6. **Spec reconciliation** — `SPEC.md` §1–2 to the one-model/two-triggers + verb surface; dated supersede note in `specs/retired/hermes-control-model.md` (D3); record the orchestration-inversion decision in the architecture-principles spec; confirm the `runs`/events schema stores reviewed-SHA + the open/closed run lifecycle (add fields if not).
 7. **Hermes launch handle** (follow-up; likely a change spec) — the dispatcher already exists (Nous Hermes + cron), so this specifies only the ergonomic handle (`claude` + `/harness run <ticket>`), the container-invocation topology, and how Hermes reads the ledger for outcomes. *(Depends on 1–4.)*
 
 ## Risks / unknowns

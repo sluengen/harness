@@ -272,6 +272,50 @@ def test_dead_state_surface_removed() -> None:
         assert hasattr(store, name), f"store.{name} must survive — it is the live ledger surface"
 
 
+# ---------------------------------------------------------------------------
+# CAL-693 — the dormant engine-era worktree-cleanup surface is removed.
+# ---------------------------------------------------------------------------
+#
+# ``harness.worktree`` was re-homed as a verb helper (``WorktreeNode.create``
+# survives — ``harness start`` calls it). But the ``cleanup`` half — the
+# ``CleanupPolicy`` Literal, the three policy implementations
+# (``merge_to_base`` / ``leave_for_inspection`` / ``delete_unconditionally``),
+# and the ``WorktreeCleanupOutput`` model — was the retired engine's
+# ``worktree.cleanup`` *node*. It has had no production caller after CAL-574:
+# ``harness start``'s rollback (``_cleanup_worktree_sync``), ``harness close``'s
+# merge, and ``harness worktrees cleanup`` all run direct git, not the policy
+# machinery, which was exercised only by its own unit tests. Same dead-surface
+# class as ``test_dead_state_surface_removed`` (CAL-613): a module surviving
+# "imports cleanly" is not the same as its whole API surviving. AC-4 retires it.
+
+
+def test_dead_worktree_cleanup_surface_removed() -> None:
+    """The engine-era ``cleanup`` policy machinery is gone from ``harness.worktree``."""
+    from harness import worktree
+
+    removed = ["CleanupPolicy", "WorktreeCleanupOutput"]
+    present = [name for name in removed if hasattr(worktree, name)]
+    assert not present, (
+        f"harness.worktree still exposes the retired cleanup surface: {present}. "
+        "The CleanupPolicy machinery had no production caller after CAL-574 "
+        "(start/close/worktrees use direct git) — delete it with its tests (AC-4)."
+    )
+
+    assert not hasattr(worktree.WorktreeNode, "cleanup"), (
+        "WorktreeNode.cleanup is the retired engine's worktree.cleanup node with no "
+        "live caller — delete it (CAL-693, AC-4)."
+    )
+
+    # The create half is the live verb helper — it must survive.
+    assert hasattr(worktree.WorktreeNode, "create"), (
+        "WorktreeNode.create must survive — harness start calls it"
+    )
+    for name in ("WorktreeCreateOutput", "WorktreeNodeError", "worktree_path"):
+        assert hasattr(worktree, name), (
+            f"worktree.{name} must survive — it is the live create surface"
+        )
+
+
 async def test_run_snapshots_table_not_created(tmp_path: Path) -> None:
     """init_db no longer creates the never-shipped run_snapshots snapshot table."""
     from harness.state import store

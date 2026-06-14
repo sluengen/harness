@@ -79,8 +79,8 @@ def test_time_module_does_not_cite_the_retired_schema_section() -> None:
     """``_time.py`` must not anchor its *format* prose to the retired SPEC §12.
 
     SPEC §12 (*SQLite Schema*) documents the events/runs table **schema** and is
-    in the retired block (superseded by ``specs/state-store.md``; banner at
-    ``SPEC.md`` §3). It contains nothing about the trailing-``Z`` *format*, which
+    in the retired block (superseded by ``specs/features/run-ledger.md``; banner
+    at ``SPEC.md`` §3). It contains nothing about the trailing-``Z`` *format*, which
     is co-documented in ``harness/events/emitter.py`` (correctly carrying no
     §-cite). This module is the format's sole home, so its docstring must not
     point readers at a retired section for content that section does not cover —

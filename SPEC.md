@@ -25,27 +25,29 @@ The `feature_specs` layer is on (`CONTEXT.md`), so the canonical as-built record
 
 **Design references (the model and deeper module detail the feature specs build on):**
 
-The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) have been re-homed to [`specs/retired/`](specs/retired/) (CAL-661). The remaining design docs are kept at the top of `specs/` because live docstrings still cite them (`state-store.md`) or they carry surviving/cross-referenced content (`hermes-orchestration.md`'s observability half, `build-workflow.md`, `cli.md`). Folding `state-store.md` / `worktree-isolation.md` under their feature specs and re-homing the rest — with the ~27 docstring cites repointed — is the deferred relocation half, tracked as **CAL-693**.
+The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) were re-homed to [`specs/retired/`](specs/retired/) in CAL-661; CAL-693 completed the relocation — `state-store.md` was **folded into** [`run-ledger.md`](specs/features/run-ledger.md) (the feature spec now carries the full schema reference); `build-workflow.md` / `cli.md` / `worktree-isolation.md` were re-homed to `specs/retired/`; and `hermes-orchestration.md` was **split** — its live launcher/trigger/allowlist/observability half stays as the live reference below (still cited by live `harness/` modules), while its superseded control half was extracted to [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md). All docstring cites were repointed.
 
 | Spec | Covers |
 |------|--------|
 | [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
 | [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
-| [`specs/state-store.md`](specs/state-store.md) | SQLite schema reference: full DDL, migrations, `BaseState` (detail behind [`run-ledger.md`](specs/features/run-ledger.md)) |
-| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Worktree helper reference: create/cleanup mechanics (detail behind [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md)) |
+| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Live launcher / trigger runtime topology, the narrow control socket, the launch handle, the `--repo` allowlist, and the read-only ledger observability Hermes consumes (SPEC §4.9) |
+
+The SQLite schema reference (full DDL, migrations, `BaseState`) now lives in [`run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the worktree helper reference is the feature spec [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) (the engine-era `WorktreeNode` detail is the retired doc below).
 
 **Superseded (retired deterministic engine — historical):**
 
 | Spec | Covers | Status |
 |------|--------|--------|
-| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model | Control half superseded by `harness-as-tool`; observability half survives |
-| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop |
+| [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) | Engine-era Hermes control model: responsibility boundary, Option A/B/C deployment decision, the Hermes→harness bridge interface | Control half superseded by `harness-as-tool` (CAL-693); the live half is `hermes-orchestration.md` above |
+| [`specs/retired/build-workflow.md`](specs/retired/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop; re-homed to `specs/retired/` (CAL-693) |
+| [`specs/retired/cli.md`](specs/retired/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`); re-homed to `specs/retired/` (CAL-693) |
+| [`specs/retired/worktree-isolation.md`](specs/retired/worktree-isolation.md) | Engine-era `WorktreeNode` reference: create + the retired cleanup policies | Live behaviour is `worktree-lifecycle.md`; `cleanup` machinery retired (CAL-693) |
 | [`specs/retired/workflow-schema.md`](specs/retired/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/engine-executor.md`](specs/retired/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/engine-loop.md`](specs/retired/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/ai-node.md`](specs/retired/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/script-node.md`](specs/retired/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
-| [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`) |
 
 ---
 
@@ -112,7 +114,7 @@ The harness never decides what to build or how. The session does; the verbs reco
 
 ---
 
-> **§3 and §5–§10, §12–§14 below describe the retired deterministic workflow engine.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current.) They are kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement below as superseded by §1–2. The current schema reference is [`specs/state-store.md`](specs/state-store.md); the current command contract is [`commands/harness.md`](commands/harness.md).
+> **§3 and §5–§10, §12–§14 below describe the retired deterministic workflow engine.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current.) They are kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement below as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is [`commands/harness.md`](commands/harness.md).
 
 ---
 
@@ -250,10 +252,12 @@ the gate tests). The verb never works around its own gate.
 
 ### 4.5 `harness.worktree`
 
-Git worktree lifecycle: create off a base branch, and cleanup under one of three
-policies (`merge_to_base` / `leave_for_inspection` / `delete_unconditionally`).
-Re-homed from the retired engine as a verb helper. See
-[`specs/worktree-isolation.md`](specs/worktree-isolation.md).
+Git worktree creation off a base branch. Re-homed from the retired engine as a
+verb helper; only `create` survives — the engine-era `cleanup` `CleanupPolicy`
+machinery was retired in CAL-693 (no live caller — `start` rollback / `close`
+merge / `worktrees cleanup` use direct git). See
+[`specs/features/worktree-lifecycle.md`](specs/features/worktree-lifecycle.md)
+(the engine-era `WorktreeNode` detail is [`specs/retired/worktree-isolation.md`](specs/retired/worktree-isolation.md)).
 
 ### 4.6 `harness.state.store`
 
@@ -262,7 +266,8 @@ audit trail; the connection is a managed resource (`@asynccontextmanager`, see
 CONTEXT.md). All run-lifecycle state goes through the store so the ledger
 reflects reality and the close gate can validate against it (D5). The schema and
 the open/closed run lifecycle live in
-[`specs/state-store.md`](specs/state-store.md) (the current schema reference).
+[`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference
+(the current schema reference).
 
 ### 4.7 `harness.events.emitter`
 

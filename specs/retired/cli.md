@@ -1,6 +1,6 @@
 # CLI — command surface, dynamic subcommands, exit codes, JSON output
 
-> **Superseded 2026-06-11** — describes the **engine-era CLI** (Typer top-level + dynamic per-workflow Click subcommands) from before the deterministic engine was retired in CAL-574. The public command contract is now the **verb surface** in [`commands/harness.md`](../commands/harness.md) — `start` / `review` / `close`, plus the `status` / `events` query verbs. Kept for historical reference only.
+> **Superseded 2026-06-11** — describes the **engine-era CLI** (Typer top-level + dynamic per-workflow Click subcommands) from before the deterministic engine was retired in CAL-574. The public command contract is now the **verb surface** in [`commands/harness.md`](../../commands/harness.md) — `start` / `review` / `close`, plus the `status` / `events` query verbs. Kept for historical reference only.
 
 The CLI is the public contract. Stable flags, stable exit codes, stable JSON output. Implemented with Typer (top-level) and Click (dynamic per-workflow subcommands).
 
@@ -57,7 +57,7 @@ harness start <ticket> [--base <branch>] [--repo <path>] [--db <path>] [--json/-
 2. Fetch the Linear issue via `issue(id: <ticket>)`.
 3. Check for an existing open run (refuse duplicate).
 4. Create the git worktree at `.worktrees/harness/<run_id>/` on branch `harness/<run_id>`.
-5. Insert an `open` row into `runs` (see `specs/state-store.md`).
+5. Insert an `open` row into `runs` (see `specs/features/run-ledger.md`).
 6. Transition the ticket to In Progress (last — the only non-local side effect). On failure, delete the DB row and remove the worktree.
 
 **JSON output schema (`StartOutput`):**
