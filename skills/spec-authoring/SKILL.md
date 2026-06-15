@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.3.1 -->
+<!-- guidance:spec-authoring@0.3.2 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -39,7 +39,7 @@ Some specs are not tied to a task. They document a stable part of the system and
 - A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences).
 - A **cross-cutting** decision (governs many features) → recorded in the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
 
-Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding a decision means updating it in-place in its spec, with a dated note on what changed and why — not a new numbered file. (See `architecture` for when a choice is decision-worthy.)
+Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding a decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice. (See `architecture` for when a choice is decision-worthy.)
 
 ## Proposal spec
 

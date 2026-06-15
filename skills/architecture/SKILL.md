@@ -2,7 +2,7 @@
 name: architecture
 description: Use when making a cross-cutting design decision — data models, contracts, interfaces — and recording it in the spec it governs. Load when shaping how something is built; every decision should trace to engineering-principles.
 ---
-<!-- guidance:architecture@0.3.0 -->
+<!-- guidance:architecture@0.4.0 -->
 # Architecture
 
 How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
@@ -25,18 +25,9 @@ Record a decision when a choice is **consequential and expensive to reverse** �
 
 Do **not** record a decision for a routine choice with no lasting consequence. The bar is: would a future contributor benefit from knowing *why*, and would relitigating it be costly?
 
-## Where the decision lives
+## Where the decision is recorded
 
-There are **no standalone ADRs and no `decisions/` folder**. A decision is recorded **in the spec it governs**, so the what and the why stay together (`spec-authoring` → "Decisions live in the spec they govern"):
-
-- **Governs one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape).
-- **Cross-cutting** (governs many features, or the system's shape) → the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
-
-A decision block records: **context** (what forced the choice), **decision** (what was chosen, stated plainly), **alternatives** (what was rejected and why — undocumented rejections get relitigated), and **consequences** (what it enables, costs, and forecloses).
-
-## Superseding a decision
-
-When a decision changes, **update it in place** in its spec — do not leave a stale version elsewhere. Replace the decision text with the new choice, and add a dated note: *"Superseded YYYY-MM-DD: previously X; changed to Y because Z."* Then grep the repo for code/comments/specs that relied on the old decision and update them. The spec always shows the current decision with its history inline, not a chain of separate files to reconcile.
+The mechanics — which spec a decision lives in, the block's shape, and how to supersede it — are owned by `spec-authoring` → "Decisions live in the spec they govern". The short version: a decision is recorded **in the spec it governs** (a Decision block in the feature spec, or the architecture-principles spec for a cross-cutting one), never a standalone ADR or a `decisions/` folder, and is superseded **in place** with a dated note. This skill governs only *when* a choice rises to a decision (above) and *that* it is recorded honestly (below); the recording rule itself lives in one place, there.
 
 ## Recording, not deciding alone
 
