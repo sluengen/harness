@@ -56,7 +56,7 @@ A proposal's outcome is explicit: **accepted** (spawns change specs; records its
 
 ## Change spec
 
-A single, concrete piece of work. The Linear issue is its home (`linear-sync`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
+A single, concrete piece of work. The Linear issue is its home (`linear`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
 
 ## Feature spec
 

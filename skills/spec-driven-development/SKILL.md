@@ -15,7 +15,7 @@ How a task flows from "idea" to "shipped and recorded" with the least ceremony t
 | **Change spec** | What one piece of work *intends* to do (incl. its design) | The **Linear issue** | While the task is in flight |
 | **Feature spec** | What the product *actually does* today | `specs/features/<feature>.md` | Permanent |
 
-**There is no `manifest.yaml`.** Linear is the queue of in-flight work and the home of the change spec (see `linear-sync`). A proposal (when needed) is decided and broken into change specs; each change is built, and its delivered behaviour is recorded into the feature spec. Small, clear work skips the proposal. All three are prose; keep them honest (`writing-quality`).
+**There is no `manifest.yaml`.** Linear is the queue of in-flight work and the home of the change spec (see `linear`). A proposal (when needed) is decided and broken into change specs; each change is built, and its delivered behaviour is recorded into the feature spec. Small, clear work skips the proposal. All three are prose; keep them honest (`writing-quality`).
 
 ## The separation that makes it work
 
@@ -26,7 +26,7 @@ The builder does **not** edit `specs/features/`. If a builder touches the featur
 ## The flow
 
 0. **Propose first if it is unconfirmed or large.** If the work needs a decision, carries real unknowns, or is too big to be one change, write a proposal spec (`/propose`, `spec-authoring`) and get it decided before opening Linear issues. Skip this for small, clear work.
-1. **The Linear issue is the front door.** Open it first. If the work was described in chat, create the issue before starting (see `linear-sync`). Set it **In Progress**.
+1. **The Linear issue is the front door.** Open it first. If the work was described in chat, create the issue before starting (see `linear`). Set it **In Progress**.
 2. **Write the change spec into the Linear issue.** Problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope (`spec-authoring` → change spec). A one-line bug fix needs one line.
 3. **Branch and isolate.** Work on a feature branch in a worktree (see `worktree-isolation`). Never build on the default branch.
 4. **Build test-first, in scope.** Follow `test-driven-development` for behaviour and `code-quality` for how to build without overreach. Design against `engineering-principles`.

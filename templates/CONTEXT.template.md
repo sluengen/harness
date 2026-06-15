@@ -39,7 +39,7 @@ conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
   linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"
-  # Linear workspace/team IDs and label IDs live here, not in the linear-sync skill
+  # Custom/renamed-state UUID overrides live here; the linear skill resolves standard states by type at runtime
 paths:
   source: {e.g. app/}
   tests: {e.g. tests/}

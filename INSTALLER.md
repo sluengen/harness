@@ -27,7 +27,7 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 > Then, for every entry in `registry.yaml` whose `profiles` includes the single profile (the one surface), copy the file to the same path, **preserving its `guidance:` header verbatim**. This covers `skills/`, `agents/`, `commands/`, `templates/`, and the process doc. (Re-running over a prior install is fine — those files carry the header and are yours to update.)
 >
 > **Flag legacy-process artifacts.** A repo set up under an older process may carry artifacts the new model has retired:
-> - A **`manifest.yaml`** (the new model uses Linear; there is no manifest — see `linear-sync`).
+> - A **`manifest.yaml`** (the new model uses Linear; there is no manifest — see `linear`).
 > - Old per-task **`changes/` folders, including nested ones** (e.g. `harness/changes/`) — search the tree, not just the root. But a `changes/` folder may be *functional* (test fixtures, runtime output, referenced by code) rather than legacy — check for references before flagging, and present it for the user to classify; never assume it is cruft.
 > - **Superseded skill/agent files** the guidance has since merged or renamed: a repo's own `scope-discipline`, `verification-before-completion`, or `code-structure` are now folded into `code-quality`; an old `spec.md` template is now `feature.md`. These sit alongside the new files as redundant cruft — **but check references first** (the repo's own agents/docs may still point at the old names; update those to the merged file, or leave the old file, rather than break them).
 >

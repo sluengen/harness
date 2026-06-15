@@ -152,7 +152,7 @@ def test_superseded_spec_has_in_file_banner(spec: Path) -> None:
 # transition), the other forbids the unqualified claim from creeping back.
 
 ARCH_PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
-LINEAR_SYNC = REPO_ROOT / "skills" / "linear-sync" / "SKILL.md"
+LINEAR_SKILL = REPO_ROOT / "skills" / "linear" / "SKILL.md"
 
 #: The exact unqualified assertion ADH-1 (CAL-596) flagged as overstated.
 _UNQUALIFIED_D5_CLAIM = "Every git and ticket mutation goes through a verb."
@@ -174,9 +174,9 @@ def test_backup_flow_hand_rolls_linear_transition() -> None:
     lifecycle transition outside the verbs. If this stops being true, the
     run-lifecycle carve-out in architecture-principles.md is stale — revisit it.
     """
-    text = LINEAR_SYNC.read_text()
+    text = LINEAR_SKILL.read_text()
     assert "issueUpdate" in text and "stateId" in text, (
-        "skills/linear-sync/SKILL.md no longer shows a hand-rolled issueUpdate/stateId "
+        "skills/linear/SKILL.md no longer shows a hand-rolled issueUpdate/stateId "
         "transition. Re-check whether architecture-principles.md still needs its "
         "run-lifecycle carve-out (ADH-1, CAL-596)."
     )

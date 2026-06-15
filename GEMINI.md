@@ -64,7 +64,7 @@ Use the option your repo provides; its `CONTEXT.md` says which. A repo without t
 | `systematic-debugging` | Any failing test or bug. |
 | `writing-quality` | Specs, decisions, any prose. |
 | `worktree-isolation` | Any multi-commit work. |
-| `linear-sync` | Reading and updating Linear. |
+| `linear` | Reading and updating Linear. |
 | `assessment-craft` | The methodology for any `/assess` pass (the steward). |
 | `guidance-coherence` | Domain standards for the `/assess system` scope (guidance coherence). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |
