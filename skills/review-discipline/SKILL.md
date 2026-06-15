@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.4.0 -->
+<!-- guidance:review-discipline@0.5.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -37,6 +37,14 @@ Only after Stage 1 passes.
 - **Structure** — size, layer boundaries, rule-of-three duplication, composition. Apply the `code-quality` Part B thresholds. Pre-existing violations in untouched files are not findings; only flag if this change makes them worse.
 - **Dead surface after a deletion** — when a change retires a subsystem but keeps its module as a re-homed helper, each remaining public function needs a *production* caller, not just a test. Grep each one across the source tree, excluding its own module and tests (`grep -rn <fn> <src>/ | grep -v <its-module>`); one reached only by its own unit test is dead surface masquerading as a helper, its passing test hiding the rot rather than justifying it. Delete it with its tests.
 - **Port-time orphan** — when a change *lifts a module from another repo*, confirm production code in **this** repo imports it before the lift lands. Grep the source tree for an importer, excluding the module itself and tests (`grep -rn <module> <src>/ | grep -v <its-own-path>`); a lifted module reached only by its own tests, or by nothing, is dead on arrival — a class no later per-change reviewer will catch, because no future change touches the orphan. Wire it to a production caller in the same change or leave it out.
+- **Over-engineering** — complexity the change *adds* that a simpler form replaces. Tag each finding with the cut it names, and in the finding name *what replaces it* so the fix is concrete, not a vibe:
+  - `stdlib:` hand-rolled what the standard library already ships — name the function that replaces it.
+  - `native:` a dependency, or a block of code, doing what the language or platform already does — name the built-in feature.
+  - `yagni:` an abstraction with one implementation, a config nobody sets, a layer with one caller — inline it until a second caller exists.
+  - `shrink:` the same logic in fewer lines — show the shorter form.
+  - `delete:` dead code, a speculative feature, or unused flexibility — replaced by nothing.
+
+  This lens is **complexity only** — correctness, security, and performance stay in their own lenses above; do not relabel a real bug as over-engineering. The single minimum smoke test, or an `assert`-based self-check, is **never** flagged as bloat: the smallest thing that proves the change works is not over-engineering. As with Structure, pre-existing complexity in files this change does not touch is not a finding.
 
 **For specs and designs:**
 - **Completeness** — no TBDs, no unresolved questions.
