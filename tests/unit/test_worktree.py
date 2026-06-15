@@ -200,3 +200,15 @@ async def test_create_custom_branch_prefix(repo: Path) -> None:
     assert result.worktree_branch == "slate/run-y"
     assert _branch_exists(repo, "slate/run-y")
     assert not _branch_exists(repo, "harness/run-y")
+
+
+def test_branch_for_default_sources_identity_prefix() -> None:
+    """The lifecycle helper's default prefix is the shared identity.BRANCH_PREFIX (CAL-719).
+
+    The configurable-prefix contract is preserved; only the *default* now sources
+    the single literal home rather than re-spelling ``"harness"``.
+    """
+    from harness import identity
+    from harness.worktree import _branch_for
+
+    assert _branch_for("run-z") == f"{identity.BRANCH_PREFIX}/run-z"

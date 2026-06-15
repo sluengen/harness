@@ -28,9 +28,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from harness.identity import WORKTREES_SUBDIR
+from harness.identity import BRANCH_PREFIX, WORKTREES_SUBDIR
 
 __all__ = [
+    "BRANCH_PREFIX",
     "WORKTREES_SUBDIR",
     "WorktreeCreateOutput",
     "WorktreeNode",
@@ -80,8 +81,16 @@ def worktree_path(repo_root: Path, run_id: str) -> Path:
     return repo_root / WORKTREES_SUBDIR / run_id
 
 
-def _branch_for(run_id: str, prefix: str = "harness") -> str:
-    """The canonical branch name for a given run id."""
+def _branch_for(run_id: str, prefix: str = BRANCH_PREFIX) -> str:
+    """The branch name for a run: the unvalidated, configurable-prefix lifecycle home.
+
+    Defaults to :data:`harness.identity.BRANCH_PREFIX` so the namespace literal
+    has one source. Unlike :func:`harness.identity.worktree_branch`, this does
+    **not** validate ``run_id`` and accepts a caller-chosen ``prefix`` — the two
+    share the literal but keep separate contracts by design (CAL-719). The
+    configurable prefix is a tested feature (``test_create_custom_branch_prefix``
+    asserts a ``slate/`` prefix).
+    """
     return f"{prefix}/{run_id}"
 
 
@@ -98,7 +107,7 @@ class WorktreeNode:
         run_id: str,
         repo_root: Path,
         base: str,
-        branch_prefix: str = "harness",
+        branch_prefix: str = BRANCH_PREFIX,
     ) -> WorktreeCreateOutput:
         """Create a worktree at ``<repo>/.worktrees/harness/<run_id>/`` from ``base``.
 

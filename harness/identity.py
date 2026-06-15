@@ -24,6 +24,15 @@ _CROCKFORD_ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 # paths from it rather than re-spelling the literal — change the layout here once
 # (CAL-590).
 WORKTREES_SUBDIR = Path(".worktrees/harness")
+
+# The branch-namespace prefix for harness runs: a run's canonical branch is
+# ``harness/<run_id>``. Public so ``harness.worktree`` builds its branch names
+# from the same literal rather than re-spelling it — the validated identity home
+# (``worktree_branch``) and the unvalidated, configurable-prefix lifecycle home
+# (``harness.worktree._branch_for``) now share this one source (CAL-719). Kept
+# separate from ``WORKTREES_SUBDIR`` on purpose: a path segment and a branch
+# namespace are distinct and may diverge.
+BRANCH_PREFIX = "harness"
 _ARTIFACTS_ROOT = Path(".harness/artifacts")
 _LOG_ROOT = Path(".harness/logs")
 
@@ -45,9 +54,17 @@ def worktree_dir(run_id: str) -> Path:
 
 
 def worktree_branch(run_id: str) -> str:
-    """Branch name for a run."""
+    """Branch name for a run: the validated, fixed-prefix identity home.
+
+    Always validates the ULID and always uses the default :data:`BRANCH_PREFIX`.
+    The unvalidated, configurable-prefix counterpart is
+    :func:`harness.worktree._branch_for` — the two share this literal but keep
+    separate contracts by design (CAL-719): identity guarantees a canonical
+    ``harness/<run_id>`` branch, the lifecycle helper builds whatever branch the
+    caller asks for.
+    """
     _validate(run_id)
-    return f"harness/{run_id}"
+    return f"{BRANCH_PREFIX}/{run_id}"
 
 
 def artifacts_dir(run_id: str) -> Path:

@@ -75,6 +75,17 @@ def test_worktree_branch_format() -> None:
     assert branch == f"harness/{run_id}"
 
 
+def test_branch_prefix_constant() -> None:
+    """The harness branch-namespace literal has a single public home (CAL-719)."""
+    assert identity.BRANCH_PREFIX == "harness"
+
+
+def test_worktree_branch_builds_on_branch_prefix() -> None:
+    """worktree_branch derives from the shared BRANCH_PREFIX, not a re-spelled literal."""
+    run_id = identity.generate_run_id()
+    assert identity.worktree_branch(run_id) == f"{identity.BRANCH_PREFIX}/{run_id}"
+
+
 # ---------------------------------------------------------------------------
 # artifacts_dir
 # ---------------------------------------------------------------------------
