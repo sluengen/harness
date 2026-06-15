@@ -44,7 +44,7 @@ The image tag `harness:dev` is what the integration test
 
 ```bash
 docker run --rm harness:dev version
-# → harness 0.1.0
+# → harness 0.2.1
 ```
 
 ## Authentication

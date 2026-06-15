@@ -57,7 +57,7 @@ The wrapper script — and exactly what it mounts and forwards — is in
 image:
 
 ```bash
-docker run --rm harness:dev version    # → harness 0.1.0
+docker run --rm harness:dev version    # → harness 0.2.1
 ```
 
 **Native (alternative).** From the harness repo root:
