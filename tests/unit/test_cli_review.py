@@ -20,7 +20,6 @@ import asyncio
 import json
 import subprocess
 import unittest.mock as mock
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -145,18 +144,19 @@ def fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch_review_events(db_path))
 
 
-def _make_runner(stdout: str) -> Any:
-    """Build a fake codex runner yielding the given stdout as one stream chunk.
+def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
+    """Build a fake engine runner returning the given stdout/stderr/exit code.
 
     The runner signature mirrors the production runner: keyword args
-    (cmd, stdin, env, cwd) and an async-iterator of stdout text.
+    (cmd, stdin, env, cwd) and a :class:`RunResult` (CAL-702). ``stderr`` /
+    ``returncode`` default to a clean success so existing call sites are
+    unaffected.
     """
 
     async def _runner(
         *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
-    ) -> AsyncIterator[str]:
-        for line in stdout.splitlines(keepends=True):
-            yield line
+    ) -> review_mod.RunResult:
+        return review_mod.RunResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
     return _runner
 
@@ -195,10 +195,9 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
 
     async def _runner(
         *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
-    ) -> AsyncIterator[str]:
+    ) -> review_mod.RunResult:
         captured["cmd"] = cmd
-        for line in stdout.splitlines(keepends=True):
-            yield line
+        return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)
 
     return _runner
 
@@ -497,6 +496,164 @@ def test_ac4_output_and_event_record_engine_provenance(
 
 
 # AC-5: SUBMIT parsing / verdict are unchanged across engines.
+
+
+# ---------------------------------------------------------------------------
+# CAL-702 — Codex→Claude usage-limit fallback.
+#
+# The real exhausted-tier signal, captured empirically 2026-06-15 by running
+# `echo ... | codex exec --sandbox read-only --ephemeral -` against a depleted
+# tier: stdout was EMPTY, the message below landed on STDERR, and the process
+# exited 1.  The URLs and reset date vary; the matcher keys on the stable phrase.
+# ---------------------------------------------------------------------------
+
+_REAL_CODEX_USAGE_LIMIT_STDERR = (
+    "OpenAI Codex v0.137.0\n"
+    "--------\n"
+    "ERROR: You've hit your usage limit. Upgrade to Pro "
+    "(https://chatgpt.com/explore/pro), visit "
+    "https://chatgpt.com/codex/settings/usage to purchase more credits or try "
+    "again at Jun 18th, 2026 8:18 PM.\n"
+)
+
+
+def _make_engine_runner(
+    by_engine: dict[str, review_mod.RunResult], order: list[str]
+) -> Any:
+    """A fake runner that dispatches on the engine in ``cmd`` and records order.
+
+    Lets a fallback test give Codex a usage-limit result and Claude a pass, then
+    assert which engines ran and in what sequence.
+    """
+
+    async def _runner(
+        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+    ) -> review_mod.RunResult:
+        engine = "codex" if cmd[0] == "codex" else "claude"
+        order.append(engine)
+        return by_engine[engine]
+
+    return _runner
+
+
+# AC-3: the matcher is unit-tested against the captured real signal and a
+# near-miss that must NOT match.
+
+
+def test_ac3_matcher_true_on_captured_real_signal() -> None:
+    assert review_mod.is_codex_usage_limit(_REAL_CODEX_USAGE_LIMIT_STDERR, 1) is True
+
+
+def test_ac3_matcher_false_on_near_miss_failure() -> None:
+    """An ordinary Codex failure mentioning 'limit' must NOT trigger fallback."""
+    near_miss = "ERROR: rate limit exceeded for model gpt-5.5 — retry later\n"
+    assert review_mod.is_codex_usage_limit(near_miss, 1) is False
+
+
+def test_ac3_matcher_false_on_clean_exit_even_with_phrase() -> None:
+    """A zero exit never counts as a usage limit (narrow match, no false hop)."""
+    assert review_mod.is_codex_usage_limit(_REAL_CODEX_USAGE_LIMIT_STDERR, 0) is False
+
+
+# AC-1 / AC-4: a usage-limit Codex run falls back to Claude exactly once, the
+# Claude verdict is authoritative, and the event records fallback_from=codex.
+
+
+def test_ac1_codex_usage_limit_falls_back_to_claude(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    order: list[str] = []
+    runner = _make_engine_runner(
+        {
+            "codex": review_mod.RunResult(
+                stdout="", stderr=_REAL_CODEX_USAGE_LIMIT_STDERR, returncode=1
+            ),
+            "claude": review_mod.RunResult(
+                stdout='SUBMIT: {"verdict": "pass", "issues": []}\n',
+                stderr="",
+                returncode=0,
+            ),
+        },
+        order,
+    )
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    # Exactly one fallback hop: codex first, then claude once.
+    assert order == ["codex", "claude"]
+
+    payload = json.loads(result.output)
+    assert payload["verdict"] == "pass"  # Claude's verdict is authoritative
+    assert payload["engine"] == "claude"
+
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["engine"] == "claude"
+    assert event["fallback_from"] == "codex"
+
+
+# AC-2: a non-limit Codex failure does NOT fall back — verdict fail, engine codex.
+
+
+def test_ac2_non_limit_codex_failure_does_not_fall_back(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    order: list[str] = []
+    runner = _make_engine_runner(
+        {
+            "codex": review_mod.RunResult(
+                stdout="", stderr="ERROR: connection reset by peer\n", returncode=1
+            ),
+            # Present but must never be reached.
+            "claude": review_mod.RunResult(
+                stdout='SUBMIT: {"verdict": "pass", "issues": []}\n',
+                stderr="",
+                returncode=0,
+            ),
+        },
+        order,
+    )
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    assert order == ["codex"]  # no fallback hop
+
+    payload = json.loads(result.output)
+    assert payload["verdict"] == "fail"
+    assert payload["engine"] == "codex"
+
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["engine"] == "codex"
+    assert "fallback_from" not in event
+
+
+def test_default_claude_never_falls_back(repo: Path, db_path: Path) -> None:
+    """The default Claude engine never engages fallback logic (single-hop only)."""
+    run_id = _seed_open_run(db_path, repo)
+    order: list[str] = []
+    runner = _make_engine_runner(
+        {
+            # Even if Claude emitted the limit phrase, no fallback engages.
+            "claude": review_mod.RunResult(
+                stdout="", stderr=_REAL_CODEX_USAGE_LIMIT_STDERR, returncode=1
+            ),
+            "codex": review_mod.RunResult(
+                stdout='SUBMIT: {"verdict": "pass", "issues": []}\n',
+                stderr="",
+                returncode=0,
+            ),
+        },
+        order,
+    )
+
+    result = _invoke(repo, db_path, run_id, runner)  # default engine = claude
+    assert result.exit_code == 0, result.output
+
+    assert order == ["claude"]  # ran once, no hop to codex
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["engine"] == "claude"
+    assert "fallback_from" not in event
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

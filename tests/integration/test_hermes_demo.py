@@ -41,7 +41,7 @@ import subprocess
 import tempfile
 import threading
 import unittest.mock as mock
-from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
@@ -133,12 +133,16 @@ class _InProcessVerbRunner:
 
 
 def _make_review_runner(verdict: str) -> Any:
-    """A fake codex runner that emits a single SUBMIT line with ``verdict``."""
+    """A fake review-engine runner returning a single SUBMIT line with ``verdict``."""
 
     async def _runner(
         *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
-    ) -> AsyncIterator[str]:
-        yield f'SUBMIT: {{"verdict": "{verdict}", "issues": []}}\n'
+    ) -> review_mod.RunResult:
+        return review_mod.RunResult(
+            stdout=f'SUBMIT: {{"verdict": "{verdict}", "issues": []}}\n',
+            stderr="",
+            returncode=0,
+        )
 
     return _runner
 
