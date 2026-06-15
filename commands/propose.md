@@ -31,7 +31,7 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 
 ### 4. On accepted, spin out the work
 - Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
-- Create a Linear issue per item in the breakdown (`linear-sync`), each with a change spec (`templates/change.md`). Link them back to the proposal.
+- Create a Linear issue per item in the breakdown (`linear`), each with a change spec (`templates/change.md`). Link them back to the proposal.
 
 ## Report
 Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the Linear issues created from the breakdown.

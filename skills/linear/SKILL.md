@@ -1,13 +1,13 @@
 ---
-name: linear-sync
-description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or discovering team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work.
+name: linear
+description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or resolving team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work. This is the single home for Linear operations — a command references this skill, it does not re-encode the API.
 ---
-<!-- guidance:linear-sync@0.3.0 -->
-# Linear Sync
+<!-- guidance:linear@0.4.0 -->
+# Linear
 
-The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue.
+The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue. This skill is the **one home** for Linear operations: a command or agent that touches Linear references this skill rather than re-encoding `api.linear.app` calls — a guard fails if raw Linear GraphQL appears in a command.
 
-**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific parts are the token (in an env file) and the workspace IDs (in `CONTEXT.md`). Do not conclude you lack access or that a tool is missing. The recipes are in [Accessing Linear](#accessing-linear-graphql-via-curl) below; if a repo ships a wrapper CLI, `CONTEXT.md` (`tools.linear_cli`) names it, but the curl below always works.
+**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the token (in an env file). The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing. The recipes are in [Accessing Linear](#accessing-linear-graphql-via-curl) below; if a repo ships a wrapper CLI, `CONTEXT.md` (`tools.linear_cli`) names it, but the curl below always works.
 
 (The rare repo not on Linear sets `linear: false` in `CONTEXT.md` and documents its local fallback there. Everything below assumes the standard: Linear is on.)
 
@@ -72,16 +72,35 @@ LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url stat
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }'
 ```
 
-**Discover the workspace IDs you need once, then cache them in `CONTEXT.md`** (team id, workflow-state ids for status changes, label ids):
+### Resolving states by type (the default)
+
+Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. Every Linear workspace has the same four state types:
+
+| `type` | The state(s) |
+|---|---|
+| `unstarted` | Todo |
+| `started` | In Progress **or** In Review — two states share this `type` |
+| `completed` | Done |
+| `canceled` | Canceled (and Duplicate) |
+
+Query the team's states *with* their `type`, then pick the one you need. For the two `started` states, **disambiguate by name** (In Progress vs In Review):
+
+```bash
+LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name type } } }'
+```
+
+From that result: `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
+
 ```bash
 LINEAR 'query { teams { nodes { id key name } } }'
-LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name } } }'
 LINEAR 'query { issueLabels { nodes { id name } } }'
 ```
 
-**Move an issue's status** (use the state id from the query above; the issue id may be the `<issue-id>` identifier):
+**CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `CONTEXT.md` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
+
+**Move an issue's status** (resolve `<state-id>` by `type` per above; the issue id may be the `<issue-id>` identifier):
 ```bash
-LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-uuid>\" }) { success } }'
+LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id>\" }) { success } }'
 ```
 
 **Create an issue** (returns its identifier + url):
@@ -94,4 +113,4 @@ LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", title: \"...\",
 LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
 ```
 
-The workspace-specific ids (team, states, labels) belong in `CONTEXT.md` so you do not re-discover them each run. The query shapes above do not — they are the same for every Linear workspace.
+State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `CONTEXT.md` carries an ID only as an *override* for a custom or renamed state the `type` enum cannot disambiguate; it is not where the standard states live.

@@ -8,7 +8,7 @@ Sets up an isolated workspace for a tracked ticket and drives it test-first thro
 ## Steps
 
 ### 1. Open the ticket
-Fetch the ticket and print a brief (title, id, state, link). The invocation is repo-specific — see `CONTEXT.md` and the `linear-sync` skill. If the ticket is already Done, or names unmet dependencies, stop and report.
+Fetch the ticket and print a brief (title, id, state, link). The invocation is repo-specific — see `CONTEXT.md` and the `linear` skill. If the ticket is already Done, or names unmet dependencies, stop and report.
 
 ### 2. Mark it In Progress
 Move the ticket to In Progress so the board reflects reality.
