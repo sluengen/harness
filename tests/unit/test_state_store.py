@@ -92,7 +92,7 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "run_id", "workflow_name", "workflow_version", "status", "state_json",
         "inputs_json", "base_branch", "worktree_branch", "exit_code",
         "started_at", "completed_at", "duration_ms",
-        "pid",          # H-2-006: process ID for harness cancel
+        "pid",          # dormant column; engine-era SIGTERM cancel removed (CAL-587)
         "ticket",       # CAL-570: Linear ticket identifier for ``harness start``
         "worktree_path",  # CAL-570: worktree filesystem path for ``harness start``
     }
@@ -213,3 +213,35 @@ async def test_runs_status_enum_accepts_all_documented_values(
         ) as cur:
             row = await cur.fetchone()
             assert row is not None and row[0] == status
+
+
+# ---------------------------------------------------------------------------
+# CAL-713 — no migration for a writer-less column
+# ---------------------------------------------------------------------------
+
+_STORE_SRC = Path(__file__).resolve().parents[2] / "harness" / "state" / "store.py"
+
+
+def test_no_pid_migration() -> None:
+    """AC #2: ``pid`` has no writer, so ``_migrate`` runs no ``ADD COLUMN pid``.
+
+    ``pid`` is a dormant column declared once in ``_SCHEMA``'s CREATE TABLE and
+    retained to avoid a destructive ``DROP COLUMN`` on existing DBs (see
+    ``specs/features/run-ledger.md``). The redundant ``ALTER TABLE runs ADD
+    COLUMN pid`` migration was removed in CAL-713; this guard keeps it gone.
+    """
+    src = _STORE_SRC.read_text()
+    assert "ADD COLUMN pid" not in src, (
+        "store.py runs an ADD COLUMN pid migration, but pid has no writer "
+        "(engine-era SIGTERM cancel removed in CAL-587). The column stays "
+        "declared in _SCHEMA; the migration must not (CAL-713, AC #2)."
+    )
+
+
+async def test_pid_column_present_via_schema(tmp_path: Path) -> None:
+    """The dormant ``pid`` column is still created — from ``_SCHEMA``, not a
+    migration — so existing-DB reads and the column contract are unchanged."""
+    db_path = tmp_path / "harness.db"
+    await store.init_db(db_path)
+    cols = await _table_columns(db_path, "runs")
+    assert "pid" in cols

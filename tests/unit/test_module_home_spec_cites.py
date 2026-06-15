@@ -26,10 +26,9 @@ Two narrowings eliminate false positives:
 
 * **Home cites only.** Only the §4.x cites in the *module-level docstring*
   (``ast.get_docstring``) are checked. A module legitimately cross-refers other
-  current sections from inline comments / function docstrings — ``events/schema.py``
-  cites §4.4 in an inline comment for the retired ``decision_violation`` event
-  type; ``events/emitter.py`` cites its own §4.7 from a method docstring. Those
-  are not home declarations and are left alone.
+  current sections from inline comments / function docstrings — e.g.
+  ``events/emitter.py`` cites its own §4.7 from a method docstring. Those are
+  not home declarations and are left alone.
 * **Presence-optional.** The guard does not force every module to carry a home
   cite (``harness.linear`` / ``harness.workspace`` carry none today). It only
   requires that a home cite, *if present*, resolves correctly — the CODE-2 class

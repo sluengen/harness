@@ -60,9 +60,11 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 | Table | Key columns | Purpose |
 |---|---|---|
 | `runs` | `run_id` (PK, ULID), `status`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, `started_at`, `completed_at` | One row per run; the open/closed lifecycle |
-| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the `review` and `close` events |
+| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the live `review` / `close` / `workflow_failed` events |
 
-New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`); `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** below.
+The canonical `event_type` set (`harness/events/schema.py`) is the three live-emitter types — `workflow_failed` (`harness cancel`), `review`, `close`. CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
+
+New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** below.
 
 ## Interface surface
 
@@ -94,7 +96,7 @@ CREATE TABLE runs (
   started_at          TEXT NOT NULL,
   completed_at        TEXT,
   duration_ms         INTEGER,
-  pid                 INTEGER   -- vestigial; always NULL (engine-era SIGTERM cancel path removed in CAL-587)
+  pid                 INTEGER   -- vestigial; always NULL (engine-era SIGTERM cancel removed in CAL-587). Dormant base-schema column — no migration (CAL-713)
 );
 
 CREATE TABLE events (
@@ -121,9 +123,10 @@ New columns added after the initial schema are applied via `ALTER TABLE ... ADD 
 
 | Column | Type | Added by | Description |
 |---|---|---|---|
-| `pid` | `INTEGER` | H-2-006 | Vestigial. Once held the owning process PID for the engine-era SIGTERM `harness cancel`; that path was removed in CAL-587, so `harness start` no longer writes it (always `NULL`). Retained as a dormant column to avoid a destructive migration on existing DBs. |
 | `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
 | `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
+
+> The `pid` column is **not** in this table: it is declared in the base `_SCHEMA` CREATE TABLE (a dormant, writer-less column — see above) and its redundant `ADD COLUMN` migration was removed in CAL-713.
 
 ### `status` values
 
