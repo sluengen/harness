@@ -231,7 +231,7 @@ def test_process_doc_harness_build_rule_is_conditional() -> None:
         "identity ('If this repo is the harness ... repo.name') (CAL-652)."
     )
     assert re.search(r"elsewhere[^.\n]*`/build`", text), (
-        "the process doc must preserve /build / /build-codex as the normal option "
+        "the process doc must preserve /build as the normal option "
         "for non-harness repos (CAL-652)."
     )
 
