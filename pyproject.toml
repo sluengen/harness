@@ -1,6 +1,6 @@
 [project]
 name = "harness"
-version = "0.2.0"
+version = "0.2.1"
 description = "Deterministic workflow execution harness for bounded LLM tasks"
 readme = "README.md"
 requires-python = ">=3.11"

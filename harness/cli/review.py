@@ -21,12 +21,18 @@ Flow (one ``asyncio.run`` event loop for all I/O):
 2. Capture ``git rev-parse HEAD`` in that worktree as ``reviewed_sha``.
 3. Run the selected engine's read-only CLI (``claude -p --permission-mode plan``
    or ``codex exec --sandbox read-only --ephemeral -``) with the review prompt on
-   stdin and scan stdout for the first ``SUBMIT:`` JSON line.
+   stdin; capture stdout, stderr, and the exit code.  On an explicit
+   ``--engine codex`` whose tier is exhausted (the usage-limit signal on stderr +
+   a non-zero exit, CAL-702) fall back **once** to the Claude engine; an ordinary
+   Codex failure does *not* fall back.  Scan the resulting stdout for the first
+   ``SUBMIT:`` JSON line.
 4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line →
    ``verdict='fail'`` with the sentinel issue
    "reviewer emitted no valid SUBMIT line".
 5. Append a ``review`` event carrying ``run_id``, ``reviewed_sha``, ``verdict``,
-   ``issues``, ``engine``, optional ``commit_message`` / ``deferred_brief``,
+   ``issues``, ``engine`` (the engine that produced the verdict — ``claude``
+   after a fallback), optional ``fallback_from`` (the engine a usage-limit
+   fallback replaced), optional ``commit_message`` / ``deferred_brief``,
    ``created_at``.
 6. Print only the bounded verdict (``verdict`` + ``issues`` + ``reviewed_sha`` +
    ``run_id`` + ``engine``).  The engine's full stdout / reasoning stays inside
@@ -47,9 +53,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import typer
 from pydantic import BaseModel
@@ -60,7 +66,14 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 
-__all__ = ["review_command", "ReviewOutput", "scan_submit_line", "Engine"]
+__all__ = [
+    "review_command",
+    "ReviewOutput",
+    "scan_submit_line",
+    "Engine",
+    "RunResult",
+    "is_codex_usage_limit",
+]
 
 # Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
 NO_SUBMIT_SENTINEL = "reviewer emitted no valid SUBMIT line"
@@ -79,9 +92,23 @@ Verdict = Literal["pass", "fail", "defer"]
 Engine = Literal["claude", "codex"]
 DEFAULT_ENGINE: Engine = "claude"
 
-# A runner takes keyword args (cmd, stdin, env, cwd) and yields stdout text
-# lines.  Default = the real codex subprocess; tests inject a fake.
-Runner = Callable[..., AsyncIterator[str]]
+class RunResult(NamedTuple):
+    """The full result of one engine subprocess: stdout, stderr, exit code.
+
+    The CAL-702 usage-limit fallback needs stderr **and** the exit code to tell
+    an exhausted Codex tier from an ordinary failure — the limit signal lands on
+    stderr with a non-zero exit, never on stdout (captured empirically). The
+    runner therefore returns all three rather than streaming stdout alone.
+    """
+
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+# A runner takes keyword args (cmd, stdin, env, cwd) and returns a RunResult.
+# Default = the real engine subprocess; tests inject a fake.
+Runner = Callable[..., Awaitable[RunResult]]
 
 
 # ---------------------------------------------------------------------------
@@ -232,27 +259,70 @@ async def _default_runner(
     stdin: str,
     env: dict[str, str],
     cwd: Path | None,
-) -> AsyncIterator[str]:
-    """Run ``cmd`` as a subprocess, feed ``stdin``, yield stdout lines."""
+) -> RunResult:
+    """Run ``cmd`` as a subprocess, feed ``stdin``, capture stdout/stderr/exit.
+
+    stderr and the exit code are captured (no longer discarded) so the Codex
+    usage-limit fallback (CAL-702) can detect an exhausted tier: the limit
+    signal lands on stderr with a non-zero exit, never on stdout.
+    """
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
         env=env,
         cwd=cwd,
-        limit=8 * 1024 * 1024,  # codex can emit large lines (file reads, diffs)
+        limit=8 * 1024 * 1024,  # engines can emit large lines (file reads, diffs)
     )
-    if process.stdin is None:  # pragma: no cover
-        raise RuntimeError("subprocess stdin pipe was not created")
-    if process.stdout is None:  # pragma: no cover
-        raise RuntimeError("subprocess stdout pipe was not created")
-    process.stdin.write(stdin.encode())
-    await process.stdin.drain()
-    process.stdin.close()
-    async for line in process.stdout:
-        yield line.decode(errors="replace")
-    await process.wait()
+    stdout_bytes, stderr_bytes = await process.communicate(stdin.encode())
+    return RunResult(
+        stdout=stdout_bytes.decode(errors="replace"),
+        stderr=stderr_bytes.decode(errors="replace"),
+        returncode=process.returncode if process.returncode is not None else -1,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Codex usage-limit detection (CAL-702)
+# ---------------------------------------------------------------------------
+
+# The stable phrase ``codex exec`` prints to **stderr** when the tier is
+# exhausted, captured empirically (CAL-702, 2026-06-15). The full real line was:
+#
+#   ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/
+#   explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase
+#   more credits or try again at Jun 18th, 2026 8:18 PM.
+#
+# The URLs and the reset date vary run-to-run; the lowercased phrase below is the
+# invariant core. On a usage limit stdout is empty and the process exits 1.
+_CODEX_USAGE_LIMIT_MARKER = "you've hit your usage limit"
+
+
+def is_codex_usage_limit(stderr: str, returncode: int) -> bool:
+    """True iff a Codex run failed *specifically* because the tier is exhausted.
+
+    Matches narrowly — the stable usage-limit phrase (case-insensitive) on a
+    non-zero exit — so an ordinary Codex failure does NOT trigger fallback.
+    Errors are never swallowed: a real review failure stays a visible ``fail``;
+    only a verified quota wall degrades gracefully to the Claude engine.
+    """
+    if returncode == 0:
+        return False
+    return _CODEX_USAGE_LIMIT_MARKER in stderr.lower()
+
+
+async def _invoke_engine(runner: Runner, engine: Engine, cwd: Path) -> RunResult:
+    """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``."""
+    try:
+        return await runner(
+            cmd=_build_cmd(engine),
+            stdin=_REVIEW_PROMPT,
+            env=dict(os.environ),
+            cwd=cwd,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -348,22 +418,23 @@ async def _run_review(
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
 
-    # 3. Run the reviewer and accumulate stdout (kept local to the verb).
-    cmd = _build_cmd(engine)
-    stdout_buf: list[str] = []
-    try:
-        async for line in runner(
-            cmd=cmd,
-            stdin=_REVIEW_PROMPT,
-            env=dict(os.environ),
-            cwd=Path(worktree_path),
-        ):
-            stdout_buf.append(line)
-    except Exception as exc:  # noqa: BLE001
-        raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
+    # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
+    #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted
+    #    Codex tier degrades the gate to a false ``fail`` exactly when relied
+    #    upon, so the verb substitutes Claude and records the substitution.
+    #    Single hop only — Claude does not fall back to anything.
+    engine_used: Engine = engine
+    fallback_from: Engine | None = None
 
-    # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).
-    parsed = scan_submit_line("".join(stdout_buf))
+    result = await _invoke_engine(runner, engine, Path(worktree_path))
+    if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
+        fallback_from = "codex"
+        engine_used = "claude"
+        result = await _invoke_engine(runner, "claude", Path(worktree_path))
+
+    # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
+    #    full stdout/stderr stays local to the verb — only the verdict escapes.
+    parsed = scan_submit_line(result.stdout)
 
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
@@ -373,9 +444,13 @@ async def _run_review(
         "reviewed_sha": reviewed_sha,
         "verdict": parsed.verdict,
         "issues": parsed.issues,
-        "engine": engine,
+        "engine": engine_used,
         "created_at": created_at,
     }
+    # Record the fallback in the ledger — never silent (CAL-702 AC-4).  Present
+    # only when a Codex usage-limit forced the hop to Claude.
+    if fallback_from is not None:
+        event_data["fallback_from"] = fallback_from
     if parsed.commit_message is not None:
         event_data["commit_message"] = parsed.commit_message
     if parsed.deferred_brief is not None:
@@ -391,11 +466,14 @@ async def _run_review(
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to record review event: {exc}", 1) from exc
 
-    # 6. Return ONLY the bounded verdict — codex stdout stays inside the verb.
+    # 6. Return ONLY the bounded verdict — the engine's stdout stays inside the
+    #    verb.  ``engine`` reflects the engine that actually produced the
+    #    verdict (``claude`` after a fallback); ``fallback_from`` lives on the
+    #    ledger event, off the printed contract (CAL-702).
     return ReviewOutput(
         verdict=parsed.verdict,
         issues=parsed.issues,
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
-        engine=engine,
+        engine=engine_used,
     )
