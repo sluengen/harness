@@ -113,11 +113,12 @@ async def _migrate(db_path: Path) -> None:
     idempotent: the ``OperationalError`` raised when a column already exists
     is silently swallowed.
 
-    H-2-006: ``runs.pid INTEGER`` — vestigial. Once held the harness run
-        process PID for the engine-era SIGTERM ``harness cancel``; that path was
-        removed in CAL-587, so ``harness start`` no longer writes it (the column
-        is always ``NULL``). The migration is retained so existing DBs keep the
-        column rather than forcing a destructive ``DROP COLUMN``.
+    The ``runs.pid`` column (vestigial — the engine-era SIGTERM ``harness
+        cancel`` path was removed in CAL-587, so nothing writes it) is declared
+        once in ``_SCHEMA`` above and kept as a dormant column to avoid a
+        destructive ``DROP COLUMN`` on existing DBs. Its ``ADD COLUMN``
+        migration was removed in CAL-713: a writer-less column needs no
+        migration, and ``_SCHEMA`` already creates it for fresh DBs.
     CAL-570: ``runs.ticket TEXT`` — Linear ticket identifier (e.g. ``CAL-570``)
         for runs opened via ``harness start``.
     CAL-570: ``runs.worktree_path TEXT`` — filesystem path of the worktree
@@ -131,7 +132,6 @@ async def _migrate(db_path: Path) -> None:
         await conn.execute("PRAGMA journal_mode = WAL")
         await conn.execute("PRAGMA foreign_keys = ON")
         for ddl in (
-            "ALTER TABLE runs ADD COLUMN pid INTEGER",
             "ALTER TABLE runs ADD COLUMN ticket TEXT",
             "ALTER TABLE runs ADD COLUMN worktree_path TEXT",
         ):

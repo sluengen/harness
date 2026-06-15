@@ -16,11 +16,11 @@ event surface and must not cite §4.9 at all.
 It also locks the **§4.4** class (originally deferred by the CAL-635 fix):
 ``schema.py`` once cited §4.4 for the retired ``decision_violation`` event type,
 but the verb-model rewrite made §4.4 ``harness.cli.close`` (the close gate) —
-which documents nothing about contract violations. ``decision_violation`` is an
-engine-era type emitted by no live code (live verbs emit only ``review`` /
-``close``); it is kept in the Literal so historical rows validate, and its
-comment is now a retired-engine label citing no live section. The guard asserts
-the events source carries no §4.4 cite so the wrong pointer cannot return.
+which documents nothing about contract violations. CAL-713 pruned the canonical
+set to the live-emitter types (``workflow_failed`` / ``review`` / ``close``), so
+``decision_violation`` and the other engine-era types are gone from the Literal
+entirely; the guard still asserts the events source carries no §4.4 cite so the
+wrong pointer cannot return on a future edit.
 """
 
 from __future__ import annotations
@@ -53,14 +53,14 @@ def test_events_source_does_not_cite_wrong_section(relpath: str) -> None:
 def test_events_source_does_not_cite_close_section(relpath: str) -> None:
     """No events module source cites §4.4 — that section is harness.cli.close.
 
-    ``decision_violation`` is a retired engine-era type emitted by no live code;
-    its comment must label it as such, not point at the close-verb section.
+    §4.4 once attached to the retired ``decision_violation`` type (removed from
+    the canonical set in CAL-713); the guard keeps the wrong cite from returning.
     """
     text = (_REPO_ROOT / relpath).read_text()
     assert "§4.4" not in text, (
         f"{relpath} cites SPEC §4.4, which documents harness.cli.close (the "
-        "close gate) — not contract violations or any event type. The retired "
-        "decision_violation type cites no live section; relabel it instead."
+        "close gate) — not contract violations or any event type. No event-type "
+        "comment should point there."
     )
 
 
