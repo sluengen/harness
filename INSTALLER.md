@@ -1,4 +1,4 @@
-<!-- guidance:bootstrap@0.4.5 -->
+<!-- guidance:bootstrap@0.4.6 -->
 # Bootstrap the guidance into a repo
 
 > Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
@@ -32,6 +32,8 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 > - **Superseded skill/agent files** the guidance has since merged or renamed: a repo's own `scope-discipline`, `verification-before-completion`, or `code-structure` are now folded into `code-quality`; an old `spec.md` template is now `feature.md`. These sit alongside the new files as redundant cruft — **but check references first** (the repo's own agents/docs may still point at the old names; update those to the merged file, or leave the old file, rather than break them).
 >
 > Detect these and surface them: recommend migrating any open items (to Linear, or the repo's idea inbox), then removing the artifact. **Do not delete automatically** — they may hold un-migrated history; remove only with my confirmation. Note any you found in the step 7 report.
+>
+> **A re-bootstrap is how you supersede pre-merge guidance.** Concretely, superseding pre-merge guidance — an older install (from before the guidance repo merged into the harness) whose skills that merge renamed or folded (`scope-discipline` / `verification-before-completion` / `code-structure` → `code-quality`) and whose old `spec.md` template became `feature.md` — is done by **re-running this installer (a re-bootstrap)**, *not* by `/update-guidance`. The fold knowledge (which old file folds into which new one) lives only here, in the legacy-artifact handling above; `/update-guidance` would see a renamed skill as a generic "removed" file and its replacement as "added", losing the fold relationship and any local edits. `/update-guidance` is for a repo **already on a harness lock** (see [`commands/update-guidance.md`](commands/update-guidance.md)); a repo still carrying pre-merge guidance is not yet in that state.
 >
 > **3. Create the entry files.**
 > - **Preserve before you overwrite.** If `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` already exist with repo-specific content (a prior setup, or a file carrying no `guidance:` header), read them **now** and migrate any repo-specific knowledge they hold (gotchas, the verify gate, conventions, architecture notes) into `CONTEXT.md` (step 4) before the copies below clobber them. Do not lose it.
