@@ -36,6 +36,7 @@ registered one.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -431,3 +432,94 @@ def test_retired_reference_detection(text: str, flagged: bool) -> None:
     """The detector flags retired invocations (any workflow name) without
     catching the slash command, the English noun, or live `runs`/`docker run`."""
     assert bool(_RETIRED_REFERENCE.search(text)) is flagged
+
+
+# --- Python module-docstring lock (CAL-699) -----------------------------------
+
+#: Retired CLI *command* references — the subset of ``_RETIRED_REFERENCE`` that
+#: names a command the CLI no longer registers (``harness run <arg>`` /
+#: ``harness validate`` / a bare ``run <workflow>``). The full doc-scan rule also
+#: flags retired engine *module paths* (``harness.nodes|engine|…``) and
+#: ``workflows/*.yaml``; that part is deliberately omitted here because a Python
+#: module docstring legitimately *narrates provenance* — e.g. ``harness/worktree
+#: .py`` documents that it was "re-homed from the retired ``harness.nodes``
+#: package (CAL-574)". A live CLI command *name*, by contrast, has no business
+#: appearing in a docstring as if it were current (the ``harness validate`` line
+#: that survived in ``test_cli_query.py`` is exactly this drift). So source
+#: docstrings are held only to the narrower CLI-name rule.
+_RETIRED_CLI_REFERENCE = re.compile(
+    r"(?<!/)\bharness run(?=\s+[<\w-])"  # `harness run <arg>` CLI invocation
+    r"|(?<!/)\bharness validate\b"  # retired `harness validate`
+    rf"|\brun (?:{_RETIRED_WORKFLOWS})\b"  # bare `run <workflow>`
+)
+
+#: Python sources whose module docstring legitimately *documents* the retired
+#: CLI surface as its subject — this guard names ``harness run`` / ``harness
+#: validate`` precisely to lock them out. Excluded in the same spirit as the
+#: supersede-bannered specs skipped by ``_live_docs()``.
+_RETIRED_CLI_DOCSTRING_ALLOWLIST = {
+    REPO_ROOT / "tests" / "unit" / "test_cli_surface_locked.py",
+}
+
+
+def _py_sources() -> list[Path]:
+    """Python files under ``harness/`` and ``tests/`` whose *module docstring*
+    is held to the retired-CLI-name rule (the allowlist removed)."""
+    files: list[Path] = []
+    for base in ("harness", "tests"):
+        files += sorted((REPO_ROOT / base).rglob("*.py"))
+    return [p for p in files if p not in _RETIRED_CLI_DOCSTRING_ALLOWLIST]
+
+
+def _module_docstring(path: Path) -> str:
+    """The module-level docstring only — not the full source. Scanning only the
+    docstring keeps this guard's own retired-pattern *constants* (data in the
+    body) from being read as if they were prose."""
+    try:
+        return ast.get_docstring(ast.parse(path.read_text())) or ""
+    except SyntaxError:  # pragma: no cover - all repo sources parse
+        return ""
+
+
+@pytest.mark.parametrize(
+    "src", _py_sources(), ids=lambda p: str(p.relative_to(REPO_ROOT))
+)
+def test_py_docstrings_have_no_retired_cli_reference(src: Path) -> None:
+    """No Python module docstring names a retired CLI command as if it were live.
+
+    ``_live_docs()`` scans ``.md``/``.sh`` only, so a retired command name in a
+    Python docstring went uncaught (CAL-699 — ``test_cli_query.py`` kept naming
+    the retired ``harness validate``). This closes that gap for source docstrings
+    while leaving legitimate engine-module *provenance* notes alone.
+    """
+    hits = [m.group(0) for m in _RETIRED_CLI_REFERENCE.finditer(_module_docstring(src))]
+    assert not hits, (
+        f"{src.relative_to(REPO_ROOT)} module docstring names retired CLI "
+        f"surface {sorted(set(hits))!r}. `run`/`validate` were retired with the "
+        "deterministic engine (CAL-574); rewrite to the as-built verbs "
+        "(`harness start/review/close`) or drop the stale reference."
+    )
+
+
+@pytest.mark.parametrize(
+    "text, flagged",
+    [
+        # Retired CLI command names — flagged.
+        ("harness validate workflow.yaml", True),
+        ("harness run feature --linear=CAL-1", True),
+        ("    run steward --domain=architecture", True),
+        # Legitimate in a source docstring — NOT flagged. Engine-module
+        # provenance and workflow-walking history are narration, not a live
+        # command name; the slash command and live `runs` stay clear too.
+        ("re-homed from the retired harness.nodes package (CAL-574)", False),
+        ("import harness.engine.runner", False),
+        ("the YAML-walking engine (engine.runner|executor|loop|retry)", False),
+        ("/harness run CAL-42", False),
+        ("a deterministic harness run. That role is dissolved.", False),
+        ("harness runs --failed", False),
+    ],
+)
+def test_retired_cli_reference_detection(text: str, flagged: bool) -> None:
+    """The CLI-name detector flags retired *commands* but leaves engine-module
+    provenance, the slash command, the English noun, and live `runs` alone."""
+    assert bool(_RETIRED_CLI_REFERENCE.search(text)) is flagged

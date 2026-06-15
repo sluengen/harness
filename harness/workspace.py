@@ -4,7 +4,7 @@
 The host launcher (CAL-579) and the Hermes flow rely on a single safety
 property: *the caller never specifies the mount; the launcher picks it from an
 allowlist*. This module is what that property enforces against — a check that
-constrains which host paths a harness run may be pointed at via ``--repo``.
+constrains which host paths the harness may be pointed at via ``--repo``.
 
 Design (see ``specs/hermes-orchestration.md`` §"Target repo allowlist"):
 

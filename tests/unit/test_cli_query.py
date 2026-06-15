@@ -6,12 +6,11 @@ Covers:
     harness events <run-id>          [--type <event_type>] [--json]
     harness worktrees list           [--json]
     harness worktrees cleanup        [--age <duration>] [--merged]
-    harness validate <workflow.yaml>
     harness version                  [--json]
 
-All write paths are deferred — these tests cover the read surface and the
-``validate`` static check only. The CLI is invoked via Typer's
-:class:`CliRunner` so we get stable exit codes and captured stdout.
+All write paths are deferred — these tests cover the read surface only. The CLI
+is invoked via Typer's :class:`CliRunner` so we get stable exit codes and
+captured stdout.
 """
 
 from __future__ import annotations
