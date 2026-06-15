@@ -63,8 +63,8 @@ def _live_docs() -> list[Path]:
         rel = path.relative_to(_REPO_ROOT)
         if rel.name in _EXCLUDED_FILES:
             continue
-        # Match an excluded dir at any depth (top-level ``assessments/`` *and*
-        # ``docs/assessments/``) — both hold historical version records.
+        # Match an excluded dir at any depth (``assessments/`` at any level) —
+        # it holds historical version records that must not track the code.
         if _EXCLUDED_DIRS.intersection(rel.parts):
             continue
         docs.append(path)
