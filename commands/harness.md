@@ -202,16 +202,9 @@ Do not ask follow-up questions. One prompt is enough; infer the rest from what t
 
 Show the user the title, priority, and description. Wait for "yes" before calling the API.
 
-**Step 4 — Fetch team ID and create the issue**
+**Step 4 — Resolve the team and create the issue**
 
-```bash
-source .env && curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"query{teams{nodes{id key name}}}"}'
-```
-
-Use `jq --arg` to JSON-encode all string fields when calling the create mutation. Check that `success: true` in the response.
+Create the issue through the **`linear` skill** — the single home for Linear operations. Do not embed raw Linear GraphQL endpoint calls here; a guard fails if one appears. Resolve the team ID at runtime (the skill's team-ID resolution recipe; the team key is `CONTEXT.md` → `repo.linear`), then call its **`issueCreate`** recipe, passing the drafted title and description, the inferred priority, and any label IDs as `issueCreate` input fields. JSON-encode every string field as the skill's recipes show, and confirm the response returns the new issue's `identifier` and `url`.
 
 **Step 5 — Report**
 

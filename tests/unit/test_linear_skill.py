@@ -105,11 +105,11 @@ def test_skill_demotes_context_uuids_to_override() -> None:
 #: Commands that still embed ``api.linear.app``, each with its cleanup disposition.
 #: This list must SHRINK: when a command is cleaned, ``test_embed_allowlist_shrinks``
 #: fails until the entry is removed, driving the guard toward the absolute invariant.
-EMBED_ALLOWLIST = {
-    # build.md was cleaned by CAL-715 (thin delegating driver) — removed from the
-    # allowlist; test_embed_allowlist_shrinks holds it out.
-    "harness.md": "CAL-731 — repo-owned /harness ingest flow; reference the linear skill",
-}
+#: Now **empty** — the invariant is reached: build.md was cleaned by CAL-715 (thin
+#: delegating driver) and harness.md by CAL-731 (ingest references the linear skill).
+#: A new embed in any command now fails ``test_no_command_embeds_linear_graphql``
+#: outright; there is no documented gap left.
+EMBED_ALLOWLIST: dict[str, str] = {}
 
 
 def _commands_embedding_graphql() -> set[str]:
