@@ -3,7 +3,7 @@
 CAL-633 guards the **retired-§** class (a docstring citing a permanently
 superseded section) and CAL-635 (``test_events_spec_cites.py``) guards one
 instance of the adjacent **wrong-current-§** class (the events writer cited the
-*live* §4.9 — launcher/workspace/trigger — instead of its home §4.7). A
+*live* §4.9 — workspace — instead of its home §4.7). A
 retired-§ grep cannot catch the wrong-current-§ class: §4.9 is a current
 section, so its mere existence is not the fault — the fault is that it documents
 a *different* module than the one citing it.
@@ -16,8 +16,7 @@ modules, named in the header and (for a few) the body::
     ### 4.6 `harness.state.store`
     ### 4.7 `harness.events.emitter`     (body also: `harness.events.schema`)
     ### 4.8 `harness.linear`, `harness.identity`
-    ### 4.9 `harness.launcher`, `harness.workspace`, `harness.trigger`
-            (body also: `harness.launcher_client`)
+    ### 4.9 `harness.workspace`
 
 so each module's *home* section is mechanically derivable from §4's text. The
 contract: **if a module's module-level docstring cites a §4.x section, that
@@ -32,20 +31,19 @@ Two narrowings eliminate false positives:
   type; ``events/emitter.py`` cites its own §4.7 from a method docstring. Those
   are not home declarations and are left alone.
 * **Presence-optional.** The guard does not force every module to carry a home
-  cite (``harness.linear`` / ``harness.launcher`` / ``harness.workspace`` /
-  ``harness.trigger`` carry none today). It only requires that a home cite, *if
-  present*, resolves correctly — the CODE-2 class is a *wrong* cite, not a
-  *missing* one.
+  cite (``harness.linear`` / ``harness.workspace`` carry none today). It only
+  requires that a home cite, *if present*, resolves correctly — the CODE-2 class
+  is a *wrong* cite, not a *missing* one.
 
 The home map is explicit, not a package-parent heuristic: a module homes at a
 section iff the section's **header** names it, **or** the section's text names it
 and it is named by no other section's header. The second clause admits
-``harness.events.schema`` (named only in §4.7's body) and ``harness.launcher_client``
-(only in §4.9's body) while *rejecting* a body cross-reference to a module that
-homes elsewhere — §4.2's body mentions ``harness.worktree``, but ``worktree`` is
-§4.5's header name, so §4.2 is not a home for it. A header-parent heuristic was
-rejected (it let ``harness.launcher_client`` resolve to §4.5 via the shared
-top-level ``harness`` package, and ``harness.cli._git`` to any of §4.2–§4.4).
+``harness.events.schema`` (named only in §4.7's body) while *rejecting* a body
+cross-reference to a module that homes elsewhere — §4.2's body mentions
+``harness.worktree``, but ``worktree`` is §4.5's header name, so §4.2 is not a
+home for it. A header-parent heuristic was rejected (it let a dotted submodule
+resolve to a sibling section via the shared top-level ``harness`` package, and
+``harness.cli._git`` to any of §4.2–§4.4).
 
 Acceptance criteria:
 
@@ -151,7 +149,7 @@ def _home_cites(abs_path: Path) -> set[str]:
 
 # --- the home map and resolution rule, pinned by example ------------------
 #: SPEC §4 as-built: module → its home section(s). Mirrors the headers, plus the
-#: two body-documented homes (``events.schema``→§4.7, ``launcher_client``→§4.9).
+#: one body-documented home (``events.schema``→§4.7).
 _EXPECTED_HOMES = {
     "harness.cli": {"4.1"},
     "harness.cli.start": {"4.2"},
@@ -163,10 +161,7 @@ _EXPECTED_HOMES = {
     "harness.events.schema": {"4.7"},
     "harness.linear": {"4.8"},
     "harness.identity": {"4.8"},
-    "harness.launcher": {"4.9"},
-    "harness.launcher_client": {"4.9"},
     "harness.workspace": {"4.9"},
-    "harness.trigger": {"4.9"},
 }
 
 # ``(module, section, expected)`` — is a home cite from ``module`` to ``section``
@@ -178,18 +173,18 @@ _RULE_CASES = [
     ("harness.events.emitter", "4.7", True),
     ("harness.identity", "4.8", True),
     ("harness.linear", "4.8", True),
-    # body-documented homes — valid (AC-2)
+    # body-documented home — valid (AC-2)
     ("harness.events.schema", "4.7", True),
-    ("harness.launcher_client", "4.9", True),
-    # the CODE-2 fault: events writer citing the launcher section — invalid (AC-1)
+    # the CODE-2 fault: events writer citing the workspace section — invalid (AC-1)
     ("harness.events.emitter", "4.9", False),
     # body cross-reference is not a home — invalid (AC-2: §4.2 mentions worktree)
     ("harness.worktree", "4.2", False),
     # a distinct sibling section must NOT be borrowed — invalid (AC-2)
     ("harness.cli.start", "4.3", False),
     ("harness.cli.review", "4.2", False),
-    # the broad-fallback regressions codex flagged — invalid
-    ("harness.launcher_client", "4.5", False),  # shared top-level `harness` pkg
+    # the broad-fallback regression: a submodule must not resolve via the shared
+    # top-level `harness` package — invalid
+    ("harness.events.schema", "4.5", False),
     # a module §4 does not document has no home cite that resolves
     ("harness.cli._git", "4.2", False),
 ]

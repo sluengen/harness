@@ -19,12 +19,11 @@ branches.  CAL-587 redefines the verb for the contract it actually serves:
    ``workflow_failed`` event with ``reason='cancelled'``. Both land together or
    not at all — a run marked ``cancelled`` with no cancellation event is an
    inconsistent ledger that retry cannot repair (a terminal run refuses
-   re-cancel). ``harness status`` then surfaces ``failure_reason='cancelled'``
-   (and ``failure_retryable=False``).
+   re-cancel). ``harness status`` then surfaces ``failure_reason='cancelled'``.
 
-This keeps the public verb contract (SPEC §1) and the launcher ``cancel`` op
-honest: the verb now does what its name promises and leaves an auditable mark
-on the one ledger that is the whole audit trail.
+This keeps the public verb contract (SPEC §1) honest: the verb now does what its
+name promises and leaves an auditable mark on the one ledger that is the whole
+audit trail.
 
 Exit codes (SPEC §11):
 * 0  — run abandoned; ``{"run_id": ..., "outcome": "cancelled"}``.
@@ -64,7 +63,7 @@ assert _CANCELLABLE_STATUSES <= RUN_STATUSES
 
 #: The cancellation event. ``workflow_failed`` with ``reason='cancelled'`` is the
 #: canonical mark (a member of :data:`EVENT_TYPES`) that ``harness status`` reads
-#: to derive ``failure_reason='cancelled'`` / ``failure_retryable=False``.
+#: to surface ``failure_reason='cancelled'``.
 _CANCEL_EVENT_TYPE = "workflow_failed"
 _CANCEL_REASON = "cancelled"
 assert _CANCEL_EVENT_TYPE in EVENT_TYPES  # guard against a future rename drift

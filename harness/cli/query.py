@@ -7,7 +7,7 @@ locate:
 
 * :mod:`harness.cli.query_status` — ``status`` (+ artifact / failure enrichment)
 * :mod:`harness.cli.query_events` — ``events`` and ``logs`` (+ ``--follow``)
-* :mod:`harness.cli.query_runs`   — ``runs`` (+ failed-run grouping)
+* :mod:`harness.cli.query_runs`   — ``runs``
 * :mod:`harness.cli._query_common` — the ``--db`` resolution and tolerant
   JSON decode the commands share.
 
@@ -22,13 +22,11 @@ from harness.cli.query_events import events_command, logs_command
 from harness.cli.query_runs import runs_command
 from harness.cli.query_status import (
     _ARTIFACT_KEYS,
-    _derive_failure_retryable,
     status_command,
 )
 
 __all__ = [
     "_ARTIFACT_KEYS",
-    "_derive_failure_retryable",
     "events_command",
     "logs_command",
     "runs_command",

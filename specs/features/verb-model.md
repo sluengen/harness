@@ -77,7 +77,7 @@ The ledger is a complete audit trail only if nothing hand-rolls a `git merge` / 
 
 ### Triggers
 
-One execution model, **two triggers** that produce an identical execution path: a human (`/harness run <ticket>`) or Hermes (the autonomous trigger slot, [`harness.trigger`](../../harness/trigger.py)). A trigger launches a per-session Claude runtime; each verb runs as a one-shot container *outside* that runtime, exactly as `~/bin/harness` is a `docker run`.
+One execution model, **two triggers** that produce an identical execution path: a human (`/harness run <ticket>`) or Hermes (the autonomous trigger slot — deferred; the launcher/trigger scaffolding was removed in CAL-712, design archived at [`hermes-orchestration.md`](../retired/hermes-orchestration.md)). A trigger launches a per-session Claude runtime; each verb runs as a one-shot container *outside* that runtime, exactly as `~/bin/harness` is a `docker run`.
 
 ## Interface surface
 

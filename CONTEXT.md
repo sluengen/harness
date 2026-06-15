@@ -56,7 +56,7 @@ Three verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
 - **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not Codex's full reasoning.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
-- **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state; `serve` runs the narrow host launcher control socket.
+- **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state.
 - **State store** — SQLite via `aiosqlite`; the `runs` / `events` ledger is the whole audit trail.
 
 The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle — every git and ticket state transition goes through a verb, and `close` validates against the ledger as a backstop (D5). Design specs live in `specs/`; `SPEC.md` is the index. Read the relevant spec before changing a verb, the ledger schema, or the close gate.

@@ -3,10 +3,10 @@
 The event-log writer and its canonical event types live in SPEC **§4.7**
 (``harness.events.emitter`` — "Event types live in ``harness.events.schema``").
 Four live docstrings instead cited **§4.9**, which is a *current* section but
-documents ``harness.launcher`` / ``harness.workspace`` / ``harness.trigger`` —
-nothing about events. A cross-reference that resolves to the wrong section is
-worse than none: a reader following §4.9 lands on launcher/workspace/trigger and
-finds no event-type contract.
+documents ``harness.workspace`` (the ``--repo`` allowlist) — nothing about
+events. A cross-reference that resolves to the wrong section is worse than none:
+a reader following §4.9 lands on the workspace allowlist and finds no event-type
+contract.
 
 This is a distinct class from the retired-§ cluster (CAL-633): §4.9 is a *live*
 section, so a retired-§ grep-guard would not catch it. This guard is the
@@ -40,12 +40,12 @@ _EVENTS_SOURCES = [
 
 @pytest.mark.parametrize("relpath", _EVENTS_SOURCES)
 def test_events_source_does_not_cite_wrong_section(relpath: str) -> None:
-    """No events module source cites §4.9 — that section is launcher/workspace."""
+    """No events module source cites §4.9 — that section is harness.workspace."""
     text = (_REPO_ROOT / relpath).read_text()
     assert "§4.9" not in text, (
-        f"{relpath} cites SPEC §4.9, which documents harness.launcher / "
-        "harness.workspace / harness.trigger — not events. The event-log writer "
-        "and its event types live in §4.7; cite that instead."
+        f"{relpath} cites SPEC §4.9, which documents harness.workspace (the "
+        "--repo allowlist) — not events. The event-log writer and its event "
+        "types live in §4.7; cite that instead."
     )
 
 

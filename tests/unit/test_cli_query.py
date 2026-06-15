@@ -28,7 +28,6 @@ from typing import Any
 from typer.testing import CliRunner
 
 from harness.cli import app, query_events
-from harness.cli.query import _derive_failure_retryable
 from harness.state import store
 
 runner = CliRunner()
@@ -733,16 +732,14 @@ def test_db_flag_overrides_default(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness status --json: enriched fields (failure_retryable, artifact_paths,
-# agent_session_ids)
+# harness status --json: enriched fields (failure_reason, artifact_paths)
 #
-# ``failure_retryable`` derives purely from ``failure_reason``; it is unit-
-# tested against the function directly below. The live DB→status wiring (a
-# ``workflow_failed`` event surfacing as ``failure_reason``/``failure_retryable``)
-# is covered end-to-end by ``test_cancel_surfaces_failure_reason_in_status`` in
-# ``test_cli_cancel.py`` — ``harness cancel`` is the sole live emitter of
-# ``workflow_failed``. We do not manufacture synthetic ``workflow_failed`` events
-# here (that was the CODE-4 / CAL-589 false-green pattern).
+# The live DB→status wiring (a ``workflow_failed`` event surfacing as
+# ``failure_reason``) is covered end-to-end by
+# ``test_cancel_surfaces_failure_reason_in_status`` in ``test_cli_cancel.py`` —
+# ``harness cancel`` is the sole live emitter of ``workflow_failed``. We do not
+# manufacture synthetic ``workflow_failed`` events here (that was the CODE-4 /
+# CAL-589 false-green pattern).
 # ---------------------------------------------------------------------------
 
 
@@ -763,38 +760,8 @@ def test_status_json_omits_current_node(tmp_path: Path) -> None:
     assert "current_node" not in payload
 
 
-def test_derive_failure_retryable_false_for_contract_violation() -> None:
-    """ContractViolation* reasons need prompt repair — not retryable."""
-    assert _derive_failure_retryable("ContractViolation: not_called") is False
-
-
-def test_derive_failure_retryable_false_for_loop_exhausted() -> None:
-    """``loop_exhausted`` means the budget was spent — not retryable."""
-    assert _derive_failure_retryable("loop_exhausted") is False
-
-
-def test_derive_failure_retryable_false_for_cancelled() -> None:
-    """``cancelled`` is an intentional termination — not retryable."""
-    assert _derive_failure_retryable("cancelled") is False
-
-
-def test_derive_failure_retryable_false_for_rejected() -> None:
-    """``rejected`` is a human termination — not retryable."""
-    assert _derive_failure_retryable("rejected") is False
-
-
-def test_derive_failure_retryable_true_for_transient_error() -> None:
-    """Generic (transient) failures are retryable."""
-    assert _derive_failure_retryable("ConnectionError") is True
-
-
-def test_derive_failure_retryable_none_when_no_failure() -> None:
-    """No ``failure_reason`` → no retryable verdict."""
-    assert _derive_failure_retryable(None) is None
-
-
-def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> None:
-    """``failure_retryable`` is None for a run that has not failed."""
+def test_status_json_failure_reason_none_when_no_failure(tmp_path: Path) -> None:
+    """``failure_reason`` is None for a run that has not failed."""
     db_path = tmp_path / ".harness" / "harness.db"
     _seed_run(db_path, run_id="R1", status="completed", exit_code=0)
 
@@ -802,7 +769,6 @@ def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> N
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["failure_reason"] is None
-    assert payload["failure_retryable"] is None
 
 
 def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None:
@@ -840,37 +806,6 @@ def test_status_json_artifact_paths_none_when_no_artifacts(tmp_path: Path) -> No
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["artifact_paths"] is None
-
-
-def test_status_json_agent_session_ids_from_tool_called_events(tmp_path: Path) -> None:
-    """``agent_session_ids`` collects unique session_id values from tool_called events."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Read", "session_id": "sess-abc"})
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Write", "session_id": "sess-abc"})  # duplicate
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s2",
-                data={"name": "Bash", "session_id": "sess-xyz"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["agent_session_ids"] is not None
-    assert sorted(payload["agent_session_ids"]) == ["sess-abc", "sess-xyz"]
-
-
-def test_status_json_agent_session_ids_none_when_no_sessions(tmp_path: Path) -> None:
-    """``agent_session_ids`` is None when tool_called events carry no session_id."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Read", "input": {}})  # no session_id key
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["agent_session_ids"] is None
 
 
 # ---------------------------------------------------------------------------

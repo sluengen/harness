@@ -1,20 +1,16 @@
-"""Tests for ``docker/entrypoint.sh`` — the one-image / two-entrypoint switch.
+"""Tests for ``docker/entrypoint.sh`` — the one-shot verb container.
 
-Decision #3 (``specs/hermes-orchestration.md`` §Runtime topology, settled by
-human call 2026-06-11): the per-session agent runtime (claude) and the per-call
-verb container (codex) ship as a **single image with two entrypoints** — an
-``agent`` mode and a ``verb`` mode. The entrypoint script selects the role
-(CAL-585).
+The image runs one audited verb per container, exactly as the ``~/bin/harness``
+wrapper invokes ``<image> start CAL-1 --repo …``. (The launcher-socket ``agent``
+mode for an autonomous per-session runtime was the deferred Hermes-dispatch
+scaffolding, removed in CAL-712 — see ``specs/retired/hermes-orchestration.md``.)
 
-These tests drive the real script with stub ``claude`` / ``uv`` binaries on
-``PATH`` (no docker, no real CLIs) and assert the dispatched command:
+These tests drive the real script with stub ``uv`` on ``PATH`` (no docker, no
+real CLIs) and assert the dispatched command:
 
-* ``agent <TICKET>`` → ``claude -p "/harness run <TICKET>"`` (decision #2:
-  headless agent runtime drives the full verb loop non-interactively).
 * ``verb <args…>`` → ``uv run harness <args…>`` (a single one-shot verb).
-* a bare verb (no mode selector) stays backward compatible with the launcher /
-  ``~/bin/harness`` wrapper, which invoke ``<image> start …`` directly.
-* ``agent`` with no ticket is an invocation error (exit 2).
+* a bare verb (no mode selector) stays backward compatible with the
+  ``~/bin/harness`` wrapper, which invokes ``<image> start …`` directly.
 """
 
 from __future__ import annotations
@@ -60,47 +56,13 @@ def _run(args: list[str], bin_dir: Path) -> subprocess.CompletedProcess[str]:
 def bin_dir(tmp_path: Path) -> Path:
     d = tmp_path / "bin"
     d.mkdir()
-    for name in ("claude", "uv"):
-        _make_stub(d, name)
+    _make_stub(d, "uv")
     return d
 
 
 def test_entrypoint_script_exists_and_is_executable() -> None:
     assert ENTRYPOINT.exists(), f"missing {ENTRYPOINT}"
     assert os.access(ENTRYPOINT, os.X_OK), "entrypoint.sh must be executable"
-
-
-def test_agent_mode_drives_harness_run_headless(bin_dir: Path) -> None:
-    # `agent CAL-585` → `claude -p "/harness run CAL-585"`.
-    proc = _run(["agent", "CAL-585"], bin_dir)
-    assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.strip() == "STUB [-p] [/harness run CAL-585]"
-
-
-def test_agent_mode_requires_a_ticket(bin_dir: Path) -> None:
-    proc = _run(["agent"], bin_dir)
-    assert proc.returncode == 2
-    # Nothing was dispatched — no stub marker in stdout.
-    assert "STUB" not in proc.stdout
-
-
-def test_agent_mode_installs_launcher_socket_client_shim(bin_dir: Path) -> None:
-    # Decision #1: the agent runtime routes verbs through the launcher socket,
-    # not the docker socket. The entrypoint must put a `harness` shim ahead on
-    # PATH that calls the launcher client — proven by capturing `claude`'s PATH.
-    stub = bin_dir / "claude"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'shim="$(command -v harness)"\n'
-        'echo "HARNESS=$shim"\n'
-        'cat "$shim"\n'
-    )
-    stub.chmod(0o755)
-    proc = _run(["agent", "CAL-585"], bin_dir)
-    assert proc.returncode == 0, proc.stderr
-    # A `harness` is resolvable and it routes to the launcher client (not docker).
-    assert "HARNESS=" in proc.stdout
-    assert "harness.launcher_client" in proc.stdout
 
 
 def test_verb_mode_runs_a_single_one_shot_verb(bin_dir: Path) -> None:

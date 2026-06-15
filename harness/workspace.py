@@ -1,12 +1,13 @@
 """Workspace allowlist enforcement — the ``HARNESS_WORKSPACE_ROOTS`` primitive
 (CAL-584).
 
-The host launcher (CAL-579) and the Hermes flow rely on a single safety
-property: *the caller never specifies the mount; the launcher picks it from an
-allowlist*. This module is what that property enforces against — a check that
-constrains which host paths the harness may be pointed at via ``--repo``.
+Every verb resolves ``--repo`` through this allowlist (via ``harness/cli/_repo.py``)
+to enforce a single safety property: *the harness is never pointed at a host path
+outside an allowed root*. It was introduced for the host launcher (CAL-579, whose
+scaffolding was retired in CAL-712); the allowlist itself is load-bearing on every
+verb and stays.
 
-Design (see ``specs/hermes-orchestration.md`` §"Target repo allowlist"):
+Design (see ``specs/retired/hermes-orchestration.md`` §"Target repo allowlist"):
 
 * ``HARNESS_WORKSPACE_ROOTS`` is a colon-separated list of absolute host
   directories. Unset or empty ⇒ *no* allowed roots ⇒ everything is rejected

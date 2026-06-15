@@ -1,4 +1,4 @@
-"""``harness runs`` — list recent runs (optionally grouped by failure).
+"""``harness runs`` — list recent runs.
 
 SPEC §11 names the command; ``specs/features/run-ledger.md`` documents the row shape.
 Async DB access is wrapped in :func:`asyncio.run` at the command boundary
@@ -20,7 +20,7 @@ from typing import Any
 import aiosqlite
 import typer
 
-from harness.cli._query_common import _resolve_db_path, _safe_json_loads
+from harness.cli._query_common import _resolve_db_path
 
 
 async def _fetch_recent_runs(
@@ -41,49 +41,7 @@ async def _fetch_recent_runs(
             return [dict(r) for r in rows]
 
 
-async def _fetch_failed_runs_grouped(
-    db_path: Path,
-) -> dict[str, list[dict[str, Any]]]:
-    """Return failed runs grouped by workflow_failed event reason.
-
-    Joins runs with events on event_type='workflow_failed' and extracts
-    data_json.reason. Runs without a workflow_failed event land under the
-    empty-string key.
-    """
-    if not db_path.exists():
-        return {}
-    async with aiosqlite.connect(db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        # Left-join so failed runs without a workflow_failed event still appear.
-        async with conn.execute(
-            "SELECT r.run_id, r.workflow_name, r.started_at, "
-            "e.data_json AS event_data_json "
-            "FROM runs r "
-            "LEFT JOIN events e ON e.run_id = r.run_id "
-            "  AND e.event_type = 'workflow_failed' "
-            "WHERE r.status = 'failed' "
-            "ORDER BY r.started_at DESC",
-        ) as cur:
-            rows = await cur.fetchall()
-
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        d = dict(row)
-        parsed = _safe_json_loads(d.get("event_data_json"))
-        reason = str(parsed.get("reason", "")) if isinstance(parsed, dict) else ""
-        entry = {
-            "run_id": d["run_id"],
-            "workflow_name": d["workflow_name"],
-            "started_at": d["started_at"],
-        }
-        groups.setdefault(reason, []).append(entry)
-    return groups
-
-
 def runs_command(
-    failed: bool = typer.Option(
-        False, "--failed", help="Group failed runs by failure reason."
-    ),
     limit: int = typer.Option(
         20, "--limit", help="Maximum number of runs to list (default 20)."
     ),
@@ -93,21 +51,6 @@ def runs_command(
 ) -> None:
     """List recent runs."""
     db_path = _resolve_db_path(db)
-
-    if failed:
-        groups = asyncio.run(_fetch_failed_runs_grouped(db_path))
-        if not groups:
-            typer.echo("(no failures)")
-            return
-        for reason, entries in groups.items():
-            header = reason if reason else "(unknown reason)"
-            typer.echo(header)
-            for entry in entries:
-                typer.echo(
-                    f"  {entry['run_id']}  {entry['workflow_name']}  "
-                    f"{entry['started_at']}"
-                )
-        return
 
     rows = asyncio.run(_fetch_recent_runs(db_path, limit=limit))
     if not rows:
@@ -122,7 +65,6 @@ def runs_command(
 
 
 __all__ = [
-    "_fetch_failed_runs_grouped",
     "_fetch_recent_runs",
     "runs_command",
 ]

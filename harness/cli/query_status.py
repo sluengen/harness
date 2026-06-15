@@ -4,22 +4,16 @@ SPEC §11 names the command; ``specs/features/run-ledger.md`` documents the row 
 Async DB access is wrapped in :func:`asyncio.run` at the command boundary
 because Typer dispatches synchronously.
 
-``harness status <id> --json`` is extended with enriched fields for Hermes
-consumption (see ``specs/hermes-orchestration.md`` §Observability
-requirements):
+``harness status <id> --json`` is extended with two enriched fields read from
+the events / state tables:
 
 * ``failure_reason`` — ``data.reason`` from the latest ``workflow_failed``
   event; ``None`` if the run has not failed. The sole live emitter of
   ``workflow_failed`` is ``harness cancel`` (``reason='cancelled'``) — the
   engine that once emitted it was retired in CAL-574.
-* ``failure_retryable`` — ``True`` for transient failures; ``False`` for
-  contract violations, cancellation, and loop exhaustion; ``None`` if no
-  failure.
 * ``artifact_paths`` — dict of non-None artifact fields from ``state``
   (``worktree_path``, ``worktree_branch``); ``None`` when no artifacts are
   recorded.
-* ``agent_session_ids`` — list of unique ``session_id`` values from
-  ``tool_called`` event data; ``None`` when no session IDs are present.
 
 Exit codes (SPEC §11):
 * 0 — succeeded; produced output.
@@ -39,37 +33,10 @@ import typer
 from harness.cli._query_common import _resolve_db_path, _safe_json_loads
 
 # ---------------------------------------------------------------------------
-# Failure-retryable derivation
-# ---------------------------------------------------------------------------
-
-# Failure reasons that are definitively not retryable.  Contract violations
-# require prompt repair; loop exhaustion means the budget was spent; cancelled
-# and rejected are intentional terminations.
-_NON_RETRYABLE_REASONS: frozenset[str] = frozenset(
-    {"cancelled", "loop_exhausted", "rejected"}
-)
-
-
-def _derive_failure_retryable(failure_reason: str | None) -> bool | None:
-    """Return whether a failure is worth retrying, or ``None`` if there is none.
-
-    ``True``  — transient errors (network, timeout, generic exceptions).
-    ``False`` — contract violations (need prompt repair), loop exhaustion,
-                cancellation, or human rejection.
-    ``None``  — the run has not failed (no ``failure_reason`` yet).
-    """
-    if failure_reason is None:
-        return None
-    if failure_reason.startswith("ContractViolation"):
-        return False
-    return failure_reason not in _NON_RETRYABLE_REASONS
-
-
-# ---------------------------------------------------------------------------
 # Artifact-path extraction
 # ---------------------------------------------------------------------------
 
-# State fields that are surfaced as artifacts for Hermes.
+# State fields surfaced as artifacts under ``artifact_paths``.
 _ARTIFACT_KEYS: tuple[str, ...] = (
     "worktree_path",
     "worktree_branch",
@@ -112,59 +79,32 @@ async def _fetch_run_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
 
 
 async def _fetch_enriched_status(db_path: Path, run_id: str) -> dict[str, Any]:
-    """Fetch enriched status fields that require event-table queries.
-
-    Uses a single connection for both queries to avoid redundant
-    connection setup on every status call.
+    """Fetch the enriched ``failure_reason`` field from the events table.
 
     Returns a dict with:
-    ``failure_reason``    — ``str | None``: ``data.reason`` from the latest
-                            ``workflow_failed`` event (emitted by
-                            ``harness cancel`` with ``reason='cancelled'``).
-    ``agent_session_ids`` — ``list[str] | None``: unique ``session_id`` values
-                            from ``tool_called`` event data payloads.
+    ``failure_reason`` — ``str | None``: ``data.reason`` from the latest
+                         ``workflow_failed`` event (emitted by ``harness cancel``
+                         with ``reason='cancelled'``).
     """
-    result: dict[str, Any] = {
-        "failure_reason": None,
-        "agent_session_ids": None,
-    }
+    result: dict[str, Any] = {"failure_reason": None}
     if not db_path.exists():
         return result
 
-    async with aiosqlite.connect(db_path) as conn:
-        # failure_reason: data.reason from the most recent workflow_failed event.
-        async with conn.execute(
+    # failure_reason: data.reason from the most recent workflow_failed event.
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute(
             "SELECT data_json FROM events "
             "WHERE run_id = ? AND event_type = 'workflow_failed' "
             "ORDER BY id DESC LIMIT 1",
             (run_id,),
-        ) as cur:
-            row = await cur.fetchone()
-            if row is not None:
-                data = _safe_json_loads(row[0])
-                if isinstance(data, dict):
-                    result["failure_reason"] = data.get("reason")
-
-        # agent_session_ids: deduplicated session_id values from tool_called events.
-        async with conn.execute(
-            "SELECT data_json FROM events "
-            "WHERE run_id = ? AND event_type = 'tool_called'",
-            (run_id,),
-        ) as cur:
-            rows = await cur.fetchall()
-        session_ids: list[str] = []
-        seen: set[str] = set()
-        for r in rows:
-            data = _safe_json_loads(r[0])
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+        if row is not None:
+            data = _safe_json_loads(row[0])
             if isinstance(data, dict):
-                sid = data.get("session_id")
-                if sid is not None:
-                    sid_str = str(sid)
-                    if sid_str not in seen:
-                        session_ids.append(sid_str)
-                        seen.add(sid_str)
-        if session_ids:
-            result["agent_session_ids"] = session_ids
+                result["failure_reason"] = data.get("reason")
 
     return result
 
@@ -210,12 +150,9 @@ def status_command(
         payload["inputs"] = _safe_json_loads(row.get("inputs_json"))
         payload.pop("state_json", None)
         payload.pop("inputs_json", None)
-        # Enriched fields from the events table (Hermes observability).
-        failure_reason: str | None = enriched.get("failure_reason")
-        payload["failure_reason"] = failure_reason
-        payload["failure_retryable"] = _derive_failure_retryable(failure_reason)
+        # Enriched fields from the events / state tables.
+        payload["failure_reason"] = enriched.get("failure_reason")
         payload["artifact_paths"] = _extract_artifact_paths(state)
-        payload["agent_session_ids"] = enriched.get("agent_session_ids")
         typer.echo(json.dumps(payload, default=str))
         return
 
@@ -231,8 +168,6 @@ def status_command(
 
 __all__ = [
     "_ARTIFACT_KEYS",
-    "_NON_RETRYABLE_REASONS",
-    "_derive_failure_retryable",
     "_extract_artifact_paths",
     "_fetch_enriched_status",
     "_fetch_run_row",
