@@ -1,11 +1,11 @@
 ---
 name: assessment-craft
-description: Use when running a periodic codebase or guidance audit as the code-steward or system-steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
+description: Use when running a periodic codebase or guidance audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.2.0 -->
+<!-- guidance:assessment-craft@0.2.1 -->
 # Assessment Craft
 
-Shared knowledge for every steward that periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. Loaded by `code-steward` and `system-steward`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills (`guidance-coherence` for `system`, the code-domain skills for `code`).
 
 ## Posture — signal, not noise
 

@@ -7,8 +7,9 @@ engine that walked the YAML is gone; the orchestrating Claude session now runs
 these steps directly. The workflow was never wired into an automated trigger,
 so no running behaviour is lost.
 
-See also the role brief in `agents/system-steward.md` /
-`agents/code-steward.md` for the standards a steward applies.
+See also the role brief in `agents/steward.md` for the process, and the
+per-scope domain standards it pulls (`guidance-coherence` for `system`; the
+code-domain skills for `code`).
 
 ## When to run
 

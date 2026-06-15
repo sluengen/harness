@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.2 -->
+<!-- guidance:process-harness@0.4.3 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -65,7 +65,8 @@ Use the option your repo provides; its `CONTEXT.md` says which. A repo without t
 | `writing-quality` | Specs, decisions, any prose. |
 | `worktree-isolation` | Any multi-commit work. |
 | `linear-sync` | Reading and updating Linear. |
-| `assessment-craft` | Periodic codebase assessments (stewards). |
+| `assessment-craft` | The methodology for any `/assess` pass (the steward). |
+| `guidance-coherence` | Domain standards for the `/assess system` scope (guidance coherence). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |
 | `design-system` | Frontend work without degrading the design system — only when the `design_system` layer is on. |
 
@@ -78,8 +79,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `dev` | Implementation, test-first, in scope. |
 | `reviewer` | The final gate; records what shipped. |
 | `architect` | Data models, contracts, decisions. Produces designs, not code. |
-| `code-steward` | Periodic codebase-health assessment. |
-| `system-steward` | Periodic guidance- and process-coherence assessment. |
+| `steward` | Periodic health assessment; `/assess <scope>` selects code or guidance. |
 
 ## Commands
 
@@ -89,7 +89,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/start <TICKET>` | Set up the workspace and build through to review-ready. |
 | `/review` | Run the final gate on the current branch. |
 | `/ship` | Integrate and close, per the repo's branch model. |
-| `/assess <domain>` | Run a steward over the codebase or guidance. |
+| `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
 ## Command namespacing

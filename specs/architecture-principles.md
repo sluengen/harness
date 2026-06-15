@@ -1,7 +1,7 @@
 <!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
-last_updated: 2026-06-15  # CAL-701: record the review-engine principle (CLI subprocess, Claude default)
+last_updated: 2026-06-15  # CAL-704: record the assessment-layering principle (one steward; command=scope, agent=process, skills=domain)
 ---
 
 # Architecture Principles
@@ -60,6 +60,10 @@ Two boundary cases the enumeration must keep straight: `commands/harness.md` is 
 - **Major** — an *interface change*: a command renamed, or an argument, output schema, or refusal reason changed. Surfaces to the consuming repo as a **decision**, never an auto-pull.
 
 The contract this governs is not just command names (the CLI-surface-lock, CAL-603, holds those) but the **data an agent reads back**: the `/harness` verb JSON output keys (`StartOutput` / `ReviewOutput` / `CloseOutput`), the `close` refusal-reason enum (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`), the `review` verdict enum (`pass` / `fail` / `defer`), and the `review` engine enum (`claude` / `codex`). A subtlety about *where the version lives*: those output models are *app* code (`harness/cli/`), not a headered surface unit, so they carry no `guidance:` header of their own. The **authoritative version record for an app-contract change is the app's own version line** — the release tag walled off from the surface by the footprint test (D5) — not the repo-owned, registry-excluded `commands/harness.md` (which documents the verbs but, being out of the surface by the app/surface boundary, is not a version record). A breaking change to the verb JSON / enums is therefore a major event on the app version, and any *distributed* surface unit that exposes the verbs (`/harness run` once distributed, CAL-650) carries a `guidance:` header that bumps under this same major rule. A **verb-contract lock** (`tests/unit/test_verb_contract_locked.py`) pins all three contracts — binding to the *emitted JSON*, not just the model fields — so a contract change cannot drift in silently: it fails the suite until the snapshot is deliberately updated, and that update is where the patch/minor/major decision is made. (A golden snapshot makes the change *visible and deliberate* in review; it cannot by itself force the version bump — that judgement stays with the author, exactly as the CLI-surface-lock and footprint guards work.) *Derived from: the "Merge the guidance repo into the harness" decision below (D3/D5) and `specs/proposals/merge-guidance-into-harness.md` breakdown item 4.*
+
+### Assessment layering
+
+**A periodic assessment is one process applied to many domains: the command names the *scope*, the agent is the *process*, and the domain standards are *skills pulled just-in-time*.** There is a **single `steward`** agent, not one per domain. `/assess <scope>` (`code` | `system`, optionally `--deep`) selects the *what*; the steward runs the same methodology (`assessment-craft` — the finding bar, severity, the insight test) for every scope and pulls only the *domain-standard* skills that scope needs: the code-domain skills (`code-quality`, `test-driven-development`, `architecture`, `engineering-principles`, and `design-system` when its layer is on) for `code`; `guidance-coherence` for `system`. This is the same two-surfaces discipline the build loop follows — a repeatable job is expressed *once* as a process, parameterised, never copied into a second file that can drift. The prior split into two steward agents put the *identical* process in two files and differed only by domain standards, which is exactly the MECE duplication the `system` scope exists to flag. *Derived from: `engineering-principles` (DRY / one source per piece of knowledge) and `specs/proposals/pre-launch-consolidation.md` workstream B.*
 
 ## Cross-cutting decisions
 

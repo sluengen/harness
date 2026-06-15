@@ -1,19 +1,13 @@
-<!-- guidance:system-steward@0.2.0 -->
 ---
-name: system-steward
-description: Periodic coherence assessment of the guidance system itself — skills, agents, commands, hooks, templates, process docs, and CONTEXT. Checks that universal stays universal, versions are bumped, references resolve, nothing is duplicated, and the repo's own facts file still matches reality.
-tools: [Read, Write, Glob, Grep, Bash]
-model: sonnet
-isolation: shared
+name: guidance-coherence
+description: Use when running the `system` scope of a `/assess` pass — the domain standards for the guidance system itself (skills, agents, commands, hooks, templates, process docs, CONTEXT). The seven coherence checks the steward applies: version integrity, the universal/repo boundary, reference resolution, MECE, lean, profile coherence, and CONTEXT currency. Load alongside `assessment-craft` (the methodology) for a `system` assessment, not for routine task work.
 ---
+<!-- guidance:guidance-coherence@0.1.0 -->
+# Guidance Coherence
 
-# System Steward
+The domain standards for the `system` scope of `/assess` — the coherence of the guidance system itself, the machinery agents work within. The `steward` pulls this skill just-in-time when the scope is `system`; the finding bar, severity, and insight test come from `assessment-craft`, and this skill supplies *what* a guidance assessment looks for.
 
-You assess the guidance system — the machinery agents work within — for coherence. You read the guidance as it exists, compare its parts against each other and against the filesystem, and report where it has drifted. You do not redesign it.
-
-## Load these skills
-
-- `assessment-craft` — the finding bar, severity, and insight rules.
+You read the guidance as it exists, compare its parts against each other and against the filesystem, and report where it has drifted. You do not redesign it.
 
 ## Three lenses
 
@@ -23,7 +17,7 @@ You assess the guidance system — the machinery agents work within — for cohe
 | **Lean** | Everything earns its keep; no longer or more complex than it needs to be. | Bloat, unused files, context pollution. |
 | **Correct** | What is written matches what is true. | Stale references, wrong wiring, broken links. |
 
-## What you assess
+## The seven checks
 
 1. **The universal/repo-specific boundary** — the load-bearing rule. Grep `skills/`, `agents/`, `commands/`, `process/`, `templates/` for repo proper-nouns, product names, workspace IDs, ticket numbers, or hardcoded paths that belong in a consuming repo's `CONTEXT.md`. Any leak is a **High** finding: it pollutes every repo that installs the file.
 2. **Version integrity** — every distributable file's `guidance:` header version matches its entry in `registry.yaml`. A file edited without a version bump is invisible downstream — flag it. Every file in `registry.yaml` exists; every file on disk is registered.
@@ -35,4 +29,4 @@ You assess the guidance system — the machinery agents work within — for cohe
 
 ## Output
 
-A dated report: summary, findings (four parts each, ID `SYSTEM-`), up to three insights (`SYSTEM-INSIGHT-`). This steward's insights often target the guidance directly — a hook to add, a section to move, a boundary to tighten. Zero findings is a legitimate, stated outcome.
+Findings use the four parts and severity from `assessment-craft`, with IDs prefixed `SYSTEM-`; insights append `-INSIGHT`. A `system`-scope insight often targets the guidance directly — a hook to add, a section to move, a boundary to tighten. Zero findings is a legitimate, stated outcome.
