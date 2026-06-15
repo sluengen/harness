@@ -41,7 +41,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.cli.close import CloseOutput, RefusalReason
-from harness.cli.review import ReviewOutput, Verdict
+from harness.cli.review import Engine, ReviewOutput, Verdict
 from harness.cli.start import StartOutput, TicketContext
 from harness.state import store
 
@@ -64,7 +64,9 @@ _INSTANCES: dict[str, BaseModel] = {
         worktree_branch="b",
         base_branch="dev",
     ),
-    "review": ReviewOutput(verdict="pass", issues=[], reviewed_sha="sha", run_id="r"),
+    "review": ReviewOutput(
+        verdict="pass", issues=[], reviewed_sha="sha", run_id="r", engine="claude"
+    ),
     "close": CloseOutput(
         run_id="r",
         ticket="CAL-1",
@@ -100,7 +102,7 @@ _ORCH: dict[str, str] = {
 #: version decision.
 EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
     "start": {"run_id", "ticket", "worktree_path", "worktree_branch", "base_branch"},
-    "review": {"verdict", "issues", "reviewed_sha", "run_id"},
+    "review": {"verdict", "issues", "reviewed_sha", "run_id", "engine"},
     "close": {"run_id", "ticket", "reviewed_sha", "merged", "ticket_done", "status"},
 }
 
@@ -187,6 +189,23 @@ def test_review_verdict_enum_matches_the_locked_contract() -> None:
     new or renamed verdict cannot drift silently past the suite.
     """
     assert set(get_args(Verdict)) == EXPECTED_REVIEW_VERDICTS
+
+
+#: The ``review`` engine-provenance values (``harness/cli/review.py``). An
+#: orchestrating agent reads ``engine`` back to know which engine produced the
+#: verdict (and, with CAL-702, whether a fallback occurred), so the *values* are
+#: interface exactly as the verdicts are. Adding, dropping, or renaming an engine
+#: is a *major*-level event.
+EXPECTED_REVIEW_ENGINES = {"claude", "codex"}
+
+
+def test_review_engine_enum_matches_the_locked_contract() -> None:
+    """The ``review`` engine type holds exactly the locked values.
+
+    The output-key lock pins the ``engine`` *key*; this pins its *values*, so a
+    new or renamed engine cannot drift silently past the suite.
+    """
+    assert set(get_args(Engine)) == EXPECTED_REVIEW_ENGINES
 
 
 def test_close_emits_a_locked_refusal_reason(

@@ -36,14 +36,14 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 ### `review` — record a verdict bound to the reviewed SHA
 
-`harness review [--run-id <id>]` runs the configured reviewer (codex) against the worktree's current HEAD and records a verdict **bound to the exact SHA reviewed** — the load-bearing detail behind decision D2: the `close` gate refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused.
+`harness review [--run-id <id>] [--engine claude|codex]` runs the selected review engine (`--engine`, **default `claude`**; CAL-701) against the worktree's current HEAD and records a verdict **bound to the exact SHA reviewed** — the load-bearing detail behind decision D2: the `close` gate refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused. Each engine is a **read-only CLI subprocess** (`claude -p --permission-mode plan` or `codex exec --sandbox read-only`) emitting the same `SUBMIT:` contract — never the Agent SDK (see the "Review engine" principle in `architecture-principles.md`).
 
 #### Scenario: a review pass
 
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
-- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes codex with the review prompt, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, created_at }` (and optional `commit_message` / `deferred_brief`)
-- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`) — codex's full reasoning stays inside the verb (context economy)
+- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`)
+- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is recorded as `verdict='fail'` with the sentinel issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a bad reviewer, it records the failure.
 
