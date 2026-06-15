@@ -1,9 +1,16 @@
-<!-- guidance:build@1.3.0 -->
+<!-- guidance:build@1.4.0 -->
 # /build — implement, verify, and review a Linear ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
 
-Full build loop: fetches the ticket, implements it in an isolated worktree, verifies, reviews, then commits and merges. Requires `LINEAR_API_KEY` in the environment.
+The **autonomous** agent-led driver: it fetches the ticket, implements it test-first in an isolated worktree, verifies, reviews, then ships — looping through fixes until the review converges, without prompting at every step. The stepped trio (`/start` → `/review` → `/ship`) is the same lifecycle for freeform, human-in-the-loop sessions; `/build` is the unattended form of it. Requires `LINEAR_API_KEY` in the environment.
+
+This command is a **thin driver**: every phase delegates to the skill that owns it, and `/build` carries only the control flow that makes the loop autonomous (the fix loop, the convergence check, the implement sub-agent spawn, the machine-readable review verdict, and the abandon path). The phase skills:
+
+- **Linear operations** (status transitions, fetching the ticket, creating a defer ticket, commenting) → the `linear` skill. Do not embed raw Linear GraphQL endpoint calls here — a guard fails if one appears.
+- **Worktree lifecycle** (create, isolate, tear down) → `worktree-isolation`.
+- **Implementation** (test-first, in scope) → `test-driven-development` and `code-quality`.
+- **Review** (what to evaluate, the severity bar, the finding format) → `review-discipline`.
 
 The review step takes an **engine** argument, mirroring the `harness review` verb:
 
@@ -20,36 +27,9 @@ Read `CLAUDE.md`. Store its full content as `claude_md` — you will pass it ver
 
 **Resolve the review engine.** Default `claude`. If the invocation passes `--engine codex`, set the engine to `codex` and confirm `codex` is on `$PATH` (if it is not, fall back to `claude` and note it). The engine only affects the Review step (§2); every other step is identical.
 
-**Mark the ticket In Progress.** Fetch the team's workflow states, find the "in progress" started-type state, and update:
+**Mark the ticket In Progress.** Use the `linear` skill: resolve the team's `started`/In Progress state by `type` (disambiguated by name) and move the ticket. Store `ticket_title` and `ticket_description` from the same skill's read-an-issue recipe — you pass both to the implement sub-agent and (for `codex`) the reviewer.
 
-```bash
-NODES=$(curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"TICKET_ID\"){team{states{nodes{id name type}}}}}"}' \
-  | jq -c '.data.issue.team.states.nodes')
-STATE_ID=$(printf '%s' "$NODES" \
-  | jq -r 'map(select(.type=="started")) | (map(select((.name|ascii_downcase)=="in progress"))|first)//first|.id//empty')
-[ -n "$STATE_ID" ] && curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"query\":\"mutation{issueUpdate(id:\\\"TICKET_ID\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" > /dev/null
-```
-
-**Fetch ticket content.** Store `ticket_title` and `ticket_description`:
-
-```bash
-curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"TICKET_ID\"){title description}}"}' \
-  | jq '{title:.data.issue.title, description:(.data.issue.description//"")}'
-```
-
-**Create a worktree.** Store `worktree_path` and `worktree_branch`:
-
-```bash
-worktree_branch="build/$(date +%s)-${TICKET_ID,,}"
-worktree_path="/tmp/worktrees/${TICKET_ID,,}"
-git worktree add -b "$worktree_branch" "$worktree_path" "$base_branch"
-```
+**Create a worktree** off `base_branch` per `worktree-isolation`. Store `worktree_path` and `worktree_branch`. All file operations for the run happen inside `worktree_path`; the default branch is never touched.
 
 ---
 
@@ -70,7 +50,7 @@ Write one line of reasoning for the verdict each time, naming which findings are
 
 ### Implement
 
-Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has Read, Write, Edit, Bash, Grep, Glob. It must not create git commits. Give it this prompt — fill all values before sending:
+Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has Read, Write, Edit, Bash, Grep, Glob. It must not create git commits. The sub-agent builds **test-first** under `test-driven-development` and in scope under `code-quality` — name those skills in its prompt and have it open them before writing code. Give it this prompt — fill all values before sending:
 
 ---
 
@@ -90,6 +70,8 @@ Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has
 *TICKET_DESCRIPTION*
 
 *## Implementation*
+
+*Build test-first: open `skills/test-driven-development/SKILL.md` and `skills/code-quality/SKILL.md` and follow them — write the failing test first, watch it fail for the right reason, then the minimal code to pass. Stay in scope; every changed file must trace to this ticket.*
 
 *Follow the conventions in this project's CLAUDE.md:*
 
@@ -124,9 +106,9 @@ Capture the diff. The implement agent does not commit, so the patch lives in the
 cd "$worktree_path" && git add -A && git diff --cached HEAD 2>/dev/null
 ```
 
-Now review the diff with the resolved engine. Both engines judge the same thing — correctness against the acceptance criteria, adherence to the CLAUDE.md conventions, adequate test coverage, a focused diff (no drive-by changes), no obvious regressions — and produce exactly one verdict (see **Verdict** below).
+Now review the diff with the resolved engine. Both engines judge the same thing, and the standard is `review-discipline` — **Stage 1** (does the diff meet the ticket's acceptance criteria and design, with a test per criterion), then **Stage 2** (correctness, security, principles, structure, over-engineering), findings carrying the four-part shape (what / where / why / how). The engine differs only in *who* applies that standard; both end in exactly one verdict (see **Verdict**).
 
-**Engine `claude` (default) — inline review.** Perform the review yourself. You have the diff above and Read/Grep access to surrounding files for context. Choose a verdict per **Verdict** and, for PASS/DEFER, write `commit_message` yourself.
+**Engine `claude` (default) — inline review.** Apply `review-discipline` to the diff yourself. You have the diff above and Read/Grep access to surrounding files for context. Choose a verdict per **Verdict** and, for PASS/DEFER, write `commit_message` yourself.
 
 **Engine `codex` — Codex CLI review.** Build the review prompt — fill all values — and write it to `/tmp/review_TICKET_ID.txt`:
 
@@ -155,7 +137,7 @@ DIFF
 
 ## Review criteria
 
-Evaluate: correctness against the acceptance criteria, adherence to the project conventions, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Use Read/Grep on surrounding files for context where needed. Be concrete — point to file and line.
+Apply the two-stage `review-discipline` standard: Stage 1 — correctness against the acceptance criteria and the design (a test per criterion); Stage 2 — adherence to the project conventions, security, structure, over-engineering, a focused diff (no drive-by changes), no obvious regressions. Use Read/Grep on surrounding files for context where needed. Be concrete — point to file and line.
 
 ## Verdict — choose exactly one
 
@@ -200,20 +182,9 @@ Choose exactly one and act accordingly:
 
 **Record the as-built spec.** The reviewed diff is the source of truth; now record what actually shipped — the durable as-built record. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) The edit is included in the commit below.
 
-**Handle DEFER.** If verdict is DEFER, fetch the team ID then create a child ticket:
+**Handle DEFER.** If verdict is DEFER, create a child ticket titled `deferred_brief`, parented to `TICKET_ID`, via the `linear` skill's `issueCreate` recipe (resolve the team ID at runtime).
 
-```bash
-TEAM_ID=$(curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"TICKET_ID\"){team{id}}}"}' \
-  | jq -r '.data.issue.team.id')
-curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d "$(jq -n --arg t "$TEAM_ID" --arg title "DEFERRED_BRIEF" --arg p "TICKET_ID" \
-    '{query:"mutation($t:String!,$title:String!,$p:String){issueCreate(input:{teamId:$t,title:$title,parentId:$p}){success}}",variables:{t:$t,title:$title,p:$p}}')" > /dev/null
-```
-
-**Set In Review.** Same pattern as set-in-progress, targeting a started-type state whose name matches "in review".
+**Set In Review.** Use the `linear` skill to move the ticket to its In Review state (resolved by `type`, disambiguated by name).
 
 **Commit.** In the worktree:
 
@@ -221,16 +192,16 @@ curl -s -X POST https://api.linear.app/graphql \
 cd "$worktree_path" && git add -A && git commit -m "COMMIT_MESSAGE"
 ```
 
-**Merge.** From the main checkout:
+**Integrate** per the repo's branch model (`CONTEXT.md` `branches`, mirroring `/ship`). Typically, from the main checkout, merge the run branch into `base_branch`:
 
 ```bash
 git checkout "$base_branch"
 git merge --no-ff "$worktree_branch"
 ```
 
-If conflicts arise: spawn a sub-agent (Read, Edit, Bash) to resolve them, then run `git add -A && git merge --continue --no-edit`. If conflicts remain after 2 attempts, push the feature branch (`git push -u origin "$worktree_branch"`), reset the ticket to Todo, comment explaining what happened, and stop.
+If conflicts arise: spawn a sub-agent (Read, Edit, Bash) to resolve them, then run `git add -A && git merge --continue --no-edit`. If conflicts remain after 2 attempts, push the feature branch (`git push -u origin "$worktree_branch"`), reset the ticket to Todo (via the `linear` skill), comment explaining what happened, and stop.
 
-**Push and teardown:**
+**Push and teardown** (`worktree-isolation`):
 
 ```bash
 git push origin "$base_branch"
@@ -238,17 +209,7 @@ git worktree remove --force "$worktree_path"
 git branch -d "$worktree_branch" 2>/dev/null || true
 ```
 
-**Close the ticket:**
-
-```bash
-STATE_ID=$(curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d '{"query":"query{issue(id:\"TICKET_ID\"){team{states{nodes{id type}}}}}"}' \
-  | jq -r '.data.issue.team.states.nodes[]|select(.type=="completed")|.id' | head -1)
-curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"query\":\"mutation{issueUpdate(id:\\\"TICKET_ID\\\",input:{stateId:\\\"${STATE_ID}\\\"}){success}}\"}" > /dev/null
-```
+**Close the ticket.** Use the `linear` skill to move it to Done (the `completed` state, resolved by `type`), and post the merge/PR link as a comment.
 
 ---
 
@@ -263,14 +224,13 @@ cd "$worktree_path" && git add -A && git commit -m "wip(TICKET_ID): build abando
 git push -u origin "$worktree_branch"
 ```
 
-**Comment on the ticket** — include the branch so the work is findable:
+**Comment on the ticket** via the `linear` skill — include the branch name so the work is findable, and the carried-forward findings:
 
-```bash
-curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d "$(jq -n --arg id "TICKET_ID" \
-    --arg body "Build loop abandoned — not converging. Work committed and pushed to WORKTREE_BRANCH for investigation.\n\nFindings:\nISSUES" \
-    '{query:"mutation($id:String!,$body:String!){commentCreate(input:{issueId:$id,body:$body}){success}}",variables:{id:$id,body:$body}}')" > /dev/null
+```
+Build loop abandoned — not converging. Work committed and pushed to WORKTREE_BRANCH for investigation.
+
+Findings:
+ISSUES
 ```
 
-Reset the ticket to Todo (same pattern as set-in-progress, targeting `type=="unstarted"`). **Leave the worktree and branch in place.** Report the findings and the branch name to the user.
+Reset the ticket to Todo (the `linear` skill, `unstarted` state by `type`). **Leave the worktree and branch in place.** Report the findings and the branch name to the user.

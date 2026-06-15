@@ -1,4 +1,4 @@
-"""Guards for the harness-owned ``/build`` command body (CAL-659, CAL-703).
+"""Guards for the harness-owned ``/build`` command body (CAL-659, CAL-703, CAL-715).
 
 The harness is the SOURCE of the universal ``/build`` command (its canonical body was
 housed here by CAL-657, imported byte-identical from the retiring ``agents`` source). A
@@ -16,7 +16,7 @@ The command body is Markdown, not code, so it is parsed as text and asserted at 
 substring level — strong enough to catch the specific defect, loose enough to survive
 incidental prose edits.
 
-The four defects (see CAL-659):
+The four CAL-659 defects (the first three still guarded here):
 
 * **[P1] Empty review diff.** The body captured the review diff with
   ``git diff "$base_branch"...HEAD``, but the implement sub-agent is told NOT to commit
@@ -29,14 +29,17 @@ The four defects (see CAL-659):
 * **[P2] Codex runs from the wrong cwd.** The Codex invocation inherited the orchestrator
   cwd, not ``worktree_path``, so it read the base checkout, not the implementation under
   review. It must ``cd`` into the worktree first.
-* **[P2] Broken jq GraphQL mutation.** The DEFER (``issueCreate``) and abandoned-run
-  (``commentCreate``) payloads embedded ``$t``/``$title``/``$p``/``$id``/``$body`` inside a
-  plain JSON *string* literal where jq does not interpolate them, and declared no GraphQL
-  variables → Linear received the literal text and silently rejected → the follow-up
-  ticket / comment was never created. The mutations must declare GraphQL variables and
-  pass a ``variables`` object.
+* **[P2] Broken jq GraphQL mutation — eliminated at the root by CAL-715.** The DEFER
+  (``issueCreate``) and abandoned-run (``commentCreate``) payloads once embedded raw
+  Linear GraphQL inline; CAL-715 thinned ``/build`` to a delegating driver that
+  references the ``linear`` skill instead of embedding any ``api.linear.app`` call, so the
+  whole class is gone — there is no embedded mutation left to mis-parameterize. The two
+  guards that pinned the *parameterized embed* are therefore retired; the stronger
+  invariant (``build.md`` embeds **no** Linear GraphQL at all) is owned by
+  ``test_linear_skill.py`` (``test_no_command_embeds_linear_graphql`` +
+  ``test_embed_allowlist_shrinks``).
 
-*Source:* CAL-659, CAL-703.
+*Source:* CAL-659, CAL-703, CAL-715.
 """
 
 from __future__ import annotations
@@ -131,42 +134,13 @@ def test_codex_reviewer_runs_from_the_worktree() -> None:
         )
 
 
-# --- [P2] GraphQL mutations use variables, not string-embedded jq args ------
-
-
-def test_no_jq_args_embedded_in_graphql_string_literals() -> None:
-    """The broken un-parameterized mutations (literal $t/$id in the query string) are gone."""
-    for path in BOTH:
-        text = _read(path)
-        assert "mutation{issueCreate(input:{teamId:$t" not in text, (
-            f"{path.name}: DEFER issueCreate embeds $t/$title/$p in a plain JSON string "
-            "where jq does not interpolate them — declare GraphQL variables instead"
-        )
-        assert "mutation{commentCreate(input:{issueId:$id" not in text, (
-            f"{path.name}: abandoned-run commentCreate embeds $id/$body in a plain JSON "
-            "string where jq does not interpolate them — declare GraphQL variables instead"
-        )
-
-
-def test_graphql_mutations_declare_and_pass_variables() -> None:
-    """Both mutations must declare typed GraphQL variables and pass a ``variables`` object."""
-    for path in BOTH:
-        text = _read(path)
-        # issueCreate (DEFER path) — parameterized signature + variables payload.
-        assert "mutation($t:String!,$title:String!,$p:String)" in text, (
-            f"{path.name}: the DEFER issueCreate mutation must declare GraphQL variables "
-            "(mutation($t:String!,$title:String!,$p:String){...})"
-        )
-        assert "variables:{t:$t,title:$title,p:$p}" in text, (
-            f"{path.name}: the DEFER issueCreate call must pass a variables object so jq "
-            "substitutes the team id / title / parent"
-        )
-        # commentCreate (abandoned-run path).
-        assert "mutation($id:String!,$body:String!)" in text, (
-            f"{path.name}: the abandoned-run commentCreate mutation must declare GraphQL "
-            "variables (mutation($id:String!,$body:String!){...})"
-        )
-        assert "variables:{id:$id,body:$body}" in text, (
-            f"{path.name}: the abandoned-run commentCreate call must pass a variables object "
-            "so jq substitutes the issue id / body"
-        )
+# --- [P2] Broken jq GraphQL mutation — eliminated at the root by CAL-715 ------
+#
+# The two guards that lived here (``test_no_jq_args_embedded_in_graphql_string_literals``
+# and ``test_graphql_mutations_declare_and_pass_variables``) pinned the *correct
+# parameterization* of the Linear GraphQL embedded in ``build.md``. CAL-715 removed the
+# embed entirely — ``/build`` now references the ``linear`` skill rather than carrying any
+# ``api.linear.app`` call — so there is no embedded mutation left to parameterize. The
+# stronger successor invariant (no embedded Linear GraphQL at all) is owned by
+# ``tests/unit/test_linear_skill.py``; retaining the old presence-guards here would assert
+# content the same ticket deliberately deleted.
