@@ -419,7 +419,7 @@ def test_ac2_review_verb_uses_the_claude_cli_not_the_agent_sdk() -> None:
 
 def test_ac3_codex_cmd_is_read_only_not_dangerous_bypass() -> None:
     """The Codex engine no longer carries the dangerous full-access bypass; it
-    runs under the read-only sandbox (matching commands/build-codex.md)."""
+    runs under the read-only sandbox (matching commands/build.md)."""
     cmd = review_mod._build_cmd("codex")
     assert "--dangerously-bypass-approvals-and-sandbox" not in cmd, cmd
     # contiguous `--sandbox read-only` pair

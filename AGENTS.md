@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.1 -->
+<!-- guidance:process-harness@0.4.2 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -44,11 +44,11 @@ The builder writes the change spec and builds. The reviewer records what actuall
 A ticket can be driven two ways within the one surface — the choice is per-invocation / per-repo, not a profile:
 
 - **Harness tooling** — `/harness run <TICKET>`, the audited verb loop (`start → review → close`) whose `review` is the Codex review. Available where the repo hosts the harness app.
-- **Agent-led** — `/build` / `/build-codex`, or the `/start → /review → /ship` sequence, driven by the agent directly.
+- **Agent-led** — `/build` (with `--engine codex` to opt into the Codex review), or the `/start → /review → /ship` sequence, driven by the agent directly.
 
-Use the option your repo provides; its `CONTEXT.md` says which. A repo without the harness app uses the agent-led option — `/build` / `/build-codex` are available everywhere.
+Use the option your repo provides; its `CONTEXT.md` says which. A repo without the harness app uses the agent-led option — `/build` is available everywhere.
 
-**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it is the **source** of the canonical `/build` and `/build-codex` commands and carries their full bodies for distribution, but drives its *own* tickets with `/harness run` (whose `review` already does the Codex review) — or `/start → /review → /ship` as a backup — and does **not** invoke `/build` / `/build-codex` on its own tickets. This rule is specific to the harness repo; elsewhere `/build` / `/build-codex` are the normal agent-led option.
+**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it is the **source** of the canonical `/build` command and carries its full body for distribution, but drives its *own* tickets with `/harness run` (whose `review` already does the Codex review) — or `/start → /review → /ship` as a backup — and does **not** invoke `/build` on its own tickets. This rule is specific to the harness repo; elsewhere `/build` is the normal agent-led option.
 
 ## Skills (the durable rules)
 

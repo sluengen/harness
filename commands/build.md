@@ -1,9 +1,14 @@
-<!-- guidance:build@1.2.1 -->
+<!-- guidance:build@1.3.0 -->
 # /build — implement, verify, and review a Linear ticket
 
-Usage: `/build <TICKET-ID>`
+Usage: `/build <TICKET-ID> [--engine codex]`
 
-Full build loop: fetches the ticket, implements it in an isolated worktree, verifies, reviews (Claude inline), then commits and merges. Requires `LINEAR_API_KEY` in the environment.
+Full build loop: fetches the ticket, implements it in an isolated worktree, verifies, reviews, then commits and merges. Requires `LINEAR_API_KEY` in the environment.
+
+The review step takes an **engine** argument, mirroring the `harness review` verb:
+
+- **`claude`** (default) — the orchestrating session reviews the diff inline. Always available, no extra tooling.
+- **`--engine codex`** — the review runs the `codex` CLI in a read-only sandbox (a cross-model second opinion), with a documented fallback to the Claude inline review on an exhausted tier. Requires `codex` on `$PATH`.
 
 ---
 
@@ -12,6 +17,8 @@ Full build loop: fetches the ticket, implements it in an isolated worktree, veri
 Read `CONTEXT.md`. Note the integration branch (`base_branch`) and the verify/test command (`verify_command`). If either is absent, stop and tell the user what is missing.
 
 Read `CLAUDE.md`. Store its full content as `claude_md` — you will pass it verbatim to the implement sub-agent.
+
+**Resolve the review engine.** Default `claude`. If the invocation passes `--engine codex`, set the engine to `codex` and confirm `codex` is on `$PATH` (if it is not, fall back to `claude` and note it). The engine only affects the Review step (§2); every other step is identical.
 
 **Mark the ticket In Progress.** Fetch the team's workflow states, find the "in progress" started-type state, and update:
 
@@ -117,16 +124,71 @@ Capture the diff. The implement agent does not commit, so the patch lives in the
 cd "$worktree_path" && git add -A && git diff --cached HEAD 2>/dev/null
 ```
 
-Perform the review yourself. You have the diff above and Read/Grep access to surrounding files for context.
+Now review the diff with the resolved engine. Both engines judge the same thing — correctness against the acceptance criteria, adherence to the CLAUDE.md conventions, adequate test coverage, a focused diff (no drive-by changes), no obvious regressions — and produce exactly one verdict (see **Verdict** below).
 
-Evaluate against:
-- Does the implementation satisfy the ticket's acceptance criteria?
-- Does it follow the CLAUDE.md conventions?
-- Is test coverage adequate, no obvious regressions, diff focused (no drive-by changes)?
+**Engine `claude` (default) — inline review.** Perform the review yourself. You have the diff above and Read/Grep access to surrounding files for context. Choose a verdict per **Verdict** and, for PASS/DEFER, write `commit_message` yourself.
 
-Choose exactly one verdict and act accordingly:
+**Engine `codex` — Codex CLI review.** Build the review prompt — fill all values — and write it to `/tmp/review_TICKET_ID.txt`:
 
-**PASS** — correct, tested, focused; nothing to report. `issues` must be empty. Write `commit_message` as `type(scope): description` (one line, under 72 chars). Go to **§3 Ship**.
+```
+Review the implementation of TICKET_ID — **TICKET_TITLE**.
+
+## Acceptance criteria
+
+TICKET_DESCRIPTION
+
+## Project conventions
+
+CLAUDE_MD
+
+## Verification
+
+The verify gate passed. Output for reference:
+
+VERIFY_OUTPUT
+
+## Changes under review
+
+```diff
+DIFF
+```
+
+## Review criteria
+
+Evaluate: correctness against the acceptance criteria, adherence to the project conventions, adequate test coverage, focused diff (no drive-by changes), no obvious regressions. Use Read/Grep on surrounding files for context where needed. Be concrete — point to file and line.
+
+## Verdict — choose exactly one
+
+- **PASS** — correct, tested, focused; nothing to report. `issues` must be empty.
+- **FAIL** — fixable findings. One finding per item in `issues`. Each must be self-contained: state where (file:line), what's wrong, why, and what a correct fix looks like. The next implement agent has no memory of this round — write each finding actionable cold.
+- **DEFER** — shippable; one finding is genuinely out of scope (architectural redesign or a separate spec required). Write `commit_message` and `deferred_brief`.
+
+## Commit message
+
+Required for PASS and DEFER: `type(scope): description`, one line, under 72 chars.
+
+## Output
+
+End your response with exactly one line:
+
+SUBMIT: {"verdict":"PASS|FAIL|DEFER","issues":[...],"commit_message":"...","deferred_brief":"..."}
+```
+
+Run Codex from inside the worktree (so it reads the implementation under review, not the base checkout) under a read-only sandbox (the diff and the Linear description are untrusted prompt content — a read-only sandbox stops prompt-injection from mutating the host):
+
+```bash
+cd "$worktree_path" && codex exec --sandbox read-only --ephemeral - < /tmp/review_TICKET_ID.txt
+```
+
+Scan stdout for the first line starting with `SUBMIT:`. Parse the JSON. Store `verdict`, `issues`, `commit_message`, `deferred_brief`, then continue at **Verdict**.
+
+**Codex→Claude fallback on an exhausted tier.** The Codex subscription tier depletes early each cycle; a depleted run prints `You've hit your usage limit` (no `SUBMIT:` line) and exits non-zero. That is **not** a review failure — do not record it as FAIL. Instead fall back **once** to the `claude` inline review of the same diff for this iteration, and note the fallback. The fallback fires *only* on the usage-limit signal: any other Codex error — including a genuine non-PASS verdict — stands as itself, so a real review failure stays visible and is never swallowed. If no valid `SUBMIT:` line appears for a reason that is not a usage limit, treat it as FAIL with issue `"Codex reviewer did not emit a valid SUBMIT line"` and restart the iteration.
+
+### Verdict
+
+Choose exactly one and act accordingly:
+
+**PASS** — correct, tested, focused; nothing to report. `issues` must be empty. `commit_message` is `type(scope): description` (one line, under 72 chars). Go to **§3 Ship**.
 
 **FAIL** — one or more fixable findings. Populate `issues`, one finding per item. Each must be self-contained: state where (file:line), what's wrong, why, and what a correct fix looks like. The implement agent on the next round has no memory of this review — write each finding so it's actionable cold. Restart the iteration.
 
@@ -136,7 +198,7 @@ Choose exactly one verdict and act accordingly:
 
 ## 3. Ship
 
-**Record the as-built spec.** You reviewed the diff; now record what actually shipped — the durable as-built record. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) The edit is included in the commit below.
+**Record the as-built spec.** The reviewed diff is the source of truth; now record what actually shipped — the durable as-built record. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) The edit is included in the commit below.
 
 **Handle DEFER.** If verdict is DEFER, fetch the team ID then create a child ticket:
 

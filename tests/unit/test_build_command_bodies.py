@@ -1,23 +1,28 @@
-"""Guards for the harness-owned ``/build`` + ``/build-codex`` command bodies (CAL-659).
+"""Guards for the harness-owned ``/build`` command body (CAL-659, CAL-703).
 
-The harness is the SOURCE of the universal ``/build`` and ``/build-codex`` commands
-(their canonical bodies were housed here by CAL-657, imported byte-identical from the
-retiring ``agents`` source). A Codex review of the imported bodies surfaced four latent
-defects — all pre-existing in the source, none introduced by the import. They must be
-fixed before the source distributes these commands. These tests pin the fixes so a
-regression (or a re-import from the stale source) is caught by the verify gate.
+The harness is the SOURCE of the universal ``/build`` command (its canonical body was
+housed here by CAL-657, imported byte-identical from the retiring ``agents`` source). A
+Codex review of the imported bodies surfaced four latent defects — all pre-existing in the
+source, none introduced by the import. They must be fixed before the source distributes
+the command. These tests pin the fixes so a regression (or a re-import from the stale
+source) is caught by the verify gate.
 
-The command bodies are Markdown, not code, so they are parsed as text and asserted at
-the substring level — strong enough to catch the specific defect, loose enough to
-survive incidental prose edits.
+CAL-703 collapsed the former ``build.md`` + ``build-codex.md`` split into one
+engine-arg ``build.md`` (``/build <TICKET> [--engine codex]``); the Codex-engine
+assertions below now bind to that single file. The dedicated consolidation guards live in
+``test_build_command_consolidated.py``.
+
+The command body is Markdown, not code, so it is parsed as text and asserted at the
+substring level — strong enough to catch the specific defect, loose enough to survive
+incidental prose edits.
 
 The four defects (see CAL-659):
 
-* **[P1] Empty review diff.** Both bodies captured the review diff with
+* **[P1] Empty review diff.** The body captured the review diff with
   ``git diff "$base_branch"...HEAD``, but the implement sub-agent is told NOT to commit
   → ``HEAD == base`` → the diff is empty → the review runs against nothing. The capture
   must read the working-tree/index instead.
-* **[P1] Unsandboxed Codex reviewer.** ``build-codex.md`` launched Codex with
+* **[P1] Unsandboxed Codex reviewer.** The Codex review step launched Codex with
   ``--dangerously-bypass-approvals-and-sandbox``; the diff and Linear description are
   untrusted prompt content, so prompt-injection could run arbitrary host commands. Codex
   must run read-only.
@@ -31,7 +36,7 @@ The four defects (see CAL-659):
   ticket / comment was never created. The mutations must declare GraphQL variables and
   pass a ``variables`` object.
 
-*Source:* CAL-659.
+*Source:* CAL-659, CAL-703.
 """
 
 from __future__ import annotations
@@ -40,10 +45,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 BUILD = REPO_ROOT / "commands" / "build.md"
-BUILD_CODEX = REPO_ROOT / "commands" / "build-codex.md"
 
-#: Both bodies carry the same review-diff capture and the same jq mutations.
-BOTH = (BUILD, BUILD_CODEX)
+#: The single command body carries the review-diff capture and the jq mutations.
+BOTH = (BUILD,)
 
 
 def _read(path: Path) -> str:
@@ -95,9 +99,9 @@ def test_review_diff_captures_the_working_tree() -> None:
 
 def test_codex_reviewer_is_not_unsandboxed() -> None:
     """Codex must never review untrusted diff content with sandbox + approvals disabled."""
-    text = _read(BUILD_CODEX)
+    text = _read(BUILD)
     assert "--dangerously-bypass-approvals-and-sandbox" not in text, (
-        "build-codex.md launches Codex with --dangerously-bypass-approvals-and-sandbox; "
+        "build.md launches Codex with --dangerously-bypass-approvals-and-sandbox; "
         "the diff and Linear description are untrusted prompt content → prompt-injection "
         "could run arbitrary host commands. Run Codex read-only."
     )
@@ -105,9 +109,9 @@ def test_codex_reviewer_is_not_unsandboxed() -> None:
 
 def test_codex_reviewer_runs_read_only() -> None:
     """The Codex reviewer must be constrained to a read-only sandbox."""
-    text = _read(BUILD_CODEX)
+    text = _read(BUILD)
     assert "--sandbox read-only" in text, (
-        "build-codex.md must run the Codex reviewer with '--sandbox read-only' so untrusted "
+        "build.md must run the Codex reviewer with '--sandbox read-only' so untrusted "
         "review content cannot mutate the host"
     )
 
@@ -117,9 +121,9 @@ def test_codex_reviewer_runs_read_only() -> None:
 
 def test_codex_reviewer_runs_from_the_worktree() -> None:
     """Codex must read the implementation under review, not the orchestrator's checkout."""
-    text = _read(BUILD_CODEX)
+    text = _read(BUILD)
     codex_lines = [ln for ln in text.splitlines() if "codex exec" in ln]
-    assert codex_lines, "build-codex.md must invoke 'codex exec'"
+    assert codex_lines, "build.md must invoke 'codex exec'"
     for ln in codex_lines:
         assert 'cd "$worktree_path" &&' in ln, (
             "the 'codex exec' invocation must 'cd \"$worktree_path\"' first so Codex reads "

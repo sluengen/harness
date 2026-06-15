@@ -237,8 +237,8 @@ def _build_cmd(engine: Engine) -> list[str]:
       it may read files / run read-only git, but carries no edit/write/bypass
       capability).
     * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
-      (matching the published ``commands/build-codex.md`` guidance), reading the
-      prompt from ``-`` (stdin).  This replaces the earlier
+      (matching the published ``commands/build.md`` Codex-engine guidance), reading
+      the prompt from ``-`` (stdin).  This replaces the earlier
       ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
     """
     if engine == "claude":
