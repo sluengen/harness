@@ -2,7 +2,7 @@
 name: assessment-craft
 description: Use when running a periodic codebase or guidance audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.2.2 -->
+<!-- guidance:assessment-craft@0.2.3 -->
 # Assessment Craft
 
 Shared knowledge for the `steward` whenever it periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills (`guidance-coherence` for `system`, the code-domain skills for `code`).
@@ -58,4 +58,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
