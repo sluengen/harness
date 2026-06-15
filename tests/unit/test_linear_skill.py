@@ -106,7 +106,8 @@ def test_skill_demotes_context_uuids_to_override() -> None:
 #: This list must SHRINK: when a command is cleaned, ``test_embed_allowlist_shrinks``
 #: fails until the entry is removed, driving the guard toward the absolute invariant.
 EMBED_ALLOWLIST = {
-    "build.md": "CAL-715 — thin /build to a delegating driver (removes the embeds)",
+    # build.md was cleaned by CAL-715 (thin delegating driver) — removed from the
+    # allowlist; test_embed_allowlist_shrinks holds it out.
     "harness.md": "CAL-731 — repo-owned /harness ingest flow; reference the linear skill",
 }
 

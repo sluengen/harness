@@ -89,6 +89,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/start <TICKET>` | Set up the workspace and build through to review-ready. |
 | `/review` | Run the final gate on the current branch. |
 | `/ship` | Integrate and close, per the repo's branch model. |
+| `/build <TICKET>` | Autonomous agent-led driver: implement, verify, review, and ship a ticket end-to-end (`--engine codex` runs the review through Codex). The unattended form of the `/start → /review → /ship` lifecycle. |
 | `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 

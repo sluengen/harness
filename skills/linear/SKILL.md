@@ -2,7 +2,7 @@
 name: linear
 description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or resolving team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work. This is the single home for Linear operations — a command references this skill, it does not re-encode the API.
 ---
-<!-- guidance:linear@0.4.0 -->
+<!-- guidance:linear@0.4.1 -->
 # Linear
 
 The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue. This skill is the **one home** for Linear operations: a command or agent that touches Linear references this skill rather than re-encoding `api.linear.app` calls — a guard fails if raw Linear GraphQL appears in a command.
@@ -103,9 +103,9 @@ LINEAR 'query { issueLabels { nodes { id name } } }'
 LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id>\" }) { success } }'
 ```
 
-**Create an issue** (returns its identifier + url):
+**Create an issue** (returns its identifier + url). `parentId` is optional — omit it for a top-level issue, set it to the parent's id to create a sub-issue (e.g. a deferred-finding follow-up):
 ```bash
-LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"] }) { issue { identifier url } } }'
+LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"], parentId: \"<parent-id>\" }) { issue { identifier url } } }'
 ```
 
 **Comment** (PR links, blocker notes):
