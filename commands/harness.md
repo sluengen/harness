@@ -103,6 +103,42 @@ The plan you are following lives only in this session's context — the ledger a
 
 ---
 
+## /harness routine \<loop\>
+
+The **unattended loops** that drive the harness between human sessions, versioned as commands so the logic that runs on a schedule lives in the repo — *version the logic, not the schedule* (`four-loops.html`). Each routine is a thin, repeatable task; the scheduled trigger that fires it (cron, a Claude routine) is configured in the app and is **not** part of this command — versioning the *logic* is the point.
+
+Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle/weekly assessment). Each names a **harness-tooled primary** and an **agent-orchestrated fallback**, selected by tool availability — the same `/harness run` vs `/build` duality the rest of this surface uses.
+
+> **Routines are local-trigger only.** A routine shells out to the **local** `harness` wrapper (`~/bin/harness`) and reads `.env` from the working copy. A cloud routine cannot reach `~/bin/harness` or the local checkout, so these routines must be triggered locally (a local Claude routine, or the macOS scheduled task). Cloud execution is out of scope.
+
+### /harness routine build
+
+The hourly work-pull: take the next logical ticket off the Linear Todo queue and drive it to Done, or — when the queue holds nothing actionable — fall through to the quality loop.
+
+**Primary surface:** `/harness run <TICKET>` (the audited verb loop). **Fallback:** `/build <TICKET>` (agent-orchestrated) when the harness tool is unavailable. In the harness repo itself, the primary is always `/harness run` (per `CLAUDE.md`, the harness drives its own tickets through the verb loop, not `/build`); the fallback is for a consuming repo that lacks the harness app.
+
+The loop:
+
+1. **Pick the next ticket.** Look at the current list of items marked **Todo** in Linear in the project `Harness v3`. From that list pick the next most logical task to start work on. Take into account the **ID number** (tickets are often added in the order in which they need to be done), **dependencies** in Linear, and the **priority**. Tickets with a `decision` label have been marked as not actionable yet in previous runs — skip them.
+2. **Check it is wholly actionable.**
+   - If it **cannot** be actioned or needs additional details, add a comment to the ticket about what it needs to be actionable and label it `decision`. Then re-pick (step 1) or, if nothing remains, go to step 4.
+   - If it **can** be actioned, implement it: `/harness run <TICKET>` (primary), or `/build <TICKET>` (fallback) where the harness tool is unavailable.
+3. **Branch off `dev`.** Take your branch off of `dev`. Linear access is via the GraphQL API; the key is in the `.env` file in the repo.
+4. **Idle → quality.** If there are no wholly actionable Todo tasks in Linear, fall through to **`/harness routine quality`** (its idle arm runs `/assess code`). If that surfaces nothing to action either, don't invent work — exit cleanly.
+
+### /harness routine quality
+
+The assessment loop that catches what accumulates across many changes — what no per-change review sees. It **advises** (files findings as tickets); it does not block a merge.
+
+**Primary surface:** `/assess code` (the steward, agent-orchestrated). There is no harness-tooled variant — assessment is advisory, not a gated verb run — so this routine is agent-led on every repo.
+
+- **Idle arm** (the Build queue is empty): run `/assess code`. Action the highest-priority finding it surfaces; record any further findings as Linear tasks back into the Build queue (`Harness v3`) for other runs to handle.
+- **Weekly arm:** run `/assess code --deep` — the broad pass that adds the test-coverage, design-system-adherence (layer-gated), and spec/doc-coherence lenses on top of the `code` lenses. File its findings the same way.
+
+A `/assess` run commits its dated report directly to the integration branch (no branch, no PR — it carries nothing reviewable); the findings live in the tracker. See `commands/assess.md`.
+
+---
+
 ## /harness ingest \<description\>
 
 Accept user intent, structure it into an agent-ready Linear issue, and create it.
