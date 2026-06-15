@@ -1,9 +1,13 @@
-"""``harness review`` — codex review of HEAD, verdict bound to the reviewed SHA.
+"""``harness review`` — engine review of HEAD, verdict bound to the reviewed SHA.
 
-The review verb makes review a callable, audited step.  It runs the configured
-reviewer (codex) against the worktree's current HEAD, parses the structured
-verdict, and appends a ``review`` event to the ledger that records the exact git
-SHA reviewed.  Binding the verdict to HEAD is the load-bearing correctness
+The review verb makes review a callable, audited step.  It runs the selected
+review engine (``--engine claude|codex``, default ``claude``; CAL-701) against
+the worktree's current HEAD, parses the structured verdict, and appends a
+``review`` event to the ledger that records the exact git SHA reviewed and the
+engine that produced the verdict.  Each engine is a **read-only CLI subprocess**
+emitting the same ``SUBMIT: <json>`` contract — never the Agent SDK (the diff and
+ticket are untrusted prompt content).  Binding the verdict to HEAD is the
+load-bearing correctness
 detail (proposal ``harness-as-tool.md`` decision **D2**): the future ``close``
 gate refuses to merge unless the ledger holds a ``verdict='pass'`` whose
 ``reviewed_sha`` equals HEAD, so a stale pass cannot be reused against a changed
@@ -15,16 +19,18 @@ Flow (one ``asyncio.run`` event loop for all I/O):
 1. Resolve "the current run" — the ``status='open'`` runs row whose
    ``worktree_path`` matches the resolved ``--repo`` (or ``--run-id`` override).
 2. Capture ``git rev-parse HEAD`` in that worktree as ``reviewed_sha``.
-3. Run ``codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral -``
-   with the review prompt on stdin and scan stdout for the first ``SUBMIT:``
-   JSON line.
+3. Run the selected engine's read-only CLI (``claude -p --permission-mode plan``
+   or ``codex exec --sandbox read-only --ephemeral -``) with the review prompt on
+   stdin and scan stdout for the first ``SUBMIT:`` JSON line.
 4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line →
    ``verdict='fail'`` with the sentinel issue
    "reviewer emitted no valid SUBMIT line".
 5. Append a ``review`` event carrying ``run_id``, ``reviewed_sha``, ``verdict``,
-   ``issues``, optional ``commit_message`` / ``deferred_brief``, ``created_at``.
+   ``issues``, ``engine``, optional ``commit_message`` / ``deferred_brief``,
+   ``created_at``.
 6. Print only the bounded verdict (``verdict`` + ``issues`` + ``reviewed_sha`` +
-   ``run_id``).  Codex's full stdout / reasoning stays inside the verb and never
+   ``run_id`` + ``engine``).  The engine's full stdout / reasoning stays inside
+   the verb and never
    enters the returned/printed JSON — the context-economy guarantee that keeps
    the orchestrating agent's context budget bounded.
 
@@ -54,15 +60,24 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 
-__all__ = ["review_command", "ReviewOutput", "scan_submit_line"]
+__all__ = ["review_command", "ReviewOutput", "scan_submit_line", "Engine"]
 
-# Sentinel issue recorded when codex emits no parseable SUBMIT line.
+# Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
 NO_SUBMIT_SENTINEL = "reviewer emitted no valid SUBMIT line"
 
 # The verdicts the SUBMIT line may carry.  Anything else is treated as garbled.
 _VALID_VERDICTS: frozenset[str] = frozenset({"pass", "fail", "defer"})
 
 Verdict = Literal["pass", "fail", "defer"]
+
+# The review engines.  Both are CLI subprocesses emitting the same ``SUBMIT:``
+# contract — never the Agent SDK (CAL-701; architecture-principles "a review
+# engine is a CLI subprocess").  ``claude`` is the default: it is available on
+# the standard tier and auto-compacts, so the gate does not degrade to a false
+# ``fail`` when the Codex tier is depleted.  ``codex`` stays opt-in for a
+# cross-model second opinion.
+Engine = Literal["claude", "codex"]
+DEFAULT_ENGINE: Engine = "claude"
 
 # A runner takes keyword args (cmd, stdin, env, cwd) and yields stdout text
 # lines.  Default = the real codex subprocess; tests inject a fake.
@@ -114,6 +129,7 @@ class ReviewOutput(BaseModel):
     issues: list[str]
     reviewed_sha: str
     run_id: str
+    engine: Engine
 
 
 class _ReviewError(Exception):
@@ -178,20 +194,33 @@ def scan_submit_line(stdout: str) -> _Parsed:
 
 
 # ---------------------------------------------------------------------------
-# Default codex runner (real subprocess) — the production path.
+# Engine command builders + default runner (real subprocess) — production path.
 # ---------------------------------------------------------------------------
 
 
-def _build_cmd() -> list[str]:
-    """Build the plain ``codex exec`` review invocation (no ``--json``).
+def _build_cmd(engine: Engine) -> list[str]:
+    """Build the review invocation for ``engine`` — a CLI subprocess (CAL-701).
 
-    Per the ticket the review verb runs plain ``codex exec ... -`` and scans
-    stdout *text* for the SUBMIT line — it does not need the NDJSON adapter.
+    Both engines are headless CLIs fed the review prompt on **stdin** and scanned
+    for a single ``SUBMIT: <json>`` line; neither uses the Agent SDK.  Both run
+    **read-only**: the diff under review and the ticket are untrusted prompt
+    content, so a read-only posture stops prompt-injection from mutating the host.
+
+    * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
+      it may read files / run read-only git, but carries no edit/write/bypass
+      capability).
+    * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
+      (matching the published ``commands/build-codex.md`` guidance), reading the
+      prompt from ``-`` (stdin).  This replaces the earlier
+      ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
     """
+    if engine == "claude":
+        return ["claude", "-p", "--permission-mode", "plan"]
     return [
         "codex",
         "exec",
-        "--dangerously-bypass-approvals-and-sandbox",
+        "--sandbox",
+        "read-only",
         "--ephemeral",
         "-",
     ]
@@ -247,13 +276,22 @@ def review_command(
         "--db",
         help="Path to harness.db (defaults to .harness/harness.db under --repo).",
     ),
+    engine: Engine = typer.Option(  # noqa: B008
+        DEFAULT_ENGINE,
+        "--engine",
+        help="Review engine: claude (default) or codex. Both run read-only.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         True,
         "--json/--no-json",
         help="Emit machine-readable JSON (default: on).",
     ),
 ) -> None:
-    """Review the worktree HEAD with codex; record the verdict bound to that SHA."""
+    """Review the worktree HEAD; record the verdict bound to that SHA.
+
+    The engine is a read-only CLI subprocess (``--engine claude|codex``,
+    default claude) emitting the ``SUBMIT:`` contract — never the Agent SDK.
+    """
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
@@ -263,6 +301,7 @@ def review_command(
                 repo_root=repo_root,
                 run_id=run_id,
                 db_path=db_path,
+                engine=engine,
                 runner=_default_runner,
             )
         )
@@ -289,6 +328,7 @@ async def _run_review(
     repo_root: Path,
     run_id: str | None,
     db_path: Path,
+    engine: Engine,
     runner: Runner,
 ) -> ReviewOutput:
     """Drive the review flow; raise :class:`_ReviewError` on failure."""
@@ -309,7 +349,7 @@ async def _run_review(
         raise _ReviewError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
 
     # 3. Run the reviewer and accumulate stdout (kept local to the verb).
-    cmd = _build_cmd()
+    cmd = _build_cmd(engine)
     stdout_buf: list[str] = []
     try:
         async for line in runner(
@@ -333,6 +373,7 @@ async def _run_review(
         "reviewed_sha": reviewed_sha,
         "verdict": parsed.verdict,
         "issues": parsed.issues,
+        "engine": engine,
         "created_at": created_at,
     }
     if parsed.commit_message is not None:
@@ -356,4 +397,5 @@ async def _run_review(
         issues=parsed.issues,
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
+        engine=engine,
     )

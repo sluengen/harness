@@ -161,22 +161,46 @@ def _make_runner(stdout: str) -> Any:
     return _runner
 
 
-def _invoke(repo: Path, db_path: Path, run_id: str, runner: Any) -> Any:
+def _invoke(
+    repo: Path,
+    db_path: Path,
+    run_id: str,
+    runner: Any,
+    *,
+    engine: str | None = None,
+) -> Any:
     # Patch the module-level default runner so the command uses the fake.
+    argv = [
+        "review",
+        "--repo",
+        str(repo),
+        "--db",
+        str(db_path),
+        "--run-id",
+        run_id,
+        "--json",
+    ]
+    if engine is not None:
+        argv += ["--engine", engine]
     with mock.patch.object(review_mod, "_default_runner", runner):
-        return cli_runner.invoke(
-            app,
-            [
-                "review",
-                "--repo",
-                str(repo),
-                "--db",
-                str(db_path),
-                "--run-id",
-                run_id,
-                "--json",
-            ],
-        )
+        return cli_runner.invoke(app, argv)
+
+
+def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
+    """A fake runner that records the ``cmd`` it was handed, then yields stdout.
+
+    Lets a test assert *which engine command* the verb built (AC-1/AC-3) without
+    spawning a real subprocess.
+    """
+
+    async def _runner(
+        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+    ) -> AsyncIterator[str]:
+        captured["cmd"] = cmd
+        for line in stdout.splitlines(keepends=True):
+            yield line
+
+    return _runner
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +355,8 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
-    # Only the bounded verdict fields are present.
-    assert set(payload.keys()) <= {"verdict", "issues", "reviewed_sha", "run_id"}
+    # Only the bounded verdict fields are present (engine is provenance, CAL-701).
+    assert set(payload.keys()) <= {"verdict", "issues", "reviewed_sha", "run_id", "engine"}
     assert payload["verdict"] == "fail"
     assert payload["issues"] == ["one issue"]
 
@@ -358,3 +382,150 @@ def test_no_open_run_for_repo_is_invocation_error(repo: Path, db_path: Path) -> 
     result = _invoke(repo, db_path, "01JNONEXISTENTRUNIDXXXXXX0", runner)
     assert result.exit_code == 2, result.output
     assert fetch_review_events(db_path) == []
+
+
+# ---------------------------------------------------------------------------
+# CAL-701 — review engine is an arg (Claude default, Codex opt-in), read-only,
+# with engine provenance.
+# ---------------------------------------------------------------------------
+
+_SUBMIT_PASS = 'SUBMIT: {"verdict": "pass", "issues": []}\n'
+
+
+# AC-2: the Claude engine is a `claude -p` CLI subprocess (no SDK).
+
+
+def test_ac2_build_cmd_claude_is_claude_p_cli() -> None:
+    """The Claude engine command is a headless ``claude -p`` CLI invocation."""
+    cmd = review_mod._build_cmd("claude")
+    assert cmd[:2] == ["claude", "-p"], cmd
+
+
+def test_ac2_review_verb_uses_the_claude_cli_not_the_agent_sdk() -> None:
+    """A grep guard: the review verb never imports the Agent SDK / anthropic.
+
+    The diff + ticket are untrusted prompt content; the engine must be a
+    sandboxed CLI subprocess, never an in-process SDK call (CAL-701 AC-2,
+    architecture-principles "a review engine is a CLI subprocess").
+    """
+    source = (Path(review_mod.__file__)).read_text()
+    for forbidden in ("import anthropic", "from anthropic", "claude_agent_sdk"):
+        assert forbidden not in source, (
+            f"review verb must not use the Agent SDK ({forbidden!r} found)"
+        )
+
+
+# AC-3: both engines run read-only.
+
+
+def test_ac3_codex_cmd_is_read_only_not_dangerous_bypass() -> None:
+    """The Codex engine no longer carries the dangerous full-access bypass; it
+    runs under the read-only sandbox (matching commands/build-codex.md)."""
+    cmd = review_mod._build_cmd("codex")
+    assert "--dangerously-bypass-approvals-and-sandbox" not in cmd, cmd
+    # contiguous `--sandbox read-only` pair
+    assert "--sandbox" in cmd and cmd[cmd.index("--sandbox") + 1] == "read-only", cmd
+
+
+def test_ac3_claude_cmd_carries_no_write_capability() -> None:
+    """The Claude engine runs in a read-only permission mode (plan) and carries
+    no edit/write/bypass capability."""
+    cmd = review_mod._build_cmd("claude")
+    assert "--permission-mode" in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "plan", cmd
+    for writeish in ("acceptEdits", "bypassPermissions", "--dangerously-skip-permissions"):
+        assert writeish not in cmd, cmd
+
+
+# AC-1: --engine accepted, default claude; both selections build the right cmd
+# and record the right provenance.
+
+
+def test_ac1_default_engine_is_claude(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner)  # no --engine
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][:2] == ["claude", "-p"], captured["cmd"]
+    assert json.loads(result.output)["engine"] == "claude"
+    assert fetch_review_events(db_path)[0]["data"]["engine"] == "claude"
+
+
+def test_ac1_engine_codex_selects_codex(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][0] == "codex", captured["cmd"]
+    assert json.loads(result.output)["engine"] == "codex"
+    assert fetch_review_events(db_path)[0]["data"]["engine"] == "codex"
+
+
+def test_ac1_engine_claude_selects_claude(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="claude")
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][:2] == ["claude", "-p"], captured["cmd"]
+    assert json.loads(result.output)["engine"] == "claude"
+
+
+# AC-4: ReviewOutput and the review event include `engine`.
+
+
+def test_ac4_output_and_event_record_engine_provenance(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner(_SUBMIT_PASS)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["engine"] == "codex"
+    assert fetch_review_events(db_path)[0]["data"]["engine"] == "codex"
+
+
+# AC-5: SUBMIT parsing / verdict are unchanged across engines.
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_ac5_submit_parsing_unchanged_across_engines(
+    repo: Path, db_path: Path, engine: str
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner('SUBMIT: {"verdict": "defer", "issues": ["x"]}\n')
+
+    result = _invoke(repo, db_path, run_id, runner, engine=engine)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["verdict"] == "defer"
+    assert fetch_review_events(db_path)[0]["data"]["verdict"] == "defer"
+
+
+# AC-6: docs record the new default + the principle.
+
+_REPO_ROOT = Path(__file__).parent.parent.parent
+
+
+def test_ac6_harness_md_documents_engine_option() -> None:
+    text = (_REPO_ROOT / "commands" / "harness.md").read_text()
+    assert "--engine" in text, "commands/harness.md must document the --engine option"
+    assert "codex" in text and "claude" in text.lower()
+
+
+def test_ac6_principle_recorded_in_architecture_principles() -> None:
+    text = (_REPO_ROOT / "specs" / "architecture-principles.md").read_text()
+    assert "CLI subprocess" in text, (
+        "architecture-principles.md must record the 'a review engine is a CLI "
+        "subprocess emitting the SUBMIT: contract — never the Agent SDK' principle"
+    )

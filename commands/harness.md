@@ -53,14 +53,17 @@ Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`).
 **Step 3 — `review`.** When the implementation is ready, review the current worktree HEAD:
 
 ```bash
-harness review --run-id <run_id>    # [--repo .]
+harness review --run-id <run_id>                  # [--repo .] — engine defaults to claude
+harness review --run-id <run_id> --engine codex   # opt into a Codex cross-model review
 ```
 
-Codex reviews the diff against HEAD and records a verdict bound to that SHA. You see only the bounded result (`ReviewOutput`) — Codex's full reasoning stays inside the verb:
+The selected engine (`--engine claude|codex`, **default `claude`**) reviews the diff against HEAD and records a verdict bound to that SHA. Both engines are **read-only CLI subprocesses** emitting the same `SUBMIT:` contract — never the Agent SDK; the engine's full reasoning stays inside the verb. You see only the bounded result (`ReviewOutput`), which records the `engine` that produced the verdict:
 
 ```json
-{ "verdict": "pass|fail|defer", "issues": [ ... ], "reviewed_sha": "...", "run_id": "..." }
+{ "verdict": "pass|fail|defer", "issues": [ ... ], "reviewed_sha": "...", "run_id": "...", "engine": "claude|codex" }
 ```
+
+`claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion.
 
 Act on `verdict`:
 
