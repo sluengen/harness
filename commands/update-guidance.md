@@ -1,9 +1,11 @@
-<!-- guidance:update-guidance@0.5.0 -->
+<!-- guidance:update-guidance@0.5.1 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
 
 Compares the installed guidance against the source and pulls what changed, without clobbering anything you edited locally. This is the other half of `BOOTSTRAP.md`: the version stamps exist so this command can tell exactly what moved.
+
+> **This command assumes a repo already on a harness lock** — it diffs that lock against the source. Superseding *pre-merge* guidance (an older install, from before the guidance repo merged into the harness, whose skills that merge renamed or folded — e.g. `scope-discipline` → `code-quality`, the `spec.md` template → `feature.md`) is **not** that case: there is no harness lock to diff, and a diff would see a renamed skill as a generic "removed" file and its replacement as "added", losing the fold. That is a **re-bootstrap** — re-run [`INSTALLER.md`](../INSTALLER.md), which alone carries the fold knowledge (its "migrating off pre-merge guidance" checklist in `BOOTSTRAP.md` is the ordered version) — not a `/update-guidance`. (A pre-0.5 *lock* — a repo that already had a harness lock in the old format — is the separate, in-scope case handled in [step 1](#1-locate-the-source-and-fetch-it).)
 
 ## Steps
 

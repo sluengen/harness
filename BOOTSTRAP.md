@@ -296,5 +296,57 @@ code and the guidance bundle — per your install method:
   `.guidance-lock.yaml` with the updated versions and hashes; review the diff
   before committing.
 
+> **`/update-guidance` assumes a repo already on a harness lock.** It diffs the
+> repo's `.guidance-lock.yaml` against the source and pulls what changed. A repo
+> that still carries **pre-merge guidance** — an older install (from before the
+> guidance repo merged into the harness) whose skills that merge renamed or
+> folded into the current surface (`scope-discipline` /
+> `verification-before-completion` / `code-structure` → `code-quality`; the old
+> `spec.md` template → `feature.md`) — is **not** in that state: there is no
+> harness lock to diff, and `/update-guidance` would treat each renamed skill as
+> a generic "removed" file and its replacement as "added", losing the fold
+> relationship and any local edits. So superseding pre-merge guidance is a
+> **re-bootstrap** — re-run [`INSTALLER.md`](INSTALLER.md), which alone carries
+> the fold knowledge — not a `/update-guidance`. The [checklist
+> below](#migrating-off-pre-merge-guidance) is the ordered version.
+
 See [`RELEASING.md`](RELEASING.md) for the release-side checklist that produces
 the tags consuming repos check out here.
+
+---
+
+## Migrating off pre-merge guidance
+
+A repo set up **before the guidance repo merged into the harness** moves onto the
+current surface by **re-bootstrapping** — re-running [`INSTALLER.md`](INSTALLER.md)
+against the harness as the guidance source — not by `/update-guidance` (which
+assumes the repo is [already on a harness lock](#updating)). The installer
+already performs each step below; this is the ordered checklist of the legacy
+handling it applies, gathered from its otherwise-scattered steps so a migrator
+sees the whole shape at once:
+
+1. **Make room for the bare command names** (installer step 2). If the repo's own
+   command sits at a guidance bare name (`commands/start.md`, etc.), namespace it
+   under a repo prefix first — the installer refuses to clobber it (this repo
+   already did so for `/harness`; see [step 2](#step-2--make-room-for-the-guidances-start)).
+2. **Flag legacy-process artifacts** (installer step 2). A `manifest.yaml`
+   (retired — Linear is the queue), old per-task `changes/` folders (search the
+   whole tree, including nested ones), and the **superseded skill/template files**
+   the merge folded elsewhere: `scope-discipline`, `verification-before-completion`,
+   and `code-structure` → `code-quality`; an old `spec.md` template → `feature.md`.
+   Check references before removing any of them, and never delete automatically —
+   migrate open items first, then remove with confirmation.
+3. **Preserve repo-specific knowledge before overwriting the entry files**
+   (installer step 3). Read any existing `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
+   and fold their gotchas, the verify gate, and conventions into `CONTEXT.md`
+   before the re-derived copies replace them.
+4. **Keep the populated `CONTEXT.md`** (installer step 4). On a re-bootstrap the
+   filled `CONTEXT.md` already exists — keep it, fill only still-empty
+   `{placeholder}` fields, never overwrite it with the blank template.
+5. **Reconcile `.gitignore` for the visibility mode** (installer step 6). An older
+   setup may ignore `.claude/`, `CLAUDE.md`, or `hooks/` as ephemeral; narrow
+   those rules so committed-mode guidance is committable.
+
+The installer writes a fresh `.guidance-lock.yaml` at the end, so once the
+re-bootstrap lands the repo is a normal harness consumer and every later update
+is an ordinary `/update-guidance`.
