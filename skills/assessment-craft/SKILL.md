@@ -2,7 +2,7 @@
 name: assessment-craft
 description: Use when running a periodic codebase or guidance audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.2.1 -->
+<!-- guidance:assessment-craft@0.2.2 -->
 # Assessment Craft
 
 Shared knowledge for the `steward` whenever it periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills (`guidance-coherence` for `system`, the code-domain skills for `code`).
@@ -53,6 +53,8 @@ Rules:
 ## What you are not looking for
 
 Style preferences, formatting nits, complexity that is justified by the problem, intentional deviations that are improvements, or "future work" that is not causing a problem now.
+
+When unjustified complexity *is* a finding, the `code` scope names it with the `review-discipline` over-engineering taxonomy — that skill is its one canonical home; cite the tag and what replaces the cut, rather than restating the tags here.
 
 ## Output
 
