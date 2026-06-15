@@ -1,4 +1,4 @@
-<!-- guidance:ship@0.1.2 -->
+<!-- guidance:ship@0.1.3 -->
 # /ship — integrate and close
 
 Usage: `/ship` (ships the current review-passed branch)
@@ -22,7 +22,7 @@ Read `branches` in `CONTEXT.md`. Repos differ: some fast-forward feature branche
 Per the repo's model, either fast-forward the integration branch, or open the PR. Never force-push. Never push directly to a protected release branch unless `CONTEXT.md` says that is the path.
 
 ### 3. Close the Linear issue
-Move it to Done (`linear-sync` status mapping). Post the merge/PR link as a comment. The change spec stays on the issue as history; there is no `manifest.yaml` to clean.
+Move it to Done (`linear` status mapping). Post the merge/PR link as a comment. The change spec stays on the issue as history; there is no `manifest.yaml` to clean.
 
 ### 4. Confirm the durable record
 The reviewer recorded what shipped to `specs/features/` on PASS (the last commit before merge). Confirm that commit is present in what you are integrating — it is the canonical record going forward.

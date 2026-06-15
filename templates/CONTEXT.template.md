@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.7 -->
+<!-- guidance:template-context@0.1.8 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -39,7 +39,7 @@ conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
   linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"
-  # Linear workspace/team IDs and label IDs live here, not in the linear-sync skill
+  # Linear workspace/team IDs and label IDs live here, not in the linear skill
 paths:
   source: {e.g. app/}
   tests: {e.g. tests/}

@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.4.0 -->
+<!-- guidance:assess@0.4.1 -->
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code` or `system`, optionally with `--deep` (e.g. `/assess code --deep`)
@@ -25,7 +25,7 @@ Reviews split by **axis, not dimension**. There are two surfaces: the per-change
 Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following `assessment-craft`: a summary, findings (each with the four parts and a severity), and up to three systemic insights. Zero findings is a valid result.
 
 ### 2. File the findings
-For every finding and every insight, create a Linear issue (`linear-sync`), labelled by source (`review-finding` / `review-insight`) and severity-mapped to priority. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time. **If this repo has no tracker** (`CONTEXT.md` `layers.linear: false`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
+For every finding and every insight, create a Linear issue (`linear`), labelled by source (`review-finding` / `review-insight`) and severity-mapped to priority. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time. **If this repo has no tracker** (`CONTEXT.md` `layers.linear: false`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
 
 ### 3. Commit the report
 A report is advisory evidence, not a code change, so it needs no merge gate. Commit the dated report directly to the integration branch (`CONTEXT.md`) — no branch, no PR. The findings already live in the tracker; a PR per run would carry nothing reviewable and, under a scheduled cadence, pile up trivial approvals. Surface the summary, the finding counts by severity, and the filed ticket IDs to the user. (When the tracker is off, the report file *is* the deliverable — commit it the same way.)

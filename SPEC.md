@@ -1144,7 +1144,7 @@ Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all
 
 ### What stays in a project's `skills/`
 
-Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
+Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
 
 ---
 
