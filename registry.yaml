@@ -1,4 +1,4 @@
-# guidance:registry@0.5.9
+# guidance:registry@0.5.10
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -52,7 +52,7 @@ files:
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
   skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.0, profiles: [harness] }
   skills/linear/SKILL.md: { id: linear,                       version: 0.4.1, profiles: [harness] }
-  skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.2.2, profiles: [harness] }
+  skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.2.3, profiles: [harness] }
   skills/guidance-coherence/SKILL.md: { id: guidance-coherence,       version: 0.1.0, profiles: [harness] }
   # Product skills, home from the retired agents repo (CAL-652, D6), part of the
   # one surface. design-system engages only where a repo's CONTEXT.md
@@ -65,7 +65,7 @@ files:
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/reviewer.md:                 { id: reviewer,                 version: 0.1.2, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.2.0, profiles: [harness] }
-  agents/steward.md:                  { id: steward,                  version: 0.1.0, profiles: [harness] }
+  agents/steward.md:                  { id: steward,                  version: 0.1.1, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.1.1, profiles: [harness] }
@@ -78,6 +78,7 @@ files:
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.1, profiles: [harness] }
+  templates/assessment.md:            { id: template-assessment,      version: 0.1.0, profiles: [harness] }
   templates/change.md:                { id: template-change,          version: 0.1.0, profiles: [harness] }
   templates/decision.md:              { id: template-decision,        version: 0.1.0, profiles: [harness] }
   templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
@@ -103,4 +104,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   INSTALLER.md:                        { id: bootstrap,                version: 0.4.5 }
-  registry.yaml:                      { id: registry,                 version: 0.5.9 }
+  registry.yaml:                      { id: registry,                 version: 0.5.10 }

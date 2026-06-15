@@ -2,6 +2,22 @@
 
 Follow this checklist before tagging any release. All items must be ticked before pushing a version tag.
 
+## Release notes + `dev → main` PR
+
+Cutting a release starts by summarising what shipped since the last one and opening the promotion PR. (This folds the retired `agents/tasks/release.md` agent task — the deterministic `release.yaml` workflow it replaced was removed in CAL-574, and a "task file" is not a durable artifact; see `specs/architecture-principles.md`, "A task is command + role + skill + template".)
+
+1. **Gather the completed tickets.** Query Linear for issues completed in the release window (default: since the last release) via the `linear` skill (`skills/linear/SKILL.md`) — it owns the GraphQL; `LINEAR_API_KEY` comes from the repo `.env`, never hard-coded. Derive each ticket's kind from its labels (`bug` / `feature` / `improvement` / `chore`).
+2. **Write the release notes.** Group the tickets by kind under **Features**, **Bug fixes**, and **Improvements**; write concise, human-readable notes. The same content seeds the `README.md` CHANGELOG section (below) and the GitHub Release body.
+3. **Open the promotion PR** from `dev` to `main`:
+
+   ```bash
+   gh pr create --base main --head dev \
+     --title "Release — $(date +%Y-%m-%d)" \
+     --body-file <release-notes.md>
+   ```
+
+   The `dev → main` promotion *is* the release (`specs/architecture-principles.md`, D7). Merge it before working the checklist below.
+
 ## Pre-release
 
 - [ ] All work for the release is merged to `main`

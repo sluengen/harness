@@ -46,7 +46,6 @@ PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
 _SURFACE = [
     *sorted((REPO_ROOT / "commands").glob("*.md")),
     *sorted(AGENTS_DIR.glob("*.md")),
-    *sorted((AGENTS_DIR / "tasks").glob("*.md")),
     *sorted((REPO_ROOT / "skills").glob("*/SKILL.md")),
     *sorted((REPO_ROOT / "templates").glob("*.md")),
     REPO_ROOT / "process" / "harness.md",

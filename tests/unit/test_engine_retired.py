@@ -7,8 +7,13 @@ These tests are the executable form of the ticket's acceptance criteria:
   / ``harness.workflow``). Expressed as an import-graph check: the verb modules
   import cleanly, and the retired modules are no longer importable.
 * **AC-2** — ``build*.yaml`` and the workflow-walking modules are gone.
-* **AC-3** — release and steward behaviour survives via the agent-task path
-  (the converted task docs exist and carry their load-bearing steps).
+* **AC-3** — release and steward behaviour survives the engine retirement and
+  carries its load-bearing steps. CAL-574 first parked both as agent-task docs
+  under ``agents/tasks/``; CAL-716 eliminated that redundant layer, so the
+  behaviour now lives in its durable home — the steward procedure folded into
+  ``agents/steward.md``, the release procedure folded into ``RELEASING.md`` (a
+  task = command + role + skill + template, never a ``tasks/`` file; see
+  ``specs/architecture-principles.md``).
 
 The check is deliberately structural: a regression that re-introduces a verb's
 dependency on the engine, or that resurrects a deleted module, fails here.
@@ -176,30 +181,43 @@ def test_workflow_package_dir_removed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-3 — release & steward behaviour is available via the agent-task path.
+# AC-3 — release & steward behaviour survives the engine retirement in its
+# durable home (CAL-574 parked it under agents/tasks/; CAL-716 folded it in).
 # ---------------------------------------------------------------------------
 
 
-def test_release_agent_task_present() -> None:
-    """The release procedure survives as an agent-task doc with its key steps."""
-    doc = _REPO_ROOT / "agents" / "tasks" / "release.md"
-    assert doc.exists()
-    text = doc.read_text()
-    # Load-bearing mechanics from the old release.yaml.
-    assert "api.linear.app/graphql" in text  # fetch closed tickets
-    assert "gh pr create" in text  # raise the dev -> main PR
+def test_release_procedure_survives_in_releasing_doc() -> None:
+    """The release procedure survives in ``RELEASING.md`` with its key steps.
 
-
-def test_steward_agent_task_present() -> None:
-    """The steward review survives as an agent-task doc with its key steps."""
-    doc = _REPO_ROOT / "agents" / "tasks" / "steward.md"
-    assert doc.exists()
-    text = doc.read_text()
-    # The three-phase shape of the old steward.yaml: read -> assess -> report.
+    CAL-574 converted ``release.yaml`` to ``agents/tasks/release.md``; CAL-716
+    folded it into ``RELEASING.md`` (the durable home) and deleted the task file.
+    The load-bearing mechanics — summarise completed Linear tickets into release
+    notes, then raise the ``dev → main`` PR — must survive the move.
+    """
+    text = (_REPO_ROOT / "RELEASING.md").read_text()
     lowered = text.lower()
-    assert "summary" in lowered
-    assert "findings" in lowered
-    assert "report" in lowered
+    assert "release notes" in lowered  # summarise the shipped tickets
+    assert "linear" in lowered  # fetch the completed tickets (via the linear skill)
+    assert "gh pr create" in text  # raise the dev -> main PR
+    # The eliminated task file must be gone (CAL-716).
+    assert not (_REPO_ROOT / "agents" / "tasks" / "release.md").exists()
+
+
+def test_steward_procedure_survives_in_steward_agent() -> None:
+    """The steward review survives in ``agents/steward.md`` with its key steps.
+
+    CAL-574 converted ``steward.yaml`` to ``agents/tasks/steward.md``; CAL-716
+    folded the procedure into ``agents/steward.md`` (dropping the dangling
+    pointer) and deleted the task file. The three-phase shape — read/summarise →
+    assess → report — must survive the move.
+    """
+    text = (_REPO_ROOT / "agents" / "steward.md").read_text()
+    lowered = text.lower()
+    assert "summar" in lowered  # read & summarise the scope
+    assert "assess" in lowered  # assess against the domain standards
+    assert "report" in lowered  # write the dated report
+    # The eliminated task file must be gone (CAL-716).
+    assert not (_REPO_ROOT / "agents" / "tasks" / "steward.md").exists()
 
 
 # ---------------------------------------------------------------------------
