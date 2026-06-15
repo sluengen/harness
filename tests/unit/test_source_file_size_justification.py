@@ -42,8 +42,10 @@ Acceptance criteria (this ticket):
   :func:`test_over_limit_source_files_carry_a_size_justification` (it failed on
   ``launcher.py`` before this change; the marker regex contract below pins what
   counts as a justification so an incidental cite cannot satisfy it).
-* **AC-2** — ``harness/launcher.py`` carries a ``# size:`` justification, so the
-  guard passes on the current tree.
+* **AC-2** — every over-limit ``harness/`` file carries a ``# size:``
+  justification, so the guard passes on the current tree. (``launcher.py``, the
+  file that motivated this guard, was removed in CAL-712 with the Hermes/launcher
+  scaffolding; the guard now protects the remaining over-limit modules.)
 """
 
 from __future__ import annotations

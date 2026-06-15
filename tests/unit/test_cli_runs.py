@@ -1,9 +1,8 @@
-"""Tests for harness runs command — list recent runs with optional failed grouping."""
+"""Tests for harness runs command — list recent runs."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
@@ -73,30 +72,6 @@ def _seed_run(db_path: Path, **kwargs: Any) -> None:
     _run_sync(_seed_run_async(db_path, **kwargs))
 
 
-async def _seed_event_async(
-    db_path: Path,
-    *,
-    run_id: str,
-    event_type: str,
-    timestamp: str = "2026-06-01T10:00:00Z",
-    node_id: str | None = None,
-    duration_ms: int | None = None,
-    data: dict[str, Any] | None = None,
-) -> None:
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
-            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, node_id, event_type, timestamp, duration_ms,
-             json.dumps(data or {})),
-        )
-        await conn.commit()
-
-
-def _seed_event(db_path: Path, **kwargs: Any) -> None:
-    _run_sync(_seed_event_async(db_path, **kwargs))
-
-
 def _init_db(db_path: Path) -> None:
     _run_sync(store.init_db(db_path))
 
@@ -157,170 +132,6 @@ def test_runs_shows_status_column(tmp_path: Path) -> None:
     result = runner.invoke(app, ["runs", "--db", str(db_path)])
     assert result.exit_code == 0, result.stdout
     assert "failed" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# harness runs --failed — grouped by reason
-# ---------------------------------------------------------------------------
-
-
-def test_runs_failed_groups_by_reason(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="F1", status="failed", workflow_name="wf")
-    _seed_run(db_path, run_id="F2", status="failed", workflow_name="wf")
-    _seed_event(
-        db_path, run_id="F1", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-    _seed_event(
-        db_path, run_id="F2", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    out = result.stdout
-    assert "ContractViolation" in out
-    assert "F1" in out
-    assert "F2" in out
-
-
-def test_runs_failed_groups_different_reasons_separately(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="FA", status="failed")
-    _seed_run(db_path, run_id="FB", status="failed")
-    _seed_event(
-        db_path, run_id="FA", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-    _seed_event(
-        db_path, run_id="FB", event_type="workflow_failed",
-        data={"reason": "CheckFailed"},
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    out = result.stdout
-    assert "ContractViolation" in out
-    assert "CheckFailed" in out
-    # Both run IDs must appear.
-    assert "FA" in out
-    assert "FB" in out
-
-
-def test_runs_failed_entry_line_has_no_trailing_residue(tmp_path: Path) -> None:
-    """A failed-run entry renders exactly run_id / workflow / started_at — no
-    trailing format slot (guards against re-introducing engine-era residue like
-    the removed empty ``node_info`` interpolation)."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(
-        db_path, run_id="F1", workflow_name="wf", status="failed",
-        started_at="2026-06-01T10:00:00Z",
-    )
-    _seed_event(
-        db_path, run_id="F1", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-
-    entry_lines = [
-        line for line in result.stdout.splitlines() if "F1" in line
-    ]
-    assert entry_lines == ["  F1  wf  2026-06-01T10:00:00Z"]
-
-
-def test_runs_failed_no_failures_shows_message(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="completed")
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    assert "no failure" in result.stdout.lower() or "(no failures)" in result.stdout
-
-
-async def _seed_raw_event_async(
-    db_path: Path,
-    *,
-    run_id: str,
-    event_type: str,
-    data_json: str,
-    timestamp: str = "2026-06-01T10:00:00Z",
-) -> None:
-    """Insert an event with a verbatim ``data_json`` payload.
-
-    Unlike :func:`_seed_event` (which ``json.dumps`` a dict), this seeds the
-    column with the exact bytes given — so a malformed/non-dict blob can be
-    exercised.
-    """
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
-            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, None, event_type, timestamp, None, data_json),
-        )
-        await conn.commit()
-
-
-def _seed_raw_event(db_path: Path, **kwargs: Any) -> None:
-    _run_sync(_seed_raw_event_async(db_path, **kwargs))
-
-
-def test_runs_failed_malformed_data_json_lands_under_unknown(tmp_path: Path) -> None:
-    """A ``workflow_failed`` event with a malformed (non-JSON) ``data_json``
-    must not crash the grouping — the run lands under ``(unknown reason)``.
-
-    Locks the tolerant-decode equivalence: the shared ``_safe_json_loads``
-    surfaces an undecodable blob as the empty reason, exactly as the inline
-    ``try/except (TypeError, ValueError)`` did before the dedup.
-    """
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="FM", status="failed", workflow_name="wf")
-    _seed_raw_event(
-        db_path, run_id="FM", event_type="workflow_failed",
-        data_json="not-valid-json",
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    assert "(unknown reason)" in result.stdout
-    assert "FM" in result.stdout
-
-
-def test_runs_failed_non_dict_data_json_lands_under_unknown(tmp_path: Path) -> None:
-    """A ``data_json`` that decodes to valid-but-non-dict JSON (e.g. a bare
-    string) also lands under ``(unknown reason)`` — ``reason`` is only read
-    from a dict payload."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="FN", status="failed", workflow_name="wf")
-    _seed_raw_event(
-        db_path, run_id="FN", event_type="workflow_failed",
-        data_json='"just a string"',
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    assert "(unknown reason)" in result.stdout
-    assert "FN" in result.stdout
-
-
-def test_runs_uses_shared_safe_json_loads() -> None:
-    """``runs`` decodes the ``workflow_failed`` ``data_json`` blob via the
-    shared ``_query_common._safe_json_loads`` — the same tolerant decoder
-    ``status`` / ``events`` use — not a private hand-rolled copy.
-
-    Binding the same function object keeps the decode policy single-sourced
-    (mirrors ``test_cancel_uses_shared_resolve_db_path`` for ``_resolve_db_path``).
-    Once the shared helper owns the decode, the module-scope ``import json`` is
-    dead and must not linger.
-    """
-    from harness.cli import _query_common, query_runs
-
-    assert query_runs._safe_json_loads is _query_common._safe_json_loads
-    assert not hasattr(query_runs, "json"), (
-        "query_runs should not import json directly; decode via _safe_json_loads"
-    )
 
 
 def test_runs_missing_db_exits_zero_empty(tmp_path: Path) -> None:

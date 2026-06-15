@@ -9,7 +9,7 @@ ever hit its refusal paths).  The redefined contract:
 * ``harness cancel <run-id>`` marks an in-flight run ``status='cancelled'``,
   stamps ``completed_at``, and emits a ``workflow_failed`` event with
   ``reason='cancelled'`` (so ``harness status`` surfaces
-  ``failure_reason='cancelled'`` / ``failure_retryable=False``).
+  ``failure_reason='cancelled'``).
 * Exits 2 (invocation error) when the run does not exist.
 * Exits 2 when the run is already terminal (``closed`` / ``cancelled`` /
   ``completed`` / ``failed``) — there is nothing to abandon.
@@ -239,8 +239,8 @@ def test_cancel_emits_workflow_failed_reason_cancelled(tmp_path: Path) -> None:
 
 
 def test_cancel_surfaces_failure_reason_in_status(tmp_path: Path) -> None:
-    """After cancel, ``harness status`` reports ``failure_reason='cancelled'``
-    and ``failure_retryable=False`` — the end-to-end observable contract."""
+    """After cancel, ``harness status`` reports ``failure_reason='cancelled'`` —
+    the end-to-end observable contract."""
     db = tmp_path / "harness.db"
     _seed_run(db, run_id="R1", status="open")
 
@@ -252,7 +252,6 @@ def test_cancel_surfaces_failure_reason_in_status(tmp_path: Path) -> None:
     payload = json.loads(status_result.output)
     assert payload["status"] == "cancelled"
     assert payload["failure_reason"] == "cancelled"
-    assert payload["failure_retryable"] is False
 
 
 def test_cancel_legacy_running_run_abandoned(tmp_path: Path) -> None:

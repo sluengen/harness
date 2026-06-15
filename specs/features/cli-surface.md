@@ -25,18 +25,17 @@ harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-j
 harness status    <run-id>                [--db <p>] [--json]
 harness logs      <run-id>                [--follow] [--node <id>] [--db <p>]
 harness events    <run-id>                [--type <event_type>] [--after-id <n>] [--db <p>] [--json]
-harness runs                              [--failed] [--limit <n>] [--db <p>]
+harness runs                              [--limit <n>] [--db <p>]
 harness worktrees list                    [--repo-root <p>] [--json]
 
 # Maintenance / ops — mutate outside the audited lifecycle
 harness cancel    <run-id>                [--db <p>] [--json]      # abandon an in-flight run: marks the ledger row cancelled
 harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
 harness doctor                            [--db <p>]               # system health checks (read-only)
-harness serve     --local                 [--socket <p>] [--image <ref>]   # host launcher control socket
 harness version                           [--json]
 ```
 
-This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). Two maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. The audited verbs and the read/inspection commands each run as a one-shot container exactly as the human's `~/bin/harness` does; `serve` is the exception — a persistent host process that listens on a unix control socket (`harness/cli/serve.py`), not a one-shot invocation.
+This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). Two maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
 
 ### Exit codes are a stable contract
 
@@ -70,7 +69,6 @@ Commands are split per concern across `harness/cli/*.py` for readability and reg
 ## Known limitations
 
 - No dynamic subcommands: the surface only changes by editing a verb, by design (the engine-era YAML-driven subcommand generation was retired in CAL-574).
-- `harness serve` exposes a narrow host control socket for spawning verb containers; it is an ops command, not part of the audited lifecycle.
 
 ## Decisions
 

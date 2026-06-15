@@ -11,7 +11,6 @@ are split across modules for readability:
 * :mod:`harness.cli.start`    — ``harness start <ticket>``
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
-* :mod:`harness.cli.serve`    — ``harness serve --local`` (launcher control socket)
 
 Exit codes:
 - 0   command succeeded
@@ -34,7 +33,6 @@ from harness.cli.query import (
     status_command,
 )
 from harness.cli.review import review_command
-from harness.cli.serve import serve_command
 from harness.cli.start import start_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
@@ -76,9 +74,6 @@ app.command(name="review", help="Review the worktree HEAD with codex; record the
 )
 app.command(name="close", help="Close a run: enforce the review gate, merge/push, transition ticket to Done.")(  # noqa: E501
     close_command
-)
-app.command(name="serve", help="Run the host launcher control socket (narrow verb API; --local only).")(  # noqa: E501
-    serve_command
 )
 
 # Nested worktrees app.

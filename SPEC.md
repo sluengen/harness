@@ -25,13 +25,12 @@ The `feature_specs` layer is on (`CONTEXT.md`), so the canonical as-built record
 
 **Design references (the model and deeper module detail the feature specs build on):**
 
-The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) were re-homed to [`specs/retired/`](specs/retired/) in CAL-661; CAL-693 completed the relocation — `state-store.md` was **folded into** [`run-ledger.md`](specs/features/run-ledger.md) (the feature spec now carries the full schema reference); `build-workflow.md` / `cli.md` / `worktree-isolation.md` were re-homed to `specs/retired/`; and `hermes-orchestration.md` was **split** — its live launcher/trigger/allowlist/observability half stays as the live reference below (still cited by live `harness/` modules), while its superseded control half was extracted to [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md). All docstring cites were repointed.
+The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) were re-homed to [`specs/retired/`](specs/retired/) in CAL-661; CAL-693 completed the relocation — `state-store.md` was **folded into** [`run-ledger.md`](specs/features/run-ledger.md) (the feature spec now carries the full schema reference); `build-workflow.md` / `cli.md` / `worktree-isolation.md` were re-homed to `specs/retired/`; and `hermes-orchestration.md` was **split** — its superseded control half was extracted to [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) (CAL-693), then its launcher / trigger / observability half was retired to [`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md) when the launcher scaffolding was removed (CAL-712). The one load-bearing piece that half documented — the `--repo` workspace allowlist — survives as `harness.workspace` (SPEC §4.9). All docstring cites were repointed.
 
 | Spec | Covers |
 |------|--------|
 | [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
 | [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
-| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Live launcher / trigger runtime topology, the narrow control socket, the launch handle, the `--repo` allowlist, and the read-only ledger observability Hermes consumes (SPEC §4.9) |
 
 The SQLite schema reference (full DDL, migrations, `BaseState`) now lives in [`run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the worktree helper reference is the feature spec [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) (the engine-era `WorktreeNode` detail is the retired doc below).
 
@@ -39,7 +38,8 @@ The SQLite schema reference (full DDL, migrations, `BaseState`) now lives in [`r
 
 | Spec | Covers | Status |
 |------|--------|--------|
-| [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) | Engine-era Hermes control model: responsibility boundary, Option A/B/C deployment decision, the Hermes→harness bridge interface | Control half superseded by `harness-as-tool` (CAL-693); the live half is `hermes-orchestration.md` above |
+| [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) | Engine-era Hermes control model: responsibility boundary, Option A/B/C deployment decision, the Hermes→harness bridge interface | Control half superseded by `harness-as-tool` (CAL-693); the launcher/trigger half is `hermes-orchestration.md` below |
+| [`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md) | Launcher / trigger runtime topology, the narrow control socket, the launch handle, and the read-only ledger observability a deferred Hermes dispatcher would consume | Launcher/trigger scaffolding removed (CAL-712); kept as **design, not built**. The `--repo` allowlist it documented survives as `harness.workspace` |
 | [`specs/retired/build-workflow.md`](specs/retired/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop; re-homed to `specs/retired/` (CAL-693) |
 | [`specs/retired/cli.md`](specs/retired/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`); re-homed to `specs/retired/` (CAL-693) |
 | [`specs/retired/worktree-isolation.md`](specs/retired/worktree-isolation.md) | Engine-era `WorktreeNode` reference: create + the retired cleanup policies | Live behaviour is `worktree-lifecycle.md`; `cleanup` machinery retired (CAL-693) |
@@ -209,7 +209,7 @@ layer, and the workflow loader — were deleted in CAL-574 (see §3's banner and
 The Typer app (`harness/cli/__init__.py`) is the public contract. It registers
 the three audited verbs (`start` / `review` / `close`) plus the read/inspection
 and ops commands (`status` / `logs` / `events` / `runs` / `worktrees` /
-`cancel` / `doctor` / `serve` / `version`). Subcommands are split per concern
+`cancel` / `doctor` / `version`). Subcommands are split per concern
 across `harness/cli/*.py` for readability. Stable flags, stable exit codes,
 stable JSON output — see §11.
 
@@ -283,25 +283,18 @@ alone. Event types live in `harness.events.schema`.
 ticket and transition its state. `harness.identity` generates the run ID (a
 ULID) and propagates it across the verbs.
 
-### 4.9 `harness.launcher`, `harness.workspace`, `harness.trigger`
+### 4.9 `harness.workspace`
 
-`harness serve` runs a narrow host control socket (`harness.launcher` /
-`harness.launcher_client`) that spawns verb containers on request.
 `harness.workspace` enforces the `--repo` allowlist (`HARNESS_WORKSPACE_ROOTS`,
-CAL-584), failing closed when unset so a verb cannot operate outside the mounted
+CAL-584): every verb resolves `--repo` through one shared adapter, which fails
+closed when the allowlist is unset so a verb cannot operate outside the mounted
 workspace.
 
-`harness.trigger` is the local stand-in for the launch handle (CAL-585): the
-*trigger slot* occupant — a human (`/harness run`) or Hermes on the autonomous
-path. Its job is deliberately tiny: **launch** the per-session agent runtime
-headless (`claude -p "/harness run <ticket>"`, `agent_run_command`), then **read
-the outcome solely from the ledger** (`harness status` / `harness events`,
-read-only). The trigger never implements, manages worktrees, runs codex, does
-gitops, or writes the harness DB; the writing verbs (`start` / `review` /
-`close`) are issued by the agent runtime, not the trigger. The launch and ledger
-readers are injected (`HermesTrigger`) so a test can substitute an in-process
-runtime and demonstrate the handle end-to-end. See
-[`specs/hermes-orchestration.md`](specs/hermes-orchestration.md).
+(The narrow host launcher control socket and the autonomous-dispatch *trigger*
+stand-in that once shared this section were the deferred Hermes scaffolding,
+removed in CAL-712. Their design is archived at
+[`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md);
+the autonomous dispatcher itself is deferred until the Build loop is built.)
 ---
 
 ## 5. YAML Workflow Schema
@@ -856,14 +849,13 @@ harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness status    <run-id>                [--json]
 harness logs      <run-id>                [--follow] [--node <id>]
 harness events    <run-id>                [--type <event_type>] [--json] [--after-id <n>]
-harness runs                              [--failed] [--limit <n>]
+harness runs                              [--limit <n>]
 harness worktrees list                    [--json]
 harness worktrees cleanup                 [--age <duration>] [--merged]
 
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
 harness doctor                                # system health checks
-harness serve     --local                     # host launcher control socket
 harness version                           [--json]
 ```
 
