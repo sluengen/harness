@@ -24,6 +24,7 @@ from __future__ import annotations
 import typer
 
 from harness.cli.cancel import cancel_command
+from harness.cli.checkpoint import checkpoint_command
 from harness.cli.close import close_command
 from harness.cli.doctor import doctor_command
 from harness.cli.query import (
@@ -78,6 +79,9 @@ app.command(name="review", help="Review the worktree HEAD with codex; record the
 )
 app.command(name="close", help="Close a run: enforce the review gate, merge/push, transition ticket to Done.")(  # noqa: E501
     close_command
+)
+app.command(name="checkpoint", help="Push the run branch to origin so committed WIP survives the container dying.")(  # noqa: E501
+    checkpoint_command
 )
 
 # Nested worktrees app.

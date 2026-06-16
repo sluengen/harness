@@ -50,6 +50,14 @@ Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`).
 
 **Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate locally as you go.
 
+**Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
+
+```bash
+harness checkpoint --run-id <run_id>    # [--repo .] — pushes the run branch to origin; records a checkpoint event
+```
+
+This is the load-bearing half of run reclamation (proposal `stale-run-reclamation` D4): the orchestrating session runs in an ephemeral container, so if it dies mid-run the only recoverable work is what was **pushed**. `checkpoint` pushes *only* the feature branch — it never merges, so the `close` gate is untouched — and records a `checkpoint` event so a later `harness reclaim` can name the branch as resumable (and a fresh run continue from it rather than restart cold). It is **best-effort**: if a checkpoint push fails (exit 1), note it and keep working — a failed checkpoint loses only durability, not the run. A run that never checkpoint-pushes still works; it just degrades to a clean restart if it dies.
+
 **Step 3 — `review`.** When the implementation is ready, review the current worktree HEAD:
 
 ```bash

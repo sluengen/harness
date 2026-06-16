@@ -22,7 +22,11 @@ What it does:
    ``reason='reclaimed'``, so ``idx_runs_ticket_open`` no longer blocks a fresh
    ``harness start`` on that ticket.
 3. **Preserve the branch.** Proposal D4 — reclaim never prunes the worktree or
-   branch; the work is kept for a later resume (CAL-739).
+   branch; the work is kept for a later resume (CAL-739). The comment names the
+   branch as resumable **only when it was checkpoint-pushed** (a ``checkpoint``
+   event exists, CAL-738) — a run that never pushed has no durable WIP, so reclaim
+   reports "no resumable branch" rather than promising a ref a later pick could
+   not fetch.
 
 Targeting:
 
@@ -61,6 +65,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+import aiosqlite
 import typer
 
 from harness._time import iso_z, parse_iso_z
@@ -110,14 +115,39 @@ def _comment_body(run_id: str | None, branch: str | None) -> str:
     )
 
 
+async def _resumable_branch(
+    conn: aiosqlite.Connection, run_id: str, branch: str | None
+) -> str | None:
+    """The run's branch *iff* it was checkpoint-pushed — else ``None`` (CAL-738).
+
+    A branch is resumable only if it is durable off the dead container, and the
+    only durable branch is one a ``harness checkpoint`` pushed to ``origin``. The
+    ledger records each push as a ``checkpoint`` event, so its presence is the
+    durable-WIP signal. A run that committed locally but never checkpoint-pushed
+    has a ``worktree_branch`` that a later (different-container) pick could not
+    fetch — reporting it would be a false promise. So with no ``checkpoint``
+    event reclaim reports ``None`` and degrades cleanly to "no resumable branch"
+    (proposal D4 / CAL-738 AC3); CAL-739's resume then restarts clean.
+    """
+    if not branch:
+        return None
+    cur = await conn.execute(
+        "SELECT 1 FROM events WHERE run_id = ? AND event_type = 'checkpoint' LIMIT 1",
+        (run_id,),
+    )
+    return branch if await cur.fetchone() is not None else None
+
+
 async def _resolve_target(
     db_path: Path, run_id_arg: str | None, ticket_arg: str | None
 ) -> tuple[str | None, str | None, str, str | None]:
     """Resolve the reclaim target → ``(run_id, status, ticket, branch)``.
 
-    For ``--ticket`` with no local open run, ``run_id`` / ``status`` / ``branch``
-    are ``None`` (a revert-only target). Raises :class:`_ReclaimError` for an
-    unknown run-id or a run with no associated ticket.
+    The returned ``branch`` is the *resumable* ref — the run's ``worktree_branch``
+    only when it was checkpoint-pushed (durable WIP), else ``None`` (CAL-738). For
+    ``--ticket`` with no local open run, ``run_id`` / ``status`` / ``branch`` are
+    ``None`` (a revert-only target). Raises :class:`_ReclaimError` for an unknown
+    run-id or a run with no associated ticket.
     """
     if run_id_arg is not None:
         if not db_path.exists():
@@ -128,16 +158,17 @@ async def _resolve_target(
                 (run_id_arg,),
             )
             row = await cur.fetchone()
-        if row is None:
-            raise _ReclaimError(f"no run with run_id={run_id_arg!r}", 2)
-        status, ticket, branch = str(row[0]), row[1], row[2]
-        if not ticket:
-            raise _ReclaimError(
-                f"run {run_id_arg!r} has no associated ticket; "
-                "there is no Linear ticket to revert",
-                2,
-            )
-        return run_id_arg, status, str(ticket), branch
+            if row is None:
+                raise _ReclaimError(f"no run with run_id={run_id_arg!r}", 2)
+            status, ticket, branch = str(row[0]), row[1], row[2]
+            if not ticket:
+                raise _ReclaimError(
+                    f"run {run_id_arg!r} has no associated ticket; "
+                    "there is no Linear ticket to revert",
+                    2,
+                )
+            resumable = await _resumable_branch(conn, run_id_arg, branch)
+        return run_id_arg, status, str(ticket), resumable
 
     assert ticket_arg is not None  # the command guarantees exactly one selector
     if not db_path.exists():
@@ -149,9 +180,11 @@ async def _resolve_target(
             (ticket_arg,),
         )
         row = await cur.fetchone()
-    if row is None:
-        return None, None, ticket_arg, None
-    return str(row[0]), "open", ticket_arg, row[1]
+        if row is None:
+            return None, None, ticket_arg, None
+        run_id = str(row[0])
+        resumable = await _resumable_branch(conn, run_id, row[1])
+    return run_id, "open", ticket_arg, resumable
 
 
 async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) -> None:
