@@ -179,18 +179,28 @@ def _live_surface_files() -> list[Path]:
     return files
 
 
+#: The documented rename form is a *fold reference*, not a live pointer: the
+#: Mode-2 migration docs (CAL-750) name ``linear-sync`` -> ``linear`` so a repo
+#: migrating off pre-merge guidance recognises the rename. Stripping this exact
+#: form leaves any *bare* mention — a genuine live pointer — to still fail.
+_ALLOWED_OLD_ID_FOLD = "linear-sync` → `linear"
+
+
 def test_no_live_reference_to_old_skill_id() -> None:
-    """No live surface file references the old ``linear-sync`` id (AC-4).
+    """No live surface file points at the old ``linear-sync`` id as a live skill (AC-4).
 
     Historical records (``CHANGELOG.md``, ``assessments/``) and regression guards
-    (``tests/``) legitimately keep the old id and are excluded by construction.
+    (``tests/``) legitimately keep the old id and are excluded by construction. The
+    documented rename ``linear-sync`` -> ``linear`` in the migration docs (CAL-750)
+    is a fold reference, not a live pointer, and is exempt.
     """
     offenders = sorted(
         str(p.relative_to(REPO_ROOT))
         for p in _live_surface_files()
-        if "linear-sync" in p.read_text()
+        if "linear-sync" in p.read_text().replace(_ALLOWED_OLD_ID_FOLD, "")
     )
     assert not offenders, (
         f"live surface file(s) still reference the old `linear-sync` id: {offenders}. "
-        "Update them to `linear` (CAL-714 AC-4)."
+        "Update them to `linear`, or (in a migration doc) use the documented fold "
+        "form ``linear-sync` → `linear`` (CAL-714 AC-4; CAL-750)."
     )
