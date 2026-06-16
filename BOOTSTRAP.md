@@ -334,8 +334,14 @@ sees the whole shape at once:
    whole tree, including nested ones), and the **superseded skill/template files**
    the merge folded elsewhere: `scope-discipline`, `verification-before-completion`,
    and `code-structure` → `code-quality`; an old `spec.md` template → `feature.md`.
-   Check references before removing any of them, and never delete automatically —
-   migrate open items first, then remove with confirmation.
+   **The merge into the harness folded more** (every pre-merge install has them):
+   `linear-sync` → `linear`; `code-steward` + `harness-steward` → one `steward`;
+   the `code-review` skill is gone; `process/standard.md` → `process/harness.md`;
+   `settings/standard.json` → `settings/harness.json`; and the flat `skills/*.md`
+   layout → `skills/<id>/SKILL.md`, so every old flat skill file is superseded.
+   Check references before removing any of them, and never delete automatically.
+   Superseding a prior install's **own** renamed/folded files is bulk cleanup —
+   confirm it once; reserve per-file confirmation for files the repo itself owns.
 3. **Preserve repo-specific knowledge before overwriting the entry files**
    (installer step 3). Read any existing `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
    and fold their gotchas, the verify gate, and conventions into `CONTEXT.md`

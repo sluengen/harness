@@ -47,6 +47,14 @@ SUPERSEDE_PHRASE = "superseding pre-merge guidance"
 #: The phrase scoping ``/update-guidance`` to the non-supersede case.
 LOCK_PHRASE = "already on a harness lock"
 
+#: Folds the *merge into the harness* performs, beyond the pre-merge-era set
+#: (``scope-discipline``/… -> ``code-quality``, ``spec.md`` -> ``feature.md``).
+#: CAL-750: the brewspec dry-run found INSTALLER named only the pre-merge folds,
+#: so a literal reading would leave ~18 orphans (it migrated by agent judgment).
+#: ``linear-sync`` and ``harness-steward`` are absent from INSTALLER until the
+#: merge fold-set is named, so they discriminate the fix from the old text.
+MERGE_FOLD_TOKENS = ("linear-sync", "harness-steward")
+
 
 # --- AC-1: INSTALLER.md + BOOTSTRAP.md state the supersede path ----------------
 
@@ -103,6 +111,33 @@ def test_bootstrap_has_migration_checklist() -> None:
     assert "migrating off pre-merge guidance" in BOOTSTRAP.read_text().lower(), (
         "BOOTSTRAP.md must collect the scattered step-2/3/4/6 legacy handling "
         "into one 'Migrating off pre-merge guidance' checklist (CAL-733 AC-3)."
+    )
+
+
+# --- CAL-750: INSTALLER's legacy handling is complete for the merge ------------
+
+
+def test_installer_names_the_merge_fold_set() -> None:
+    """INSTALLER step 2 names the folds the merge performs, not just pre-merge ones."""
+    text = INSTALLER.read_text()
+    missing = [tok for tok in MERGE_FOLD_TOKENS if tok not in text]
+    assert not missing, (
+        f"INSTALLER.md does not name these merge folds: {missing}. Step 2 lists "
+        "only the pre-merge folds (scope-discipline/... -> code-quality, "
+        "spec.md -> feature.md); a Mode-2 re-bootstrap also folds linear-sync -> "
+        "linear, code-steward + harness-steward -> steward, etc. Naming them stops "
+        "an agent following the doc literally from leaving orphans (CAL-750)."
+    )
+
+
+def test_installer_distinguishes_bulk_supersede_from_foreign_deletion() -> None:
+    """INSTALLER separates bulk supersede-cleanup from per-file foreign deletion."""
+    text = INSTALLER.read_text()
+    assert "in bulk" in text and "per-file confirmation" in text, (
+        "INSTALLER.md's no-auto-delete rule must distinguish superseding a prior "
+        "install's own renamed/folded files (confirm once, in bulk) from deleting "
+        "files the repo itself owns (per-file confirmation) — a faithful Mode-2 "
+        "re-bootstrap removes ~18 superseded files (CAL-750)."
     )
 
 

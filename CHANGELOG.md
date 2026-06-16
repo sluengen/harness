@@ -4,6 +4,12 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — INSTALLER Mode-2 legacy handling names the merge folds + clarifies bulk deletion (CAL-750)
+- **Source: `assessments/2026-06-16-mode2-dryrun.md` DRYRUN-3 (Low).** Step 2 named only the pre-merge folds (`scope-discipline`/… → `code-quality`, `spec.md` → `feature.md`); it omitted the folds the merge itself performs, so an agent following the doc literally would leave ~18 orphans (the dry-run migrated correctly only by reasoning from the registry).
+- **`INSTALLER.md` `bootstrap@0.4.6` → `0.4.7`, `registry.yaml` `0.5.13` → `0.5.14`.** Step 2 now also names: `linear-sync` → `linear`; `code-steward` + `harness-steward` → one `steward`; `code-review` removed; `process/standard.md` → `process/harness.md`; `settings/standard.json` → `settings/harness.json`; flat `skills/*.md` → `skills/<id>/SKILL.md` (every old flat skill superseded); old lock `source: { name: … }` → `{ repo, branch, ref }`. The no-auto-delete rule now distinguishes **bulk supersede-cleanup of a prior install's own files** (confirm once) from **per-file deletion of repo-owned files**.
+- **`BOOTSTRAP.md`** (repo-owned) "Migrating off pre-merge guidance" checklist mirrors the same fold-set and bulk/per-file distinction.
+- **Guards** `test_mode2_migration_documented.py`: `test_installer_names_the_merge_fold_set`, `test_installer_distinguishes_bulk_supersede_from_foreign_deletion`.
+
 ### Fixed — registry layer-gating note no longer cites a closed/unrelated ticket (CAL-749)
 - **Source: `assessments/2026-06-16-mode2-dryrun.md` DRYRUN-2 (Medium).** The brewspec Mode-2 dry-run omitted `design-system` + `ux-design` from the install on the strength of the registry comment *"install-time layer gating is CAL-675"* — but CAL-675 is closed and is about `/harness run` universality, not layer gating. Omitting profile files drifts the consumer lock from the registry.
 - **`registry.yaml` `0.5.12` → `0.5.13`.** The product-skills note now states the contract accurately: the installer copies the **whole profile**; the `CONTEXT.md` layers gate *engagement* at runtime, **not install membership**. `design-system` installs regardless and sits dormant when its layer is off; `ux-design` is never gated. Install-time layer gating is unbuilt — an installer agent must not omit profile files by layer.
