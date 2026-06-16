@@ -151,13 +151,166 @@ query FetchIssue($id: String!) {
             identifier, state_type="completed", preferred_name="done"
         )
 
+    async def transition_to_unstarted(self, identifier: str) -> None:
+        """Transition issue ``identifier`` back to its Todo (unstarted) state.
+
+        The revert a reclamation sweep applies to a ticket stranded In Progress
+        by a dead run (proposal ``stale-run-reclamation``).  Mirrors
+        :meth:`transition_to_in_progress` but targets ``type=='unstarted'``:
+        prefers a state literally named "Todo", else the first unstarted-type
+        state.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, no ``unstarted``
+                workflow state is configured on the issue's team, or the
+                ``issueUpdate`` mutation did not report ``success: true``.
+        """
+        await self._transition(
+            identifier, state_type="unstarted", preferred_name="todo"
+        )
+
+    async def apply_label(self, identifier: str, name: str) -> None:
+        """Resolve (creating if absent) the label ``name`` and add it to ``identifier``.
+
+        Resolves the label id at runtime from the issue's team labels — never a
+        hard-coded UUID — matching it case-insensitively; if no such label
+        exists it is created on the issue's team.  Adds it with ``issueAddLabel``
+        so any labels already on the issue are preserved.
+
+        The caller supplies the label name (e.g. reclamation passes
+        ``"reclaimed"``), keeping this client a generic primitive.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, label creation
+                returned no label, or ``issueAddLabel`` did not report
+                ``success: true``.
+        """
+        labels_query = """
+query IssueTeamLabels($id: String!) {
+  issue(id: $id) {
+    id
+    team {
+      id
+      labels {
+        nodes {
+          id
+          name
+        }
+      }
+    }
+  }
+}
+"""
+        data = await self._request(labels_query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        issue_id: str = issue["id"]
+        team = issue.get("team") or {}
+        team_id: str = team["id"]
+        label_nodes: list[dict[str, Any]] = (team.get("labels") or {}).get("nodes", [])
+
+        target = next(
+            (n for n in label_nodes if (n.get("name") or "").lower() == name.lower()),
+            None,
+        )
+        if target is not None:
+            label_id: str = target["id"]
+        else:
+            label_id = await self._create_label(name, team_id)
+
+        add_mutation = """
+mutation AddLabel($id: String!, $labelId: String!) {
+  issueAddLabel(id: $id, labelId: $labelId) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            add_mutation, {"id": issue_id, "labelId": label_id}
+        )
+        success = (result.get("data") or {}).get("issueAddLabel", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueAddLabel did not report success for {identifier!r}; "
+                f"response: {result!r}"
+            )
+
+    async def _create_label(self, name: str, team_id: str) -> str:
+        """Create label ``name`` on team ``team_id`` and return its id."""
+        create_mutation = """
+mutation CreateLabel($name: String!, $teamId: String!) {
+  issueLabelCreate(input: {name: $name, teamId: $teamId}) {
+    success
+    issueLabel {
+      id
+    }
+  }
+}
+"""
+        created = await self._request(
+            create_mutation, {"name": name, "teamId": team_id}
+        )
+        payload = (created.get("data") or {}).get("issueLabelCreate") or {}
+        label_id = (payload.get("issueLabel") or {}).get("id")
+        if not payload.get("success") or not label_id:
+            raise LinearRequestError(
+                f"Linear issueLabelCreate did not return a label for {name!r}; "
+                f"response: {created!r}"
+            )
+        return str(label_id)
+
+    async def post_comment(self, identifier: str, body: str) -> None:
+        """Post a comment with ``body`` to issue ``identifier`` (``commentCreate``).
+
+        Resolves the issue's UUID first (``commentCreate`` keys on the id, not
+        the identifier), then fires the mutation.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error or ``commentCreate``
+                did not report ``success: true``.
+        """
+        id_query = """
+query IssueId($id: String!) {
+  issue(id: $id) {
+    id
+  }
+}
+"""
+        data = await self._request(id_query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        issue_id: str = issue["id"]
+
+        mutation = """
+mutation AddComment($issueId: String!, $body: String!) {
+  commentCreate(input: {issueId: $issueId, body: $body}) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"issueId": issue_id, "body": body}
+        )
+        success = (result.get("data") or {}).get("commentCreate", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear commentCreate did not report success for {identifier!r}; "
+                f"response: {result!r}"
+            )
+
     async def _transition(
         self, identifier: str, *, state_type: str, preferred_name: str
     ) -> None:
         """Move issue ``identifier`` to a workflow state of ``state_type``.
 
-        Shared implementation behind :meth:`transition_to_in_progress` and
-        :meth:`transition_to_done`.  Queries the team's workflow states, selects
+        Shared implementation behind :meth:`transition_to_in_progress`,
+        :meth:`transition_to_done`, and :meth:`transition_to_unstarted`.  Queries
+        the team's workflow states, selects
         a state literally named ``preferred_name`` (case-insensitive) if present
         else the first state of ``state_type``, then fires an ``issueUpdate``
         mutation.  Mirrors ``build-codex.yaml``.
