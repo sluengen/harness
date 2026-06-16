@@ -207,9 +207,13 @@ layer, and the workflow loader — were deleted in CAL-574 (see §3's banner and
 ### 4.1 `harness.cli` — the verb surface
 
 The Typer app (`harness/cli/__init__.py`) is the public contract. It registers
-the three audited verbs (`start` / `review` / `close`) plus the read/inspection
-and ops commands (`status` / `logs` / `events` / `runs` / `worktrees` /
-`cancel` / `doctor` / `version`). Subcommands are split per concern
+the three audited verbs (`start` / `review` / `close`) — detailed in §4.2–§4.4 —
+alongside the read/inspection commands, the mutating ops and maintenance verbs,
+and the worktree housekeeping group. The exact registered set, with flags and
+exit codes, is the §11 command surface — the single source of truth, locked
+against the live app by `test_cli_surface_locked.py`; this section deliberately
+does not re-list it, so a verb added later cannot leave a stale partial list
+here. Subcommands are split per concern
 across `harness/cli/*.py` for readability. Stable flags, stable exit codes,
 stable JSON output — see §11.
 
