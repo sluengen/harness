@@ -14,7 +14,7 @@ Linear response (SPEC context-economy constraint):
 The ``transition_to_in_progress`` method first queries the issue's team states
 to find the "In Progress" (``type=started``) state, then fires the
 ``issueUpdate`` mutation.  If no "In Progress"-named state is found it falls
-back to the first ``started`` state — matching the build-codex.yaml logic.
+back to the first ``started`` state — a deterministic name-then-type fallback.
 
 Environment variable: ``LINEAR_API_KEY`` must be set before constructing a
 :class:`LinearClient`.  :func:`linear_api_key` raises :class:`LinearConfigError`
@@ -412,7 +412,7 @@ mutation AddComment($issueId: String!, $body: String!) {
         the team's workflow states, selects
         a state literally named ``preferred_name`` (case-insensitive) if present
         else the first state of ``state_type``, then fires an ``issueUpdate``
-        mutation.  Mirrors ``build-codex.yaml``.
+        mutation.
 
         Raises:
             LinearNotFound: the issue does not exist.

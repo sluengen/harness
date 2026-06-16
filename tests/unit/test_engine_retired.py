@@ -180,6 +180,67 @@ def test_workflow_package_dir_removed() -> None:
     assert tracked_files_under("harness/workflows") == set()
 
 
+# A live-source *citation* of a retired build workflow by name — ``build.yaml``
+# or ``build-codex.yaml``. ``test_build_yaml_removed`` guards that the *files* are
+# gone; this guards that no docstring/comment still *points a reader at* them.
+# A cite into a deleted artifact is worse than no cite — it sends a reader to
+# prose that no longer exists (the same class ``test_retired_spec_cites.py``
+# eliminated for retired SPEC sections, CAL-633). One pattern covers both names:
+# ``build`` + optional ``-codex`` + ``.yaml``.
+_RETIRED_BUILD_YAML_CITE = re.compile(r"\bbuild(?:-codex)?\.yaml\b")
+
+# The boundary contract, pinned by example (mirrors test_retired_spec_cites.py).
+_BUILD_YAML_MATCH = [
+    "matching the build-codex.yaml logic",  # the linear.py docstring cite
+    "Mirrors ``build-codex.yaml``.",        # the linear.py _transition cite
+    "see workflows/build.yaml",             # path-qualified bare form
+    "build.yaml",                           # bare filename
+]
+_BUILD_YAML_NO_MATCH = [
+    "build a yaml document",     # prose that is not a filename cite
+    "buildable.yamlish config",  # not the retired filename
+    "rebuild.yaml is unrelated", # different filename (no word boundary before build)
+]
+
+
+@pytest.mark.parametrize("sample", _BUILD_YAML_MATCH)
+def test_retired_build_yaml_cite_regex_matches(sample: str) -> None:
+    assert _RETIRED_BUILD_YAML_CITE.search(sample), (
+        f"{sample!r} should be flagged as a retired build-workflow cite"
+    )
+
+
+@pytest.mark.parametrize("sample", _BUILD_YAML_NO_MATCH)
+def test_retired_build_yaml_cite_regex_ignores_non_cites(sample: str) -> None:
+    assert not _RETIRED_BUILD_YAML_CITE.search(sample), f"{sample!r} must not be flagged"
+
+
+def test_no_live_harness_source_cites_a_retired_build_yaml() -> None:
+    """No git-tracked ``harness/**/*.py`` names the retired ``build*.yaml`` workflows.
+
+    The deterministic build workflows (``build.yaml`` / ``build-codex.yaml``) were
+    deleted with the engine (CAL-574); the verb model that replaced them is
+    self-contained. A docstring or comment that still says the code "mirrors
+    build-codex.yaml" cross-refers a reader to a file that no longer exists —
+    ``test_build_yaml_removed`` only proves the file is gone, not that nothing
+    points at it. This sweep closes that gap, the same way
+    ``test_retired_spec_cites.py`` did for retired SPEC sections.
+    """
+    violations: list[str] = []
+    for path in sorted(tracked_files_under("harness")):
+        if path.suffix != ".py":
+            continue
+        for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+            if _RETIRED_BUILD_YAML_CITE.search(line):
+                violations.append(f"{path.name}:{line_no}: {line.strip()}")
+
+    assert not violations, (
+        "live harness/ source cites a retired build workflow (build.yaml / "
+        "build-codex.yaml were deleted with the engine in CAL-574; the verb "
+        "model is self-contained):\n  " + "\n  ".join(violations)
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-3 — release & steward behaviour survives the engine retirement in its
 # durable home (CAL-574 parked it under agents/tasks/; CAL-716 folded it in).
