@@ -1,6 +1,6 @@
-"""``harness reclaim`` — reclaim a run whose orchestrator died (CAL-735).
+"""``harness reclaim`` — reclaim a run whose orchestrator died (CAL-735 + CAL-736).
 
-Breakdown item 2 of the accepted proposal ``stale-run-reclamation``. When the
+Breakdown items 2 + 3 of the accepted proposal ``stale-run-reclamation``. When the
 Claude session driving a run stops without finishing (usage limit, crash,
 container timeout) it strands three pieces of state: a Linear ticket stuck *In
 Progress*, an ``open`` ``runs`` row, and a git worktree/branch. ``harness
@@ -31,10 +31,19 @@ Targeting:
 * ``harness reclaim --ticket <ID>`` — resolve the ``open`` run for the ticket.
   When there is **no** local open run (the cloud regime, where a fresh container
   never had the dead run's DB) it still reverts the ticket on Linear — the
-  contract the ``--stale`` sweep (CAL-736) builds on.
+  contract the ``--stale`` sweep builds on.
+* ``harness reclaim --stale --project <name> [--older-than 90m]`` — the **sweep**
+  (CAL-736, breakdown item 3). Enumerate the project's In-Progress tickets and
+  reclaim each whose Linear ``updatedAt`` is older than the threshold, *reusing*
+  the single-target ``--ticket`` path per ticket (no second reclaim
+  implementation). Liveness of a dead run cannot be observed (ephemeral
+  container, no shared DB); the only signal is time — a ticket idle longer than
+  any legitimate run takes is presumed abandoned (proposal D2). The bulk arm the
+  hourly Build routine's pre-flight will call (CAL-737).
 
 Idempotent: reclaiming a run already ``cancelled`` is a safe no-op (no second
-Linear revert, no duplicate event).
+Linear revert, no duplicate event). The sweep is idempotent the same way — once
+reverted a ticket is Todo, so the next sweep's enumeration no longer returns it.
 
 Exit codes (SPEC §11):
 * 0  — reclaimed (or an idempotent no-op / a revert-only when no local run).
@@ -48,15 +57,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import typer
 
-from harness._time import iso_z
+from harness._time import iso_z, parse_iso_z
 from harness.cli._abandon import CANCELLABLE_STATUSES, AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._query_common import _resolve_db_path
+from harness.cli.worktrees import _parse_duration
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -236,6 +247,77 @@ async def _run_reclaim(
     }
 
 
+async def _run_stale_sweep(
+    db_path: Path, *, project: str, older_than: str, threshold: timedelta
+) -> dict[str, object]:
+    """Enumerate the project's In-Progress tickets and reclaim each idle past
+    ``threshold``; raise :class:`_ReclaimError` on a Linear/config failure.
+
+    The enumerate-and-filter layer (CAL-736) on top of the single-target reclaim:
+    every stale ticket is reclaimed through :func:`_run_reclaim`'s ``--ticket``
+    arm, so the revert + ledger-reconcile + branch-preserve behaviour is shared,
+    not re-implemented. A ticket inside the threshold is left untouched.
+    """
+    try:
+        api_key = linear_api_key()
+    except LinearConfigError as exc:
+        raise _ReclaimError(str(exc), 2) from exc
+
+    client = LinearClient(api_key=api_key)
+    try:
+        issues = await client.fetch_in_progress_issues(project=project)
+    except LinearRequestError as exc:
+        raise _ReclaimError(
+            f"failed to list In-Progress issues for project {project!r}: {exc}", 2
+        ) from exc
+
+    # Staleness keys on time only (proposal D2): a ticket idle longer than the
+    # threshold is presumed abandoned. ``updatedAt`` is parsed through the
+    # ``_time`` seam; both sides of the comparison are aware-UTC.
+    cutoff = datetime.now(UTC) - threshold
+
+    reclaimed: list[dict[str, object]] = []
+    skipped: list[str] = []
+    for issue in issues:
+        identifier = str(issue["identifier"])
+        updated = parse_iso_z(str(issue["updated_at"]))
+        if updated < cutoff:
+            result = await _run_reclaim(db_path, None, identifier)
+            reclaimed.append(
+                {
+                    "ticket": identifier,
+                    "outcome": result["outcome"],
+                    "branch_preserved": result["branch_preserved"],
+                }
+            )
+        else:
+            skipped.append(identifier)
+
+    return {
+        "mode": "stale-sweep",
+        "project": project,
+        "older_than": older_than,
+        "scanned": len(issues),
+        "reclaimed": reclaimed,
+        "skipped": skipped,
+    }
+
+
+def _print_sweep(result: dict[str, object]) -> None:
+    """Human-readable summary of a ``--stale`` sweep (``--json`` emits ``result``)."""
+    reclaimed = cast("list[dict[str, object]]", result["reclaimed"])
+    skipped = cast("list[str]", result["skipped"])
+    typer.echo(
+        f"Swept {result['scanned']} In-Progress ticket(s) in {result['project']!r} "
+        f"(threshold {result['older_than']}): {len(reclaimed)} reclaimed, "
+        f"{len(skipped)} left in-flight."
+    )
+    for entry in reclaimed:
+        typer.echo(f"  reclaimed {entry['ticket']} ({entry['outcome']})")
+    for ident in skipped:
+        typer.echo(f"  skipped   {ident} (within threshold)")
+
+
 def reclaim_command(
     run_id: str | None = typer.Argument(
         None, help="Run identifier (ULID). Provide this or --ticket, not both."
@@ -251,17 +333,57 @@ def reclaim_command(
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
     ),
+    stale: bool = typer.Option(
+        False,
+        "--stale",
+        help="Sweep mode: reclaim every In-Progress ticket in --project idle "
+        "past --older-than. Mutually exclusive with <run-id>/--ticket.",
+    ),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        help="Project name to scope the --stale sweep (required with --stale).",
+    ),
+    older_than: str = typer.Option(
+        "90m",
+        "--older-than",
+        help="Staleness threshold for --stale (e.g. 90m, 12h, 7d). Default 90m.",
+    ),
 ) -> None:
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
     db_path = _resolve_db_path(db)
 
     try:
-        # Exactly one selector: a bare run-id or --ticket, never both or neither.
-        if (run_id is None) == (ticket is None):
-            raise _ReclaimError(
-                "provide exactly one of <run-id> or --ticket <ID>", 2
+        if stale:
+            # Sweep mode owns the project; a single-target selector is ambiguous.
+            if run_id is not None or ticket is not None:
+                raise _ReclaimError(
+                    "--stale sweeps the project; do not combine it with "
+                    "<run-id> or --ticket",
+                    2,
+                )
+            if not project:
+                raise _ReclaimError(
+                    "--stale requires --project <name> to scope the sweep", 2
+                )
+            # Parse the duration outside the event loop so a bad value exits 2
+            # via typer.BadParameter, exactly like ``worktrees cleanup --age``.
+            threshold = _parse_duration(older_than)
+            result = asyncio.run(
+                _run_stale_sweep(
+                    db_path,
+                    project=project,
+                    older_than=older_than,
+                    threshold=threshold,
+                )
             )
-        result = asyncio.run(_run_reclaim(db_path, run_id, ticket))
+        else:
+            # Exactly one selector: a bare run-id or --ticket, never both or neither.
+            if (run_id is None) == (ticket is None):
+                raise _ReclaimError(
+                    "provide exactly one of <run-id> or --ticket <ID>", 2
+                )
+            result = asyncio.run(_run_reclaim(db_path, run_id, ticket))
     except _ReclaimError as exc:
         if json_output:
             typer.echo(json.dumps({"error": exc.message}))
@@ -271,6 +393,10 @@ def reclaim_command(
 
     if json_output:
         typer.echo(json.dumps(result))
+        return
+
+    if result.get("mode") == "stale-sweep":
+        _print_sweep(result)
         return
 
     outcome = result["outcome"]
