@@ -209,3 +209,74 @@ def test_routines_documented_local_trigger_only() -> None:
         "the local-trigger note in the `## /harness routine` section must name "
         "the local harness wrapper it cannot reach from the cloud (CAL-705 AC-4)."
     )
+
+
+# --- CAL-737: the Build routine runs a reclaim pre-flight before picking work
+#
+# A run that dies mid-flight (a session that hits a usage/session limit just
+# stops) leaves its ticket stranded **In Progress**; a fresh hourly Build run
+# can observe nothing about the dead predecessor, so the queue wedges until a
+# human intervenes. CAL-736 shipped the Linear-keyed ``harness reclaim --stale``
+# sweep; CAL-737 (breakdown item 4 of ``specs/proposals/stale-run-reclamation``)
+# wires it in as **step 0** of the Build routine — run before the pick step so
+# each tick unblocks the queue first. These guards pin that wiring.
+
+
+def test_build_routine_runs_reclaim_preflight() -> None:
+    """CAL-737 AC-1: the Build routine runs the Linear-keyed
+    ``harness reclaim --stale`` sweep (scoped to a ``--project``, default 90m)
+    as its pre-flight, before picking work."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    assert "harness reclaim --stale" in body, (
+        "the Build routine must run `harness reclaim --stale` as its pre-flight "
+        "step 0, before picking the next ticket (CAL-737 AC-1)."
+    )
+    assert "--project" in body, (
+        "the `--stale` sweep is required to be scoped to a project; the Build "
+        "routine must pass `--project` (CAL-737 AC-1)."
+    )
+    assert re.search(r"90\s*(m|min)", body, re.IGNORECASE), (
+        "the Build routine must note the default 90-minute staleness threshold "
+        "for the reclaim pre-flight (CAL-737 AC-1)."
+    )
+
+
+def test_build_routine_reclaim_runs_first_with_rationale() -> None:
+    """CAL-737 AC-2: the reclaim pre-flight is documented BEFORE the pick step,
+    with its rationale (unblock the backlog) and its idempotency (safe each tick)."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    reclaim_at = body.find("harness reclaim --stale")
+    pick_at = body.lower().find("pick the next ticket")
+    assert reclaim_at != -1, (
+        "the reclaim pre-flight command must appear in the Build routine "
+        "(CAL-737 AC-1)."
+    )
+    assert pick_at != -1, "the Build routine must retain its pick step."
+    assert reclaim_at < pick_at, (
+        "the reclaim pre-flight must be documented BEFORE the pick step — it "
+        "runs first so the queue is unblocked before work is chosen (CAL-737 AC-2)."
+    )
+    assert re.search(r"unblock", body, re.IGNORECASE), (
+        "the Build routine must document WHY the reclaim runs first — to unblock "
+        "the backlog (CAL-737 AC-2)."
+    )
+    assert re.search(r"idempotent", body, re.IGNORECASE), (
+        "the Build routine must document that the reclaim pre-flight is "
+        "idempotent / safe to run each tick (CAL-737 AC-2)."
+    )
+
+
+def test_build_routine_fallback_documents_equivalent_preflight() -> None:
+    """CAL-737 AC-3: where the harness tool is unavailable (the ``/build``
+    fallback), the routine documents the equivalent Linear-keyed pre-flight,
+    routed through the ``linear`` skill (no embedded GraphQL — CAL-731)."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    low = body.lower()
+    assert "equivalent" in low and "pre-flight" in low, (
+        "the Build routine must document the *equivalent* pre-flight for the "
+        "`/build` fallback where the harness tool is unavailable (CAL-737 AC-3)."
+    )
+    assert "`linear` skill" in body, (
+        "the fallback pre-flight must route through the `linear` skill rather "
+        "than embedding Linear GraphQL (CAL-737 AC-3; CAL-731 invariant)."
+    )

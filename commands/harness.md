@@ -117,6 +117,14 @@ The hourly work-pull: take the next logical ticket off the Linear Todo queue and
 
 **Primary surface:** `/harness run <TICKET>` (the audited verb loop). **Fallback:** `/build <TICKET>` (agent-orchestrated) when the harness tool is unavailable. In the harness repo itself, the primary is always `/harness run` (per `CLAUDE.md`, the harness drives its own tickets through the verb loop, not `/build`); the fallback is for a consuming repo that lacks the harness app.
 
+**Step 0 — reclaim stranded runs (pre-flight).** Before picking any work, sweep the queue for tickets stranded **In Progress** by a run that died mid-flight. A session that hits a usage/session limit just *stops*, leaving its ticket In Progress; a fresh run can observe nothing about the dead predecessor, so liveness is unobservable and a **time heuristic** is the only fix that survives a hard kill (proposal `stale-run-reclamation`, D2/D3). Run the sweep first:
+
+```bash
+harness reclaim --stale --project "Harness v3"   # default staleness threshold 90m
+```
+
+This **runs first, before the pick step**, so the routine **unblocks the backlog** before it chooses work: a ticket left In Progress by a dead predecessor would otherwise wedge the queue until a human intervened. The sweep reverts each idle ticket (Linear `updatedAt` older than the threshold) back to **Todo**, so this same run can then pick it up. It is **idempotent and safe to run every tick**: a ticket already reverted is Todo (not In Progress), so a later sweep does not re-enumerate it, and a sweep that finds nothing stale is a clean no-op. The sweep keys entirely on **Linear** (not the local ledger), so it works in both the local and cloud regimes; it touches only **In Progress** tickets and never **In Review**. *Fallback (`/build`, harness tool unavailable):* run the **equivalent** Linear-keyed pre-flight by hand through the `linear` skill — revert every `Harness v3` ticket left In Progress past the staleness threshold back to Todo (never touch In Review) — before picking work.
+
 The loop:
 
 1. **Pick the next ticket.** Look at the current list of items marked **Todo** in Linear in the project `Harness v3`. From that list pick the next most logical task to start work on. Take into account the **ID number** (tickets are often added in the order in which they need to be done), **dependencies** in Linear, and the **priority**. Tickets with a `decision` label have been marked as not actionable yet in previous runs — skip them.
