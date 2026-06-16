@@ -61,6 +61,7 @@ EXPECTED_SURFACE = {
     "events",
     "runs",  # read / inspection
     "cancel",
+    "reclaim",
     "doctor",
     "version",
     "worktrees",

@@ -43,111 +43,39 @@ from pathlib import Path
 import typer
 
 from harness._time import iso_z
+from harness.cli._abandon import AbandonError
+from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._query_common import _resolve_db_path
-from harness.events.schema import EVENT_TYPES
 from harness.state import store
-from harness.state.schema import RUN_STATUSES
 
 __all__ = ["cancel_command"]
 
-#: In-flight statuses a run can be abandoned *from* — an explicit allowlist, not
-#: a terminal denylist. The verb model only ever writes ``open``; the rest are
-#: legacy engine / intake states that may still appear on historical rows. An
-#: allowlist means an unknown or future status is **refused**, never silently
-#: overwritten to ``cancelled``.
-_CANCELLABLE_STATUSES: frozenset[str] = frozenset(
-    {"open", "running", "pending", "paused", "stalled"}
-)
-# The allowlist must stay a subset of the canonical run-status set.
-assert _CANCELLABLE_STATUSES <= RUN_STATUSES
-
-#: The cancellation event. ``workflow_failed`` with ``reason='cancelled'`` is the
-#: canonical mark (a member of :data:`EVENT_TYPES`) that ``harness status`` reads
-#: to surface ``failure_reason='cancelled'``.
-_CANCEL_EVENT_TYPE = "workflow_failed"
+#: The reason recorded on the ``workflow_failed`` event a cancel emits.
+#: ``harness reclaim`` reuses the same shared transaction (:mod:`harness.cli
+#: ._abandon`) with ``reason='reclaimed'``; the allowlist and event-type
+#: invariants live there so both verbs share one ledger-write rule.
 _CANCEL_REASON = "cancelled"
-assert _CANCEL_EVENT_TYPE in EVENT_TYPES  # guard against a future rename drift
-
-
-class _CancelError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
-
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
 
 
 async def _run_cancel(db_path: Path, run_id: str) -> None:
-    """Abandon the run; raise :class:`_CancelError` on refusal or error."""
+    """Abandon the run; raise :class:`AbandonError` on refusal or error."""
     if not db_path.exists():
-        raise _CancelError(f"no run with run_id={run_id!r}", 2)
+        raise AbandonError(f"no run with run_id={run_id!r}", 2)
 
     completed_at = datetime.now(UTC).isoformat()
     event_ts = iso_z()
-    event_data = json.dumps({"reason": _CANCEL_REASON})
 
     async with store.connect(db_path) as conn:
-        # The status flip and the audit event must land together: a run marked
-        # `cancelled` with no cancellation event is an inconsistent ledger that
-        # retry cannot repair (a terminal run refuses re-cancel). So both writes
-        # share one transaction — commit once, or roll back together.
-        await conn.execute("BEGIN IMMEDIATE")
-        try:
-            cur = await conn.execute(
-                "SELECT status FROM runs WHERE run_id = ?", (run_id,)
-            )
-            row = await cur.fetchone()
-            if row is None:
-                raise _CancelError(f"no run with run_id={run_id!r}", 2)
-
-            status = str(row[0])
-            if status not in _CANCELLABLE_STATUSES:
-                # Refuse anything not on the allowlist. Distinguish a known
-                # terminal run from an unrecognised status for a clearer
-                # message, but never overwrite either.
-                if status in RUN_STATUSES:
-                    raise _CancelError(
-                        f"run {run_id!r} is already terminal (status={status!r}); "
-                        "only an in-flight run can be cancelled",
-                        2,
-                    )
-                raise _CancelError(
-                    f"run {run_id!r} has an unrecognised status {status!r}; "
-                    "refusing to cancel",
-                    2,
-                )
-
-            # Guard the transition on the exact status we observed — optimistic
-            # concurrency. If a close/cancel raced in between the read above and
-            # here, the status differs and zero rows change: refuse rather than
-            # overwrite a terminal state.
-            update = await conn.execute(
-                "UPDATE runs SET status = 'cancelled', completed_at = ? "
-                "WHERE run_id = ? AND status = ?",
-                (completed_at, run_id, status),
-            )
-            if update.rowcount == 0:
-                raise _CancelError(
-                    f"run {run_id!r} changed state concurrently; only an in-flight "
-                    "run can be cancelled",
-                    2,
-                )
-
-            # Append the cancellation event in the same transaction (mirrors
-            # EventEmitter's INSERT; inlined here so it shares the commit).
-            await conn.execute(
-                "INSERT INTO events (run_id, node_id, event_type, timestamp, "
-                "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
-                (run_id, None, _CANCEL_EVENT_TYPE, event_ts, None, event_data),
-            )
-            await conn.commit()
-        except _CancelError:
-            await conn.rollback()
-            raise
-        except Exception as exc:  # noqa: BLE001
-            await conn.rollback()
-            raise _CancelError(f"failed to record cancellation: {exc}", 1) from exc
+        # The status flip and the audit event must land together — see
+        # :func:`harness.cli._abandon.abandon_run_in_ledger`, the one
+        # transaction ``cancel`` and ``reclaim`` share.
+        await _abandon_in_ledger(
+            conn,
+            run_id,
+            reason=_CANCEL_REASON,
+            completed_at=completed_at,
+            event_ts=event_ts,
+        )
 
 
 def cancel_command(
@@ -166,7 +94,7 @@ def cancel_command(
 
     try:
         asyncio.run(_run_cancel(db_path, run_id))
-    except _CancelError as exc:
+    except AbandonError as exc:
         if json_output:
             typer.echo(json.dumps({"error": exc.message}))
         else:

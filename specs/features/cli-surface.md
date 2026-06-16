@@ -30,12 +30,13 @@ harness worktrees list                    [--repo-root <p>] [--json]
 
 # Maintenance / ops — mutate outside the audited lifecycle
 harness cancel    <run-id>                [--db <p>] [--json]      # abandon an in-flight run: marks the ledger row cancelled
+harness reclaim   [<run-id>] [--ticket <id>] [--db <p>] [--json]   # reclaim a stranded run: revert its ticket to Todo (+reclaimed label/comment), reconcile the ledger, preserve the branch
 harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]
 ```
 
-This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). Two maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
+This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). Three maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `reclaim` recovers a run whose orchestrator died — it reverts the stranded Linear ticket to Todo (with a `reclaimed` label + comment), then reuses `cancel`'s ledger transaction to clear the `open` row (so a fresh `start` is not blocked), while **preserving** the worktree/branch; `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
 
 ### Exit codes are a stable contract
 
