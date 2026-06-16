@@ -280,3 +280,39 @@ def test_build_routine_fallback_documents_equivalent_preflight() -> None:
         "the fallback pre-flight must route through the `linear` skill rather "
         "than embedding Linear GraphQL (CAL-737 AC-3; CAL-731 invariant)."
     )
+
+
+# --- CAL-739: the Build pick logic resumes a reclaimed ticket from its WIP branch
+#
+# Item 6 of ``specs/proposals/stale-run-reclamation`` (D4 preserve/resume): once
+# a stranded ticket is back in Todo carrying a checkpoint-pushed WIP branch, the
+# next Build run continues from that branch (``harness start --resume``) instead
+# of restarting cold — recovering the dead run's work rather than redoing it.
+# These guards pin that the pick logic documents the resume path and its clean
+# fallback.
+
+
+def test_build_routine_resumes_reclaimed_ticket_from_preserved_branch() -> None:
+    """CAL-739 AC-1: the Build pick logic resumes a `reclaimed` ticket from its
+    preserved WIP branch via `harness start --resume`, instead of a clean branch
+    off `dev`."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    assert "--resume" in body, (
+        "the Build routine must wire `harness start --resume` so a re-picked "
+        "`reclaimed` ticket continues from its preserved WIP branch (CAL-739 AC-1)."
+    )
+    assert "reclaimed" in body.lower(), (
+        "the resume wiring must key on the `reclaimed` ticket the reclaim "
+        "pre-flight produces (CAL-739 AC-1)."
+    )
+
+
+def test_build_routine_resume_documents_clean_fallback() -> None:
+    """CAL-739 AC-2: the routine documents that with no durable WIP, `--resume`
+    falls back to a normal clean start."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    low = body.lower()
+    assert "fall back" in low or "fallback" in low or "falls back" in low, (
+        "the resume wiring must document the clean-restart fallback when no "
+        "durable WIP exists (CAL-739 AC-2)."
+    )

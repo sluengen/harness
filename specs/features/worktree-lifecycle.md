@@ -1,8 +1,8 @@
 ---
 feature: worktree-lifecycle
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-590, CAL-661, CAL-693]
+last_updated: 2026-06-16
+linear: [CAL-590, CAL-661, CAL-693, CAL-739]
 ---
 
 # Worktree lifecycle — isolated branch per run
@@ -23,6 +23,18 @@ linear: [CAL-590, CAL-661, CAL-693]
 - WHEN the helper's `create` runs
 - THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git worktree add -b harness/<run_id> <path> <base>`
 - AND if the path already exists it raises rather than silently reuse; on a `git` failure it best-effort cleans up any half-baked directory before raising
+
+### Resume — start the worktree from a preserved branch
+
+`WorktreeNode.create` accepts an optional `start_point` that decouples the commit the new branch starts at from the recorded `base` (the merge target). `harness start --resume` uses it to **continue a reclaimed run from its checkpoint-pushed WIP branch** (CAL-739, proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md) D4) instead of restarting cold.
+
+#### Scenario: `harness start --resume` continues a reclaimed run
+
+- GIVEN a `reclaimed` ticket whose dead run left a checkpoint-pushed branch `<wip>` on `origin` (the reclaim comment names it; [`reclaim`](run-ledger.md) preserved it)
+- WHEN `harness start <ticket> --resume` runs
+- THEN it reads `<wip>` from Linear (`LinearClient.fetch_resume_branch`), `git fetch origin <wip>`, and calls `create(..., base=<base>, start_point=<fetched SHA>)` — so the worktree's `harness/<run_id>` branch continues from the recovered WIP tip while `base_branch` stays `<base>`
+- AND `close` therefore merges into `<base>` and its HEAD-bound gate keeps the resumed run safe from double-merge
+- AND when no durable WIP exists — the reclaim preserved no branch, or `<wip>` no longer fetches — `start_point` is `None` and it falls back to a clean start off `<base>` (best-effort; resume never blocks the queue)
 
 ### Rollback — `start` removes its own worktree on a later failure
 

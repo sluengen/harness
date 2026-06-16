@@ -80,6 +80,7 @@ from harness.linear import (
     LinearRequestError,
     linear_api_key,
 )
+from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
 
@@ -87,12 +88,10 @@ __all__ = ["reclaim_command"]
 
 #: The reason recorded on the ``workflow_failed`` event a reclaim emits — distinct
 #: from ``cancel``'s ``'cancelled'`` so ``harness status`` surfaces
-#: ``failure_reason='reclaimed'`` and the ledger says *why* the run ended.
+#: ``failure_reason='reclaimed'`` and the ledger says *why* the run ended. This is
+#: the ledger-event reason, separate from the Linear ``reclaimed`` *label*
+#: (:data:`harness.reclaim_marker.RECLAIM_LABEL`), which is the reader's re-pick gate.
 _RECLAIM_REASON = "reclaimed"
-
-#: The label reclaim applies to a reverted ticket so a re-picked ticket is
-#: visibly marked (proposal D1).
-_RECLAIM_LABEL = "reclaimed"
 
 
 class _ReclaimError(Exception):
@@ -102,17 +101,6 @@ class _ReclaimError(Exception):
         super().__init__(message)
         self.message = message
         self.code = code
-
-
-def _comment_body(run_id: str | None, branch: str | None) -> str:
-    """A reclamation comment naming when it happened and the preserved branch."""
-    run_clause = f"run `{run_id}`" if run_id else "no local run row found"
-    ref = branch if branch else "(none — clean restart on next pick)"
-    return (
-        f"Reclaimed by `harness reclaim` at {iso_z()}. The orchestrating session "
-        f"is presumed dead ({run_clause}); the ticket is reverted to **Todo** and "
-        f"labelled `reclaimed` so it can be re-picked. Preserved branch: `{ref}`."
-    )
 
 
 async def _resumable_branch(
@@ -198,8 +186,10 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
     client = LinearClient(api_key=api_key)
     try:
         await client.transition_to_unstarted(ticket)
-        await client.apply_label(ticket, _RECLAIM_LABEL)
-        await client.post_comment(ticket, _comment_body(run_id, branch))
+        await client.apply_label(ticket, RECLAIM_LABEL)
+        await client.post_comment(
+            ticket, format_reclaim_comment(run_id, branch, when=iso_z())
+        )
     except LinearNotFound as exc:
         raise _ReclaimError(f"ticket {ticket!r} not found on Linear: {exc}", 2) from exc
     except LinearRequestError as exc:
