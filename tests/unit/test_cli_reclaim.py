@@ -105,6 +105,22 @@ def _seed_run(
     _run_sync(_insert())
 
 
+def _seed_checkpoint(db_path: Path, run_id: str, branch: str = "harness/cal-735") -> None:
+    """Emit a ``checkpoint`` event for ``run_id`` — the durable-WIP signal a
+    checkpoint-push leaves (CAL-738). reclaim reports a resumable branch only when
+    one exists; a run with none has no pushed WIP."""
+    from harness.events.emitter import EventEmitter
+
+    async def _emit() -> None:
+        await EventEmitter(db_path).emit(
+            run_id=run_id,
+            event_type="checkpoint",
+            data={"run_id": run_id, "branch": branch, "pushed_sha": "deadbeef"},
+        )
+
+    _run_sync(_emit())
+
+
 def _fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
     async def _select() -> dict[str, Any] | None:
         async with store.connect(db_path) as conn:
@@ -221,6 +237,7 @@ def test_reclaim_reverts_linear_and_flips_run(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     _seed_run(db, run_id="R1", status="open", ticket="CAL-735",
               worktree_branch="harness/cal-735")
+    _seed_checkpoint(db, "R1")  # the run checkpoint-pushed → branch is durable
     stub = _make_linear_stub()
 
     result = _invoke(["reclaim", "R1", "--db", str(db)], stub)
@@ -230,7 +247,7 @@ def test_reclaim_reverts_linear_and_flips_run(tmp_path: Path) -> None:
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-735")
     stub.apply_label.assert_awaited_once_with("CAL-735", "reclaimed")
     stub.post_comment.assert_awaited_once()
-    # Comment names the preserved branch ref.
+    # Comment names the preserved (checkpoint-pushed) branch ref.
     (_ident, body) = stub.post_comment.await_args.args
     assert "harness/cal-735" in body
 
@@ -296,6 +313,7 @@ def test_reclaim_json_output(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     _seed_run(db, run_id="R1", status="open", ticket="CAL-735",
               worktree_branch="harness/cal-735")
+    _seed_checkpoint(db, "R1")  # checkpoint-pushed → the branch is resumable
     result = _invoke(["reclaim", "R1", "--json", "--db", str(db)], _make_linear_stub())
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -303,6 +321,26 @@ def test_reclaim_json_output(tmp_path: Path) -> None:
     assert payload["ticket"] == "CAL-735"
     assert payload["outcome"] == "reclaimed"
     assert payload["branch_preserved"] == "harness/cal-735"
+
+
+def test_reclaim_without_checkpoint_reports_no_resumable_branch(tmp_path: Path) -> None:
+    """CAL-738 AC3: a run that never checkpoint-pushed has no durable WIP, so
+    reclaim degrades cleanly to *no resumable branch* — it does not advertise a
+    local-only branch a later pick could not fetch."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="open", ticket="CAL-735",
+              worktree_branch="harness/cal-735")
+    # No checkpoint event seeded — nothing was pushed.
+    stub = _make_linear_stub()
+    result = _invoke(["reclaim", "R1", "--json", "--db", str(db)], stub)
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "reclaimed"
+    assert payload["branch_preserved"] is None
+    # The comment does not promise a branch a resume could not find.
+    (_ident, body) = stub.post_comment.await_args.args
+    assert "harness/cal-735" not in body
 
 
 # ===========================================================================
@@ -596,6 +634,7 @@ def test_stale_sweep_full_reclaim_when_local_run_exists(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     _seed_run(db, run_id="R9", status="open", ticket="CAL-840",
               worktree_branch="harness/cal-840")
+    _seed_checkpoint(db, "R9", branch="harness/cal-840")  # durable WIP pushed
     stub = _make_sweep_stub([{"identifier": "CAL-840", "updated_at": _iso_minutes_ago(100)}])
 
     result = _invoke(

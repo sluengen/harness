@@ -272,10 +272,11 @@ the open/closed run lifecycle live in
 ### 4.7 `harness.events.emitter`
 
 Append-only event-log writer over the `events` table. `review` appends a
-`review` event (carrying `reviewed_sha` + verdict) and `close` appends a `close`
-event; `start` emits **no** event — the open run is recorded as the `runs` row
-itself. So the audit trail is the `runs` row **plus** its events, not the events
-alone. Event types live in `harness.events.schema`.
+`review` event (carrying `reviewed_sha` + verdict), `close` appends a `close`
+event, and `checkpoint` appends a `checkpoint` event (the run-branch push that
+makes WIP durable, CAL-738); `start` emits **no** event — the open run is
+recorded as the `runs` row itself. So the audit trail is the `runs` row **plus**
+its events, not the events alone. Event types live in `harness.events.schema`.
 
 ### 4.8 `harness.linear`, `harness.identity`
 
@@ -844,6 +845,7 @@ Stall is distinct from the hard `timeout_s` wall (which terminates after total e
 harness start  <ticket>   [--base <b>] [--repo <p>] [--db <p>] [--json]
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
+harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
 
 # Read / inspection — never mutate state
 harness status    <run-id>                [--json]

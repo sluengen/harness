@@ -56,6 +56,7 @@ EXPECTED_SURFACE = {
     "start",
     "review",
     "close",  # the three audited verbs
+    "checkpoint",  # push the run branch mid-flight (CAL-738)
     "status",
     "logs",
     "events",

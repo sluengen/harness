@@ -29,6 +29,10 @@ EventType = Literal[
     "review",
     # Close verb (CAL-572) — gate passed, run merged/closed, ticket Done.
     "close",
+    # Checkpoint verb (CAL-738) — the run branch pushed to origin mid-flight so
+    # WIP survives the container dying; the ledger signal ``reclaim`` reads to
+    # report a *durable* (resumable) branch rather than a never-pushed local one.
+    "checkpoint",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

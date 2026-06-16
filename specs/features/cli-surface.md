@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-583, CAL-603, CAL-661]
+last_updated: 2026-06-16
+linear: [CAL-583, CAL-603, CAL-661, CAL-738]
 ---
 
 # CLI surface — the fixed verb contract
@@ -20,6 +20,7 @@ The Typer app (`harness/cli/__init__.py`) is the public contract. The surface is
 harness start  <ticket>   [--base <b>] [--repo <p>] [--db <p>] [--json/--no-json]
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
+harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]   # push the run branch to origin mid-flight so committed WIP survives the container dying — pushes only the feature branch, never merges
 
 # Read / inspection — never mutate state
 harness status    <run-id>                [--db <p>] [--json]
@@ -36,7 +37,7 @@ harness doctor                            [--db <p>]               # system heal
 harness version                           [--json]
 ```
 
-This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). Three maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `reclaim` recovers a run whose orchestrator died — it reverts the stranded Linear ticket to Todo (with a `reclaimed` label + comment), then reuses `cancel`'s ledger transaction to clear the `open` row (so a fresh `start` is not blocked), while **preserving** the worktree/branch; its `--stale` sweep enumerates a project's In-Progress tickets and reclaims each whose Linear `updatedAt` is idle past `--older-than` (default 90m) — keying on time alone (proposal D2), since a dead run's liveness cannot be observed — reusing the single-ticket path per ticket (the bulk pre-flight the Build routine calls); `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
+This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). `checkpoint` is a fourth lifecycle verb the orchestrating run calls *between* `start` and `close` — after each green increment it pushes the run's `worktree_branch` to `origin` so committed WIP survives the container dying, and appends a `checkpoint` event bound to the pushed SHA. It pushes **only** the feature branch — never the base, never a merge — so the `close` gate is untouched; the event is the durable-WIP signal `reclaim` reads to report a resumable branch (CAL-738, proposal `stale-run-reclamation` D4). Three maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `reclaim` recovers a run whose orchestrator died — it reverts the stranded Linear ticket to Todo (with a `reclaimed` label + comment), then reuses `cancel`'s ledger transaction to clear the `open` row (so a fresh `start` is not blocked), while **preserving** the worktree/branch; its `--stale` sweep enumerates a project's In-Progress tickets and reclaims each whose Linear `updatedAt` is idle past `--older-than` (default 90m) — keying on time alone (proposal D2), since a dead run's liveness cannot be observed — reusing the single-ticket path per ticket (the bulk pre-flight the Build routine calls); `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
 
 ### Exit codes are a stable contract
 

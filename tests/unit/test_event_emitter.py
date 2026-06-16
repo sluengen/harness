@@ -2,8 +2,9 @@
 
 See SPEC §4.7 (event types) and ``specs/features/run-ledger.md`` (events table).
 
-CAL-713 pruned the canonical event set to the three types a live verb emits
-(``workflow_failed`` via ``harness cancel``, ``review``, ``close``). The
+CAL-713 pruned the canonical event set to the live-verb-emitter types
+(``workflow_failed`` via ``harness cancel``, ``review``, ``close``); CAL-738
+added ``checkpoint`` (``harness checkpoint`` — the run-branch push). The
 retired deterministic-engine types (CAL-574) are no longer writable — the
 emitter validates them out — but historical rows that still carry them read
 back unchanged, because readers never re-validate ``event_type``.
@@ -26,9 +27,9 @@ from harness.state import store
 # Helpers
 # ---------------------------------------------------------------------------
 
-#: The canonical set — every type a live verb emits. After CAL-713 this is the
-#: whole writable surface.
-LIVE_EVENT_TYPES: list[EventType] = ["workflow_failed", "review", "close"]
+#: The canonical set — every type a live verb emits. CAL-713 pruned this to the
+#: post-engine live set; CAL-738 added ``checkpoint`` (the run-branch push).
+LIVE_EVENT_TYPES: list[EventType] = ["workflow_failed", "review", "close", "checkpoint"]
 
 #: Retired deterministic-engine types (CAL-574). No live code emits these; the
 #: emitter now rejects them on write. Kept here as a test fixture so the
