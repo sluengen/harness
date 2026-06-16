@@ -173,6 +173,44 @@ def test_spec_command_surface_equals_registered() -> None:
     assert documented == _registered_surface()
 
 
+def _spec_section_41() -> str:
+    """The body of SPEC §4.1 (``harness.cli`` — the verb surface), up to §4.2."""
+    text = SPEC.read_text()
+    start = text.index("### 4.1 ")
+    end = text.index("### 4.2 ", start)
+    return text[start:end]
+
+
+#: The three audited verbs are named inline in §4.1 by design (§4.2–§4.4 detail
+#: each), so they are excluded from the ops-enumeration invariant below.
+_AUDITED_VERBS = {"start", "review", "close"}
+
+
+def test_spec_41_does_not_partially_enumerate_the_command_surface() -> None:
+    """SPEC §4.1 must not hand-list a *subset* of the registered ops commands.
+
+    §11 is the single guarded source of the command surface
+    (``test_spec_command_surface_equals_registered``). §4.1 once kept a *second*,
+    unguarded prose list of the same set — it named ``cancel`` among the ops
+    commands but omitted the registered siblings ``reclaim`` / ``checkpoint``
+    (CAL-746), and drifted silently because only §11 was locked. The fix made
+    §4.1 defer the exact set to §11 (CAL-747). This lock holds that: the ops
+    commands §4.1 enumerates are *all* of them or *none* (a deferral) — never a
+    misleading proper subset that goes stale the next time a verb is added.
+    """
+    registered = _registered_surface()
+    named = {t for t in re.findall(r"`(\w+)`", _spec_section_41()) if t in registered}
+    ops_named = named - _AUDITED_VERBS
+    ops_registered = registered - _AUDITED_VERBS
+    assert ops_named in (set(), ops_registered), (
+        "SPEC §4.1 enumerates a proper subset of the registered ops commands: "
+        f"names {sorted(ops_named)} but the registered ops set is "
+        f"{sorted(ops_registered)} (missing {sorted(ops_registered - ops_named)}). "
+        "Defer the exact list to §11 — the single guarded source of truth — "
+        "instead of keeping a parallel hand-list that drifts (CAL-746 / CAL-747)."
+    )
+
+
 def _real_options() -> dict[str, set[str]]:
     """Map every command (incl. ``worktrees list`` / ``worktrees cleanup``) to the
     set of ``--long`` options it actually exposes, via the live Typer/click app."""
