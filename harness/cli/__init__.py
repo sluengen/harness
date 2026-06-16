@@ -32,6 +32,7 @@ from harness.cli.query import (
     runs_command,
     status_command,
 )
+from harness.cli.reclaim import reclaim_command
 from harness.cli.review import review_command
 from harness.cli.start import start_command
 from harness.cli.version import version_command
@@ -63,6 +64,9 @@ app.command(name="events", help="Print a run's events (JSON or compact).")(
 )
 app.command(name="cancel", help="Abandon an in-flight run (close without merge).")(
     cancel_command
+)
+app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to Todo and reconcile the ledger.")(  # noqa: E501
+    reclaim_command
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)

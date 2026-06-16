@@ -30,6 +30,12 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 - WHEN `harness cancel <run-id>` runs
 - THEN it sets `status='cancelled'`, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'` (it also reclaims legacy engine-era `running`/`pending` rows)
 
+#### Scenario: a reclaimed run (orchestrator died mid-flight)
+
+- GIVEN an `open` run whose orchestrating session died, leaving its ticket stuck *In Progress*
+- WHEN `harness reclaim <run-id>` (or `--ticket <ID>`) runs
+- THEN it first reverts the Linear ticket to **Todo** (+ a `reclaimed` label and comment), then reuses the `cancel` ledger transaction to set `status='cancelled'` + stamp `completed_at` + emit a `workflow_failed` event with `reason='reclaimed'` — clearing the `open` row so a fresh `harness start` is not blocked. The worktree/branch are **preserved**, not pruned (proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md) D4). `cancel` and `reclaim` share one ledger-abandon transaction (`harness/cli/_abandon.py`); they differ only in the recorded `reason`.
+
 The partial unique index `idx_runs_ticket_open ON runs(ticket) WHERE status = 'open'` keeps at most one `open` run per ticket, so a concurrent `harness start` cannot insert a second open row (CAL-570).
 
 The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalled` / `paused`) belong to the **retired** deterministic engine (CAL-574) and survive only so historical rows validate. `RUN_STATUSES` / the `RunStatus` `Literal` in `harness/state/schema.py` enumerates both the verb-model statuses and the retired-engine ones, so a status read out of any `runs` row validates against one type-safe seam (CAL-583); the column itself is plain `TEXT` (no `CHECK`).

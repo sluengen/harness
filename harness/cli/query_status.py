@@ -8,9 +8,10 @@ because Typer dispatches synchronously.
 the events / state tables:
 
 * ``failure_reason`` — ``data.reason`` from the latest ``workflow_failed``
-  event; ``None`` if the run has not failed. The sole live emitter of
-  ``workflow_failed`` is ``harness cancel`` (``reason='cancelled'``) — the
-  engine that once emitted it was retired in CAL-574.
+  event; ``None`` if the run has not failed. The live emitters of
+  ``workflow_failed`` are ``harness cancel`` (``reason='cancelled'``) and
+  ``harness reclaim`` (``reason='reclaimed'``) — the engine that once emitted it
+  was retired in CAL-574.
 * ``artifact_paths`` — dict of non-None artifact fields from ``state``
   (``worktree_path``, ``worktree_branch``); ``None`` when no artifacts are
   recorded.
@@ -84,7 +85,8 @@ async def _fetch_enriched_status(db_path: Path, run_id: str) -> dict[str, Any]:
     Returns a dict with:
     ``failure_reason`` — ``str | None``: ``data.reason`` from the latest
                          ``workflow_failed`` event (emitted by ``harness cancel``
-                         with ``reason='cancelled'``).
+                         with ``reason='cancelled'`` or ``harness reclaim`` with
+                         ``reason='reclaimed'``).
     """
     result: dict[str, Any] = {"failure_reason": None}
     if not db_path.exists():
