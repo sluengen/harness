@@ -116,6 +116,45 @@ query FetchIssue($id: String!) {
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
         return {k: raw.get(k) for k in _TICKET_FIELDS}
 
+    async def fetch_in_progress_issues(
+        self, *, project: str
+    ) -> list[dict[str, str]]:
+        """List the In-Progress issues in ``project`` as ``[{identifier, updated_at}]``.
+
+        The enumeration the ``harness reclaim --stale`` sweep (CAL-736) filters by
+        age.  Scoped to the named project and the **In Progress** state by name, so
+        the other ``started`` state — In Review, a legitimate handoff — is never
+        swept up.  ``updated_at`` carries Linear's ``updatedAt`` (ISO-8601 UTC):
+        the staleness signal the sweep compares against its threshold (proposal
+        D2).  Requests up to 100 issues unpaged — a single project never holds more
+        simultaneously-In-Progress tickets than that.
+
+        Raises:
+            LinearRequestError: the API returned an error or an unexpected response.
+        """
+        query = """
+query InProgressIssues($project: String!) {
+  issues(
+    first: 100
+    filter: {
+      project: { name: { eq: $project } }
+      state: { name: { eq: "In Progress" } }
+    }
+  ) {
+    nodes {
+      identifier
+      updatedAt
+    }
+  }
+}
+"""
+        data = await self._request(query, {"project": project})
+        nodes = ((data.get("data") or {}).get("issues") or {}).get("nodes") or []
+        return [
+            {"identifier": n["identifier"], "updated_at": n["updatedAt"]}
+            for n in nodes
+        ]
+
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Transition issue ``identifier`` to the first In Progress state.
 

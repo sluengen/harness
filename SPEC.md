@@ -855,7 +855,7 @@ harness worktrees cleanup                 [--age <duration>] [--merged]
 
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
-harness reclaim   [<run-id>] [--ticket <id>]  [--db <p>] [--json]   # revert a stranded ticket to Todo, reconcile the ledger
+harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
 harness doctor                                # system health checks
 harness version                           [--json]
 ```

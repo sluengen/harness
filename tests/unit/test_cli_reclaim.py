@@ -1,11 +1,12 @@
-"""Tests for ``harness reclaim`` — reclaim a run whose orchestrator died (CAL-735).
+"""Tests for ``harness reclaim`` — reclaim a run whose orchestrator died
+(CAL-735 single-target, CAL-736 ``--stale`` sweep).
 
-Breakdown item 2 of the accepted proposal ``stale-run-reclamation``. A run whose
-driving session died leaves the Linear ticket stuck *In Progress*, an ``open``
-``runs`` row, and a worktree/branch. ``harness cancel`` only flips the local row
-— it never touches Linear, so the ticket stays In Progress and every dependent
-stays blocked. ``reclaim`` is the one auditable verb that reverts the ticket and
-reconciles the local ledger.
+Breakdown items 2 + 3 of the accepted proposal ``stale-run-reclamation``. A run
+whose driving session died leaves the Linear ticket stuck *In Progress*, an
+``open`` ``runs`` row, and a worktree/branch. ``harness cancel`` only flips the
+local row — it never touches Linear, so the ticket stays In Progress and every
+dependent stays blocked. ``reclaim`` is the one auditable verb that reverts the
+ticket and reconciles the local ledger.
 
 Contract under test:
 
@@ -23,22 +24,34 @@ Contract under test:
 * Refuses cleanly (exit 2) for an unknown run-id, a finished-terminal run, an
   unrecognised status, or an ambiguous invocation (both / neither selector).
   Idempotent — reclaiming an already-``cancelled`` run is a safe no-op.
+* ``--stale --project <name> [--older-than 90m]`` enumerates the project's
+  In-Progress tickets and reclaims each idle past the threshold (reusing the
+  single-target ``--ticket`` path per ticket), skipping any inside the threshold;
+  an empty / already-reverted project is a clean no-op.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
+from harness._time import iso_z
 from harness.cli import app
 from harness.state import store
 
 cli_runner = CliRunner()
+
+
+def _iso_minutes_ago(minutes: int) -> str:
+    """A trailing-``Z`` UTC timestamp ``minutes`` in the past — the Linear
+    ``updatedAt`` shape the sweep parses (proposal D2 staleness signal)."""
+    return iso_z(datetime.now(UTC) - timedelta(minutes=minutes))
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +185,18 @@ def _make_linear_stub(
         mock.transition_to_unstarted = AsyncMock(side_effect=raise_on_transition)
     else:
         mock.transition_to_unstarted = AsyncMock(return_value=None)
+    mock.apply_label = AsyncMock(return_value=None)
+    mock.post_comment = AsyncMock(return_value=None)
+    return mock
+
+
+def _make_sweep_stub(in_progress: list[dict[str, str]]) -> MagicMock:
+    """A LinearClient mock for ``--stale``: ``fetch_in_progress_issues`` returns the
+    given list; the revert primitives are no-op AsyncMocks (the single stub serves
+    both the enumeration and the per-ticket revert, which the sweep reuses)."""
+    mock = MagicMock()
+    mock.fetch_in_progress_issues = AsyncMock(return_value=in_progress)
+    mock.transition_to_unstarted = AsyncMock(return_value=None)
     mock.apply_label = AsyncMock(return_value=None)
     mock.post_comment = AsyncMock(return_value=None)
     return mock
@@ -441,3 +466,194 @@ def test_reclaim_and_cancel_share_the_abandon_transaction() -> None:
 
     assert reclaim._abandon_in_ledger is _abandon.abandon_run_in_ledger
     assert cancel._abandon_in_ledger is _abandon.abandon_run_in_ledger
+
+
+# ===========================================================================
+# CAL-736: --stale sweep — enumerate In-Progress tickets, reclaim the stale ones
+# ===========================================================================
+
+
+def test_stale_sweep_reclaims_past_threshold(tmp_path: Path) -> None:
+    """A ticket idle past the threshold is reclaimed. With no local run (the cloud
+    regime) the revert-only path runs — the load-bearing case for the routine."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))  # empty ledger — cloud regime
+    stub = _make_sweep_stub([{"identifier": "CAL-800", "updated_at": _iso_minutes_ago(100)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.fetch_in_progress_issues.assert_awaited_once_with(project="Harness v3")
+    stub.transition_to_unstarted.assert_awaited_once_with("CAL-800")
+
+    payload = json.loads(result.output)
+    assert payload["mode"] == "stale-sweep"
+    assert payload["scanned"] == 1
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-800"]
+    assert payload["skipped"] == []
+
+
+def test_stale_sweep_skips_sub_threshold(tmp_path: Path) -> None:
+    """A fresh/active ticket inside the threshold is never reclaimed."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub([{"identifier": "CAL-801", "updated_at": _iso_minutes_ago(10)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_not_awaited()
+    payload = json.loads(result.output)
+    assert payload["reclaimed"] == []
+    assert payload["skipped"] == ["CAL-801"]
+
+
+def test_stale_sweep_mixed_partitions_by_age(tmp_path: Path) -> None:
+    """A mixed list is partitioned: only the past-threshold ticket is reclaimed."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub(
+        [
+            {"identifier": "CAL-810", "updated_at": _iso_minutes_ago(200)},  # stale
+            {"identifier": "CAL-811", "updated_at": _iso_minutes_ago(30)},  # fresh
+        ]
+    )
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-810"]
+    assert payload["skipped"] == ["CAL-811"]
+    stub.transition_to_unstarted.assert_awaited_once_with("CAL-810")
+
+
+def test_stale_sweep_honours_custom_older_than(tmp_path: Path) -> None:
+    """``--older-than`` lowers the bar: a 30-min-idle ticket is stale under 20m."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub([{"identifier": "CAL-820", "updated_at": _iso_minutes_ago(30)}])
+
+    result = _invoke(
+        [
+            "reclaim", "--stale", "--older-than", "20m",
+            "--project", "Harness v3", "--json", "--db", str(db),
+        ],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-820"]
+    assert payload["older_than"] == "20m"
+
+
+def test_stale_sweep_empty_project_is_noop(tmp_path: Path) -> None:
+    """No In-Progress tickets → a clean no-op (exit 0, nothing reclaimed)."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub([])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["scanned"] == 0
+    assert payload["reclaimed"] == []
+    assert payload["skipped"] == []
+    stub.transition_to_unstarted.assert_not_awaited()
+
+
+def test_stale_sweep_idempotent_across_ticks(tmp_path: Path) -> None:
+    """Safe every tick: once reclaimed a ticket is Todo, so the next sweep's
+    enumeration no longer returns it — a true no-op, not a second revert."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    # Tick 1: the ticket is stale and In Progress → reclaimed.
+    tick1 = _make_sweep_stub([{"identifier": "CAL-830", "updated_at": _iso_minutes_ago(120)}])
+    assert _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--db", str(db)], tick1
+    ).exit_code == 0
+    tick1.transition_to_unstarted.assert_awaited_once_with("CAL-830")
+    # Tick 2: it is now Todo, so it is no longer enumerated → nothing to do.
+    tick2 = _make_sweep_stub([])
+    assert _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--db", str(db)], tick2
+    ).exit_code == 0
+    tick2.transition_to_unstarted.assert_not_awaited()
+
+
+def test_stale_sweep_full_reclaim_when_local_run_exists(tmp_path: Path) -> None:
+    """In the local regime the sweep does a full reclaim: the open run flips to
+    cancelled and the comment names the preserved branch (reuses the single path)."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R9", status="open", ticket="CAL-840",
+              worktree_branch="harness/cal-840")
+    stub = _make_sweep_stub([{"identifier": "CAL-840", "updated_at": _iso_minutes_ago(100)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    assert _fetch_row(db, "R9")["status"] == "cancelled"  # type: ignore[index]
+    assert _fetch_events(db, "R9", "workflow_failed")[0]["reason"] == "reclaimed"
+    (_ident, body) = stub.post_comment.await_args.args
+    assert "harness/cal-840" in body
+    payload = json.loads(result.output)
+    assert payload["reclaimed"][0]["outcome"] == "reclaimed"
+
+
+# --- --stale invocation refusals ----------------------------------------------
+
+
+def test_stale_requires_project(tmp_path: Path) -> None:
+    """``--stale`` without ``--project`` is refused (no unbounded workspace sweep)."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    result = _invoke(["reclaim", "--stale", "--db", str(db)], _make_sweep_stub([]))
+    assert result.exit_code == 2
+    # Nothing was enumerated or reverted.
+    # (the stub's fetch is never reached when the invocation is refused)
+
+
+def test_stale_rejects_a_run_id_selector(tmp_path: Path) -> None:
+    """``--stale`` combined with a single-target ``<run-id>`` is ambiguous → exit 2."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    result = _invoke(
+        ["reclaim", "R1", "--stale", "--project", "Harness v3", "--db", str(db)],
+        _make_sweep_stub([]),
+    )
+    assert result.exit_code == 2
+
+
+def test_stale_rejects_a_ticket_selector(tmp_path: Path) -> None:
+    """``--stale`` combined with ``--ticket`` is ambiguous → exit 2."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    result = _invoke(
+        ["reclaim", "--stale", "--ticket", "CAL-1", "--project", "Harness v3",
+         "--db", str(db)],
+        _make_sweep_stub([]),
+    )
+    assert result.exit_code == 2
+
+
+def test_stale_rejects_a_bad_duration(tmp_path: Path) -> None:
+    """A malformed ``--older-than`` is refused (exit 2, like worktrees cleanup)."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    result = _invoke(
+        ["reclaim", "--stale", "--older-than", "soon", "--project", "Harness v3",
+         "--db", str(db)],
+        _make_sweep_stub([]),
+    )
+    assert result.exit_code == 2
