@@ -877,10 +877,17 @@ def test_events_after_id_past_last_returns_empty(tmp_path: Path) -> None:
 
 
 def _db_help_text(command: str) -> str:
-    """Return the ``--help`` output for ``command`` with rich box-drawing
-    borders stripped and whitespace collapsed, so an option's help string can
-    be matched without caring how the renderer wrapped it across lines."""
+    """Return the ``--help`` output for ``command`` with ANSI colour codes and
+    rich box-drawing borders stripped and whitespace collapsed, so an option's
+    help string can be matched without caring how the renderer wrapped *or
+    coloured* it across lines.
+
+    CI renders help with colour at 80 cols (``FORCE_COLOR``); the ANSI SGR codes
+    then interleave the help text, so they must be stripped before matching —
+    otherwise a contiguous-substring check passes locally (no colour) but fails
+    on CI (CAL-751)."""
     out = runner.invoke(app, [command, "--help"]).stdout
+    out = re.sub(r"\x1b\[[0-9;]*m", "", out)  # strip ANSI SGR colour codes
     return re.sub(r"\s+", " ", re.sub(r"[│|]", " ", out))
 
 
