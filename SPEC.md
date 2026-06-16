@@ -1,8 +1,10 @@
 # Harness — Design Specification
 
-**Version:** 0.6 (planning)
-**Status:** Under revision. No code lands until this is approved.
-**Guiding principle:** *Build a deterministic execution engine, not an agent framework.*
+**Version:** 0.7
+**Status:** Current for §1–2 (the verb model), §4 (core module design), and §11 (CLI design). §3, §5–§10, and §12–§14 describe the **retired** deterministic workflow engine and are superseded — see the banner at §3.
+**Guiding principle:** *The harness is a set of deterministic, audited verbs an agent calls — not a pipeline that drives agents.*
+
+> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling three deterministic verbs — `start` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model; §4 (modules) and §11 (CLI) describe its as-built surface. The deterministic workflow engine (§3, §5–§10, §12–§14) was retired in CAL-574.
 
 ---
 
@@ -10,82 +12,109 @@
 
 Subsystem and integration specs live in `specs/`. Read the relevant file before touching a module.
 
+**Current — as-built record (verb model):**
+
+The `feature_specs` layer is on (`CONTEXT.md`), so the canonical as-built record of each current subsystem is a feature spec in `specs/features/` (`templates/feature.md` shape). Read the relevant feature spec before touching its subsystem.
+
+| Feature spec | Covers |
+|------|--------|
+| [`specs/features/verb-model.md`](specs/features/verb-model.md) | The `start` / `review` / `close` lifecycle and the close gate (the central feature) |
+| [`specs/features/run-ledger.md`](specs/features/run-ledger.md) | The SQLite ledger: `runs` / `events`, the open/closed lifecycle, the reviewed-SHA gate datum |
+| [`specs/features/worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) | The isolated worktree per run: create off base, cleanup policies, path/branch conventions |
+| [`specs/features/cli-surface.md`](specs/features/cli-surface.md) | The fixed command surface: verbs, read/inspection, ops, exit codes, JSON |
+
+**Design references (the model and deeper module detail the feature specs build on):**
+
+The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engine-loop`, `ai-node`, `script-node`) were re-homed to [`specs/retired/`](specs/retired/) in CAL-661; CAL-693 completed the relocation — `state-store.md` was **folded into** [`run-ledger.md`](specs/features/run-ledger.md) (the feature spec now carries the full schema reference); `build-workflow.md` / `cli.md` / `worktree-isolation.md` were re-homed to `specs/retired/`; and `hermes-orchestration.md` was **split** — its superseded control half was extracted to [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) (CAL-693), then its launcher / trigger / observability half was retired to [`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md) when the launcher scaffolding was removed (CAL-712). The one load-bearing piece that half documented — the `--repo` workspace allowlist — survives as `harness.workspace` (SPEC §4.9). All docstring cites were repointed.
+
 | Spec | Covers |
 |------|--------|
-| [`specs/workflow-schema.md`](specs/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs |
-| [`specs/engine-executor.md`](specs/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots |
-| [`specs/engine-loop.md`](specs/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind |
-| [`specs/ai-node.md`](specs/ai-node.md) | AI node dispatch, structured output, failure modes |
-| [`specs/script-node.md`](specs/script-node.md) | Script node subprocess, env, contract |
-| [`specs/worktree-isolation.md`](specs/worktree-isolation.md) | Git worktree lifecycle, branch naming, cleanup policies |
-| [`specs/state-store.md`](specs/state-store.md) | SQLite schema, BaseState, state merge, snapshots |
-| [`specs/cli.md`](specs/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output |
-| [`specs/build-workflow.md`](specs/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) |
-| [`specs/hermes-orchestration.md`](specs/hermes-orchestration.md) | Hermes + harness architecture decision, interface, deployment model |
+| [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
+| [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
+
+The SQLite schema reference (full DDL, migrations, `BaseState`) now lives in [`run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the worktree helper reference is the feature spec [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) (the engine-era `WorktreeNode` detail is the retired doc below).
+
+**Superseded (retired deterministic engine — historical):**
+
+| Spec | Covers | Status |
+|------|--------|--------|
+| [`specs/retired/hermes-control-model.md`](specs/retired/hermes-control-model.md) | Engine-era Hermes control model: responsibility boundary, Option A/B/C deployment decision, the Hermes→harness bridge interface | Control half superseded by `harness-as-tool` (CAL-693); the launcher/trigger half is `hermes-orchestration.md` below |
+| [`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md) | Launcher / trigger runtime topology, the narrow control socket, the launch handle, and the read-only ledger observability a deferred Hermes dispatcher would consume | Launcher/trigger scaffolding removed (CAL-712); kept as **design, not built**. The `--repo` allowlist it documented survives as `harness.workspace` |
+| [`specs/retired/build-workflow.md`](specs/retired/build-workflow.md) | Build workflow end-to-end (implement → review loop → merge phase) | Replaced by the `/harness run` verb loop; re-homed to `specs/retired/` (CAL-693) |
+| [`specs/retired/cli.md`](specs/retired/cli.md) | Command surface, dynamic subcommands, exit codes, JSON output | Verb surface is now the contract (`commands/harness.md`); re-homed to `specs/retired/` (CAL-693) |
+| [`specs/retired/worktree-isolation.md`](specs/retired/worktree-isolation.md) | Engine-era `WorktreeNode` reference: create + the retired cleanup policies | Live behaviour is `worktree-lifecycle.md`; `cleanup` machinery retired (CAL-693) |
+| [`specs/retired/workflow-schema.md`](specs/retired/workflow-schema.md) | YAML workflow format, step keys, contracts, inputs | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/engine-executor.md`](specs/retired/engine-executor.md) | Per-node execution, contract validation, state writes, snapshots | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/engine-loop.md`](specs/retired/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/ai-node.md`](specs/retired/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
+| [`specs/retired/script-node.md`](specs/retired/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 
 ---
 
 ## 1. Mission
 
-Execute workflows deterministically. Decouple *what work gets done* (orchestration, agents, humans) from *how work runs* (this harness).
+Give an agent a small set of **deterministic, audited verbs** to drive a ticket end-to-end, and **enforce that review happened** before anything merges. The agent owns *what work gets done and how* (orchestration + implementation); the harness owns *the durable record and the gate*.
+
+Decouple judgement (the agent's: read the ticket, write the code, decide how to fix a finding, when to re-review) from the **audit trail and enforcement** (the harness's: a `runs` ledger, a review verdict bound to a git SHA, a `close` gate that refuses an unreviewed merge).
 
 ### Core principles
 
-1. **Strict separation of concerns.** External layer decides what to run. Harness decides how it runs.
-2. **Deterministic execution.** Control flow does not depend on LLM outputs. All branching, looping, and termination are defined in code or YAML.
-3. **LLMs as bounded functions.** AI nodes execute tightly scoped tasks against declared contracts. The workflow declares the bounded *tool set* available to a node; the LLM chooses which tools to use within that set — that's where its creative problem-solving applies. **The YAML defines what to do with each step's output; the LLM provides typed answers to declared questions.** An LLM contributing a `decision: bool` to a gate is the LLM answering a question, not deciding the route — the YAML's `on_reject:` decides the route. Control flow shape is deterministic and lives in YAML, not in model judgement.
-4. **Reproducibility.** Same inputs → same execution behaviour. Container provides consistent runtime.
-5. **CLI is a public contract.** The harness is invoked by humans, agents, and meta-orchestrators through the same CLI surface. Stable flags, stable exit codes, stable JSON output.
-6. **Data flows via the workflow, not the agent.** External data (Linear issues, Notion content, GitHub state) is fetched by deterministic upstream nodes and passed to AI nodes via state and template variables. AI nodes do not reach out to MCP servers, plugin systems, or external APIs at runtime. This keeps token cost predictable (no model burning context deciding what to fetch), keeps state explicit (the run record shows exactly what the agent saw), and keeps the agent-harness layer thin (no MCP servers to configure per-adapter, no asymmetry between Claude Code / codex / opencode features to paper over).
+1. **The agent orchestrates; the harness records and gates.** There is **one execution model** — a Claude session runs `start → implement → review → (fix → review)* → close`, calling the verbs and doing the implementation itself — with **two triggers**: a human (`/harness run <ticket>`) or Hermes. The harness does not own the build loop and does not spawn its own implementing/reviewing agents.
+2. **Determinism lives in the verbs, not the journey.** Each verb (`start`, `review`, `close`) is a one-shot, audited, reproducible operation over the ledger. The orchestration *between* verbs varies with the agent and is deliberately not reproducible — that trade buys full context retention (the agent that reads the ticket is the one that writes the code) and graceful degradation (a verb failure drops to manual driving).
+3. **Enforcement is a gate inside `close`, bound to the reviewed tree.** `review` records the git SHA it reviewed; `close` refuses unless the ledger holds a `start` for the ticket **and** a `verdict=pass` whose reviewed SHA equals the worktree's current HEAD. This closes the stale-pass hole and makes unattended (Hermes-triggered) dispatch trustworthy — when no human is watching, the gate *is* the guarantee that nothing merges unreviewed.
+4. **Routing discipline — every git/ticket mutation goes through a verb.** The ledger is a complete audit trail only if nothing hand-rolls a `git merge`/`push` or a Linear mutation for the run lifecycle. The `/harness run` skill forbids it; `close` validates against the ledger as a backstop.
+5. **The verb surface is a public contract.** The harness is invoked by humans and by Hermes through the same verbs (`start` / `review` / `close` / `status` / `events` / `cancel`). Stable flags, stable exit codes, stable JSON output, structured refusals. Each verb runs as a one-shot container exactly as the human's `~/bin/harness` does.
+6. **Reproducibility applies to the verbs, not the end-to-end run.** We deliberately give up same-inputs→same-journey reproducibility (the original §2 goal). Autonomy is not a separate deterministic engine — it is Hermes occupying the trigger slot a human would. The container still provides a consistent runtime for each verb.
 
 ---
 
 ## 2. High-Level Architecture
 
+One execution model, two triggers. A trigger launches a per-session Claude runtime; that session orchestrates and implements, shelling out to one-shot verb containers; the verbs are the only thing that touches the ledger and git/ticket state.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  External layer (orchestration)                                 │
-│  - Linear webhook / Discord intake / Cron / Claude Code agent   │
-│  - Decides WHAT to run                                          │
-│  - Invokes harness via CLI                                      │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ harness run <workflow> [flags]
+┌─────────────────────────────────────────────────────────────────────┐
+│  TRIGGER                                                            │
+│   • a human  ( /harness run CAL-42 )                                │
+│   • Hermes   ( Nous' persistent agent: built-in cron dispatcher )   │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            │ launch a session for a ticket
                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Harness (this project)                                         │
-│  - Loads YAML workflow + Pydantic state schema                  │
-│  - Walks steps in declared order                                │
-│  - Dispatches AI / script / check / worktree nodes              │
-│  - Validates contracts, writes state, emits events              │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ subprocess / SDK
+┌─────────────────────────────────────────────────────────────────────┐
+│  Claude session — orchestrator + implementer  (per-session)         │
+│   start → [implement] → review → (fix → review)* → close            │
+│   context retained; the agent that reads the ticket writes the code │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            │ shells out to verbs (one-shot `docker run`)
                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Execution environment (inside container)                       │
-│  - Mounted project directory at /workspace                      │
-│  - Worktree per run (when workflow opts in via worktree node)   │
-│  - Agent harness: claude_agent_sdk / codex / opencode (subproc) │
-│  - SQLite state + event log at /workspace/.harness/             │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Harness — the tool:  start / review / close  +  ledger  +  gate    │
+│   • each verb a one-shot container over the host-mounted worktree   │
+│   • SQLite ledger (runs/events) at /workspace/.harness/             │
+│   • close gate: refuse unless a HEAD-bound passing review exists    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data flow per run
+A human typing `/harness run CAL-42` and Hermes dispatching CAL-42 produce the **identical** execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot container spawned **outside** the runtime, exactly as `~/bin/harness` is already a `docker run`. The agent must not run inside a verb container; that would make it per-call and reintroduce the lost-context problem.
 
-1. Caller invokes `harness run feature --linear PROJ-249 --base staging`.
-2. Harness generates a `run_id` (ULID).
-3. Harness loads `workflows/feature.yaml` + its declared `state_schema`.
-4. Harness initialises state, writes a `runs` row, emits `workflow_started`.
-5. For each node in declared order:
-   a. Resolve dependencies from prior state.
-   b. Render prompt template (Jinja) with state.
-   c. Dispatch to agent / script / check / worktree handler.
-   d. Validate output against the node's `contract`.
-   e. Apply `writes:` declarations to state. Reject any other state mutation.
-   f. Emit `node_completed`.
-6. On loop blocks, re-execute step list until `until:` condition evaluates true on state.
-7. On workflow completion, write `completed_at`, emit `workflow_completed`, exit 0.
+### Verb lifecycle per run
 
-The engine never asks an LLM what to do next. The YAML decides.
+1. A trigger launches a Claude session for `<ticket>` and issues `/harness run <ticket>`.
+2. **`start <ticket>`** — validate the ticket, transition it to In Progress, create a worktree off the base branch (default `dev`), open a `runs` ledger row (`status=open`, ULID `run_id`). Emits `StartOutput` (run_id, ticket context, worktree path/branch).
+3. **implement** — the session writes code + tests in the worktree, test-first, in scope. No verb is involved; the agent uses its own tools.
+4. **`review --run-id <id>`** — run codex against the worktree HEAD; record a `review` event carrying `{ verdict, issues, reviewed_sha }` bound to that SHA. The session sees only the bounded verdict; codex's full reasoning stays inside the verb.
+   - `fail` → fix the root cause, commit, re-run `review` (the `(fix → review)*` loop). Each review binds to the new HEAD.
+   - `defer` → file a follow-up for the out-of-scope finding, then close.
+   - `pass` → proceed to close.
+5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA == current HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+
+The harness never decides what to build or how. The session does; the verbs record it and gate the merge.
+
+---
+
+---
+
+> **§3 and §5–§10, §12–§14 below describe the retired deterministic workflow engine.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current.) They are kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement below as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is [`commands/harness.md`](commands/harness.md).
 
 ---
 
@@ -144,8 +173,7 @@ harness/
 │   │   ├── schema.py          ← Workflow / Step Pydantic models (engine-side)
 │   │   ├── derive.py          ← derive workflow state schema from collected writes/contracts
 │   │   └── prompt.py          ← Jinja2 prompt rendering
-│   ├── identity.py            ← run_id generation, propagation
-│   └── log.py                 ← structured logging
+│   └── identity.py            ← run_id generation, propagation
 ├── workflows/                 ← YAML workflow definitions (yours go here)
 │   ├── release-notes.yaml     ← shipped: pull Linear, summarise, write file
 │   └── steward.yaml           ← shipped: domain steward review
@@ -169,198 +197,109 @@ Placeholder dirs (`prompts/{feature,bugfix,review,steward}/`, `examples/`, `test
 
 ## 4. Core Module Design
 
-### 4.1 `harness.engine.runner`
+The harness is a small set of modules behind the verb CLI: the verbs, the
+worktree lifecycle, the SQLite ledger, the event log, and the Linear and
+identity helpers. The deterministic-engine internals this section once
+described — the YAML runner and executor, the node protocol, the agent-dispatch
+layer, and the workflow loader — were deleted in CAL-574 (see §3's banner and
+`tests/unit/test_engine_retired.py`).
 
-Top-level orchestrator. One `Runner.run(workflow_path, inputs)` call per invocation.
+### 4.1 `harness.cli` — the verb surface
 
-Responsibilities:
-- Generate `run_id`.
-- Load workflow YAML and its state schema.
-- Initialise state from `inputs` and defaults.
-- Walk steps in declared order, including loop blocks.
-- Catch fatal errors, emit terminal event, set exit code.
+The Typer app (`harness/cli/__init__.py`) is the public contract. It registers
+the three audited verbs (`start` / `review` / `close`) — detailed in §4.2–§4.4 —
+alongside the read/inspection commands, the mutating ops and maintenance verbs,
+and the worktree housekeeping group. The exact registered set, with flags and
+exit codes, is the §11 command surface — the single source of truth, locked
+against the live app by `test_cli_surface_locked.py`; this section deliberately
+does not re-list it, so a verb added later cannot leave a stale partial list
+here. Subcommands are split per concern
+across `harness/cli/*.py` for readability. Stable flags, stable exit codes,
+stable JSON output — see §11.
 
-Does **not** know about AI, scripts, or worktrees — delegates to nodes.
+### 4.2 `harness.cli.start`
 
-### 4.2 `harness.engine.executor`
+Opens a run. Validates the ticket (fetch from Linear, canonicalise the
+identifier, refuse a duplicate open run), generates a ULID `run_id` and creates
+an isolated git worktree off the base branch (via `harness.worktree`, default
+`dev`), inserts the `open` `runs` ledger row, and **transitions the ticket to
+*In Progress* last** — it is the only non-local side effect, so if the worktree
+or the ledger insert fails nothing has touched Linear (rollback ordering locked
+by `test_cli_start.py::test_worktree_failure_leaves_no_db_row_and_no_transition`
+and `::test_db_failure_removes_worktree_and_no_transition`). Emits a
+`StartOutput` JSON object (`run_id`, ticket, worktree path/branch); the open run
+is recorded as the `runs` row, not as an event.
 
-Per-node execution. `Executor.execute(step, state, context) -> NodeResult`.
+### 4.3 `harness.cli.review`
 
-Responsibilities:
-- Resolve `depends_on` (state must contain referenced fields).
-- Render prompt via `harness.workflow.prompt`.
-- Dispatch to the matching `Node` implementation.
-- Validate the node's output against its declared `contract` (Pydantic).
-- Apply `writes:` declarations — only declared fields propagate to state.
-- Emit `node_started` / `node_completed` / `node_failed`.
+Reviews the worktree's current HEAD with the configured reviewer (codex).
+Captures `git rev-parse HEAD` as `reviewed_sha`, runs codex against the
+worktree, scans stdout for the single `SUBMIT: <json>` line, and appends a
+`review` event whose verdict (`pass` / `fail` / `defer`) is **bound to that
+SHA** — the load-bearing detail behind decision D2 (the close gate refuses a
+pass whose SHA ≠ HEAD). Prints only the bounded verdict; the reviewer's full
+reasoning stays inside the verb.
 
-### 4.3 `harness.nodes.base`
+### 4.4 `harness.cli.close`
 
-The interface every node implements:
+Enforces the gate, then merges the **already-committed** HEAD to the base
+branch, pushes, transitions the ticket to *Done*, and finalizes the run. It does
+**not** auto-commit: a dirty worktree is refused outright, because uncommitted
+edits are not in HEAD and so were never reviewed (`stale_review` catches a
+commit *after* review; only the clean-tree check catches an edit *without*
+committing — CAL-586). The gate refuses unless a `start` row exists, the
+worktree is clean, and a `verdict=pass` reviewed-SHA equals HEAD; a refusal
+exits 2 with exactly one structured `reason` — `no_run` / `dirty_worktree` /
+`no_passing_review` / `stale_review` (locked by
+`test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits` and
+the gate tests). The verb never works around its own gate.
 
-```python
-class Node(Protocol):
-    type: ClassVar[Literal["ai", "script", "check", "worktree"]]
-    async def execute(self, step: Step, state: BaseState, ctx: Context) -> NodeResult: ...
+### 4.5 `harness.worktree`
 
-class NodeResult(BaseModel, Generic[T]):
-    contract: T                 # workflow-defined Pydantic — the actual deliverable
-    attestation: Attestation    # agent's self-report (informational only)
-    artifacts: Artifacts        # file mutations
+Git worktree creation off a base branch. Re-homed from the retired engine as a
+verb helper; only `create` survives — the engine-era `cleanup` `CleanupPolicy`
+machinery was retired in CAL-693 (no live caller — `start` rollback / `close`
+merge / `worktrees cleanup` use direct git). See
+[`specs/features/worktree-lifecycle.md`](specs/features/worktree-lifecycle.md)
+(the engine-era `WorktreeNode` detail is [`specs/retired/worktree-isolation.md`](specs/retired/worktree-isolation.md)).
 
-class Attestation(BaseModel):
-    status: Literal["complete", "partial", "blocked"]
-    reasoning: str              # short, for the event log
+### 4.6 `harness.state.store`
 
-class Artifacts(BaseModel):
-    diff: str | None
-    commit_sha: str | None
-    files_changed: list[Path]   # validated to be inside state.worktree_path
-```
+The SQLite ledger via `aiosqlite`. The `runs` / `events` tables are the whole
+audit trail; the connection is a managed resource (`@asynccontextmanager`, see
+CONTEXT.md). All run-lifecycle state goes through the store so the ledger
+reflects reality and the close gate can validate against it (D5). The schema and
+the open/closed run lifecycle live in
+[`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference
+(the current schema reference).
 
-**Hard rule (engine enforcement):** Control flow may read from `state` and from `check` node results. It may **not** read from `attestation`. Attestation is for the event log and human debugging only.
+### 4.7 `harness.events.emitter`
 
-### 4.4 `harness.nodes.ai`
+Append-only event-log writer over the `events` table. `review` appends a
+`review` event (carrying `reviewed_sha` + verdict), `close` appends a `close`
+event, and `checkpoint` appends a `checkpoint` event (the run-branch push that
+makes WIP durable, CAL-738); `start` emits **no** event — the open run is
+recorded as the `runs` row itself. So the audit trail is the `runs` row **plus**
+its events, not the events alone. Event types live in `harness.events.schema`.
 
-AI node. Wraps an agent harness (claude_agent_sdk / codex / opencode — see §4.7) for the duration of one bounded task.
+### 4.8 `harness.linear`, `harness.identity`
 
-Inputs:
-- Rendered prompt (Jinja2, with `state`, `inputs`, and any `template_vars` in scope).
-- Contract type (Pydantic — compiled from inline YAML or `$contracts/<name>` reference).
-- Allowed tool set (`allowed_tools:`; default read-only: `Read`, `Grep`, `Glob`).
+`harness.linear` is the Linear GraphQL client `start` and `close` use to fetch a
+ticket and transition its state. `harness.identity` generates the run ID (a
+ULID) and propagates it across the verbs.
 
-Output: `NodeResult[contract]`.
+### 4.9 `harness.workspace`
 
-#### Structured output via native tool calling
+`harness.workspace` enforces the `--repo` allowlist (`HARNESS_WORKSPACE_ROOTS`,
+CAL-584): every verb resolves `--repo` through one shared adapter, which fails
+closed when the allowlist is unset so a verb cannot operate outside the mounted
+workspace.
 
-The contract compiles to **two** artefacts at workflow load time:
-
-1. A **Pydantic model** for final validation.
-2. A **tool schema** (in the agent harness's native dialect) called `submit_<node_id>`, with one parameter per contract field, typed.
-
-The agent's instructions are: do the work using the allowed tools, then call `submit_<node_id>` exactly once with the typed payload. The harness extracts the call's arguments → validates against Pydantic → that's the `NodeResult.contract`.
-
-This pattern uses what RL-trained models are best at (tool calling), avoids fighting the harness's response format, and gives us first-line validation from the harness itself before our Pydantic check runs.
-
-#### Notes channel — auto-captured from text deltas
-
-Whatever text the agent emits *between* tool calls — "I'll start by reading X, looks like the issue is Y, now I'll check Z" — is captured automatically into `state.notes` (list-append). This is framework-provided, not workflow-opt-in: the harness listens to the agent harness's text-delta stream and routes each chunk as a note entry. No `note(text)` tool, no special declaration in the contract. The agent just talks; the harness just listens.
-
-Notes are bounded — see §7.
-
-#### Failure-mode catalogue (real, not hypothetical)
-
-Tool-call-based structured output works almost every time. The "almost" is what makes the engine robust. The patterns below are MECE — each carries a distinct retry response, so the engine discriminates by `ContractViolation.reason` rather than collapsing them.
-
-| Pattern | `reason` | Detection | Response |
-|---|---|---|---|
-| Model narrates the answer in chat instead of calling submit | `not_called` | Submit tool not called by end of turn | Contract-violation retry: stricter system message ("you MUST call submit_X with the typed payload, not narrate"). Fails after retry. |
-| Model calls submit with placeholder values (`"summary": "TODO"`) | `placeholder` | Pydantic validation passes but values look like placeholders (regex on common patterns: `TODO`, `<...>`, `example`, etc.) | Contract-violation retry: "be specific — placeholders are not acceptable values." Engine logs the suspicious payload. |
-| Model calls submit but the payload fails Pydantic validation | `validation_failed` | Submit tool called; Pydantic raises ValidationError on the arguments | Contract-violation retry: error feedback inline, "match the schema fields exactly." Distinct from `placeholder` because Pydantic itself rejected — the agent didn't even produce a structurally valid call. |
-| Model calls submit twice with different content | (warning, not violation) | Engine sees two `tool_called(submit_*)` events | First call wins. Second call is logged as `decision_violation` event and emits a warning. Workflow continues. |
-| Model calls submit then keeps emitting text | (informational) | submit was called, but agent hasn't ended turn | Engine treats first call as the result; subsequent text becomes notes. |
-| Model never calls submit and exits the loop | `not_called` | Submit tool not called by turn end + agent stop | Same as the narration case — agent never produced output. Contract-violation retry. |
-
-Each detection runs in the executor wrapper around the agent call. Each fires a `node_failed` (or, in the double-submit case, a `decision_violation` event) with a specific reason so failure-mode debugging is a single grep, not interpretive archaeology.
-
-Retries: see §10. Contract violations retry up to N with stricter system messages, then fail with exit code 3.
-
-### 4.5 `harness.nodes.decision`
-
-Decision/approval gate. Two actor flavors:
-
-**`actor: llm`** (v1) — same execution shape as an AI node, but the contract must include a `decision: bool` field and the engine routes on it via `on_reject:`. Emits a dedicated `decision_made` event so audit queries can find gates without parsing every node output. Implemented as syntactic sugar over the AI dispatch path plus routing.
-
-**`actor: human`** (v2 — schema reserved in v1, errors at load time until v2 ships) — pauses the workflow. Engine emits `decision_requested`, writes `paused_awaiting_decision` status to the runs row, persists state, prints the prompt + run-id to stdout, and exits with code **4**. The decision arrives via a separate CLI invocation (`harness decision approve|reject <run-id>`) which rehydrates state, emits `decision_received`, and resumes from the next step.
-
-The resume machinery lives in `harness/decisions/`. v1 ships the schema parser (which validates the YAML) and a load-time guard that rejects workflows using `actor: human` until v2 lands.
-
-### 4.6 `harness.nodes.worktree`
-
-Three sub-types via parameter, not separate node types:
-
-```yaml
-- id: setup
-  type: worktree
-  action: create
-  base: $state.base_branch
-  writes: [worktree_path, worktree_branch]
-
-- id: teardown
-  type: worktree
-  action: cleanup
-  policy: merge_to_base    # or: leave_for_inspection | delete_unconditionally
-  reads: [worktree_path, worktree_branch]
-```
-
-**Engine enforcement (load-time validation):** any node with `writes_files: true` (set by AI / script nodes that mutate the worktree) must have a `worktree.create` node upstream in the dependency graph. Workflows lacking this are rejected at load time. Prevents file mutations from escaping to source.
-
-### 4.7 `harness.dispatch.base`
-
-The `Agent` protocol wraps an **agent harness**, not a raw model API. We do not reimplement the tool loop — Claude Code, codex, and opencode have all converged on the same shape and frontier labs RL-train against it. We rent that loop and own the deterministic workflow layer above.
-
-```python
-class Agent(Protocol):
-    async def execute(
-        self,
-        prompt: str,
-        contract: type[BaseModel],
-        submit_tool_schema: dict,    # auto-generated from contract; see §4.4
-        *,
-        allowed_tools: list[str],
-        cwd: Path | None,
-        timeout_s: int = 600,
-        stall_timeout_s: int = 300,
-    ) -> NodeResult: ...
-```
-
-Implementations:
-
-- **v1 — `dispatch.claude_agent.ClaudeAgent`** — uses `claude_agent_sdk` (Anthropic's Python SDK that embeds the Claude Code loop in-process). Auths via `claude /login` for **subscription pricing** or `ANTHROPIC_API_KEY` for API rates. Ships day one.
-- **v1 — `dispatch.codex.CodexAgent`** — subprocess `codex` CLI for OpenAI models with text-submit completion. OpenAI's frontier models are RL-trained against the codex tool-call format — using the native harness avoids the small-but-real performance penalty of routing through opencode's generic dispatch.
-- **v1.5 — `dispatch.opencode.OpencodeAgent`** — subprocess `opencode` CLI for **local models** (Ollama / llama-swap / llama.cpp via OpenAI-compatible endpoint). Could also serve OpenAI as a fallback, though codex is preferred for OpenAI native models.
-
-#### Why claude_agent_sdk and not the raw `anthropic` SDK
-
-The raw Anthropic SDK gives us a model API. `claude_agent_sdk` gives us the Claude Code loop in-process (tool execution, structured response handling, sandbox semantics). Building the loop ourselves is ~1000 LOC of agent-harness reinvention. Using the SDK is ~150 LOC of adapter code and we inherit Anthropic's improvements as the SDK evolves.
-
-#### Feature symmetry — resolved by Principle 6
-
-Different agent harnesses expose different feature surfaces (Claude Code has rich MCP, skills, hooks; codex has a different dialect; opencode has its own). On the surface that's an asymmetry problem.
-
-**It isn't, because of Principle 6.** We don't use those features in the agent loop. Linear data is fetched by an upstream `script` node and passed via state, not by an in-loop MCP server. Domain knowledge lives in the prompt template (and Jinja partials), not in skills. Pre/post-tool-call interception, if we ever need it, lives at the engine level (executor wraps the agent call), not at the harness level — that makes it portable.
-
-The lowest-common-denominator we *do* depend on across all three adapters:
-- Structured completion with typed schemas
-- Streaming text output (for notes capture)
-- Cwd-scoped execution
-- Per-tool-call observability (events captured during execution)
-
-All three harnesses support all four. Asymmetry is real but doesn't bite the workflow layer.
-
-Adding a new agent (e.g., aider, cline, or a future opencode replacement) is one ~150–250-line module that implements `Agent`. No engine changes.
-
-### 4.8 `harness.state.store`
-
-Per-run state lives as a single JSON blob on the `runs` row. The state schema is **derived** at workflow load time from the union of `writes:` declarations across all nodes (see §6). State changes always go through `StateStore.update(run_id, **fields)` which (a) validates fields against the derived schema, (b) applies type-driven merge semantics (see §7), (c) updates the JSON, (d) emits a `state_changed` event.
-
-**Direct state mutation by nodes is forbidden.** Nodes return a `NodeResult`; the executor extracts fields per the `writes:` declaration and calls the store.
-
-### 4.9 `harness.events.emitter`
-
-Append-only event log in SQLite. Schema in §12.
-
-Events:
-- `workflow_started`, `workflow_completed`, `workflow_failed`, `workflow_paused`
-- `node_started`, `node_completed`, `node_failed`
-- `tool_called`, `tool_completed` (per tool call inside an AI node — captured from the SDK)
-- `state_changed`
-- `loop_iteration`
-- `retry_attempted`
-- `decision_requested`, `decision_made` (LLM actor), `decision_received` (human actor, v2), `decision_timeout` (v2), `decision_violation` (warning when an agent calls submit twice — see §4.4)
-
-Each event has `run_id`, `node_id` (nullable), `event_type`, ISO timestamp, JSON `data`, `duration_ms` (nullable).
-
+(The narrow host launcher control socket and the autonomous-dispatch *trigger*
+stand-in that once shared this section were the deferred Hermes scaffolding,
+removed in CAL-712. Their design is archived at
+[`specs/retired/hermes-orchestration.md`](specs/retired/hermes-orchestration.md);
+the autonomous dispatcher itself is deferred until the Build loop is built.)
 ---
 
 ## 5. YAML Workflow Schema
@@ -906,71 +845,100 @@ Stall is distinct from the hard `timeout_s` wall (which terminates after total e
 ### Command surface
 
 ```
-harness run <workflow> [<positional>...] [--<input>=<value> ...]
-harness status <run-id>                   [--json]
-harness logs <run-id>                     [--follow] [--node <id>]
-harness events <run-id>                   [--type <event_type>] [--json]
+# Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
+harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json]   # --resume: a reclaimed ticket with a checkpoint-pushed WIP branch continues from it (fetch + base the worktree on it); falls back to a clean start (CAL-739)
+harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
+harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
+harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
+
+# Read / inspection — never mutate state
+harness status    <run-id>                [--json]
+harness logs      <run-id>                [--follow] [--node <id>]
+harness events    <run-id>                [--type <event_type>] [--json] [--after-id <n>]
+harness runs                              [--limit <n>]
 harness worktrees list                    [--json]
 harness worktrees cleanup                 [--age <duration>] [--merged]
-harness decisions list                    [--json]                  # v2: paused runs
-harness decision show <run-id>            [--json]                  # v2
-harness decision approve <run-id>         [--comment="..."]         # v2
-harness decision reject  <run-id>         [--comment="..."]         # v2
-harness validate <workflow.yaml>          # static validation, no execution
+
+# Ops
+harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
+harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
+harness doctor                                # system health checks
 harness version                           [--json]
 ```
 
-The `decisions` / `decision` surface is **reserved in v1** — the verbs exist as no-ops or "not yet implemented" errors, but the names won't change in v2. Callers can plan for them.
+#### Harness-as-tool verbs
 
-### Per-workflow inputs (dynamic subcommand generation)
+`start` / `review` / `close` are the audited, one-shot verbs an
+orchestrating agent calls — see `specs/proposals/harness-as-tool.md`. They
+operate over the SQLite ledger, not the workflow engine.
 
-The `<workflow>` slot in `harness run <workflow>` is dynamic. The CLI loads the workflow YAML at invocation, reads its `inputs:` block, and generates the appropriate flag and positional argument structure on the fly. **The workflow IS the CLI definition for its own subcommand.**
+**`harness review`** runs the configured reviewer (codex) against the worktree's
+current HEAD and records a `review` event bound to the exact SHA reviewed — the
+load-bearing correctness detail behind decision **D2** (the `close` gate
+refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused).
 
-This means:
-- `harness run feature --help` introspects `workflows/feature.yaml` and prints that workflow's specific flags + positional args.
-- Adding a new workflow means writing YAML, not editing CLI code.
-- Per-workflow input shape is defined in the YAML's `inputs:` block (see §5 — *Inputs and CLI generation*).
+- Resolves *the current run* — the `status='open'` run whose `worktree_path`
+  equals `--repo` (CWD by default), or the run named by `--run-id`. No open run
+  resolved → exit 2.
+- Captures `git rev-parse HEAD` in that worktree as `reviewed_sha`.
+- Invokes `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral -`
+  with the review prompt on stdin and scans stdout for the first `SUBMIT: <json>`
+  line. The JSON carries `verdict` (`pass`|`fail`|`defer`), `issues[]`, and
+  optional `commit_message` / `deferred_brief`. A missing, malformed, or
+  unknown-verdict SUBMIT line is recorded as `verdict='fail'` with the sentinel
+  issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a
+  bad reviewer, it records the failure.
+- Appends a `review` event (`harness.events.schema` event type `review`) whose
+  `data_json` holds `run_id`, `reviewed_sha`, `verdict`, `issues`, optional
+  `commit_message` / `deferred_brief`, and `created_at`.
+- **Context economy:** prints only the bounded verdict — `verdict`, `issues`,
+  `reviewed_sha`, `run_id`. Codex's full stdout / reasoning stays inside the
+  verb and never enters the printed or returned JSON, keeping the agent's
+  context budget bounded. A recorded `fail` is still a *successful review*
+  (exit 0); deciding what to do with a verdict is the agent's job, not the
+  verb's. Exit codes mirror `start`: 0 success, 1 unexpected error, 2 no open
+  run resolved.
 
-Examples across workflows:
+### Fixed verb surface (no dynamic subcommands)
 
-```bash
-harness run feature --linear=PROJ-249               # flag form
-harness run feature "Build a dropdown menu"        # positional form (input has `position: 1`)
-harness run steward --domain=architecture
-harness run bugfix --linear=$LINEAR_ID --base=staging
-harness run review --pr=142 --json | jq .review_status
-```
+The surface above is **fixed**. There is no per-workflow dynamic subcommand
+generation: each verb is a hand-written Typer command with a stable flag set,
+and adding behaviour means adding or changing a verb, not loading YAML at
+invocation. The authoritative, agent-facing contract for the verbs the
+orchestrating session drives is [`commands/harness.md`](commands/harness.md);
+the registered command set is wired in `harness/cli/__init__.py`.
 
 ### Exit codes (stable contract)
 
 | Code | Meaning |
 |------|---------|
-| 0 | Workflow completed successfully (state matches expected terminal condition) |
-| 1 | Workflow failed (caught error during execution — e.g., loop exhausted, check failed) |
-| 2 | Invocation error (bad flags, missing config, workflow YAML invalid, state schema import failed) |
-| 3 | Contract violation (LLM output failed validation after exhausting retries) |
-| 4 | Paused awaiting decision (human-decision node, v2) — not a failure; resumes via `harness decision approve\|reject` |
+| 0 | Command succeeded |
+| 1 | Unexpected error (git failure, DB error, Linear error) |
+| 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 130 | SIGINT (user cancelled) |
 
 ### JSON output
 
-Every read command supports `--json` for machine consumers. Schema is versioned via `output_schema_version` field. Flag names and JSON keys are part of the public contract — no breaking changes without a major version bump.
+`status` and `events` expose `--json` for machine consumers; `logs` is the
+human-readable timeline (use `events --json` for its machine-readable form) and
+`runs` prints a summary table. The verbs (`start` / `review` / `close`) also
+take `--json`. Flag names and JSON keys are part of the public contract — no
+breaking changes without a major version bump.
 
 ### Examples
 
 ```bash
-# Human / agent kicks off a feature
-harness run feature --linear=PROJ-249 --base=staging
+# Open a run for a ticket (transitions it to In Progress, creates the worktree)
+harness start CAL-123
 
-# Cron fires the nightly architecture steward
-harness run steward --domain=architecture
+# Review the worktree HEAD — the verdict binds to the reviewed SHA
+harness review --run-id 01J...
 
-# Linear webhook (future) shells out
-harness run bugfix --linear=$LINEAR_ID --base=staging
+# Close through the gate (merge/push, transition the ticket to Done)
+harness close CAL-123 --run-id 01J...
 
-# Claude Code session inside the agent flow
-# (the harness binary is on PATH inside any container that has it)
-harness run review --pr=142 --json | jq .review_status
+# Inspect a run without mutating it
+harness status 01J... --json | jq .status
 ```
 
 ---
@@ -1183,7 +1151,7 @@ Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all
 
 ### What stays in a project's `skills/`
 
-Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear-sync, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
+Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
 
 ---
 
@@ -1198,8 +1166,7 @@ Explicit list of things this project does **not** do, even on request:
 - Multi-tenancy / multi-project state in one DB. One DB per project mount.
 - Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them.
 - LLM-driven workflow generation.
-- General-purpose agent framework. This is an execution engine for *bounded* AI tasks. If a use case wants an autonomous agent, this isn't the tool.
-- **Tracker writes from the engine.** The harness reads from trackers (Linear, GitHub) for intake and status checks. Writing back — updating ticket status, posting PR comments, transitioning workflow state — is the agent's job (via its tool calls inside an AI node) or an explicit `script` node's job. The engine itself never writes to a tracker. This boundary keeps the engine portable and prevents implicit coupling to any one tracker's state machine.
+- General-purpose agent framework. The harness is a set of deterministic verbs an agent calls, not a framework that runs agents. If a use case wants an autonomous agent that spawns its own work, this isn't the tool.
 
 ---
 
@@ -1223,7 +1190,7 @@ These are deliberately unresolved. Pick before code lands.
 
    The risk is bounded: the only real contention point is bursty event writes from many concurrent runs, which WAL serialises with millisecond-class lock acquisition. Acceptable for v1's expected workload (1–3 concurrent runs locally). If usage grows beyond that, switch to PostgreSQL — the schema is portable.
 
-4. **Discord intake — built-in or external?** Initial bias: external. The harness exposes the CLI; a separate `intake/discord.py` script (in this repo or a sibling) listens to Discord and shells out. Keeps the harness boundary clean.
+4. **External trigger source (Discord, etc.) — built-in or external?** *Resolved: external.* The harness exposes the CLI and does not listen; any process that watches a source and shells out to a verb lives in a sibling repo or in Hermes, never in this tool. The engine-era webhook listener that violated this boundary was retired in CAL-601.
 
 5. **Prompt-cache strategy.** Anthropic cache breakpoints could materially cut token cost for steward runs that re-read the same context daily. Defer to v0.2 once we have real token-cost data.
 

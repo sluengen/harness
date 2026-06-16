@@ -10,22 +10,22 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: HAR   # team prefix — workspace/team UUID unknown; run /harness ingest or check Linear settings to confirm
+  linear: CAL   # team prefix — Calibrate-coffee (CAL); harness work lives in the "Harness v3" project
 layers:
   linear: true
   design_system: false
-  feature_specs: false
+  feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
 stack:
   language: Python 3.11+
   framework: Pydantic 2 / Typer / aiosqlite
 commands:
   install: "uv sync --extra dev"
   lint:    "uv run ruff check ."
-  typecheck: "uv run mypy harness intake"
+  typecheck: "uv run mypy harness"
   test:    "uv run pytest"
   test_one: "uv run pytest <path/to/test_file.py::test_name>"
-  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke → workflow validation. Run before merge/tag.
-  run:     "source .env && PYTHONPATH=. bin/harness run build --linear=ISSUE-ID"
+  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke. Run before merge/tag.
+  run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
   release: main         # PRs from dev → main for releases
@@ -37,6 +37,7 @@ paths:
   source: harness/
   tests: tests/
   proposals: specs/proposals/
+  features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
   decisions: specs/   # ADRs not yet separated into decisions/; design docs in specs/
 env:
   file: .env
@@ -45,20 +46,20 @@ env:
 
 ## What this repo is
 
-A deterministic workflow execution harness in Python. It decouples orchestration (external: Linear issues, webhook triggers) from execution (this repo). Other repos run it as their CI pipeline; the harness clones a worktree, dispatches agents, gates on review, and handles the git lifecycle. It has no product UI and no end-users — it is infrastructure.
+A set of **deterministic, audited verbs an agent calls** to drive a Linear ticket end-to-end — not an engine that drives agents. A single Claude session orchestrates *and* implements (reads the ticket, writes the code and tests, decides how to fix a review finding, when to re-review); the harness owns only the **durable record and the gate**. It has no product UI and no end-users — it is infrastructure other repos self-host. (The earlier deterministic YAML workflow engine was retired in CAL-574; `README.md` and `SPEC.md` §1–2 describe the current verb model.)
 
 ## Architecture
 
-The main package is `harness/` (Python). Workflows are YAML files in `workflows/` — the harness loads and executes them. The Linear webhook intake lives in `intake/`.
+The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch.
 
-Key layers:
-- **Workflow engine** — parses YAML, resolves `$state.<field>` / `$inputs.<key>` substitutions, runs loop blocks (`until:` / `until_bash:`), dispatches node types
-- **Node types** — `ClaudeAgent` (via `anthropic` SDK / `claude_agent_sdk`), `CodexAgent` (subprocess/text-submit), `script` (shell), `check` / `decision`, `worktree` lifecycle
-- **State store** — SQLite via `aiosqlite`; all run state and events persisted here
-- **CLI** — `Typer`; entry point `harness.cli`; `bin/harness` wrapper script bypasses VIRTUAL_ENV conflicts
-- **Intake** — Linear webhook receiver; routes to workflow runs
+Three verbs, one ledger, one gate:
+- **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
+- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not Codex's full reasoning.
+- **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
+- **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state.
+- **State store** — SQLite via `aiosqlite`; the `runs` / `events` ledger is the whole audit trail.
 
-Design specs live in `specs/`; `SPEC.md` is the index. Read the relevant spec before changing any node type, state model, or workflow schema.
+The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle — every git and ticket state transition goes through a verb, and `close` validates against the ledger as a backstop (D5). Design specs live in `specs/`; `SPEC.md` is the index. Read the relevant spec before changing a verb, the ledger schema, or the close gate.
 
 ## Repo-specific principles
 
@@ -75,18 +76,21 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 ## Where deeper truth lives
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
-- **Workflow YAML grammar** → `AUTHORING.md`
+- **The verb contract the agent drives** → `commands/harness.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
-- **Linear (issues / in-flight work)** → linear.app (team: HAR)
+- **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
 
 ## Gotchas
 
-- **Use `bin/harness`, not `uv run harness`**, when `VIRTUAL_ENV` is already set in the shell (e.g. a Homebrew Python or another activated venv). The wrapper unsets `VIRTUAL_ENV` before delegating to `.venv/bin/python`. `uv run` warns and may pick the wrong interpreter when `VIRTUAL_ENV` is foreign.
+- **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo and call a verb — `harness start <ISSUE-ID>`, then `review` / `close`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, extracts the Claude OAuth token from the macOS Keychain, and mounts `~/.codex` for Codex subscription auth. See `docker/README.md` for the full wrapper script and installation steps.
+- **Drive the loop with `/harness run <ISSUE-ID>`.** The orchestrating Claude session calls each verb in turn (`start → implement → review → (fix → review)* → close`); the verbs own every git and ticket mutation. The contract and gate-refusal handling are in `commands/harness.md`. The agent never runs *inside* a verb container — each verb is a one-shot `docker run` spawned by the wrapper.
+- **`bin/harness` is dev-time only.** It hard-codes `.venv/bin/python` relative to the harness repo root and only works inside the harness checkout. Use it when iterating on harness source itself; use `~/bin/harness` for everything else.
+- **Cross-repo execution** — `cd` to the target repo and run the verbs there. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. (`--repo` and `--base` are accepted when invoking the verbs directly outside the wrapper.)
+- **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH. Use when Docker is not available. Credentials and env vars must be set manually.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
-- **`mypy` scope is `harness intake`** — tests are excluded from the type check. The 89 test-file mypy errors are a known backlog, not a gate failure.
+- **`mypy` scope is `harness`** — tests are excluded from the type check. Test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
-- **Cross-repo execution** — when running the harness against a different repo, pass `--repo /path/to/target`, `--verify-command "..."`, and `--branch-prefix "feature/"`. Omitting `--repo` makes the harness operate on its own working tree (dog-fooding).
 - **Verification output can come back empty** in the Claude Code Bash tool (it auto-backgrounds long commands). Redirect to `/tmp/<file>.txt` and `tail` it.
 
 ## Python conventions

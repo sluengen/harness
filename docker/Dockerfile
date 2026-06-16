@@ -8,13 +8,30 @@
 #   docker run --rm \
 #     -v "$(pwd)":/workspace -w /workspace \
 #     -e ANTHROPIC_API_KEY -e LINEAR_API_KEY \
-#     harness:dev run steward --domain=architecture
+#     harness:dev start CAL-123
 FROM python:3.11-slim
 
-# OS deps: git for worktree operations, ca-certificates for HTTPS to Anthropic / Linear.
+# Link the published image to its source repo so GHCR connects the package to
+# sluengen/harness and "Inherit access from repository" can govern who may pull
+# it (CAL-623). The registry tag is published by .github/workflows/release.yml.
+LABEL org.opencontainers.image.source=https://github.com/sluengen/harness
+
+# OS deps:
+#   git              — worktree operations
+#   curl             — Linear / API calls
+#   ca-certificates  — HTTPS to Anthropic / Linear
+#   jq               — JSON wrangling in the verbs and helper scripts
+#   postgresql-client — psql for per-run DATABASE_URL provisioning
+#   nodejs/npm       — required to install the Claude Code CLI
+#   openssh-client   — `ssh` binary for `git push` over SSH on the close verb
+#                      (without it `git push` fails: "cannot run ssh: No such file or directory")
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates \
+        git curl ca-certificates jq postgresql-client nodejs npm openssh-client \
     && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI — required by claude_agent_sdk (SubprocessCLITransport).
+# OpenAI Codex CLI — required by CodexAgent (codex exec --json).
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 # uv handles dependency resolution and the project venv inside the image.
 RUN pip install --no-cache-dir uv
@@ -33,8 +50,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # Layer 2: runtime sources. Tests are intentionally excluded (see .dockerignore).
 COPY harness/ ./harness/
-COPY workflows/ ./workflows/
-COPY prompts/ ./prompts/
+
+# The two-entrypoint dispatch script (decision #3 — one image, two entrypoints).
+# .dockerignore excludes docker/ wholesale, then re-includes just this file.
+COPY docker/entrypoint.sh /opt/harness/entrypoint.sh
+RUN chmod +x /opt/harness/entrypoint.sh
 
 # Install the harness package itself into the venv so `uv run harness`
 # resolves the console script declared in pyproject.toml (project.scripts.harness).
@@ -49,4 +69,8 @@ ENV PYTHONUNBUFFERED=1 \
     # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
     UV_NO_SYNC=1
 
-ENTRYPOINT ["uv", "run", "harness"]
+# One image, two entrypoints: the script dispatches `agent <TICKET>` (headless
+# per-session agent runtime) vs. `verb <args…>` / bare-verb (one-shot verb).
+# Bare-verb stays backward compatible with the launcher / ~/bin/harness wrapper,
+# which pass `start …` directly with no mode selector.
+ENTRYPOINT ["/opt/harness/entrypoint.sh"]

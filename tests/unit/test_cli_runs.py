@@ -1,9 +1,8 @@
-"""Tests for harness runs command — list recent runs with optional failed grouping."""
+"""Tests for harness runs command — list recent runs."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
@@ -73,30 +72,6 @@ def _seed_run(db_path: Path, **kwargs: Any) -> None:
     _run_sync(_seed_run_async(db_path, **kwargs))
 
 
-async def _seed_event_async(
-    db_path: Path,
-    *,
-    run_id: str,
-    event_type: str,
-    timestamp: str = "2026-06-01T10:00:00Z",
-    node_id: str | None = None,
-    duration_ms: int | None = None,
-    data: dict[str, Any] | None = None,
-) -> None:
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
-            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, node_id, event_type, timestamp, duration_ms,
-             json.dumps(data or {})),
-        )
-        await conn.commit()
-
-
-def _seed_event(db_path: Path, **kwargs: Any) -> None:
-    _run_sync(_seed_event_async(db_path, **kwargs))
-
-
 def _init_db(db_path: Path) -> None:
     _run_sync(store.init_db(db_path))
 
@@ -159,67 +134,34 @@ def test_runs_shows_status_column(tmp_path: Path) -> None:
     assert "failed" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# harness runs --failed — grouped by reason
-# ---------------------------------------------------------------------------
-
-
-def test_runs_failed_groups_by_reason(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="F1", status="failed", workflow_name="wf")
-    _seed_run(db_path, run_id="F2", status="failed", workflow_name="wf")
-    _seed_event(
-        db_path, run_id="F1", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-    _seed_event(
-        db_path, run_id="F2", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    out = result.stdout
-    assert "ContractViolation" in out
-    assert "F1" in out
-    assert "F2" in out
-
-
-def test_runs_failed_groups_different_reasons_separately(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="FA", status="failed")
-    _seed_run(db_path, run_id="FB", status="failed")
-    _seed_event(
-        db_path, run_id="FA", event_type="workflow_failed",
-        data={"reason": "ContractViolation"},
-    )
-    _seed_event(
-        db_path, run_id="FB", event_type="workflow_failed",
-        data={"reason": "CheckFailed"},
-    )
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    out = result.stdout
-    assert "ContractViolation" in out
-    assert "CheckFailed" in out
-    # Both run IDs must appear.
-    assert "FA" in out
-    assert "FB" in out
-
-
-def test_runs_failed_no_failures_shows_message(tmp_path: Path) -> None:
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="completed")
-
-    result = runner.invoke(app, ["runs", "--db", str(db_path), "--failed"])
-    assert result.exit_code == 0, result.stdout
-    assert "no failure" in result.stdout.lower() or "(no failures)" in result.stdout
-
-
 def test_runs_missing_db_exits_zero_empty(tmp_path: Path) -> None:
     """Missing DB should exit 0 with empty/no output (not an error condition)."""
     db_path = tmp_path / ".harness" / "harness.db"
 
     result = runner.invoke(app, ["runs", "--db", str(db_path)])
     assert result.exit_code == 0, result.stdout
+
+
+def test_runs_docstring_exit_codes_match_contract() -> None:
+    """The module docstring's exit-code block must match the tested behaviour.
+
+    ``runs`` is a list command with no run-id: a missing DB is the empty case
+    (exit 0), not an invocation error. The run-id read commands
+    (``status``/``events``) exit 2 on a missing DB because the run cannot be
+    found, and that wording must not leak into ``runs``. Guards against the
+    docstring drifting back to the copied "missing DB → exit 2" claim that
+    ``test_runs_missing_db_exits_zero_empty`` proves false.
+    """
+    from harness.cli import query_runs
+
+    doc = query_runs.__doc__ or ""
+    exit_block = doc[doc.index("Exit codes") :]
+    two_line = next(
+        line for line in exit_block.splitlines() if line.lstrip().startswith("* 2")
+    )
+    assert "missing DB" not in two_line, (
+        "runs exits 0 (not 2) on a missing DB; remove the copied claim"
+    )
+    assert "missing or empty DB" in exit_block, (
+        "docstring should document the exit-0 missing/empty-DB case"
+    )

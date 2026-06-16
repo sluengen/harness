@@ -2,15 +2,16 @@
 
 Scope is deliberately narrow: walk ``<repo_root>/.worktrees/harness/`` on
 disk, then for ``cleanup`` shell out to ``git worktree remove`` so the index
-and ref state stay consistent. The engine has its own
-:class:`harness.nodes.worktree.WorktreeNode` helper for run-time cleanup;
+and ref state stay consistent. The ``start`` verb has its own
+:class:`harness.worktree.WorktreeNode` helper for run-time worktree lifecycle;
 this CLI surface is for operator-driven housekeeping and stays decoupled.
 
 Filters for ``cleanup``:
 
 * ``--age <duration>`` — remove worktrees whose directory mtime is older
   than the supplied duration (``30m``, ``12h``, ``7d``).
-* ``--merged`` — remove worktrees whose branch is fully merged into ``main``.
+* ``--merged`` — remove worktrees whose branch is fully merged into
+  ``dev``, ``main``, or ``master`` (the integration/release bases).
 
 Without filters, ``cleanup`` is a no-op (it prints "kept" lines so the
 operator sees what would have been candidate). The conservative default
@@ -26,6 +27,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
+
+from harness._time import iso_z, parse_iso_z
+from harness.cli._git import run_git
+from harness.identity import WORKTREES_SUBDIR
 
 worktrees_app = typer.Typer(
     help="Inspect or clean up worktrees under .worktrees/harness/",
@@ -66,7 +71,7 @@ def _parse_duration(text: str) -> timedelta:
 
 
 def _worktrees_root(repo_root: Path) -> Path:
-    return repo_root / ".worktrees" / "harness"
+    return repo_root / WORKTREES_SUBDIR
 
 
 def _discover_worktrees(repo_root: Path) -> list[dict[str, object]]:
@@ -91,7 +96,7 @@ def _discover_worktrees(repo_root: Path) -> list[dict[str, object]]:
             {
                 "run_id": child.name,
                 "path": str(child),
-                "last_modified": mtime.isoformat().replace("+00:00", "Z"),
+                "last_modified": iso_z(mtime),
                 "branch": branch_by_path.get(child.resolve(), None),
             }
         )
@@ -102,13 +107,7 @@ def _git_worktree_branches(repo_root: Path) -> dict[Path, str]:
     """Parse ``git worktree list --porcelain`` and return a map of
     absolute worktree path to branch name."""
     try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        proc = run_git(repo_root, "worktree", "list", "--porcelain", timeout=15)
     except (OSError, subprocess.SubprocessError):
         return {}
     if proc.returncode != 0:
@@ -164,21 +163,14 @@ def list_command(
 # ---------------------------------------------------------------------------
 
 
-def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
+def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     """Return True if ``branch`` is fully merged into ``dev``, ``main``, or ``master``.
 
     ``--merged`` is conservative: an absent branch ref counts as not-merged
     so we never remove a worktree whose ref state we can't read.
     """
     for base in ("dev", "main", "master"):
-        proc = subprocess.run(
-            [
-                "git", "-C", str(repo_root), "merge-base", "--is-ancestor",
-                branch, base,
-            ],
-            check=False,
-            capture_output=True,
-        )
+        proc = run_git(repo_root, "merge-base", "--is-ancestor", branch, base)
         if proc.returncode == 0:
             return True
     return False
@@ -186,12 +178,7 @@ def _branch_merged_into_main(repo_root: Path, branch: str) -> bool:
 
 def _remove_worktree(repo_root: Path, path: Path) -> tuple[bool, str]:
     """Invoke ``git worktree remove`` and report success/failure."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    proc = run_git(repo_root, "worktree", "remove", "--force", str(path))
     if proc.returncode != 0:
         return False, proc.stderr.strip() or proc.stdout.strip()
     return True, ""
@@ -210,7 +197,9 @@ def cleanup_command(
         None, "--age", help="Remove worktrees older than this (e.g. 30m / 12h / 7d)."
     ),
     merged: bool = typer.Option(
-        False, "--merged", help="Remove worktrees whose branch is merged into main."
+        False,
+        "--merged",
+        help="Remove worktrees whose branch is merged into dev, main, or master.",
     ),
 ) -> None:
     """Remove worktrees matching ``--age`` / ``--merged``."""
@@ -229,15 +218,13 @@ def cleanup_command(
 
     for item in items:
         path = Path(str(item["path"]))
-        last_modified = datetime.fromisoformat(
-            str(item["last_modified"]).replace("Z", "+00:00")
-        )
+        last_modified = parse_iso_z(str(item["last_modified"]))
         branch = item.get("branch")
 
         should_remove = False
         if cutoff is not None and last_modified < cutoff:
             should_remove = True
-        if merged and isinstance(branch, str) and _branch_merged_into_main(
+        if merged and isinstance(branch, str) and _branch_merged_into_base(
             repo_root, branch
         ):
             should_remove = True

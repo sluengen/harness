@@ -20,7 +20,14 @@ def check_auth(
     env: dict[str, str] | None = None,
     claude_dir: Path | None = None,
 ) -> tuple[str, str]:
-    """Pass if ANTHROPIC_API_KEY is set OR ~/.claude/ exists."""
+    """Pass if ANTHROPIC_API_KEY is set, CLAUDE_CODE_OAUTH_TOKEN is non-empty, OR ~/.claude/ exists.
+
+    ``CLAUDE_CODE_OAUTH_TOKEN`` is the credential the recommended ``~/bin/harness``
+    Docker wrapper injects (extracted from the macOS Keychain); the wrapper mounts
+    neither ``ANTHROPIC_API_KEY`` nor ``~/.claude``, so the token alone must pass.
+    The wrapper forwards the variable as an empty string when Keychain extraction
+    fails, so require a non-empty value — a present-but-empty token is no credential.
+    """
     if env is None:
         import os
 
@@ -30,9 +37,15 @@ def check_auth(
 
     if "ANTHROPIC_API_KEY" in env:
         return ("PASS", "ANTHROPIC_API_KEY set")
+    if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return ("PASS", "CLAUDE_CODE_OAUTH_TOKEN set")
     if claude_dir.exists():
         return ("PASS", f"{claude_dir} exists (Claude Code OAuth)")
-    return ("FAIL", "neither ANTHROPIC_API_KEY nor ~/.claude/ found — see README §Authentication")
+    return (
+        "FAIL",
+        "none of ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, or ~/.claude/ found "
+        "— see README §Authentication",
+    )
 
 
 def check_git(porcelain_output: str | None = None) -> tuple[str, str]:
@@ -72,18 +85,20 @@ def check_db(db_path: Path | None = None) -> tuple[str, str]:
     )
 
 
-def check_adapters() -> tuple[str, str]:
-    """Import ClaudeAgent and print its capability matrix."""
-    from harness.dispatch.claude import ClaudeAgent
+def check_reviewer(codex_path: str | None = None) -> tuple[str, str]:
+    """Report whether the ``codex`` reviewer binary is on PATH.
 
-    cap = ClaudeAgent.capability
-    matrix = (
-        f"ClaudeAgent: submit={'✓' if cap.supports_submit_tool else '✗'} "
-        f"cwd={'✓' if cap.supports_cwd else '✗'} "
-        f"max_turns={'✓' if cap.supports_max_turns else '✗'} "
-        f"tools={'✓' if cap.supports_tool_allowlist else '✗'}"
-    )
-    return ("PASS", matrix)
+    The ``review`` verb shells out to ``codex exec``; a missing binary is not
+    fatal to the rest of the CLI (hence WARN, not FAIL), but it means review
+    will fail until codex is installed.
+    """
+    import shutil
+
+    if codex_path is None:
+        codex_path = shutil.which("codex")
+    if codex_path:
+        return ("PASS", f"codex reviewer found at {codex_path}")
+    return ("WARN", "codex not found on PATH — `harness review` will fail until installed")
 
 
 def check_cli(
@@ -121,7 +136,7 @@ def doctor_command(
     ),
 ) -> None:
     """Run system health checks."""
-    from harness.cli.query import _resolve_db_path
+    from harness.cli._query_common import _resolve_db_path
 
     db_path = _resolve_db_path(db)
 
@@ -132,7 +147,7 @@ def doctor_command(
         ("auth", check_auth()),
         ("git", check_git()),
         ("db", check_db(db_path)),
-        ("adapters", check_adapters()),
+        ("reviewer", check_reviewer()),
         ("cli", check_cli()),
     ]
 

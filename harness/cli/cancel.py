@@ -1,58 +1,81 @@
-"""CLI surface for ``harness cancel <run-id>`` — H-2-006.
+"""CLI surface for ``harness cancel <run-id>`` — abandon a run (CAL-587).
 
-Sends SIGTERM to the harness run process identified by ``run-id``.  The
-runner installs a SIGTERM → ``KeyboardInterrupt`` handler so the signal
-propagates through the executor's normal cancellation path:
+Under the verb model ``cancel`` is the *abandon / close-without-merge*
+transition — the third terminal outcome alongside ``close`` (merged) and a
+run that simply never finishes.  It does **not** signal any process: the
+engine-era ``harness run`` daemon it used to SIGTERM no longer exists.
+``harness start`` writes a ledger row and exits, so the recorded ``runs.pid``
+was dead on arrival and the old SIGTERM path could only ever hit its refusal
+branches.  CAL-587 redefines the verb for the contract it actually serves:
 
-1. ``harness cancel <run-id>`` reads ``runs.pid`` from the DB.
-2. It validates the run is currently ``running`` and the process is alive.
-3. It delivers ``signal.SIGTERM`` to the recorded PID.
-4. The running ``harness run`` process catches the signal, emits
-   ``workflow_failed`` with ``reason='cancelled'``, sets
-   ``status='cancelled'``, and exits 130.
+1. Resolve the ``runs`` row for ``run-id``.
+2. Cancel only from an explicit in-flight allowlist (``open`` plus the legacy
+   ``running`` / ``pending`` / ``paused`` / ``stalled``). Refuse a terminal run
+   (``closed`` / ``cancelled`` / ``completed`` / ``failed``) and refuse an
+   unrecognised status — an allowlist, not a denylist, so an unknown or future
+   status is never silently overwritten.
+3. In **one transaction**, mark the run ``status='cancelled'`` + stamp
+   ``completed_at`` *and* append a
+   ``workflow_failed`` event with ``reason='cancelled'``. Both land together or
+   not at all — a run marked ``cancelled`` with no cancellation event is an
+   inconsistent ledger that retry cannot repair (a terminal run refuses
+   re-cancel). ``harness status`` then surfaces ``failure_reason='cancelled'``.
+
+This keeps the public verb contract (SPEC §1) honest: the verb now does what its
+name promises and leaves an auditable mark on the one ledger that is the whole
+audit trail.
 
 Exit codes (SPEC §11):
-* 0  — SIGTERM successfully delivered.
-* 2  — Invocation error: unknown run-id, run not running, PID absent or
-        stale, no permission to signal the process.
+* 0  — run abandoned; ``{"run_id": ..., "outcome": "cancelled"}``.
+* 2  — invocation error: unknown run-id, a run already terminal, or a run
+       whose status is not on the in-flight allowlist (an unknown/future
+       status is refused, never silently overwritten).
+* 1  — unexpected error (DB failure).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
-import signal
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-import aiosqlite
 import typer
 
+from harness._time import iso_z
+from harness.cli._abandon import AbandonError
+from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
+from harness.cli._query_common import _resolve_db_path
 from harness.state import store
 
 __all__ = ["cancel_command"]
 
+#: The reason recorded on the ``workflow_failed`` event a cancel emits.
+#: ``harness reclaim`` reuses the same shared transaction (:mod:`harness.cli
+#: ._abandon`) with ``reason='reclaimed'``; the allowlist and event-type
+#: invariants live there so both verbs share one ledger-write rule.
+_CANCEL_REASON = "cancelled"
 
-def _resolve_db_path(db: Path | None) -> Path:
-    """``--db`` override or the default ``.harness/harness.db``."""
-    if db is not None:
-        return db
-    return Path.cwd() / store.DEFAULT_DB_PATH
 
-
-async def _fetch_run_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
-    """Return the run row, or ``None`` if the DB or row does not exist."""
+async def _run_cancel(db_path: Path, run_id: str) -> None:
+    """Abandon the run; raise :class:`AbandonError` on refusal or error."""
     if not db_path.exists():
-        return None
-    async with aiosqlite.connect(db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        async with conn.execute(
-            "SELECT run_id, status, pid FROM runs WHERE run_id = ?",
-            (run_id,),
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
+        raise AbandonError(f"no run with run_id={run_id!r}", 2)
+
+    completed_at = datetime.now(UTC).isoformat()
+    event_ts = iso_z()
+
+    async with store.connect(db_path) as conn:
+        # The status flip and the audit event must land together — see
+        # :func:`harness.cli._abandon.abandon_run_in_ledger`, the one
+        # transaction ``cancel`` and ``reclaim`` share.
+        await _abandon_in_ledger(
+            conn,
+            run_id,
+            reason=_CANCEL_REASON,
+            completed_at=completed_at,
+            event_ts=event_ts,
+        )
 
 
 def cancel_command(
@@ -66,68 +89,19 @@ def cancel_command(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Cancel a running workflow by sending SIGTERM to its process."""
+    """Abandon an in-flight run — mark it cancelled and record the abandonment."""
     db_path = _resolve_db_path(db)
-    row = asyncio.run(_fetch_run_row(db_path, run_id))
 
-    def _err(msg: str) -> None:
+    try:
+        asyncio.run(_run_cancel(db_path, run_id))
+    except AbandonError as exc:
         if json_output:
-            typer.echo(json.dumps({"error": msg}))
+            typer.echo(json.dumps({"error": exc.message}))
         else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=2)
-
-    if row is None:
-        _err(f"no run with run_id={run_id!r}")
-
-    assert row is not None  # narrowing for type checker
-
-    if row["status"] != "running":
-        _err(
-            f"run {run_id!r} is not running (status={row['status']!r}); "
-            "only running workflows can be cancelled"
-        )
-
-    pid: int | None = row.get("pid")
-    if pid is None:
-        _err(
-            f"run {run_id!r} has no recorded PID — it may have been started "
-            "before H-2-006 or outside the harness CLI"
-        )
-
-    assert pid is not None  # narrowing for type checker
-
-    # Probe whether the process is still alive before delivering the signal.
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        _err(
-            f"process {pid} for run {run_id!r} no longer exists "
-            "(stale PID — the run may have already exited)"
-        )
-    except PermissionError:
-        _err(
-            f"no permission to signal process {pid} for run {run_id!r}"
-        )
-
-    # Deliver SIGTERM — the runner converts it to KeyboardInterrupt.
-    # Guard the TOCTOU window: the process may exit between the liveness probe
-    # above and the actual signal delivery here.  Without this guard a
-    # ProcessLookupError (or PermissionError) would propagate as an unhandled
-    # exception and print a Python traceback rather than a clean error message.
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        _err(
-            f"process {pid} for run {run_id!r} exited before the signal could be "
-            "delivered (TOCTOU race — the run may have already completed)"
-        )
-    except PermissionError:
-        _err(
-            f"no permission to signal process {pid} for run {run_id!r}"
-        )
+            typer.echo(exc.message, err=True)
+        raise typer.Exit(code=exc.code) from exc
 
     if json_output:
         typer.echo(json.dumps({"run_id": run_id, "outcome": "cancelled"}))
     else:
-        typer.echo(f"Cancelled: sent SIGTERM to process {pid} for run {run_id}")
+        typer.echo(f"Cancelled run {run_id} (abandoned — not merged)")

@@ -1,9 +1,9 @@
-<!-- guidance:review@0.1.1 -->
+<!-- guidance:review@0.1.2 -->
 # /review — review the current branch
 
 Usage: `/review` (reviews the active branch's diff against its change spec)
 
-Runs the final gate before merge. Implements `code-review` via the `reviewer` agent.
+Runs the final gate before merge. Implements `review-discipline` via the `reviewer` agent.
 
 ## Steps
 

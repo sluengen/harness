@@ -24,6 +24,29 @@ def test_check_auth_passes_when_api_key_in_env() -> None:
     assert "ANTHROPIC_API_KEY" in msg
 
 
+def test_check_auth_passes_when_oauth_token_in_env() -> None:
+    from harness.cli.doctor import check_auth
+
+    # The recommended ~/bin/harness Docker wrapper injects CLAUDE_CODE_OAUTH_TOKEN
+    # (extracted from the macOS Keychain) and mounts neither ANTHROPIC_API_KEY nor
+    # ~/.claude — so the OAuth token alone must satisfy the auth check.
+    status, msg = check_auth(env={"CLAUDE_CODE_OAUTH_TOKEN": "tok-test"}, claude_dir=None)
+    assert status == "PASS"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
+
+
+def test_check_auth_does_not_pass_on_empty_oauth_token(tmp_path: Path) -> None:
+    from harness.cli.doctor import check_auth
+
+    # The wrapper exports CLAUDE_CODE_OAUTH_TOKEN as an empty string when Keychain
+    # extraction fails; a present-but-empty token is no usable credential, so the
+    # check must not PASS on it.
+    status, _msg = check_auth(
+        env={"CLAUDE_CODE_OAUTH_TOKEN": ""}, claude_dir=tmp_path / "nonexistent"
+    )
+    assert status == "FAIL"
+
+
 def test_check_auth_passes_when_claude_dir_exists(tmp_path: Path) -> None:
     from harness.cli.doctor import check_auth
 
@@ -39,6 +62,11 @@ def test_check_auth_fails_when_neither_present(tmp_path: Path) -> None:
 
     status, msg = check_auth(env={}, claude_dir=tmp_path / "nonexistent")
     assert status == "FAIL"
+    # The FAIL message must name all three recognised credentials so the operator
+    # knows every way to satisfy the check.
+    assert "ANTHROPIC_API_KEY" in msg
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
+    assert "~/.claude" in msg
 
 
 def test_check_git_passes_on_clean_output() -> None:
@@ -75,12 +103,22 @@ def test_check_db_warns_when_not_found(tmp_path: Path) -> None:
     assert "not found" in msg.lower() or "first run" in msg.lower()
 
 
-def test_check_adapters_returns_pass_with_matrix() -> None:
-    from harness.cli.doctor import check_adapters
+def test_check_reviewer_passes_when_codex_present() -> None:
+    from harness.cli.doctor import check_reviewer
 
-    status, msg = check_adapters()
+    status, msg = check_reviewer(codex_path="/usr/local/bin/codex")
     assert status == "PASS"
-    assert "ClaudeAgent" in msg
+    assert "codex" in msg.lower()
+
+
+def test_check_reviewer_warns_when_codex_missing() -> None:
+    from harness.cli.doctor import check_reviewer
+
+    # An explicit empty path forces the not-found branch deterministically
+    # (passing None would trigger a real PATH lookup).
+    status, msg = check_reviewer(codex_path="")
+    assert status == "WARN"
+    assert "codex" in msg.lower()
 
 
 def test_check_cli_passes_when_version_exits_zero() -> None:
@@ -134,7 +172,7 @@ def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:
     out = result.stdout
     assert "auth" in out
     assert "db" in out
-    assert "adapters" in out
+    assert "reviewer" in out
     assert "cli" in out
 
 

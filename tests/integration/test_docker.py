@@ -3,10 +3,13 @@
 Asserts:
 
 1. The Docker image at ``docker/Dockerfile`` builds successfully from the repo
-   root using the tag ``harness:dev``.
-2. The image's ENTRYPOINT is ``["uv", "run", "harness"]`` such that
-   ``docker run --rm harness:dev version`` prints a version string
-   starting with ``harness``.
+   root using the tag ``harness:dev`` (this also exercises the ``.dockerignore``
+   re-include that puts ``docker/entrypoint.sh`` in the build context).
+2. The image's entrypoint runs a one-shot verb: a bare verb stays backward
+   compatible (``docker run --rm harness:dev version`` prints a ``harness``
+   version string), and the explicit ``verb <args…>`` selector runs a one-shot
+   verb. (The launcher-socket ``agent`` mode was the deferred Hermes-dispatch
+   scaffolding, removed in CAL-712.)
 
 The test is marked ``@pytest.mark.docker`` and SKIPS if ``docker info`` fails
 (CI may not have docker available; macOS/Linux dev hosts typically do).
@@ -114,3 +117,19 @@ def test_docker_run_harness_version(built_image: str) -> None:
     assert "harness" in result.stdout, (
         f"Expected 'harness' in version output, got: {result.stdout!r}"
     )
+
+
+def test_docker_verb_mode_runs_a_verb(built_image: str) -> None:
+    """`verb <args…>` runs a single one-shot verb (the explicit selector)."""
+    result = subprocess.run(
+        ["docker", "run", "--rm", built_image, "verb", "version"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"`docker run ... verb version` failed (exit {result.returncode}).\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    assert "harness" in result.stdout, result.stdout

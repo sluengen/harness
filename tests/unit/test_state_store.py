@@ -5,17 +5,12 @@ See SPEC §12 for the schema, §4.8 for the store responsibilities.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import aiosqlite
 import pytest
-from pydantic import create_model
 
 from harness.state import store
-from harness.state.schema import BaseState
 
 # ---------------------------------------------------------------------------
 # init_db — idempotency, parent-dir creation, both tables exist
@@ -53,7 +48,6 @@ async def test_init_db_creates_both_tables(tmp_path: Path) -> None:
     tables = await _table_names(db_path)
     assert "runs" in tables
     assert "events" in tables
-    assert "run_snapshots" in tables
 
 
 async def test_init_db_creates_indexes(tmp_path: Path) -> None:
@@ -66,8 +60,6 @@ async def test_init_db_creates_indexes(tmp_path: Path) -> None:
     assert "idx_events_run" in indexes
     assert "idx_events_type" in indexes
     assert "idx_events_run_node" in indexes
-    assert "idx_snapshots_run" in indexes
-    assert "idx_snapshots_run_seq" in indexes
 
 
 async def test_init_db_is_idempotent(tmp_path: Path) -> None:
@@ -76,7 +68,7 @@ async def test_init_db_is_idempotent(tmp_path: Path) -> None:
     # Second call must not raise.
     await store.init_db(db_path)
     tables = await _table_names(db_path)
-    assert {"runs", "events", "run_snapshots"} <= tables
+    assert {"runs", "events"} <= tables
 
 
 async def test_init_db_creates_parent_dir(tmp_path: Path) -> None:
@@ -100,7 +92,9 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "run_id", "workflow_name", "workflow_version", "status", "state_json",
         "inputs_json", "base_branch", "worktree_branch", "exit_code",
         "started_at", "completed_at", "duration_ms",
-        "pid",  # H-2-006: process ID for harness cancel
+        "pid",          # dormant column; engine-era SIGTERM cancel removed (CAL-587)
+        "ticket",       # CAL-570: Linear ticket identifier for ``harness start``
+        "worktree_path",  # CAL-570: worktree filesystem path for ``harness start``
     }
     assert set(cols.keys()) == expected
     assert cols["run_id"]["pk"] == 1
@@ -222,79 +216,32 @@ async def test_runs_status_enum_accepts_all_documented_values(
 
 
 # ---------------------------------------------------------------------------
-# restore_state — verbatim overwrite
+# CAL-713 — no migration for a writer-less column
 # ---------------------------------------------------------------------------
 
-
-def _base_kwargs_st(run_id: str = "R1") -> dict[str, Any]:
-    return {
-        "run_id": run_id,
-        "workflow_name": "wf",
-        "base_branch": "main",
-        "artifacts_dir": "/tmp/x",
-        "started_at": datetime(2026, 5, 8, 12, 0, 0).isoformat(),
-        "notes": [],
-    }
+_STORE_SRC = Path(__file__).resolve().parents[2] / "harness" / "state" / "store.py"
 
 
-async def _seed_run_st(db_path: Path, run_id: str = "R1", state_json: str | None = None) -> None:
-    await store.init_db(db_path)
-    if state_json is None:
-        state_json = json.dumps(_base_kwargs_st(run_id))
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
-            "state_json, inputs_json, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (run_id, "wf", 1, "paused", state_json, "{}", "2026-05-08T00:00:00Z"),
-        )
-        await conn.commit()
+def test_no_pid_migration() -> None:
+    """AC #2: ``pid`` has no writer, so ``_migrate`` runs no ``ADD COLUMN pid``.
 
-
-async def test_restore_state_overwrites_state_json(tmp_path: Path) -> None:
-    """restore_state writes the supplied state verbatim to runs.state_json."""
-    db = tmp_path / "h.db"
-    derived_state_cls = create_model(
-        "DerivedState", __base__=BaseState, label=(str | None, None)
+    ``pid`` is a dormant column declared once in ``_SCHEMA``'s CREATE TABLE and
+    retained to avoid a destructive ``DROP COLUMN`` on existing DBs (see
+    ``specs/features/run-ledger.md``). The redundant ``ALTER TABLE runs ADD
+    COLUMN pid`` migration was removed in CAL-713; this guard keeps it gone.
+    """
+    src = _STORE_SRC.read_text()
+    assert "ADD COLUMN pid" not in src, (
+        "store.py runs an ADD COLUMN pid migration, but pid has no writer "
+        "(engine-era SIGTERM cancel removed in CAL-587). The column stays "
+        "declared in _SCHEMA; the migration must not (CAL-713, AC #2)."
     )
-    await _seed_run_st(db)
-
-    new_state = derived_state_cls.model_validate(_base_kwargs_st() | {"label": "restored"})
-    await store.restore_state("R1", new_state, db_path=db)
-
-    async with aiosqlite.connect(db) as conn, conn.execute(
-        "SELECT state_json FROM runs WHERE run_id = ?", ("R1",)
-    ) as cur:
-        row = await cur.fetchone()
-    assert row is not None
-    persisted = json.loads(row[0])
-    assert persisted["label"] == "restored"
 
 
-async def test_restore_state_does_not_append_lists(tmp_path: Path) -> None:
-    """restore_state replaces notes entirely rather than appending."""
-    db = tmp_path / "h.db"
-    derived_state_cls = create_model("DerivedState", __base__=BaseState)
-    initial = _base_kwargs_st() | {"notes": ["old"]}
-    await _seed_run_st(db, state_json=json.dumps(initial))
-
-    new_state = derived_state_cls.model_validate(_base_kwargs_st() | {"notes": ["new"]})
-    await store.restore_state("R1", new_state, db_path=db)
-
-    async with aiosqlite.connect(db) as conn, conn.execute(
-        "SELECT state_json FROM runs WHERE run_id = ?", ("R1",)
-    ) as cur:
-        row = await cur.fetchone()
-    assert row is not None
-    persisted = json.loads(row[0])
-    assert persisted["notes"] == ["new"]
-
-
-async def test_restore_state_raises_for_unknown_run(tmp_path: Path) -> None:
-    """restore_state raises StateStoreError when the run_id doesn't exist."""
-    db = tmp_path / "h.db"
-    derived_state_cls = create_model("DerivedState", __base__=BaseState)
-    await store.init_db(db)
-    state = derived_state_cls.model_validate(_base_kwargs_st())
-
-    with pytest.raises(store.StateStoreError, match="no run"):
-        await store.restore_state("NONEXISTENT", state, db_path=db)
+async def test_pid_column_present_via_schema(tmp_path: Path) -> None:
+    """The dormant ``pid`` column is still created — from ``_SCHEMA``, not a
+    migration — so existing-DB reads and the column contract are unchanged."""
+    db_path = tmp_path / "harness.db"
+    await store.init_db(db_path)
+    cols = await _table_columns(db_path, "runs")
+    assert "pid" in cols

@@ -1,25 +1,46 @@
 # harness
 
-A deterministic workflow execution harness for bounded LLM tasks. Decouples *what* gets run (orchestration, external) from *how* it runs (this harness).
+A set of **deterministic, audited verbs an agent calls** to drive a ticket end-to-end — not a pipeline that drives agents.
 
-> Build a deterministic execution engine, not an agent framework.
+> The harness is a tool the agent uses, not an engine that uses the agent.
 
-**Status:** v1.0 — engine, CLI, Docker image, ergonomics validation, and authoring guide all shipped. See [CHANGELOG](#changelog) below.
+**Status:** verb model (`start` / `review` / `close`). The earlier deterministic YAML workflow engine was retired in CAL-574; this README and [`SPEC.md`](./SPEC.md) §1–2 describe the current model.
 
 ## What it does
 
-You describe a workflow as YAML — sequenced steps with declared input/output contracts. The harness:
+A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: three verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
-- Parses + validates the workflow at load time (typed inputs, derived state schema, contract compilation).
-- Walks the steps deterministically (no LLM-driven control flow).
-- Dispatches AI steps to an agent harness (Claude via `claude_agent_sdk` in v1; Codex + OpenCode adapters are v1.5).
-- Validates each step's output against its contract.
-- Writes state + per-tool events to a SQLite log keyed by run ID.
-- Manages isolated git worktrees per run when the workflow opts in.
+- **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
+- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; Codex's full reasoning stays inside the verb.
+- **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
-The agent does what only an agent can do (judgment, code, summarisation). Everything else — sequencing, gating, retries, state, git operations — is deterministic engine code.
+The agent does what only an agent can do (judgement, code, deciding how to fix a finding). Everything the audit trail depends on — opening the run, binding a review to a SHA, gating the merge — is deterministic verb code.
 
-For the full architectural picture and "why" of every decision, read [`SPEC.md`](./SPEC.md). For authoring workflows, read [`AUTHORING.md`](./AUTHORING.md).
+For the full architectural picture and the "why" of every decision, read [`SPEC.md`](./SPEC.md) (§1–2) and the accepted proposal [`specs/proposals/harness-as-tool.md`](./specs/proposals/harness-as-tool.md). For the verb contract the agent drives, read [`commands/harness.md`](./commands/harness.md).
+
+## The model: one execution path, two triggers
+
+There is **one** execution model — a Claude session running `start → implement → review → (fix → review)* → close` — with **two** triggers:
+
+- a **human**, via the `/harness run <ISSUE-ID>` slash command in Claude Code, or
+- **Hermes**, the autonomous dispatcher occupying the same trigger slot.
+
+Both produce the identical execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot `docker run` spawned **outside** the runtime by the `~/bin/harness` wrapper. The agent never runs inside a verb container.
+
+```
+trigger ( /harness run CAL-42  |  Hermes )
+   │  launches a Claude session for the ticket
+   ▼
+Claude session — orchestrator + implementer
+   start → [implement] → review → (fix → review)* → close
+   │  shells out to verbs (one-shot `docker run`)
+   ▼
+harness verbs:  start / review / close   +   SQLite ledger   +   close gate
+```
+
+### Routing discipline
+
+The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle. Every git and ticket state transition goes through a verb; `close` validates against the ledger as a backstop. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
 
 ## Install
 
@@ -32,167 +53,107 @@ uv sync --extra dev
 .venv/bin/harness version
 ```
 
-### As a dependency in another repo (current path)
-
-PyPI publishing comes in v1.1. For now, install from git:
+### As a tool on PATH
 
 ```bash
-# In your consuming repo
-uv add git+ssh://git@github.com/sluengen/harness.git@v1.0.0
-# or
-pip install git+ssh://git@github.com/sluengen/harness.git@v1.0.0
+uv tool install .          # installs the `harness` console script on PATH
+harness version
 ```
 
-The console script `harness` lands on `PATH` (under your venv).
+### Docker wrapper (canonical invocation)
 
-### Docker
+The primary way to invoke the verbs is the `~/bin/harness` wrapper — a thin shell around the Docker image. It mounts the current repo at `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, and extracts your Claude OAuth token from the macOS Keychain so runs use subscription pricing. See [`docker/README.md`](./docker/README.md) for the wrapper script and one-time setup.
 
 ```bash
-docker build -t harness:v1.0.0 -f docker/Dockerfile .
-docker run --rm \
-  -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.claude":/root/.claude:ro \
-  harness:v1.0.0 run <workflow>
+# Build the image
+docker build -t harness:dev -f docker/Dockerfile .
+
+# Then drive a ticket from any repo (CWD is mounted automatically)
+cd /path/to/target-repo
+harness start CAL-42        # → run_id + worktree
 ```
 
-The image mounts your project at `/workspace` and runs the workflow against it. State + worktrees + events land in `/workspace/.harness/` (gitignored). The `~/.claude` mount carries your Claude Code OAuth credentials into the container so the run uses subscription pricing — see [Authentication](#authentication) below for alternatives. See [`docker/README.md`](./docker/README.md) for full container details.
+The ledger, worktrees, and event log land under `/workspace/.harness/` and `/workspace/.worktrees/` (both gitignored).
 
 ## Authentication
 
-harness wraps `claude_agent_sdk`, which itself wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+harness dispatches review via Codex and (where used) `claude_agent_sdk`, which wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
 
 | Path | Pricing | When |
 |---|---|---|
-| `claude /login` on the host, then run locally | Subscription | Local development. The SDK reads OAuth from `~/.claude/` automatically — **no env var needed.** |
-| Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts where you can ship the OAuth token. |
-| `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. CI without OAuth access. |
+| `claude /login` on the host, then run locally | Subscription | Local development. Credentials read from `~/.claude/` automatically — **no env var needed.** |
+| Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts. The `~/bin/harness` wrapper extracts the Keychain token for you. |
+| `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. |
 
-The SDK picks them up in this order: in-memory OAuth > `CLAUDE_CODE_OAUTH_TOKEN` > `ANTHROPIC_API_KEY`. If you've run `claude /login` and you're invoking harness on the same machine, you don't need to set anything.
+`LINEAR_API_KEY` lives in a gitignored `.env` at the target repo root; the verbs read it to fetch and transition the ticket. No Linear CLI is involved — all Linear interaction is via the GraphQL API inside the verbs.
 
-## First run
+## Driving a ticket
 
-A workflow needs three things in your repo:
+In Claude Code, the `/harness run <ISSUE-ID>` command orchestrates the whole loop: it calls each verb, you (the session) write the code and tests inline in the worktree, and it acts on each verdict. The loop, the gate-refusal handling, and the routing rules are documented in [`commands/harness.md`](./commands/harness.md).
 
-1. The workflow YAML at `workflows/<name>.yaml`
-2. The contracts + prompts it references (inline or shared)
-3. **One of the auth paths above.** Default: just `claude /login` once; nothing else to set.
-
-Smallest possible run-once example:
-
-```yaml
-# workflows/hello.yaml
-name: hello
-version: 1
-
-steps:
-  - id: greet
-    type: ai
-    prompt: prompts/hello.j2
-    contract:
-      message: string
-    writes: [message]
-```
-
-```jinja
-{# prompts/hello.j2 #}
-Say hi in five words or fewer.
-```
+By hand, the same loop is:
 
 ```bash
-harness run hello
-harness status <run-id>          # what happened
-harness logs   <run-id>          # full event log
-harness events <run-id> --json   # machine-readable
+harness start CAL-42                      # opens the run; prints run_id + worktree_path
+cd <worktree_path>                        # implement: write code + tests, test-first
+harness review --run-id <run_id>          # Codex verdict bound to HEAD; fix + re-run until pass
+harness close CAL-42 --run-id <run_id>    # gate → commit / merge / push → ticket Done
 ```
 
-## Authoring workflows
+Read commands inspect a run without changing state:
 
-Read [`AUTHORING.md`](./AUTHORING.md) — it's the canonical guide. About 400 lines, action-oriented, covers:
+```bash
+harness status <run_id>     # terminal-state summary
+harness logs   <run_id>     # event timeline
+harness events <run_id> --json
+harness runs                # list recent runs
+harness worktrees           # inspect / clean up run worktrees
+harness doctor              # system health checks
+```
 
-- Step types (`ai`, `script`, `check`, `decision`, `worktree`, `loop`) with minimal examples
-- Inline contract grammar + the `$contracts/<name>` shared-schema mechanism
-- State and `writes:` (derivation, type-driven merge, variable substitution)
-- Standard prompts (`prompts/{analyze,implement,review,summarize}.j2`)
-- A worked release-notes example end-to-end
-- Common pitfalls
+Run `harness <verb> --help` for the full flag set.
 
-Or use the `/build-workflow` slash command (Claude Code) — the agent reads `AUTHORING.md` for you and produces a validated workflow from a description.
+## Using harness on harness (dog-fooding)
+
+harness's own follow-on work flows through harness: each Linear ticket in the *Harness v3* project is built by running `/harness run <ISSUE-ID>`, which exercises the same `start → review → close` verbs the tool ships. If the work that improves the harness ships cleanly *through* the harness, self-hosting is validated empirically.
 
 ## Repository layout
 
 ```
 harness/
-├── agents/             ← agent role definitions (dev, reviewer, architect, stewards)
-├── skills/             ← reusable skills (TDD, scope discipline, workflow authoring)
-├── commands/           ← user-invocable slash commands (start, build-workflow)
-├── workflows/          ← workflow YAML files
-├── contracts/          ← shared YAML contract schemas (referenced via $contracts/<name>)
-├── prompts/            ← reusable Jinja prompt templates
-├── harness/            ← the Python engine
-├── docker/             ← container build + entrypoint
-├── lessons/            ← validation artifacts (ergonomics runs, etc.)
-├── tests/              ← unit + integration tests
-├── AUTHORING.md        ← workflow author reference
-├── SPEC.md             ← design specification (the "why")
-└── CLAUDE.md           ← project bootstrap for Claude Code
+├── agents/        ← agent role definitions (dev, reviewer, architect, stewards)
+├── skills/        ← reusable skills (TDD, scope discipline, review discipline, …)
+├── commands/      ← user-invocable slash commands (start, review, ship, /harness …)
+├── harness/       ← the Python package: cli/ verbs, state/ ledger, worktree, codex dispatch
+├── specs/         ← design specs (SPEC.md is the index); proposals/ for unconfirmed ideas
+├── docker/        ← container build + entrypoint + the ~/bin/harness wrapper
+├── tests/         ← unit + integration tests
+├── scripts/       ← verify gate (scripts/verify.sh) and tooling
+├── CONTEXT.md     ← agent-facing repo context (read first)
+├── SPEC.md        ← design specification (the "why")
+└── CLAUDE.md      ← project process for Claude Code
 ```
 
-`agents/`, `skills/`, `commands/` are agent-agnostic (plain markdown). Claude Code sees them via symlinks at `.claude/{agents,skills,commands}` → `../{agents,skills,commands}`. Other agent ecosystems can read the top-level paths directly or add their own symlink layer.
-
-## Using harness on harness (dog-fooding)
-
-From v1.0 onward, harness's own follow-on work flows through harness:
-
-- All work items (bugs, features, improvements) → `harness run build --linear=<ISSUE-ID>`
-- Domain assessments → `harness run steward --domain=<area>`
-
-The first dog-food runs validated engine loader/worktree contract reconciliation and a series of AUTHORING.md refinements. If those ship cleanly through the harness, self-hosting is validated empirically.
+`agents/`, `skills/`, `commands/` are agent-agnostic (plain markdown). Claude Code sees them via symlinks under `.claude/`.
 
 ## Tech stack
 
-Python 3.11+ · Pydantic 2 · Typer · Jinja2 · PyYAML · `anthropic` SDK · `claude_agent_sdk` · `aiosqlite` · pytest · ruff · mypy · uv · Docker
+Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude_agent_sdk` · Codex CLI · pytest · ruff · mypy · uv · Docker
 
 ## Related
 
-- **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (workflow concepts, worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
+- **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
+- **Read first:** [`CONTEXT.md`](./CONTEXT.md) (agents) · [`SPEC.md`](./SPEC.md) §1–2 (design) · [`commands/harness.md`](./commands/harness.md) (verb contract).
 
 ## Changelog
 
-### v1.0.0 (2026-05-27)
+### 2026-06 — execution model inverted (verb model)
 
-- Engine: workflow loader, derived state, type-driven merge, dispatch protocol, six node types (`ai`, `script`, `check`, `decision`, `worktree`, `loop`), three-layer retry, executor, runner.
-- Dispatch: `claude_agent_sdk` adapter (v1); `codex`/`opencode` subprocess adapters exist but are gated behind `proc_fn=` for testing (not production-ready).
-- CLI: dynamic per-workflow subcommands, query commands (`status`/`logs`/`events`/`worktrees`/`validate`/`version`/`runs`/`doctor`), v2-reserved decision verbs.
-- Docker image with reproducible build.
-- AUTHORING.md author guide.
-- Ergonomics validation skill + 4 documented validation runs.
-- `/build-workflow` slash command + `workflow-authoring` skill.
-- Agent-agnostic layout (top-level `agents/`, `skills/`, `commands/`).
-- Dict-merge state semantics, per-write merge override (`merge: replace`).
-- Per-node retry configuration (`retry.transient.attempts`).
-- Linear webhook intake + reconciliation (`intake/` package).
-- State snapshots (per-completion) written after every successful node.
-- Workflow-level cancellation on SIGINT + SIGTERM.
+- **Orchestration boundary inverted** (proposal [`harness-as-tool`](./specs/proposals/harness-as-tool.md), accepted 2026-06-09). The harness no longer drives the build; a Claude session orchestrates and implements, calling three deterministic verbs.
+- **Verbs:** `start` (open run + worktree + ticket → In Progress), `review` (Codex verdict bound to the reviewed SHA), `close` (gate → merge/push → ticket Done). Plus read commands: `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version`.
+- **Ledger + gate:** a single SQLite `runs`/`events` ledger is the audit trail; `close` refuses any merge without a HEAD-bound passing review (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`).
+- **Deterministic YAML workflow engine retired** (CAL-574): the engine runner/executor/loop/retry, the node protocol, the workflow schema, and the `build*.yaml` workflows were deleted. Worktree lifecycle, Codex dispatch, the SQLite store, and the git/Linear helpers were re-homed as verb helpers.
 
-### v1.1 (planned)
+### v1.0.0 (2026-05-27) — historical (deterministic engine)
 
-- PyPI publish + release pipeline
-- `harness init <dir>` scaffold for consuming repos
-- 7 minor AUTHORING.md refinements
-- Loader/worktree contract reconciliation
-
-**Migration notes (v1.0 → v1.1):** No breaking changes expected. PyPI install path will replace the git-URL install once published. The `harness init` scaffold is additive.
-
-### v1.5 (planned)
-
-- `OpencodeAgent` production wiring (subprocess + tool injection)
-- AI node multi-turn improvements
-
-**Migration notes (v1.1 → v1.5):** `CodexAgent` is production-wired through the `codex` CLI and text-submit completion. `OpencodeAgent` still raises `RuntimeError` unless a `proc_fn=` is passed (test-only). Workflows using only `ClaudeAgent` are unaffected.
-
-### v2 (planned)
-
-- Human-actor decision nodes with pause/resume
-- Decision pause/resume via CLI (`harness decision approve/reject`)
-
-**Migration notes (v1.5 → v2):** Decision nodes will gain a pause/resume lifecycle. Existing `decision` steps using synchronous `auto:` resolution are unaffected. Steps expecting immediate resolution will need to opt in to the new pause semantics.
+The original release shipped the deterministic YAML workflow engine (workflow loader, derived state, six node types, three-layer retry, executor, runner), the `claude_agent_sdk` adapter, dynamic per-workflow CLI subcommands, the Docker image, and the AUTHORING.md author guide. It also shipped a Linear webhook intake — a sibling listener that fired the engine on ticket events. The engine was superseded by the verb model above and retired in CAL-574; the webhook listener lingered until it too was retired in CAL-601. This entry is kept for history.

@@ -1,0 +1,110 @@
+# guidance:registry@0.5.14
+# Single source of truth for versions. Everything version-stamped or installed
+# is listed here, so /update-guidance and the freshness hook can see it:
+#   files: — copied into a repo (md/js carry a matching guidance: header;
+#            JSON settings carry no header, so the version here is authoritative).
+#   meta:  — version-stamped but NOT installed (the installer, the registry).
+#
+# A file belongs to a profile if that profile name appears in its `profiles` list.
+# The set of files for a profile is derived here — there is no separate manifest.
+
+registry_format: 1
+
+source:
+  name: harness
+  # The authoritative guidance source (CAL-653). `repo` is a cloneable git remote:
+  # the installer clones it and /update-guidance fetches it at `branch` below, so
+  # it must carry a scheme (`git clone <repo>` must work, not be read as a local
+  # path). Consumers record both in their own .guidance-lock.yaml
+  # `source: { repo, branch, ref }`.
+  repo: https://github.com/sluengen/harness.git
+  # External repos pull the released `main`; the harness authors + dogfoods the
+  # surface on `dev` (the canary), and the `dev → main` promotion is the release
+  # (D7). A guidance-only fix rides the app's dev→main cadence — accepted at N=1.
+  branch: main
+
+profiles:
+  # ONE surface, one profile. The standard-vs-harness profile split is retired
+  # (specs/architecture-principles.md, "maturity-only", 2026-06-13): a single
+  # surface, with branches differing only by maturity (dev = unstable, main =
+  # released), not content. Repo-type variation — feature specs on/off, the
+  # design-system layer — is per-repo CONTEXT.md `layers:` config, NOT a profile.
+  # The single profile is named `harness` for historical continuity; the name is
+  # a label for the one surface, not a repo-type selector.
+  harness:
+    description: The shared agent-guidance surface. Lean spec-driven flow; repo-type variation via CONTEXT.md layers.
+    process: process/harness.md
+    settings: settings/harness.json
+    # Recommended starting layers a new repo seeds into its CONTEXT.md and then
+    # overrides for its type (a product repo typically sets feature_specs: true).
+    default_layers: { linear: true, design_system: false, feature_specs: false }
+
+files:
+  # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
+  skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.3.0, profiles: [harness] }
+  skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.3.2, profiles: [harness] }
+  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.3.2, profiles: [harness] }
+  skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.4.0, profiles: [harness] }
+  skills/code-quality/SKILL.md: { id: code-quality,             version: 0.5.1, profiles: [harness] }
+  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.5.0, profiles: [harness] }
+  skills/architecture/SKILL.md: { id: architecture,             version: 0.4.0, profiles: [harness] }
+  skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
+  skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
+  skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.0, profiles: [harness] }
+  skills/linear/SKILL.md: { id: linear,                       version: 0.4.1, profiles: [harness] }
+  skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.2.3, profiles: [harness] }
+  skills/guidance-coherence/SKILL.md: { id: guidance-coherence,       version: 0.1.0, profiles: [harness] }
+  # Product skills, home from the retired agents repo (CAL-652, D6), part of the
+  # one surface. The installer copies the WHOLE profile; the CONTEXT.md layers
+  # gate *engagement* at runtime, not install membership. design-system installs
+  # regardless and sits dormant unless the design_system layer is on (the layer
+  # gates whether it engages, not whether it installs). ux-design applies to any
+  # user-facing surface, independent of that layer — never gate it. (Install-time
+  # layer gating is unbuilt; do not omit profile files by layer — CAL-749.)
+  skills/design-system/SKILL.md: { id: design-system,            version: 0.2.1, profiles: [harness] }
+  skills/ux-design/SKILL.md: { id: ux-design,                version: 0.2.0, profiles: [harness] }
+
+  # --- agents ---
+  agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.2, profiles: [harness] }
+  agents/architect.md:                { id: architect,                version: 0.2.0, profiles: [harness] }
+  agents/steward.md:                  { id: steward,                  version: 0.1.1, profiles: [harness] }
+
+  # --- commands ---
+  commands/propose.md:                { id: propose,                  version: 0.1.1, profiles: [harness] }
+  commands/start.md:                  { id: start,                    version: 0.2.1, profiles: [harness] }
+  commands/review.md:                 { id: review,                   version: 0.1.2, profiles: [harness] }
+  commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
+  commands/assess.md:                 { id: assess,                   version: 0.4.0, profiles: [harness] }
+  commands/update-guidance.md:        { id: update-guidance,          version: 0.5.1, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.4.0, profiles: [harness] }
+
+  # --- templates ---
+  templates/proposal.md:              { id: template-proposal,        version: 0.1.1, profiles: [harness] }
+  templates/assessment.md:            { id: template-assessment,      version: 0.1.0, profiles: [harness] }
+  templates/change.md:                { id: template-change,          version: 0.1.0, profiles: [harness] }
+  templates/decision.md:              { id: template-decision,        version: 0.1.0, profiles: [harness] }
+  templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
+  templates/architecture.md:          { id: template-architecture,    version: 0.1.0, profiles: [harness] }
+  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.7, profiles: [harness] }
+  # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
+  # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
+  templates/feature.md:               { id: template-feature,         version: 0.1.1, profiles: [harness] }
+
+  # --- hooks (Claude Code only; wired via the profile's settings file) ---
+  hooks/prompt-guard.js:              { id: hook-prompt-guard,        version: 0.1.0, profiles: [harness] }
+  hooks/workflow-guard.js:            { id: hook-workflow-guard,      version: 0.1.0, profiles: [harness] }
+  hooks/context-monitor.js:           { id: hook-context-monitor,     version: 0.1.0, profiles: [harness] }
+  hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.3.2, profiles: [harness] }
+
+  # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---
+  process/harness.md:                 { id: process-harness,          version: 0.4.4, profiles: [harness] }
+
+  # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
+  settings/harness.json:              { id: settings-harness,         version: 0.1.0, profiles: [harness] }
+
+# Source-managed + version-stamped, but NOT installed into a repo (the installer and the registry itself).
+# The freshness hook checks their header against the version here; they never appear in a repo's lock.
+meta:
+  INSTALLER.md:                        { id: bootstrap,                version: 0.4.7 }
+  registry.yaml:                      { id: registry,                 version: 0.5.14 }

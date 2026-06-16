@@ -1,0 +1,200 @@
+"""``harness checkpoint`` — push the run branch so WIP survives the container (CAL-738).
+
+Breakdown item 5 of the accepted proposal ``stale-run-reclamation``. Decision D4
+is **preserve/resume**, but resume is only real if the WIP is durable: a worktree
+on a dead ephemeral container is gone, so the only recoverable work is what was
+**pushed** before the run died. Without periodic checkpoint-pushing, a cloud
+hard-kill leaves an unpushed branch and resume degrades to a clean restart for
+exactly the failure we care about — this is the load-bearing half of D4.
+
+What it does:
+
+1. **Resolve the open run** — by ``--run-id`` or by ``worktree_path == --repo``,
+   the same rule ``review`` / ``close`` use (:func:`harness.cli._runs.resolve_open_run`).
+   No open run resolved → exit 2.
+2. **Push the run branch to ``origin``.** Only the run's ``worktree_branch`` moves
+   — never the base, never a merge — so the ``close`` gate (a ``pass`` whose
+   reviewed SHA == HEAD, then merge to base) is wholly untouched. The push goes
+   through this verb rather than a hand-rolled ``git push`` in the loop, honouring
+   the routing-discipline rule (``commands/harness.md``: never raw git
+   state-transitions in the run loop — route every mutation through a verb).
+3. **Append a ``checkpoint`` event** bound to the pushed SHA. This is the ledger
+   signal :mod:`harness.cli.reclaim` reads to report a *durable* (resumable)
+   branch on a reclaimed ticket — a run with no checkpoint event has no durable
+   WIP, so reclaim degrades cleanly to "no resumable branch" (proposal item 6 /
+   CAL-739 then resumes from a pushed branch, or restarts clean).
+
+Context economy: the git push output stays inside the verb and never enters the
+printed JSON — only the bounded :class:`CheckpointOutput` is emitted.
+
+Exit codes (SPEC §11):
+* 0 — the branch was pushed and the checkpoint recorded.
+* 2 — no open run resolved for the worktree / ``--run-id``.
+* 1 — unexpected error (the ``git push`` failed, or a DB/HEAD read failed); the
+       WIP-durability failure is surfaced, not silently dropped.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+import typer
+from pydantic import BaseModel
+
+from harness._time import iso_z
+from harness.cli._git import rev_parse_head, run_git
+from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._runs import resolve_open_run
+from harness.events.emitter import EventEmitter
+
+__all__ = ["checkpoint_command", "CheckpointOutput"]
+
+
+class CheckpointOutput(BaseModel):
+    """Compact checkpoint result — the ONLY thing printed on success.
+
+    Git push output stays inside the verb and never appears here (context-economy
+    AC). The fields are the bounded status an orchestrating agent needs to confirm
+    the WIP was made durable.
+    """
+
+    run_id: str
+    branch: str
+    pushed_sha: str
+    pushed: bool
+
+
+class _CheckpointError(Exception):
+    """Internal control-flow exception carrying a message and an exit code."""
+
+    def __init__(self, message: str, code: int) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+def checkpoint_command(
+    repo: Path = typer.Option(  # noqa: B008
+        Path("."),
+        "--repo",
+        help="Worktree root whose run branch to push. Defaults to CWD.",
+    ),
+    run_id: str | None = typer.Option(
+        None,
+        "--run-id",
+        help="Explicit run to checkpoint. Defaults to the open run whose worktree is --repo.",
+    ),
+    db: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--db",
+        help="Path to harness.db (defaults to .harness/harness.db under --repo).",
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        True,
+        "--json/--no-json",
+        help="Emit machine-readable JSON (default: on).",
+    ),
+) -> None:
+    """Push the run branch to origin so committed WIP survives the container dying."""
+    repo_root = resolve_repo_root_or_exit(repo)
+    db_path = resolve_verb_db_path(db, repo_root)
+
+    try:
+        output = asyncio.run(
+            _run_checkpoint(repo_root=repo_root, run_id=run_id, db_path=db_path)
+        )
+    except _CheckpointError as exc:
+        if json_output:
+            typer.echo(json.dumps({"error": exc.message}))
+        else:
+            typer.echo(exc.message, err=True)
+        raise typer.Exit(code=exc.code) from exc
+
+    if json_output:
+        typer.echo(output.model_dump_json())
+    else:
+        typer.echo(
+            f"checkpointed {output.run_id} — pushed {output.branch} @ "
+            f"{output.pushed_sha[:12]}"
+        )
+
+
+async def _run_checkpoint(
+    *,
+    repo_root: Path,
+    run_id: str | None,
+    db_path: Path,
+) -> CheckpointOutput:
+    """Push the resolved run's branch and record a ``checkpoint`` event."""
+    # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
+    resolved = await resolve_open_run(db_path, repo_root, run_id)
+    if resolved is None:
+        raise _CheckpointError(
+            f"no open run found for worktree {repo_root}"
+            + (f" (run-id {run_id})" if run_id else ""),
+            2,
+        )
+    resolved_run_id, worktree_path, _base_branch, worktree_branch = resolved
+
+    # 2. Capture HEAD — the SHA the checkpoint records as durable.
+    try:
+        head_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
+    except Exception as exc:  # noqa: BLE001
+        raise _CheckpointError(
+            f"failed to read HEAD for worktree {worktree_path}: {exc}", 1
+        ) from exc
+
+    # 3. Push the feature branch to origin (sync git, offloaded). Output is
+    #    captured and discarded inside the verb — it never enters the JSON.
+    try:
+        await asyncio.to_thread(
+            _push_branch, worktree_path=Path(worktree_path), branch=worktree_branch
+        )
+    except _CheckpointError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _CheckpointError(f"checkpoint push failed: {exc}", 1) from exc
+
+    # 4. Record the checkpoint event (the durable-WIP ledger signal reclaim reads).
+    try:
+        await EventEmitter(db_path).emit(
+            run_id=resolved_run_id,
+            event_type="checkpoint",
+            data={
+                "run_id": resolved_run_id,
+                "branch": worktree_branch,
+                "pushed_sha": head_sha,
+                "pushed_at": iso_z(),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _CheckpointError(f"failed to record checkpoint event: {exc}", 1) from exc
+
+    return CheckpointOutput(
+        run_id=resolved_run_id,
+        branch=worktree_branch,
+        pushed_sha=head_sha,
+        pushed=True,
+    )
+
+
+def _push_branch(*, worktree_path: Path, branch: str) -> str:
+    """``git push origin <branch>`` from the run's worktree (sync — run in a thread).
+
+    A plain branch push: it creates the branch on ``origin`` on the first
+    checkpoint and fast-forwards it on later ones (the branch only this run
+    advances). Pushes nothing but the run's feature branch — never the base, never
+    a merge — so the ``close`` gate is untouched. Returns the git output for
+    logging; that output is deliberately *not* propagated into the printed JSON
+    (context-economy). Raises :class:`_CheckpointError` on a non-zero push.
+    """
+    result = run_git(worktree_path, "push", "origin", branch)
+    if result.returncode != 0:
+        raise _CheckpointError(
+            f"git push origin {branch} failed in {worktree_path}: "
+            f"{result.stderr.strip()}",
+            1,
+        )
+    return result.stdout + result.stderr

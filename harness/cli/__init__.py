@@ -1,20 +1,21 @@
 """CLI entrypoint — see SPEC §11.
 
 The CLI is the public contract. Stable flags, stable exit codes, stable JSON
-output. Subcommands are split across modules for readability:
+output. The harness exposes verbs the orchestrating agent shells out to
+(``start`` / ``review`` / ``close``) plus read/inspection commands. Subcommands
+are split across modules for readability:
 
 * :mod:`harness.cli.version`  — ``harness version``
-* :mod:`harness.cli.validate` — ``harness validate <workflow.yaml>``
-* :mod:`harness.cli.query`    — ``harness status / logs / events``
+* :mod:`harness.cli.query`    — ``harness status / logs / events / runs``
 * :mod:`harness.cli.worktrees` — ``harness worktrees list / cleanup``
-* :mod:`harness.cli.run`      — ``harness run <workflow>`` (dynamic subcommands)
+* :mod:`harness.cli.start`    — ``harness start <ticket>``
+* :mod:`harness.cli.review`   — ``harness review --run-id <id>``
+* :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
 
 Exit codes:
-- 0   workflow completed successfully / read command succeeded
-- 1   workflow failed (caught error during execution)
-- 2   invocation error (bad flags, unknown run-id, workflow YAML invalid)
-- 3   contract violation (LLM output failed validation after exhausting retries)
-- 4   paused awaiting decision (v2)
+- 0   command succeeded
+- 1   unexpected error (git failure, DB error, Linear error)
+- 2   invocation / gate refusal (bad flags, unknown run-id, gate not satisfied)
 - 130 SIGINT
 """
 
@@ -23,7 +24,8 @@ from __future__ import annotations
 import typer
 
 from harness.cli.cancel import cancel_command
-from harness.cli.decisions import decision_app, decisions_app
+from harness.cli.checkpoint import checkpoint_command
+from harness.cli.close import close_command
 from harness.cli.doctor import doctor_command
 from harness.cli.query import (
     events_command,
@@ -31,13 +33,14 @@ from harness.cli.query import (
     runs_command,
     status_command,
 )
-from harness.cli.run import run_command
-from harness.cli.validate import validate_command
+from harness.cli.reclaim import reclaim_command
+from harness.cli.review import review_command
+from harness.cli.start import start_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
 
 app = typer.Typer(
-    help="Deterministic workflow execution harness — see SPEC.md",
+    help="Deterministic, audited verbs an agent calls to drive a ticket — see SPEC.md",
     no_args_is_help=True,
 )
 
@@ -53,9 +56,6 @@ def _root() -> None:
 
 # Top-level read commands.
 app.command(name="version", help="Print harness version.")(version_command)
-app.command(name="validate", help="Validate a workflow YAML file (static).")(
-    validate_command
-)
 app.command(name="status", help="Print a run's terminal-state summary.")(
     status_command
 )
@@ -63,40 +63,29 @@ app.command(name="logs", help="Print a run's event timeline.")(logs_command)
 app.command(name="events", help="Print a run's events (JSON or compact).")(
     events_command
 )
-app.command(name="cancel", help="Cancel a running workflow by sending SIGTERM.")(
+app.command(name="cancel", help="Abandon an in-flight run (close without merge).")(
     cancel_command
+)
+app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to Todo and reconcile the ledger.")(  # noqa: E501
+    reclaim_command
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
-
-# Dynamic per-workflow `run` command. Uses context-settings to leave
-# workflow-specific args unparsed so `harness.cli.run` can build a Click
-# command from the YAML on the fly.
-app.command(
-    name="run",
-    help="Execute a workflow. Per-workflow flags are loaded from its YAML.",
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_extra_args": True,
-        "help_option_names": [],
-    },
-    add_help_option=False,
-)(run_command)
+app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
+    start_command
+)
+app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501
+    review_command
+)
+app.command(name="close", help="Close a run: enforce the review gate, merge/push, transition ticket to Done.")(  # noqa: E501
+    close_command
+)
+app.command(name="checkpoint", help="Push the run branch to origin so committed WIP survives the container dying.")(  # noqa: E501
+    checkpoint_command
+)
 
 # Nested worktrees app.
 app.add_typer(worktrees_app, name="worktrees", help="Inspect or clean up run worktrees.")
-
-# Decision surface — list/show implemented (H-2-003); approve/reject v2-reserved.
-app.add_typer(
-    decisions_app,
-    name="decisions",
-    help="Enumerate paused runs awaiting human decision.",
-)
-app.add_typer(
-    decision_app,
-    name="decision",
-    help="Inspect or resolve a paused decision node.",
-)
 
 
 __all__ = ["app"]

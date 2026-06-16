@@ -6,21 +6,20 @@ Covers:
     harness events <run-id>          [--type <event_type>] [--json]
     harness worktrees list           [--json]
     harness worktrees cleanup        [--age <duration>] [--merged]
-    harness validate <workflow.yaml>
     harness version                  [--json]
 
-All write paths are deferred — these tests cover the read surface and the
-``validate`` static check only. The CLI is invoked via Typer's
-:class:`CliRunner` so we get stable exit codes and captured stdout.
+All write paths are deferred — these tests cover the read surface only. The CLI
+is invoked via Typer's :class:`CliRunner` so we get stable exit codes and
+captured stdout.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 import sys
-import textwrap
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,7 +27,7 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from harness.cli import app
+from harness.cli import app, query_events
 from harness.state import store
 
 runner = CliRunner()
@@ -557,42 +556,56 @@ def test_worktrees_cleanup_no_filter_removes_nothing(tmp_path: Path) -> None:
     assert wt.exists()
 
 
-# ---------------------------------------------------------------------------
-# harness validate <workflow.yaml>
-# ---------------------------------------------------------------------------
+def test_worktrees_cleanup_merged_removes_branch_merged_into_dev(
+    tmp_path: Path,
+) -> None:
+    """``--merged`` treats a branch merged into ``dev`` as a removal candidate.
 
+    ``dev`` is this repo's integration branch, so a worktree whose branch has
+    landed on ``dev`` (the common case) must be cleaned up. This locks the real
+    check — ``dev``, ``main``, *and* ``master`` — that the ``--merged`` help and
+    docstring describe.
+    """
+    repo_root = tmp_path
+    subprocess.run(
+        ["git", "init", "-q", "-b", "dev", str(repo_root)], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "config", "user.email", "t@t"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "config", "user.name", "t"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty",
+         "-q", "-m", "init"], check=True
+    )
+    # A worktree whose branch points at the same commit as dev is "merged".
+    wt = repo_root / ".worktrees" / "harness" / "R-merged"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-merged", str(wt)],
+        check=True,
+    )
 
-def test_validate_known_good_workflow_prints_ok(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "workflows" / "demo.yaml"
-    workflow_yaml.parent.mkdir(parents=True, exist_ok=True)
-    workflow_yaml.write_text(textwrap.dedent("""\
-        name: demo
-        version: 1
-        description: demo
-        steps:
-          - id: hello
-            type: check
-            expr: "1 + 1 == 2"
-    """))
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
     assert result.exit_code == 0, result.stdout
-    assert "OK" in result.stdout
-    assert "demo" in result.stdout
-    assert "1" in result.stdout
+    assert not wt.exists()
+    assert "R-merged" in result.stdout
 
 
-def test_validate_invalid_workflow_exits_2(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "workflows" / "bad.yaml"
-    workflow_yaml.parent.mkdir(parents=True, exist_ok=True)
-    workflow_yaml.write_text("this: is: not: valid\n")
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
-    assert result.exit_code == 2
+def test_worktrees_cleanup_help_lists_all_merge_bases() -> None:
+    """The ``--merged`` help text must match the real check, not just ``main``.
 
-
-def test_validate_missing_file_exits_2(tmp_path: Path) -> None:
-    workflow_yaml = tmp_path / "absent.yaml"
-    result = runner.invoke(app, ["validate", str(workflow_yaml)])
-    assert result.exit_code == 2
+    The implementation tests the branch against ``dev``, ``main``, and
+    ``master``; the user-facing help must not understate that to ``main`` alone.
+    """
+    result = runner.invoke(app, ["worktrees", "cleanup", "--help"])
+    assert result.exit_code == 0, result.stdout
+    assert "dev" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -640,6 +653,69 @@ def test_logs_follow_exits_when_run_is_terminal(tmp_path: Path) -> None:
     assert "workflow_completed" in result.stdout
 
 
+def test_logs_follow_tails_open_run_until_closed(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``--follow`` keeps polling while a run is ``open`` (the verb model's live
+    status) and tails events that arrive across polls, exiting only once the run
+    becomes ``closed``.
+
+    Regression for CAL-640: ``_IN_PROGRESS_STATUSES`` was the retired engine's
+    ``{"pending", "running"}`` and omitted ``open``, so the first poll saw a
+    live run as terminal and the loop returned after one pass — ``--follow``
+    never tailed any live run. This test seeds an ``open`` run with one event,
+    lands a second event mid-follow, then closes the run; it fails against the
+    engine-era set (the second event is never tailed and the loop polls once)
+    and passes once ``open`` is in the in-progress set.
+    """
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1", status="open")
+    _seed_event(
+        db_path, run_id="R1", event_type="workflow_started",
+        timestamp="2026-05-08T12:00:00Z",
+    )
+
+    # Drive the loop deterministically: no real sleeping between polls.
+    monkeypatch.setattr(query_events, "_FOLLOW_POLL_INTERVAL_SECONDS", 0)
+
+    # Drive the run's lifecycle through the status polls. On the first poll the
+    # run is still ``open`` and a second event lands; on the second poll it has
+    # ``closed`` so the loop exits. Events are fetched before the status check,
+    # so the second event must arrive while the loop still believes the run is
+    # live for it to be tailed — exactly what the bug prevented.
+    calls = {"n": 0}
+
+    async def fake_fetch_status(db: Path, run_id: str) -> str | None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # Land a second event mid-follow, on the loop's own event loop (the
+            # sync seeder would spin up a nested loop and fail). Insert it before
+            # reporting the run still ``open`` so the next poll can tail it.
+            await _seed_event_async(
+                db_path, run_id="R1", node_id=None,
+                event_type="workflow_completed",
+                timestamp="2026-05-08T12:30:00Z",
+                duration_ms=None, data=None,
+            )
+            return "open"
+        return "closed"
+
+    monkeypatch.setattr(query_events, "_fetch_status", fake_fetch_status)
+
+    result = runner.invoke(
+        app, ["logs", "R1", "--db", str(db_path), "--follow"]
+    )
+    assert result.exit_code == 0, result.stdout
+    # The loop polled past the first ``open`` status instead of exiting on it.
+    assert calls["n"] >= 2, (
+        f"follow exited after {calls['n']} poll(s) — it treated `open` as "
+        "terminal and never tailed the live run"
+    )
+    # Both the initial event and the one that arrived mid-follow are tailed.
+    assert "workflow_started" in result.stdout
+    assert "workflow_completed" in result.stdout
+
+
 # ---------------------------------------------------------------------------
 # DB resolution — the `--db` flag is honoured everywhere (sanity)
 # ---------------------------------------------------------------------------
@@ -656,97 +732,36 @@ def test_db_flag_overrides_default(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# harness status --json: enriched fields (current_node, failure_retryable,
-# artifact_paths, agent_session_ids)
+# harness status --json: enriched fields (failure_reason, artifact_paths)
+#
+# The live DB→status wiring (a ``workflow_failed`` event surfacing as
+# ``failure_reason``) is covered end-to-end by
+# ``test_cancel_surfaces_failure_reason_in_status`` in ``test_cli_cancel.py`` —
+# ``harness cancel`` is the sole live emitter of ``workflow_failed``. We do not
+# manufacture synthetic ``workflow_failed`` events here (that was the CODE-4 /
+# CAL-589 false-green pattern).
 # ---------------------------------------------------------------------------
 
 
-def test_status_json_includes_current_node(tmp_path: Path) -> None:
-    """``current_node`` is populated from the latest ``node_started`` event."""
+def test_status_json_omits_current_node(tmp_path: Path) -> None:
+    """``current_node`` is no longer emitted (CAL-589).
+
+    It derived from ``node_started``, which only the engine retired in CAL-574
+    ever emitted — always ``null`` under the verb model. This locks its removal:
+    the field must be absent from the ``status --json`` payload (this test fails
+    against the parent implementation, which still emitted it).
+    """
     db_path = tmp_path / ".harness" / "harness.db"
     _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-a",
-                timestamp="2026-05-08T12:00:01Z")
-    _seed_event(db_path, run_id="R1", event_type="node_started", node_id="step-b",
-                timestamp="2026-05-08T12:00:02Z")
 
     result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
-    # Latest node_started is step-b.
-    assert payload["current_node"] == "step-b"
+    assert "current_node" not in payload
 
 
-def test_status_json_current_node_is_none_when_no_node_started(tmp_path: Path) -> None:
-    """``current_node`` is None when no ``node_started`` events exist."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="workflow_started",
-                timestamp="2026-05-08T12:00:00Z")
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["current_node"] is None
-
-
-def test_status_json_failure_retryable_false_for_contract_violation(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ContractViolation failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=3)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "ContractViolation: not_called"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "ContractViolation: not_called"
-    assert payload["failure_retryable"] is False
-
-
-def test_status_json_failure_retryable_false_for_loop_exhausted(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ``loop_exhausted`` failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "loop_exhausted"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "loop_exhausted"
-    assert payload["failure_retryable"] is False
-
-
-def test_status_json_failure_retryable_false_for_cancelled(tmp_path: Path) -> None:
-    """``failure_retryable`` is False for ``cancelled`` (user-initiated)."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="cancelled", exit_code=130)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "cancelled"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_retryable"] is False
-
-
-def test_status_json_failure_retryable_true_for_transient_error(tmp_path: Path) -> None:
-    """``failure_retryable`` is True for generic (transient) failures."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="failed", exit_code=1)
-    _seed_event(db_path, run_id="R1", event_type="workflow_failed",
-                data={"reason": "ConnectionError"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["failure_reason"] == "ConnectionError"
-    assert payload["failure_retryable"] is True
-
-
-def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> None:
-    """``failure_retryable`` is None for a run that has not failed."""
+def test_status_json_failure_reason_none_when_no_failure(tmp_path: Path) -> None:
+    """``failure_reason`` is None for a run that has not failed."""
     db_path = tmp_path / ".harness" / "harness.db"
     _seed_run(db_path, run_id="R1", status="completed", exit_code=0)
 
@@ -754,18 +769,21 @@ def test_status_json_failure_retryable_none_when_no_failure(tmp_path: Path) -> N
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["failure_reason"] is None
-    assert payload["failure_retryable"] is None
 
 
 def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None:
-    """``artifact_paths`` surfaces non-None artifact fields from ``state``."""
+    """``artifact_paths`` surfaces non-None artifact fields from ``state``.
+
+    Only schema-declared artifact fields are injected — ``BaseState`` forbids
+    extra keys, so a real ``state`` blob can never carry anything else (guarded
+    by ``test_artifact_keys_are_declared_state_fields``).
+    """
     db_path = tmp_path / ".harness" / "harness.db"
     state = {
         "run_id": "R1", "workflow_name": "build", "base_branch": "main",
         "artifacts_dir": "/tmp/arts", "started_at": "2026-05-08T12:00:00Z",
         "notes": [], "worktree_path": None,
         "worktree_branch": "harness/R1",
-        "pr_url": "https://github.com/org/repo/pull/42",
     }
     _seed_run(db_path, run_id="R1", status="completed",
               state_json=json.dumps(state))
@@ -774,7 +792,6 @@ def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["artifact_paths"] is not None
-    assert payload["artifact_paths"]["pr_url"] == "https://github.com/org/repo/pull/42"
     assert payload["artifact_paths"]["worktree_branch"] == "harness/R1"
     # worktree_path is None in state, so it must not appear.
     assert "worktree_path" not in payload["artifact_paths"]
@@ -789,37 +806,6 @@ def test_status_json_artifact_paths_none_when_no_artifacts(tmp_path: Path) -> No
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["artifact_paths"] is None
-
-
-def test_status_json_agent_session_ids_from_tool_called_events(tmp_path: Path) -> None:
-    """``agent_session_ids`` collects unique session_id values from tool_called events."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Read", "session_id": "sess-abc"})
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Write", "session_id": "sess-abc"})  # duplicate
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s2",
-                data={"name": "Bash", "session_id": "sess-xyz"})
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["agent_session_ids"] is not None
-    assert sorted(payload["agent_session_ids"]) == ["sess-abc", "sess-xyz"]
-
-
-def test_status_json_agent_session_ids_none_when_no_sessions(tmp_path: Path) -> None:
-    """``agent_session_ids`` is None when tool_called events carry no session_id."""
-    db_path = tmp_path / ".harness" / "harness.db"
-    _seed_run(db_path, run_id="R1", status="running")
-    _seed_event(db_path, run_id="R1", event_type="tool_called", node_id="s1",
-                data={"name": "Read", "input": {}})  # no session_id key
-
-    result = runner.invoke(app, ["status", "R1", "--db", str(db_path), "--json"])
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    assert payload["agent_session_ids"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -889,3 +875,38 @@ def test_events_after_id_past_last_returns_empty(tmp_path: Path) -> None:
     assert len(lines) == 0
 
 
+
+def _db_help_text(command: str) -> str:
+    """Return the ``--help`` output for ``command`` with ANSI colour codes and
+    rich box-drawing borders stripped and whitespace collapsed, so an option's
+    help string can be matched without caring how the renderer wrapped *or
+    coloured* it across lines.
+
+    CI renders help with colour at 80 cols (``FORCE_COLOR``); the ANSI SGR codes
+    then interleave the help text, so they must be stripped before matching —
+    otherwise a contiguous-substring check passes locally (no colour) but fails
+    on CI (CAL-751)."""
+    out = runner.invoke(app, [command, "--help"]).stdout
+    out = re.sub(r"\x1b\[[0-9;]*m", "", out)  # strip ANSI SGR colour codes
+    return re.sub(r"\s+", " ", re.sub(r"[│|]", " ", out))
+
+
+def test_events_db_help_documents_default(tmp_path: Path) -> None:
+    """``events --help`` documents the ``--db`` default like its siblings.
+
+    Every read-side command resolves ``--db`` through the same
+    ``_resolve_db_path`` default (``$cwd/.harness/harness.db``); the help text
+    must say so, as ``status``/``runs``/``doctor`` already do.
+    """
+    assert (
+        "Path to harness.db (defaults to .harness/harness.db)"
+        in _db_help_text("events")
+    )
+
+
+def test_logs_db_help_documents_default(tmp_path: Path) -> None:
+    """``logs --help`` documents the ``--db`` default, matching its siblings."""
+    assert (
+        "Path to harness.db (defaults to .harness/harness.db)"
+        in _db_help_text("logs")
+    )

@@ -1,11 +1,11 @@
-"""Append-only event log writer — see SPEC §4.9.
+"""Append-only event log writer — see SPEC §4.7.
 
 One row per ``emit()`` call into the ``events`` table created by
 ``harness.state.store``. No buffering, no batching, no listeners — just an
 append-only writer the engine calls at every workflow/node/tool/state
 transition.
 
-Schema (SPEC §12)::
+Schema (``specs/features/run-ledger.md``)::
 
     events(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,10 +26,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from harness._time import iso_z
 from harness.events.schema import EVENT_TYPES, EventType
 from harness.state import store
 
@@ -47,8 +47,8 @@ class EventEmitter:
         db_path: Path to the SQLite database.
         on_emit: Optional synchronous callback invoked after each successful
             INSERT + commit. Signature: ``(event_type, node_id, duration_ms)``.
-            Used by :class:`~harness.engine.progress.ProgressReporter` to tap
-            the event stream for terminal output without a new persistence layer.
+            A caller may pass a callback to tap the event stream for terminal
+            output without adding a new persistence layer.
     """
 
     def __init__(
@@ -73,7 +73,7 @@ class EventEmitter:
             run_id: The owning run's ULID. Must reference an existing
                 ``runs.run_id`` — the foreign key raises
                 ``sqlite3.IntegrityError`` otherwise.
-            event_type: One of the canonical SPEC §4.9 event types. Unknown
+            event_type: One of the canonical SPEC §4.7 event types. Unknown
                 values raise ``ValueError`` before any DB write.
             node_id: Optional step/node identifier. ``None`` is stored as SQL
                 NULL.
@@ -82,7 +82,7 @@ class EventEmitter:
                 NULL.
 
         Raises:
-            ValueError: ``event_type`` is not in the canonical SPEC §4.9 set.
+            ValueError: ``event_type`` is not in the canonical SPEC §4.7 set.
             sqlite3.IntegrityError: ``run_id`` does not exist in ``runs``.
         """
         if event_type not in EVENT_TYPES:
@@ -90,7 +90,7 @@ class EventEmitter:
                 f"unknown event_type {event_type!r}; expected one of {sorted(EVENT_TYPES)}"
             )
 
-        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        timestamp = iso_z()
         data_json = json.dumps(data if data is not None else {})
 
         async with store.connect(self._db_path) as conn:

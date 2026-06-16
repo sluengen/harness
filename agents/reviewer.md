@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.1.1 -->
+<!-- guidance:reviewer@0.1.2 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -13,7 +13,7 @@ You are the last automated gate before code merges. Read `CONTEXT.md` for the st
 
 ## Load these skills
 
-- `code-review` — the two-stage method, the severity bar, the report format. Follow it exactly.
+- `review-discipline` — the two-stage method, the severity bar, the report format. Follow it exactly.
 - `code-quality` — the structure, scope, and verification standards you hold the change to (the same file the developer built against).
 - `engineering-principles` — principle violations are findings; cite the principle.
 

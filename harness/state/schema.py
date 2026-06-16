@@ -1,14 +1,11 @@
-"""Framework-defined state base — see SPEC §6.
+"""Framework-defined state base — see ``specs/features/run-ledger.md`` ("BaseState").
 
-Every workflow produces a derived state class that subclasses
-:class:`BaseState`. The derivation step (H-009,
-:func:`harness.workflow.derive.derive_state_schema`) walks a
-:class:`~harness.workflow.loader.LoadedWorkflow`, takes the union of
-every step's ``writes:`` declarations, and adds one field per name on
-top of the fields declared here.
+:class:`BaseState` holds the framework-defined run fields. It predates the
+verb model (CAL-574 retired the workflow engine that derived per-workflow
+state subclasses on top of this base); the run-state shape is now this base
+directly.
 
-The seven framework-supplied fields are populated by the engine when a
-run begins:
+The framework-supplied fields populated when a run begins:
 
 * ``run_id`` — opaque identifier for this run.
 * ``workflow_name`` — :attr:`Workflow.name`.
@@ -19,10 +16,10 @@ run begins:
 * ``artifacts_dir`` — where the run writes prompt transcripts, review
   artifacts, etc.
 * ``started_at`` — UTC timestamp the run was started.
-* ``notes`` — auto-populated, framework-managed log line buffer
-  (SPEC §7 "Notes — framework-provided, auto-populated"). The bounded
-  merge logic that appends to this list lives in H-010; H-009 only
-  declares the field.
+* ``notes`` — auto-populated, framework-managed log line buffer (see
+  ``specs/features/run-ledger.md`` for the ``BaseState`` field set). This module
+  declares the field; the engine-era bounded-merge writer that appended to
+  it was removed with the rest of the dead state surface in CAL-613.
 
 ``extra="forbid"`` is set so an agent that hallucinates an unknown
 state field is rejected rather than silently persisted.
@@ -39,13 +36,27 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
 
 
-# Canonical run-status enum — see SPEC §12. The SQLite column is ``TEXT NOT
+# Canonical run-status enum — see ``specs/features/run-ledger.md`` ("status values").
+# The SQLite column is ``TEXT NOT
 # NULL`` without a CHECK constraint, so this Literal is the type-safe seam:
-# engine writers + CLI readers import :data:`RUN_STATUSES` to validate the
-# string they read out of the DB. ``paused`` and ``stalled`` belong to the
-# v1.5 lifecycle additions (H-025) and are admitted here even though the v2
-# decision flow that produces ``paused`` runs is not yet wired.
+# writers + CLI readers import :data:`RUN_STATUSES` to validate the string
+# they read out of the DB.
+#
+# Two lifecycles are folded into one set:
+#
+# * Verb model (current) — ``harness start`` opens a run as ``open`` and
+#   ``harness close`` finalizes it to ``closed`` (CAL-583). These are the
+#   statuses live code writes today.
+# * Retired deterministic engine — ``pending``/``running``/``completed``/
+#   ``failed``/``cancelled``/``stalled``/``paused`` were the per-node engine
+#   states (``paused``/``stalled`` were the v1.5/H-025 lifecycle additions).
+#   CAL-574 retired the engine; these are kept so historical rows still
+#   validate (removing them is out of scope).
 RunStatus = Literal[
+    # verb model
+    "open",
+    "closed",
+    # retired deterministic engine
     "pending",
     "running",
     "completed",
@@ -63,7 +74,7 @@ RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
 class BaseState(BaseModel):
     """Framework-defined fields prepended to every derived state class.
 
-    See module docstring and SPEC §6 for the full rationale.
+    See module docstring and ``specs/features/run-ledger.md`` for the full rationale.
     """
 
     model_config = ConfigDict(extra="forbid")

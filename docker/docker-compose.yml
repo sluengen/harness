@@ -8,10 +8,10 @@
 #   # Build once.
 #   docker compose -f docker/docker-compose.yml build harness
 #
-#   # Run a workflow against another repo (mount the host repo into /workspace).
+#   # Open a run against another repo (mount the host repo into /workspace).
 #   HARNESS_TARGET_REPO=/abs/path/to/your-repo \
 #     docker compose -f docker/docker-compose.yml run --rm harness \
-#       run steward --domain=architecture
+#       start CAL-123
 #
 # `HARNESS_TARGET_REPO` defaults to the current directory, which is convenient
 # when iterating on the harness against its own repo.
