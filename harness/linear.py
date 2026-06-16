@@ -30,6 +30,13 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from harness.reclaim_marker import RECLAIM_LABEL, RECLAIM_MARKER, parse_preserved_branch
+
+# size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
+# requires every Linear GraphQL operation to live in this client (never in
+# command prose), so the surface grows one query-method at a time; splitting the
+# client to chase the 500-line limit would scatter that boundary, not clarify it.
+
 __all__ = [
     "LinearClient",
     "LinearConfigError",
@@ -154,6 +161,59 @@ query InProgressIssues($project: String!) {
             {"identifier": n["identifier"], "updated_at": n["updatedAt"]}
             for n in nodes
         ]
+
+    async def fetch_resume_branch(self, identifier: str) -> str | None:
+        """The preserved WIP branch a reclaimed ticket can resume from, or ``None``.
+
+        Resume (proposal ``stale-run-reclamation`` D4 / CAL-739): when a run's
+        orchestrator died, ``harness reclaim`` reverted the ticket to Todo and
+        posted a comment naming the checkpoint-pushed branch the next run
+        continues from. This reads it back — the durable record survives to a
+        fresh container because it lives on **Linear**, not the dead checkout.
+
+        Returns the branch only when the ticket still carries the ``reclaimed``
+        label **and** its latest reclaim comment names a real branch. The label
+        is the structured gate (the ticket is a reclamation re-pick); the comment
+        carries the ref. Every other case — not reclaimed, a reclaim that
+        preserved no durable WIP (the sentinel), or no parseable reclaim comment —
+        returns ``None`` so the caller restarts clean rather than resume a wrong
+        ref. The **latest** reclaim comment wins, so a ticket reclaimed more than
+        once resumes from its freshest branch.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        query = """
+query ResumeBranch($id: String!) {
+  issue(id: $id) {
+    labels { nodes { name } }
+    comments(first: 20) { nodes { body createdAt } }
+  }
+}
+"""
+        data = await self._request(query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+
+        label_names = {
+            (n.get("name") or "").lower()
+            for n in (issue.get("labels") or {}).get("nodes", [])
+        }
+        if RECLAIM_LABEL not in label_names:
+            return None
+
+        comment_nodes: list[dict[str, Any]] = (
+            (issue.get("comments") or {}).get("nodes", [])
+        )
+        reclaim_comments = [
+            c for c in comment_nodes if RECLAIM_MARKER in (c.get("body") or "")
+        ]
+        if not reclaim_comments:
+            return None
+        latest = max(reclaim_comments, key=lambda c: c.get("createdAt") or "")
+        return parse_preserved_branch(latest.get("body") or "")
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Transition issue ``identifier`` to the first In Progress state.

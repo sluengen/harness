@@ -1064,3 +1064,156 @@ def test_start_docstring_exit_codes_match_contract() -> None:
     assert "existing run" in exit_block, (
         "docstring should document the exit-0 existing-run (duplicate start) case"
     )
+
+
+# ---------------------------------------------------------------------------
+# --resume: continue a reclaimed run from its preserved WIP branch (CAL-739)
+#
+# When the routine picks a `reclaimed` ticket carrying a checkpoint-pushed
+# branch, `harness start --resume` bases the new run's worktree on that branch
+# (fetch + continue) instead of a clean branch off `dev`. With no durable WIP —
+# or a branch that no longer fetches — it falls back to a clean start. Either
+# way `base_branch` stays `dev` (the merge target), so close's HEAD-bound gate
+# keeps the merge safe from double-merge.
+# ---------------------------------------------------------------------------
+
+
+def _make_resume_stub(resume_branch: str | None) -> MagicMock:
+    """A Linear stub whose ``fetch_resume_branch`` returns ``resume_branch``."""
+    mock = _make_linear_stub()
+    mock.fetch_resume_branch = AsyncMock(return_value=resume_branch)
+    return mock
+
+
+def _setup_origin_with_wip(repo: Path) -> tuple[str, str]:
+    """Give ``repo`` an ``origin`` carrying a checkpoint-pushed WIP branch.
+
+    Returns ``(wip_branch, wip_sha)``. The WIP branch is removed locally after
+    the push, mirroring the cloud regime: the dead run's worktree is gone and the
+    branch survives only because it was checkpoint-pushed to ``origin``.
+    """
+    origin = repo.parent / "origin.git"
+    _git(repo, "init", "--bare", str(origin))
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "origin", "dev")
+    _git(repo, "checkout", "-b", "harness/wip")
+    (repo / "wip.txt").write_text("recovered work\n")
+    _git(repo, "add", "wip.txt")
+    _git(repo, "commit", "-m", "wip checkpoint")
+    wip_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "push", "origin", "harness/wip")
+    _git(repo, "checkout", "dev")
+    _git(repo, "branch", "-D", "harness/wip")
+    # Drop the remote-tracking ref the push created, so the only path back to the
+    # WIP tip is an explicit fetch — proving resume fetches, not a local lookup.
+    _git(repo, "update-ref", "-d", "refs/remotes/origin/harness/wip")
+    return "harness/wip", wip_sha
+
+
+def _worktree_head(worktree_path: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=worktree_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+@pytest.mark.slow
+def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> None:
+    """AC-1: a `reclaimed` ticket with a pushed WIP branch resumes from it — the
+    new worktree continues from the WIP tip, while `base_branch` stays `dev`."""
+    wip_branch, wip_sha = _setup_origin_with_wip(repo)
+    stub = _make_resume_stub(wip_branch)
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+
+    # The worktree continues from the recovered WIP commit, not a clean dev branch.
+    assert _worktree_head(Path(payload["worktree_path"])) == wip_sha
+    # The merge target (base_branch) is still dev — close merges into dev, so the
+    # HEAD-bound gate keeps the resumed run safe from double-merge (AC-3).
+    rows = fetch_runs(db_path)
+    assert len(rows) == 1
+    assert rows[0]["base_branch"] == "dev"
+    stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
+
+
+@pytest.mark.slow
+def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) -> None:
+    """AC-2: `--resume` on a ticket with no preserved branch starts clean off dev."""
+    dev_sha = _git(repo, "rev-parse", "dev").stdout.strip()
+    stub = _make_resume_stub(None)
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert _worktree_head(Path(payload["worktree_path"])) == dev_sha
+    assert fetch_runs(db_path)[0]["base_branch"] == "dev"
+
+
+@pytest.mark.slow
+def test_resume_falls_back_clean_when_branch_does_not_fetch(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-2 / best-effort: a named branch that no longer fetches degrades to a
+    clean restart rather than blocking the queue."""
+    # An origin exists, but the named resume branch is not on it.
+    origin = repo.parent / "origin.git"
+    _git(repo, "init", "--bare", str(origin))
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "origin", "dev")
+    dev_sha = _git(repo, "rev-parse", "dev").stdout.strip()
+
+    stub = _make_resume_stub("harness/ghost-never-pushed")
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    # Fell back to a clean branch off dev — the run still opens.
+    assert _worktree_head(Path(payload["worktree_path"])) == dev_sha
+    assert fetch_runs(db_path)[0]["base_branch"] == "dev"
+
+
+@pytest.mark.slow
+def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> None:
+    """Without `--resume`, start never calls fetch_resume_branch — a plain start
+    is unchanged (an ordinary interactive run pays no resume cost)."""
+    stub = _make_resume_stub("harness/should-not-be-used")
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    stub.fetch_resume_branch.assert_not_awaited()

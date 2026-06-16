@@ -202,6 +202,68 @@ async def test_create_custom_branch_prefix(repo: Path) -> None:
     assert not _branch_exists(repo, "harness/run-y")
 
 
+# ---------------------------------------------------------------------------
+# start_point parameter — resume continues the worktree from a preserved branch
+# (CAL-739). The recorded base (the merge target) is decoupled from the git
+# commit the worktree's branch starts at.
+# ---------------------------------------------------------------------------
+
+
+async def test_start_point_bases_the_branch_off_a_different_commit(repo: Path) -> None:
+    """With ``start_point``, the new branch starts at that commit, not at ``base``.
+
+    Simulates resuming a reclaimed run: a preserved WIP branch carries a commit
+    that ``main`` does not, and the new run's worktree must continue from it.
+    """
+    # A "WIP" branch off main with one extra commit that main lacks.
+    _git(repo, "checkout", "-b", "harness/wip")
+    (repo / "wip.txt").write_text("work in progress\n")
+    _git(repo, "add", "wip.txt")
+    _git(repo, "commit", "-m", "wip checkpoint")
+    wip_sha = _git(repo, "rev-parse", "harness/wip").stdout.strip()
+    main_sha = _git(repo, "rev-parse", "main").stdout.strip()
+    assert wip_sha != main_sha
+    _git(repo, "checkout", "main")
+
+    node = WorktreeNode()
+    result = await node.create(
+        run_id="run-resume", repo_root=repo, base="main", start_point="harness/wip"
+    )
+
+    wt = repo / ".worktrees" / "harness" / "run-resume"
+    wt_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=wt,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # The worktree continues from the WIP tip, not from base.
+    assert wt_sha == wip_sha
+    assert wt_sha != main_sha
+    # The new run still gets its own canonical branch name.
+    assert result.worktree_branch == "harness/run-resume"
+    # The WIP file is present in the resumed worktree.
+    assert (wt / "wip.txt").exists()
+
+
+async def test_start_point_none_falls_back_to_base(repo: Path) -> None:
+    """``start_point=None`` is identical to the default — the worktree starts at base."""
+    base_sha = _git(repo, "rev-parse", "main").stdout.strip()
+    node = WorktreeNode()
+    await node.create(run_id="run-clean", repo_root=repo, base="main", start_point=None)
+
+    wt = repo / ".worktrees" / "harness" / "run-clean"
+    wt_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=wt,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert wt_sha == base_sha
+
+
 def test_branch_for_default_sources_identity_prefix() -> None:
     """The lifecycle helper's default prefix is the shared identity.BRANCH_PREFIX (CAL-719).
 

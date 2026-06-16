@@ -842,7 +842,7 @@ Stall is distinct from the hard `timeout_s` wall (which terminates after total e
 
 ```
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
-harness start  <ticket>   [--base <b>] [--repo <p>] [--db <p>] [--json]
+harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json]   # --resume: a reclaimed ticket with a checkpoint-pushed WIP branch continues from it (fetch + base the worktree on it); falls back to a clean start (CAL-739)
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched

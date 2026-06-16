@@ -11,7 +11,11 @@ starts implementing:
 4. Checks for an already-open run for the same ticket (refuses to open a
    second rather than silently create a duplicate).
 5. Generates a ULID run_id and creates a git worktree at
-   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``.
+   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``. With
+   ``--resume``, a reclaimed ticket carrying a checkpoint-pushed WIP branch is
+   continued from that branch (fetch + base the worktree on it) instead of off
+   ``base``; the recorded ``base_branch`` (the merge target) stays ``base`` so
+   ``close``'s HEAD-bound gate keeps the resumed run safe (CAL-739).
 6. Inserts an ``open`` row into ``runs`` (``status='open'``).
 7. Transitions the ticket to In Progress (last — the only non-local side
    effect; local state is rolled back if it fails).
@@ -112,7 +116,13 @@ def start_command(
     base: str = typer.Option(
         "dev",
         "--base",
-        help="Base branch for the worktree. Defaults to ``dev``.",
+        help="Base branch for the worktree (the merge target). Defaults to ``dev``.",
+    ),
+    resume: bool = typer.Option(  # noqa: B008
+        False,
+        "--resume",
+        help="Resume a reclaimed ticket from its preserved WIP branch when one "
+        "exists (fetch + continue); fall back to a clean start otherwise.",
     ),
     repo: Path = typer.Option(  # noqa: B008
         Path("."),
@@ -139,6 +149,7 @@ def start_command(
             _run_start(
                 ticket=ticket,
                 base=base,
+                resume=resume,
                 repo_root=repo_root,
                 db_path=db_path,
             )
@@ -165,6 +176,7 @@ async def _run_start(
     *,
     ticket: str,
     base: str,
+    resume: bool = False,
     repo_root: Path,
     db_path: Path,
 ) -> StartOutput:
@@ -197,11 +209,23 @@ async def _run_start(
     if existing is not None:
         return existing
 
+    # 4b. Resume resolution (--resume only): if this is a reclaimed ticket whose
+    # dead run left a checkpoint-pushed branch, base the worktree on that branch
+    # so the new run continues the recovered work. Best-effort — any failure
+    # (not reclaimed, no durable WIP, a branch that no longer fetches, or a
+    # Linear probe error) falls back to a clean start off ``base`` rather than
+    # blocking the queue. ``base`` (the merge target) is unchanged either way.
+    start_point: str | None = None
+    if resume:
+        start_point = await _resolve_resume_start_point(client, canonical, repo_root)
+
     # 5. Create worktree (local side effect — rolled back on any later failure).
     run_id = generate_run_id()
     node = WorktreeNode()
     try:
-        result = await node.create(run_id=run_id, repo_root=repo_root, base=base)
+        result = await node.create(
+            run_id=run_id, repo_root=repo_root, base=base, start_point=start_point
+        )
     except WorktreeNodeError as exc:
         # No local state created yet — no rollback needed.
         raise _StartError(f"worktree creation failed: {exc}", 1) from exc
@@ -281,6 +305,48 @@ def _compact_ticket(ticket_data: dict[str, Any]) -> TicketContext:
         description=raw_desc,
         url=ticket_data.get("url"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Resume resolution (--resume) — continue a reclaimed run from its WIP branch
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_resume_start_point(
+    client: LinearClient, ticket: str, repo_root: Path
+) -> str | None:
+    """The git commit a resumed run starts from, or ``None`` for a clean start.
+
+    Reads the reclaimed ticket's preserved (checkpoint-pushed) branch from Linear
+    and fetches it from ``origin``, returning the fetched tip SHA. Best-effort
+    throughout: no preserved branch, a branch that no longer fetches, or a Linear
+    probe error all return ``None`` so the run restarts clean rather than block
+    the queue (proposal ``stale-run-reclamation`` D4 / CAL-739).
+    """
+    try:
+        branch = await client.fetch_resume_branch(ticket)
+    except (LinearNotFound, LinearRequestError):
+        return None
+    if not branch:
+        return None
+    return await asyncio.to_thread(_fetch_origin_branch, repo_root, branch)
+
+
+def _fetch_origin_branch(repo_root: Path, branch: str) -> str | None:
+    """``git fetch origin <branch>`` then resolve its tip SHA, or ``None`` on failure.
+
+    Returns the fetched commit SHA so the worktree starts at the exact tip — not a
+    branch name a later op could move. A non-zero fetch (the branch is no longer
+    on ``origin``) or an unresolvable ``FETCH_HEAD`` returns ``None``: a clean
+    restart, not an error. Sync — offloaded via :func:`asyncio.to_thread`.
+    """
+    fetch = run_git(repo_root, "fetch", "origin", branch)
+    if fetch.returncode != 0:
+        return None
+    head = run_git(repo_root, "rev-parse", "FETCH_HEAD")
+    if head.returncode != 0:
+        return None
+    return head.stdout.strip() or None
 
 
 # ---------------------------------------------------------------------------

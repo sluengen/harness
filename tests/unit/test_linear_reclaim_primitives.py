@@ -411,3 +411,108 @@ async def test_fetch_in_progress_issues_empty_when_none(
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
     assert await client.fetch_in_progress_issues(project="Harness v3") == []
+
+
+# ---------------------------------------------------------------------------
+# fetch_resume_branch — the preserved branch a reclaimed ticket resumes from
+# (CAL-739, the read side of the reclaim-comment contract)
+# ---------------------------------------------------------------------------
+
+
+def _resume_issue(labels: list[str], comments: list[str]) -> dict[str, Any]:
+    """A GraphQL ``issue`` payload with the given label names and comment bodies."""
+    return {
+        "data": {
+            "issue": {
+                "labels": {"nodes": [{"name": n} for n in labels]},
+                "comments": {
+                    "nodes": [
+                        {"body": b, "createdAt": f"2026-06-16T00:0{i}:00.000Z"}
+                        for i, b in enumerate(comments)
+                    ]
+                },
+            }
+        }
+    }
+
+
+async def test_fetch_resume_branch_returns_branch_from_latest_reclaim_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reclaimed ticket whose latest reclaim comment names a branch returns it.
+
+    The *latest* reclaim comment wins — a ticket reclaimed twice carries the
+    freshest branch, so the most recent comment is authoritative.
+    """
+    from harness.reclaim_marker import format_reclaim_comment
+
+    old = format_reclaim_comment("R1", "harness/old", when="2026-06-16T00:00:00Z")
+    new = format_reclaim_comment("R2", "harness/new", when="2026-06-16T00:02:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["reclaimed"], [old, "an unrelated comment", new])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_resume_branch("CAL-739") == "harness/new"
+
+
+async def test_fetch_resume_branch_none_without_reclaimed_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No ``reclaimed`` label → None even if a comment names a branch: the label
+    is the structured gate that the ticket is a reclamation re-pick."""
+    from harness.reclaim_marker import format_reclaim_comment
+
+    body = format_reclaim_comment("R1", "harness/x", when="2026-06-16T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["Feature"], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_resume_branch("CAL-739") is None
+
+
+async def test_fetch_resume_branch_none_when_reclaim_preserved_no_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reclaim that preserved no durable WIP (the sentinel) → None, so resume
+    degrades to a clean restart (AC-2)."""
+    from harness.reclaim_marker import format_reclaim_comment
+
+    body = format_reclaim_comment("R1", None, when="2026-06-16T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["reclaimed"], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_resume_branch("CAL-739") is None
+
+
+async def test_fetch_resume_branch_none_when_no_reclaim_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The label is present but no comment carries the reclaim marker → None."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["reclaimed"], ["just chatter", "more chatter"])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_resume_branch("CAL-739") is None
+
+
+async def test_fetch_resume_branch_raises_not_found_for_null_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing issue raises LinearNotFound (the caller treats it as best-effort)."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.fetch_resume_branch("CAL-999")

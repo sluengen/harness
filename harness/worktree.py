@@ -108,18 +108,29 @@ class WorktreeNode:
         repo_root: Path,
         base: str,
         branch_prefix: str = BRANCH_PREFIX,
+        start_point: str | None = None,
     ) -> WorktreeCreateOutput:
-        """Create a worktree at ``<repo>/.worktrees/harness/<run_id>/`` from ``base``.
+        """Create a worktree at ``<repo>/.worktrees/harness/<run_id>/``.
+
+        The new branch starts at ``start_point`` when given, else at ``base``.
+        Decoupling the two lets a run **resume** from a preserved WIP branch while
+        still merging back into ``base``: ``harness start --resume`` (CAL-739)
+        passes the checkpoint-pushed branch (or its SHA) as ``start_point`` so the
+        worktree continues the dead run's work, but records ``base`` as the merge
+        target unchanged — so ``close`` merges into ``base`` and its HEAD-bound
+        gate keeps the resumed run safe from double-merge. With ``start_point``
+        omitted this is the ordinary clean start off ``base``.
 
         Raises
         ------
         WorktreeNodeError
             * if the destination path already exists (we never silently
               reuse an existing worktree — that would mask state bugs)
-            * if ``git worktree add`` fails (e.g. unknown ``base``).
+            * if ``git worktree add`` fails (e.g. unknown ``base``/``start_point``).
         """
         path = worktree_path(repo_root, run_id)
         branch = _branch_for(run_id, prefix=branch_prefix)
+        commit_ish = start_point if start_point is not None else base
 
         if path.exists():
             raise WorktreeNodeError(
@@ -138,17 +149,17 @@ class WorktreeNode:
             "-b",
             branch,
             str(path),
-            base,
+            commit_ish,
         )
         if rc != 0:
-            # Git refuses to create the worktree on a bad base; ensure no
+            # Git refuses to create the worktree on a bad start point; ensure no
             # half-baked dir survives so AC7 is honoured.
             if path.exists():
                 # Best-effort cleanup; if this fails the original error wins.
                 await _git(repo_root, "worktree", "remove", "--force", str(path))
                 await _git(repo_root, "worktree", "prune")
             raise WorktreeNodeError(
-                f"git worktree add failed (base={base!r}): {stderr.strip()}"
+                f"git worktree add failed (start_point={commit_ish!r}): {stderr.strip()}"
             )
 
         return WorktreeCreateOutput(
