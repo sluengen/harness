@@ -163,12 +163,15 @@ are wired automatically; the table is what to provide for a native install or CI
 | Codex subscription auth (`~/.codex/auth.json`) | the `review` verb's reviewer | `~/.codex` mounted into the container |
 
 Push transport for the `close` verb uses **ssh** — the wrapper mounts `~/.ssh`
-read-only and forwards the host ssh-agent (`/run/host-services/ssh-auth.sock`
-on macOS Docker Desktop). On a host **without** ssh-agent forwarding, `close`'s
-`git push` has no working credential; until a tokenized-https fallback ships,
-apply the manual workaround in [`docker/README.md`](docker/README.md) (point
-`origin` at an `https://x-access-token:$TOKEN@github.com/…` URL via
-`gh auth token`, push, then restore the ssh URL).
+read-only and forwards the host ssh-agent. On macOS Docker Desktop the host
+agent is bridged into the container at `/run/host-services/ssh-auth.sock` (a
+path supplied at mount time — it exists only inside the VM, so the wrapper keys
+the forward off the host agent, not that path), so `close` pushes over ssh
+whenever the host has a loaded agent — `ssh-add -l` should list a key. Only on a
+host with **no** loaded agent does the wrapper skip the forward and `close`'s
+`git push` lose its credential; the fallback is to point `origin` at an
+`https://x-access-token:$(gh auth token)@github.com/…` URL, push, then restore
+the ssh URL.
 
 Get a `LINEAR_API_KEY` from **linear.app → Settings → API → Personal API keys**.
 If Claude auth errors, run `claude /login` on the host to refresh the Keychain
