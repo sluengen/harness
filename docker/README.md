@@ -196,7 +196,7 @@ IMAGE="${HARNESS_IMAGE:-harness:dev}"
 
 # Pull LINEAR_API_KEY from the shell or a local .env file.
 if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
-  LINEAR_API_KEY=$(grep -E '^LINEAR_API_KEY=' "$(pwd)/.env" | cut -d= -f2- | tr -d '\r')
+  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r')
   export LINEAR_API_KEY
 fi
 
@@ -215,11 +215,16 @@ if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
 fi
 
 # Forward the host ssh-agent for `git push` over SSH (the close verb).
-# On macOS Docker Desktop exposes the host agent at a fixed path; the key itself
-# is Keychain-backed and not usable from the mounted file, so the agent socket is
-# what actually authenticates. Falls back to no-agent on hosts that lack it.
+# Docker Desktop bridges the host agent into the container at the fixed in-VM
+# path /run/host-services/ssh-auth.sock. That path exists ONLY inside the Docker
+# VM — it is never present on the macOS host — so we must NOT test for it here:
+# the old `[[ -S /run/host-services/ssh-auth.sock ]]` gate ran host-side, was
+# always false, and silently disabled forwarding (forcing the tokenized-https
+# fallback on every close). Gate on the host actually having a reachable agent
+# holding a key, and let Docker Desktop supply the socket at mount time. Falls
+# back to no-agent on hosts without one.
 SSH_AGENT_ARGS=()
-if [[ -S /run/host-services/ssh-auth.sock ]]; then
+if [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
   SSH_AGENT_ARGS=(
     -v /run/host-services/ssh-auth.sock:/ssh-agent
     -e SSH_AUTH_SOCK=/ssh-agent
