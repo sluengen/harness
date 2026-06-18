@@ -47,7 +47,7 @@ linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767]
 
 ### Merge back — `close` advances the base, then reclaims the worktree
 
-From the main checkout `harness close` runs `git checkout <base>`, `git merge --no-ff <worktree_branch>`, and `git push origin <base>` (`harness/cli/close.py`). Once the merge has landed — and the ticket is Done and the ledger row closed — it calls `teardown_worktree(..., delete_remote=True)` to remove the worktree directory and delete the branch both locally and on `origin` (a checkpoint may have pushed it). The teardown is **best-effort and runs last**: the close has already succeeded, so a teardown failure never fails it or undoes the merge — the housekeeping sweep reclaims anything left behind.
+From the main checkout `harness close` runs `git checkout <base>`, integrates the current `origin/<base>` (`git fetch origin <base>` then a `--ff-only` fast-forward of the local base to it, so a base that advanced during the run does not reject the push non-fast-forward — CAL-777), `git merge --no-ff <worktree_branch>`, and `git push origin <base>` (`harness/cli/close.py`). Once the merge has landed — and the ticket is Done and the ledger row closed — it calls `teardown_worktree(..., delete_remote=True)` to remove the worktree directory and delete the branch both locally and on `origin` (a checkpoint may have pushed it). The teardown is **best-effort and runs last**: the close has already succeeded, so a teardown failure never fails it or undoes the merge — the housekeeping sweep reclaims anything left behind.
 
 #### Scenario: a successful `close` reclaims its worktree and branch
 

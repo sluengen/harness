@@ -24,7 +24,10 @@ On pass, the verb performs the side effects in order (each kept *inside* the
 verb so its output never enters the printed JSON — the context-economy
 guarantee):
 
-1. ``git merge --no-ff`` the run branch into ``base_branch``.
+1. Integrate the current ``origin/<base_branch>`` (``git fetch`` then a
+   ``--ff-only`` fast-forward of the local base), so a base branch that advanced
+   during the run does not reject the push non-fast-forward (CAL-777), then
+   ``git merge --no-ff`` the run branch into ``base_branch``.
 2. ``git push`` the base branch.
 3. Transition the Linear ticket to Done.
 4. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
@@ -377,7 +380,7 @@ def _merge_and_push(
     base_branch: str,
     worktree_branch: str,
 ) -> str:
-    """Merge the run branch into ``base`` and push.
+    """Integrate the current ``origin/<base>``, merge the run branch, and push.
 
     The worktree is guaranteed clean by the time this runs — ``_run_close``
     refuses a dirty tree (``dirty_worktree``) before any side effect, so there
@@ -386,6 +389,17 @@ def _merge_and_push(
     the caller may log it, but that output is deliberately *not* propagated into
     the printed JSON (context-economy). Raises :class:`_CloseError` on any git
     failure.
+
+    ``origin/<base>`` can advance *during* the run — a concurrent
+    ``/harness routine build`` or another session landing a ticket. The base SHA
+    captured at ``start`` is then stale, and a plain ``push`` is rejected
+    non-fast-forward, failing the close with the reviewed work stranded
+    (CAL-777). So before merging we ``fetch`` the current ``origin/<base>`` and
+    **fast-forward** the local base to it; merging the run branch on top then
+    pushes cleanly. The HEAD-bound gate is untouched: the run branch tip is the
+    reviewed SHA and becomes the merge's second parent, so only the reviewed
+    commit's content rides in — the integration only adds work already on
+    ``origin/<base>`` (each merged through its own gate).
     """
     output: list[str] = []
 
@@ -399,10 +413,51 @@ def _merge_and_push(
                 1,
             )
 
-    # Merge the run branch into base, then push base — operated from the main
-    # repo checkout so the base branch's working tree is what advances.
+    # Operate from the main repo checkout so the base branch's working tree is
+    # what advances.
     _run(repo_root, "checkout", base_branch)
-    _run(repo_root, "merge", "--no-ff", worktree_branch, "-m", f"Merge {worktree_branch}")
+
+    # Integrate the current origin/<base> BEFORE merging, so a base that advanced
+    # during the run does not reject the push as non-fast-forward (CAL-777). Fetch
+    # the remote tip into FETCH_HEAD and fast-forward the local base to it.
+    _run(repo_root, "fetch", "origin", base_branch)
+    ff = run_git(repo_root, "merge", "--ff-only", "FETCH_HEAD")
+    output.append(ff.stdout)
+    output.append(ff.stderr)
+    if ff.returncode != 0:
+        # The harness never commits to the local base directly, so a fast-forward
+        # to origin always applies. A failure here means the local base and
+        # origin/<base> have genuinely diverged — an unexpected state we refuse
+        # cleanly rather than force, leaving the base checkout untouched.
+        raise _CloseError(
+            f"cannot integrate origin/{base_branch}: local {base_branch} has "
+            f"diverged from origin and cannot be fast-forwarded; reconcile "
+            f"{base_branch} with origin and re-review before closing",
+            1,
+        )
+
+    # Merge the reviewed run branch into the now-current base.
+    merge = run_git(
+        repo_root, "merge", "--no-ff", worktree_branch, "-m", f"Merge {worktree_branch}"
+    )
+    output.append(merge.stdout)
+    output.append(merge.stderr)
+    if merge.returncode != 0:
+        # A genuine conflict between the reviewed run branch and the changes that
+        # landed on origin/<base> during the run. Abort to leave the checkout
+        # clean (the run stays resumable — the worktree and the passing review
+        # are untouched), and fail with a clear message rather than the raw git
+        # conflict dump. Recovery: rebase the run branch on the updated base,
+        # re-review (a fresh HEAD → a fresh pass), and close again.
+        run_git(repo_root, "merge", "--abort")
+        raise _CloseError(
+            f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
+            f"with changes that landed on origin/{base_branch} during the run; "
+            f"rebase the run branch on the updated {base_branch}, re-review, and "
+            f"close again",
+            1,
+        )
+
     _run(repo_root, "push", "origin", base_branch)
 
     return "".join(output)
