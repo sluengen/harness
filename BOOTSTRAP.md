@@ -1,11 +1,12 @@
 # BOOTSTRAP.md — onboarding the harness to a repo
 
 How to make a repo **harness-onboardable**: install the harness, wire its
-credentials, bring in the guidance bundle (the universal `/start → /review →
-/ship` commands, skills, and agents), and add the harness's own `/harness run`
-command — so an agent can drive a Linear ticket end-to-end. Run this once per
-repo; thereafter `/update-guidance` keeps the guidance current and the
-[§Updating](#updating) steps below move you to a new harness release.
+credentials, and bring in the guidance bundle — the universal `/start → /review
+→ /ship` commands, skills, agents, **and the harness's own `/harness run`
+command** (a registry-tracked surface unit since CAL-764) — so an agent can
+drive a Linear ticket end-to-end. Run this once per repo; thereafter
+`/update-guidance` keeps the guidance current and the [§Updating](#updating)
+steps below move you to a new harness release.
 
 This is the **repeatable** procedure the rest of the docs point at:
 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` reference [step 2](#step-2--make-room-for-the-guidances-start)
@@ -139,13 +140,16 @@ mechanics, so this doc does not restate them — it does, in one pass:
 Use the harness's recommended **`committed`** visibility mode so a cloud / CI
 runner has the guidance (the installer defaults private repos to it).
 
-> **`/harness run` is not in that bundle.** `commands/harness.md` (the
-> `/harness run` and `/harness ingest` commands) is **repo-owned here** — it
-> ships in the harness repo but is deliberately excluded from `registry.yaml`,
-> so the installer does not copy it into a *consuming* repo (a boundary the
-> footprint guard locks in, **CAL-650**). Until `/harness run` is distributed as
-> a surface unit, a consuming repo gets it by copying `commands/harness.md` from
-> the harness repo directly.
+> **`/harness run` ships in that bundle (CAL-764).** `commands/harness.md` (the
+> `/harness run`, `/harness ingest`, and `/harness routine` commands) is a
+> **distributed surface unit**: it carries a `guidance:harness@…` header and a
+> `registry.yaml` entry under the `harness` profile, so the installer copies it
+> like any other command and `/update-guidance` tracks it — no hand-copy, and no
+> per-repo edit of its `/harness routine` Linear project (that resolves at
+> runtime from `CONTEXT.md` → `repo.project`). This **reverses** the earlier
+> CAL-650 repo-owned exclusion. The command sits **inert** in a repo that does
+> not host the `~/bin/harness` tool — it documents that prerequisite — which is
+> the bounded cost of distributing it everywhere.
 
 Thereafter, **do not hand-edit installed guidance files** (that creates a
 permanent local divergence) — run [`/update-guidance`](commands/update-guidance.md)
@@ -227,25 +231,25 @@ present), and `commands/start.md` belongs to the guidance's `/start`.
 
 ---
 
-## The onboarding snippet (the unit a consuming repo needs)
+## Driving a consuming repo with `/harness run`
 
-The unit a consuming repo needs is **this file plus the `/harness run` command**
-([`commands/harness.md`](commands/harness.md)). The command is already
+`commands/harness.md` — the `/harness run` command — installs **with the
+guidance bundle** (CAL-764): it is a registry-tracked surface unit, so
+[step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml) copies it
+automatically and `/update-guidance` keeps it current. The command is
 self-contained — it documents the full `start → review → (fix → review)* →
 close` loop, the gate-refusal reasons, and context-economy recovery — so a
-consuming repo gets a working pipeline command the moment it lands. Because
-`commands/harness.md` is repo-owned and excluded from `registry.yaml` (CAL-650),
-the installer does not copy it; today a consuming repo copies it across by hand
-(see the [step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml)
-note).
+consuming repo gets a working pipeline command the moment the bundle lands. (The
+hand-copy this section used to describe was the interim path before CAL-764.)
 
 > **You don't strictly need the command file to drive a non-harness repo
 > (CAL-675).** The verbs are repo-agnostic — `~/bin/harness` mounts the caller's
 > CWD at `/workspace` — so an orchestrating agent already holding the
 > `/harness run` loop in context can `cd` into the target repo and call
 > `harness start / review / close` directly, with **no `commands/harness.md`
-> installed there**. Copying the command in is the convenience that makes the
-> loop discoverable in that repo; driving the verbs directly is the minimum.
+> installed there**. Installing the command (now automatic via the bundle,
+> CAL-764) makes the loop discoverable in that repo; driving the verbs directly
+> is the minimum even without it.
 > Either way the only per-repo setup is a `.env` with `LINEAR_API_KEY` and the
 > two `.gitignore` lines from [step 5](#step-5--scaffold-env-and-gitignore).
 > (A *native*, non-wrapper invocation also needs `HARNESS_WORKSPACE_ROOTS`
@@ -272,7 +276,7 @@ shape, fall back to the agent-led `/start → /review → /ship` flow.
 
 > **Mind the base branch.** `harness start` defaults `--base dev`. A consuming
 > repo whose integration branch is `main` (or anything other than `dev`) must
-> pass `--base <branch>` on every `start`, so adapt the copied `/harness run`
+> pass `--base <branch>` on every `start`, so adapt the installed `/harness run`
 > command (and the `harness start` calls it makes) to the repo's integration
 > branch — otherwise the first run fails creating a worktree off a branch that
 > does not exist. Removing this footgun with per-repo config (`.harness.toml`)

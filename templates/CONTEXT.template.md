@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.7 -->
+<!-- guidance:template-context@0.1.8 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -13,6 +13,7 @@ visibility: committed          # committed (all guidance in git; enables cloud e
 repo:
   name: {repo name}
   linear: {Linear workspace/team — or 'none' for the rare repo not on Linear}
+  project: {Linear project the /harness routine loops pull from — only needed if this repo self-hosts the harness tool; omit otherwise}
 # Layers carry repo-type variation — what the retired standard/harness profiles'
 # `default_layers` used to encode is now per-repo config here. A product repo:
 # feature_specs: true (+ design_system: true if it has one). An infra / pipeline
