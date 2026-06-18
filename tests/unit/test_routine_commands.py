@@ -14,14 +14,16 @@ repo-owned, ``/harness``-namespaced commands:
 * ``/harness routine quality`` — idle → ``/assess code``; weekly →
   ``/assess code --deep``; findings filed back into the Build queue.
 
-Both are sections of the **repo-owned** ``commands/harness.md`` (alongside
-``/harness run`` and ``/harness ingest``), which is deliberately excluded from
-``registry.yaml`` (``test_harness_command_repo_owned.py``, CAL-650): they drive
-the harness's *own* loop, so they are never installed into a consuming repo and
-carry no per-command ``guidance:`` header. The change is recorded through the
-registered doc that documents them — ``process/harness.md`` (and its byte-
-identical ``AGENTS.md`` / ``CLAUDE.md`` / ``GEMINI.md`` mirrors) — whose
-namespacing section lists the new commands.
+Both are sections of ``commands/harness.md`` (alongside ``/harness run`` and
+``/harness ingest``). That file became a **distributed surface unit** in CAL-764
+— a ``registry.yaml`` ``files:`` entry under the ``harness`` profile carrying a
+single ``guidance:harness@…`` header (``test_harness_command_distributed.py``) —
+so the routine commands now ship into a consuming repo *with it* and need no
+per-command ``guidance:`` header of their own (the file's one header covers them)
+and no separate registry entry. The loop logic is *also* recorded through the
+registered process doc that documents them — ``process/harness.md`` (and its
+byte-identical ``AGENTS.md`` / ``CLAUDE.md`` / ``GEMINI.md`` mirrors) — whose
+namespacing section lists the commands.
 
 This guard pins that the loop logic is versioned in the repo and carries the
 properties the acceptance criteria require.
@@ -168,19 +170,22 @@ def test_process_doc_mirrors_byte_identical() -> None:
 
 
 def test_routine_commands_stay_out_of_registry() -> None:
-    """AC-3 boundary: the routine commands ride inside the repo-owned
-    ``commands/harness.md`` and gain no ``registry.yaml`` ``files:`` entry — they
-    drive the harness's own loop and are never installed into a consuming repo
-    (consistent with ``test_harness_command_repo_owned.py``, CAL-650)."""
+    """AC-3 boundary: the routine commands ride inside ``commands/harness.md`` as
+    *sections* and gain no ``registry.yaml`` ``files:`` entry of their own.
+    ``commands/harness.md`` is itself one registered surface unit since CAL-764
+    (``test_harness_command_distributed.py``); the routines are documented inside
+    that single file, not as separate distributable command files, so no
+    ``routine``-keyed entry should appear in the copy-list."""
     offenders = [
         k
         for k in _registry_file_keys()
         if "routine" in posixpath.normpath(k)
     ]
     assert not offenders, (
-        f"{offenders!r} add a routine command to registry.yaml's files: block — "
-        "the routine commands are repo-owned (they drive the harness's own loop) "
-        "and must not be installed into consuming repos (CAL-705 AC-3; CAL-650)."
+        f"{offenders!r} add a separate routine command to registry.yaml's files: "
+        "block — the routine commands are sections of commands/harness.md (one "
+        "registered surface unit), not standalone distributable files, so they "
+        "must not gain their own registry entry (CAL-705 AC-3; CAL-764)."
     )
 
 
