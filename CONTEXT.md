@@ -10,7 +10,8 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix — Calibrate-coffee (CAL); harness work lives in the "Harness v3" project
+  linear: CAL   # team prefix — Calibrate-coffee (CAL)
+  project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
 layers:
   linear: true
   design_system: false

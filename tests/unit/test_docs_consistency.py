@@ -349,3 +349,60 @@ def test_bootstrap_ignores_both_run_state_dirs() -> None:
         "(ledger) and `.worktrees/` (run worktrees) — they sit at different "
         "paths, so ignoring only one leaves the other committable (CAL-675, AC-3)."
     )
+
+
+# --- ssh-agent forwarding gate --------------------------------------
+#
+# The close verb pushes over SSH from inside the container. Docker Desktop
+# bridges the host ssh-agent into the container at the fixed in-VM path
+# /run/host-services/ssh-auth.sock — a path that exists ONLY inside the Docker
+# VM, never on the macOS host. The wrapper must therefore NOT gate the forward on
+# the host-side existence of that socket (`[[ -S /run/host-services/... ]]`):
+# evaluated host-side that test is *always* false, so forwarding silently never
+# enables and every `close` push falls back to the tokenized-https detour
+# (mis-read for months as "this host has no ssh-agent"). Gate on the host
+# actually having a reachable agent instead, and let Docker Desktop supply the
+# socket at mount time.
+
+#: The buggy *active* gate — `if [[ -S /run/host-services/ssh-auth.sock ]]`.
+#: Anchored on the `if` so a prose mention of the old form (e.g. this guard's own
+#: rationale, or an explanatory comment in the wrapper) is not a false positive;
+#: only a live gate keying off the VM-only socket trips it.
+_SSH_VM_SOCKET_TEST_RE = re.compile(
+    r"if\s+\[\[\s*-S\s+/run/host-services/ssh-auth\.sock\s*\]\]"
+)
+#: The corrected gate keys off the host's own agent (SSH_AUTH_SOCK + ssh-add) on
+#: a single line.
+_SSH_HOST_AGENT_GATE_RE = re.compile(r"SSH_AUTH_SOCK[^\n]*\bssh-add\b")
+#: Docker Desktop still supplies the socket — the mount must remain.
+_SSH_SOCKET_MOUNT = "/run/host-services/ssh-auth.sock:/ssh-agent"
+
+
+def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
+    """The documented wrapper gates ssh-agent forwarding on the *host* agent, not
+    on the VM-only magic socket.
+
+    Testing `[[ -S /run/host-services/ssh-auth.sock ]]` host-side is always false
+    — that path lives inside the Docker VM, never on the macOS host — so the old
+    gate silently disabled forwarding and forced the tokenized-https fallback on
+    every close. The fix keys the gate off the host's own agent and lets Docker
+    Desktop provide the socket at mount time; the mount itself must stay.
+    """
+    text = DOCKER_README.read_text()
+    assert not _SSH_VM_SOCKET_TEST_RE.search(text), (
+        "docker/README.md's wrapper still gates ssh forwarding on "
+        "`[[ -S /run/host-services/ssh-auth.sock ]]`. That socket exists only "
+        "inside the Docker VM, so the host-side test is always false and "
+        "forwarding never enables. Gate on the host agent "
+        "(`[[ -n \"${SSH_AUTH_SOCK:-}\" ]] && ssh-add -l`) instead."
+    )
+    assert _SSH_HOST_AGENT_GATE_RE.search(text), (
+        "docker/README.md's wrapper no longer gates on the host's own agent "
+        "(SSH_AUTH_SOCK + ssh-add). The forward must enable when the host has a "
+        "reachable agent holding a key."
+    )
+    assert _SSH_SOCKET_MOUNT in text, (
+        "docker/README.md's wrapper no longer mounts "
+        f"`{_SSH_SOCKET_MOUNT}`. Docker Desktop supplies the host agent at that "
+        "in-VM path at mount time — the mount must remain."
+    )

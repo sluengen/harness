@@ -595,6 +595,78 @@ def test_worktrees_cleanup_merged_removes_branch_merged_into_dev(
     assert result.exit_code == 0, result.stdout
     assert not wt.exists()
     assert "R-merged" in result.stdout
+    # CAL-767: --merged also deletes the merged branch (it is provably integrated).
+    branches = subprocess.run(
+        ["git", "-C", str(repo_root), "branch", "--format=%(refname:short)"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert "harness/R-merged" not in branches
+
+
+def test_worktrees_cleanup_merged_deletes_remote_branch(tmp_path: Path) -> None:
+    """CAL-767: ``--merged`` deletes the branch on ``origin`` too — a checkpoint
+    push may have created it, and once merged it is dead weight."""
+    repo_root = tmp_path / "repo"
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "remote", "add", "origin", str(bare)], check=True
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-pushed"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add", "-b",
+         "harness/R-pushed", str(wt)], check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "push", "-q", "origin", "harness/R-pushed"],
+        check=True,
+    )
+
+    result = runner.invoke(
+        app, ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    remote_refs = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-remote", "--heads", "origin", "harness/R-pushed"],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    assert "harness/R-pushed" not in remote_refs
+
+
+def test_worktrees_cleanup_age_removes_orphaned_dir(tmp_path: Path) -> None:
+    """CAL-767: an orphaned directory (never/no-longer a registered worktree, so
+    ``git worktree remove`` errors on it) is still reclaimed by ``--age`` via the
+    rmtree fallback. This is the GB-of-cruft case that accumulated."""
+    import os
+
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    orphan = repo_root / ".worktrees" / "harness" / "R-orphan"
+    orphan.mkdir(parents=True)
+    (orphan / "leftover.txt").write_text("cruft\n")
+    old = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+    os.utime(orphan, (old, old))
+
+    result = runner.invoke(
+        app, ["worktrees", "cleanup", "--repo-root", str(repo_root), "--age", "1d"]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not orphan.exists()
+    assert "R-orphan" in result.stdout
 
 
 def test_worktrees_cleanup_help_lists_all_merge_bases() -> None:

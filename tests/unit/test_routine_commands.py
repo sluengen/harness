@@ -14,14 +14,16 @@ repo-owned, ``/harness``-namespaced commands:
 * ``/harness routine quality`` — idle → ``/assess code``; weekly →
   ``/assess code --deep``; findings filed back into the Build queue.
 
-Both are sections of the **repo-owned** ``commands/harness.md`` (alongside
-``/harness run`` and ``/harness ingest``), which is deliberately excluded from
-``registry.yaml`` (``test_harness_command_repo_owned.py``, CAL-650): they drive
-the harness's *own* loop, so they are never installed into a consuming repo and
-carry no per-command ``guidance:`` header. The change is recorded through the
-registered doc that documents them — ``process/harness.md`` (and its byte-
-identical ``AGENTS.md`` / ``CLAUDE.md`` / ``GEMINI.md`` mirrors) — whose
-namespacing section lists the new commands.
+Both are sections of ``commands/harness.md`` (alongside ``/harness run`` and
+``/harness ingest``). That file became a **distributed surface unit** in CAL-764
+— a ``registry.yaml`` ``files:`` entry under the ``harness`` profile carrying a
+single ``guidance:harness@…`` header (``test_harness_command_distributed.py``) —
+so the routine commands now ship into a consuming repo *with it* and need no
+per-command ``guidance:`` header of their own (the file's one header covers them)
+and no separate registry entry. The loop logic is *also* recorded through the
+registered process doc that documents them — ``process/harness.md`` (and its
+byte-identical ``AGENTS.md`` / ``CLAUDE.md`` / ``GEMINI.md`` mirrors) — whose
+namespacing section lists the commands.
 
 This guard pins that the loop logic is versioned in the repo and carries the
 properties the acceptance criteria require.
@@ -168,19 +170,22 @@ def test_process_doc_mirrors_byte_identical() -> None:
 
 
 def test_routine_commands_stay_out_of_registry() -> None:
-    """AC-3 boundary: the routine commands ride inside the repo-owned
-    ``commands/harness.md`` and gain no ``registry.yaml`` ``files:`` entry — they
-    drive the harness's own loop and are never installed into a consuming repo
-    (consistent with ``test_harness_command_repo_owned.py``, CAL-650)."""
+    """AC-3 boundary: the routine commands ride inside ``commands/harness.md`` as
+    *sections* and gain no ``registry.yaml`` ``files:`` entry of their own.
+    ``commands/harness.md`` is itself one registered surface unit since CAL-764
+    (``test_harness_command_distributed.py``); the routines are documented inside
+    that single file, not as separate distributable command files, so no
+    ``routine``-keyed entry should appear in the copy-list."""
     offenders = [
         k
         for k in _registry_file_keys()
         if "routine" in posixpath.normpath(k)
     ]
     assert not offenders, (
-        f"{offenders!r} add a routine command to registry.yaml's files: block — "
-        "the routine commands are repo-owned (they drive the harness's own loop) "
-        "and must not be installed into consuming repos (CAL-705 AC-3; CAL-650)."
+        f"{offenders!r} add a separate routine command to registry.yaml's files: "
+        "block — the routine commands are sections of commands/harness.md (one "
+        "registered surface unit), not standalone distributable files, so they "
+        "must not gain their own registry entry (CAL-705 AC-3; CAL-764)."
     )
 
 
@@ -279,6 +284,34 @@ def test_build_routine_fallback_documents_equivalent_preflight() -> None:
     assert "`linear` skill" in body, (
         "the fallback pre-flight must route through the `linear` skill rather "
         "than embedding Linear GraphQL (CAL-737 AC-3; CAL-731 invariant)."
+    )
+
+
+# --- CAL-767: the Build routine sweeps merged worktrees + branches in pre-flight
+#
+# `close` self-cleans, but a container that dies before close's teardown step — or
+# accumulated cruft from before the self-cleaning landed — still leaks worktree
+# dirs and branches. The routine runs `harness worktrees cleanup` each tick so the
+# leak is bounded without a human running housekeeping by hand.
+
+
+def test_build_routine_runs_worktree_cleanup_preflight() -> None:
+    """CAL-767: the Build pre-flight runs the worktree+branch housekeeping sweep."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    assert "harness worktrees cleanup" in body, (
+        "the Build routine must run `harness worktrees cleanup` in its pre-flight "
+        "so worktree directories and branches are reclaimed each tick rather than "
+        "accumulating (GB of worktrees, a cluttered branch list) — CAL-767."
+    )
+    assert "--merged" in body and "--age" in body, (
+        "the cleanup sweep must use `--merged` (remove merged worktrees and delete "
+        "their branch) and `--age` (reclaim orphaned dirs) — CAL-767."
+    )
+    cleanup_at = body.find("harness worktrees cleanup")
+    pick_at = body.lower().find("pick the next ticket")
+    assert cleanup_at != -1 and pick_at != -1 and cleanup_at < pick_at, (
+        "the worktree cleanup sweep must be documented in the pre-flight, before "
+        "the pick step (CAL-767)."
     )
 
 

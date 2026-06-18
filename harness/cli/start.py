@@ -48,7 +48,7 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import run_git
+from harness.cli._git import run_git, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
@@ -449,17 +449,18 @@ async def _delete_run_row(db_path: Path, run_id: str) -> None:
 
 
 def _cleanup_worktree_sync(repo_root: Path, worktree_path: str) -> None:
-    """Best-effort cleanup: remove the worktree if a later step failed.
+    """Best-effort rollback of a failed ``start`` create: remove the worktree.
 
-    Each step ignores ``run_git``'s result — a failed rollback must not mask the
-    original error that triggered it.
+    Delegates to the shared :func:`harness.cli._git.teardown_worktree` so the
+    reclaim logic — worktree-remove (with an orphan ``rmtree`` fallback), prune,
+    and local ``branch -D`` — has one home (CAL-767). ``start`` never pushed the
+    branch, so ``delete_remote`` stays ``False``. Kept as a named wrapper so the
+    rollback call sites (and the test that patches it) have a stable seam.
     """
     path = Path(worktree_path)
-    if not path.exists():
-        return
-    run_git(repo_root, "worktree", "remove", "--force", str(path))
-    # Also prune the stale worktree entry from git's index.
-    run_git(repo_root, "worktree", "prune")
-    # Remove the branch if it was created.
-    branch = _branch_for(path.name)
-    run_git(repo_root, "branch", "-D", branch)
+    teardown_worktree(
+        repo_root,
+        worktree_path=path,
+        branch=_branch_for(path.name),
+        delete_remote=False,
+    )

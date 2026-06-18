@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.2
+// guidance:hook-guidance-freshness@0.3.3
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -51,7 +51,9 @@ function registryVersion(reg, relPath) {
 }
 // A path is managed by the source only if it appears as a key in registry.yaml
 // (files: or meta:). A file under a surface dir but absent from the registry is
-// repo-owned (e.g. commands/harness.md) — not distributed guidance.
+// repo-owned (e.g. a repo's own command it keeps under commands/) — not
+// distributed guidance. (commands/harness.md used to be this example; CAL-764
+// registered it, so it is now distributed guidance like any other command.)
 function registryMember(reg, relPath) {
   return new RegExp("(^|\\n)\\s*" + relPath.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + ":\\s*\\{").test(reg);
 }
@@ -93,8 +95,10 @@ function main() {
   // SOURCE repo
   if (registry) {
     // Repo-owned files under a surface dir but excluded from the copy-list
-    // (e.g. commands/harness.md) are not distributed guidance — source-mode
-    // checks must not apply to them. Identify them without naming any repo fact:
+    // (e.g. a repo-local command a consuming repo keeps under commands/) are not
+    // distributed guidance — source-mode checks must not apply to them. (This was
+    // commands/harness.md until CAL-764 registered it; the mechanism still guards
+    // any genuinely repo-owned file.) Identify them without naming any repo fact:
     // a non-member that carries no `guidance:` header AND is not a `.json` is
     // repo-owned, so skip it. The `.json` carve-out matters because settings
     // JSON is the one *headerless* distributable type (the registry version is

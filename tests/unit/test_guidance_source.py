@@ -445,28 +445,38 @@ def test_freshness_hook_ignores_registry_excluded_repo_file(tmp_path: Path) -> N
     """A repo-owned file the registry does not list draws no SOURCE-mode warning.
 
     Flipping to SOURCE mode must not make the hook claim a registry-*excluded*
-    file is distributed guidance. ``commands/harness.md`` is the canonical
-    repo-owned command kept out of ``registry.yaml`` (the app/surface boundary);
-    editing it in the source repo must not demand a registry version bump or
-    assert consumers installed it (CAL-646 review). Isolated ``TMPDIR`` defeats
-    the debounce.
+    file is distributed guidance. The hook treats a surface-dir file that is
+    absent from ``registry.yaml``, carries no ``guidance:`` header, and is not a
+    ``.json`` as repo-owned (e.g. a consuming repo's own namespaced command):
+    editing it must not demand a registry version bump or assert consumers
+    installed it (CAL-646 review). A synthetic repo isolates the behaviour from
+    any one real file's registry status — ``commands/harness.md`` was this example
+    until CAL-764 registered it as a distributed surface unit. Isolated ``TMPDIR``
+    defeats the debounce.
     """
     node = shutil.which("node")
     if node is None:
         pytest.skip("node not available")
-    excluded = REPO_ROOT / "commands" / "harness.md"
-    if not excluded.exists():
-        pytest.skip("commands/harness.md not present")
-    # Precondition: the file really is outside the registry's files:/meta: lists.
-    assert "commands/harness.md" not in REGISTRY.read_text()
-    payload = {"tool_name": "Edit", "tool_input": {"file_path": str(excluded)}}
-    env = {**os.environ, "TMPDIR": str(tmp_path)}
+    (tmp_path / "registry.yaml").write_text(
+        "# guidance:registry@0.4.0\nregistry_format: 1\nfiles:\n"
+        "  commands/start.md: { id: start, version: 0.2.1, profiles: [harness] }\n"
+        "meta:\n  INSTALLER.md: { id: bootstrap, version: 0.4.2 }\n"
+    )
+    (tmp_path / "commands").mkdir()
+    # A genuinely repo-owned command: under a surface dir, headerless, not .json,
+    # and absent from the registry's files:/meta: lists.
+    repo_owned = tmp_path / "commands" / "myrepo.md"
+    repo_owned.write_text("# /myrepo — a repo's own command\n")
+    assert "commands/myrepo.md" not in (tmp_path / "registry.yaml").read_text()
+    (tmp_path / "_tmp").mkdir()
+    payload = {"tool_name": "Edit", "tool_input": {"file_path": str(repo_owned)}}
+    env = {**os.environ, "TMPDIR": str(tmp_path / "_tmp")}
     proc = subprocess.run(
         [node, str(REPO_ROOT / "hooks" / "guidance-freshness.js")],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
-        cwd=str(REPO_ROOT),
+        cwd=str(tmp_path),
         env=env,
         timeout=30,
     )
@@ -567,8 +577,11 @@ def test_freshness_hook_warns_on_unregistered_json_settings(tmp_path: Path) -> N
     JSON settings are headerless *by design* yet are distributable guidance, so
     the "headerless → repo-owned" exclusion must not swallow them: a new
     ``settings/<profile>.json`` created before its registry entry must still draw
-    the register/version reminder (CAL-646 review). Repo-owned files (the
-    ``commands/harness.md`` case) are headerless **and** not ``.json``.
+    the register/version reminder (CAL-646 review). The headerless→repo-owned
+    exclusion the hook applies is for genuinely repo-owned files (headerless
+    **and** not ``.json`` — e.g. a repo's own namespaced command), which JSON
+    settings are not. (``commands/harness.md`` was that example until CAL-764
+    registered it as a headered surface unit.)
     """
     node = shutil.which("node")
     if node is None:
