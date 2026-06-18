@@ -1,17 +1,23 @@
 """``harness worktrees`` subcommands — list + cleanup.
 
 Scope is deliberately narrow: walk ``<repo_root>/.worktrees/harness/`` on
-disk, then for ``cleanup`` shell out to ``git worktree remove`` so the index
-and ref state stay consistent. The ``start`` verb has its own
-:class:`harness.worktree.WorktreeNode` helper for run-time worktree lifecycle;
-this CLI surface is for operator-driven housekeeping and stays decoupled.
+disk, then for ``cleanup`` reclaim each candidate via the shared
+:func:`harness.cli._git.teardown_worktree` primitive (orphan-safe — it falls
+back to ``rmtree`` for a directory whose worktree registration is already
+pruned, the cruft a plain ``git worktree remove`` cannot touch). The ``start``
+verb has its own :class:`harness.worktree.WorktreeNode` helper for run-time
+worktree lifecycle; this CLI surface is the operator/routine housekeeping path.
 
 Filters for ``cleanup``:
 
 * ``--age <duration>`` — remove worktrees whose directory mtime is older
-  than the supplied duration (``30m``, ``12h``, ``7d``).
+  than the supplied duration (``30m``, ``12h``, ``7d``). Reclaims orphaned
+  directories regardless of branch; **retains** the branch (an aged worktree may
+  hold unmerged work).
 * ``--merged`` — remove worktrees whose branch is fully merged into
-  ``dev``, ``main``, or ``master`` (the integration/release bases).
+  ``dev``, ``main``, or ``master`` (the integration/release bases), **and delete
+  that merged branch** (local, and on ``origin`` if it was pushed) — it is
+  provably integrated, so the branch is dead weight (CAL-767).
 
 Without filters, ``cleanup`` is a no-op (it prints "kept" lines so the
 operator sees what would have been candidate). The conservative default
@@ -29,7 +35,7 @@ from pathlib import Path
 import typer
 
 from harness._time import iso_z, parse_iso_z
-from harness.cli._git import run_git
+from harness.cli._git import run_git, teardown_worktree
 from harness.identity import WORKTREES_SUBDIR
 
 worktrees_app = typer.Typer(
@@ -176,14 +182,6 @@ def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     return False
 
 
-def _remove_worktree(repo_root: Path, path: Path) -> tuple[bool, str]:
-    """Invoke ``git worktree remove`` and report success/failure."""
-    proc = run_git(repo_root, "worktree", "remove", "--force", str(path))
-    if proc.returncode != 0:
-        return False, proc.stderr.strip() or proc.stdout.strip()
-    return True, ""
-
-
 @worktrees_app.command(
     "cleanup", help="Remove worktrees matching the supplied filters."
 )
@@ -199,7 +197,10 @@ def cleanup_command(
     merged: bool = typer.Option(
         False,
         "--merged",
-        help="Remove worktrees whose branch is merged into dev, main, or master.",
+        help=(
+            "Remove worktrees whose branch is merged into dev, main, or master, "
+            "and delete that merged branch (local + remote)."
+        ),
     ),
 ) -> None:
     """Remove worktrees matching ``--age`` / ``--merged``."""
@@ -220,24 +221,42 @@ def cleanup_command(
         path = Path(str(item["path"]))
         last_modified = parse_iso_z(str(item["last_modified"]))
         branch = item.get("branch")
+        branch_str = branch if isinstance(branch, str) else None
 
         should_remove = False
+        # Only delete the branch when removal is driven by ``--merged`` — the
+        # branch is provably integrated, so it is safe. An ``--age`` removal
+        # retains the branch (an aged worktree may still hold unmerged work).
+        delete_branch = False
         if cutoff is not None and last_modified < cutoff:
             should_remove = True
-        if merged and isinstance(branch, str) and _branch_merged_into_base(
-            repo_root, branch
+        if (
+            merged
+            and branch_str is not None
+            and _branch_merged_into_base(repo_root, branch_str)
         ):
             should_remove = True
+            delete_branch = True
 
         if not should_remove:
             kept.append(str(item["run_id"]))
             continue
 
-        ok, err = _remove_worktree(repo_root, path)
-        if ok:
-            removed.append(str(item["run_id"]))
+        # Orphan-safe removal + optional branch deletion (local + remote). The
+        # shared primitive is best-effort, so confirm by checking the directory
+        # is actually gone afterwards.
+        teardown_worktree(
+            repo_root,
+            worktree_path=path,
+            branch=branch_str if delete_branch else None,
+            delete_remote=delete_branch,
+        )
+        if path.exists():
+            failures.append(
+                (str(item["run_id"]), "worktree directory still present after removal")
+            )
         else:
-            failures.append((str(item["run_id"]), err))
+            removed.append(str(item["run_id"]))
 
     for run_id in removed:
         typer.echo(f"removed {run_id}")

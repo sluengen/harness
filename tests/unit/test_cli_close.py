@@ -638,3 +638,92 @@ async def test_linear_transition_to_done_raises_when_no_completed_state(
 
     with pytest.raises(LinearRequestError, match="no 'completed' workflow state"):
         await client.transition_to_done("CAL-572")
+
+
+# ---------------------------------------------------------------------------
+# AC-teardown (CAL-767): a successful close reclaims the worktree + branch
+# ---------------------------------------------------------------------------
+
+WT_RUN_ID = "01JRUNCLOSEWORKTREE0000001"
+
+
+def _seed_run_with_worktree(db_path: Path, repo: Path) -> tuple[str, Path, str]:
+    """Seed an open run backed by a REAL worktree under .worktrees/harness/.
+
+    Unlike :func:`_seed_open_run` (whose ``worktree_path`` is the repo itself),
+    this creates an actual ``git worktree`` so the teardown step has something to
+    reclaim. The worktree HEAD equals the repo's ``dev`` tip, so the gate binds
+    to ``_head_sha(repo)``.
+    """
+    path = repo / ".worktrees" / "harness" / WT_RUN_ID
+    branch = f"harness/{WT_RUN_ID}"
+    _git(repo, "worktree", "add", "-b", branch, str(path), "dev")
+
+    async def _insert() -> None:
+        await store.init_db(db_path)
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO runs ("
+                "run_id, workflow_name, workflow_version, status, state_json, "
+                "inputs_json, base_branch, worktree_path, worktree_branch, "
+                "ticket, started_at, pid"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    WT_RUN_ID, "", 0, "open", "{}", "{}", "dev",
+                    str(path), branch, "CAL-572", "2026-06-10T00:00:00Z", 1234,
+                ),
+            )
+            await conn.commit()
+
+    _sync(_insert())
+    return WT_RUN_ID, path, branch
+
+
+def _local_branches(repo: Path) -> set[str]:
+    out = _git(repo, "branch", "--format=%(refname:short)").stdout
+    return set(out.split())
+
+
+def test_close_reclaims_worktree_and_branch_on_success(repo: Path, db_path: Path) -> None:
+    """CAL-767: after a successful close the worktree dir and local branch are gone."""
+    run_id, path, branch = _seed_run_with_worktree(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    assert path.exists()
+    assert branch in _local_branches(repo)
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+
+    assert result.exit_code == 0, result.output
+    assert not path.exists()
+    assert branch not in _local_branches(repo)
+
+
+def test_close_does_not_reclaim_on_gate_refusal(repo: Path, db_path: Path) -> None:
+    """A stale-review refusal exits before teardown — the worktree survives."""
+    run_id, path, branch = _seed_run_with_worktree(db_path, repo)
+    _emit_review(db_path, run_id, "0" * 40, "pass")  # pass for a different SHA
+
+    result, merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+
+    assert result.exit_code == 2
+    assert json.loads(result.output)["reason"] == "stale_review"
+    merge.assert_not_called()
+    assert path.exists()  # worktree NOT torn down
+    assert branch in _local_branches(repo)
+
+
+def test_close_succeeds_even_if_teardown_raises(repo: Path, db_path: Path) -> None:
+    """Teardown is best-effort: an exception in it never fails an already-landed
+    close (merge/Done/ledger have all succeeded)."""
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+
+    with patch.object(close_mod, "teardown_worktree", side_effect=RuntimeError("boom")):
+        result, merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "closed"
+    assert payload["merged"] is True
+    assert payload["ticket_done"] is True
+    merge.assert_called_once()

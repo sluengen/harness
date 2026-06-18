@@ -28,6 +28,13 @@ guarantee):
 2. ``git push`` the base branch.
 3. Transition the Linear ticket to Done.
 4. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
+5. Reclaim the run's worktree and branch (``teardown_worktree``): the merge has
+   landed, so the worktree directory and the branch — local, and on ``origin``
+   if a checkpoint pushed it — are removed. This step is **best-effort**: a
+   failure never fails the close (the merge/Done/ledger already succeeded), and
+   the ``harness worktrees cleanup`` sweep reclaims anything left behind. Without
+   it every closed run leaks a ``.worktrees/harness/<id>/`` directory and a
+   branch (CAL-767).
 
 On a gate failure the verb exits non-zero with a structured refusal carrying a
 ``reason`` of exactly one of:
@@ -50,6 +57,7 @@ Exit codes (mirroring ``harness start`` / ``harness review``):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any, Literal
@@ -58,7 +66,7 @@ import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
-from harness.cli._git import rev_parse_head, run_git
+from harness.cli._git import rev_parse_head, run_git, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
@@ -259,6 +267,24 @@ async def _run_close(
         )
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"failed to record run close: {exc}", 1) from exc
+
+    # 9. Reclaim the run's worktree + branch now the merge has landed. The branch
+    #    is merged into base, so deleting it (local, and remote if a checkpoint
+    #    pushed it) is safe. This is best-effort housekeeping AFTER an already
+    #    successful close: a teardown failure must never flip a closed run to an
+    #    error or undo the merge/Done/ledger — the safety-net sweep
+    #    (`harness worktrees cleanup`) reclaims anything left behind (CAL-767).
+    # ``teardown_worktree`` is best-effort internally; suppress here too so even
+    # an unexpected failure (e.g. a thread/loop error) cannot fail a close that
+    # has already merged, transitioned the ticket, and closed the ledger row.
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(
+            teardown_worktree,
+            repo_root,
+            worktree_path=Path(worktree_path),
+            branch=worktree_branch,
+            delete_remote=True,
+        )
 
     return CloseOutput(
         run_id=resolved_run_id,

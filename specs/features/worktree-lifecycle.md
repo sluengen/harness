@@ -1,17 +1,17 @@
 ---
 feature: worktree-lifecycle
 status: implemented
-last_updated: 2026-06-16
-linear: [CAL-590, CAL-661, CAL-693, CAL-739]
+last_updated: 2026-06-18
+linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767]
 ---
 
 # Worktree lifecycle — isolated branch per run
 
-> Every run builds in its own git worktree on its own branch, so file mutations never escape to the main working tree; `close` advances the base by merging that branch.
+> Every run builds in its own git worktree on its own branch, so file mutations never escape to the main working tree; `close` advances the base by merging that branch, then reclaims the worktree and branch it no longer needs.
 
 ## Behaviour
 
-`harness start` creates an isolated worktree off the base branch; the agent does all its work there; `harness close` merges the branch back into the base. Worktree creation is a verb helper (`harness/worktree.py`, `WorktreeNode.create`), re-homed from the retired engine — the engine-era node wrapper and load-time graph validation are gone (CAL-574). The worktree directory itself outlives `close`; the `harness worktrees` command is a separate operator tool that removes stale worktrees later.
+`harness start` creates an isolated worktree off the base branch; the agent does all its work there; `harness close` merges the branch back into the base and then tears the worktree and branch down. Worktree creation is a verb helper (`harness/worktree.py`, `WorktreeNode.create`), re-homed from the retired engine — the engine-era node wrapper and load-time graph validation are gone (CAL-574). Removal is single-sourced in `harness.cli._git.teardown_worktree`, the best-effort reclaim primitive shared by `start` rollback, `close`, and the `harness worktrees cleanup` sweep — so a run no longer leaks its worktree directory or branch (CAL-767).
 
 ### Create — off the base branch
 
@@ -43,15 +43,30 @@ linear: [CAL-590, CAL-661, CAL-693, CAL-739]
 #### Scenario: a duplicate-run or DB failure after create
 
 - GIVEN `start` has created the worktree but a later step fails (the partial unique index rejects a duplicate open run, or the ledger insert fails)
-- THEN `start` removes the worktree directly — `git worktree remove --force`, `git worktree prune`, `git branch -D harness/<run_id>` (`_cleanup_worktree_sync`) — best-effort, so a failed rollback never masks the original error
+- THEN `start` removes the worktree directly via `_cleanup_worktree_sync`, which delegates to `teardown_worktree` (`git worktree remove --force`, `git worktree prune`, `git branch -D harness/<run_id>`; no remote delete — the branch was never pushed) — best-effort, so a failed rollback never masks the original error
 
-### Merge back — `close` advances the base
+### Merge back — `close` advances the base, then reclaims the worktree
 
-`harness close` does **not** use the worktree helper or remove the worktree. From the main checkout it runs `git checkout <base>`, `git merge --no-ff <worktree_branch>`, and `git push origin <base>` (`harness/cli/close.py`). The worktree directory and branch remain on disk after a successful close; they are reclaimed later by the housekeeping command.
+From the main checkout `harness close` runs `git checkout <base>`, `git merge --no-ff <worktree_branch>`, and `git push origin <base>` (`harness/cli/close.py`). Once the merge has landed — and the ticket is Done and the ledger row closed — it calls `teardown_worktree(..., delete_remote=True)` to remove the worktree directory and delete the branch both locally and on `origin` (a checkpoint may have pushed it). The teardown is **best-effort and runs last**: the close has already succeeded, so a teardown failure never fails it or undoes the merge — the housekeeping sweep reclaims anything left behind.
+
+#### Scenario: a successful `close` reclaims its worktree and branch
+
+- GIVEN an open run whose worktree HEAD has a passing review and a clean tree
+- WHEN `harness close` merges, transitions the ticket Done, and closes the ledger row
+- THEN it removes `<repo_root>/.worktrees/harness/<run_id>/`, deletes the local branch `harness/<run_id>`, and (best-effort) deletes it from `origin`
+- AND if the teardown raises, the close still returns success (merged, ticket Done, status closed) — teardown is best-effort housekeeping after an already-successful close
+- AND a gate refusal (`stale_review` / `dirty_worktree` / `no_run`) exits before any teardown, so the worktree survives for the agent to fix and re-review
 
 ### Housekeeping — `harness worktrees`
 
-`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged]` removes the worktree *directories* matching the filters with `git worktree remove --force` (then surfaces what it removed); it **retains the branch**. It is an operator tool, decoupled from the per-run lifecycle, and uses direct git.
+`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged]` is the safety-net sweep for worktrees `close` did not reclaim — a run whose container died before close's teardown step, or cruft from before self-cleaning close landed. It removes the worktree *directories* matching the filters via `teardown_worktree` (orphan-safe: an `rmtree` fallback reclaims a directory whose worktree registration is already pruned, which `git worktree remove` cannot touch). `--merged` additionally **deletes the merged branch** (local + on `origin`) — it is provably integrated, so dead weight; `--age` removes the directory but **retains the branch** (an aged worktree may still hold unmerged work). The Build routine (`/harness routine build`) runs `harness worktrees cleanup --merged --age 7d` in its pre-flight so the reclaim is automatic, not operator-only.
+
+#### Scenario: `--merged` deletes the worktree and its branch
+
+- GIVEN a worktree whose branch is merged into `dev` (or `main` / `master`), its branch pushed to `origin`
+- WHEN `harness worktrees cleanup --merged` runs
+- THEN it removes the directory and deletes the branch locally and on `origin`
+- AND an orphaned directory (no live worktree registration) older than `--age` is still removed via the `rmtree` fallback
 
 ## Data model
 
@@ -66,7 +81,7 @@ Every run gets a unique branch derived from its ULID `run_id`, so concurrent run
 
 ## Known limitations
 
-- `close` leaves the worktree on disk; reclaiming it is the operator's `harness worktrees cleanup`, not an automatic step.
+- `close`'s teardown is best-effort: if it cannot reach `origin` to delete the remote branch (or its container dies first), the worktree or branch can survive that close. The `harness worktrees cleanup --merged --age 7d` sweep in the Build routine's pre-flight is the safety net that reclaims the remainder; it bounds the leak rather than eliminating every transient one.
 - `WorktreeNode.create` does not validate the `run_id` it is handed; `harness.identity.worktree_dir` is the validating entry point.
 
 > The engine-era `CleanupPolicy` machinery (`WorktreeNode.cleanup` — `merge_to_base` / `leave_for_inspection` / `delete_unconditionally`) was **retired in CAL-693**: it had no live caller (the live paths use direct git — `start` rollback, `close` merge, `worktrees cleanup`) and was exercised only by its own tests. Only `WorktreeNode.create` survives.

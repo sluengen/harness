@@ -19,8 +19,11 @@ as its own verb-specific error.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
+
+from harness.identity import WORKTREES_SUBDIR
 
 
 class GitError(RuntimeError):
@@ -70,3 +73,56 @@ def rev_parse_head(worktree_path: Path) -> str:
             f"git rev-parse HEAD failed for {worktree_path}: {result.stderr.strip()}"
         )
     return result.stdout.strip()
+
+
+def teardown_worktree(
+    repo_root: Path,
+    *,
+    worktree_path: Path,
+    branch: str | None = None,
+    delete_remote: bool = False,
+) -> None:
+    """Reclaim a run's worktree directory and branch — best-effort, never raises.
+
+    One reclaim primitive for every site that finishes with a worktree it no
+    longer needs: ``start`` rolling back a failed create, ``close`` after the
+    merge has landed, and ``worktrees cleanup`` sweeping a merged run. It runs
+    *after* the operation it follows has already succeeded, so a teardown failure
+    must never mask or undo that — every git call ignores its result and no path
+    here raises (CAL-767).
+
+    Steps, in order:
+
+    1. ``git worktree remove --force`` the directory. If that exits non-zero and
+       the directory is still present, it is an **orphan** — its worktree
+       registration was already pruned, so git no longer recognises it as a
+       working tree — and :func:`shutil.rmtree` removes it instead. This is the
+       cruft case a plain ``git worktree remove`` cannot touch.
+    2. ``git worktree prune`` to drop any stale admin entry left behind.
+    3. ``git branch -D <branch>`` to delete the local branch (when given).
+    4. ``git push origin --delete <branch>`` when ``delete_remote`` — a
+       checkpoint push may have created the branch on ``origin``; once the run is
+       merged it is dead weight. A no-op (and harmless non-zero exit) when the
+       remote ref does not exist.
+
+    **Safety:** directory removal only ever touches a path *inside*
+    ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that is the main
+    checkout (or anything outside the run-worktree area) skips removal entirely —
+    the ``rmtree`` fallback must never be able to destroy the repository itself.
+    The branch operations still run (deleting a merged run branch is safe).
+    """
+    worktrees_area = (repo_root / WORKTREES_SUBDIR).resolve()
+    resolved = worktree_path.resolve()
+    within_worktrees_area = (
+        resolved != worktrees_area and worktrees_area in resolved.parents
+    )
+    if within_worktrees_area and worktree_path.exists():
+        result = run_git(repo_root, "worktree", "remove", "--force", str(worktree_path))
+        if result.returncode != 0 and worktree_path.exists():
+            # Orphaned directory — git won't remove what it no longer tracks.
+            shutil.rmtree(worktree_path, ignore_errors=True)
+    run_git(repo_root, "worktree", "prune")
+    if branch:
+        run_git(repo_root, "branch", "-D", branch)
+        if delete_remote:
+            run_git(repo_root, "push", "origin", "--delete", branch)
