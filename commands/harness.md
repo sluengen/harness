@@ -133,6 +133,14 @@ harness reclaim --stale --project "Harness v3"   # default staleness threshold 9
 
 This **runs first, before the pick step**, so the routine **unblocks the backlog** before it chooses work: a ticket left In Progress by a dead predecessor would otherwise wedge the queue until a human intervened. The sweep reverts each idle ticket (Linear `updatedAt` older than the threshold) back to **Todo**, so this same run can then pick it up. It is **idempotent and safe to run every tick**: a ticket already reverted is Todo (not In Progress), so a later sweep does not re-enumerate it, and a sweep that finds nothing stale is a clean no-op. The sweep keys entirely on **Linear** (not the local ledger), so it works in both the local and cloud regimes; it touches only **In Progress** tickets and never **In Review**. *Fallback (`/build`, harness tool unavailable):* run the **equivalent** Linear-keyed pre-flight by hand through the `linear` skill — revert every `Harness v3` ticket left In Progress past the staleness threshold back to Todo (never touch In Review) — before picking work.
 
+**Then reclaim merged worktrees + branches (housekeeping).** `close` tears down its own worktree and branch when it lands, but a run whose container died before that teardown step — or a long-dead run reverted by the sweep above — can still leave a `.worktrees/harness/<id>/` directory and a branch behind, and over many ticks these accumulate (GB of worktrees, a cluttered branch list). Run the housekeeping sweep as part of the same pre-flight:
+
+```bash
+harness worktrees cleanup --merged --age 7d   # delete merged worktrees + their branch; rm orphaned dirs >7d old
+```
+
+This is **best-effort and idempotent**: `--merged` removes each worktree whose branch has already landed on `dev`/`main`/`master` and deletes that merged branch (local + on `origin`); `--age 7d` reclaims orphaned directories left by runs that died long ago (the cruft a plain `git worktree remove` can no longer touch). It never removes a recent, unmerged worktree — including a reclaimed ticket's preserved WIP branch, which lives on `origin` and is fetched by `--resume`, not from the local directory. *Fallback (`/build`, harness tool unavailable):* run the same `harness worktrees cleanup --merged --age 7d` by hand in the repo as part of the pre-flight.
+
 The loop:
 
 1. **Pick the next ticket.** Look at the current list of items marked **Todo** in Linear in the project `Harness v3`. From that list pick the next most logical task to start work on. Take into account the **ID number** (tickets are often added in the order in which they need to be done), **dependencies** in Linear, and the **priority**. Tickets with a `decision` label have been marked as not actionable yet in previous runs — skip them.

@@ -282,6 +282,34 @@ def test_build_routine_fallback_documents_equivalent_preflight() -> None:
     )
 
 
+# --- CAL-767: the Build routine sweeps merged worktrees + branches in pre-flight
+#
+# `close` self-cleans, but a container that dies before close's teardown step — or
+# accumulated cruft from before the self-cleaning landed — still leaks worktree
+# dirs and branches. The routine runs `harness worktrees cleanup` each tick so the
+# leak is bounded without a human running housekeeping by hand.
+
+
+def test_build_routine_runs_worktree_cleanup_preflight() -> None:
+    """CAL-767: the Build pre-flight runs the worktree+branch housekeeping sweep."""
+    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    assert "harness worktrees cleanup" in body, (
+        "the Build routine must run `harness worktrees cleanup` in its pre-flight "
+        "so worktree directories and branches are reclaimed each tick rather than "
+        "accumulating (GB of worktrees, a cluttered branch list) — CAL-767."
+    )
+    assert "--merged" in body and "--age" in body, (
+        "the cleanup sweep must use `--merged` (remove merged worktrees and delete "
+        "their branch) and `--age` (reclaim orphaned dirs) — CAL-767."
+    )
+    cleanup_at = body.find("harness worktrees cleanup")
+    pick_at = body.lower().find("pick the next ticket")
+    assert cleanup_at != -1 and pick_at != -1 and cleanup_at < pick_at, (
+        "the worktree cleanup sweep must be documented in the pre-flight, before "
+        "the pick step (CAL-767)."
+    )
+
+
 # --- CAL-739: the Build pick logic resumes a reclaimed ticket from its WIP branch
 #
 # Item 6 of ``specs/proposals/stale-run-reclamation`` (D4 preserve/resume): once
