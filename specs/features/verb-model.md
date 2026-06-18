@@ -55,13 +55,20 @@ The agent acts on the verdict:
 
 ### `close` — enforce the gate, then merge
 
-`harness close <ticket> --run-id <id>` enforces the gate, merges the already-committed HEAD to the base branch, pushes, transitions the ticket to Done, and finalizes the run.
+`harness close <ticket> --run-id <id>` enforces the gate, integrates the current `origin/<base>`, merges the already-committed HEAD to the base branch, pushes, transitions the ticket to Done, and finalizes the run.
 
 #### Scenario: the gate is satisfied
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb merges (`git merge --no-ff`) the run branch into the base, pushes the base, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`)
+- THEN the verb fetches and fast-forwards the local base to `origin/<base>`, merges (`git merge --no-ff`) the run branch into the base, pushes the base, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`)
+
+#### Scenario: the base advanced during the run
+
+- GIVEN an open run that passed review, and `origin/<base>` has advanced since `start` with non-conflicting work (a concurrent run landed a ticket)
+- WHEN the agent runs `harness close <ticket> --run-id <id>`
+- THEN the verb fetches and fast-forwards the local base to `origin/<base>` **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
+- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb aborts the merge and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
 
 #### Scenario: a gate refusal
 
