@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.5.0 -->
+<!-- guidance:review-discipline@0.5.1 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -37,6 +37,7 @@ Only after Stage 1 passes.
 - **Structure** — size, layer boundaries, rule-of-three duplication, composition. Apply the `code-quality` Part B thresholds. Pre-existing violations in untouched files are not findings; only flag if this change makes them worse.
 - **Dead surface after a deletion** — when a change retires a subsystem but keeps its module as a re-homed helper, each remaining public function needs a *production* caller, not just a test. Grep each one across the source tree, excluding its own module and tests (`grep -rn <fn> <src>/ | grep -v <its-module>`); one reached only by its own unit test is dead surface masquerading as a helper, its passing test hiding the rot rather than justifying it. Delete it with its tests.
 - **Port-time orphan** — when a change *lifts a module from another repo*, confirm production code in **this** repo imports it before the lift lands. Grep the source tree for an importer, excluding the module itself and tests (`grep -rn <module> <src>/ | grep -v <its-own-path>`); a lifted module reached only by its own tests, or by nothing, is dead on arrival — a class no later per-change reviewer will catch, because no future change touches the orphan. Wire it to a production caller in the same change or leave it out.
+- **Misplaced pure helper** — in a repo whose CONTEXT designates a home for testable client logic (e.g. a `lib/` directory under a coverage ratchet), a *pure* function — no hooks, no JSX/render — declared inline inside a view or screen file, that a **second** view also needs, belongs in that home before approval, not copied screen-to-screen. The class hides per-change because each ticket touches one screen, so catch it at the moment of reuse: when this change adds or copies an inline pure helper a sibling screen already declares, move it to the designated `lib/` (under its ratchet) as part of this change. Grep the source for a sibling declaration before approving (`grep -rn <fn> <src>/ | grep -v <its-screen>`); the same pure helper declared in two screens is the signal.
 - **Over-engineering** — complexity the change *adds* that a simpler form replaces. Tag each finding with the cut it names, and in the finding name *what replaces it* so the fix is concrete, not a vibe:
   - `stdlib:` hand-rolled what the standard library already ships — name the function that replaces it.
   - `native:` a dependency, or a block of code, doing what the language or platform already does — name the built-in feature.
