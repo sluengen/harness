@@ -1,4 +1,4 @@
-# guidance:registry@0.5.16
+# guidance:registry@0.5.17
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -84,7 +84,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.1.0, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.1.1, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.1, profiles: [harness] }
@@ -114,4 +114,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   INSTALLER.md:                        { id: bootstrap,                version: 0.4.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.16 }
+  registry.yaml:                      { id: registry,                 version: 0.5.17 }
