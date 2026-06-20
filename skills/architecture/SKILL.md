@@ -2,7 +2,7 @@
 name: architecture
 description: Use when making a cross-cutting design decision — data models, contracts, interfaces — and recording it in the spec it governs. Load when shaping how something is built; every decision should trace to engineering-principles.
 ---
-<!-- guidance:architecture@0.5.0 -->
+<!-- guidance:architecture@0.6.0 -->
 # Architecture
 
 How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
@@ -61,3 +61,20 @@ git diff --name-only "<integration-branch>...HEAD"
 If the integration branch is unknown or unavailable — a detached checkout, or a `CONTEXT.md` that omits `branches.integration` — **fall back** to the working-tree diff (`git diff --name-only HEAD` plus staged and untracked files) so the check still runs against whatever this change adds, rather than skipping silently. Match each changed path against the watchlist globs.
 
 **Refreshing the list.** The watchlist is not write-once. When the steward (`/assess code`, and the `--deep` arm) finds a recurring gravity well or repeated architectural drag in a file, it proposes adding that file to `architecture_watchlist` so the next change there trips the trigger (`assessment-craft`). This skill is the one home for the mechanism; the builder reference is in `spec-authoring` (the change-spec section) and the reviewer reference in `review-discipline` (the Stage-2 check).
+
+## Architecture assessment
+
+The steward loads this section for `/assess architecture --deep` (`agents/steward.md`, the `architecture` scope). Where a design decision (above) shapes *one* change, an architecture assessment steps back and judges the *whole* system shape periodically: **is the shape still right for the product, and what should we preserve, change, or watch?** It is a holistic judgement, not a finding sweep — its output is a verdict and a narrative (`templates/assessment.md`, the architecture report shape), and only the *actionable* risks become tickets (`assessment-craft`: a report may carry non-ticket narrative; `commands/assess.md`: file only actionable architecture risks).
+
+Assess against these lenses — each grounded in `engineering-principles` and this repo's architecture-principles spec:
+
+1. **Purpose fit** — are the major structural choices still serving the product, or has the product moved past them?
+2. **Boundary integrity** — are the API / client / domain / data boundaries holding, or has logic leaked across them?
+3. **Domain-model coherence** — do names, entities, and invariants still match the product language, or has the model drifted from the words the team uses?
+4. **Change ergonomics** — where are gravity wells or awkward seams forming — the files every change has to fight? (Feed these to the `architecture_watchlist`, above.)
+5. **Operational / efficiency fit** — is the deploy / test / local-dev workflow aligned with how the system is actually run and changed?
+6. **Verification architecture** — do the tests and gates prove the *important* contracts, or do they cluster on the easy ones while a load-bearing path goes unguarded?
+7. **Spec-record health** — do the as-built records (feature specs / `SPEC.md` / `specs/`) still match shipped behaviour?
+8. **Watchlist recommendations** — which files or boundaries should trip a conditional refactor on the next touch? Propose them for the repo's `architecture_watchlist` (above).
+
+The assessment names **positive bets to preserve** as first-class output, not only risks: a holistic review that records what is working and which trade-off to keep is doing its job even when it files no ticket. Calibrate risks with the `assessment-craft` finding bar — evidence first, a concrete fix, honest severity — but keep the narrative (verdict, what is working, trade-offs) in the report rather than forcing it into the tracker.

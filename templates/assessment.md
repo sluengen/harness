@@ -1,4 +1,4 @@
-<!-- guidance:template-assessment@0.1.0 -->
+<!-- guidance:template-assessment@0.2.0 -->
 # Assessment report (the steward's output format)
 
 The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, severity, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
@@ -21,7 +21,7 @@ The one- or two-paragraph headline — the state of the scope and where the risk
 
 ## Findings
 
-Each finding is a level-3 heading carrying its ID, a one-line title, the severity, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `SYSTEM-` — and numbered within the pass.
+Each finding is a level-3 heading carrying its ID, a one-line title, the severity, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` / `SYSTEM-` — and numbered within the pass.
 
 ### {SCOPE}-{n} — {one-line title} — {Critical | High | Medium | Low}
 
@@ -42,4 +42,21 @@ The class it prevents, the exact edit (file + change), and the finding(s) it gen
 
 ---
 
-After the report is written, the `/assess` command files each finding and insight as a tracker issue and commits the dated report (`commands/assess.md`).
+## Architecture report shape (the `architecture` scope)
+
+An `/assess architecture --deep` pass writes the *same* dated file (`assessments/<YYYY-MM-DD>-architecture.md`) in a **holistic** shape, not a finding list. Its value is the narrative; only the actionable risks leave as tickets (`commands/assess.md`). Use these sections — drop any a pass does not need, never pad to fill them:
+
+- **Verdict** — the one- or two-paragraph headline: is the system shape still right for the product, and where does the risk concentrate?
+- **System map / current shape** — the boundaries and major components as they actually stand, so a reader can place everything that follows.
+- **What is working** — the positive bets to preserve and the trade-offs worth keeping. **These are not findings and are not filed as tickets** — recording them is the point of a holistic review.
+- **Architectural risks** — the actionable concerns, each with the four parts (`assessment-craft`) and a severity, IDs prefixed `ARCH-`. These *are* filed.
+- **Watchlist / triggers** — files or boundaries to add to the repo's `architecture_watchlist` (`skills/architecture/SKILL.md`) so the next change there trips a conditional refactor.
+- **Recommended actions** — the concrete changes the risks imply, ordered by leverage.
+- **Findings / tickets to file** — the subset above that becomes tracker issues: the actionable risks and recommendations only.
+- **Not assessed** — what this pass deliberately did not cover, so the verdict is not read as broader than it is.
+
+**Zero tickets is a valid architecture pass.** A verdict, a watchlist, and a "what is working" section with no filed risk is a useful, complete report — not a failed run.
+
+---
+
+After the report is written, the `/assess` command files each finding and insight as a tracker issue and commits the dated report (`commands/assess.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections.
