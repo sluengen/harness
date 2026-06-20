@@ -280,6 +280,30 @@ def test_code_and_system_scopes_unchanged() -> None:
     )
 
 
+def test_global_id_prefix_lists_name_arch() -> None:
+    """Every *global* scope-ID-prefix enumeration names `ARCH-` beside CODE-/SYSTEM-,
+    so the new scope stays coherent with the report convention (review nit).
+
+    These are the lists that enumerate *all* scope prefixes together (the steward
+    Output section, the assessment template, assessment-craft Output) — not the
+    per-scope line that defines a single scope's own prefix."""
+    # The steward Output section and the assessment template both phrase it as
+    # "prefixed by scope — `CODE-` / ... / `SYSTEM-`": ARCH- must sit in that list.
+    for path in (STEWARD, ASSESSMENT_TEMPLATE):
+        text = path.read_text()
+        m = re.search(r"prefixed by scope — (.+?) —|prefixed by scope — (.+?)\)", text)
+        assert m, f"{path.name}: no 'prefixed by scope — …' enumeration found"
+        enum = (m.group(1) or m.group(2))
+        assert "ARCH-" in enum, (
+            f"{path.name}: the global scope-ID enumeration must name `ARCH-` "
+            f"(found: {enum!r})."
+        )
+    # assessment-craft lists them inline in its Output section.
+    assert "ARCH-" in ASSESSMENT_CRAFT.read_text(), (
+        "assessment-craft Output must name the `ARCH-` prefix."
+    )
+
+
 # --- version integrity: each edited header equals its registry entry ----------
 
 

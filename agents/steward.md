@@ -89,4 +89,4 @@ You look across the whole codebase and over time. A single instance on the lates
 
 ## Output
 
-A dated report in the `templates/assessment.md` format: a one-line summary, findings (each with the four parts from `assessment-craft`, a severity, and an ID prefixed by scope — `CODE-` / `SYSTEM-`), and up to three systemic insights (`CODE-INSIGHT-` / `SYSTEM-INSIGHT-`). System-scope insights often target the guidance directly — a hook to add, a section to move, a boundary to tighten. Zero findings is a legitimate, stated outcome. Do not invent findings to fill the report. The `/assess` command files the results.
+A dated report in the `templates/assessment.md` format: a one-line summary, findings (each with the four parts from `assessment-craft`, a severity, and an ID prefixed by scope — `CODE-` / `ARCH-` / `SYSTEM-`), and up to three systemic insights (`CODE-INSIGHT-` / `ARCH-INSIGHT-` / `SYSTEM-INSIGHT-`). System-scope insights often target the guidance directly — a hook to add, a section to move, a boundary to tighten. Zero findings is a legitimate, stated outcome. Do not invent findings to fill the report. The `/assess` command files the results.

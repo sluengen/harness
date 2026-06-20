@@ -21,7 +21,7 @@ The one- or two-paragraph headline — the state of the scope and where the risk
 
 ## Findings
 
-Each finding is a level-3 heading carrying its ID, a one-line title, the severity, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `SYSTEM-` — and numbered within the pass.
+Each finding is a level-3 heading carrying its ID, a one-line title, the severity, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` / `SYSTEM-` — and numbered within the pass.
 
 ### {SCOPE}-{n} — {one-line title} — {Critical | High | Medium | Low}
 
