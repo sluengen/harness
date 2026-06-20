@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.0 -->
+<!-- guidance:harness@0.1.1 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -72,7 +72,7 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 { "verdict": "pass|fail|defer", "issues": [ ... ], "reviewed_sha": "...", "run_id": "...", "engine": "claude|codex" }
 ```
 
-`claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude (CAL-702): `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
+`claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude: `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
 
 Act on `verdict`:
 
@@ -150,7 +150,7 @@ The loop:
 2. **Check it is wholly actionable.**
    - If it **cannot** be actioned or needs additional details, add a comment to the ticket about what it needs to be actionable and label it `decision`. Then re-pick (step 1) or, if nothing remains, go to step 5.
    - If it **can** be actioned, implement it: `/harness run <TICKET>` (primary), or `/build <TICKET>` (fallback) where the harness tool is unavailable.
-3. **Resume a reclaimed ticket from its preserved WIP branch.** If the picked ticket carries the `reclaimed` label, it was reverted from a run whose orchestrator died (the pre-flight, step 0) and may have a **checkpoint-pushed WIP branch**. Start it with `harness start <TICKET> --resume` so the new run continues from that branch (fetch + continue) instead of a clean branch off `dev`, recovering the dead run's work rather than redoing it. When no durable WIP exists — the reclaim preserved no branch, or the branch no longer fetches — `--resume` **falls back** to a normal clean start automatically; it is best-effort and never blocks the queue. Either path is safe from double-merge: the resumed run still merges into `dev`, and `close`'s HEAD-bound gate (a `pass` whose reviewed SHA == HEAD) holds. The resumed worktree already carries the prior WIP, so re-orient via `git log` before continuing (proposal `stale-run-reclamation` D4 / CAL-739). A non-`reclaimed` ticket starts normally (no `--resume`).
+3. **Resume a reclaimed ticket from its preserved WIP branch.** If the picked ticket carries the `reclaimed` label, it was reverted from a run whose orchestrator died (the pre-flight, step 0) and may have a **checkpoint-pushed WIP branch**. Start it with `harness start <TICKET> --resume` so the new run continues from that branch (fetch + continue) instead of a clean branch off `dev`, recovering the dead run's work rather than redoing it. When no durable WIP exists — the reclaim preserved no branch, or the branch no longer fetches — `--resume` **falls back** to a normal clean start automatically; it is best-effort and never blocks the queue. Either path is safe from double-merge: the resumed run still merges into `dev`, and `close`'s HEAD-bound gate (a `pass` whose reviewed SHA == HEAD) holds. The resumed worktree already carries the prior WIP, so re-orient via `git log` before continuing (proposal `stale-run-reclamation` D4). A non-`reclaimed` ticket starts normally (no `--resume`).
 4. **Branch off `dev`.** Take your branch off of `dev`. Linear access is via the GraphQL API; the key is in the `.env` file in the repo.
 5. **Idle → quality.** If there are no wholly actionable Todo tasks in Linear, fall through to **`/harness routine quality`** (its idle arm runs `/assess code`). If that surfaces nothing to action either, don't invent work — exit cleanly.
 
