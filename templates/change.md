@@ -1,4 +1,4 @@
-<!-- guidance:template-change@0.1.0 -->
+<!-- guidance:template-change@0.1.1 -->
 # Change spec
 
 The structure for a single piece of work. This is the body of the **Linear issue** (`linear`) — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
@@ -26,6 +26,10 @@ Endpoints, commands, or component contracts: request/response shapes, status and
 ### Scenarios
 Behaviour where it is non-obvious or edge cases are easy to forget.
 - GIVEN {precondition} WHEN {action} THEN {outcome}
+
+## Watchlist trigger
+
+*Conditional — include this section only when the planned diff touches a file in `CONTEXT.md` `architecture_watchlist.files`. Record exactly one outcome: a small behavior-preserving seam extraction (name the seam and the test/smoke evidence), or an explicit deferral with a reason. See `architecture` → Architecture watchlist. Omit the section entirely when no watchlisted file is touched (or the repo has no watchlist).*
 
 ## Acceptance criteria
 
