@@ -254,6 +254,11 @@ def test_assessment_craft_allows_narrative_scopes() -> None:
         "assessment-craft must keep the four-part bar for filed architecture risks "
         "(AC-5)."
     )
+    # The Output section's ID-prefix list must name ARCH- alongside CODE-/SYSTEM-,
+    # so the scope-ID convention stays coherent with the new scope (review nit).
+    assert "arch-" in low, (
+        "assessment-craft must list the `ARCH-` scope ID prefix beside CODE-/SYSTEM-."
+    )
 
 
 # --- AC-8: existing `code` and `system` scope behavior is unchanged ----------
