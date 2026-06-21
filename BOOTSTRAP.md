@@ -1,365 +1,87 @@
-# BOOTSTRAP.md — onboarding the harness to a repo
-
-How to make a repo **harness-onboardable**: install the harness, wire its
-credentials, and bring in the guidance bundle — the universal `/start → /review
-→ /ship` commands, skills, agents, **and the harness's own `/harness run`
-command** (a registry-tracked surface unit since CAL-764) — so an agent can
-drive a Linear ticket end-to-end. Run this once per repo; thereafter
-`/update-guidance` keeps the guidance current and the [§Updating](#updating)
-steps below move you to a new harness release.
-
-This is the **repeatable** procedure the rest of the docs point at:
-`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` reference [step 2](#step-2--make-room-for-the-guidances-start)
-for the command-name collision, `RELEASING.md` references
-[§Updating](#updating), and `.guidance-lock.yaml` is the lock file this
-bootstrap writes ([step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml)).
-
-> **Who runs this:** a human (or an agent acting for one) setting up the harness
-> in a repo for the first time. It is not part of the `/harness run` loop — it
-> is the one-time setup that makes that loop available.
-
----
-
-## What you get
-
-Two install methods; pick one. Both expose a `harness` invocation that runs the
-three verbs (`start` / `review` / `close`) against the current repo.
-
-| Method | Use when | Install |
-|--------|----------|---------|
-| **Docker image + `~/bin/harness` wrapper** (recommended) | You want zero per-repo Python setup; you drive other repos from your host | Build the image, install the wrapper (steps below) |
-| **Native `uv tool install`** | Docker is unavailable, or you are iterating on harness source | `uv tool install .` from the harness checkout puts the `harness` console script on `PATH` |
-
-The Docker wrapper handles all credential wiring automatically **on macOS**,
-where it reads the Claude token from the Keychain (`security find-generic-password`).
-On **Linux** that Keychain path does not exist, so export
-`CLAUDE_CODE_OAUTH_TOKEN` in your shell before invoking the wrapper — it is the
-one Claude credential the wrapper forwards (`-e CLAUDE_CODE_OAUTH_TOKEN`). The
-wrapper does **not** pass `ANTHROPIC_API_KEY` or mount `~/.claude`; to use those
-instead you run the plain `docker run` form (or edit the wrapper) — see
-[`docker/README.md`](docker/README.md) §Authentication. The native install
-requires you to set credentials and env vars yourself on any OS.
-
----
-
-## The procedure
-
-### Step 1 — install the harness
-
-**Docker (recommended).** From the harness checkout, build the image once:
-
-```bash
-docker build -t harness:dev -f docker/Dockerfile .
-```
-
-Then install the thin wrapper `~/bin/harness` and put `~/bin` on your `PATH`.
-The wrapper script — and exactly what it mounts and forwards — is in
-[`docker/README.md`](docker/README.md) ("Thin shell wrapper"). Sanity-check the
-image:
-
-```bash
-docker run --rm harness:dev version    # → harness 0.2.1
-```
-
-**Native (alternative).** From the harness repo root:
-
-```bash
-uv tool install .        # installs the `harness` console script on PATH
-```
-
-`uv tool install` installs only the Python package — it does **not** bring the
-two external CLIs the verbs shell out to. Install both (the Docker image bundles
-them; a native host must add them):
-
-```bash
-npm install -g @anthropic-ai/claude-code @openai/codex
-```
-
-`@anthropic-ai/claude-code` is the CLI the agent runs through; `@openai/codex`
-provides the `codex` binary the `review` verb invokes (`codex exec`) — without
-it `harness review` fails. Credentials and env vars must then be set manually
-(see [step 4](#step-4--wire-credentials)).
-
-> **The native CLI is not the wrapper.** [`commands/harness.md`](commands/harness.md)
-> (the `/harness run` command) is written for the `~/bin/harness` Docker wrapper:
-> it assumes `.env` is auto-loaded and credentials are wired for you. The native
-> console script does neither — it reads `LINEAR_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`
-> from the actual environment. So before running the verbs natively, export them
-> (`set -a; source .env; set +a`), and read the command doc's wrapper steps as
-> "invoke the `harness` console script" rather than the containerised wrapper.
-
-### Step 2 — make room for the guidance's `/start`
-
-The guidance bundle installs its universal commands at their **bare** paths —
-the guidance's `/start` lands at `commands/start.md`. The harness has its **own**
-pipeline commands, and the harness's own "start" means *run the harness
-pipeline*, not *begin the agent-led process*. Those would collide on
-`commands/start.md`.
-
-Resolve the collision **before** installing the guidance: namespace the
-harness's own commands under `/harness <verb>` (so the harness's start lives in
-`commands/harness.md` as `/harness run`, not in `commands/start.md`). The
-bootstrap **refuses to clobber** an existing `commands/start.md`, so if the
-harness's own `start` still occupies that path, move it out first.
-
-In this repo the collision is already resolved — `commands/harness.md` holds
-`/harness run` and `/harness ingest`, and `commands/start.md` is free for the
-guidance's `/start`. A fresh repo with no `commands/start.md` needs nothing
-here; a repo that already used the bare name for its own command must rename it
-under `/harness` first.
-
-### Step 3 — install the guidance bundle (writes `.guidance-lock.yaml`)
-
-The guidance bundle — the universal `/start`, `/review`, `/ship`, `/propose`,
-`/assess`, `/update-guidance` commands plus the skills, agents, hooks, and the
-`harness` process doc — installs from **this repo**: the harness *is* the
-guidance source (the guidance repo was merged in). **Do not hand-roll the
-install here.** This repo carries the canonical, versioned installer —
-[`INSTALLER.md`](INSTALLER.md) (`guidance:bootstrap`), the copy-in bootstrap
-prompt; run *that* from inside the target repo, point it at the guidance source
-— the harness GitHub repo at the released branch
-(`https://github.com/sluengen/harness.git`, `main`; a non-harness repo always
-pulls `main`, never in-flight `dev`), or a local harness checkout when iterating
-on the source — and select the **`harness` profile**. It is the single source of truth for the copy-in
-mechanics, so this doc does not restate them — it does, in one pass:
-
-- enforces the [step 2](#step-2--make-room-for-the-guidances-start) no-clobber
-  rule (it refuses to overwrite a repo-owned `commands/start.md`);
-- copies every `harness`-profile file from `registry.yaml` (`skills/`, `agents/`,
-  `commands/`, `hooks/`, `templates/`, the process doc) into place;
-- creates the `.claude/` discovery symlinks (`commands`, `skills`, `agents`,
-  `hooks` → `../*`) and derives `.claude/settings.json` from `settings/harness.json`;
-- derives the three byte-identical entry files `AGENTS.md` / `CLAUDE.md` /
-  `GEMINI.md` from `process/harness.md`;
-- scaffolds the repo-owned `CONTEXT.md` from the template (never a distributable —
-  `/update-guidance` never overwrites it);
-- **writes `.guidance-lock.yaml`** (the lock the header comment of that file
-  attributes to BOOTSTRAP), recording the source ref and every file's version +
-  hash so `/update-guidance` can later detect drift.
-
-Use the harness's recommended **`committed`** visibility mode so a cloud / CI
-runner has the guidance (the installer defaults private repos to it).
-
-> **`/harness run` ships in that bundle (CAL-764).** `commands/harness.md` (the
-> `/harness run`, `/harness ingest`, and `/harness routine` commands) is a
-> **distributed surface unit**: it carries a `guidance:harness@…` header and a
-> `registry.yaml` entry under the `harness` profile, so the installer copies it
-> like any other command and `/update-guidance` tracks it — no hand-copy, and no
-> per-repo edit of its `/harness routine` Linear project (that resolves at
-> runtime from `CONTEXT.md` → `repo.project`). This **reverses** the earlier
-> CAL-650 repo-owned exclusion. The command sits **inert** in a repo that does
-> not host the `~/bin/harness` tool — it documents that prerequisite — which is
-> the bounded cost of distributing it everywhere.
-
-Thereafter, **do not hand-edit installed guidance files** (that creates a
-permanent local divergence) — run [`/update-guidance`](commands/update-guidance.md)
-to pull a newer harness guidance ref, which rewrites the lock.
-
-### Step 4 — wire credentials
-
-The verbs need three credentials. With the `~/bin/harness` wrapper, all three
-are wired automatically; the table is what to provide for a native install or CI.
-
-| Credential | What it is for | Wrapper behaviour |
-|------------|----------------|-------------------|
-| `LINEAR_API_KEY` | `start` / `close` fetch and transition the ticket | Read from `.env` in the current directory |
-| Claude Code OAuth (`CLAUDE_CODE_OAUTH_TOKEN`) | the agent that drives the loop | Extracted from the macOS Keychain (`Claude Code-credentials`) per invocation |
-| Codex subscription auth (`~/.codex/auth.json`) | the `review` verb's reviewer | `~/.codex` mounted into the container |
-
-Push transport for the `close` verb uses **ssh** — the wrapper mounts `~/.ssh`
-read-only and forwards the host ssh-agent. On macOS Docker Desktop the host
-agent is bridged into the container at `/run/host-services/ssh-auth.sock` (a
-path supplied at mount time — it exists only inside the VM, so the wrapper keys
-the forward off the host agent, not that path), so `close` pushes over ssh
-whenever the host has a loaded agent — `ssh-add -l` should list a key. Only on a
-host with **no** loaded agent does the wrapper skip the forward and `close`'s
-`git push` lose its credential; the fallback is to point `origin` at an
-`https://x-access-token:$(gh auth token)@github.com/…` URL, push, then restore
-the ssh URL.
-
-Get a `LINEAR_API_KEY` from **linear.app → Settings → API → Personal API keys**.
-If Claude auth errors, run `claude /login` on the host to refresh the Keychain
-entry.
-
-### Step 5 — scaffold `.env` and `.gitignore`
-
-Create a `.env` at the repo root (the wrapper reads `LINEAR_API_KEY` from it,
-no `source` needed):
-
-```bash
-# .env (repo root) — never commit this
-LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx
-```
-
-Ensure `.gitignore` excludes the secret and the harness's local state so a run
-never commits them:
-
-```gitignore
-# holds LINEAR_API_KEY — keep every variant out of git
-.env
-.env.*
-# SQLite ledger (harness.db) — host-local run state
-.harness/
-# run worktrees, created at <repo>/.worktrees/harness/<run-id>/
-.worktrees/
-# local virtualenv (native install)
-.venv/
-```
-
-`.harness/` (the ledger) and `.worktrees/` (the run worktrees) are **separate**
-directories — ignore both, or a `git add .` after a run can stage worktree
-contents. (Comments must be on their own lines — git treats a trailing `#` as
-part of the pattern, so `.env  # …` would *not* ignore `.env` and a later
-`git add .` could stage the key.)
-
-### Step 6 — verify the install
-
-```bash
-harness version                 # the wrapper or console script resolves
-harness doctor                  # environment health checks (see caveat below)
-```
-
-`harness version` returning a version is the smoke test that the install
-resolves. `harness doctor` reports on git / db / reviewer / cli wiring; its
-**auth** row passes on any of `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or
-a mounted `~/.claude/` — so under the recommended wrapper (which injects
-`CLAUDE_CODE_OAUTH_TOKEN`) the auth row reads `PASS`.
-
-A repo is onboarded once `harness version` resolves, `.env` holds a valid
-`LINEAR_API_KEY`, the guidance bundle is installed (`.guidance-lock.yaml`
-present), and `commands/start.md` belongs to the guidance's `/start`.
-
----
-
-## Driving a consuming repo with `/harness run`
-
-`commands/harness.md` — the `/harness run` command — installs **with the
-guidance bundle** (CAL-764): it is a registry-tracked surface unit, so
-[step 3](#step-3--install-the-guidance-bundle-writes-guidance-lockyaml) copies it
-automatically and `/update-guidance` keeps it current. The command is
-self-contained — it documents the full `start → review → (fix → review)* →
-close` loop, the gate-refusal reasons, and context-economy recovery — so a
-consuming repo gets a working pipeline command the moment the bundle lands. (The
-hand-copy this section used to describe was the interim path before CAL-764.)
-
-> **You don't strictly need the command file to drive a non-harness repo
-> (CAL-675).** The verbs are repo-agnostic — `~/bin/harness` mounts the caller's
-> CWD at `/workspace` — so an orchestrating agent already holding the
-> `/harness run` loop in context can `cd` into the target repo and call
-> `harness start / review / close` directly, with **no `commands/harness.md`
-> installed there**. Installing the command (now automatic via the bundle,
-> CAL-764) makes the loop discoverable in that repo; driving the verbs directly
-> is the minimum even without it.
-> Either way the only per-repo setup is a `.env` with `LINEAR_API_KEY` and the
-> two `.gitignore` lines from [step 5](#step-5--scaffold-env-and-gitignore).
-> (A *native*, non-wrapper invocation also needs `HARNESS_WORKSPACE_ROOTS`
-> exported — the wrapper sets it to `/workspace` for you; see
-> [`docker/README.md`](docker/README.md) §"Thin shell wrapper".)
-
-Put this minimal snippet in the consuming repo's **`CONTEXT.md`** — the
-repo-owned file that is never a distributable, so a local addition there creates
-no guidance drift. Do **not** paste it into `CLAUDE.md` / `AGENTS.md` /
-`GEMINI.md`: those are byte-identical generated artifacts (step 3), and editing
-one creates exactly the LOCAL divergence `/update-guidance` warns against. If
-the entry point should reach every harness repo automatically, add it to the
-source profile's process doc instead, so it ships through the bundle.
-
-```markdown
-## Driving a ticket with the harness
-
-`/harness run <ISSUE-ID>` orchestrates the build loop (`start → review →
-close`) for a Linear ticket; the harness verbs own every git and ticket
-mutation, you own the implementation. First-time setup — install, credentials,
-guidance bundle — is in `BOOTSTRAP.md`. When a task does not fit the pipeline
-shape, fall back to the agent-led `/start → /review → /ship` flow.
-```
-
-> **Mind the base branch.** `harness start` defaults `--base dev`. A consuming
-> repo whose integration branch is `main` (or anything other than `dev`) must
-> pass `--base <branch>` on every `start`, so adapt the installed `/harness run`
-> command (and the `harness start` calls it makes) to the repo's integration
-> branch — otherwise the first run fails creating a worktree off a branch that
-> does not exist. Removing this footgun with per-repo config (`.harness.toml`)
-> is the open ticket **CAL-621**.
-
----
-
-## Updating
-
-To move a repo to a newer harness release, update **both** layers — the harness
-code and the guidance bundle — per your install method:
-
-**Harness code**
-
-- **Docker:** `git checkout <new-tag>` in the harness checkout, then rebuild the
-  image: `docker build -t harness:dev -f docker/Dockerfile .`. The wrapper
-  resolves `harness:dev` on its next invocation.
-- **Native:** `git checkout <new-tag>` then `uv tool install . --force` (or
-  `uv tool upgrade harness`) to replace the console script.
-
-**Guidance bundle**
-
-- Run `/update-guidance` to pull the new harness guidance ref. It rewrites
-  `.guidance-lock.yaml` with the updated versions and hashes; review the diff
-  before committing.
-
-> **`/update-guidance` assumes a repo already on a harness lock.** It diffs the
-> repo's `.guidance-lock.yaml` against the source and pulls what changed. A repo
-> that still carries **pre-merge guidance** — an older install (from before the
-> guidance repo merged into the harness) whose skills that merge renamed or
-> folded into the current surface (`scope-discipline` /
-> `verification-before-completion` / `code-structure` → `code-quality`; the old
-> `spec.md` template → `feature.md`) — is **not** in that state: there is no
-> harness lock to diff, and `/update-guidance` would treat each renamed skill as
-> a generic "removed" file and its replacement as "added", losing the fold
-> relationship and any local edits. So superseding pre-merge guidance is a
-> **re-bootstrap** — re-run [`INSTALLER.md`](INSTALLER.md), which alone carries
-> the fold knowledge — not a `/update-guidance`. The [checklist
-> below](#migrating-off-pre-merge-guidance) is the ordered version.
-
-See [`RELEASING.md`](RELEASING.md) for the release-side checklist that produces
-the tags consuming repos check out here.
-
----
-
-## Migrating off pre-merge guidance
-
-A repo set up **before the guidance repo merged into the harness** moves onto the
-current surface by **re-bootstrapping** — re-running [`INSTALLER.md`](INSTALLER.md)
-against the harness as the guidance source — not by `/update-guidance` (which
-assumes the repo is [already on a harness lock](#updating)). The installer
-already performs each step below; this is the ordered checklist of the legacy
-handling it applies, gathered from its otherwise-scattered steps so a migrator
-sees the whole shape at once:
-
-1. **Make room for the bare command names** (installer step 2). If the repo's own
-   command sits at a guidance bare name (`commands/start.md`, etc.), namespace it
-   under a repo prefix first — the installer refuses to clobber it (this repo
-   already did so for `/harness`; see [step 2](#step-2--make-room-for-the-guidances-start)).
-2. **Flag legacy-process artifacts** (installer step 2). A `manifest.yaml`
-   (retired — Linear is the queue), old per-task `changes/` folders (search the
-   whole tree, including nested ones), and the **superseded skill/template files**
-   the merge folded elsewhere: `scope-discipline`, `verification-before-completion`,
-   and `code-structure` → `code-quality`; an old `spec.md` template → `feature.md`.
-   **The merge into the harness folded more** (every pre-merge install has them):
-   `linear-sync` → `linear`; `code-steward` + `harness-steward` → one `steward`;
-   the `code-review` skill is gone; `process/standard.md` → `process/harness.md`;
-   `settings/standard.json` → `settings/harness.json`; and the flat `skills/*.md`
-   layout → `skills/<id>/SKILL.md`, so every old flat skill file is superseded.
-   Check references before removing any of them, and never delete automatically.
-   Superseding a prior install's **own** renamed/folded files is bulk cleanup —
-   confirm it once; reserve per-file confirmation for files the repo itself owns.
-3. **Preserve repo-specific knowledge before overwriting the entry files**
-   (installer step 3). Read any existing `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
-   and fold their gotchas, the verify gate, and conventions into `CONTEXT.md`
-   before the re-derived copies replace them.
-4. **Keep the populated `CONTEXT.md`** (installer step 4). On a re-bootstrap the
-   filled `CONTEXT.md` already exists — keep it, fill only still-empty
-   `{placeholder}` fields, never overwrite it with the blank template.
-5. **Reconcile `.gitignore` for the visibility mode** (installer step 6). An older
-   setup may ignore `.claude/`, `CLAUDE.md`, or `hooks/` as ephemeral; narrow
-   those rules so committed-mode guidance is committable.
-
-The installer writes a fresh `.guidance-lock.yaml` at the end, so once the
-re-bootstrap lands the repo is a normal harness consumer and every later update
-is an ordinary `/update-guidance`.
+<!-- guidance:bootstrap@0.4.8 -->
+# Bootstrap the guidance into a repo
+
+> Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
+
+The model is **copy-in, version-stamped**: files are physically copied into the repo (not symlinked to an external clone) so every tool — Claude, Codex, Gemini — reads plain files, and the repo can diverge locally. Each file carries a `guidance:<id>@<version>` header; a `.guidance-lock.yaml` records what was installed so `/update-guidance` can pull changes later.
+
+Installs come in two **visibility modes**, controlling what is committed to git:
+
+- **`committed`** — all guidance files are committed. A clone or a cloud/CI runner has everything, so remote execution works. Default for **private** repos.
+- **`local`** — only `CONTEXT.md` is committed; the internals are gitignored, present locally, and restored by re-running this bootstrap on a fresh clone. Keeps the methodology private and the repo clean. Default for **public** repos.
+
+`CONTEXT.md` is always committed in both modes — it is agent-facing repo documentation, not methodology.
+
+## Prompt
+
+> You are installing the shared agent guidance into this repo.
+>
+> **1. Locate the source (GitHub `main`), note the single surface, pick a visibility mode.**
+> The guidance source is the harness **GitHub** repo. Clone it at the released branch — `git clone --branch main --depth 1 https://github.com/sluengen/harness.git` to a temp dir (`registry.yaml` records the canonical cloneable `source.repo` and `source.branch`) — and read its `registry.yaml`. External repos install from `main`; the harness itself authors and dogfoods the surface on `dev`, so a non-harness repo pulls `main`, never in-flight `dev`. (A local path may be given instead when iterating on the source.) Then:
+> - **Surface:** there is **one surface** — a single profile under `profiles:` (the `standard`/`harness` split is retired). Install that one surface; do not look for a repo-type profile to choose between. Repo-type variation — feature specs, design system — is set **after** install via this repo's `CONTEXT.md` `layers:` block (step 4), not by selecting a profile.
+> - **Visibility mode:** `committed` (all guidance in git; enables cloud execution; default for private repos) or `local` (only `CONTEXT.md` in git; internals bootstrapped locally; default for public repos). Determine the repo's visibility with `gh repo view --json visibility` if available, else ask; default the mode from it.
+> Confirm the visibility mode with me if it is ambiguous.
+>
+> **2. Check for collisions, then copy the profile's files in.**
+> First, **never overwrite a pre-existing non-guidance file.** For every target path, if a file already exists there and does **not** carry a `guidance:` header (it is the repo's own, not a prior install), stop and resolve it — do not clobber it. **Exception — registry-managed JSON settings** (`settings/*.json`) carry no header by design (the registry version is authoritative), so header-presence can't distinguish a prior install from a repo-owned file. Use the **lock**: if `.guidance-lock.yaml` records this path, it is a prior install you may update; if no lock records it, treat an existing file as a potential repo-owned collision and stop to resolve it — never overwrite an unmarked settings file on a first install (registry membership alone does not prove the file came from us). The common case for the no-clobber rule is commands: the universal guidance commands own the bare names (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`), so a repo's own command at one of those paths (e.g. a harness repo whose `commands/start.md` launches the harness) must be **namespaced under a repo prefix first** (e.g. `/harness …` — see `process/harness.md`) before the guidance installs its version. The same no-clobber rule applies to any path.
+> Then, for every entry in `registry.yaml` whose `profiles` includes the single profile (the one surface), copy the file to the same path, **preserving its `guidance:` header verbatim**. This covers `skills/`, `agents/`, `commands/`, `templates/`, and the process doc. (Re-running over a prior install is fine — those files carry the header and are yours to update.)
+>
+> **Flag legacy-process artifacts.** A repo set up under an older process may carry artifacts the new model has retired:
+> - A **`manifest.yaml`** (the new model uses Linear; there is no manifest — see `linear`).
+> - Old per-task **`changes/` folders, including nested ones** (e.g. `harness/changes/`) — search the tree, not just the root. But a `changes/` folder may be *functional* (test fixtures, runtime output, referenced by code) rather than legacy — check for references before flagging, and present it for the user to classify; never assume it is cruft.
+> - **Superseded skill/agent files** the guidance has since merged or renamed: a repo's own `scope-discipline`, `verification-before-completion`, or `code-structure` are now folded into `code-quality`; an old `spec.md` template is now `feature.md`. **The merge into the harness folded more** (a pre-merge install carries all of these): `linear-sync` → `linear`; the `code-steward` and `harness-steward` agents → one `steward`; the `code-review` skill is gone (its concept is now `review-discipline` + the `/code-review` command); `process/standard.md` → `process/harness.md` and `settings/standard.json` → `settings/harness.json`; and the **flat `skills/*.md` layout moved to `skills/<id>/SKILL.md`**, so *every* old flat skill file is superseded. The old lock's `name`/`ref` source line becomes a `{ repo, branch, ref }` remote. These sit alongside the new files as redundant cruft — **but check references first** (the repo's own agents/docs may still point at the old names; update those to the merged file, or leave the old file, rather than break them).
+>
+> Detect these and surface them: recommend migrating any open items (to Linear, or the repo's idea inbox), then removing the artifact. **Do not delete automatically** — they may hold un-migrated history; remove only with my confirmation. Two kinds get different handling: a prior install's **own** renamed or folded files (they carry a `guidance:` header, or the prior `.guidance-lock.yaml` records them) are superseded cleanup — the re-bootstrap is replacing them, so **confirm that removal once, in bulk** rather than file-by-file; files the **repo itself owns** (no `guidance:` header, not in the prior lock) get the per-file confirmation, since those may be the repo's own work. Note any you found in the step 7 report.
+>
+> **A re-bootstrap is how you supersede pre-merge guidance.** Concretely, superseding pre-merge guidance — an older install (from before the guidance repo merged into the harness) whose skills that merge renamed or folded (`scope-discipline` / `verification-before-completion` / `code-structure` → `code-quality`) and whose old `spec.md` template became `feature.md` — is done by **re-running this installer (a re-bootstrap)**, *not* by `/update-guidance`. The fold knowledge (which old file folds into which new one) lives only here, in the legacy-artifact handling above; `/update-guidance` would see a renamed skill as a generic "removed" file and its replacement as "added", losing the fold relationship and any local edits. `/update-guidance` is for a repo **already on a harness lock** (see [`commands/update-guidance.md`](commands/update-guidance.md)); a repo still carrying pre-merge guidance is not yet in that state.
+>
+> **3. Create the entry files.**
+> - **Preserve before you overwrite.** If `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` already exist with repo-specific content (a prior setup, or a file carrying no `guidance:` header), read them **now** and migrate any repo-specific knowledge they hold (gotchas, the verify gate, conventions, architecture notes) into `CONTEXT.md` (step 4) before the copies below clobber them. Do not lose it.
+> - Copy the profile's process doc (e.g. the profile's `process/<profile>.md`) to `AGENTS.md` at the repo root.
+> - Write `CLAUDE.md` and `GEMINI.md` as **byte-identical copies of `AGENTS.md`** (the same process-doc content and `guidance:` header) — not shims. Each tool auto-loads a different name (Claude → `CLAUDE.md`, Gemini → `GEMINI.md`, Codex → `AGENTS.md`), and a goal-directed agent reads the file it is handed rather than following a pointer to a second one — so the full process lives in all three. The process doc already says to read `CONTEXT.md` first, so the shim's pointer is preserved. This also matters for the pipeline harness, which injects `CLAUDE.md` verbatim: a shim would hand it nothing. `/update-guidance` re-derives all three from the process doc.
+> - Create `.claude/` with symlinks `agents -> ../agents`, `skills -> ../skills`, `commands -> ../commands`, `hooks -> ../hooks`, and **derive** `.claude/settings.json` from the profile's `settings/<profile>.json` (which step 2 already copied in, since it is a registry file). `.claude/settings.json` is a derived copy — like `AGENTS.md` is derived from the process doc — so `/update-guidance` regenerates it when the source settings change. The settings file wires the hooks; they are Claude Code only (Codex and Gemini read the same plain files but do not run hooks).
+>
+> **4. Scaffold `CONTEXT.md`.**
+> **Only if `CONTEXT.md` does not already exist**, copy `templates/CONTEXT.template.md` to `CONTEXT.md`. On a re-bootstrap (e.g. restoring a `local`-mode install on a fresh clone) the populated `CONTEXT.md` is already committed — **keep it**, fill only still-empty `{placeholder}` fields, and never overwrite it with the blank template (it holds repo-specific branch, tracker, env, and operational detail that may not be re-inferable). Then fill it by inspecting the repo:
+> - Read `package.json` / `pyproject.toml` / lockfiles for stack and commands.
+> - Read `README.md` and the top-level tree for architecture and paths.
+> - Read `git remote` and any existing tracker config.
+> - **Verification gate + conventions:** if the repo has a *canonical combined gate* (e.g. `scripts/verify.sh` bundling lint + type + test + smoke), capture it in `commands.verify` — do not lose it by only recording the decomposed lint/test commands. Capture any commit-format convention (e.g. `type(scope): description`) in `conventions.commit_format`.
+> - **Prior-setup entry files:** fold the repo-specific knowledge you preserved in step 3 (before overwriting `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) into the relevant `CONTEXT.md` fields here.
+> - **Env file + Linear token:** look for `.env`, `.env.local`, `.env.*`. Grep them for `LINEAR_API_KEY` — match the *variable name*, never echo the value. Record the file in `env.file` and the variable in `env.linear_token`. If the token sits in a different file than the tooling will source, note it and offer to consolidate **with my confirmation** — never move a secret silently. If the repo is on Linear (`linear: true`) but no token is found, flag it for me to add; do not invent one.
+> Fill what you can confidently infer. For everything you cannot — the tracker invocation and IDs, the branch model, the layer flags, repo-specific principles, gotchas — **ask me, one focused batch of questions.** Do not invent facts. Set the `profile:` and `visibility:` fields to match the choices from step 1.
+>
+> **5. Write `.guidance-lock.yaml`** at the repo root recording, for every file installed: its path, version (from `registry.yaml`), and a short content hash. Record the chosen profile and the source **you actually installed from** — so `/update-guidance` re-fetches that same source, not a different one. For the standard GitHub install, that is the registry's `repo` + `branch` plus the `ref` SHA you cloned. For the local-checkout path, record the **local checkout** instead (`repo:` its path, `branch:` its branch, `ref: local`) — do *not* write the GitHub `main` remote, or the next update silently switches the consumer to `main`, which may differ from the locally tested guidance. Schema:
+>
+> ```yaml
+> # guidance lock — written by the installer, updated by /update-guidance
+> profile: harness
+> # GitHub install (the default): the cloneable remote + released branch + cloned SHA.
+> source: { repo: https://github.com/sluengen/harness.git, branch: main, ref: <git sha> }
+> # Local-checkout install instead: record the checkout you installed from.
+> #   source: { repo: /abs/path/to/harness, branch: <its-branch>, ref: local }
+> files:
+>   skills/code-quality/SKILL.md: { version: 0.4.0, hash: <sha256-first12> }
+>   # ... one line per installed file (skills are the Agent Skills shape skills/<id>/SKILL.md)
+> ```
+>
+> **6. Reconcile `.gitignore` for the visibility mode.** Never ignore `CONTEXT.md` in either mode. Do not remove unrelated ignores.
+> - **committed mode:** the installed files must be committed. Check `.gitignore` for rules excluding any installed path (`.claude/`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `hooks/`, `skills/`, `agents/`, `commands/`, `templates/`, `process/`, `.guidance-lock.yaml`). A repo set up under an older model may ignore `.claude/`, `CLAUDE.md`, or `hooks/` as ephemeral — narrow each such rule so only `.claude/settings.local.json` stays ignored.
+> - **local mode:** only `CONTEXT.md` is committed. Add root-anchored ignores for the internals you installed: `/.claude/`, `/.codex/`, `/.gemini/`, `/CLAUDE.md`, `/AGENTS.md`, `/GEMINI.md`, `/skills/`, `/agents/`, `/commands/`, `/hooks/`, `/templates/`, `/process/`, `/settings/`, `/.guidance-lock.yaml`. Only ignore paths you actually installed (do not mask a directory the repo already owns). Confirm `CONTEXT.md` stays tracked.
+> - **both modes (secret safety):** confirm the env file (`CONTEXT.md` → `env.file`) and any other secret-bearing file are gitignored. Never let a file holding a token become committable. If the env file is not yet ignored, add it.
+> - **per-tool config dirs (`.codex/`, `.gemini/`):** other agent tools generate their own config from the installed files (e.g. Codex writes `.codex/agents/*.toml`). Treat them like `.claude/` — **committed in committed mode** (most of it is portable agent config), **ignored in local mode** (listed above). Narrowly ignore only a genuinely per-machine file if a tool emits one with absolute paths (e.g. an absolute-path hooks config), the way `.claude/settings.local.json` is ignored — not the whole directory.
+>
+> **7. Verify.**
+> - Every file in the lock exists and still carries its `guidance:` header — **except** registry-managed JSON settings (`settings/*.json`), which carry no header; verify their recorded version against `registry.yaml` instead.
+> - `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are byte-identical (one derived process artifact under three names).
+> - `.claude/agents`, `.claude/skills`, `.claude/commands`, `.claude/hooks` resolve.
+> - `CONTEXT.md` has no remaining `{placeholder}` tokens and is **not** git-ignored (always committed).
+> - **committed mode:** `git check-ignore` confirms no installed guidance path is excluded. **local mode:** `git status` shows only `CONTEXT.md` (and the `.gitignore` change) as guidance-related tracked changes; the internals are ignored but still present on disk.
+> Report the visibility mode, what was installed (counts per directory), what you inferred for `CONTEXT.md`, any `.gitignore` rules you reconciled, and what you need me to confirm.
+
+## After bootstrap
+
+- **committed mode:** commit the installed files and `.guidance-lock.yaml`; they travel to any clone or cloud runner.
+- **local mode:** commit `CONTEXT.md` and the `.gitignore` change only; the internals stay local. A fresh clone re-runs this bootstrap to restore them. The lock is local too, so `/update-guidance` needs the guidance present — re-bootstrap first on a clean clone.
+- `CONTEXT.md` is yours to maintain — `/update-guidance` never overwrites it.
+- To pull upstream guidance changes later, run `/update-guidance`: it diffs `.guidance-lock.yaml` against the source `registry.yaml`, auto-pulls files you have not locally edited (hash matches), and surfaces a diff for any you have.

@@ -30,25 +30,25 @@ STALE_PHRASES = [
 ]
 
 
-# --- BOOTSTRAP.md must be shipped (CAL-620) -----------------------------------
+# --- ONBOARDING.md must be shipped (CAL-620) ----------------------------------
 #
-# CLAUDE.md / AGENTS.md / GEMINI.md / RELEASING.md all link to BOOTSTRAP.md as
-# the repeatable-onboarding doc. A doc you reference but do not ship sends anyone
-# who follows the pointer to a 404, so the repo must actually carry it.
+# RELEASING.md links to ONBOARDING.md (§Updating) as the repeatable-onboarding
+# doc. A doc you reference but do not ship sends anyone who follows the pointer
+# to a 404, so the repo must actually carry it.
 #
 # The guard judges the *committed* tree (``git ls-files``), not the working
-# tree, per the CAL-619 git-aware-guard principle: a BOOTSTRAP.md that exists
+# tree, per the CAL-619 git-aware-guard principle: an ONBOARDING.md that exists
 # only on an author's disk must still fail on a clean checkout.
 
-BOOTSTRAP_DOC = REPO_ROOT / "BOOTSTRAP.md"
+ONBOARDING_DOC = REPO_ROOT / "ONBOARDING.md"
 
 
-def test_bootstrap_md_is_tracked() -> None:
-    """BOOTSTRAP.md is referenced across the docs; it must be a committed file."""
-    assert BOOTSTRAP_DOC.resolve() in tracked_files_under("BOOTSTRAP.md"), (
-        "BOOTSTRAP.md is referenced by CLAUDE.md / AGENTS.md / GEMINI.md / "
-        "RELEASING.md, but git does not track it. Ship the onboarding doc you "
-        "reference (CAL-620; the CAL-619 git-aware-guard principle)."
+def test_onboarding_md_is_tracked() -> None:
+    """ONBOARDING.md is referenced across the docs; it must be a committed file."""
+    assert ONBOARDING_DOC.resolve() in tracked_files_under("ONBOARDING.md"), (
+        "ONBOARDING.md is referenced by RELEASING.md (§Updating), but git does "
+        "not track it. Ship the onboarding doc you reference (CAL-620; the "
+        "CAL-619 git-aware-guard principle)."
     )
 
 
@@ -211,10 +211,10 @@ def test_routing_discipline_scoped_to_run_lifecycle() -> None:
 #: agents-repo *retirement* as a past event. specs/ and assessments/ are decision
 #: and audit records, likewise historical.
 ONE_REPO_DOCS = [
-    REPO_ROOT / "BOOTSTRAP.md",
+    REPO_ROOT / "ONBOARDING.md",
     REPO_ROOT / "CONTEXT.md",
     REPO_ROOT / "README.md",
-    REPO_ROOT / "INSTALLER.md",
+    REPO_ROOT / "BOOTSTRAP.md",
 ]
 
 #: Phrases that assert a separate agents *source* repo (the two-repo world). The
@@ -228,7 +228,7 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
     """AC-1: no live doc claims a separate agents *source* repo (CAL-651).
 
     The harness is the guidance source now; the install pulls from this repo and
-    runs the in-repo installer (INSTALLER.md), not an external agents repo.
+    runs the in-repo installer (BOOTSTRAP.md), not an external agents repo.
     """
     if not doc.exists():
         pytest.skip(f"{doc.name} not found")
@@ -236,7 +236,7 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
     assert not hits, (
         f"{doc.name} still describes a separate agents source repo: {hits!r}. "
         "The guidance repo was merged into the harness (D1/D6) — the harness is "
-        "the source. Point the install at the in-repo installer (INSTALLER.md) "
+        "the source. Point the install at the in-repo installer (BOOTSTRAP.md) "
         "and drop the agents-repo framing (CAL-651, AC-1)."
     )
 
@@ -333,19 +333,19 @@ def test_wrapper_pins_allowlist_to_container_workspace() -> None:
     )
 
 
-def test_bootstrap_ignores_both_run_state_dirs() -> None:
+def test_onboarding_ignores_both_run_state_dirs() -> None:
     """AC-3 (CAL-675): the onboarding doc tells a consuming repo to ignore both
     run-state directories.
 
     A run writes the SQLite ledger to ``<repo>/.harness/`` and its worktrees to
-    ``<repo>/.worktrees/harness/`` — *different* paths. BOOTSTRAP step 5 must
+    ``<repo>/.worktrees/harness/`` — *different* paths. ONBOARDING step 5 must
     list both in the `.gitignore` it scaffolds, or a `git add .` after a run can
     stage worktree contents in the consuming repo (the rough edge the cross-repo
     smoke surfaced).
     """
-    text = BOOTSTRAP_DOC.read_text()
+    text = ONBOARDING_DOC.read_text()
     assert ".worktrees/" in text and ".harness/" in text, (
-        "BOOTSTRAP.md must tell a consuming repo to gitignore both `.harness/` "
+        "ONBOARDING.md must tell a consuming repo to gitignore both `.harness/` "
         "(ledger) and `.worktrees/` (run worktrees) — they sit at different "
         "paths, so ignoring only one leaves the other committable (CAL-675, AC-3)."
     )
