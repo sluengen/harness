@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.8 -->
+<!-- guidance:template-context@0.1.9 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -49,6 +49,16 @@ paths:
   infrastructure: {e.g. specs/infrastructure.md — or omit}   # reference spec
   architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here)
   design_system: {path or external repo — or omit}
+# Optional. Gravity-well files where state/branching/rendering accumulate — when a
+# planned or actual diff touches one, the change spec and the review carry a
+# `Watchlist trigger` section (a small behavior-preserving seam extraction, or a
+# recorded deferral with a reason). Repo-owned and preserved across guidance
+# updates (/update-guidance never touches CONTEXT.md); omit it and the trigger is
+# a no-op. Paths are repo-relative; globs allowed. See the `architecture` skill.
+architecture_watchlist:               # optional — omit entirely if this repo opts out
+  files:
+    - {e.g. app/screens/BigScreen.tsx}
+    - {e.g. src/orchestrator/*.py}
 env:
   file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
   linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if linear: false

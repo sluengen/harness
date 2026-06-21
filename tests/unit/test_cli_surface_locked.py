@@ -211,6 +211,116 @@ def test_spec_41_does_not_partially_enumerate_the_command_surface() -> None:
     )
 
 
+# --- Cross-section surface-enumeration lock (CAL-810) -------------------------
+# §11 is the single guarded source of the command surface
+# (``test_spec_command_surface_equals_registered``). §4.1 once kept a *second*,
+# unguarded prose list and drifted (CAL-746/CAL-747); the test above locks §4.1.
+# §1 principle 5 had the same drift one section over — it hand-listed the verb
+# surface as ``start / review / close / status / events / cancel``, a proper
+# subset that omits ``checkpoint``/``reclaim``/``logs``/``runs``/``worktrees``/…
+# and goes stale the next time a verb is added (CAL-810). Rather than lock each
+# section by hand, this locks *every* live SPEC section against the enumeration
+# idiom itself: a ``/``-joined run of backtick command names that presents itself
+# as the verb surface. Two refinements keep it precise:
+#
+# * The ``/`` separator (not "and"/commas) is what marks a deliberate *list*, so
+#   ``the `runs` table and the `events` table`` is left alone.
+# * A real verb-surface list anchors on the audited verbs — you cannot enumerate
+#   "the verbs" and omit ``start``/``review``/``close``. Requiring an audited-verb
+#   anchor leaves alone the ledger ``\`runs\` / \`events\``` tables pair (§4),
+#   whose names merely double as commands but name no audited verb.
+#
+# So the lock fires only on a slash-list that names an audited verb *and* an ops
+# command yet is a proper subset of the registered surface — exactly the §1
+# drift. The audited trio alone (no ops command) and a complete list (not a
+# subset) are both left alone.
+
+#: A ``/``-joined run of two or more backtick-wrapped tokens — the verb-surface
+#: enumeration idiom (`` `a` / `b` / `c` ``). Captured whole so the member tokens
+#: can be read out; prose joined by "and"/commas is deliberately not matched.
+_SLASH_LIST = re.compile(r"`\w+`(?:\s*/\s*`\w+`)+")
+
+
+def _surface_slash_lists(text: str) -> list[set[str]]:
+    """Every ``/``-joined backtick run in *text*, as the set of registered
+    command names it contains (runs naming no registered command are dropped)."""
+    registered = _registered_surface()
+    runs: list[set[str]] = []
+    for run in _SLASH_LIST.findall(text):
+        names = {t for t in re.findall(r"`(\w+)`", run) if t in registered}
+        if names:
+            runs.append(names)
+    return runs
+
+
+def _is_subset_surface_enumeration(names: set[str], registered: set[str]) -> bool:
+    """True when *names* is a slash-list that presents itself as the verb surface
+    (names ≥1 audited verb) yet pulls in an ops command while staying a *proper*
+    subset of the registered surface — the §1 drift CAL-810 locks out."""
+    ops = registered - _AUDITED_VERBS
+    return bool(names & _AUDITED_VERBS) and bool(names & ops) and names != registered
+
+
+def test_no_live_spec_section_handlists_a_command_subset() -> None:
+    """No live SPEC section enumerates a *proper subset* of the command surface.
+
+    AC for CAL-810: §11 is the single guarded source of the command set; any
+    other live section that slash-lists the verbs (as §1 principle 5 did) drifts
+    the moment a verb is added. The by-design audited trio
+    (``start``/``review``/``close``) names no ops command and is allowed; a
+    complete list and §11's fenced surface are allowed; the ledger ``runs`` /
+    ``events`` tables pair names no audited verb and is allowed; a proper subset
+    that presents itself as the verb surface yet pulls in an ops command is not.
+    """
+    registered = _registered_surface()
+    offenders = [
+        sorted(names)
+        for names in _surface_slash_lists(_live_text(SPEC))
+        if _is_subset_surface_enumeration(names, registered)
+    ]
+    assert not offenders, (
+        "A live SPEC section hand-lists a proper subset of the registered "
+        f"command surface: {offenders}. §11 is the single guarded source of the "
+        "command set (`test_spec_command_surface_equals_registered`); name the "
+        "command categories and defer the exact set to §11 instead of repeating "
+        "a slash-list that goes stale when a verb is added (CAL-810)."
+    )
+
+
+@pytest.mark.parametrize(
+    "text, flagged",
+    [
+        # The §1 drift — a proper subset that pulls in ops commands.
+        ("`start` / `review` / `close` / `status` / `events` / `cancel`", True),
+        ("`start` / `status`", True),
+        # Allowed — the by-design audited trio names no ops command.
+        ("`start` / `review` / `close`", False),
+        # Allowed — the ledger tables pair (§4) names no audited verb, so it is
+        # not read as a verb-surface enumeration even though both names double as
+        # commands.
+        ("the `runs` / `events` tables are the whole audit trail", False),
+        # Allowed — non-command slash-lists (refusal reasons, verdicts).
+        ("`no_run` / `dirty_worktree` / `no_passing_review`", False),
+        ("`pass` / `fail` / `defer`", False),
+        # Allowed — a lone command reference is not an enumeration.
+        ("the `runs` ledger row", False),
+        # Allowed — "and"/comma prose is not the slash-list idiom.
+        ("the `runs` table and the `events` table", False),
+    ],
+)
+def test_surface_slash_list_detection(text: str, flagged: bool) -> None:
+    """The slash-list detector flags a proper-subset verb enumeration that
+    anchors on an audited verb and pulls in an ops command, but leaves the
+    audited trio, the ledger tables pair, non-command lists, lone references,
+    and "and"/comma prose alone."""
+    registered = _registered_surface()
+    hit = any(
+        _is_subset_surface_enumeration(names, registered)
+        for names in _surface_slash_lists(text)
+    )
+    assert hit is flagged
+
+
 def _real_options() -> dict[str, set[str]]:
     """Map every command (incl. ``worktrees list`` / ``worktrees cleanup``) to the
     set of ``--long`` options it actually exposes, via the live Typer/click app."""

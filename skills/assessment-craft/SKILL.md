@@ -2,7 +2,7 @@
 name: assessment-craft
 description: Use when running a periodic codebase or guidance audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.2.3 -->
+<!-- guidance:assessment-craft@0.3.0 -->
 # Assessment Craft
 
 Shared knowledge for the `steward` whenever it periodically audits a codebase or the guidance itself. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills (`guidance-coherence` for `system`, the code-domain skills for `code`).
@@ -50,6 +50,10 @@ Rules:
 - **Cite at least one finding as evidence.** No insight without a pattern behind it.
 - **Zero insights is legitimate.** Say "no insights this cycle" rather than inventing one.
 
+## Narrative scopes — when a report is more than findings
+
+Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture --deep`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, honest severity. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
+
 ## What you are not looking for
 
 Style preferences, formatting nits, complexity that is justified by the problem, intentional deviations that are improvements, or "future work" that is not causing a problem now.
@@ -58,4 +62,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
