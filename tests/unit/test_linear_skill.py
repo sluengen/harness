@@ -161,7 +161,7 @@ _LIVE_ROOT_FILES = (
     "CLAUDE.md",
     "AGENTS.md",
     "GEMINI.md",
-    "INSTALLER.md",
+    "BOOTSTRAP.md",
     "SPEC.md",
     "README.md",
     "registry.yaml",

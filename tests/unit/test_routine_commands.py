@@ -160,12 +160,12 @@ def test_process_doc_and_mirrors_reference_routines() -> None:
 
 def test_process_doc_mirrors_byte_identical() -> None:
     """The three entry-file mirrors stay byte-identical to the process doc — one
-    derived process artifact under three names (INSTALLER.md)."""
+    derived process artifact under three names (BOOTSTRAP.md)."""
     canonical = PROCESS_DOC.read_text()
     drifted = [m.relative_to(REPO_ROOT) for m in MIRRORS if m.read_text() != canonical]
     assert not drifted, (
         f"{drifted} drifted from process/harness.md — AGENTS/CLAUDE/GEMINI.md "
-        "must be byte-identical copies (INSTALLER.md)."
+        "must be byte-identical copies (BOOTSTRAP.md)."
     )
 
 

@@ -405,20 +405,22 @@ def test_freshness_hook_runs_in_source_mode(tmp_path: Path) -> None:
 
 
 def test_freshness_hook_watches_rehomed_installer(tmp_path: Path) -> None:
-    """The hook treats the re-homed installer (``INSTALLER.md``) as a meta file.
+    """The hook treats the installer (``BOOTSTRAP.md``) as a meta file.
 
-    Re-homing the generic installer off ``BOOTSTRAP.md`` only works if the
-    freshness hook's ``META`` set follows the rename — otherwise edits to the
-    installer bypass version-drift and bump reminders, letting its header and
-    registry version silently diverge (CAL-646 review P2). Isolated ``TMPDIR``
-    defeats the 4h debounce.
+    The installer's filename has moved over time — the agents-repo's
+    ``BOOTSTRAP.md`` became ``INSTALLER.md`` on the merge (CAL-646 review P2),
+    then realigned back to ``BOOTSTRAP.md`` so its filename matches its
+    ``bootstrap`` id (CAL-835). Each move only works if the freshness hook's
+    ``META`` set follows the current name — otherwise edits to the installer
+    bypass version-drift and bump reminders, letting its header and registry
+    version silently diverge. Isolated ``TMPDIR`` defeats the 4h debounce.
     """
     node = shutil.which("node")
     if node is None:
         pytest.skip("node not available")
     payload = {
         "tool_name": "Edit",
-        "tool_input": {"file_path": str(REPO_ROOT / "INSTALLER.md")},
+        "tool_input": {"file_path": str(REPO_ROOT / "BOOTSTRAP.md")},
     }
     env = {**os.environ, "TMPDIR": str(tmp_path)}
     proc = subprocess.run(
@@ -432,9 +434,9 @@ def test_freshness_hook_watches_rehomed_installer(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, f"hook errored: {proc.stderr}"
     ctx = json.loads(proc.stdout).get("additionalContext", "")
-    assert "INSTALLER.md" in ctx, (
+    assert "BOOTSTRAP.md" in ctx, (
         "editing the re-homed installer must trigger a meta bump/drift reminder "
-        f"(the hook's META set must include INSTALLER.md); got: {ctx!r}"
+        f"(the hook's META set must include BOOTSTRAP.md); got: {ctx!r}"
     )
     assert "installed guidance" not in ctx, (
         f"hook must be in SOURCE mode, not CONSUMER mode; got: {ctx!r}"
@@ -460,7 +462,7 @@ def test_freshness_hook_ignores_registry_excluded_repo_file(tmp_path: Path) -> N
     (tmp_path / "registry.yaml").write_text(
         "# guidance:registry@0.4.0\nregistry_format: 1\nfiles:\n"
         "  commands/start.md: { id: start, version: 0.2.1, profiles: [harness] }\n"
-        "meta:\n  INSTALLER.md: { id: bootstrap, version: 0.4.2 }\n"
+        "meta:\n  BOOTSTRAP.md: { id: bootstrap, version: 0.4.2 }\n"
     )
     (tmp_path / "commands").mkdir()
     # A genuinely repo-owned command: under a surface dir, headerless, not .json,
@@ -492,7 +494,7 @@ def test_freshness_hook_always_checks_meta_files(tmp_path: Path) -> None:
     """Meta files are checked regardless of registry membership.
 
     The registry-membership gate must apply only to distributable *surface*
-    files — not to meta files (``registry.yaml`` / ``INSTALLER.md``). Otherwise a
+    files — not to meta files (``registry.yaml`` / ``BOOTSTRAP.md``). Otherwise a
     malformed registry edit that drops its own ``meta:`` self-entry would make
     ``registryMember`` return false and silently skip the bump/drift reminder for
     the very file being broken (CAL-646 review). This fixture writes a registry
@@ -506,7 +508,7 @@ def test_freshness_hook_always_checks_meta_files(tmp_path: Path) -> None:
     (tmp_path / "registry.yaml").write_text(
         "# guidance:registry@0.4.0\nregistry_format: 1\nfiles:\n"
         "  skills/code-quality.md: { id: code-quality, version: 0.4.0, profiles: [harness] }\n"
-        "meta:\n  INSTALLER.md: { id: bootstrap, version: 0.4.2 }\n"
+        "meta:\n  BOOTSTRAP.md: { id: bootstrap, version: 0.4.2 }\n"
     )
     payload = {
         "tool_name": "Edit",
@@ -546,7 +548,7 @@ def test_freshness_hook_warns_on_unregistered_headered_surface(tmp_path: Path) -
     (tmp_path / "registry.yaml").write_text(
         "# guidance:registry@0.4.0\nregistry_format: 1\nfiles:\n"
         "  skills/code-quality.md: { id: code-quality, version: 0.4.0, profiles: [harness] }\n"
-        "meta:\n  INSTALLER.md: { id: bootstrap, version: 0.4.2 }\n"
+        "meta:\n  BOOTSTRAP.md: { id: bootstrap, version: 0.4.2 }\n"
     )
     (tmp_path / "skills").mkdir()
     new_file = tmp_path / "skills" / "new-skill.md"
@@ -589,7 +591,7 @@ def test_freshness_hook_warns_on_unregistered_json_settings(tmp_path: Path) -> N
     (tmp_path / "registry.yaml").write_text(
         "# guidance:registry@0.4.0\nregistry_format: 1\nfiles:\n"
         "  skills/code-quality.md: { id: code-quality, version: 0.4.0, profiles: [harness] }\n"
-        "meta:\n  INSTALLER.md: { id: bootstrap, version: 0.4.2 }\n"
+        "meta:\n  BOOTSTRAP.md: { id: bootstrap, version: 0.4.2 }\n"
     )
     (tmp_path / "settings").mkdir()
     new_json = tmp_path / "settings" / "newprofile.json"
