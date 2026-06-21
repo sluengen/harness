@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.4 -->
+<!-- guidance:process-harness@0.4.5 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -97,7 +97,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 
 The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
 
-For example, in the harness repo the harness's own commands are namespaced under **`/harness`** (`/harness run`, `/harness ingest`, and the unattended-loop commands `/harness routine build` / `/harness routine quality`): its "start" means *run the harness pipeline*, not *begin the agent-led process*, so it cannot take the bare `/start` name. (The installer copies the guidance's `/start` to `commands/start.md`, so the repo's own command must move out of that path first — see `INSTALLER.md` step 2.) Other repos apply the same rule to their own commands, if any. The `/harness routine` commands version the logic of the unattended loops (Build hourly, Quality idle/weekly) so it lives in the repo, not only in a scheduled-task config — *version the logic, not the schedule*; they are local-trigger only.
+For example, in the harness repo the harness's own commands are namespaced under **`/harness`** (`/harness run`, `/harness ingest`, and the unattended-loop commands `/harness routine build` / `/harness routine quality`): its "start" means *run the harness pipeline*, not *begin the agent-led process*, so it cannot take the bare `/start` name. (The installer copies the guidance's `/start` to `commands/start.md`, so the repo's own command must move out of that path first — see `BOOTSTRAP.md` step 2.) Other repos apply the same rule to their own commands, if any. The `/harness routine` commands version the logic of the unattended loops (Build hourly, Quality idle/weekly) so it lives in the repo, not only in a scheduled-task config — *version the logic, not the schedule*; they are local-trigger only.
 
 ## When you are confused
 

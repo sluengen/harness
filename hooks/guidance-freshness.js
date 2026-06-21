@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.4
+// guidance:hook-guidance-freshness@0.3.5
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -10,7 +10,7 @@
  *   - Version drift: a distributable/meta file whose header no longer matches its
  *     registry version. JSON settings carry no header — the registry version is
  *     authoritative, so they get the generic bump reminder instead.
- *   - meta files (INSTALLER.md, registry.yaml) are watched too, not just subdirs.
+ *   - meta files (BOOTSTRAP.md, registry.yaml) are watched too, not just subdirs.
  *   - Leak guard: a universal prose file (skills/agents/commands/process/templates)
  *     containing a repo proper-noun — a ticket-ID-shaped token — which the
  *     universal/repo-specific rule forbids (AGENTS.md). What system-steward greps
@@ -32,7 +32,7 @@ const D_LEAK = path.join(os.tmpdir(), "guidance-freshness-leak");
 const D_ENTRY = path.join(os.tmpdir(), "guidance-freshness-entry");
 
 const DIST = /^(skills|agents|commands|templates|process|hooks|settings)\//;
-const META = /^(INSTALLER\.md|registry\.yaml)$/;
+const META = /^(BOOTSTRAP\.md|registry\.yaml)$/;
 const ENTRY = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);      // triplicated entry files — must match
 const PROSE = /^(skills|agents|commands|process|templates)\//;       // universal prose — leak-checked
 // Ticket-ID shape (e.g. CAL-42), excluding obvious standards refs.
@@ -106,7 +106,7 @@ function main() {
     // authoritative) — a new, unregistered settings file must still draw the
     // register reminder. A non-member that carries a header is likewise a new
     // guidance file not yet registered — keep checking it. Meta files
-    // (registry.yaml, INSTALLER.md) are always checked (isDist is false for
+    // (registry.yaml, BOOTSTRAP.md) are always checked (isDist is false for
     // them), so a malformed registry that drops its own meta entry can't silence
     // the reminder for the very file being broken.
     if (isDist && !registryMember(registry, relPath) &&

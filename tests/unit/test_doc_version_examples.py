@@ -5,7 +5,7 @@ of ``harness version`` output must track the real version.
 Onboarding/ops docs show that output as a sanity-check example, e.g.
 ``docker run --rm harness:dev version  # → harness 0.1.0``. Those examples
 hardcode a version that drifts every release: at the ``0.2.1`` release both
-``BOOTSTRAP.md`` and ``docker/README.md`` still showed ``harness 0.1.0`` — a doc
+``ONBOARDING.md`` and ``docker/README.md`` still showed ``harness 0.1.0`` — a doc
 stating behaviour the code no longer has.
 
 This guard turns that recurring find→fix into a suite gate: every
@@ -29,7 +29,7 @@ Acceptance criteria:
 * **AC-1** — a live doc showing ``harness <old>`` where ``<old>`` != the current
   version fails the guard. Proven by
   :func:`test_doc_version_examples_match_current_version` (it failed on
-  ``BOOTSTRAP.md`` and ``docker/README.md`` showing ``harness 0.1.0`` before
+  ``ONBOARDING.md`` and ``docker/README.md`` showing ``harness 0.1.0`` before
   this change).
 * **AC-2** — on the current tree every ``harness X.Y.Z`` example equals
   ``harness.__version__``, so the guard passes.
@@ -74,7 +74,7 @@ def _live_docs() -> list[Path]:
 def test_live_docs_are_discovered() -> None:
     """Sanity: the doc set is non-empty (a broken glob would vacuously pass)."""
     names = {p.name for p in _live_docs()}
-    assert "BOOTSTRAP.md" in names
+    assert "ONBOARDING.md" in names
     assert "README.md" in {p.relative_to(_REPO_ROOT).name for p in _live_docs()}
 
 

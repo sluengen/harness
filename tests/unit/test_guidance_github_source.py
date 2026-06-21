@@ -11,7 +11,7 @@ documented, and stays documented:
 
 * **AC-1** — ``/update-guidance`` pulls from a GitHub remote ref defined in the
   consumer lock's ``source: { repo, branch, ref }``.
-* **AC-2** — ``bootstrap`` (``INSTALLER.md``) installs from GitHub ``main``, and
+* **AC-2** — ``bootstrap`` (``BOOTSTRAP.md``) installs from GitHub ``main``, and
   ``registry.yaml``'s ``source.repo`` is a concrete repo (not an ``<owner>``
   placeholder).
 * **AC-3** — the dev-dogfood vs. main-release path and the release-coupling
@@ -27,7 +27,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "registry.yaml"
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
-INSTALLER = REPO_ROOT / "INSTALLER.md"
+BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
 PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
 
 SOURCE_REPO = "sluengen/harness"
@@ -104,34 +104,34 @@ def test_update_guidance_pulls_from_github_remote() -> None:
 
 
 def test_installer_lock_schema_has_repo_branch_ref() -> None:
-    """``INSTALLER.md`` lock schema is ``source: { repo, branch, ref }`` (AC-1).
+    """``BOOTSTRAP.md`` lock schema is ``source: { repo, branch, ref }`` (AC-1).
 
     The schema the installer writes is the consumer-side lock ``/update-guidance``
     later reads; it must carry the GitHub remote (``repo``/``branch``), not just a
     ``name``/``ref``.
     """
-    text = INSTALLER.read_text()
+    text = BOOTSTRAP.read_text()
     m = re.search(r"source:\s*\{([^}]*)\}", text)
-    assert m, "INSTALLER.md has no `source: { ... }` lock schema example"
+    assert m, "BOOTSTRAP.md has no `source: { ... }` lock schema example"
     body = m.group(1)
     for key in ("repo", "branch", "ref"):
         assert key in body, (
-            f"INSTALLER.md lock schema `source: {{ ... }}` must include `{key}` "
+            f"BOOTSTRAP.md lock schema `source: {{ ... }}` must include `{key}` "
             f"(AC-1); got: {body.strip()!r}"
         )
 
 
 def test_installer_installs_from_github_main() -> None:
-    """``INSTALLER.md`` installs the guidance from GitHub ``main`` (AC-2).
+    """``BOOTSTRAP.md`` installs the guidance from GitHub ``main`` (AC-2).
 
     External repos pull the released ``main`` ref, not in-flight ``dev``.
     """
-    text = INSTALLER.read_text()
+    text = BOOTSTRAP.read_text()
     assert re.search(r"git[Hh]ub", text), (
-        "INSTALLER.md must name GitHub as the install source (AC-2)"
+        "BOOTSTRAP.md must name GitHub as the install source (AC-2)"
     )
     assert "main" in text, (
-        "INSTALLER.md must name `main` as the branch external repos install from "
+        "BOOTSTRAP.md must name `main` as the branch external repos install from "
         "(AC-2)"
     )
 
