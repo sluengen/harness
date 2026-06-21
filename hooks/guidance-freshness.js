@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.3
+// guidance:hook-guidance-freshness@0.3.4
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -26,6 +26,7 @@ const os = require("os");
 
 const TTL_MS = 4 * 60 * 60 * 1000;
 const D_DRIFT = path.join(os.tmpdir(), "guidance-freshness-drift");
+const D_SELFVER = path.join(os.tmpdir(), "guidance-freshness-selfver");
 const D_GENERIC = path.join(os.tmpdir(), "guidance-freshness-generic");
 const D_LEAK = path.join(os.tmpdir(), "guidance-freshness-leak");
 const D_ENTRY = path.join(os.tmpdir(), "guidance-freshness-entry");
@@ -125,10 +126,23 @@ function main() {
     if (!relPath.endsWith(".json")) {
       const fileVer = headerVersion(read(path.join(cwd, relPath)));
       const regVer = registryVersion(registry, relPath);
-      if (fileVer && regVer && fileVer !== regVer && !recently(D_DRIFT)) {
-        mark(D_DRIFT);
-        return done(`[GUIDANCE-FRESHNESS] ${relPath} header says @${fileVer} but registry.yaml says @${regVer}. ` +
-          `Make them match — /update-guidance and the integrity check key off the version.`);
+      if (fileVer && regVer && fileVer !== regVer) {
+        // registry.yaml is self-referential: its `# guidance:registry@` header
+        // stamp and its own row in the `meta:` table both live in this one file,
+        // so a one-sided bump is easy to miss. Give that case a DEDICATED debounce
+        // marker (D_SELFVER) so an unrelated file's drift warning in the same
+        // window can't mask it, and a message naming both spots + the guard.
+        const self = relPath === "registry.yaml";
+        const marker = self ? D_SELFVER : D_DRIFT;
+        if (!recently(marker)) {
+          mark(marker);
+          return done(self
+            ? `[GUIDANCE-FRESHNESS] registry.yaml carries its version in TWO places and they disagree: ` +
+              `the \`# guidance:registry@${fileVer}\` header vs its \`meta:\` self-entry @${regVer}. ` +
+              `Bump BOTH — test_registry_header_matches_meta_self_version enforces the parity.`
+            : `[GUIDANCE-FRESHNESS] ${relPath} header says @${fileVer} but registry.yaml says @${regVer}. ` +
+              `Make them match — /update-guidance and the integrity check key off the version.`);
+        }
       }
     }
     if (!recently(D_GENERIC)) {
