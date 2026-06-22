@@ -686,3 +686,120 @@ def test_ac6_principle_recorded_in_architecture_principles() -> None:
         "architecture-principles.md must record the 'a review engine is a CLI "
         "subprocess emitting the SUBMIT: contract — never the Agent SDK' principle"
     )
+
+
+# ---------------------------------------------------------------------------
+# CAL-866 — a review-engine sandbox/init failure is INFRA, not a code-review
+# ``fail``.
+#
+# When ``codex exec --sandbox read-only`` runs inside a non-privileged Docker
+# container, bwrap cannot create a user namespace (stock Docker seccomp blocks
+# CLONE_NEWUSER) and exits non-zero with the marker below on STDERR.  Before
+# CAL-866 this fell through to ``scan_submit_line`` and was recorded as
+# ``verdict="fail"`` + the no-SUBMIT sentinel — indistinguishable from "the
+# reviewer genuinely rejected the diff".  The fix mirrors ``is_codex_usage_limit``
+# (a narrow stderr match + non-zero exit) and surfaces the failure as a distinct,
+# machine-readable infra signal: a dedicated exit code + ``reason`` on the error
+# JSON, NOT a verdict.  The real captured line was:
+#
+#   bwrap: No permissions to create a new namespace
+#
+# The lowercased invariant core is the marker.
+# ---------------------------------------------------------------------------
+
+_REAL_SANDBOX_INIT_STDERR = (
+    "OpenAI Codex v0.137.0\n"
+    "--------\n"
+    "bwrap: No permissions to create a new namespace\n"
+)
+
+
+# AC-1 / AC-2: the matcher is true on the captured real signal and narrow —
+# false on a clean exit and on an ordinary failure that merely mentions
+# "namespace".
+
+
+def test_cal866_sandbox_matcher_true_on_captured_real_signal() -> None:
+    assert review_mod.is_sandbox_init_failure(_REAL_SANDBOX_INIT_STDERR, 1) is True
+
+
+def test_cal866_sandbox_matcher_false_on_clean_exit() -> None:
+    """A zero exit never counts as a sandbox failure (narrow match)."""
+    assert review_mod.is_sandbox_init_failure(_REAL_SANDBOX_INIT_STDERR, 0) is False
+
+
+def test_cal866_sandbox_matcher_false_on_near_miss_failure() -> None:
+    """An ordinary failure mentioning 'namespace' must NOT count as infra."""
+    near_miss = "ERROR: namespace 'foo' already registered in the registry\n"
+    assert review_mod.is_sandbox_init_failure(near_miss, 1) is False
+
+
+def test_cal866_sandbox_and_usage_limit_detectors_are_disjoint() -> None:
+    """The two infra detectors never co-fire — distinct stderr phrases (AC-c)."""
+    assert review_mod.is_sandbox_init_failure(_REAL_CODEX_USAGE_LIMIT_STDERR, 1) is False
+    assert review_mod.is_codex_usage_limit(_REAL_SANDBOX_INIT_STDERR, 1) is False
+
+
+# AC-1 / AC-3: a sandbox-init failure surfaces as a distinct infra signal —
+# a dedicated non-zero exit + a machine-readable ``reason`` — and is NEVER
+# recorded as a verdict (no ``pass``, no ``fail``, not swallowed).
+
+
+def test_cal866_sandbox_init_failure_surfaces_as_infra_not_fail(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner("", stderr=_REAL_SANDBOX_INIT_STDERR, returncode=1)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+
+    # Distinct, non-zero exit (not a recorded review's exit 0) — the dedicated
+    # infra-failure code, separate from "unexpected error" (1) / "no run" (2).
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert result.exit_code not in (0, 1, 2)
+
+    payload = json.loads(result.output)
+    # Machine-readable signal — the orchestrator keys on ``reason``.
+    assert payload["reason"] == "sandbox_init_failure"
+    assert "error" in payload
+
+    # No verdict was recorded: an infra failure must NOT read as pass/fail and
+    # must NOT be swallowed into the ledger as a review event.
+    assert fetch_review_events(db_path) == []
+
+
+def test_cal866_sandbox_init_failure_not_recorded_as_fail_verdict(
+    repo: Path, db_path: Path
+) -> None:
+    """Regression for the conflation bug: the bwrap wall is no longer a fail."""
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner("", stderr=_REAL_SANDBOX_INIT_STDERR, returncode=1)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
+    # The pre-fix bug recorded verdict="fail" + the no-SUBMIT sentinel; assert it
+    # no longer does (no review event at all, so certainly not a fail).
+    events = fetch_review_events(db_path)
+    assert all(e["data"].get("verdict") != "fail" for e in events)
+
+
+# AC-b: a genuine no-SUBMIT on a CLEAN exit still records a code-review ``fail``
+# — the infra detector must not capture an ordinary rejected/empty review.
+
+
+def test_cal866_genuine_no_submit_on_clean_exit_still_fails(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    # Reviewer ran fine (exit 0) but emitted no SUBMIT line — a real code-review
+    # outcome, NOT infra. Must stay a recorded fail + sentinel, exit 0.
+    runner = _make_runner("I reviewed it and have nothing structured to add.\n", returncode=0)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    events = fetch_review_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["verdict"] == "fail"
+    assert SENTINEL in events[0]["data"]["issues"]
