@@ -46,6 +46,13 @@ Exit codes (mirroring ``harness start``):
       agent's job, not this verb's).
 * 1 — unexpected error (git failure, DB error).
 * 2 — invocation error: no open run resolved for the worktree.
+* 3 — infra failure: the review engine could not run at all (e.g. a
+      sandbox/namespace-init wall — ``codex``/bwrap cannot create a user
+      namespace in a non-privileged container).  Surfaced distinctly with a
+      machine-readable ``reason`` so the orchestrator can tell "the environment
+      couldn't run the review" apart from "the diff was rejected" (CAL-866).
+      This is NOT a code-review ``fail`` and NOT shippable, so it does not reuse
+      ``defer`` or record a verdict — no review event is written.
 """
 
 from __future__ import annotations
@@ -66,6 +73,11 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
 
+# size: one cohesive verb — the review prompt, bounded output model, SUBMIT-line
+# scanner, both engine-failure detectors (usage-limit → Claude fallback,
+# sandbox-init → infra exit; CAL-702/CAL-866), and the single-event-loop
+# orchestration. The detectors have one caller (`_run_review`); splitting them
+# off to chase the 500-line limit would fragment the verb, not clarify it.
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -73,6 +85,9 @@ __all__ = [
     "Engine",
     "RunResult",
     "is_codex_usage_limit",
+    "is_sandbox_init_failure",
+    "EXIT_INFRA_FAILURE",
+    "SANDBOX_INIT_REASON",
 ]
 
 # Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
@@ -160,12 +175,19 @@ class ReviewOutput(BaseModel):
 
 
 class _ReviewError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
+    """Internal control-flow exception carrying a message and an exit code.
 
-    def __init__(self, message: str, code: int) -> None:
+    ``reason`` is an optional stable, machine-readable tag emitted on the error
+    JSON (mirroring ``close``'s ``{"error", "reason"}`` refusal shape) so a
+    caller can branch on the *kind* of failure — e.g. an infra wall vs an
+    unexpected error — rather than string-matching the human message (CAL-866).
+    """
+
+    def __init__(self, message: str, code: int, *, reason: str | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
+        self.reason = reason
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +334,49 @@ def is_codex_usage_limit(stderr: str, returncode: int) -> bool:
     return _CODEX_USAGE_LIMIT_MARKER in stderr.lower()
 
 
+# ---------------------------------------------------------------------------
+# Review-engine sandbox/init-failure detection (CAL-866)
+# ---------------------------------------------------------------------------
+
+# The stable phrase **bwrap** prints to stderr when it cannot create a user
+# namespace — e.g. ``codex exec --sandbox read-only`` running inside a
+# non-privileged Docker container whose seccomp profile blocks ``CLONE_NEWUSER``.
+# The real captured line was:
+#
+#   bwrap: No permissions to create a new namespace
+#
+# This is an *environment* failure: the engine never got far enough to review
+# anything.  Lowercased invariant core below; the ``bwrap:`` prefix is dropped so
+# the match survives a differently-prefixed wrapper, while staying specific
+# enough that an ordinary failure mentioning "namespace" does not match.
+_SANDBOX_INIT_MARKER = "no permissions to create a new namespace"
+
+# Exit code for an infra failure (the review engine could not run at all).
+# Distinct from a code-review ``fail`` (exit 0), an unexpected error (1), and an
+# invocation error (2) so the orchestrator can tell an environment wall from a
+# rejected diff (CAL-866).
+EXIT_INFRA_FAILURE = 3
+
+# Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
+SANDBOX_INIT_REASON = "sandbox_init_failure"
+
+
+def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
+    """True iff a review engine failed because its sandbox could not initialize.
+
+    Mirrors :func:`is_codex_usage_limit`: a narrow stderr match (the stable
+    bwrap namespace phrase, case-insensitive) on a non-zero exit.  Such a failure
+    is *infra*, not a code-review verdict — the engine never reviewed the diff —
+    so the verb surfaces it distinctly (a dedicated exit + ``reason``) instead of
+    letting it fall through to a recorded ``fail``.  The narrowness keeps an
+    ordinary review failure a visible ``fail``: a clean exit, or a failure
+    without the marker, returns ``False``.
+    """
+    if returncode == 0:
+        return False
+    return _SANDBOX_INIT_MARKER in stderr.lower()
+
+
 async def _invoke_engine(runner: Runner, engine: Engine, cwd: Path) -> RunResult:
     """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``."""
     try:
@@ -377,7 +442,12 @@ def review_command(
         )
     except _ReviewError as exc:
         if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
+            payload: dict[str, str] = {"error": exc.message}
+            # A stable ``reason`` lets the orchestrator branch on the failure
+            # kind (e.g. an infra wall) without parsing the human message.
+            if exc.reason is not None:
+                payload["reason"] = exc.reason
+            typer.echo(json.dumps(payload))
         else:
             typer.echo(exc.message, err=True)
         raise typer.Exit(code=exc.code) from exc
@@ -427,6 +497,26 @@ async def _run_review(
     fallback_from: Engine | None = None
 
     result = await _invoke_engine(runner, engine, Path(worktree_path))
+
+    # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
+    # namespace in a non-privileged container) is INFRA, not a verdict — the
+    # engine never reviewed the diff.  Surface it distinctly (a dedicated exit +
+    # machine-readable ``reason``) so the orchestrator can tell an environment
+    # wall from a rejected diff (CAL-866).  It is NOT shippable, so — unlike a
+    # usage-limit, which degrades to a Claude verdict — it does NOT fall back,
+    # does NOT reuse ``defer``, and records no review event: a non-zero exit
+    # keeps it from ever reading as a pass or being swallowed.
+    if is_sandbox_init_failure(result.stderr, result.returncode):
+        raise _ReviewError(
+            "review engine could not initialize its sandbox (bwrap: no "
+            "permissions to create a new namespace); this is an environment/infra "
+            "failure, not a code-review verdict — the engine never reviewed the "
+            "diff. Run review where the engine can create a user namespace, or "
+            "use a different --engine.",
+            EXIT_INFRA_FAILURE,
+            reason=SANDBOX_INIT_REASON,
+        )
+
     if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
         fallback_from = "codex"
         engine_used = "claude"
