@@ -50,7 +50,7 @@ files:
   skills/architecture/SKILL.md: { id: architecture,             version: 0.6.0, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
-  skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.0, profiles: [harness] }
+  skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.1, profiles: [harness] }
   skills/linear/SKILL.md: { id: linear,                       version: 0.4.1, profiles: [harness] }
   skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.3.0, profiles: [harness] }
   skills/guidance-coherence/SKILL.md: { id: guidance-coherence,       version: 0.1.0, profiles: [harness] }
