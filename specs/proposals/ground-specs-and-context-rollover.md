@@ -44,6 +44,12 @@ Both trace to `engineering-principles`: smallest change that fixes the real fail
 - **D2 → concrete named facts only.** The verify rule is scoped to facts that name a **file / function / flag / version / decision** — the checkable, staleness-prone ones — keeping grounding proportionate rather than turning every spec into a research essay.
 - **D3 → build WS-B now, alongside WS-A.** Not deferred. The two are independent (grounding guidance vs context-rollover protocol); they ship in parallel with no blocking relation.
 
+### WS-A delivery revised 2026-06-30 — research subagent (primary), inline fallback
+
+The accepted WS-A recommendation was **A1** (inline self-grounding by the executor). On further design discussion the *delivery mechanism* was re-scoped toward **A2**: the agent-led `/start` flow dispatches a read-only **`researcher` agent** that investigates current reality in its own context and returns a distilled **grounding brief** to the executing agent alongside the change spec. Rationale — the *double whammy*: the executor's context is saved (only the brief enters its window, not the raw investigation) and a dedicated read-only pass grounds deeper, free of build-narrative momentum (DoorDash's isolated research phase; the same pattern as the Explore subagent). Inline self-grounding (the original A1 rule) is **retained as the fallback** where no sub-agent host is available, so grounding always happens.
+
+The grounding **contract is unchanged** (D1/D2 still hold): verify facts naming a file / function / flag / version / decision against current code, recorded artifact + guard — the brief *is* the recorded Grounding artifact. The deterministic `start` CLI verb is **not** modified (it stays deterministic); dispatch lives in the agent-led flow. An extra agent per ticket interacts with the spend breakers (`harden-loop-layer` WS1) — it is a context-quality trade, not a token saving. Tracked in the WS-A change spec.
+
 ## Open decisions
 
 | Decision | Who decides | Recorded in |
