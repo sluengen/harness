@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.1 -->
+<!-- guidance:harness@0.1.2 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -76,7 +76,7 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 
 Act on `verdict`:
 
-- **`fail`** — fix the listed `issues` in the worktree (fix the root cause, not just the cited line), then **re-run `harness review`**. This is the `(fix → review)*` loop; repeat until the verdict is `pass` or `defer`. Each new review binds to the new HEAD.
+- **`fail`** — fix the listed `issues` in the worktree (fix the root cause, not just the cited line), then **re-run `harness review`**. This is the `(fix → review)*` loop; each new review binds to the new HEAD. The loop is **bounded** by one stop rule (the same one `agents/reviewer.md` states and the `review` verb enforces, thresholds in `CONTEXT.md` → `loop:`): cycles 1–3 run unconditionally; after the 3rd, assess convergence on each FAIL before continuing (the verb flags this with a `convergence_check_required` advisory); and the run **stops and escalates on reaching the 6th review→fix cycle regardless** — a 6th `harness review` is refused with `reason=review_cycle_ceiling` (a `90`-minute per-run wall-clock budget trips the same way, `reason=wall_clock_budget`). On a breaker refusal, **stop and escalate to the human** — do not work around it; the loop is bounded out for a reason.
 - **`defer`** — the implementation is shippable, but the review surfaced a genuinely out-of-scope finding (needs its own spec or a redesign). Handle the finding by **filing a follow-up** — use `/harness ingest` to create a child ticket capturing it — then proceed to close.
 - **`pass`** — proceed to close.
 

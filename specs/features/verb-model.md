@@ -42,16 +42,27 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
-- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`)
-- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`) — the engine's full reasoning stays inside the verb (context economy)
+- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at }` (and optional `commit_message` / `deferred_brief`)
+- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is recorded as `verdict='fail'` with the sentinel issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a bad reviewer, it records the failure.
 
 The agent acts on the verdict:
 
-- `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD.
+- `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD. The loop is **bounded** by the spend breakers below.
 - `defer` → the implementation is shippable, but the review surfaced a genuinely out-of-scope finding; file a follow-up for it. Note the close gate opens **only** on a `verdict=pass` (`harness/cli/close.py` queries `verdict='pass'`; a run with only a `defer` is refused `no_passing_review`), so to close you still need a passing review bound to HEAD — obtain one before closing.
 - `pass` → proceed to close.
+
+#### Scenario: the spend breakers bound the fix loop
+
+The `review` verb is the loop boundary, so it enforces two **ledger-backed spend breakers** there (`harness/loop_budget.py`; thresholds read from `CONTEXT.md` → `loop:`, defaults `max_review_cycles: 6` / `wall_clock_budget_minutes: 90`). The harness cannot see the orchestrating session's token meter, but it can observe the ledger — so it bounds the *behaviours* that burn tokens:
+
+- GIVEN a run that has already recorded **5** `review` events
+- WHEN the agent runs `harness review` a 6th time
+- THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `4` with `{ "error": ..., "reason": "review_cycle_ceiling" }` — the run stops and escalates to the user (cycles 1–3 run unconditionally; cycles 4–5 carry a `convergence_check_required` advisory on a fail so the agent assesses convergence; the 6th is the hard ceiling, double the unconditional three).
+- AND likewise, GIVEN a run whose `started_at` is older than the 90-minute wall-clock budget, WHEN the agent runs `harness review`, THEN the verb refuses the same way with `reason=wall_clock_budget` (deliberately mirroring the stale-run reclamation staleness threshold — if one moves, move both).
+
+This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md` also state. The breakers are checked at the verb boundary, not mid-session: a run that runs away *between* verbs is bounded by the wall-clock check at the next boundary, not interrupted mid-thought — the honest limit of ledger-backed breakers, and the reason true token/$ metering is deferred.
 
 ### `close` — enforce the gate, then merge
 

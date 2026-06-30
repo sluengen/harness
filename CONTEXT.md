@@ -30,6 +30,9 @@ commands:
 branches:
   integration: dev      # feature branches base from here and merge back here
   release: main         # PRs from dev → main for releases
+loop:                   # ledger-backed spend breakers for the autonomous loop (CAL-906; read by harness/loop_budget.py)
+  max_review_cycles: 6           # hard ceiling — the run stops + escalates on REACHING the 6th review→fix cycle (cycles 1–3 unconditional; 4–5 assess convergence). One coherent stop rule with agents/reviewer.md.
+  wall_clock_budget_minutes: 90  # per-run wall-clock budget; deliberately mirrors the stale-run reclamation staleness threshold — if one moves, move both.
 conventions:
   commit_format: "type(scope): description — feat / fix / chore / docs / refactor / test / spec"
 tools:
