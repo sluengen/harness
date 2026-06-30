@@ -2,7 +2,7 @@
 name: linear
 description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or resolving team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work. This is the single home for Linear operations — a command references this skill, it does not re-encode the API.
 ---
-<!-- guidance:linear@0.4.1 -->
+<!-- guidance:linear@0.4.2 -->
 # Linear
 
 The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue. This skill is the **one home** for Linear operations: a command or agent that touches Linear references this skill rather than re-encoding `api.linear.app` calls — a guard fails if raw Linear GraphQL appears in a command.
@@ -47,6 +47,7 @@ Keep the taxonomy flat and small. The shape (the actual IDs are in `CONTEXT.md`)
 3. **Comment, don't clutter.** Post PR links and blocker notes as comments. Do not rewrite the description after intake (beyond adding the change spec).
 4. **Blocked → Backlog with the question.** Park with the specific question stated, so it can be answered async.
 5. **Don't probe the CLI for usage.** The first positional arg to a create command is usually the title — `create --help` can file an issue titled "--help". Read the invocation in `CONTEXT.md`; do not guess at the tool.
+6. **A merged PR auto-transitions every ticket it names — link deliberately.** Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. So put a ticket id in those surfaces only when the PR actually *completes* that ticket. A PR that merely **spawns** or references tickets it is not finishing — a proposal-acceptance PR listing its breakdown, a doc PR mentioning related work — must keep those ids out of the branch / title / body / commit (name them in prose without the bare id, or omit them), or merging it falsely closes the tickets it just created. This is integration behaviour, not a harness verb: the audited verbs transition state on purpose; the integration does it on sight of an id.
 
 ## Accessing Linear (GraphQL via curl)
 
