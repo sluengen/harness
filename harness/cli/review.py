@@ -61,6 +61,7 @@ import asyncio
 import json
 import os
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -72,12 +73,20 @@ from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
+from harness.loop_budget import (
+    convergence_check_required,
+    evaluate_breakers,
+    load_loop_budget,
+)
+from harness.state import store
 
 # size: one cohesive verb — the review prompt, bounded output model, SUBMIT-line
 # scanner, both engine-failure detectors (usage-limit → Claude fallback,
-# sandbox-init → infra exit; CAL-702/CAL-866), and the single-event-loop
-# orchestration. The detectors have one caller (`_run_review`); splitting them
-# off to chase the 500-line limit would fragment the verb, not clarify it.
+# sandbox-init → infra exit; CAL-702/CAL-866), the ledger-backed spend breakers
+# (cycle ceiling + wall-clock; CAL-906), and the single-event-loop orchestration.
+# The detectors + breaker glue have one caller (`_run_review`); splitting them
+# off to chase the 500-line limit would fragment the verb, not clarify it. The
+# breaker *decision* is already factored out to harness.loop_budget (pure).
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -87,6 +96,7 @@ __all__ = [
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
     "EXIT_INFRA_FAILURE",
+    "EXIT_BREAKER_TRIPPED",
     "SANDBOX_INIT_REASON",
 ]
 
@@ -165,6 +175,12 @@ class ReviewOutput(BaseModel):
     appears here (context-economy AC).  ``commit_message`` / ``deferred_brief``
     are persisted to the ledger event but deliberately kept off the printed
     surface to hold the printed JSON to the minimal verdict the agent needs.
+
+    ``convergence_check_required`` is a bounded advisory (CAL-906): ``True`` when
+    this fail lands past the unconditional review→fix cycles and below the
+    ceiling, so the build agent must assess whether the fixes are converging
+    before spending another cycle. It is a single bool — no engine reasoning —
+    so it does not breach the context-economy guarantee.
     """
 
     verdict: Verdict
@@ -172,6 +188,7 @@ class ReviewOutput(BaseModel):
     reviewed_sha: str
     run_id: str
     engine: Engine
+    convergence_check_required: bool = False
 
 
 class _ReviewError(Exception):
@@ -357,6 +374,14 @@ _SANDBOX_INIT_MARKER = "no permissions to create a new namespace"
 # rejected diff (CAL-866).
 EXIT_INFRA_FAILURE = 3
 
+# Exit code for a tripped spend breaker (the run hit the review-cycle ceiling or
+# the wall-clock budget; CAL-906). Distinct from every other code so the
+# orchestrator can tell "stop and escalate, the loop is bounded out" from a
+# rejected diff or an infra wall. Like the infra failure, no review event is
+# recorded and the engine never runs — the carried ``reason`` names which breaker
+# tripped (``review_cycle_ceiling`` / ``wall_clock_budget``).
+EXIT_BREAKER_TRIPPED = 4
+
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
 SANDBOX_INIT_REASON = "sandbox_init_failure"
 
@@ -482,6 +507,26 @@ async def _run_review(
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
 
+    # 1a. Enforce the ledger-backed spend breakers BEFORE running an engine
+    #     (CAL-906). This verb is the loop boundary, so the cycle ceiling and the
+    #     per-run wall-clock are checked here against state already in the ledger:
+    #     the count of prior ``review`` events and the run's ``started_at``. A
+    #     trip records NO review event and never invokes an engine — it raises the
+    #     refusal contract (a dedicated exit + machine-readable ``reason``) so the
+    #     orchestrator stops and escalates rather than spinning the fix loop.
+    budget = load_loop_budget(repo_root)
+    prior_review_count = await _count_review_events(db_path, resolved_run_id)
+    started_at = await _read_started_at(db_path, resolved_run_id)
+    if started_at is not None:
+        trip = evaluate_breakers(
+            prior_review_count=prior_review_count,
+            started_at=started_at,
+            now=datetime.now(UTC),
+            budget=budget,
+        )
+        if trip is not None:
+            raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
+
     # 2. Capture HEAD at review time — the load-bearing SHA binding (D2).
     try:
         reviewed_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
@@ -526,6 +571,17 @@ async def _run_review(
     #    full stdout/stderr stays local to the verb — only the verdict escapes.
     parsed = scan_submit_line(result.stdout)
 
+    # 4a. The convergence advisory (CAL-906): this review is cycle
+    #     ``prior_review_count + 1``. A fail past the unconditional window and
+    #     below the ceiling tells the build agent to assess whether the fixes are
+    #     converging before spending another cycle. A bounded bool — no engine
+    #     reasoning — surfaced on both the printed verdict and the ledger event.
+    needs_convergence_check = convergence_check_required(
+        cycles_completed=prior_review_count + 1,
+        verdict=parsed.verdict,
+        budget=budget,
+    )
+
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
     created_at = iso_z()
@@ -535,6 +591,7 @@ async def _run_review(
         "verdict": parsed.verdict,
         "issues": parsed.issues,
         "engine": engine_used,
+        "convergence_check_required": needs_convergence_check,
         "created_at": created_at,
     }
     # Record the fallback in the ledger — never silent (CAL-702 AC-4).  Present
@@ -566,4 +623,56 @@ async def _run_review(
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
         engine=engine_used,
+        convergence_check_required=needs_convergence_check,
     )
+
+
+# ---------------------------------------------------------------------------
+# Ledger reads for the spend breakers (CAL-906)
+# ---------------------------------------------------------------------------
+
+
+async def _count_review_events(db_path: Path, run_id: str) -> int:
+    """Count the ``review`` events already recorded for ``run_id``.
+
+    This is the prior review→fix cycle count the cycle ceiling is measured
+    against. A missing DB (no run yet) counts as zero.
+    """
+    if not db_path.exists():
+        return 0
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review'",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:
+    """Read the run's ``started_at`` as an aware datetime, or ``None``.
+
+    ``runs.started_at`` is written with a plain ``.isoformat()`` (offset form, no
+    trailing ``Z``); ``datetime.fromisoformat`` round-trips it (and also accepts
+    the trailing-``Z`` form historical/seeded rows may carry, on Python 3.11+).
+    A missing row or an unparseable value yields ``None`` so the wall-clock
+    breaker degrades to "do not trip" rather than erroring the verb.
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT started_at FROM runs WHERE run_id = ?",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(row[0]))
+    except ValueError:
+        return None

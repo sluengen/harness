@@ -102,7 +102,18 @@ _ORCH: dict[str, str] = {
 #: version decision.
 EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
     "start": {"run_id", "ticket", "worktree_path", "worktree_branch", "base_branch"},
-    "review": {"verdict", "issues", "reviewed_sha", "run_id", "engine"},
+    # ``convergence_check_required`` added with the CAL-906 spend breakers — a
+    # bounded advisory bool prompting the build agent to assess convergence on a
+    # fail past the unconditional review→fix cycles (a deliberate, additive
+    # output-contract extension).
+    "review": {
+        "verdict",
+        "issues",
+        "reviewed_sha",
+        "run_id",
+        "engine",
+        "convergence_check_required",
+    },
     "close": {"run_id", "ticket", "reviewed_sha", "merged", "ticket_done", "status"},
 }
 

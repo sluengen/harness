@@ -20,6 +20,7 @@ import asyncio
 import json
 import subprocess
 import unittest.mock as mock
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +105,11 @@ def _seed_open_run(db_path: Path, repo: Path, run_id: str = "01JRUNREVIEWXXXXXXX
                     str(repo),
                     f"harness/{run_id}",
                     "CAL-571",
-                    "2026-06-10T00:00:00Z",
+                    # A *recent* started_at: the CAL-906 wall-clock breaker is
+                    # measured from this, so a stale literal would trip it before
+                    # the engine runs. These tests exercise the review flow, not
+                    # the breaker (that is test_review_breakers.py).
+                    datetime.now(UTC).isoformat(),
                     1234,
                 ),
             )
@@ -354,8 +359,16 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
-    # Only the bounded verdict fields are present (engine is provenance, CAL-701).
-    assert set(payload.keys()) <= {"verdict", "issues", "reviewed_sha", "run_id", "engine"}
+    # Only the bounded verdict fields are present (engine is provenance, CAL-701;
+    # convergence_check_required is the bounded CAL-906 advisory bool).
+    assert set(payload.keys()) <= {
+        "verdict",
+        "issues",
+        "reviewed_sha",
+        "run_id",
+        "engine",
+        "convergence_check_required",
+    }
     assert payload["verdict"] == "fail"
     assert payload["issues"] == ["one issue"]
 
