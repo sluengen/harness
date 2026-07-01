@@ -81,6 +81,7 @@ No formal `decisions/` directory exists yet. Major design decisions are in `spec
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
 - **The verb contract the agent drives** → `commands/harness.md`
+- **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
