@@ -68,3 +68,21 @@ For **each** task file above:
 - Re-run the guard on the repo side: `uv run --extra dev pytest
   tests/unit/test_work_discovery_skill.py` stays green, confirming the versioned
   surface the trigger now calls still single-homes the logic.
+
+---
+
+## Running the loop on a cloud schedule (the harness's own loop)
+
+The local triggers above are one regime. The harness's **own** loop is also
+**cloud-runnable** — so the overnight sweep does not depend on a laptop staying
+open. That path is the versioned workflow `.github/workflows/harness-loop.yml`
+(native `harness` install, credentials as secrets, Claude review engine, the
+Linear-keyed reclaim pre-flight for the fresh-clone case).
+
+The decision, the secrets/engine setup, and the **per-target-repo gate rule**
+(cloud-viability is set by the *target's* gate — an Xcode/macOS-bound target
+stays local or on a macOS runner) are recorded in
+`specs/decisions/0001-cloud-runnable-harness-loop.md`. The **operator steps to
+complete the first live run** (provision the three secrets, land the workflow on
+the default branch, dispatch once) live in that ADR's *Operator steps* section —
+single-homed there, not duplicated here.

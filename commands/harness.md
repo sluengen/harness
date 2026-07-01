@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.3 -->
+<!-- guidance:harness@0.1.4 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -120,7 +120,7 @@ Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle
 
 > **The Linear project is resolved from `CONTEXT.md`, not hardcoded.** Both loops operate on one Linear project — the Build queue. Resolve it at runtime from `CONTEXT.md` → `repo.project` (the same way `/harness ingest` resolves the team from `repo.linear`), so this distributed command needs no per-repo hand-edit. Below, `<repo.project>` stands for that value; in the harness repo it is `Harness v3`.
 
-> **Routines are local-trigger only.** A routine shells out to the **local** `harness` wrapper (`~/bin/harness`) and reads `.env` from the working copy. A cloud routine cannot reach `~/bin/harness` or the local checkout, so these routines must be triggered locally (a local Claude routine, or the macOS scheduled task). Cloud execution is out of scope.
+> **Two trigger regimes — local (Docker wrapper) and cloud (native install).** In the **local** regime a routine shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy; a cloud runner cannot reach either, so *that* regime is local-trigger (a local Claude routine, or the macOS scheduled task — see `RUNBOOK.md`). But the harness's own loop is **also cloud-runnable**: run against the native `harness` entry point (`uv tool install .`, no Docker), with credentials supplied as secrets and the **Claude** review engine. That path is the versioned workflow `.github/workflows/harness-loop.yml`; the decision, the secrets/engine setup, and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are recorded in `specs/decisions/0001-cloud-runnable-harness-loop.md`. Cloud-enabling self-hosting *target* repos remains out of scope.
 
 ### /harness routine build
 

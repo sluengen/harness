@@ -42,7 +42,7 @@ paths:
   tests: tests/
   proposals: specs/proposals/
   features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
-  decisions: specs/   # ADRs not yet separated into decisions/; design docs in specs/
+  decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
 env:
   file: .env
   linear_token: LINEAR_API_KEY
@@ -75,13 +75,16 @@ The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` 
 
 ## Decisions index
 
-No formal `decisions/` directory exists yet. Major design decisions are in `specs/` and inline in `SPEC.md`. ADRs should go in `specs/decisions/` when first created.
+Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design decisions remain in `specs/` and inline in `SPEC.md`.
+
+- **[0001 — The harness's own loop runs in the cloud; cloud-viability is per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908). The Build/Quality loops run on a cloud schedule (`.github/workflows/harness-loop.yml`) with credentials as secrets and the Claude review engine — scheduling is **no longer local-only / "empty by design."** Cloud-viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
 
 ## Where deeper truth lives
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
 - **The verb contract the agent drives** → `commands/harness.md`
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
+- **Running the loop on a cloud schedule (secrets + engine + per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md` + the workflow `.github/workflows/harness-loop.yml`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
