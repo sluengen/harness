@@ -71,18 +71,17 @@ For **each** task file above:
 
 ---
 
-## Running the loop on a cloud schedule (the harness's own loop)
+## Substrate: always-on local is the default
 
-The local triggers above are one regime. The harness's **own** loop is also
-**cloud-runnable** — so the overnight sweep does not depend on a laptop staying
-open. That path is the versioned workflow `.github/workflows/harness-loop.yml`
-(native `harness` install, credentials as secrets, Claude review engine, the
-Linear-keyed reclaim pre-flight for the fresh-clone case).
+The local triggers above are the **default** substrate for the harness's own
+loop — they already work and cost nothing per run. Running the loop off-machine
+is *possible* (the gate is Linux-clean and the verbs run in-process), but is
+**deferred and optional**: if the device ever stops being always-on, the recorded
+next step is a **Claude cloud routine** driving the same `/harness routine build`
+— **not** GitHub Actions (rejected: a private repo meters Actions minutes and the
+loop is a long agent run, not a cheap CI gate).
 
-The decision, the secrets/engine setup, and the **per-target-repo gate rule**
-(cloud-viability is set by the *target's* gate — an Xcode/macOS-bound target
+The decision, the optional cloud path, and the **per-target-repo gate rule**
+(off-machine viability is set by the *target's* gate — an Xcode/macOS-bound target
 stays local or on a macOS runner) are recorded in
-`specs/decisions/0001-cloud-runnable-harness-loop.md`. The **operator steps to
-complete the first live run** (provision the three secrets, land the workflow on
-the default branch, dispatch once) live in that ADR's *Operator steps* section —
-single-homed there, not duplicated here.
+`specs/decisions/0001-cloud-runnable-harness-loop.md`.
