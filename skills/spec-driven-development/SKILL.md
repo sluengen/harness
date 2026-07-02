@@ -2,7 +2,7 @@
 name: spec-driven-development
 description: Use at the start of a tracked task to follow the spec-driven flow from idea to shipped-and-recorded with minimal ceremony — when each spec (proposal, change, feature) is produced and what handoff means. The spine the other skills hang off.
 ---
-<!-- guidance:spec-driven-development@0.3.2 -->
+<!-- guidance:spec-driven-development@0.4.0 -->
 # Spec-Driven Development
 
 How a task flows from "idea" to "shipped and recorded" with the least ceremony that still guarantees quality. This is the spine the other skills hang off. How to *write* each spec is in `spec-authoring`; this is *when* each one is produced.
@@ -27,17 +27,18 @@ The builder does **not** edit `specs/features/`. If a builder touches the featur
 
 0. **Propose first if it is unconfirmed or large.** If the work needs a decision, carries real unknowns, or is too big to be one change, write a proposal spec (`/propose`, `spec-authoring`) and get it decided before opening Linear issues. Skip this for small, clear work.
 1. **The Linear issue is the front door.** Open it first. If the work was described in chat, create the issue before starting (see `linear`). Set it **In Progress**.
-2. **Write the change spec into the Linear issue.** Problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope (`spec-authoring` → change spec). A one-line bug fix needs one line.
-3. **Branch and isolate.** Work on a feature branch in a worktree (see `worktree-isolation`). Never build on the default branch.
-4. **Build test-first, in scope.** Follow `test-driven-development` for behaviour and `code-quality` for how to build without overreach. Design against `engineering-principles`.
-5. **If scope shifts, update the change spec.** Silent divergence between the spec and the work is a process violation. Edit the change spec in place the moment the plan changes.
-6. **Hand off to review.** Set the issue **In Review**. The reviewer checks output *and* process (`review-discipline`).
-7. **On PASS, the reviewer records reality.** The reviewer updates `specs/features/<feature>.md` to match what shipped, as the last commit before merge.
-8. **Ship and close.** Integrate per the repo's branch model (see the `/ship` command and `CONTEXT.md`), set the issue **Done**. The change spec stays on the Linear issue as history; the durable record is now in `specs/features/`.
+2. **Ground the spec in current reality.** Before writing the change spec, verify the facts it will rest on that name a **file / function / flag / version / decision** against the *current* code — recalled facts (memory, system-reminders) reflect what was true when written, and a spec built on a stale one reverts to blocked mid-build. Where a sub-agent host is available, the agent-led `/start` flow dispatches a read-only `researcher` agent that investigates in its own context and returns a distilled **grounding brief**; where none is available, the executor self-grounds inline (the fallback). Either way, record the result as the change spec's `Grounding` section (`spec-authoring`). Grounding always happens; the sub-agent is the richer delivery where available.
+3. **Write the change spec into the Linear issue.** Problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope (`spec-authoring` → change spec). A one-line bug fix needs one line.
+4. **Branch and isolate.** Work on a feature branch in a worktree (see `worktree-isolation`). Never build on the default branch.
+5. **Build test-first, in scope.** Follow `test-driven-development` for behaviour and `code-quality` for how to build without overreach. Design against `engineering-principles`.
+6. **If scope shifts, update the change spec.** Silent divergence between the spec and the work is a process violation. Edit the change spec in place the moment the plan changes.
+7. **Hand off to review.** Set the issue **In Review**. The reviewer checks output *and* process (`review-discipline`).
+8. **On PASS, the reviewer records reality.** The reviewer updates `specs/features/<feature>.md` to match what shipped, as the last commit before merge.
+9. **Ship and close.** Integrate per the repo's branch model (see the `/ship` command and `CONTEXT.md`), set the issue **Done**. The change spec stays on the Linear issue as history; the durable record is now in `specs/features/`.
 
 ## No claim without evidence
 
-Steps 4 and 6 are gated by the verification rule in `code-quality`: no "done", "passing", or "ready for review" without a fresh command run and its output read in this session. Confidence is not evidence.
+Steps 5 and 7 are gated by the verification rule in `code-quality`: no "done", "passing", or "ready for review" without a fresh command run and its output read in this session. Confidence is not evidence.
 
 ## When you are blocked
 
