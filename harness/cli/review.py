@@ -52,7 +52,12 @@ Exit codes (mirroring ``harness start``):
       machine-readable ``reason`` so the orchestrator can tell "the environment
       couldn't run the review" apart from "the diff was rejected" (CAL-866).
       This is NOT a code-review ``fail`` and NOT shippable, so it does not reuse
-      ``defer`` or record a verdict — no review event is written.
+      ``defer`` or record a verdict — no review event is written.  Two shapes hit
+      this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
+      (CAL-866), *and* ``codex`` exiting 0 but emitting a well-formed ``defer``
+      whose reasoning is the same bwrap wall — every read-only command it ran was
+      blocked, so it reviewed nothing (CAL-924).  Both mean the diff was never
+      reviewed, so both are infra, not a verdict.
 """
 
 from __future__ import annotations
@@ -81,12 +86,14 @@ from harness.loop_budget import (
 from harness.state import store
 
 # size: one cohesive verb — the review prompt, bounded output model, SUBMIT-line
-# scanner, both engine-failure detectors (usage-limit → Claude fallback,
-# sandbox-init → infra exit; CAL-702/CAL-866), the ledger-backed spend breakers
-# (cycle ceiling + wall-clock; CAL-906), and the single-event-loop orchestration.
-# The detectors + breaker glue have one caller (`_run_review`); splitting them
-# off to chase the 500-line limit would fragment the verb, not clarify it. The
-# breaker *decision* is already factored out to harness.loop_budget (pure).
+# scanner, the engine-failure detectors (usage-limit → Claude fallback, and two
+# sandbox walls → infra exit: codex's non-zero-exit/stderr case and its exit-0
+# masquerading-defer case; CAL-702/CAL-866/CAL-924), the ledger-backed spend
+# breakers (cycle ceiling + wall-clock; CAL-906), and the single-event-loop
+# orchestration.  The detectors + breaker glue have one caller (`_run_review`);
+# splitting them off to chase the 500-line limit would fragment the verb, not
+# clarify it. The breaker *decision* is already factored out to
+# harness.loop_budget (pure).
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -95,6 +102,7 @@ __all__ = [
     "RunResult",
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
+    "is_sandbox_blocked_defer",
     "EXIT_INFRA_FAILURE",
     "EXIT_BREAKER_TRIPPED",
     "SANDBOX_INIT_REASON",
@@ -402,6 +410,38 @@ def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
     return _SANDBOX_INIT_MARKER in stderr.lower()
 
 
+def is_sandbox_blocked_defer(verdict: str, issues: list[str], engine: Engine) -> bool:
+    """True iff a Codex ``defer`` is really a sandbox-blocked non-review (CAL-924).
+
+    :func:`is_sandbox_init_failure` catches the case where ``codex exec`` itself
+    exits non-zero with the bwrap marker on **stderr**.  It MISSES the subtler
+    case seen in the CAL-906 dogfood: ``codex exec`` exits **0**, but every
+    read-only command it shells out to inspect the diff is killed by bwrap, so
+    Codex reviews nothing yet emits a well-formed
+    ``SUBMIT: {"verdict": "defer", ...}`` whose reasoning is "I could not run any
+    command (bwrap: no permissions to create a new namespace)".  That reads as a
+    normal, shippable ``defer`` though no review happened.
+
+    This detector reads the OTHER channel: the same bwrap marker
+    (:data:`_SANDBOX_INIT_MARKER`, case-insensitive) inside the reviewer's own
+    reasoning — the parsed ``issues``.  It is deliberately narrow:
+
+    * only a ``defer`` — a blocked review cannot ``pass`` or ``fail`` without
+      inspecting the diff, so pass/fail are left untouched;
+    * only the ``codex`` engine — ``claude`` runs in plan mode, never bwrap, so a
+      Claude ``defer`` that merely quotes the phrase is never swallowed.
+
+    A genuine, well-founded defer (a real out-of-scope finding, no marker) stays
+    a recorded ``defer``.  (Honest limit: a codex review that genuinely inspects
+    the diff yet quotes the exact bwrap phrase in its finding would be caught —
+    an acceptably rare shape, weighed against a review that never ran silently
+    shipping.)
+    """
+    if engine != "codex" or verdict != "defer":
+        return False
+    return _SANDBOX_INIT_MARKER in " ".join(issues).lower()
+
+
 async def _invoke_engine(runner: Runner, engine: Engine, cwd: Path) -> RunResult:
     """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``."""
     try:
@@ -571,7 +611,30 @@ async def _run_review(
     #    full stdout/stderr stays local to the verb — only the verdict escapes.
     parsed = scan_submit_line(result.stdout)
 
-    # 4a. The convergence advisory (CAL-906): this review is cycle
+    # 4a. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
+    #     sandbox-blocked non-review, not a shippable defer (CAL-924): ``codex
+    #     exec`` exited 0, but every read-only command it ran to inspect the diff
+    #     was killed by bwrap, so it reviewed nothing.  The stderr/non-zero
+    #     detector above misses this (exit 0, marker on stdout not stderr), so
+    #     surface it as the SAME infra failure (CAL-866 contract) — dedicated exit
+    #     + ``reason``, NO review event — rather than recording a ``defer`` for a
+    #     review that never happened.  ``engine_used`` (not the requested engine)
+    #     is what ran: a usage-limit fallback would already have flipped it to
+    #     claude, and a claude ``defer`` is never treated this way.
+    if is_sandbox_blocked_defer(parsed.verdict, parsed.issues, engine_used):
+        raise _ReviewError(
+            "review engine could not initialize its sandbox (bwrap: no "
+            "permissions to create a new namespace); codex exec exited 0 but "
+            "every command it ran to inspect the diff was blocked, so it "
+            "reviewed nothing and emitted an empty 'defer'. This is an "
+            "environment/infra failure, not a code-review verdict. Run review "
+            "where the engine can create a user namespace, or use a different "
+            "--engine.",
+            EXIT_INFRA_FAILURE,
+            reason=SANDBOX_INIT_REASON,
+        )
+
+    # 4b. The convergence advisory (CAL-906): this review is cycle
     #     ``prior_review_count + 1``. A fail past the unconditional window and
     #     below the ceiling tells the build agent to assess whether the fixes are
     #     converging before spending another cycle. A bounded bool — no engine

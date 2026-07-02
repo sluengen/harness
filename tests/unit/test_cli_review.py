@@ -816,3 +816,115 @@ def test_cal866_genuine_no_submit_on_clean_exit_still_fails(
     assert len(events) == 1
     assert events[0]["data"]["verdict"] == "fail"
     assert SENTINEL in events[0]["data"]["issues"]
+
+
+# ---------------------------------------------------------------------------
+# CAL-924 — a bwrap-blocked Codex ``defer`` is INFRA, not a shippable verdict.
+#
+# The CAL-866 detector keys on codex's OWN non-zero exit + the bwrap marker on
+# STDERR.  It misses the subtler case seen in the CAL-906 dogfood: ``codex exec``
+# exits **0**, but every read-only command it shells out to inspect the diff is
+# killed by bwrap, so Codex reviews nothing yet emits a well-formed
+# ``SUBMIT: {"verdict": "defer", ...}`` whose reasoning is "I could not run any
+# command (bwrap: No permissions to create a new namespace)".  That read as a
+# normal, shippable ``defer`` — a review that never happened.  The fix surfaces
+# it as the SAME infra signal as CAL-866 (exit EXIT_INFRA_FAILURE, reason
+# sandbox_init_failure, NO review event), narrowed to a Codex ``defer`` carrying
+# the marker so a genuine defer — or any Claude verdict — is never swallowed.
+# ---------------------------------------------------------------------------
+
+# A realistic bwrap-blocked codex stdout: exit 0, a well-formed ``defer`` whose
+# issue text is the reviewer explaining every command was killed by the wall.
+_BWRAP_BLOCKED_DEFER_STDOUT = (
+    'SUBMIT: {"verdict": "defer", "issues": ["I could not inspect the diff: '
+    "every command I ran failed with 'bwrap: No permissions to create a new "
+    "namespace', so I reviewed nothing.\"]}\n"
+)
+
+
+# AC-2 (narrowness) — the matcher: true only on a Codex ``defer`` whose reasoning
+# carries the bwrap marker; false on a genuine defer, a non-defer verdict, or a
+# Claude verdict.
+
+
+def test_cal924_matcher_true_on_bwrap_blocked_codex_defer() -> None:
+    issues = [
+        "I could not inspect the diff: every command failed with 'bwrap: No "
+        "permissions to create a new namespace'."
+    ]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "codex") is True
+
+
+def test_cal924_matcher_false_on_genuine_codex_defer() -> None:
+    """A genuine defer (real finding, no bwrap marker) is never swallowed."""
+    issues = ["The retry knob needs its own ticket — out of scope here."]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "codex") is False
+
+
+def test_cal924_matcher_false_on_non_defer_verdict() -> None:
+    """Only a ``defer`` masquerades this way; pass/fail stay untouched."""
+    issues = ["bwrap: No permissions to create a new namespace"]
+    assert review_mod.is_sandbox_blocked_defer("pass", issues, "codex") is False
+    assert review_mod.is_sandbox_blocked_defer("fail", issues, "codex") is False
+
+
+def test_cal924_matcher_false_on_claude_engine() -> None:
+    """Claude runs in plan mode, not bwrap — a Claude defer is never infra."""
+    issues = ["bwrap: No permissions to create a new namespace"]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "claude") is False
+
+
+def test_cal924_matcher_disjoint_from_stderr_detector() -> None:
+    """The two sandbox detectors read different channels and never conflate.
+
+    The CAL-866 detector keys on stderr + a non-zero exit; this one keys on the
+    parsed defer's issue text at exit 0.  A clean stdout defer is not a stderr
+    failure, and a genuine defer is not blocked.
+    """
+    # The exit-0 defer marker is invisible to the stderr/non-zero detector.
+    assert review_mod.is_sandbox_init_failure("", 0) is False
+    # A genuine defer with no marker is not blocked.
+    assert review_mod.is_sandbox_blocked_defer("defer", ["out of scope"], "codex") is False
+
+
+# AC-1 / AC-3: a bwrap-blocked codex defer surfaces as the CAL-866 infra signal —
+# a dedicated non-zero exit + machine-readable ``reason`` — and records NO event.
+
+
+def test_cal924_bwrap_blocked_defer_surfaces_as_infra_not_verdict(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner(_BWRAP_BLOCKED_DEFER_STDOUT, returncode=0)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+
+    # Same dedicated exit + reason as the CAL-866 stderr case — one contract.
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert result.exit_code not in (0, 1, 2)
+    payload = json.loads(result.output)
+    assert payload["reason"] == review_mod.SANDBOX_INIT_REASON
+    assert "error" in payload
+
+    # A review that never happened must NOT read as a defer (or any verdict).
+    assert fetch_review_events(db_path) == []
+
+
+# AC-2 / AC-3: a genuine defer (the reviewer actually inspected the diff) is
+# still recorded as a ``defer`` verdict — the detector stays narrow.
+
+
+def test_cal924_genuine_codex_defer_still_recorded(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    genuine = (
+        'SUBMIT: {"verdict": "defer", "issues": ["Refactoring the store belongs '
+        'in its own ticket; out of scope here."]}\n'
+    )
+    runner = _make_runner(genuine, returncode=0)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    events = fetch_review_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["verdict"] == "defer"
