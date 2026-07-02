@@ -78,6 +78,7 @@ The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` 
 Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design decisions remain in `specs/` and inline in `SPEC.md`.
 
 - **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
+- **[0002 — The in-container review engine is Claude; `--engine codex` is a host-only option](specs/decisions/0002-in-container-review-engine.md)** (CAL-925). Codex's `bwrap` sandbox cannot open a user namespace in the unprivileged `harness:dev` container (CAL-866), so `--engine codex` degrades in-container. Rather than loosen container privileges — it reviews untrusted diffs — the in-container engine is **Claude**, and `--engine codex` is a **host-only** cross-model option. No image privilege change.
 
 ## Where deeper truth lives
 
@@ -85,6 +86,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 - **The verb contract the agent drives** → `commands/harness.md`
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
 - **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
+- **In-container review engine (Claude in-container; `--engine codex` host-only)** → `specs/decisions/0002-in-container-review-engine.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")

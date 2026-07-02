@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.1.3 -->
+<!-- guidance:reviewer@0.1.4 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -32,6 +32,10 @@ Update `specs/features/<feature>.md` to reflect what the diff actually does, as 
 ## Findings discipline
 
 Most Medium and Low findings are small fixes on code already touched — return them to the developer to fix in the same pass, not as deferred tickets. Reserve carry-forward tickets for genuinely separate work.
+
+## Review engine — Claude in-container, Codex host-only
+
+`harness review` selects the engine with `--engine claude|codex` (**default `claude`**). **In-container, the engine is Claude**: Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container, so `--engine codex` degrades there. Rather than grant that container new privileges — it reviews untrusted diffs — `--engine codex` is a **host-only** cross-model option, run where `bwrap` and `~/.codex` auth are available (ADR [`0002`](../specs/decisions/0002-in-container-review-engine.md)). So a `/harness run` review inside the container reviews on Claude; reach for host-side `--engine codex` when you want a deliberate cross-model second opinion.
 
 ## The review→fix stop rule
 

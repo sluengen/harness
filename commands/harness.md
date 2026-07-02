@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.6 -->
+<!-- guidance:harness@0.1.7 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -63,7 +63,7 @@ This is the load-bearing half of run reclamation (proposal `stale-run-reclamatio
 
 ```bash
 harness review --run-id <run_id>                  # [--repo .] — engine defaults to claude
-harness review --run-id <run_id> --engine codex   # opt into a Codex cross-model review
+harness review --run-id <run_id> --engine codex   # cross-model review — host-only (see below)
 ```
 
 The selected engine (`--engine claude|codex`, **default `claude`**) reviews the diff against HEAD and records a verdict bound to that SHA. Both engines are **read-only CLI subprocesses** emitting the same `SUBMIT:` contract — never the Agent SDK; the engine's full reasoning stays inside the verb. You see only the bounded result (`ReviewOutput`), which records the `engine` that produced the verdict:
@@ -73,6 +73,8 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 ```
 
 `claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude: `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
+
+**In-container, the review engine is Claude; `--engine codex` is host-only** (ADR [`0002`](../specs/decisions/0002-in-container-review-engine.md)). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
 
 Act on `verdict`:
 

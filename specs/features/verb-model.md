@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-570, CAL-574, CAL-586, CAL-661]
+last_updated: 2026-07-02
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925]
 ---
 
 # Verb model — start / review / close
@@ -37,6 +37,8 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 ### `review` — record a verdict bound to the reviewed SHA
 
 `harness review [--run-id <id>] [--engine claude|codex]` runs the selected review engine (`--engine`, **default `claude`**; CAL-701) against the worktree's current HEAD and records a verdict **bound to the exact SHA reviewed** — the load-bearing detail behind decision D2: the `close` gate refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused. Each engine is a **read-only CLI subprocess** (`claude -p --permission-mode plan` or `codex exec --sandbox read-only`) emitting the same `SUBMIT:` contract — never the Agent SDK (see the "Review engine" principle in `architecture-principles.md`).
+
+**The in-container review engine is Claude; `--engine codex` is host-only** (ADR [0002](../decisions/0002-in-container-review-engine.md), CAL-925). Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container (`CLONE_NEWUSER` blocked, CAL-866), so a real `--engine codex` review degrades there. Rather than loosen the container's privileges — it reviews untrusted diffs — the decision keeps the container's engine Claude and treats `--engine codex` as a host-only cross-model option, where `bwrap` and `~/.codex` auth are available. So inside `~/bin/harness` and the `/harness run` verb loop, review runs on Claude.
 
 #### Scenario: a review pass
 
