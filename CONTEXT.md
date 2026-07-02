@@ -77,14 +77,14 @@ The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` 
 
 Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design decisions remain in `specs/` and inline in `SPEC.md`.
 
-- **[0001 — The harness's own loop runs in the cloud; cloud-viability is per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908). The Build/Quality loops run on a cloud schedule (`.github/workflows/harness-loop.yml`) with credentials as secrets and the Claude review engine — scheduling is **no longer local-only / "empty by design."** Cloud-viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
+- **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
 
 ## Where deeper truth lives
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
 - **The verb contract the agent drives** → `commands/harness.md`
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
-- **Running the loop on a cloud schedule (secrets + engine + per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md` + the workflow `.github/workflows/harness-loop.yml`
+- **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
