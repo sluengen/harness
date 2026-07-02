@@ -1,12 +1,24 @@
-"""The reclaim-comment contract — single-sourced for its two parties (CAL-739).
+"""The reclaim- and handoff-comment contracts — single-sourced for their parties.
 
-``harness reclaim`` (CAL-735) reverts a stranded ticket to Todo and posts a
-comment naming the preserved (checkpoint-pushed) branch; ``harness start
---resume`` (CAL-739) reads that comment back to continue the dead run from its
-branch. The comment format therefore has a **writer** and a **reader**, and a
-format the reader guesses at would silently drift from the writer — so it lives
-in exactly one place here, beside :func:`parse_preserved_branch` that recovers
-the branch from it. ``test_reclaim_marker.py`` pins the round-trip.
+Two sibling protocols recover a run's checkpoint-pushed WIP branch through a
+Linear comment; both live here so their writer and reader can never drift, and
+so the **distinction** between them is stated in one place (CAL-739 / CAL-923):
+
+* **Death-keyed reclamation (CAL-739).** ``harness reclaim`` (CAL-735) reverts a
+  stranded ticket to **Todo**, applies the ``reclaimed`` **label**, and posts a
+  comment carrying :data:`RECLAIM_MARKER`; ``harness start --resume`` reads it
+  back via :func:`parse_preserved_branch`. The orchestrator is **presumed dead**.
+* **Proactive context-rollover handoff (CAL-923).** A session that is *alive but
+  near its context limit* checkpoints, keeps the ticket **In Progress** (no
+  label), and posts a comment carrying :data:`HANDOFF_MARKER`; a fresh session
+  resumes the **same** ticket via ``harness start --resume``, which reads it back
+  via :func:`parse_handoff_branch`.
+
+The two **never collide**: they use *distinct* marker strings, so a reader keyed
+on one never matches a comment written for the other (pinned in
+``test_reclaim_marker.py``), and they occupy *distinct* Linear states (Todo +
+``reclaimed`` vs In Progress). Only the ``Preserved branch:`` clause is shared —
+both recover the ref through :data:`_PRESERVED_RE`.
 
 This module is intentionally dependency-free (stdlib ``re`` only) and lives at
 the package root rather than under ``harness.cli`` so both :mod:`harness.linear`
@@ -19,10 +31,13 @@ from __future__ import annotations
 import re
 
 __all__ = [
+    "HANDOFF_MARKER",
     "NO_BRANCH_SENTINEL",
     "RECLAIM_LABEL",
     "RECLAIM_MARKER",
+    "format_handoff_comment",
     "format_reclaim_comment",
+    "parse_handoff_branch",
     "parse_preserved_branch",
 ]
 
@@ -35,13 +50,34 @@ RECLAIM_LABEL = "reclaimed"
 #: identify a reclaim comment among a ticket's other comments.
 RECLAIM_MARKER = "Reclaimed by `harness reclaim`"
 
-#: The preserved-branch value used when a reclaim found no durable WIP — parses
-#: back to ``None`` (no resumable branch → a clean restart on the next pick).
+#: The opening phrase every proactive context-rollover **handoff** comment
+#: carries (CAL-923). Distinct from :data:`RECLAIM_MARKER` so the two readers
+#: never cross-match — the structural basis for non-collision.
+HANDOFF_MARKER = "Context-rollover handoff by `harness checkpoint`"
+
+#: The preserved-branch value used when a reclaim/handoff found no durable WIP —
+#: parses back to ``None`` (no resumable branch → a clean restart on resume).
 NO_BRANCH_SENTINEL = "(none — clean restart on next pick)"
 
 #: The preserved-branch clause: a backtick-quoted ref the writer emits and the
-#: reader extracts. One regex, one format string — they cannot drift.
+#: reader extracts. One regex, one format string — they cannot drift. Shared by
+#: both the reclaim and handoff contracts.
 _PRESERVED_RE = re.compile(r"Preserved branch: `([^`]+)`")
+
+
+def _parse_preserved_ref(comment_body: str) -> str | None:
+    """Extract the ``Preserved branch:`` ref, or ``None`` for the sentinel/absent.
+
+    The shared clause parser both contracts call *after* their own marker gate —
+    it does not itself check any marker, so it must never be called on a raw
+    comment (that would ignore the reclaim-vs-handoff distinction). Returns
+    ``None`` when the clause is missing or names the no-WIP sentinel.
+    """
+    match = _PRESERVED_RE.search(comment_body)
+    if match is None:
+        return None
+    ref = match.group(1)
+    return None if ref == NO_BRANCH_SENTINEL else ref
 
 
 def format_reclaim_comment(run_id: str | None, branch: str | None, *, when: str) -> str:
@@ -62,19 +98,51 @@ def format_reclaim_comment(run_id: str | None, branch: str | None, *, when: str)
     )
 
 
+def format_handoff_comment(run_id: str | None, branch: str | None, *, when: str) -> str:
+    """The proactive context-rollover **handoff** comment body (CAL-923).
+
+    The alive-but-near-limit counterpart to :func:`format_reclaim_comment`. The
+    body states — for the human reader and for the non-collision guard — that the
+    session is *alive* and the ticket **stays In Progress** (it is deliberately
+    NOT reverted to Todo and carries no ``reclaimed`` label), so a fresh session
+    continues the **same** ticket via ``harness start --resume``. ``branch`` is
+    the checkpoint-pushed WIP ref, or ``None`` → the sentinel (clean restart).
+    """
+    run_clause = f"run `{run_id}`" if run_id else "no local run row found"
+    ref = branch if branch else NO_BRANCH_SENTINEL
+    return (
+        f"{HANDOFF_MARKER} at {when}. The orchestrating session is alive "
+        f"({run_clause}) but near its context budget; the ticket stays "
+        f"**In Progress** (no revert, no label) and a fresh session continues the "
+        f"same ticket via `harness start --resume`. Preserved branch: `{ref}`."
+    )
+
+
 def parse_preserved_branch(comment_body: str) -> str | None:
-    """The preserved branch ref named in a reclaim comment, or ``None``.
+    """The preserved branch ref named in a **reclaim** comment, or ``None``.
 
     Returns ``None`` for every non-branch case — a comment that is not a reclaim
-    comment, one that names the no-WIP sentinel, or one whose preserved-branch
-    clause is absent/unparseable. The reader thus never resumes from a wrong ref:
-    any ambiguity degrades to a clean restart, which ``close``'s HEAD-bound gate
-    keeps safe.
+    comment (including a *handoff* comment, which carries a different marker), one
+    that names the no-WIP sentinel, or one whose preserved-branch clause is
+    absent/unparseable. The reader thus never resumes from a wrong ref: any
+    ambiguity degrades to a clean restart, which ``close``'s HEAD-bound gate keeps
+    safe.
     """
     if RECLAIM_MARKER not in comment_body:
         return None
-    match = _PRESERVED_RE.search(comment_body)
-    if match is None:
+    return _parse_preserved_ref(comment_body)
+
+
+def parse_handoff_branch(comment_body: str) -> str | None:
+    """The preserved branch ref named in a **handoff** comment, or ``None`` (CAL-923).
+
+    The proactive counterpart to :func:`parse_preserved_branch`, gated on
+    :data:`HANDOFF_MARKER`. A reclaim comment (different marker) parses to
+    ``None`` here, and a handoff comment parses to ``None`` in
+    :func:`parse_preserved_branch` — the non-collision the two protocols rely on.
+    Every other non-branch case (sentinel, missing clause) also degrades to
+    ``None`` → a clean restart.
+    """
+    if HANDOFF_MARKER not in comment_body:
         return None
-    ref = match.group(1)
-    return None if ref == NO_BRANCH_SENTINEL else ref
+    return _parse_preserved_ref(comment_body)

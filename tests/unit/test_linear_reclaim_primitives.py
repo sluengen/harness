@@ -504,6 +504,80 @@ async def test_fetch_resume_branch_none_when_no_reclaim_comment(
     assert await client.fetch_resume_branch("CAL-739") is None
 
 
+# ---------------------------------------------------------------------------
+# fetch_handoff_branch — the preserved branch a proactively-handed-off ticket
+# continues from (CAL-923). Keyed on the handoff marker, NOT the reclaimed label:
+# a proactive handoff keeps the ticket In Progress with no label.
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_handoff_branch_returns_latest_and_needs_no_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ticket with a handoff comment returns its branch — with **no** ``reclaimed``
+    label (a proactive handoff stays In Progress). The latest handoff comment wins."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    old = format_handoff_comment("H1", "harness/old", when="2026-07-02T00:00:00Z")
+    new = format_handoff_comment("H2", "harness/new", when="2026-07-02T00:02:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [old, "an unrelated comment", new])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") == "harness/new"
+
+
+async def test_fetch_handoff_branch_ignores_a_reclaim_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-collision at the reader level: a ticket carrying only a death-keyed
+    reclaim comment yields None from the handoff reader — the proactive path never
+    resumes from a reclamation's branch."""
+    from harness.reclaim_marker import format_reclaim_comment
+
+    body = format_reclaim_comment("R1", "harness/reclaimed", when="2026-07-02T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["reclaimed"], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") is None
+
+
+async def test_fetch_handoff_branch_none_when_preserved_no_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A handoff that preserved no durable WIP (the sentinel) → None, so resume
+    degrades to a clean restart."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    body = format_handoff_comment("H1", None, when="2026-07-02T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") is None
+
+
+async def test_fetch_handoff_branch_raises_not_found_for_null_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing issue raises LinearNotFound, mirroring fetch_resume_branch."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.fetch_handoff_branch("CAL-999")
+
+
 async def test_fetch_resume_branch_raises_not_found_for_null_issue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

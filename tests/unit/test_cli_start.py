@@ -1078,10 +1078,19 @@ def test_start_docstring_exit_codes_match_contract() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_resume_stub(resume_branch: str | None) -> MagicMock:
-    """A Linear stub whose ``fetch_resume_branch`` returns ``resume_branch``."""
+def _make_resume_stub(
+    resume_branch: str | None, handoff_branch: str | None = None
+) -> MagicMock:
+    """A Linear stub whose reclaim/handoff resume readers return the given branches.
+
+    ``fetch_resume_branch`` returns ``resume_branch`` (the death-keyed source);
+    ``fetch_handoff_branch`` returns ``handoff_branch`` (the CAL-923 proactive
+    source), defaulting to ``None`` so a stub set up for the reclamation path still
+    answers the fall-through ``fetch_handoff_branch`` call cleanly.
+    """
     mock = _make_linear_stub()
     mock.fetch_resume_branch = AsyncMock(return_value=resume_branch)
+    mock.fetch_handoff_branch = AsyncMock(return_value=handoff_branch)
     return mock
 
 
@@ -1147,6 +1156,35 @@ def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> No
     assert len(rows) == 1
     assert rows[0]["base_branch"] == "dev"
     stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
+
+
+@pytest.mark.slow
+def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None:
+    """CAL-923: a proactively handed-off ticket (still In Progress, no `reclaimed`
+    label, so `fetch_resume_branch` finds nothing) resumes the SAME ticket from its
+    handoff branch — resume falls through to the handoff marker. `base_branch`
+    stays `dev`, so close's HEAD-bound gate keeps it safe from double-merge."""
+    wip_branch, wip_sha = _setup_origin_with_wip(repo)
+    stub = _make_resume_stub(None, handoff_branch=wip_branch)
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert _worktree_head(Path(payload["worktree_path"])) == wip_sha
+    rows = fetch_runs(db_path)
+    assert len(rows) == 1
+    assert rows[0]["base_branch"] == "dev"
+    # Reclamation source is consulted first, then the CAL-923 handoff fall-through.
+    stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
+    stub.fetch_handoff_branch.assert_awaited_once_with("CAL-570")
 
 
 @pytest.mark.slow

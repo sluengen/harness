@@ -317,14 +317,29 @@ async def _resolve_resume_start_point(
 ) -> str | None:
     """The git commit a resumed run starts from, or ``None`` for a clean start.
 
-    Reads the reclaimed ticket's preserved (checkpoint-pushed) branch from Linear
-    and fetches it from ``origin``, returning the fetched tip SHA. Best-effort
-    throughout: no preserved branch, a branch that no longer fetches, or a Linear
-    probe error all return ``None`` so the run restarts clean rather than block
-    the queue (proposal ``stale-run-reclamation`` D4 / CAL-739).
+    Reads the ticket's preserved (checkpoint-pushed) branch from Linear and
+    fetches it from ``origin``, returning the fetched tip SHA. Two sources feed
+    resume, tried in order:
+
+    1. **Death-keyed reclamation** (``fetch_resume_branch`` — proposal
+       ``stale-run-reclamation`` D4 / CAL-739): a ``reclaimed`` ticket whose dead
+       run left a checkpoint-pushed branch.
+    2. **Proactive context-rollover handoff** (``fetch_handoff_branch`` —
+       proposal ``ground-specs-and-context-rollover`` WS-B / CAL-923): an alive
+       session near its context limit handed off the **same** (still In-Progress)
+       ticket. Its handoff marker carries no ``reclaimed`` label, so the
+       reclamation reader skips it — hence the explicit fall-through here.
+
+    Best-effort throughout: no preserved branch from either source, a branch that
+    no longer fetches, or a Linear probe error all return ``None`` so the run
+    restarts clean rather than block the queue. ``base`` (the merge target) is
+    unchanged either way, so ``close``'s HEAD-bound gate keeps the resumed run
+    safe from double-merge whichever source supplied the branch.
     """
     try:
         branch = await client.fetch_resume_branch(ticket)
+        if not branch:
+            branch = await client.fetch_handoff_branch(ticket)
     except (LinearNotFound, LinearRequestError):
         return None
     if not branch:
