@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.5 -->
+<!-- guidance:harness@0.1.6 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -109,6 +109,26 @@ The plan you are following lives only in this session's context — the ledger a
 
 - **Re-orient via the ledger.** Run `harness status <run-id> [--json]` to get the run's terminal-state summary, and inspect the worktree (`git status`, `git log`, the diff) to see what is already implemented. The ledger + worktree are the source of truth — trust them over a half-remembered plan.
 - **Checkpoint intent before you risk losing it.** Commit WIP in the worktree and/or write the remaining plan into the ticket or a scratch note, so the one thing that lives only in context survives a compaction. (A `CLAUDE.md` "Compact Instructions" section is an optional refinement, not required.)
+
+#### Proactive context-rollover handoff
+
+When a build is **alive but nearing its context limit** mid-ticket, hand off gracefully rather than risk a mid-thought cutoff — **compose the existing verbs, no new machinery** (proposal `ground-specs-and-context-rollover` WS-B):
+
+1. **`harness checkpoint --run-id <run_id>`** — push the WIP branch so it is durable (the existing verb; pushes only the feature branch, so the `close` gate is untouched).
+2. **Post a handoff comment** on the ticket naming the checkpoint-pushed branch, in the single-sourced `harness.reclaim_marker.format_handoff_comment` format — marker `Context-rollover handoff by \`harness checkpoint\`` with a ``Preserved branch: `<branch>` `` clause. Post it through the `linear` skill (`commentCreate`). **Leave the ticket In Progress** — do **not** revert it to Todo and do **not** apply the `reclaimed` label.
+3. **A fresh session continues the same ticket** with `harness start <TICKET> --resume`: resume resolution reads the handoff marker (`LinearClient.fetch_handoff_branch`), fetches the branch from `origin`, and starts the worktree from its tip while keeping `base_branch` = `dev` — so `close`'s HEAD-bound gate keeps the resumed run safe from double-merge. Re-orient via `git log` on the recovered WIP before continuing.
+
+**This is distinct from death-keyed reclamation** (`harness reclaim`, Step 0 of `/harness routine build`), and the two never collide:
+
+| | Proactive context-rollover handoff | Death-keyed reclamation |
+|---|---|---|
+| Trigger | session **alive**, near its context limit | orchestrator **dead** (stalled past the staleness threshold) |
+| Linear state | ticket **stays In Progress** | ticket reverted to **Todo** |
+| Label | **none** | **`reclaimed`** |
+| Comment marker | `Context-rollover handoff by \`harness checkpoint\`` | `Reclaimed by \`harness reclaim\`` |
+| Resume reader | `fetch_handoff_branch` (marker-gated, no label) | `fetch_resume_branch` (`reclaimed`-label-gated) |
+
+Because the two use **distinct marker strings** and occupy **distinct Linear states**, `start --resume` resolves the right branch for each — a handoff comment is never read as a reclaim comment, and vice versa (pinned in `tests/unit/test_reclaim_marker.py`). `start --resume` tries the reclaim source first, then falls through to the handoff source, so one flag serves both.
 
 ---
 

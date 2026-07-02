@@ -30,7 +30,13 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from harness.reclaim_marker import RECLAIM_LABEL, RECLAIM_MARKER, parse_preserved_branch
+from harness.reclaim_marker import (
+    HANDOFF_MARKER,
+    RECLAIM_LABEL,
+    RECLAIM_MARKER,
+    parse_handoff_branch,
+    parse_preserved_branch,
+)
 
 # size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
 # requires every Linear GraphQL operation to live in this client (never in
@@ -214,6 +220,53 @@ query ResumeBranch($id: String!) {
             return None
         latest = max(reclaim_comments, key=lambda c: c.get("createdAt") or "")
         return parse_preserved_branch(latest.get("body") or "")
+
+    async def fetch_handoff_branch(self, identifier: str) -> str | None:
+        """The preserved WIP branch a **proactively handed-off** ticket continues from.
+
+        Proactive context-rollover handoff (proposal
+        ``ground-specs-and-context-rollover`` WS-B / CAL-923): a session that is
+        *alive but near its context limit* checkpoints its WIP and posts a
+        :data:`~harness.reclaim_marker.HANDOFF_MARKER` comment naming the pushed
+        branch, so a fresh session continues the **same** ticket. This reads that
+        branch back.
+
+        The counterpart to :meth:`fetch_resume_branch`, and deliberately
+        different in one way: a proactive handoff keeps the ticket **In Progress**
+        and applies **no** ``reclaimed`` label (it is not a reclamation), so this
+        keys **only** on the handoff marker in a comment — there is no label gate.
+        The handoff marker is distinct from the reclaim marker, so this never
+        picks up a death-keyed reclaim comment (and ``fetch_resume_branch`` never
+        picks up a handoff comment). The **latest** handoff comment wins. Every
+        other case — no handoff comment, a handoff that preserved no durable WIP
+        (the sentinel) — returns ``None`` so the caller restarts clean.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        query = """
+query HandoffBranch($id: String!) {
+  issue(id: $id) {
+    comments(first: 20) { nodes { body createdAt } }
+  }
+}
+"""
+        data = await self._request(query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+
+        comment_nodes: list[dict[str, Any]] = (
+            (issue.get("comments") or {}).get("nodes", [])
+        )
+        handoff_comments = [
+            c for c in comment_nodes if HANDOFF_MARKER in (c.get("body") or "")
+        ]
+        if not handoff_comments:
+            return None
+        latest = max(handoff_comments, key=lambda c: c.get("createdAt") or "")
+        return parse_handoff_branch(latest.get("body") or "")
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Transition issue ``identifier`` to the first In Progress state.
