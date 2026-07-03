@@ -4,6 +4,12 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Added — require a lifecycle sweep in change-spec design sections (CAL-973)
+- **Source: `assessments/2026-07-03-full-review.md`, CODE-INSIGHT-1 (Medium, systemic).** One review pass surfaced three separate write/delete paths that shipped their primary mutation but missed a *derived* artifact of the same entity — a brew POST that never invalidated its cache, a deletion that never revoked its share token, an anonymisation that filtered some aggregates but not others. The defect class is "a state change that forgets its derived artifacts," and per-change review keeps catching it one artifact at a time.
+- **`skills/spec-authoring/SKILL.md` `@0.5.0` → `@0.6.0`.** Adds a **Lifecycle sweep (conditional)** rule to the Change spec design guidance: for any state-changing operation, enumerate the derived artifacts of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state per artifact what happens to it — "Unaffected" is acceptable, silence is not. It moves the sweep to design time, in the change spec, where it is cheapest.
+- **Guard `tests/unit/test_lifecycle_sweep_spec.py`.** Pins the rule's presence, its named artifact kinds, the unaffected/silence clause, and its placement in the Change spec section (with the honest limit that it evidences the rule, not that a sweep was performed).
+- **`registry.yaml` `0.5.30` → `0.5.31`** for the `spec-authoring` bump (registry self-version bumped in both header + `meta:` self-entry).
+
 ### Changed — correct the loop substrate: always-on local is the default; delete the GitHub Actions workflow (CAL-930)
 - **Source: corrects CAL-908 (below), 2026-07-02.** CAL-908 made a GitHub Actions workflow the *primary* substrate for the harness's own loop. That default was wrong on cost and fit: the repo is **private** so Actions minutes are metered (~2,000/month, no Pro subscription); the loop is a **long-lived agent run** (~30–90 min per ticket), not the ~24s CI gate — Actions bills the whole wall-clock, so nightly runs would eat/blow the budget. The reasoning conflated "the *gate* runs green on `ubuntu-latest` in CI" (cheap) with "run the *whole loop* on Actions" (expensive). Actions is also built for short CI jobs, not multi-hour agent sessions, and the four-loops model already had loops running as Claude cloud Routines, not Actions.
 - **Deleted `.github/workflows/harness-loop.yml`.** The mis-fit artifact is removed.
