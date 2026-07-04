@@ -4,6 +4,12 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Added — a removal must sweep for its dependents (CAL-974)
+- **Source: `assessments/2026-07-03-full-review.md`, CODE-INSIGHT-2 (Medium, systemic).** One review pass surfaced several dead contracts left keyed to removed things — an unreachable 409 guarding a constraint dropped in a migration, a coverage floor no gate measured, `tools/` references three files deep, orphaned library helpers. The defect class is "a removal that leaves its dependents behind."
+- **`skills/code-quality/SKILL.md` `@0.6.0` → `@0.7.0`.** Adds an **A removal sweeps for its dependents** rule to Part A — Scope: a removal is not complete until you grep for the removed name (constraint names in exception handlers, feature names in config / testpaths / docs) and delete or update every dependent — the diff of a removal should include its dependents.
+- **Guard `tests/unit/test_removal_sweep_spec.py`.** Pins the rule's presence, its named dependent kinds, and its placement in Part A — Scope (with the honest limit that it evidences the rule, not that a sweep was performed).
+- **`registry.yaml` `0.5.31` → `0.5.32`** for the `code-quality` bump (registry self-version bumped in both header + `meta:` self-entry).
+
 ### Added — require a lifecycle sweep in change-spec design sections (CAL-973)
 - **Source: `assessments/2026-07-03-full-review.md`, CODE-INSIGHT-1 (Medium, systemic).** One review pass surfaced three separate write/delete paths that shipped their primary mutation but missed a *derived* artifact of the same entity — a brew POST that never invalidated its cache, a deletion that never revoked its share token, an anonymisation that filtered some aggregates but not others. The defect class is "a state change that forgets its derived artifacts," and per-change review keeps catching it one artifact at a time.
 - **`skills/spec-authoring/SKILL.md` `@0.5.0` → `@0.6.0`.** Adds a **Lifecycle sweep (conditional)** rule to the Change spec design guidance: for any state-changing operation, enumerate the derived artifacts of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state per artifact what happens to it — "Unaffected" is acceptable, silence is not. It moves the sweep to design time, in the change spec, where it is cheapest.
