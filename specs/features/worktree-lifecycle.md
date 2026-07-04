@@ -1,8 +1,8 @@
 ---
 feature: worktree-lifecycle
 status: implemented
-last_updated: 2026-06-18
-linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767]
+last_updated: 2026-07-04
+linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
 ---
 
 # Worktree lifecycle — isolated branch per run
@@ -21,8 +21,16 @@ linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767]
 
 - GIVEN `harness start <ticket>` with base branch `<base>` (default `dev`)
 - WHEN the helper's `create` runs
-- THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git worktree add -b harness/<run_id> <path> <base>`
+- THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git -c worktree.useRelativePaths=true worktree add -b harness/<run_id> <path> <base>`
 - AND if the path already exists it raises rather than silently reuse; on a `git` failure it best-effort cleans up any half-baked directory before raising
+
+#### Relative pointers — the worktree is usable from both the host and the container, with no flip
+
+`create` writes the worktree's two pointer files — the worktree `.git` and the admin `<repo>/.git/worktrees/<run_id>/gitdir` — in **relative** form (`worktree.useRelativePaths=true`, git ≥ 2.48). This is load-bearing for the Docker wrapper: `harness start` runs *inside* the container, where the repo is mounted at `/workspace`, but the same worktree is also operated on from the host, where it lives at `/Users/...`. An **absolute** pointer baked at create time is valid in only one of those namespaces, so the operator previously had to hand-flip both files between container-form and host-form around every git operation — a fragile dance whose broken-worktree window let a concurrent `git worktree prune` delete the admin dir and its uncommitted work (CAL-866). A relative pointer resolves from the file's own location, so it is correct in *both* namespaces at once: no flip is ever needed, and `git worktree list` never marks the worktree spuriously `prunable` (CAL-935).
+
+- GIVEN a worktree created in-container (repo mounted at `/workspace`)
+- THEN both pointer files are relative, so host git (repo at `/Users/...`) and container git (repo at `/workspace`) each run `status` / `commit` / `worktree list` in the worktree with no restore step, and neither sees it as prunable
+- AND because relative worktree pointers and the `extensions.relativeWorktrees` marker they stamp require git ≥ 2.48 — which the base image's Debian trixie does not ship (2.47.3) — the harness image compiles git 2.50.x from source (`docker/Dockerfile` `git-build` stage); a host using this worktree layout likewise needs git ≥ 2.48
 
 ### Resume — start the worktree from a preserved branch
 

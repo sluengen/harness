@@ -9,6 +9,16 @@ A self-contained Python 3.11-slim image with the harness pre-installed via
 `uv`. The host project repo is mounted at `/workspace`, so worktrees and the
 SQLite state database (`.harness/harness.db`) live on the host filesystem.
 
+The image ships **git 2.50.x compiled from source** rather than the base OS
+package. `harness start` creates each run's worktree in-container but that same
+worktree is operated on from the host, so its `.git`/`gitdir` pointers must be
+written in **relative** form to resolve across the `/workspace`↔`/Users/...`
+mount boundary (`worktree.useRelativePaths`, git ≥ 2.48). Debian trixie freezes
+git at 2.47.3, which cannot write — or even open — a relative-pointer worktree,
+so the Dockerfile's `git-build` stage compiles a matching git and copies it in
+(see [`specs/features/worktree-lifecycle.md`](../specs/features/worktree-lifecycle.md)).
+A **host** using this layout likewise needs git ≥ 2.48.
+
 The image is **not** a long-running service. The harness CLI is a one-shot
 process: each `docker run` invokes one verb (or one headless agent run) and
 exits. The entrypoint selects the role — `agent <TICKET>` drives the full
@@ -19,7 +29,7 @@ exits. The entrypoint selects the role — `agent <TICKET>` drives the full
 
 | Path | Purpose |
 |------|---------|
-| `docker/Dockerfile` | Image definition. Python 3.11-slim, deps via `uv sync --frozen --no-dev`, ENTRYPOINT `uv run harness`. |
+| `docker/Dockerfile` | Image definition. Python 3.11-slim, a `git-build` stage compiling git 2.50.x (relative worktrees need ≥ 2.48; trixie ships 2.47.3), deps via `uv sync --frozen --no-dev`, ENTRYPOINT `uv run harness`. |
 | `docker/docker-compose.yml` | Dev compose with mount, working dir, env vars, and `host.docker.internal` bridge. |
 | `.dockerignore` (repo root) | Excludes `.venv/`, `tests/`, `.git/`, `.worktrees/`, `.harness/`, `__pycache__/`, etc. |
 

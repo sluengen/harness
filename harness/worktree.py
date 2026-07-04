@@ -142,8 +142,16 @@ class WorktreeNode:
         # will create the leaf, but it expects the .worktrees/harness/ prefix.
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Write RELATIVE pointers for both the worktree `.git` and the admin
+        # `gitdir` (git >= 2.48; the harness image mandates it — see
+        # docker/Dockerfile). Relative pointers resolve identically whether the
+        # repo is seen at its host path (/Users/...) or the container mount
+        # (/workspace), so no manual gitdir-pointer flip is ever needed, and the
+        # worktree is never spuriously `prunable` (the CAL-866 data-loss path).
         rc, _stdout, stderr = await _git(
             repo_root,
+            "-c",
+            "worktree.useRelativePaths=true",
             "worktree",
             "add",
             "-b",
