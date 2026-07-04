@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.5.3 -->
+<!-- guidance:review-discipline@0.5.4 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -86,7 +86,7 @@ Critical and High block. Medium and Low do not, **but fix them in the same pass 
 ## Reviewer obligations
 
 - **Run the verification yourself.** Do not trust the builder's claim that tests pass. Fresh run, read the output (`code-quality` Part C).
-- **Record reality on PASS.** Update `specs/features/<feature>.md` from what the diff actually does, as the last commit before merge (`spec-driven-development`). This is the reviewer's job, not the builder's.
+- **Record reality on PASS — the as-built-record gate.** When the diff touches a **user-facing surface** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does as the last commit before merge (`spec-driven-development`).
 - **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings by severity with the four parts each, the verification output, and a final PASS / FAIL.
 
 ## On a FAIL
