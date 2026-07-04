@@ -164,8 +164,11 @@ directory with no flags or env-var setup.
 - **`LINEAR_API_KEY`** — reads from a `.env` file in the current directory if
   not already in the shell environment.
 - **Claude OAuth** — extracts the access token from the macOS Keychain
-  (`Claude Code-credentials`) on each invocation. No manual token setup or
-  `~/.claude` mount needed; the Keychain is the source of truth on macOS.
+  (`Claude Code-credentials`) on each invocation, and **refreshes it first if it
+  is expired or about to expire** (via `claude -p ok`, which makes the CLI write a
+  fresh token back to the Keychain) so a stale token never reaches the container
+  (CAL-941). No manual token setup or `~/.claude` mount needed; the Keychain is
+  the source of truth on macOS.
 - **Codex OAuth** — mounts `~/.codex` into the container. Codex uses
   subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
   no `OPENAI_API_KEY` is required or passed.
@@ -217,11 +220,33 @@ fi
 # HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
 # container and would reject the mounted repo, breaking cross-repo runs. Pin it.
 
-# Pull Claude OAuth token from macOS Keychain (containers can't access Keychain directly).
+# Pull the Claude OAuth token from the macOS Keychain (containers can't read the
+# Keychain directly). The stored access token is short-lived (a few hours), so
+# passing it verbatim long after `claude /login` makes every in-container `claude`
+# call 401 — which surfaces as a false `review` failure (CAL-941). So read the
+# token AND its expiry, and if the token is missing or within 5 min of expiring,
+# trigger the Claude CLI's own refresh host-side (`claude -p ok` makes the CLI
+# exchange the stored refreshToken and write a fresh token back to the Keychain),
+# then re-read. Both are forwarded (CLAUDE_CODE_OAUTH_EXPIRES_AT too) so
+# `harness doctor` can flag a stale token instead of failing silently in review.
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['claudeAiOauth']['accessToken'])" 2>/dev/null || true)
-  export CLAUDE_CODE_OAUTH_TOKEN
+  _read_claude_token() {
+    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin)['claudeAiOauth'];t=d.get('accessToken') or '';print(t, int(d.get('expiresAt') or 0)) if t else None" 2>/dev/null
+  }
+  read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
+  _now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
+  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || "${CLAUDE_CODE_OAUTH_EXPIRES_AT:-0}" -le "$((_now_ms + 300000))" ]]; then
+    if command -v claude >/dev/null 2>&1; then
+      # macOS ships no `timeout`; use it (or coreutils `gtimeout`) when present.
+      if command -v timeout >/dev/null 2>&1; then _t=(timeout 60)
+      elif command -v gtimeout >/dev/null 2>&1; then _t=(gtimeout 60)
+      else _t=(); fi
+      ${_t[@]+"${_t[@]}"} claude -p ok >/dev/null 2>&1 || true
+      read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
+    fi
+  fi
+  export CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT
 fi
 
 # Forward the host ssh-agent for `git push` over SSH (the close verb).
@@ -250,6 +275,7 @@ exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -e LINEAR_API_KEY \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
+  -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
   -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
   -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
@@ -279,10 +305,17 @@ not using the locally-built `harness:dev`.
 
 ### Token expiry
 
-The OAuth token extracted from the Keychain has an expiry. The wrapper fetches
-a fresh token on every invocation, so as long as your local Claude Code session
-is active the token will be valid. If you see auth errors, run `claude /login`
-on the host to refresh the Keychain entry.
+The OAuth token extracted from the Keychain is short-lived (a few hours). The
+wrapper reads its `expiresAt` and, when the token is missing or within 5 minutes
+of expiring, triggers the Claude CLI's own refresh host-side (`claude -p ok`,
+which exchanges the stored refresh token and writes a fresh access token back to
+the Keychain) before passing it in — so a run started long after `claude /login`
+still authenticates in the container (CAL-941). The freshness (`expiresAt`) is
+forwarded as `CLAUDE_CODE_OAUTH_EXPIRES_AT`, and `harness doctor` fails loudly on
+an expired token rather than letting `review` 401 silently. If the refresh cannot
+run — the stored refresh token is itself dead, or `claude` is not on `PATH` — the
+wrapper falls back to the stale token and `doctor` reports it; run `claude /login`
+on the host to re-establish the Keychain entry.
 
 ## Notes / caveats
 
