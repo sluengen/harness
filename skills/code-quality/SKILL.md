@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.6.0 -->
+<!-- guidance:code-quality@0.7.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -35,6 +35,10 @@ Specifically, unless the task asks for it: do not rename in untouched paths, do 
 ### Smallest working solution
 
 The build-time application of `engineering-principles`' *smallest change that satisfies the spec*. One condition is usually enough. Removing code is often the answer. New abstractions, layers, and helpers are justified by the task, not introduced speculatively. This is not licence to leave work half-done: if the spec calls for a helper or a missing primitive, build it. The rule is *don't add what wasn't asked for; do build what the task requires.*
+
+### A removal sweeps for its dependents
+
+A deletion looks finished the moment the code is gone — but it is only half-done if its dependents still point at the removed name. **A removal is not complete until you grep for the removed name — constraint names in exception handlers, feature names in config / testpaths / docs — and delete or update every dependent. The diff of a removal should include its dependents.** What survives otherwise is dead contract: a handler guarding a constraint that no longer exists, a config key for a deleted feature, a doc describing a path that is gone. Grep the name; the diff is the proof the sweep happened.
 
 ### Carry-forward, not silent cleanup
 
