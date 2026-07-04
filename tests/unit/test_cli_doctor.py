@@ -35,6 +35,69 @@ def test_check_auth_passes_when_oauth_token_in_env() -> None:
     assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
 
 
+def test_check_auth_fails_on_expired_oauth_token() -> None:
+    from harness.cli.doctor import check_auth
+
+    # CAL-941: the wrapper also exports CLAUDE_CODE_OAUTH_EXPIRES_AT (epoch-ms).
+    # When the token is the active credential but its expiry is in the past, the
+    # check must FAIL loudly (an expired token 401s every in-container claude call)
+    # rather than PASS on mere presence.
+    status, msg = check_auth(
+        env={
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok-stale",
+            "CLAUDE_CODE_OAUTH_EXPIRES_AT": "1000",  # epoch-ms, long past
+        },
+        claude_dir=None,
+        now_ms=2000,
+    )
+    assert status == "FAIL"
+    assert "expired" in msg.lower()
+
+
+def test_check_auth_passes_on_fresh_oauth_token_with_expiry() -> None:
+    from harness.cli.doctor import check_auth
+
+    # A token whose expiry is in the future passes.
+    status, msg = check_auth(
+        env={
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok-fresh",
+            "CLAUDE_CODE_OAUTH_EXPIRES_AT": "9000",
+        },
+        claude_dir=None,
+        now_ms=2000,
+    )
+    assert status == "PASS"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in msg
+
+
+def test_check_auth_passes_on_oauth_token_without_expiry() -> None:
+    from harness.cli.doctor import check_auth
+
+    # Backward compatible: no CLAUDE_CODE_OAUTH_EXPIRES_AT (older wrapper) — a
+    # present non-empty token still passes; freshness is only asserted when the
+    # expiry is supplied.
+    status, _msg = check_auth(
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "tok-test"}, claude_dir=None, now_ms=2000
+    )
+    assert status == "PASS"
+
+
+def test_check_auth_passes_on_non_integer_expiry() -> None:
+    from harness.cli.doctor import check_auth
+
+    # A malformed expiry must not crash nor spuriously FAIL — fall back to the
+    # presence check.
+    status, _msg = check_auth(
+        env={
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok-test",
+            "CLAUDE_CODE_OAUTH_EXPIRES_AT": "not-a-number",
+        },
+        claude_dir=None,
+        now_ms=2000,
+    )
+    assert status == "PASS"
+
+
 def test_check_auth_does_not_pass_on_empty_oauth_token(tmp_path: Path) -> None:
     from harness.cli.doctor import check_auth
 

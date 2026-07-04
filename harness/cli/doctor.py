@@ -19,14 +19,25 @@ from harness.state import store
 def check_auth(
     env: dict[str, str] | None = None,
     claude_dir: Path | None = None,
+    now_ms: int | None = None,
 ) -> tuple[str, str]:
-    """Pass if ANTHROPIC_API_KEY is set, CLAUDE_CODE_OAUTH_TOKEN is non-empty, OR ~/.claude/ exists.
+    """Pass if ANTHROPIC_API_KEY is set, CLAUDE_CODE_OAUTH_TOKEN is non-empty and
+    unexpired, OR ~/.claude/ exists.
 
     ``CLAUDE_CODE_OAUTH_TOKEN`` is the credential the recommended ``~/bin/harness``
     Docker wrapper injects (extracted from the macOS Keychain); the wrapper mounts
     neither ``ANTHROPIC_API_KEY`` nor ``~/.claude``, so the token alone must pass.
     The wrapper forwards the variable as an empty string when Keychain extraction
     fails, so require a non-empty value — a present-but-empty token is no credential.
+
+    Freshness (CAL-941): the wrapper also forwards ``CLAUDE_CODE_OAUTH_EXPIRES_AT``
+    (epoch-ms). An *expired* access token 401s every in-container ``claude`` call —
+    surfacing as a false ``review`` failure — so when the expiry is present and in
+    the past this **FAILs loudly** rather than passing on mere presence. This is a
+    backstop: the wrapper refreshes a stale token before it ever reaches here, so a
+    FAIL means the refresh itself did not take (e.g. a dead refresh token → run
+    ``claude -p ok`` / ``claude /login`` on the host). A missing or unparseable
+    expiry falls back to the presence check (older wrapper / non-wrapper runs).
     """
     if env is None:
         import os
@@ -38,6 +49,25 @@ def check_auth(
     if "ANTHROPIC_API_KEY" in env:
         return ("PASS", "ANTHROPIC_API_KEY set")
     if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        expires_at = env.get("CLAUDE_CODE_OAUTH_EXPIRES_AT")
+        if expires_at:
+            try:
+                expires_ms = int(expires_at)
+            except ValueError:
+                expires_ms = None
+            if expires_ms is not None:
+                if now_ms is None:
+                    import time
+
+                    now_ms = int(time.time() * 1000)
+                if now_ms >= expires_ms:
+                    stale_min = (now_ms - expires_ms) // 60_000
+                    return (
+                        "FAIL",
+                        f"CLAUDE_CODE_OAUTH_TOKEN expired {stale_min} min ago — "
+                        "the wrapper's refresh did not take; run `claude -p ok` "
+                        "(or `claude /login`) on the host to refresh the Keychain token",
+                    )
         return ("PASS", "CLAUDE_CODE_OAUTH_TOKEN set")
     if claude_dir.exists():
         return ("PASS", f"{claude_dir} exists (Claude Code OAuth)")
