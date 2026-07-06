@@ -124,6 +124,7 @@ def test_superseded_table_is_parseable() -> None:
         "build-workflow.md",
         "cli.md",
         "hermes-control-model.md",
+        "spec-engine.md",  # SPEC.md's own retired-engine sections (CAL-1010)
     } <= names
 
 

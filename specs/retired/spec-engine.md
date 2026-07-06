@@ -1,0 +1,816 @@
+# Harness — Retired Engine Design (SPEC §3, §5–§10, §12–§14)
+
+> **Superseded 2026-07-07** by the verb model — proposal [`harness-as-tool`](../proposals/harness-as-tool.md) (accepted 2026-06-09), decision recorded in [`architecture-principles`](../architecture-principles.md). This document is the re-homed body of the retired deterministic-engine sections of [`SPEC.md`](../../SPEC.md): §3 (Repository Structure), §5–§10 (workflow schema, state, merge semantics, identity, worktree isolation, execution engine), and §12–§14 (SQLite schema, Docker, the steward example). The YAML-walking engine these sections describe was deleted in CAL-574; they are kept as design history only. The current design is SPEC §1–2 (verb model), §4 (core modules), and §11 (CLI); the current schema reference is [`run-ledger.md`](../features/run-ledger.md).
+
+The sections below are reproduced from SPEC.md as of the CAL-1010 extraction. Treat any "the engine walks the workflow / the YAML decides the route" statement as superseded by SPEC §1–2.
+
+---
+
+## 3. Repository Structure
+
+```
+harness/
+├── pyproject.toml
+├── README.md
+├── CLAUDE.md
+├── SPEC.md                    ← this file
+├── .gitignore
+├── .claude/
+│   └── settings.json
+├── docker/
+│   ├── Dockerfile
+│   └── entrypoint.sh
+├── harness/                   ← Python package
+│   ├── __init__.py
+│   ├── cli.py                 ← Typer entrypoint
+│   ├── engine/
+│   │   ├── __init__.py
+│   │   ├── runner.py          ← top-level: load workflow, walk steps, emit events
+│   │   ├── executor.py        ← per-node execution + contract validation
+│   │   ├── loop.py            ← `until:` block evaluator
+│   │   └── retry.py           ← three-layer retry policies
+│   ├── nodes/
+│   │   ├── __init__.py
+│   │   ├── base.py            ← Node protocol, NodeResult, Attestation, Artifacts
+│   │   ├── ai.py              ← AI node (Claude / Ollama / Pi via dispatch)
+│   │   ├── script.py          ← shell / python script via subprocess
+│   │   ├── check.py           ← deterministic state evaluator
+│   │   ├── decision.py        ← LLM or human approval gate (human flavor: v2)
+│   │   └── worktree.py        ← create / merge / cleanup worktree
+│   ├── decisions/             ← human-decision resume machinery (v2)
+│   │   ├── __init__.py
+│   │   ├── pause.py           ← persist paused state, emit prompt
+│   │   └── resume.py          ← rehydrate state, jump to next node
+│   ├── dispatch/
+│   │   ├── __init__.py
+│   │   ├── base.py            ← Agent protocol — wraps an agent harness (v1)
+│   │   ├── claude_agent.py    ← claude_agent_sdk in-process (v1)
+│   │   ├── codex.py           ← OpenAI codex CLI subprocess (v1.5)
+│   │   └── opencode.py        ← opencode CLI subprocess (v1.5) — local + multi-vendor
+│   ├── state/
+│   │   ├── __init__.py
+│   │   ├── schema.py          ← BaseState, run_id, worktree fields, helpers
+│   │   └── store.py           ← SQLite read/write of state row
+│   ├── events/
+│   │   ├── __init__.py
+│   │   ├── emitter.py         ← append-only event log writer
+│   │   └── schema.py          ← event Pydantic models
+│   ├── workflow/
+│   │   ├── __init__.py
+│   │   ├── loader.py          ← parse YAML, resolve $contracts refs, compile to Pydantic
+│   │   ├── schema.py          ← Workflow / Step Pydantic models (engine-side)
+│   │   ├── derive.py          ← derive workflow state schema from collected writes/contracts
+│   │   └── prompt.py          ← Jinja2 prompt rendering
+│   └── identity.py            ← run_id generation, propagation
+├── workflows/                 ← YAML workflow definitions (yours go here)
+│   ├── release-notes.yaml     ← shipped: pull Linear, summarise, write file
+│   └── steward.yaml           ← shipped: domain steward review
+├── contracts/                 ← shared YAML contract schemas (referenced via $contracts/<name>)
+├── prompts/
+│   └── standard/              ← shared library: analyze.j2, implement.j2, review.j2, summarize.j2
+│                              ← workflow-specific prompts go in prompts/<workflow-name>/
+└── tests/
+    ├── unit/                  ← per-module unit tests
+    └── integration/           ← end-to-end with mocked AI dispatch
+```
+
+Placeholder dirs (`prompts/{feature,bugfix,review,steward}/`, `examples/`, `tests/fixtures/synthetic_repo/`) were removed once shipping reality drifted from the spec. The diagram shows what exists today; create subdirectories under `workflows/`, `contracts/`, or `prompts/<workflow-name>/` as new workflows demand them.
+
+**Conventions:**
+- One Python module = one responsibility.
+- No cyclic imports between top-level packages.
+- Workflows are pure YAML. Adding a workflow does not require adding a Python file.
+
+---
+
+
+## 5. YAML Workflow Schema
+
+A workflow is **pure YAML**. No Python state classes, no Python contract classes, no per-workflow Python files. Every node declares its contract inline (or references a shared YAML schema). State is derived from those declarations.
+
+### Full example: bugfix
+
+```yaml
+name: bugfix                              # required, snake-case
+version: 1                                # schema version, integer
+description: Fix a Linear-tracked bug, verify with tests, merge to base
+
+# Inputs the caller provides via CLI — generates flags / positional args dynamically
+inputs:
+  linear_id:
+    type: string
+    pattern: "^[A-Z]+-[0-9]+$"
+    flag: --linear
+    required: true
+  base_branch:
+    type: string
+    default: staging
+
+steps:
+  - id: setup-worktree
+    type: worktree
+    action: create
+    base: $inputs.base_branch
+    writes: [worktree_path, worktree_branch]
+
+  - id: fetch-issue
+    type: script
+    command: |
+      curl -s -X POST https://api.linear.app/graphql \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{issue(id:\"$1\"){id identifier title description state{name} labels{nodes{name}} url}}"}'
+    args: ["$inputs.linear_id"]
+    contract: $contracts/linear-issue              # shared YAML schema
+    writes: [issue]
+
+  - id: investigate
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/bugfix/investigate.j2
+    allowed_tools: [Read, Grep, Glob, Bash]
+    contract:                                       # inline
+      root_cause: string
+      plan:
+        type: list
+        of: string
+    cwd: $state.worktree_path
+    writes: [root_cause, plan]
+
+  - id: implement-and-test
+    type: loop
+    loop:
+      max_iterations: 5
+      until: state.tests_pass
+      steps:
+        - id: implement
+          type: ai
+          agent: claude
+          prompt: prompts/standard/implement.j2
+          template_vars:
+            task: "Apply the fix at $state.root_cause following the plan in $state.plan"
+          allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+          cwd: $state.worktree_path
+          writes_files: true
+          writes: []                                # produces files, not state — no contract needed
+
+        - id: run-tests
+          type: script
+          command: pytest -x
+          cwd: $state.worktree_path
+          contract:
+            tests_pass: boolean
+            failing_tests:
+              type: list
+              of: string
+          writes: [tests_pass, failing_tests]
+
+  - id: review
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/standard/review.j2
+    template_vars:
+      criteria: "Correctness, test coverage, regression risk"
+    allowed_tools: [Read, Grep, Glob, Bash]
+    contract: $contracts/review-verdict             # shared YAML schema
+    cwd: $state.worktree_path
+    writes: [status, issues]
+
+  - id: gate-on-review
+    type: check
+    expr: state.status == "PASS"
+    on_fail: cancel
+
+  - id: teardown-worktree
+    type: worktree
+    action: cleanup
+    policy: merge_to_base
+```
+
+### Step keys
+
+| Key                  | Required         | Meaning                                                               |
+| -------------------- | ---------------- | --------------------------------------------------------------------- |
+| `id`                 | yes              | unique within workflow                                                |
+| `type`               | yes              | `ai` \| `script` \| `check` \| `decision` \| `worktree` \| `loop`     |
+| `depends_on`         | no               | explicit dependency override (default: previous step)                 |
+| `actor`              | decision         | `llm` (v1) \| `human` (v2)                                            |
+| `via`                | decision.human   | `cli` (v1 once shipped) \| `webhook` (future)                         |
+| `message`            | decision.human   | string shown to the human; supports `$state.X` substitution           |
+| `display_state`      | decision.human   | list of state field names to render alongside `message`               |
+| `timeout`            | decision.human   | duration (e.g., `24h`); omit for no timeout                           |
+| `on_reject`          | decision         | `cancel` \| `continue` \| `retry_loop:<id>` \| `pause_for_human`      |
+| `on_timeout`         | decision.human   | `cancel` \| `continue` \| `reject_and_continue`                       |
+| `agent`              | ai               | `claude` \| `ollama:<model>` \| `pi:<provider>/<model>`               |
+| `model`              | ai               | model override (e.g., `haiku`, `sonnet`, `qwen2.5-coder:7b`)          |
+| `prompt`             | ai               | path to Jinja2 template                                               |
+| `template_vars`      | ai               | mapping of vars passed to the Jinja prompt template                   |
+| `allowed_tools`      | ai               | list of tools the LLM may call (default: read-only `Read,Grep,Glob`)  |
+| `contract`           | yes (any output node) | inline schema OR `$contracts/<name>` reference; compiled to Pydantic at load time |
+| `command` / `script` | script           | shell command or script path                                          |
+| `runtime`            | script           | `bash` \| `python`                                                    |
+| `args`               | script           | list of args, supports `$inputs.X` and `$state.Y`                     |
+| `cwd`                | ai, script       | working directory (usually `$state.worktree_path`)                    |
+| `writes`             | yes              | state fields this step is allowed to mutate                           |
+| `writes_files`       | no               | bool, true if the step mutates the filesystem                         |
+| `stall_timeout_s`    | ai               | kill node if no SDK event (tool_called/completed) for N seconds; default: `300` (5 min). Distinct from hard `timeout_s` wall. |
+| `persist_session`    | ai               | bool, resume the agent's conversation across re-executions (keyed by `step.id`) instead of running fresh; default `false`. Honoured by adapters that support session resume (ClaudeAgent); cleared by a `fresh_context: true` loop. |
+| `expr`               | check            | Python boolean expression over `state`                                |
+| `on_fail`            | check            | `cancel` \| `retry_loop:<id>` \| `continue`                           |
+| `loop`               | loop             | nested block with `max_iterations`, `steps`, and one of `until` / `until_bash` (see §10) |
+| `action`             | worktree         | `create` \| `cleanup`                                                 |
+| `policy`             | worktree.cleanup | `merge_to_base` \| `leave_for_inspection` \| `delete_unconditionally` |
+
+### Contracts
+
+**Every node that writes state has a contract.** If a node produces no state output (`writes: []`) and its job is purely to mutate the worktree or fire a side effect, the `contract:` field is optional. The discipline holds where it matters — anything downstream nodes can reference is typed — and the friction disappears where it doesn't.
+
+Concrete example: a code-implementation node inside a loop produces files, not state. Its output is "did the work get done" which is captured by the test-node that follows. No contract needed.
+
+```yaml
+- id: implement
+  type: ai
+  prompt: prompts/standard/implement.j2
+  allowed_tools: [Read, Write, Edit, Bash]
+  writes_files: true
+  writes: []                # nothing flows to state — contract optional
+```
+
+Otherwise: contracts are declared, no defaults.
+
+Contracts come in two forms:
+
+**Inline** — declared right in the YAML, compiled to a Pydantic model at load time via `pydantic.create_model()`:
+
+```yaml
+contract:
+  summary: string
+  items:
+    type: list
+    of: string
+  count: integer
+  status:
+    type: string
+    enum: [PASS, FAIL]
+  priority:
+    type: integer
+    min: 1
+    max: 5
+```
+
+Supported types: `string`, `integer`, `boolean`, `number`, `list` (with `of: <type>`), nested objects (a mapping is treated as a sub-schema). Constraints: `enum`, `pattern` (regex), `min`/`max`, `format` (e.g., `datetime`).
+
+**Shared (`$contracts/<name>`)** — for contracts reused across workflows, hoist them to a YAML file in `contracts/` and reference by name:
+
+```yaml
+# contracts/review-verdict.yaml
+status:
+  type: string
+  enum: [PASS, FAIL]
+issues:
+  type: list
+  of:
+    severity: string
+    description: string
+blocking: boolean
+```
+
+```yaml
+# any workflow
+contract: $contracts/review-verdict
+```
+
+The harness resolves the reference at load time and compiles to the same Pydantic model. Adding a shared schema means writing YAML, not Python.
+
+**Why every node?** Implicit shapes are the foot-gun. If a downstream node can reference `$state.<field>`, that field's existence is a load-time guarantee, not a runtime hope.
+
+#### Contract compiles to two artefacts
+
+At workflow load time, every contract compiles to:
+
+1. **A Pydantic model.** Validates the final payload after the agent returns. Backstop guarantee.
+2. **A tool schema** in the agent harness's native dialect (`submit_<node_id>(...)`). Injected into the agent's available tools at run time. The agent calls this tool with the typed payload to deliver its output. See §4.4 for the structured-output mechanism.
+
+Both artefacts come from the same source — the YAML `contract:` block — so they can never drift. Authors write one schema and get both behaviours: native tool-call structured output for the agent, Pydantic validation for the engine.
+
+### Decision nodes (LLM gates and human approvals)
+
+The `check` node handles deterministic gating (boolean expressions over state). The `decision` node handles the *non*-deterministic kind: an LLM judging whether to proceed, or a human approving an artifact. Two actor flavors share one node type.
+
+**`actor: llm`** (v1) — a bounded AI call whose contract must declare a `decision: bool` field. The engine routes on that field via `on_reject:`. Distinguished from a plain AI node only by the routing semantics and a dedicated `decision_made` event for audit.
+
+```yaml
+- id: should-proceed
+  type: decision
+  actor: llm
+  agent: claude
+  model: haiku
+  prompt: prompts/standard/can_proceed.j2
+  template_vars:
+    question: "Is there enough information in $state.issue to plan a fix?"
+  allowed_tools: [Read]
+  contract:                         # MUST include `decision: bool`
+    decision: boolean
+    reasoning: string
+    missing:                        # optional — what's lacking when decision=false
+      type: list
+      of: string
+  on_reject: cancel                 # cancel | continue | retry_loop:<id> | pause_for_human
+  writes: [data]
+```
+
+When `decision` is `true`, execution continues to the next step. When `false`, the engine applies `on_reject:`. `pause_for_human` is the bridge between LLM and human flavors: an LLM's "no" can escalate to a human gate without two separate nodes.
+
+**`actor: human`** (v2 — schema reserved in v1) — the workflow pauses, awaits an external CLI invocation, then resumes. Schema is parsed and validated in v1; running a workflow that uses `actor: human` errors at load time with `actor: human is reserved for v2` until the resume machinery ships.
+
+```yaml
+- id: confirm-bug-report
+  type: decision
+  actor: human
+  via: cli
+  message: "Is this bug report accurate? See $state.report_path"
+  display_state: [issue, root_cause, plan]
+  timeout: 24h
+  contract:
+    decision: boolean
+    comment: string                 # captured into the event log
+  on_reject: cancel
+  on_timeout: cancel                # cancel | continue | reject_and_continue
+```
+
+Mechanics (v2):
+
+1. Engine reaches the node, emits `decision_requested`, writes status `paused` to the runs row, persists state.
+2. Prints the rendered `message`, the run-id, and resume instructions to stdout.
+3. Exits with code **4** (paused).
+4. The decider (human or orchestrator) reviews and runs:
+   ```bash
+   harness decisions list                                # all paused runs
+   harness decision show <run-id>                        # the question + display_state
+   harness decision approve <run-id> [--comment="..."]
+   harness decision reject  <run-id> [--comment="..."]
+   ```
+5. The approve/reject command rehydrates state, emits `decision_received`, resumes from the next step (or applies `on_reject:`).
+
+**Why decision is its own node type, not just AI + check:**
+
+- The audit trail (`decision_made`, `decision_requested`, `decision_received`) makes "where did this workflow ask for permission?" a one-grep query.
+- Routing semantics (`on_reject:`, `on_timeout:`) live where they belong, not split across two nodes.
+- `pause_for_human` escalation needs a single node identity to hand off cleanly.
+
+### Inputs and CLI generation
+
+The `inputs:` block declares the CLI surface for this workflow's `harness run` subcommand. The CLI introspects the workflow YAML at invocation and dynamically generates flags / positional args.
+
+Per-input fields:
+
+| Field      | Meaning                                                              |
+|------------|----------------------------------------------------------------------|
+| `type`     | `string` \| `integer` \| `boolean`                                   |
+| `required` | boolean (default `false` if `default:` is set, else `true`)          |
+| `default`  | fallback value if the caller omits the input                         |
+| `pattern`  | regex the input must match (string types)                            |
+| `enum`     | list of allowed values                                               |
+| `flag`     | explicit CLI flag (default: `--<input_name>`, underscores → dashes)  |
+| `position` | integer; if set, accepts as positional arg instead of flag           |
+
+`harness run <workflow> --help` introspects the YAML and prints the input contract. Adding a new workflow means writing YAML, not editing CLI code.
+
+Example workflow inputs supporting both flag and positional forms:
+
+```yaml
+inputs:
+  linear_id:
+    type: string
+    pattern: "^[A-Z]+-[0-9]+$"
+    flag: --linear
+    required: false        # because we have a positional fallback below
+  free_text:
+    type: string
+    position: 1
+    required: false
+```
+
+Yields:
+
+```bash
+harness run feature --linear=PROJ-249                          # flag form
+harness run feature "Build a dropdown menu"                   # positional form
+harness run feature --linear=PROJ-249 "with these specifics…"  # both
+```
+
+### Variable substitution
+
+Two namespaces, both prefixed `$`:
+- `$inputs.X` — values the caller passed via CLI.
+- `$state.X` — the live state object; always reflects the latest committed state.
+
+Templating engine: Jinja2 inside prompt templates (full templating power); simple `$` substitution inside YAML scalar values (literal token replace, no expressions).
+
+---
+
+
+## 6. State Schema (derived)
+
+**State is not declared. State is derived.** The harness builds the per-workflow state schema at load time by walking every node's `contract:` and `writes:`, taking the union of declared fields. No Python state classes exist.
+
+### Base state (always present)
+
+Framework-defined fields, prepended to every derived schema:
+
+```python
+class BaseState(BaseModel):
+    run_id: str
+    workflow_name: str
+    base_branch: str
+    worktree_path: Path | None = None
+    worktree_branch: str | None = None
+    artifacts_dir: Path
+    started_at: datetime
+```
+
+### Derivation rule
+
+For each step in the workflow:
+- Compile the node's `contract:` to a Pydantic model.
+- For each name in `writes:`, the field must exist on that contract. The contract field's type becomes the state field's type.
+- If multiple steps write the same field name, their contract field types must be identical (load-time check) — divergence is a workflow error.
+
+The result is a `Pydantic` model class that subclasses `BaseState` and carries every state field the workflow uses.
+
+### Worked example
+
+```yaml
+- id: investigate
+  contract:
+    root_cause: string
+    plan:
+      type: list
+      of: string
+  writes: [root_cause, plan]
+
+- id: run-tests
+  contract:
+    tests_pass: boolean
+    failing_tests:
+      type: list
+      of: string
+  writes: [tests_pass, failing_tests]
+```
+
+Derived state:
+
+```python
+class BugfixState(BaseState):
+    root_cause: str | None = None
+    plan: list[str] = []
+    tests_pass: bool | None = None
+    failing_tests: list[str] = []
+```
+
+Defaults are `None` for scalars, `[]` for lists, `{}` for dicts, applied automatically.
+
+### Engine enforcement
+
+- Every name in `writes:` must match a field name in that step's `contract:`. Otherwise: load-time error.
+- Type consistency across multiple writers of the same field. Otherwise: load-time error.
+- No `state_schema:` field on the workflow. Trying to declare one is a load-time error pointing the author at the derived model.
+
+---
+
+
+## 7. State Merge Semantics
+
+When multiple steps write the same state field, the merge is **type-driven**, not configured per-write. This eliminates the need for a separate "notes channel" — accumulation falls out of the rules.
+
+| Field type | Merge behaviour | Example |
+|------------|-----------------|---------|
+| `list`     | Append          | `notes: list[str]` — every writer appends; the field accumulates across nodes |
+| Scalar (`string`, `integer`, `boolean`, `number`) | Overwrite | `tests_pass: bool` — last writer wins, which is what you want for status fields |
+
+### Why this works
+
+- **Accumulation is a list type.** Lists naturally append; perfect for the auto-populated notes channel.
+- **Status fields are scalars.** `tests_pass`, `review_status`, `worktree_branch` overwrite naturally as the workflow progresses.
+
+### Notes — framework-provided, auto-populated
+
+The `notes: list[str]` field on `BaseState` is special only in *how it's populated*: the AI node captures the agent harness's text-delta stream (everything the model says between tool calls) and routes each chunk into `state.notes` as an append. No `note(text)` tool, no contract opt-in, no workflow ceremony.
+
+Workflows that want *typed* notes (e.g., `warnings: list[string]` populated by a specific contract field) still work and stay unaffected — those are explicit contract fields. The framework `notes` channel is for the agent's free-form thinking, captured for debugging.
+
+### Bounding strategy
+
+Notes auto-capture can grow fast — a long-running AI node can emit thousands of words of "thinking aloud." Two caps applied in order on every write:
+
+- **Per-list entry count** — max 100 entries; oldest dropped first.
+- **Total character budget** — max 50 KB across the whole list; if a write would exceed, oldest entries dropped until under budget.
+
+Both caps are non-configurable in v1. The character budget is the load-bearing one — entry count alone doesn't bound the worst case. Revisit if a real workflow hits either cap.
+
+### Engine enforcement
+
+- Type-driven merge is applied automatically at write time inside `StateStore.update`.
+- Caps applied automatically per the bounding strategy above.
+
+### Deferred to v1.5
+
+- **Dict-merge semantics.** Multiple writers contributing keys to a shared `dict` field. Cut from v1 because no shipped workflow needs it; the same outcome is achievable with separate scalar fields. Add back when a real workflow forces the case.
+- **Per-write merge override** (e.g., `merge: replace` on a list to force overwrite). Same reason — no concrete v1 workflow needs the override. Type-driven defaults are the only behaviour available.
+
+---
+
+
+## 8. Run ID and Identity
+
+A single ULID (or short UUID) is generated at workflow start and propagated everywhere:
+
+| Surface | Format |
+|---------|--------|
+| Worktree dir | `.worktrees/harness/<run-id>/` |
+| Worktree branch | `harness/<run-id>` |
+| State row | `runs.run_id` |
+| Event log | `events.run_id` |
+| Artifacts dir | `.harness/artifacts/<run-id>/` |
+| Logs | `.harness/logs/<run-id>.log` |
+
+`harness logs <run-id>`, `harness status <run-id>`, `git log harness/<run-id>` all work against the same identifier. One ID, one grep.
+
+---
+
+
+## 9. Worktree Isolation
+
+### Composable, not baked in
+
+Worktree handling is a node type, not an engine feature. Workflows opt in:
+
+- **Code-mutating workflows** (feature, bugfix) start with `worktree.create` and end with `worktree.cleanup`.
+- **Read-only workflows** (steward, review) skip worktree nodes entirely.
+
+### Mount and path
+
+- The container mounts the project repo at `/workspace` (bind mount of e.g., `/abs/path/to/your-repo` on the host).
+- Worktrees are created inside the mount at `/workspace/.worktrees/harness/<run-id>/` so they share the gitdir.
+- `.worktrees/` is in the project's `.gitignore` (already done for many projects).
+
+### Branch identity
+
+- Every run gets a unique branch: `harness/<run-id>`. No collisions between concurrent runs.
+- Cleanup policies:
+  - `merge_to_base` — fast-forward `<base>` to the worktree branch, delete worktree, delete branch.
+  - `leave_for_inspection` — delete the worktree but keep the branch (for human follow-up).
+  - `delete_unconditionally` — delete worktree and branch regardless of state. For ephemeral runs (e.g., shadow mode).
+
+### Validation
+
+At workflow load time the engine builds a dependency graph and checks: any node with `writes_files: true` has a `worktree.create` ancestor. Otherwise the workflow is rejected with a clear error.
+
+---
+
+
+## 10. Execution Engine Details
+
+### Sequencing
+
+Steps execute in declared order. `depends_on:` is rarely needed because most workflows are linear. When present, the executor topologically sorts within a step block.
+
+### Loop blocks
+
+```yaml
+- id: implement-and-test
+  type: loop
+  loop:
+    max_iterations: 5
+    until: state.tests_pass
+    steps: [...]
+```
+
+The loop runs its `steps` in declared order, evaluates `until:` against state, repeats up to `max_iterations`. On exit:
+- If `until:` is true → continue to the next step in the parent.
+- If `max_iterations` reached without satisfying `until:` → workflow fails (exit 1) with a `loop_exhausted` event.
+
+`fresh_context: true` (optional) reinitialises the AI context per iteration. Useful for "self-correcting" loops where carrying prior reasoning hurts. It also clears any sessions stored by `persist_session: true` steps (via the adapter's `reset()`), so it overrides per-step session persistence.
+
+**Satisfaction predicate — `until:` or `until_bash:`.** A loop block must declare exactly one. `until:` is a Python boolean expression over `state` (the default shape). `until_bash:` is a shell command run via `bash -c` after each iteration; exit 0 means satisfied, any non-zero exit means not-yet-satisfied. `$state.<field>` / `$inputs.<key>` references inside the command are substituted before exec; missing references fail the workflow. A 300s wall-clock timeout caps each invocation — a timed-out command is treated as "not satisfied" and the `loop_iteration` event carries `data.until_bash_timeout=true`. Declaring both `until:` and `until_bash:` is rejected as ambiguous.
+
+**`retry_loop:<loop-id>` from a child check rewinds to the named loop.** When a `check` step inside (or after) a loop fails with `on_fail: retry_loop:<id>`, the enclosing loop starts another iteration of the loop whose `step.id` matches `<id>`. The retry counts against the same `max_iterations` budget. The pre-retry `loop_iteration` event carries `data.trigger=retry_loop_requested` and `data.requested_by=<check-id>` so the rewind is visible in the event log. A `retry_loop:<id>` referencing a loop that is not on the active stack fails the workflow with a message naming the offending id.
+
+### Retry policies (three layers, distinct)
+
+| Layer | Trigger | Policy (v1, fixed) |
+|-------|---------|--------------------|
+| Transient | Provider 5xx, network timeout | 3 attempts, exponential backoff |
+| Contract violation | LLM output failed Pydantic validation | 2 attempts with stricter system message |
+| Logic failure | Test/check returned fail | None — handled by `loop` block |
+
+These layers never compound silently. Retries emit `retry_attempted` events with attempt number and reason.
+
+**Non-configurable in v1.** The defaults above are baked in — there is no YAML knob to tune them per-node or per-workflow. This keeps the schema lean and forces real failure data before we add tuning surface. If a v1 workflow hits a retry pathology, the fix is to address the root cause (better prompt, better contract), not to twist the dial. Per-node configuration moves to v1.5 when there's evidence it earns its keep.
+
+### Cancellation
+
+`SIGINT` (Ctrl-C) gracefully aborts: emit `workflow_failed` with reason `cancelled`, run cleanup nodes (worktree teardown if applicable), exit 130.
+
+### Stall detection (AI nodes)
+
+An AI node is **stalled** when it's still running but the SDK has emitted no `tool_called` / `tool_completed` / `node_completed` event for `stall_timeout_s` seconds (default 300). On stall:
+
+- Kill the underlying SDK call.
+- Emit `node_failed` with reason `stalled`.
+- Update run status to `stalled`.
+- Apply the contract-violation retry layer (1 retry with stricter prompting) before giving up.
+
+Stall is distinct from the hard `timeout_s` wall (which terminates after total elapsed time regardless of activity). Real failure mode for long-running AI nodes — captured separately so debugging can distinguish "agent ran 10 minutes producing useful output" from "agent hung 5 minutes producing nothing."
+
+---
+
+
+## 12. SQLite Schema
+
+Single database per project: `/workspace/.harness/harness.db`.
+
+```sql
+CREATE TABLE runs (
+  run_id              TEXT PRIMARY KEY,
+  workflow_name       TEXT NOT NULL,
+  workflow_version    INTEGER NOT NULL,
+  status              TEXT NOT NULL,  -- pending | running | completed | failed | cancelled | stalled | paused
+  state_json          TEXT NOT NULL,  -- serialized Pydantic state, latest snapshot
+  inputs_json         TEXT NOT NULL,  -- caller-provided inputs
+  base_branch         TEXT,
+  worktree_branch     TEXT,
+  exit_code           INTEGER,
+  started_at          TEXT NOT NULL,
+  completed_at        TEXT,
+  duration_ms         INTEGER
+);
+
+CREATE INDEX idx_runs_status ON runs(status);
+CREATE INDEX idx_runs_workflow ON runs(workflow_name);
+CREATE INDEX idx_runs_started ON runs(started_at);
+
+CREATE TABLE events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id      TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  node_id     TEXT,
+  event_type  TEXT NOT NULL,
+  timestamp   TEXT NOT NULL,
+  duration_ms INTEGER,
+  data_json   TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX idx_events_run ON events(run_id);
+CREATE INDEX idx_events_type ON events(event_type);
+CREATE INDEX idx_events_run_node ON events(run_id, node_id);
+```
+
+WAL mode enabled for concurrent reads (`harness status` while a run is in progress).
+
+---
+
+
+## 13. Docker Setup
+
+### Image
+
+```dockerfile
+# docker/Dockerfile
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /opt/harness
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+COPY harness/ ./harness/
+COPY workflows/ ./workflows/
+COPY prompts/ ./prompts/
+
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["uv", "run", "harness"]
+```
+
+### Invocation
+
+```bash
+docker run --rm -it \
+  -v "$(pwd)":/workspace -w /workspace \
+  -v "$HOME/.claude":/root/.claude:ro \
+  -e LINEAR_API_KEY \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 \
+  harness:latest \
+  run feature --linear=PROJ-249 --base=staging
+```
+
+### Mount strategy
+
+- `$(pwd)` (host project repo) → `/workspace` (container).
+- Worktrees land at `/workspace/.worktrees/harness/<run-id>/` (visible to host).
+- State + events at `/workspace/.harness/harness.db` (visible to host).
+- `~/.claude` (host) → `/root/.claude` (container, read-only) when using OAuth subscription auth — see Auth below.
+- Ollama runs on the host; `host.docker.internal` lets the container hit it (v1.5+ adapters only).
+
+### Auth
+
+The engine wraps `claude_agent_sdk`, which follows Claude Code's auth conventions. Three paths, in order of preference:
+
+| Path | Pricing | When |
+|---|---|---|
+| Mount `~/.claude` into the container (above example) | Subscription | Recommended for local + most CI cases where the OAuth host install exists. |
+| `CLAUDE_CODE_OAUTH_TOKEN` env var (generated by `claude setup-token`) | Subscription | CI / non-interactive without OAuth file access. |
+| `ANTHROPIC_API_KEY` env var | API rates | Fallback when neither OAuth source is available. |
+
+The SDK picks them up in declared order. Other env vars (`LINEAR_API_KEY` for Linear-fetching workflows, `OPENAI_API_KEY` / `OLLAMA_BASE_URL` for v1.5+ adapters) are independent of the Claude auth choice.
+
+All credentials come from environment / mount at runtime. Never baked into the image.
+
+---
+
+
+## 14. Example Workflow: Steward (smallest end-to-end)
+
+The domain-steward workflow — read-only, no worktree, no code mutation. Smallest possible end-to-end exercise of the engine. Pure YAML, derived state, inline contracts.
+
+```yaml
+# workflows/steward.yaml
+name: steward
+version: 1
+description: Domain steward review producing a structured report
+
+inputs:
+  domain:
+    type: string
+    enum: [architecture, harness, test, code, design]
+    flag: --domain
+    required: true
+
+steps:
+  - id: read-context
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/standard/analyze.j2
+    template_vars:
+      task: "Read the codebase and produce a structured summary of the $inputs.domain domain"
+    allowed_tools: [Read, Grep, Glob, Bash]
+    contract:
+      summary: string
+      key_files:
+        type: list
+        of: string
+      open_questions:
+        type: list
+        of: string
+    writes: [summary, key_files, open_questions]
+
+  - id: assess
+    type: ai
+    agent: claude
+    model: sonnet
+    prompt: prompts/standard/review.j2
+    template_vars:
+      criteria: "$inputs.domain principles, recurring patterns, systemic issues"
+    allowed_tools: [Read, Grep, Glob]
+    contract:
+      findings:
+        type: list
+        of:
+          severity: string
+          area: string
+          description: string
+      systemic_insights:
+        type: list
+        of: string
+    writes: [findings, systemic_insights]
+
+  - id: write-report
+    type: script
+    runtime: python
+    script: scripts/write_steward_report.py
+    args: ["--run-id", "$state.run_id", "--domain", "$inputs.domain"]
+    contract:
+      report_path: string
+    writes: [report_path]
+```
+
+Three nodes, pure YAML. Derived state: `{ summary, key_files, open_questions, findings, systemic_insights, report_path }` plus the framework `BaseState` fields. Standard prompts (`analyze.j2`, `review.j2`) reused via `template_vars`.
+
+### What the author did NOT write
+
+- A `StewardState` Pydantic class — derived from the contracts.
+- Any standalone Pydantic contract classes — declared inline.
+- Custom Jinja templates — standard library is parameterised.
+- A `state_schema:` declaration — there is no such field anymore.
+
+The core ergonomics commitment: **a workflow is a YAML file. Nothing else.**
+
+---
+
