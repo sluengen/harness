@@ -50,8 +50,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _VERSION_EXAMPLE = re.compile(r"\bharness (\d+\.\d+\.\d+)\b")
 
 # Docs that legitimately record *historical* versions — excluded from the gate.
+# ``CHANGELOG-archive/`` holds released CHANGELOG entries rotated out of the root
+# file (CAL-1011); it is the same historical record as ``CHANGELOG.md`` and
+# inherits its exemption.
 _EXCLUDED_FILES = frozenset({"CHANGELOG.md"})
-_EXCLUDED_DIRS = frozenset({"assessments"})
+_EXCLUDED_DIRS = frozenset({"assessments", "CHANGELOG-archive"})
 
 
 def _live_docs() -> list[Path]:

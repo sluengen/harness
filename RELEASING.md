@@ -8,7 +8,8 @@ Cutting a release starts by summarising what shipped since the last one and open
 
 1. **Gather the completed tickets.** Query Linear for issues completed in the release window (default: since the last release) via the `linear` skill (`skills/linear/SKILL.md`) — it owns the GraphQL; `LINEAR_API_KEY` comes from the repo `.env`, never hard-coded. Derive each ticket's kind from its labels (`bug` / `feature` / `improvement` / `chore`).
 2. **Write the release notes.** Group the tickets by kind under **Features**, **Bug fixes**, and **Improvements**; write concise, human-readable notes. The same content seeds the `README.md` CHANGELOG section (below) and the GitHub Release body.
-3. **Open the promotion PR** from `dev` to `main`:
+3. **Rotate `CHANGELOG.md`.** The root changelog keeps only the current `[Unreleased]` window; the release moves its shipped entries into the per-year archive so the root stays bounded (CAL-1011). Move every entry under `## [Unreleased]` in `CHANGELOG.md` to the top of `CHANGELOG-archive/<year>.md` (newest first, under that file's `## Released` heading — create the file with an archive header if the year has none yet), then leave `## [Unreleased]` empty for the next cycle. The archive is historical record; the freshness hook still points authors at the root `CHANGELOG.md` for new entries, and `tests/unit/test_changelog_rotation.py` enforces the root's byte/line ceiling. Include this rotation in the promotion PR below.
+4. **Open the promotion PR** from `dev` to `main`:
 
    ```bash
    gh pr create --base main --head dev \

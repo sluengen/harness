@@ -485,10 +485,11 @@ _INTAKE_MODULE_PATTERN = re.compile(
 # all tracked Markdown plus the two build configs that named the module.
 #
 # Point-in-time records are history, not living guidance, and are excluded:
-# ``assessments/`` (dated code assessments) and ``lessons/`` (captured run
-# logs). Hidden / generated trees (``.venv``, ``.git``, ``.pytest_cache`` …)
-# and vendored ``node_modules`` are excluded too.
-_HISTORY_SEGMENTS = {"assessments", "lessons"}
+# ``assessments/`` (dated code assessments), ``lessons/`` (captured run logs),
+# and ``CHANGELOG-archive/`` (released CHANGELOG entries rotated out of the root
+# file, CAL-1011). Hidden / generated trees (``.venv``, ``.git``,
+# ``.pytest_cache`` …) and vendored ``node_modules`` are excluded too.
+_HISTORY_SEGMENTS = {"assessments", "lessons", "CHANGELOG-archive"}
 _EXTRA_CONFIG_DOCS = ["pyproject.toml", "scripts/verify.sh"]
 
 
