@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,14 @@ from pathlib import Path
 import typer
 
 from harness.state import store
+
+# Minimum host git that understands the ``relativeWorktrees`` extension. Creating
+# the first relative worktree stamps ``extensions.relativeWorktrees=true`` +
+# ``repositoryformatversion=1`` into the repo-global ``.git/config`` — a permanent,
+# repo-wide, one-way floor-raise — after which every git op fails
+# ``fatal: unknown repository extension found: relativeworktrees`` under an older
+# git (CAL-935/CAL-979). Compared as a ``(major, minor)`` tuple.
+MIN_GIT_VERSION = (2, 48)
 
 # ---------------------------------------------------------------------------
 # Individual check functions — each returns (status, message).
@@ -108,6 +117,56 @@ def check_git(
     if not stripped:
         return ("PASS", "working tree clean")
     return ("WARN", f"working tree has uncommitted changes ({stripped.count(chr(10)) + 1} file(s))")
+
+
+def check_git_version(
+    version_output: str | None = None,
+) -> tuple[str, str]:
+    """FAIL if the git on PATH is below the ``MIN_GIT_VERSION`` floor; else PASS.
+
+    Fail loud at setup, not mid-run (CAL-979): a host whose system git is < 2.48
+    would have its repo silently floor-raised by the first relative-worktree
+    create (see ``MIN_GIT_VERSION``) and then break for all its other tooling —
+    the main checkout, the IDE, other contributors, CI on an old runner. The
+    in-container git is 2.50, so this guards the *host* git.
+
+    ``version_output`` injects the raw ``git --version`` stdout for tests; ``None``
+    runs the real subprocess. A missing or unparseable git is a WARN — the
+    precondition for the check could not be established (an entirely absent git is
+    already flagged by ``check_git``) — so this FAILs only on the condition it
+    actually tests: a git present but below the floor.
+    """
+    if version_output is None:
+        try:
+            result = subprocess.run(
+                ["git", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return ("WARN", "could not determine git version (git --version exited non-zero)")
+            version_output = result.stdout
+        except (subprocess.TimeoutExpired, OSError):
+            return ("WARN", "git not available or timed out")
+
+    # ``git version 2.50.1 (Apple Git-155)`` → (2, 50); the parenthetical suffix
+    # on Apple/packaged builds must not defeat the parse.
+    match = re.search(r"git version (\d+)\.(\d+)", version_output)
+    if match is None:
+        return ("WARN", f"could not parse git version from {version_output.strip()!r}")
+
+    found = (int(match.group(1)), int(match.group(2)))
+    found_str = f"{found[0]}.{found[1]}"
+    floor_str = f"{MIN_GIT_VERSION[0]}.{MIN_GIT_VERSION[1]}"
+    if found >= MIN_GIT_VERSION:
+        return ("PASS", f"git {found_str} >= {floor_str}")
+    return (
+        "FAIL",
+        f"git {found_str} < {floor_str} — the first relative-worktree create would "
+        "floor-raise this repo (repositoryformatversion=1) and break every git op "
+        f"on it under this git; upgrade git to >= {floor_str}",
+    )
 
 
 def check_db(db_path: Path | None = None) -> tuple[str, str]:
@@ -212,6 +271,7 @@ def doctor_command(
     checks: list[tuple[str, tuple[str, str]]] = [
         ("auth", check_auth()),
         ("git", check_git()),
+        ("git-version", check_git_version()),
         ("db", check_db(db_path)),
         ("reviewer", check_reviewer()),
         ("cli", check_cli()),
@@ -219,7 +279,7 @@ def doctor_command(
 
     any_fail = False
     for name, (status, msg) in checks:
-        typer.echo(f"[{status}] {name:<10} {msg}")
+        typer.echo(f"[{status}] {name:<12} {msg}")
         if status == "FAIL":
             any_fail = True
 
