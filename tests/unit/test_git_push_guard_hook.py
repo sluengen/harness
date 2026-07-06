@@ -111,6 +111,16 @@ _MUST_DENY = [
     r"$'\x67it' push --force origin dev",  # 'git' hex-obfuscated
     r"git push $'\x2df' origin dev",  # '-f' hex-obfuscated
     r"$'\147it' push -f origin dev",  # 'git' octal-obfuscated
+    # brace group / function body: the force-push runs inline in the shell.
+    "{ git push --force origin dev; }",
+    "f() { git push --force origin dev; }; f",
+    "function f() { git push -f origin dev; }; f",
+    # a bare shell fed a script it can't read (pipe / here-string / heredoc /
+    # process substitution) fails closed.
+    'echo "git push --force origin dev" | bash',
+    'printf "%s\\n" "git push --force origin dev" | sh',
+    'sh <<< "git push --force origin dev"',
+    'cat <(echo "git push --force origin dev") | bash',
 ]
 
 # Non-force pushes and non-push commands that MUST stay allowed — the exact
@@ -147,6 +157,15 @@ _MUST_ALLOW = [
     'bash -c "git status"',
     # ANSI-C quoting in a non-push git command is fine
     r"git commit -m $'fix\ttabbed'",
+    # ${VAR} parameter expansion is captured opaquely, not severed like a brace
+    # group — a plain push with a computed branch is not force and stays allowed.
+    "git push origin ${BRANCH}",
+    # a brace group whose body is a non-force push is fine
+    "{ git push origin dev; }",
+    # a pipeline whose sink is NOT a shell is untouched
+    "git log --oneline | cat",
+    # a bare shell running a script FILE (no pipe / redirect) is out of scope
+    "bash deploy.sh",
 ]
 
 

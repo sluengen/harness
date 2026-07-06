@@ -43,6 +43,32 @@
  * unicode and the standard letter escapes) so the real word is seen. There is no
  * false-positive cost — no legitimate push hex-escapes its words.
  *
+ * **Brace groups and functions.** ``{ git push --force; }`` and
+ * ``f() { git push --force; }; f`` run their body in the current shell, so the
+ * force-push is inline and literal — the lexer treats a word-boundary ``{`` / ``}``
+ * as a command separator (like ``(`` / ``)``) so the body command is analysed.
+ *
+ * **A shell fed a script it can't read.** A bare shell (``sh`` / ``bash`` / …
+ * with no ``-c``) that reads its script from **stdin via a pipe** (``… | bash``),
+ * a **here-string / heredoc** (``sh <<< …``, ``sh <<EOF``) or a **process
+ * substitution** (``bash <(…)``) runs a script the hook cannot resolve
+ * statically. Such an invocation **fails closed**, matching the
+ * command-substitution policy.
+ *
+ * **Explicit scope boundary.** A shell is Turing-complete, so no static parser
+ * can catch every way to reach ``git push --force``. Beyond the classes above,
+ * these are deliberately **out of scope** — closing them is undecidable or would
+ * deny broad legitimate use, and the hook is defence-in-depth atop the deny globs
+ * and (once the repo is public) server-side branch protection, not the sole gate:
+ *   - parameter expansion of the command or its flags (``g=git; $g push --force``;
+ *     ``F=--force; git push $F …``) — same class as the ``$VAR`` refspec case;
+ *   - a shell running a script **file** whose contents are unknowable
+ *     (``bash deploy.sh``);
+ *   - arbitrary generation / decoding of the command text (``base64 -d``, a
+ *     built-up string) and dispatchers like ``xargs`` / ``find -exec``.
+ * Adding a new obfuscation vector to this list (with a one-line justification) is
+ * a valid resolution — the hook must never *silently* miss a class.
+ *
  * On a force-push it emits the current PreToolUse deny contract
  * (``hookSpecificOutput.permissionDecision: "deny"``, exit 0). Otherwise it
  * defers to the normal permission flow (``{continue:true}`` — it does NOT
@@ -146,21 +172,49 @@ function captureBacktick(s, start) {
   return [body, j + 1];
 }
 
+/** Capture a ``${…}`` parameter expansion from ``start`` (just past ``${``) to
+ * its matching ``}``. Returns ``[text, indexAfterClose]``. Kept opaque so a
+ * word-boundary ``{`` separator never severs a ``${VAR}``; not recursed into (a
+ * parameter is a value, not a command). */
+function captureParam(s, start) {
+  let depth = 1;
+  let j = start;
+  let text = "";
+  while (j < s.length && depth > 0) {
+    const ch = s[j];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        j++;
+        break;
+      }
+    }
+    text += ch;
+    j++;
+  }
+  return [text, j];
+}
+
 /** Lex a shell command string.
  *
- * Returns ``{commands, substitutions}``: ``commands`` is a list of commands
- * (each a list of tokens), split on the separators ``; & | ( ) `` and newline;
- * ``substitutions`` is the list of ``$(…)`` / backtick bodies, kept for
- * recursive analysis. Single/double quotes, backslash escapes and ``#``
- * comments are honoured. A command substitution is captured as an opaque token
- * (it does not sever the surrounding command) — a pragmatic lexer for
- * *detecting* a git-push invocation, not a full shell parser. */
+ * Returns ``{commands, substitutions}``. ``commands`` is a list of
+ * ``{tokens, pipedInto}`` objects, split on the separators ``; & | ( ) { }`` and
+ * newline (``{`` / ``}`` only at a word boundary, so a brace group's body is its
+ * own command); ``pipedInto`` marks a command that is the sink of a ``|`` (its
+ * stdin is another command's output). ``substitutions`` is the list of ``$(…)`` /
+ * backtick bodies, kept for recursive analysis. Single/double quotes, backslash
+ * escapes and ``#`` comments are honoured; ``$(…)`` and ``${…}`` are captured as
+ * opaque tokens so they never sever the surrounding command. A pragmatic lexer
+ * for *detecting* a git-push invocation, not a full shell parser. */
 function lex(command) {
   const commands = [];
   const substitutions = [];
   let cur = [];
   let token = "";
   let hasToken = false;
+  let curPiped = false; // is the command being built the sink of a '|'?
+  let nextPiped = false; // does the next command follow a single '|'?
   let i = 0;
   const n = command.length;
 
@@ -174,9 +228,11 @@ function lex(command) {
   const endCommand = () => {
     endToken();
     if (cur.length) {
-      commands.push(cur);
+      commands.push({ tokens: cur, pipedInto: curPiped });
       cur = [];
     }
+    curPiped = nextPiped;
+    nextPiped = false;
   };
 
   while (i < n) {
@@ -193,6 +249,13 @@ function lex(command) {
       const [body, next] = captureParenSub(command, i + 2);
       substitutions.push(body);
       token += "$(" + body + ")";
+      hasToken = true;
+      i = next;
+      continue;
+    }
+    if (c === "$" && command[i + 1] === "{") {
+      const [text, next] = captureParam(command, i + 2);
+      token += "${" + text + "}";
       hasToken = true;
       i = next;
       continue;
@@ -257,11 +320,24 @@ function lex(command) {
       while (i < n && command[i] !== "\n") i++;
       continue;
     }
-    // Command separators (bare '(' / ')' are subshell grouping — '$(' was
-    // already consumed as a substitution above).
-    if (c === "\n" || c === ";" || c === "&" || c === "|" || c === "(" || c === ")") {
+    // Word-boundary '{' / '}' are brace-group delimiters (a brace group runs its
+    // body in the current shell) — separate so the body is its own command. Only
+    // at a word boundary: '${…}' is consumed above, and 'dev{a,b}' keeps '{' as
+    // an ordinary char mid-token.
+    if ((c === "{" || c === "}") && !hasToken) {
       endCommand();
-      if ((c === "&" && command[i + 1] === "&") || (c === "|" && command[i + 1] === "|")) i++;
+      i++;
+      continue;
+    }
+    // Command separators (bare '(' / ')' are subshell grouping — '$(' was
+    // already consumed as a substitution above). A single '|' pipes the next
+    // command's stdin from this one's output.
+    if (c === "\n" || c === ";" || c === "&" || c === "|" || c === "(" || c === ")") {
+      const doubled =
+        (c === "&" && command[i + 1] === "&") || (c === "|" && command[i + 1] === "|");
+      if (c === "|" && !doubled) nextPiped = true;
+      endCommand();
+      if (doubled) i++;
       i++;
       continue;
     }
@@ -334,6 +410,23 @@ function nestedScripts(rawTokens) {
   return [];
 }
 
+/** True if a command is a bare shell (``sh``/``bash``/… with no ``-c`` script)
+ * that reads its script from a channel the hook cannot resolve statically: its
+ * stdin is piped from another command (``… | bash``), or it has an input
+ * redirect — a here-string (``sh <<< …``), heredoc (``sh <<EOF``) or process
+ * substitution (``bash <(…)``). Such an invocation runs an unknown script, so
+ * the guard fails closed (mirroring the command-substitution policy). A bare
+ * shell running a script *file* (``bash deploy.sh`` — no pipe, no redirect) is
+ * out of scope: its contents are unknowable and denying it is too broad. */
+function isBareShellFedExternally(tokens, pipedInto) {
+  const stripped = stripPrefixes(tokens);
+  if (stripped.length === 0) return false;
+  if (!SHELLS.has(stripped[0].split("/").pop())) return false;
+  if (nestedScripts(tokens).length > 0) return false; // has a -c script; analysed directly
+  const hasInputRedirect = stripped.some((t) => t.includes("<"));
+  return pipedInto || hasInputRedirect;
+}
+
 /** True if a single command's tokens are a ``git push`` that force-pushes (or a
  * ``git`` command whose push-ness / force form is obscured by a command
  * substitution the guard fails closed on). */
@@ -388,14 +481,15 @@ function commandForcePushes(rawTokens) {
 }
 
 /** True if ``command`` — or any command substitution or inline shell script
- * nested within it — force-pushes. Recursion is bounded by the finite nesting
- * depth. */
+ * nested within it — force-pushes (or is a bare shell fed an unreadable script,
+ * which fails closed). Recursion is bounded by the finite nesting depth. */
 function forcePushAnywhere(command, depth = 0) {
   if (depth > 16) return false; // pathological-nesting backstop
   const { commands, substitutions } = lex(command);
-  for (const cmd of commands) {
-    if (commandForcePushes(cmd)) return true;
-    for (const script of nestedScripts(cmd)) {
+  for (const { tokens, pipedInto } of commands) {
+    if (commandForcePushes(tokens)) return true;
+    if (isBareShellFedExternally(tokens, pipedInto)) return true;
+    for (const script of nestedScripts(tokens)) {
       if (forcePushAnywhere(script, depth + 1)) return true;
     }
   }
