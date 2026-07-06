@@ -190,11 +190,16 @@ query InProgressIssues($project: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
+        # ``last: 20`` — Linear's default connection order is oldest-first, so
+        # ``first`` would return the *oldest* comments and drop the freshest
+        # reclaim marker (posted just before the re-pick) off the page on a
+        # ticket with >20 comments. Window newest-first so the latest marker is
+        # always present (CAL-1005).
         query = """
 query ResumeBranch($id: String!) {
   issue(id: $id) {
     labels { nodes { name } }
-    comments(first: 20) { nodes { body createdAt } }
+    comments(last: 20) { nodes { body createdAt } }
   }
 }
 """
@@ -245,10 +250,13 @@ query ResumeBranch($id: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
+        # ``last: 20`` — window newest-first so the freshest handoff marker is
+        # in the page even when the ticket has >20 comments (CAL-1005; see the
+        # matching note in ``fetch_resume_branch``).
         query = """
 query HandoffBranch($id: String!) {
   issue(id: $id) {
-    comments(first: 20) { nodes { body createdAt } }
+    comments(last: 20) { nodes { body createdAt } }
   }
 }
 """
