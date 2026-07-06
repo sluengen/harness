@@ -93,10 +93,17 @@ Codex uses subscription auth (`auth_mode: chatgpt`) stored in
 the `codex` CLI can read its credentials. No `OPENAI_API_KEY` is needed or
 passed.
 
+The mount is **read-only** (`:ro`). Unlike `~/.claude` — which the in-container
+Claude engine writes session state to, so it must stay read-write — the
+in-container review engine is Claude, not Codex (`--engine codex` is host-only,
+[ADR 0002](../specs/decisions/0002-in-container-review-engine.md)). Nothing in
+the container writes `~/.codex`, so read-only removes that write surface without
+breaking anything.
+
 ```bash
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.codex":/root/.codex \
+  -v "$HOME/.codex":/home/harness/.codex:ro \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
   review --run-id 01J...
@@ -128,13 +135,13 @@ docker build -t harness:dev -f docker/Dockerfile .
 cd /abs/path/to/your-repo
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.claude":/root/.claude:ro \
+  -v "$HOME/.claude":/home/harness/.claude:ro \
   -e LINEAR_API_KEY \
   harness:dev \
   start CAL-123
 ```
 
-(Replace the `-v "$HOME/.claude":/root/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above.)
+(Replace the `-v "$HOME/.claude":/home/harness/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above. The mount targets `/home/harness` because the container runs as the non-root `harness` user — see [Thin shell wrapper](#thin-shell-wrapper-binharness).)
 
 ### Via compose
 
@@ -169,9 +176,12 @@ directory with no flags or env-var setup.
   fresh token back to the Keychain) so a stale token never reaches the container
   (CAL-941). No manual token setup or `~/.claude` mount needed; the Keychain is
   the source of truth on macOS.
-- **Codex OAuth** — mounts `~/.codex` into the container. Codex uses
-  subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
-  no `OPENAI_API_KEY` is required or passed.
+- **Codex OAuth** — mounts `~/.codex` **read-only** into the container. Codex
+  uses subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
+  no `OPENAI_API_KEY` is required or passed. Read-only is safe because the
+  in-container review engine is Claude, not Codex (`--engine codex` is host-only,
+  [ADR 0002](../specs/decisions/0002-in-container-review-engine.md)) — nothing in
+  the container writes `~/.codex`.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
@@ -183,6 +193,17 @@ directory with no flags or env-var setup.
   into the container instead. `GIT_SSH_COMMAND` is set with `-F /dev/null` so the
   macOS `~/.ssh/config` (which carries `UseKeychain yes`, an option Linux ssh
   rejects) is ignored; auth comes from the forwarded agent.
+  > **Scope the forwarded key.** The container runs untrusted diff content, and a
+  > forwarded agent can authenticate as you to **any** host your loaded keys
+  > reach. Load only a key **scoped to the target remote(s)** into the agent for
+  > a harness run (e.g. a deploy key for the repo, not your account-wide key), so
+  > an in-container compromise cannot push to unrelated hosts on your behalf.
+- **Non-root user** — the container runs as the unprivileged `harness` user
+  (uid 1000), not root (CAL-1008), so an in-container compromise is not root over
+  the mounted repo or credentials. Host credentials are therefore mounted under
+  that user's home (`/home/harness/.ssh`, `/home/harness/.codex`) — reachable by
+  a non-root process — **not** `/root/...`, which is mode `700` and unreadable to
+  it.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
 
@@ -269,14 +290,14 @@ fi
 exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  -v "$HOME/.ssh":/root/.ssh:ro \
-  -v "$HOME/.codex":/root/.codex \
+  -v "$HOME/.ssh":/home/harness/.ssh:ro \
+  -v "$HOME/.codex":/home/harness/.codex:ro \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
-  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
+  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
   -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
   -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
