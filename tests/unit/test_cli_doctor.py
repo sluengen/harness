@@ -147,6 +147,17 @@ def test_check_git_warns_on_dirty_tree() -> None:
     assert "uncommitted" in msg.lower() or "dirty" in msg.lower()
 
 
+def test_check_git_does_not_pass_outside_a_repo() -> None:
+    from harness.cli.doctor import check_git
+
+    # Outside a git repo `git status --porcelain` exits 128 with empty stdout.
+    # Inspecting only stdout would misread that as a clean tree and PASS; the
+    # non-zero returncode must demote it away from PASS.
+    status, msg = check_git(porcelain_output="", returncode=128)
+    assert status != "PASS"
+    assert "repo" in msg.lower() or "git" in msg.lower()
+
+
 def test_check_db_passes_when_file_exists(tmp_path: Path) -> None:
     from harness.cli.doctor import check_db
 
@@ -166,20 +177,36 @@ def test_check_db_warns_when_not_found(tmp_path: Path) -> None:
     assert "not found" in msg.lower() or "first run" in msg.lower()
 
 
-def test_check_reviewer_passes_when_codex_present() -> None:
+def test_check_reviewer_passes_when_both_engines_present() -> None:
     from harness.cli.doctor import check_reviewer
 
-    status, msg = check_reviewer(codex_path="/usr/local/bin/codex")
+    status, msg = check_reviewer(
+        claude_path="/usr/local/bin/claude", codex_path="/usr/local/bin/codex"
+    )
     assert status == "PASS"
+    assert "claude" in msg.lower()
     assert "codex" in msg.lower()
 
 
-def test_check_reviewer_warns_when_codex_missing() -> None:
+def test_check_reviewer_fails_when_claude_missing() -> None:
     from harness.cli.doctor import check_reviewer
 
-    # An explicit empty path forces the not-found branch deterministically
-    # (passing None would trigger a real PATH lookup).
-    status, msg = check_reviewer(codex_path="")
+    # claude has been the default review engine since CAL-701 (review.py); a host
+    # missing it fails `harness review` at runtime, so doctor must FAIL — not the
+    # old WARN, which let a broken host pass. An explicit empty path forces the
+    # not-found branch deterministically (None would trigger a real PATH lookup).
+    status, msg = check_reviewer(claude_path="", codex_path="/usr/local/bin/codex")
+    assert status == "FAIL"
+    assert "claude" in msg.lower()
+
+
+def test_check_reviewer_warns_when_only_codex_missing() -> None:
+    from harness.cli.doctor import check_reviewer
+
+    # codex is the opt-in cross-model second opinion (`--engine codex`); its
+    # absence is not fatal because the default claude review still works, so a
+    # missing codex is a WARN, not a FAIL.
+    status, msg = check_reviewer(claude_path="/usr/local/bin/claude", codex_path="")
     assert status == "WARN"
     assert "codex" in msg.lower()
 
@@ -222,6 +249,31 @@ def test_doctor_command_exits_zero_on_pass_or_warn(tmp_path: Path) -> None:
     )
     # Exit 0 when all checks pass or warn.
     assert result.exit_code == 0, result.stdout
+
+
+def test_doctor_command_exits_one_on_failure(tmp_path: Path) -> None:
+    """A FAILing check must propagate as a non-zero (exit 1) CLI status.
+
+    The pass/warn cases pin exit 0; without this, the FAIL → typer.Exit(code=1)
+    path is unasserted at the CLI level. Force a deterministic auth FAIL: remove
+    ANTHROPIC_API_KEY and supply an OAuth token whose expiry is in the past
+    (CAL-941). That branch returns FAIL before the ~/.claude fallback, so it
+    fails regardless of the host's home directory.
+    """
+    db = tmp_path / ".harness" / "harness.db"
+    result = runner.invoke(
+        app,
+        ["doctor", "--db", str(db)],
+        env={
+            "ANTHROPIC_API_KEY": None,
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok-stale",
+            "CLAUDE_CODE_OAUTH_EXPIRES_AT": "1000",
+        },
+    )
+    assert result.exit_code == 1, result.stdout
+    # Pin that exit 1 came from a real doctor FAIL line, not a stray exception.
+    assert "[FAIL]" in result.stdout
+    assert "auth" in result.stdout
 
 
 def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:

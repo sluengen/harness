@@ -78,8 +78,16 @@ def check_auth(
     )
 
 
-def check_git(porcelain_output: str | None = None) -> tuple[str, str]:
-    """Pass if the working tree is clean; warn if dirty."""
+def check_git(
+    porcelain_output: str | None = None,
+    returncode: int | None = None,
+) -> tuple[str, str]:
+    """Pass if the working tree is clean; warn if dirty or the CWD is not a repo.
+
+    Outside a git repository ``git status --porcelain`` exits 128 with empty
+    stdout; inspecting only stdout would misread that as a clean tree and PASS,
+    so a non-zero returncode gates the result away from PASS.
+    """
     if porcelain_output is None:
         try:
             result = subprocess.run(
@@ -89,8 +97,12 @@ def check_git(porcelain_output: str | None = None) -> tuple[str, str]:
                 timeout=10,
             )
             porcelain_output = result.stdout
+            returncode = result.returncode
         except (subprocess.TimeoutExpired, OSError):
             return ("WARN", "git not available or timed out")
+
+    if returncode is not None and returncode != 0:
+        return ("WARN", "not a git repository (git exited non-zero)")
 
     stripped = porcelain_output.strip()
     if not stripped:
@@ -105,7 +117,10 @@ def check_db(db_path: Path | None = None) -> tuple[str, str]:
 
     if db_path.exists():
         try:
-            db_path.read_bytes()
+            # Probe readability with a single byte — the file only needs to be
+            # openable, not slurped whole (it can grow large across many runs).
+            with db_path.open("rb") as fh:
+                fh.read(1)
             return ("PASS", f"{db_path} exists")
         except OSError as exc:
             return ("FAIL", f"{db_path} exists but is not readable: {exc}")
@@ -115,20 +130,41 @@ def check_db(db_path: Path | None = None) -> tuple[str, str]:
     )
 
 
-def check_reviewer(codex_path: str | None = None) -> tuple[str, str]:
-    """Report whether the ``codex`` reviewer binary is on PATH.
+def check_reviewer(
+    claude_path: str | None = None,
+    codex_path: str | None = None,
+) -> tuple[str, str]:
+    """Report whether the review-engine binaries are on PATH.
 
-    The ``review`` verb shells out to ``codex exec``; a missing binary is not
-    fatal to the rest of the CLI (hence WARN, not FAIL), but it means review
-    will fail until codex is installed.
+    ``review`` defaults to the ``claude`` engine (since CAL-701); ``codex`` is
+    the opt-in ``--engine codex`` cross-model second opinion. A missing
+    ``claude`` is therefore fatal to the default review path — it FAILs, where
+    the old codex-only check would let such a host pass. A missing ``codex``
+    only costs the optional second opinion, so it is a WARN. Pass ``""`` for
+    either to force its not-found branch in tests (``None`` triggers a real
+    PATH lookup).
     """
     import shutil
 
+    if claude_path is None:
+        claude_path = shutil.which("claude")
     if codex_path is None:
         codex_path = shutil.which("codex")
-    if codex_path:
-        return ("PASS", f"codex reviewer found at {codex_path}")
-    return ("WARN", "codex not found on PATH — `harness review` will fail until installed")
+
+    if not claude_path:
+        return (
+            "FAIL",
+            "claude not found on PATH — the default review engine; "
+            "`harness review` will fail until it is installed",
+        )
+    if not codex_path:
+        return (
+            "WARN",
+            f"claude at {claude_path}; codex not found on PATH — the opt-in "
+            "`--engine codex` cross-model review is unavailable "
+            "(default claude review still works)",
+        )
+    return ("PASS", f"claude at {claude_path}; codex at {codex_path}")
 
 
 def check_cli(
