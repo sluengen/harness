@@ -38,13 +38,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 
 import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
-from harness.cli._git import rev_parse_head, run_git
+from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
@@ -190,7 +191,19 @@ def _push_branch(*, worktree_path: Path, branch: str) -> str:
     logging; that output is deliberately *not* propagated into the printed JSON
     (context-economy). Raises :class:`_CheckpointError` on a non-zero push.
     """
-    result = run_git(worktree_path, "push", "origin", branch)
+    # A network op — bound it (CAL-1004). A fired timeout becomes the same
+    # _CheckpointError a non-zero push already raises; the checkpoint is
+    # best-effort, so the caller notes it and keeps working either way.
+    try:
+        result = run_git(
+            worktree_path, "push", "origin", branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _CheckpointError(
+            f"git push origin {branch} exceeded the "
+            f"{NETWORK_GIT_TIMEOUT_SECONDS:.0f}s network timeout in {worktree_path}",
+            1,
+        ) from exc
     if result.returncode != 0:
         raise _CheckpointError(
             f"git push origin {branch} failed in {worktree_path}: "

@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
 import unittest.mock as mock
 from datetime import UTC, datetime
 from pathlib import Path
@@ -159,7 +161,12 @@ def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         return review_mod.RunResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
@@ -199,7 +206,12 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         captured["cmd"] = cmd
         return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)
@@ -540,7 +552,12 @@ def _make_engine_runner(
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         engine = "codex" if cmd[0] == "codex" else "claude"
         order.append(engine)
@@ -566,6 +583,95 @@ def test_ac3_matcher_false_on_near_miss_failure() -> None:
 def test_ac3_matcher_false_on_clean_exit_even_with_phrase() -> None:
     """A zero exit never counts as a usage limit (narrow match, no false hop)."""
     assert review_mod.is_codex_usage_limit(_REAL_CODEX_USAGE_LIMIT_STDERR, 0) is False
+
+
+# ---------------------------------------------------------------------------
+# CAL-1004: a hung review engine is bounded by a subprocess timeout — it does
+# not hang the verb forever waiting on the external kill. On expiry the process
+# is killed and the run surfaces the infra-failure shape (exit 3 + a stable,
+# machine-readable reason), never a code-review verdict.
+# ---------------------------------------------------------------------------
+
+
+def test_default_runner_kills_hung_engine_and_raises_infra_exit3() -> None:
+    """A never-returning engine subprocess hits the ceiling → infra exit 3 + reason.
+
+    Exercises the REAL mechanism: a genuinely hanging child process (a python
+    sleep that ignores stdin and never exits) under a tiny timeout. ``asyncio``'s
+    ``wait_for`` must fire, the process must be killed (so the test returns
+    promptly rather than blocking on the 30s sleep), and ``_default_runner`` must
+    raise the ``_ReviewError`` carrying ``EXIT_INFRA_FAILURE`` and the stable
+    ``ENGINE_TIMEOUT_REASON`` — not a swallowed failure, not a verdict.
+    """
+    hang = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    async def _run() -> None:
+        await review_mod._default_runner(
+            cmd=hang,
+            stdin="ignored",
+            env=dict(os.environ),
+            cwd=None,
+            timeout=0.2,
+        )
+
+    with pytest.raises(review_mod._ReviewError) as excinfo:
+        asyncio.run(_run())
+    err = excinfo.value
+    assert err.code == review_mod.EXIT_INFRA_FAILURE == 3
+    assert err.reason == review_mod.ENGINE_TIMEOUT_REASON == "engine_timeout"
+
+
+def test_default_runner_no_timeout_still_runs_to_completion() -> None:
+    """With ``timeout=None`` the runner keeps its old unbounded behaviour.
+
+    A fast-exiting child returns its RunResult normally — the timeout is a
+    ceiling, not a mandatory wait, so the no-timeout path is unchanged.
+    """
+    echo = [sys.executable, "-c", "print('SUBMIT: {\"verdict\": \"pass\", \"issues\": []}')"]
+
+    async def _run() -> review_mod.RunResult:
+        return await review_mod._default_runner(
+            cmd=echo, stdin="", env=dict(os.environ), cwd=None, timeout=None
+        )
+
+    result = asyncio.run(_run())
+    assert result.returncode == 0
+    assert "SUBMIT:" in result.stdout
+
+
+def test_review_cli_surfaces_engine_timeout_as_exit3_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """End-to-end: a timed-out engine surfaces exit 3 + ``reason`` on the CLI JSON.
+
+    Injects a runner that raises the timeout ``_ReviewError`` (as the real
+    ``_default_runner`` does on expiry) and drives the full ``review`` command.
+    The verb must exit 3, print the machine-readable ``reason``, and record NO
+    review event — a hung engine never reviewed the diff, so it is infra, not a
+    verdict (mirrors the sandbox-init contract).
+    """
+    run_id = _seed_open_run(db_path, repo)
+
+    async def _timeout_runner(
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
+    ) -> review_mod.RunResult:
+        raise review_mod._ReviewError(
+            "review engine exceeded its timeout and was killed",
+            review_mod.EXIT_INFRA_FAILURE,
+            reason=review_mod.ENGINE_TIMEOUT_REASON,
+        )
+
+    result = _invoke(repo, db_path, run_id, _timeout_runner)
+    assert result.exit_code == 3, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "engine_timeout"
+    # No verdict recorded: infra failure, not a review.
+    assert fetch_review_events(db_path) == []
 
 
 # AC-1 / AC-4: a usage-limit Codex run falls back to Claude exactly once, the

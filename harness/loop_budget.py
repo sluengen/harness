@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 __all__ = [
+    "DEFAULT_ENGINE_TIMEOUT_SECONDS",
     "DEFAULT_MAX_REVIEW_CYCLES",
     "DEFAULT_WALL_CLOCK_BUDGET_MINUTES",
     "REVIEW_CYCLE_CEILING_REASON",
@@ -53,6 +54,15 @@ __all__ = [
 DEFAULT_MAX_REVIEW_CYCLES = 6
 DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 90
 
+# The review-engine subprocess ceiling (CAL-1004). The two breakers above are
+# checked only at *verb boundaries*; a review engine that hangs mid-verb is
+# bounded by neither until the next boundary. This ceiling closes that gap — it
+# caps a single ``claude -p`` / ``codex exec`` subprocess so a hung engine is
+# killed and surfaced as an infra failure rather than hanging the verb until an
+# external kill. Default 600s to match the documented ops kill; a repo overrides
+# it in the same ``loop:`` block.
+DEFAULT_ENGINE_TIMEOUT_SECONDS = 600
+
 # Stable, machine-readable ``reason`` tags carried on a trip — mirrors the
 # ``{"error", "reason"}`` refusal shape of ``close`` / the review infra failure
 # (CAL-866) so the orchestrator branches on the *kind* of trip without parsing
@@ -62,10 +72,17 @@ WALL_CLOCK_BUDGET_REASON = "wall_clock_budget"
 
 
 class LoopBudget(NamedTuple):
-    """The two configured breaker thresholds for a run."""
+    """The configured loop bounds for a run, read from CONTEXT.md's ``loop:`` block.
+
+    The first two are the ledger-backed spend breakers checked at verb
+    boundaries (:func:`evaluate_breakers`). ``engine_timeout_seconds`` is the
+    mid-verb complement: the per-subprocess ceiling a hung review engine is
+    killed at, consumed by ``review``'s runner rather than the boundary check.
+    """
 
     max_review_cycles: int
     wall_clock_budget_minutes: int
+    engine_timeout_seconds: int = DEFAULT_ENGINE_TIMEOUT_SECONDS
 
     @property
     def unconditional_review_cycles(self) -> int:
@@ -116,7 +133,9 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         text = context.read_text()
     except OSError:
         return LoopBudget(
-            DEFAULT_MAX_REVIEW_CYCLES, DEFAULT_WALL_CLOCK_BUDGET_MINUTES
+            DEFAULT_MAX_REVIEW_CYCLES,
+            DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
+            DEFAULT_ENGINE_TIMEOUT_SECONDS,
         )
     return LoopBudget(
         max_review_cycles=_read_int_key(
@@ -124,6 +143,9 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         ),
         wall_clock_budget_minutes=_read_int_key(
             text, "wall_clock_budget_minutes", DEFAULT_WALL_CLOCK_BUDGET_MINUTES
+        ),
+        engine_timeout_seconds=_read_int_key(
+            text, "engine_timeout_seconds", DEFAULT_ENGINE_TIMEOUT_SECONDS
         ),
     )
 

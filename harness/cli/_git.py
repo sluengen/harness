@@ -19,11 +19,21 @@ as its own verb-specific error.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import subprocess
 from pathlib import Path
 
 from harness.identity import WORKTREES_SUBDIR
+
+# Default ceiling (seconds) for a *network* git call — ``fetch`` / ``push`` /
+# ``push --delete`` (CAL-1004). These reach a remote and can hang indefinitely on
+# a partition or a wedged server; a local call (checkout, merge, rev-parse) does
+# not and passes no timeout. 120s sits in the documented 60–120s band: generous
+# for a healthy remote, bounded against a dead one. ``run_git`` forwards it to
+# ``subprocess.run``, which raises ``subprocess.TimeoutExpired`` on expiry — each
+# network site converts that into its own failure shape (never a raw traceback).
+NETWORK_GIT_TIMEOUT_SECONDS = 120
 
 
 class GitError(RuntimeError):
@@ -125,4 +135,15 @@ def teardown_worktree(
     if branch:
         run_git(repo_root, "branch", "-D", branch)
         if delete_remote:
-            run_git(repo_root, "push", "origin", "--delete", branch)
+            # A network op — bound it (CAL-1004). Teardown is best-effort and
+            # never raises (CAL-767), so a fired timeout is swallowed here like
+            # any other non-zero exit on this cleanup path.
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                run_git(
+                    repo_root,
+                    "push",
+                    "origin",
+                    "--delete",
+                    branch,
+                    timeout=NETWORK_GIT_TIMEOUT_SECONDS,
+                )

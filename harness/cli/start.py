@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,11 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import run_git, teardown_worktree
+from harness.cli._git import (
+    NETWORK_GIT_TIMEOUT_SECONDS,
+    run_git,
+    teardown_worktree,
+)
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
@@ -354,8 +359,17 @@ def _fetch_origin_branch(repo_root: Path, branch: str) -> str | None:
     branch name a later op could move. A non-zero fetch (the branch is no longer
     on ``origin``) or an unresolvable ``FETCH_HEAD`` returns ``None``: a clean
     restart, not an error. Sync — offloaded via :func:`asyncio.to_thread`.
+
+    The fetch is a network op, so it carries a timeout (CAL-1004); a fired
+    timeout is the same ``None`` a failed fetch already returns — resume degrades
+    to a clean start rather than hanging or raising.
     """
-    fetch = run_git(repo_root, "fetch", "origin", branch)
+    try:
+        fetch = run_git(
+            repo_root, "fetch", "origin", branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if fetch.returncode != 0:
         return None
     head = run_git(repo_root, "rev-parse", "FETCH_HEAD")
