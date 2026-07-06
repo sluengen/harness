@@ -31,6 +31,18 @@
  * — is a weaker, contrived class and is deliberately out of scope: closing it
  * would deny every ``git push origin $BRANCH``.)
  *
+ * **Nested shell scripts.** ``sh -c "<script>"`` / ``bash -c`` (and bundled
+ * ``-lc`` etc.) and ``eval "<script>"`` run their string argument as a shell
+ * command, so ``sh -c "git push --force origin dev"`` force-pushes while the
+ * outer command's executable is ``sh``. The guard extracts that inline script
+ * and analyses it recursively with the same lexer.
+ *
+ * **ANSI-C quoting.** ``$'…'`` decodes backslash escapes (``$'\x67it'`` → ``git``),
+ * which would otherwise obfuscate ``git`` / ``push`` / ``--force`` past both this
+ * hook and the raw-string deny globs. The lexer decodes ``$'…'`` (hex, octal,
+ * unicode and the standard letter escapes) so the real word is seen. There is no
+ * false-positive cost — no legitimate push hex-escapes its words.
+ *
  * On a force-push it emits the current PreToolUse deny contract
  * (``hookSpecificOutput.permissionDecision: "deny"``, exit 0). Otherwise it
  * defers to the normal permission flow (``{continue:true}`` — it does NOT
@@ -60,6 +72,61 @@ function captureParenSub(s, start) {
     j++;
   }
   return [body, j];
+}
+
+//: The single-letter ANSI-C escapes (``$'\n'`` etc.).
+const ANSI_C_LETTER = {
+  n: "\n",
+  t: "\t",
+  r: "\r",
+  a: "\x07",
+  b: "\b",
+  f: "\f",
+  v: "\v",
+  e: "\x1b",
+  E: "\x1b",
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  "?": "?",
+};
+
+/** Decode an ANSI-C ``$'…'`` body from ``start`` (just past ``$'``) to its
+ * closing ``'``, resolving ``\xHH``, octal ``\ooo``, ``\uHHHH`` / ``\UHHHHHHHH``
+ * and the letter escapes. Returns ``[decoded, indexAfterClose]``. Decoding is
+ * what defeats hex/octal obfuscation of ``git`` / ``push`` / ``--force``. */
+function captureAnsiC(s, start) {
+  let j = start;
+  let out = "";
+  while (j < s.length && s[j] !== "'") {
+    if (s[j] === "\\" && j + 1 < s.length) {
+      const e = s[j + 1];
+      let m;
+      if (e === "x" && (m = /^[0-9A-Fa-f]{1,2}/.exec(s.slice(j + 2)))) {
+        out += String.fromCharCode(parseInt(m[0], 16));
+        j += 2 + m[0].length;
+      } else if (e >= "0" && e <= "7" && (m = /^[0-7]{1,3}/.exec(s.slice(j + 1)))) {
+        out += String.fromCharCode(parseInt(m[0], 8) & 0xff);
+        j += 1 + m[0].length;
+      } else if (e === "u" && (m = /^[0-9A-Fa-f]{1,4}/.exec(s.slice(j + 2)))) {
+        out += String.fromCharCode(parseInt(m[0], 16));
+        j += 2 + m[0].length;
+      } else if (e === "U" && (m = /^[0-9A-Fa-f]{1,8}/.exec(s.slice(j + 2)))) {
+        out += String.fromCodePoint(parseInt(m[0], 16));
+        j += 2 + m[0].length;
+      } else if (e in ANSI_C_LETTER) {
+        out += ANSI_C_LETTER[e];
+        j += 2;
+      } else {
+        out += e; // unknown escape: keep the char literally
+        j += 2;
+      }
+    } else {
+      out += s[j];
+      j++;
+    }
+  }
+  return [out, j + 1]; // skip the closing quote
 }
 
 /** Capture a backtick body from ``start`` (just past the opening backtick) to
@@ -115,6 +182,13 @@ function lex(command) {
   while (i < n) {
     const c = command[i];
 
+    if (c === "$" && command[i + 1] === "'") {
+      const [decoded, next] = captureAnsiC(command, i + 2);
+      token += decoded;
+      hasToken = true;
+      i = next;
+      continue;
+    }
     if (c === "$" && command[i + 1] === "(") {
       const [body, next] = captureParenSub(command, i + 2);
       substitutions.push(body);
@@ -226,11 +300,38 @@ function hasCommandSubstitution(token) {
   return token.includes("$(") || token.includes("`");
 }
 
+// Shells that run an inline script from ``-c`` (matched on the executable's
+// basename, so ``/bin/sh`` counts).
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ash", "ksh"]);
+
 /** Drop leading ``NAME=value`` assignments and ``env`` wrappers. */
 function stripPrefixes(tokens) {
   let i = 0;
   while (i < tokens.length && (ASSIGNMENT.test(tokens[i]) || WRAPPERS.has(tokens[i]))) i++;
   return tokens.slice(i);
+}
+
+/** Inline shell scripts a command runs as its own shell — the ``-c`` argument
+ * of ``sh``/``bash``/… and the joined arguments of ``eval`` — to be analysed
+ * recursively. Without this, ``sh -c "git push --force …"`` would pass because
+ * the outer executable is ``sh``, not ``git``. */
+function nestedScripts(rawTokens) {
+  const tokens = stripPrefixes(rawTokens);
+  if (tokens.length === 0) return [];
+  const exec = tokens[0].split("/").pop();
+  if (SHELLS.has(exec)) {
+    for (let k = 1; k < tokens.length; k++) {
+      const t = tokens[k];
+      if (/^-[A-Za-z]*c[A-Za-z]*$/.test(t)) {
+        // ``-c`` (possibly bundled, e.g. ``-lc``): the next token is the script.
+        return k + 1 < tokens.length ? [tokens[k + 1]] : [];
+      }
+      if (!t.startsWith("-")) break; // first operand, no ``-c``: a script *file*, not inline
+    }
+    return [];
+  }
+  if (exec === "eval") return [tokens.slice(1).join(" ")];
+  return [];
 }
 
 /** True if a single command's tokens are a ``git push`` that force-pushes (or a
@@ -286,12 +387,18 @@ function commandForcePushes(rawTokens) {
   return false;
 }
 
-/** True if ``command`` — or the body of any command substitution nested within
- * it — force-pushes. Recursion is bounded by the finite nesting depth. */
+/** True if ``command`` — or any command substitution or inline shell script
+ * nested within it — force-pushes. Recursion is bounded by the finite nesting
+ * depth. */
 function forcePushAnywhere(command, depth = 0) {
   if (depth > 16) return false; // pathological-nesting backstop
   const { commands, substitutions } = lex(command);
-  if (commands.some(commandForcePushes)) return true;
+  for (const cmd of commands) {
+    if (commandForcePushes(cmd)) return true;
+    for (const script of nestedScripts(cmd)) {
+      if (forcePushAnywhere(script, depth + 1)) return true;
+    }
+  }
   return substitutions.some((body) => forcePushAnywhere(body, depth + 1));
 }
 

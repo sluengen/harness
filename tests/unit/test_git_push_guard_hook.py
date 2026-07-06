@@ -100,6 +100,17 @@ _MUST_DENY = [
     "out=$(git push -f origin dev)",  # inner force-push in an assignment subst
     "echo `git push -f origin dev`",  # backtick form (recursion)
     "git push origin `printf dev` --force",  # backtick operand + literal --force
+    # inline shell scripts: sh -c / bash -c / eval run their string as a shell
+    # command, so the force-push hides behind an 'sh'/'eval' executable.
+    'sh -c "git push --force origin dev"',
+    'bash -c "git push -f origin dev"',
+    'bash -lc "git push --force origin dev"',  # bundled -lc still means -c
+    'eval "git push --force origin dev"',
+    "eval git push -f origin dev",  # unquoted eval
+    # ANSI-C quoting decodes escapes: $'\x67it' -> 'git', $'\x2df' -> '-f'.
+    r"$'\x67it' push --force origin dev",  # 'git' hex-obfuscated
+    r"git push $'\x2df' origin dev",  # '-f' hex-obfuscated
+    r"$'\147it' push -f origin dev",  # 'git' octal-obfuscated
 ]
 
 # Non-force pushes and non-push commands that MUST stay allowed — the exact
@@ -131,6 +142,11 @@ _MUST_ALLOW = [
     'git commit -m "$(printf msg)"',
     'git tag -m "$(whoami)" v1',
     "echo $(date)",
+    # shell-wrapper recursion must not over-deny a non-force nested command
+    'sh -c "git push origin dev"',
+    'bash -c "git status"',
+    # ANSI-C quoting in a non-push git command is fine
+    r"git commit -m $'fix\ttabbed'",
 ]
 
 
