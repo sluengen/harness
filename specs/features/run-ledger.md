@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693]
+last_updated: 2026-07-06
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -22,7 +22,7 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 - GIVEN `harness start <ticket>` succeeds
 - THEN it inserts a `runs` row with `status='open'`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, and `started_at`
 - WHEN `harness close` passes its gate
-- THEN the same row flips to `status='closed'` and a terminal `close` event is appended
+- THEN the same row flips to `status='closed'` and a terminal `close` event is appended — **both in one `BEGIN IMMEDIATE` transaction**: a failed event write rolls the status flip back, so a run can never land `closed` with no `close` event (an inconsistent ledger no retry can repair, since nothing re-drives a terminal run) (CAL-1002). This mirrors the shared abandon transaction the `cancel`/`reclaim` scenarios use.
 
 #### Scenario: a cancelled run
 
