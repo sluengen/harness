@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiosqlite
 import pytest
 from typer.testing import CliRunner
 
@@ -1255,3 +1256,132 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
 
     assert result.exit_code == 0, result.output
     stub.fetch_resume_branch.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# CAL-1007: the two silent error paths are un-swallowed.
+#
+# 1. `_find_open_run` must not read a locked/corrupt DB as "no existing run":
+#    a real read failure surfaces with its cause (as `_StartError`), while an
+#    uninitialized DB (file exists, no `runs` table) stays the quiet empty case.
+# 2. `_delete_run_row` (rollback) must stay best-effort — never re-raise — but a
+#    failed rollback is no longer silent: it warns to stderr naming the orphaned
+#    run_id and the manual remedy, so the orphan open row that would block every
+#    future start for the ticket is visible rather than invisible.
+# ---------------------------------------------------------------------------
+
+
+def test_find_open_run_surfaces_db_read_failure(repo: Path, db_path: Path) -> None:
+    """A locked/corrupt DB read surfaces as `_StartError` carrying its cause.
+
+    The old `except Exception: return None` masqueraded a failed read as "no
+    existing open run", so start proceeded and later reported the misleading
+    "concurrent start conflict but no existing run found". The real cause must
+    surface instead (CAL-1007, swallow #1).
+    """
+    from harness.cli.start import _find_open_run, _StartError
+
+    # The file must exist so the `db_path.exists()` short-circuit does not fire —
+    # this is the "DB present but unreadable" case, not "DB missing".
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.write_bytes(b"")
+
+    boom = aiosqlite.OperationalError("database is locked")
+    with patch("harness.cli.start.store.connect", side_effect=boom):  # noqa: SIM117
+        with pytest.raises(_StartError) as excinfo:
+            _sync(_find_open_run(db_path, "CAL-570"))
+
+    assert "database is locked" in str(excinfo.value), (
+        "the underlying DB error must be carried in the surfaced message"
+    )
+    assert excinfo.value.code == 1
+
+
+def test_find_open_run_returns_none_for_uninitialized_db(
+    repo: Path, db_path: Path
+) -> None:
+    """A DB file that exists but has no `runs` table genuinely has no open run.
+
+    Guards the *empty* side of the narrowing: only a real read failure raises;
+    an uninitialized DB (no `runs` table yet) is a quiet `None`, not an error
+    (CAL-1007, swallow #1 boundary).
+    """
+    from harness.cli.start import _find_open_run
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def _make_db_without_runs_table() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute("CREATE TABLE unrelated (x)")
+            await conn.commit()
+
+    _sync(_make_db_without_runs_table())
+
+    assert _sync(_find_open_run(db_path, "CAL-570")) is None
+
+
+def test_delete_run_row_warns_when_rollback_fails(
+    repo: Path, db_path: Path
+) -> None:
+    """A failed rollback DELETE warns (naming run_id + remedy) but never raises.
+
+    The old `except Exception: pass` left an orphan `open` row — whose partial
+    unique index blocks every future start for that ticket — completely silent.
+    The rollback stays best-effort (must not re-raise, or it would mask the
+    original error), but it now emits an actionable stderr warning (CAL-1007,
+    swallow #2).
+    """
+    from harness.cli import start as start_mod
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.write_bytes(b"")  # exists → passes the `db_path.exists()` guard
+
+    boom = aiosqlite.OperationalError("database is locked")
+    with (
+        patch("harness.cli.start.store.connect", side_effect=boom),
+        patch("harness.cli.start.typer.echo") as mock_echo,
+    ):
+        # Best-effort: a failed rollback must NOT propagate.
+        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+
+    mock_echo.assert_called_once()
+    args, kwargs = mock_echo.call_args
+    message = args[0]
+    assert "01TESTRUNID" in message, "the warning must name the orphaned run_id"
+    assert kwargs.get("err") is True, "the warning must go to stderr"
+    assert "cancel" in message or "reclaim" in message, (
+        "the warning must name an actionable manual remedy"
+    )
+
+
+def test_delete_run_row_silent_on_successful_rollback(
+    repo: Path, db_path: Path
+) -> None:
+    """A rollback that succeeds deletes the row and emits no warning.
+
+    Guards against over-warning: the stderr notice is for the *failed* rollback
+    only, not the ordinary successful one (CAL-1007, swallow #2 boundary).
+    """
+    from harness.cli import start as start_mod
+
+    async def _seed_open_run() -> None:
+        await store.init_db(db_path)
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO runs (run_id, workflow_name, workflow_version, "
+                "status, state_json, inputs_json, base_branch, worktree_path, "
+                "worktree_branch, ticket, started_at) "
+                "VALUES (?, '', 0, 'open', '{}', '{}', 'dev', '/wt', "
+                "'harness/x', 'CAL-570', '2026-01-01T00:00:00+00:00')",
+                ("01TESTRUNID",),
+            )
+            await conn.commit()
+
+    _seed_open_run_result = _seed_open_run()
+    _sync(_seed_open_run_result)
+
+    with patch("harness.cli.start.typer.echo") as mock_echo:
+        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+
+    mock_echo.assert_not_called()
+    assert fetch_runs(db_path) == [], "the row must be deleted on a clean rollback"

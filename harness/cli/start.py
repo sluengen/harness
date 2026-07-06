@@ -67,6 +67,12 @@ from harness.linear import (
 from harness.state import store
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
+# size: one cohesive verb — the start orchestration plus the Linear/resume
+# helpers and the DB + worktree rollback that keep its side effects atomic,
+# which splitting would only scatter across files. CAL-1007 un-swallowed the
+# two silent DB error paths (surface a failed read, warn on a failed rollback)
+# inline, pushing it just over the 500-line limit.
+
 __all__ = ["start_command", "StartOutput", "TicketContext"]
 
 # ---------------------------------------------------------------------------
@@ -407,8 +413,16 @@ async def _find_open_run(
             ) as cur,
         ):
             row = await cur.fetchone()
-    except Exception:
-        return None
+    except aiosqlite.Error as exc:
+        # An uninitialized DB (the file exists but the `runs` table was never
+        # created) genuinely has no open run — treat that one case as empty.
+        # Every other read failure (a locked or corrupt DB) is a real error:
+        # surface it with its cause rather than masquerading as "no existing
+        # run", which would let start proceed and later report the misleading
+        # "concurrent start conflict but no existing run found".
+        if isinstance(exc, aiosqlite.OperationalError) and "no such table" in str(exc).lower():
+            return None
+        raise _StartError(f"failed to read run database: {exc}", 1) from exc
 
     if row is None:
         return None
@@ -461,15 +475,27 @@ async def _insert_open_run(
 
 
 async def _delete_run_row(db_path: Path, run_id: str) -> None:
-    """Delete the ``runs`` row for ``run_id``, best-effort (no exception on failure)."""
+    """Delete the ``runs`` row for ``run_id``, best-effort — never raises.
+
+    A failed rollback is not re-raised: the original error that triggered the
+    rollback keeps priority. But it is no longer silent — a failed delete leaves
+    an orphan ``open`` row whose partial unique index blocks *every* future
+    ``start`` for that ticket, so it warns to stderr naming the ``run_id`` and
+    the manual remedy instead of swallowing the failure.
+    """
     try:
         if not db_path.exists():
             return
         async with store.connect(db_path) as conn:
             await conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
             await conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass  # Best-effort rollback — original error takes priority.
+    except Exception as exc:  # noqa: BLE001 — best-effort: must not mask the original error
+        typer.echo(
+            f"warning: failed to roll back run row {run_id!r}: {exc}. "
+            f"An orphaned open run may remain and block future starts for this "
+            f"ticket — clear it with `harness cancel {run_id}` or `harness reclaim`.",
+            err=True,
+        )
 
 
 # ---------------------------------------------------------------------------
