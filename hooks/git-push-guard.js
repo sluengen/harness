@@ -18,6 +18,19 @@
  *   - a short-flag bundle containing ``f`` (``-f``, ``-fq``, ``-qf`` …), or
  *   - a refspec operand beginning with ``+`` (``+HEAD:dev``).
  *
+ * **Command substitution.** ``$(…)`` and backticks execute inline, so
+ * ``git push origin $(echo dev) --force`` really force-pushes and
+ * ``git $(echo push) --force origin dev`` hides the sub-command from a naive
+ * split (and from the raw-string deny globs). The lexer therefore captures a
+ * substitution as an *opaque token* (it does not sever the surrounding command)
+ * and also records its body, which is analysed recursively so an inner
+ * ``echo $(git push --force)`` is caught too. When a command substitution lands
+ * in a position that decides push-ness or a force form (the sub-command slot, or
+ * any ``git push`` argument), the guard **fails closed** — it cannot statically
+ * prove the expansion is safe. (Plain parameter expansion — ``$VAR`` / ``${VAR}``
+ * — is a weaker, contrived class and is deliberately out of scope: closing it
+ * would deny every ``git push origin $BRANCH``.)
+ *
  * On a force-push it emits the current PreToolUse deny contract
  * (``hookSpecificOutput.permissionDecision: "deny"``, exit 0). Otherwise it
  * defers to the normal permission flow (``{continue:true}`` — it does NOT
@@ -27,16 +40,57 @@
  */
 "use strict";
 
-/** Lex a shell command string into a list of commands (each a list of tokens).
+/** Capture a ``$(…)`` body from ``start`` (just past ``$(``) to its matching
+ * ``)``, honouring nested ``(``/``)``. Returns ``[body, indexAfterClose]``. */
+function captureParenSub(s, start) {
+  let depth = 1;
+  let j = start;
+  let body = "";
+  while (j < s.length && depth > 0) {
+    const ch = s[j];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        j++;
+        break;
+      }
+    }
+    body += ch;
+    j++;
+  }
+  return [body, j];
+}
+
+/** Capture a backtick body from ``start`` (just past the opening backtick) to
+ * the next unescaped backtick. Returns ``[body, indexAfterClose]``. */
+function captureBacktick(s, start) {
+  let j = start;
+  let body = "";
+  while (j < s.length && s[j] !== "`") {
+    if (s[j] === "\\" && j + 1 < s.length) {
+      body += s[j + 1];
+      j += 2;
+    } else {
+      body += s[j];
+      j++;
+    }
+  }
+  return [body, j + 1];
+}
+
+/** Lex a shell command string.
  *
- * Splits on the command separators ``; & | ( ) `` and newline, honours single
- * and double quotes and backslash escapes, and drops ``#`` comments. It is a
- * pragmatic lexer for *detecting* a git-push invocation, not a full shell
- * parser — it does not expand variables or command substitutions, but a
- * substitution's inner command still lexes as its own command because ``(`` and
- * a backtick are separators. */
+ * Returns ``{commands, substitutions}``: ``commands`` is a list of commands
+ * (each a list of tokens), split on the separators ``; & | ( ) `` and newline;
+ * ``substitutions`` is the list of ``$(…)`` / backtick bodies, kept for
+ * recursive analysis. Single/double quotes, backslash escapes and ``#``
+ * comments are honoured. A command substitution is captured as an opaque token
+ * (it does not sever the surrounding command) — a pragmatic lexer for
+ * *detecting* a git-push invocation, not a full shell parser. */
 function lex(command) {
   const commands = [];
+  const substitutions = [];
   let cur = [];
   let token = "";
   let hasToken = false;
@@ -61,6 +115,22 @@ function lex(command) {
   while (i < n) {
     const c = command[i];
 
+    if (c === "$" && command[i + 1] === "(") {
+      const [body, next] = captureParenSub(command, i + 2);
+      substitutions.push(body);
+      token += "$(" + body + ")";
+      hasToken = true;
+      i = next;
+      continue;
+    }
+    if (c === "`") {
+      const [body, next] = captureBacktick(command, i + 1);
+      substitutions.push(body);
+      token += "`" + body + "`";
+      hasToken = true;
+      i = next;
+      continue;
+    }
     if (c === "'") {
       hasToken = true;
       i++;
@@ -75,7 +145,17 @@ function lex(command) {
       hasToken = true;
       i++;
       while (i < n && command[i] !== '"') {
-        if (command[i] === "\\" && i + 1 < n && "\"\\$`".includes(command[i + 1])) {
+        if (command[i] === "$" && command[i + 1] === "(") {
+          const [body, next] = captureParenSub(command, i + 2);
+          substitutions.push(body);
+          token += "$(" + body + ")";
+          i = next;
+        } else if (command[i] === "`") {
+          const [body, next] = captureBacktick(command, i + 1);
+          substitutions.push(body);
+          token += "`" + body + "`";
+          i = next;
+        } else if (command[i] === "\\" && i + 1 < n && "\"\\$`".includes(command[i + 1])) {
           token += command[i + 1];
           i += 2;
         } else {
@@ -103,8 +183,9 @@ function lex(command) {
       while (i < n && command[i] !== "\n") i++;
       continue;
     }
-    // Command separators.
-    if (c === "\n" || c === ";" || c === "&" || c === "|" || c === "(" || c === ")" || c === "`") {
+    // Command separators (bare '(' / ')' are subshell grouping — '$(' was
+    // already consumed as a substitution above).
+    if (c === "\n" || c === ";" || c === "&" || c === "|" || c === "(" || c === ")") {
       endCommand();
       if ((c === "&" && command[i + 1] === "&") || (c === "|" && command[i + 1] === "|")) i++;
       i++;
@@ -120,7 +201,7 @@ function lex(command) {
     i++;
   }
   endCommand();
-  return commands;
+  return { commands, substitutions };
 }
 
 // A leading ``NAME=value`` environment assignment.
@@ -139,6 +220,12 @@ const GIT_GLOBAL_WITH_ARG = new Set([
   "--config-env",
 ]);
 
+/** True if a token carries a command substitution (``$(…)`` or backticks) — an
+ * inline-executed expansion the guard cannot resolve statically. */
+function hasCommandSubstitution(token) {
+  return token.includes("$(") || token.includes("`");
+}
+
 /** Drop leading ``NAME=value`` assignments and ``env`` wrappers. */
 function stripPrefixes(tokens) {
   let i = 0;
@@ -146,8 +233,10 @@ function stripPrefixes(tokens) {
   return tokens.slice(i);
 }
 
-/** True if a single command's tokens are a ``git push`` that force-pushes. */
-function isForcePush(rawTokens) {
+/** True if a single command's tokens are a ``git push`` that force-pushes (or a
+ * ``git`` command whose push-ness / force form is obscured by a command
+ * substitution the guard fails closed on). */
+function commandForcePushes(rawTokens) {
   const tokens = stripPrefixes(rawTokens);
   if (tokens.length === 0 || tokens[0] !== "git") return false;
 
@@ -165,7 +254,13 @@ function isForcePush(rawTokens) {
     }
     break;
   }
-  if (i >= tokens.length || tokens[i] !== "push") return false;
+  if (i >= tokens.length) return false;
+  const subcommand = tokens[i];
+  if (subcommand !== "push") {
+    // The sub-command slot is a command substitution → it could resolve to
+    // ``push`` with a force form. Fail closed.
+    return hasCommandSubstitution(subcommand);
+  }
 
   // Scan the push arguments for any force form.
   let sawDoubleDash = false;
@@ -180,12 +275,24 @@ function isForcePush(rawTokens) {
       if (t === "--force-with-lease" || t.startsWith("--force-with-lease=")) return true;
       // short-flag bundle (single dash, letters only) containing 'f'
       if (/^-[A-Za-z]+$/.test(t) && t.includes("f")) return true;
-      continue; // some other option
+      if (hasCommandSubstitution(t)) return true; // an option that could expand to a force flag
+      continue;
     }
-    // an operand (a refspec): a leading '+' forces that refspec
+    // an operand (a refspec): a leading '+' forces that refspec …
     if (t.startsWith("+")) return true;
+    // … and a substitution operand could expand to a +refspec or a force flag.
+    if (hasCommandSubstitution(t)) return true;
   }
   return false;
+}
+
+/** True if ``command`` — or the body of any command substitution nested within
+ * it — force-pushes. Recursion is bounded by the finite nesting depth. */
+function forcePushAnywhere(command, depth = 0) {
+  if (depth > 16) return false; // pathological-nesting backstop
+  const { commands, substitutions } = lex(command);
+  if (commands.some(commandForcePushes)) return true;
+  return substitutions.some((body) => forcePushAnywhere(body, depth + 1));
 }
 
 function readStdin() {
@@ -199,9 +306,10 @@ function readStdin() {
 function deny(command) {
   const reason =
     `[GIT-PUSH-GUARD] Blocked a force-push. The command ${JSON.stringify(command)} force-pushes ` +
-    `(a --force / -f / --force-with-lease flag, or a +<refspec>), which can overwrite history on a ` +
-    `shared branch. Land work through a reviewed merge (the close verb), not a force-push. If a ` +
-    `force-push is genuinely required, a human must run it.`;
+    `(a --force / -f / --force-with-lease flag, or a +<refspec> — possibly via a command ` +
+    `substitution), which can overwrite history on a shared branch. Land work through a reviewed ` +
+    `merge (the close verb), not a force-push. If a force-push is genuinely required, a human ` +
+    `must run it.`;
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
@@ -222,7 +330,7 @@ function main() {
   const input = readStdin();
   if ((input.tool_name || "") !== "Bash") return passThrough();
   const command = (input.tool_input && input.tool_input.command) || "";
-  if (lex(command).some(isForcePush)) return deny(command);
+  if (forcePushAnywhere(command)) return deny(command);
   passThrough();
 }
 

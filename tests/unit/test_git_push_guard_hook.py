@@ -90,6 +90,16 @@ _MUST_DENY = [
     "cd /tmp && git push --force origin dev",
     "git push origin main && git push --force origin dev",
     "echo start; git push -f origin dev",
+    # command substitution: it executes inline, so these really force-push. The
+    # guard captures the substitution opaquely (not as a separator), recurses
+    # into its body, and fails closed when one lands in a push decision slot.
+    "git push origin $(printf dev) --force",  # subst operand + literal --force
+    "git $(printf push) --force origin dev",  # sub-command hidden in a subst
+    "git push origin $(printf '+HEAD:dev')",  # the +refspec is inside the subst
+    "echo $(git push --force origin dev)",  # inner force-push (recursion)
+    "out=$(git push -f origin dev)",  # inner force-push in an assignment subst
+    "echo `git push -f origin dev`",  # backtick form (recursion)
+    "git push origin `printf dev` --force",  # backtick operand + literal --force
 ]
 
 # Non-force pushes and non-push commands that MUST stay allowed — the exact
@@ -116,6 +126,11 @@ _MUST_ALLOW = [
     "git status",
     "git log --oneline -5",
     'echo "git push --force origin dev"',
+    # a command substitution in a NON-push git command (or no git push at all)
+    # must NOT fail closed — only pushes are the guard's concern.
+    'git commit -m "$(printf msg)"',
+    'git tag -m "$(whoami)" v1',
+    "echo $(date)",
 ]
 
 
