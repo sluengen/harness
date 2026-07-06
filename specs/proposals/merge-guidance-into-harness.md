@@ -14,8 +14,8 @@ related: [specs/proposals/harness-as-tool.md, specs/architecture-principles.md, 
 
 There are two repos:
 
-- **`/Users/scottluengen/Code/agents` — the guidance source.** Holds `registry.yaml` (`registry_format: 1`; a copy-list keyed by installed path, defining two **profiles** — `standard` and `harness` — plus a `meta:` block of source-only files like the installer `BOOTSTRAP.md`). It is the source of record for the universal commands/skills/agents/templates/hooks/process/settings.
-- **`/Users/scottluengen/Code/harness` — a consumer of that guidance, plus the harness app.** It carries the *installed* copies of the surface at its root and a `.guidance-lock.yaml` pinning `source: agents, ref: 35ed6cc` with per-file `{version, hash}`. The harness *app* (the Python package under `harness/`, Docker, the verbs) lives alongside.
+- **`~/Code/agents` — the guidance source.** Holds `registry.yaml` (`registry_format: 1`; a copy-list keyed by installed path, defining two **profiles** — `standard` and `harness` — plus a `meta:` block of source-only files like the installer `BOOTSTRAP.md`). It is the source of record for the universal commands/skills/agents/templates/hooks/process/settings.
+- **`~/Code/harness` — a consumer of that guidance, plus the harness app.** It carries the *installed* copies of the surface at its root and a `.guidance-lock.yaml` pinning `source: agents, ref: 35ed6cc` with per-file `{version, hash}`. The harness *app* (the Python package under `harness/`, Docker, the verbs) lives alongside.
 
 The split was justified by keeping the guidance **product-agnostic** so many repos could install a consistent agent base (`CLAUDE.md`: "The guidance stays product-agnostic"). That boundary is now taxing the work, and the justification no longer holds:
 
@@ -108,7 +108,7 @@ Provisional; each shippable on its own, spawned as Linear issues once the user l
 4. **Surface as versioned interface** (D3) — the semver-on-header principle + a test locking the verb JSON / refusal-reason contract; record in architecture-principles + `SPEC.md`.
 5. **Supersede CAL-624** — "distribute `/harness run` via the agents-repo channel" is subsumed once the harness owns the channel; reconcile and close it. *(CAL-621 `.harness.toml` and CAL-623 GHCR are independent and unaffected; CAL-622 is already Done.)*
 6. **Doc reconciliation** — BOOTSTRAP.md, CONTEXT.md ("where deeper truth lives"), README, CHANGELOG ownership; **resolve the BOOTSTRAP.md path question** (the harness onboarding doc vs. the agents installer `meta:` file must not collide).
-7. **Retire the agents repo** — bring the `standard` profile + its product-only files (design-system, ux-design, feature template) home; confirm the harness is the home of all guidance; archive/retire `/Users/scottluengen/Code/agents`.
+7. **Retire the agents repo** — bring the `standard` profile + its product-only files (design-system, ux-design, feature template) home; confirm the harness is the home of all guidance; archive/retire `~/Code/agents`.
 8. **GitHub-pull distribution (D7)** — make `/update-guidance` + bootstrap fetch from the harness GitHub repo at a branch ref (external consumers = `main`); extend `.guidance-lock.yaml.source` to `{repo, branch, ref}`; wire guidance release to the `dev → main` promotion. (The command already anticipates a "path/remote" source — make the remote concrete.)
 
 ## Risks / unknowns

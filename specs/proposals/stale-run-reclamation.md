@@ -88,12 +88,12 @@ Created in dependency order; lower ID = earlier (the Build routine picks by ID o
 
 | Item | Ticket |
 |---|---|
-| 1 — `transition_to_unstarted` + markers | [CAL-734](https://linear.app/form-coffee/issue/CAL-734) |
-| 2 — `harness reclaim` verb | [CAL-735](https://linear.app/form-coffee/issue/CAL-735) |
-| 3 — `harness reclaim --stale` sweep | [CAL-736](https://linear.app/form-coffee/issue/CAL-736) |
-| 4 — wire pre-flight into `/harness routine build` | [CAL-737](https://linear.app/form-coffee/issue/CAL-737) |
-| 5 — checkpoint-push durable WIP | [CAL-738](https://linear.app/form-coffee/issue/CAL-738) |
-| 6 — resume-from-branch in pick logic | [CAL-739](https://linear.app/form-coffee/issue/CAL-739) |
+| 1 — `transition_to_unstarted` + markers | CAL-734 |
+| 2 — `harness reclaim` verb | CAL-735 |
+| 3 — `harness reclaim --stale` sweep | CAL-736 |
+| 4 — wire pre-flight into `/harness routine build` | CAL-737 |
+| 5 — checkpoint-push durable WIP | CAL-738 |
+| 6 — resume-from-branch in pick logic | CAL-739 |
 
 Item 7 (heartbeat) is deferred — not ticketed until D2's 90-min threshold proves too blunt.
 
