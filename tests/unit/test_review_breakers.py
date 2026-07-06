@@ -131,7 +131,12 @@ def _tracking_runner(stdout: str, calls: list[int]) -> Any:
     """A fake engine runner that records each time it is invoked."""
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         calls.append(1)
         return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)

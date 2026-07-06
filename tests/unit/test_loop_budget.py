@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from harness.loop_budget import (
+    DEFAULT_ENGINE_TIMEOUT_SECONDS,
     DEFAULT_MAX_REVIEW_CYCLES,
     DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
     REVIEW_CYCLE_CEILING_REASON,
@@ -50,7 +51,14 @@ def _budget(max_cycles: int = 6, wall_clock: int = 90) -> LoopBudget:
 # ---------------------------------------------------------------------------
 
 
-def _write_context(root: Path, *, max_cycles: int, wall_clock: int) -> None:
+def _write_context(
+    root: Path, *, max_cycles: int, wall_clock: int, engine_timeout: int | None = None
+) -> None:
+    engine_line = (
+        f"  engine_timeout_seconds: {engine_timeout}\n"
+        if engine_timeout is not None
+        else ""
+    )
     (root / "CONTEXT.md").write_text(
         "<!-- guidance:template-context@0.1.4 -->\n"
         "# CONTEXT.md\n\n"
@@ -59,6 +67,7 @@ def _write_context(root: Path, *, max_cycles: int, wall_clock: int) -> None:
         "loop:\n"
         f"  max_review_cycles: {max_cycles}\n"
         f"  wall_clock_budget_minutes: {wall_clock}\n"
+        f"{engine_line}"
         "```\n"
     )
 
@@ -76,6 +85,32 @@ def test_load_defaults_when_no_context(tmp_path: Path) -> None:
     budget = load_loop_budget(tmp_path)
     assert budget.max_review_cycles == DEFAULT_MAX_REVIEW_CYCLES == 6
     assert budget.wall_clock_budget_minutes == DEFAULT_WALL_CLOCK_BUDGET_MINUTES == 90
+
+
+# ---------------------------------------------------------------------------
+# engine_timeout_seconds — the mid-verb subprocess ceiling (CAL-1004)
+# ---------------------------------------------------------------------------
+
+
+def test_load_reads_engine_timeout_from_context(tmp_path: Path) -> None:
+    """The review-engine subprocess ceiling is read from the ``loop:`` block (CAL-1004)."""
+    _write_context(tmp_path, max_cycles=6, wall_clock=90, engine_timeout=300)
+    budget = load_loop_budget(tmp_path)
+    assert budget.engine_timeout_seconds == 300
+
+
+def test_load_defaults_engine_timeout_when_absent(tmp_path: Path) -> None:
+    """A ``loop:`` block without the key falls back to the documented default."""
+    # CONTEXT.md present but no engine_timeout_seconds line → default, not error.
+    _write_context(tmp_path, max_cycles=6, wall_clock=90)
+    budget = load_loop_budget(tmp_path)
+    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 600
+
+
+def test_load_defaults_engine_timeout_when_no_context(tmp_path: Path) -> None:
+    """No CONTEXT.md at all → the documented engine-timeout default."""
+    budget = load_loop_budget(tmp_path)
+    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 600
 
 
 def test_load_defaults_when_loop_block_absent(tmp_path: Path) -> None:

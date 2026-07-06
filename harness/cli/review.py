@@ -139,8 +139,10 @@ class RunResult(NamedTuple):
     returncode: int
 
 
-# A runner takes keyword args (cmd, stdin, env, cwd) and returns a RunResult.
-# Default = the real engine subprocess; tests inject a fake.
+# A runner takes keyword args (cmd, stdin, env, cwd, timeout) and returns a
+# RunResult. Default = the real engine subprocess; tests inject a fake. The
+# ``timeout`` (seconds, or None) is the per-subprocess ceiling (CAL-1004); a
+# fake may accept and ignore it.
 Runner = Callable[..., Awaitable[RunResult]]
 
 
@@ -306,12 +308,19 @@ async def _default_runner(
     stdin: str,
     env: dict[str, str],
     cwd: Path | None,
+    timeout: float | None = None,
 ) -> RunResult:
     """Run ``cmd`` as a subprocess, feed ``stdin``, capture stdout/stderr/exit.
 
     stderr and the exit code are captured (no longer discarded) so the Codex
     usage-limit fallback (CAL-702) can detect an exhausted tier: the limit
     signal lands on stderr with a non-zero exit, never on stdout.
+
+    ``timeout`` (seconds) caps the engine subprocess (CAL-1004). On expiry the
+    process is killed and reaped and the run is failed as infra — a hung engine
+    never reviewed the diff, so it is not a verdict — via ``_ReviewError``
+    (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`). ``None`` keeps the
+    old unbounded behaviour for any direct caller that opts out.
     """
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -322,7 +331,24 @@ async def _default_runner(
         cwd=cwd,
         limit=8 * 1024 * 1024,  # engines can emit large lines (file reads, diffs)
     )
-    stdout_bytes, stderr_bytes = await process.communicate(stdin.encode())
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            process.communicate(stdin.encode()), timeout=timeout
+        )
+    except TimeoutError:
+        # asyncio.wait_for raises the builtin TimeoutError (3.11+) after
+        # cancelling communicate(); the child is still alive. Kill and reap it so
+        # no zombie/orphan survives, then surface the infra failure.
+        process.kill()
+        await process.wait()
+        raise _ReviewError(
+            f"review engine exceeded its {timeout:.0f}s timeout and was killed; "
+            "this is an environment/infra failure (a hung engine never reviewed "
+            "the diff), not a code-review verdict. Raise engine_timeout_seconds "
+            "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
+            EXIT_INFRA_FAILURE,
+            reason=ENGINE_TIMEOUT_REASON,
+        ) from None
     return RunResult(
         stdout=stdout_bytes.decode(errors="replace"),
         stderr=stderr_bytes.decode(errors="replace"),
@@ -393,6 +419,13 @@ EXIT_BREAKER_TRIPPED = 4
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
 SANDBOX_INIT_REASON = "sandbox_init_failure"
 
+# Machine-readable ``reason`` for a review engine killed by the subprocess
+# timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
+# the diff, so this is infra (``EXIT_INFRA_FAILURE``), not a code-review verdict:
+# no review event is recorded and the run stops with a distinct, greppable tag
+# rather than hanging until an external kill (exit 143).
+ENGINE_TIMEOUT_REASON = "engine_timeout"
+
 
 def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
     """True iff a review engine failed because its sandbox could not initialize.
@@ -442,15 +475,26 @@ def is_sandbox_blocked_defer(verdict: str, issues: list[str], engine: Engine) ->
     return _SANDBOX_INIT_MARKER in " ".join(issues).lower()
 
 
-async def _invoke_engine(runner: Runner, engine: Engine, cwd: Path) -> RunResult:
-    """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``."""
+async def _invoke_engine(
+    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None
+) -> RunResult:
+    """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``.
+
+    ``timeout`` is forwarded to the runner as the per-subprocess ceiling
+    (CAL-1004). A ``_ReviewError`` the runner already raised — the timeout
+    infra-failure carries its own exit code and ``reason`` — passes through
+    unchanged; only *other* exceptions are wrapped as the generic exit-1 error.
+    """
     try:
         return await runner(
             cmd=_build_cmd(engine),
             stdin=_REVIEW_PROMPT,
             env=dict(os.environ),
             cwd=cwd,
+            timeout=timeout,
         )
+    except _ReviewError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
 
@@ -581,7 +625,10 @@ async def _run_review(
     engine_used: Engine = engine
     fallback_from: Engine | None = None
 
-    result = await _invoke_engine(runner, engine, Path(worktree_path))
+    # The configured per-subprocess ceiling (CAL-1004): a hung engine is killed
+    # and surfaced as infra rather than hanging this verb until an external kill.
+    engine_timeout = budget.engine_timeout_seconds
+    result = await _invoke_engine(runner, engine, Path(worktree_path), timeout=engine_timeout)
 
     # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
     # namespace in a non-privileged container) is INFRA, not a verdict — the
@@ -605,7 +652,9 @@ async def _run_review(
     if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
         fallback_from = "codex"
         engine_used = "claude"
-        result = await _invoke_engine(runner, "claude", Path(worktree_path))
+        result = await _invoke_engine(
+            runner, "claude", Path(worktree_path), timeout=engine_timeout
+        )
 
     # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
     #    full stdout/stderr stays local to the verb — only the verdict escapes.

@@ -64,6 +64,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -71,7 +72,12 @@ import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
-from harness.cli._git import rev_parse_head, run_git, teardown_worktree
+from harness.cli._git import (
+    NETWORK_GIT_TIMEOUT_SECONDS,
+    rev_parse_head,
+    run_git,
+    teardown_worktree,
+)
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.schema import EVENT_TYPES
@@ -83,6 +89,11 @@ from harness.linear import (
     linear_api_key,
 )
 from harness.state import store
+
+# size: one cohesive verb — the close gate plus the integrate → merge → push →
+# teardown lifecycle it guards, which splitting would only scatter across files.
+# CAL-1004 added the network-timeout guards (fetch/push) inline, per run_git's
+# caller-owns-error-policy contract, pushing it just over the 500-line limit.
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -439,8 +450,19 @@ def _merge_and_push(
     """
     output: list[str] = []
 
-    def _run(cwd: Path, *args: str) -> None:
-        result = run_git(cwd, *args)
+    def _run(cwd: Path, *args: str, timeout: float | None = None) -> None:
+        # A fired network timeout (fetch/push) raises TimeoutExpired rather than
+        # returning a non-zero result — convert it to the same _CloseError shape
+        # so close fails cleanly instead of leaking a raw traceback (CAL-1004).
+        try:
+            result = run_git(cwd, *args, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise _CloseError(
+                f"git {' '.join(args)} exceeded the {timeout:.0f}s network "
+                f"timeout in {cwd}; the remote may be unreachable — retry close "
+                "once it is back",
+                1,
+            ) from exc
         output.append(result.stdout)
         output.append(result.stderr)
         if result.returncode != 0:
@@ -456,7 +478,7 @@ def _merge_and_push(
     # Integrate the current origin/<base> BEFORE merging, so a base that advanced
     # during the run does not reject the push as non-fast-forward (CAL-777). Fetch
     # the remote tip into FETCH_HEAD and fast-forward the local base to it.
-    _run(repo_root, "fetch", "origin", base_branch)
+    _run(repo_root, "fetch", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
     ff = run_git(repo_root, "merge", "--ff-only", "FETCH_HEAD")
     output.append(ff.stdout)
     output.append(ff.stderr)
@@ -494,6 +516,6 @@ def _merge_and_push(
             1,
         )
 
-    _run(repo_root, "push", "origin", base_branch)
+    _run(repo_root, "push", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
 
     return "".join(output)
