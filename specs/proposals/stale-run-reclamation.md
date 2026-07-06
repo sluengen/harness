@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: stale-run-reclamation
-status: accepted   # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-16
 related: [run-ledger, verb-model, four-loops, CAL-734, CAL-735, CAL-736, CAL-737, CAL-738, CAL-739]
 ---

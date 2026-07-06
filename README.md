@@ -52,15 +52,15 @@ For the full architectural picture and the "why" of every decision, read [`SPEC.
 
 ## The model: one execution path, two triggers
 
-There is **one** execution model — a Claude session running `start → implement → review → (fix → review)* → close` — with **two** triggers:
+There is **one** execution model — a Claude session running `start → implement → review → (fix → review)* → close` — designed for **two** trigger slots, one built today and one **design-only**:
 
-- a **human**, via the `/harness run <ISSUE-ID>` slash command in Claude Code, or
-- **Hermes**, the autonomous dispatcher occupying the same trigger slot.
+- a **human**, via the `/harness run <ISSUE-ID>` slash command in Claude Code (the built trigger), or
+- **Hermes**, the autonomous dispatcher that *would* occupy the same trigger slot — **design-only**, not built: the launcher was removed in CAL-712 and the design is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
 
-Both produce the identical execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot `docker run` spawned **outside** the runtime by the `~/bin/harness` wrapper. The agent never runs inside a verb container.
+By design, either trigger produces the identical execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot `docker run` spawned **outside** the runtime by the `~/bin/harness` wrapper. The agent never runs inside a verb container.
 
 ```
-trigger ( /harness run CAL-42  |  Hermes )
+trigger ( /harness run CAL-42  |  Hermes† )
    │  launches a Claude session for the ticket
    ▼
 Claude session — orchestrator + implementer
@@ -69,6 +69,8 @@ Claude session — orchestrator + implementer
    ▼
 harness verbs:  start / review / close   +   SQLite ledger   +   close gate
 ```
+
+† Hermes is **design-only** — not a built trigger. Today only `/harness run` (a human) launches the session; the Hermes slot is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
 
 ### Routing discipline
 

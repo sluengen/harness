@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: harden-loop-layer
-status: accepted   # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-30
 related: [stale-run-reclamation, four-loops, run-ledger, verb-model, CAL-906, CAL-907, CAL-908]
 ---
