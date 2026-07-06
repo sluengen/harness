@@ -3,13 +3,21 @@
 Asserts:
 
 1. The Docker image at ``docker/Dockerfile`` builds successfully from the repo
-   root using the tag ``harness:dev`` (this also exercises the ``.dockerignore``
-   re-include that puts ``docker/entrypoint.sh`` in the build context).
+   root (this also exercises the ``.dockerignore`` re-include that puts
+   ``docker/entrypoint.sh`` in the build context).
 2. The image's entrypoint runs a one-shot verb: a bare verb stays backward
-   compatible (``docker run --rm harness:dev version`` prints a ``harness``
-   version string), and the explicit ``verb <args…>`` selector runs a one-shot
-   verb. (The launcher-socket ``agent`` mode was the deferred Hermes-dispatch
+   compatible (``docker run --rm <image> version`` prints a ``harness`` version
+   string), and the explicit ``verb <args…>`` selector runs a one-shot verb.
+   (The launcher-socket ``agent`` mode was the deferred Hermes-dispatch
    scaffolding, removed in CAL-712.)
+3. The container runs as a **non-root** user (CAL-1008) — the runtime proof of
+   the ``USER`` directive whose source invariant is locked in
+   ``tests/unit/test_container_hardening.py``.
+
+The build uses a dedicated ``harness:test`` tag, **not** ``harness:dev``, so a
+host / CI run of this test never clobbers a developer's working ``harness:dev``
+image mid-session (the runtime behaviour now differs — non-root — so a stray
+rebuild of the live tag could break an in-flight verb loop).
 
 The test is marked ``@pytest.mark.docker`` and SKIPS if ``docker info`` fails
 (CI may not have docker available; macOS/Linux dev hosts typically do).
@@ -28,7 +36,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
-IMAGE_TAG = "harness:dev"
+IMAGE_TAG = "harness:test"
 
 
 def _docker_available() -> bool:
@@ -133,3 +141,26 @@ def test_docker_verb_mode_runs_a_verb(built_image: str) -> None:
         f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
     assert "harness" in result.stdout, result.stdout
+
+
+def test_docker_runs_as_non_root(built_image: str) -> None:
+    """The container's runtime user is non-root (uid != 0) — CAL-1008.
+
+    Runtime proof of the ``USER`` directive: overriding the entrypoint with
+    ``id -u`` reports the uid the container actually runs as.
+    """
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--entrypoint", "id", built_image, "-u"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"`docker run --entrypoint id ... -u` failed (exit {result.returncode}).\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    uid = result.stdout.strip()
+    assert uid and uid != "0", (
+        f"container must run as a non-root user; got uid {uid!r}"
+    )

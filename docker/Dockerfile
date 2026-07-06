@@ -105,6 +105,30 @@ ENV PYTHONUNBUFFERED=1 \
     # `harness <cmd>` starts fast and doesn't try to mutate the immutable image FS.
     UV_NO_SYNC=1
 
+# ---------------------------------------------------------------------------
+# Non-root runtime user (CAL-1008). The container reviews UNTRUSTED ticket/diff
+# content with LLM agents, so an in-container compromise must not be root: as
+# root it has write access to the mounted repo (incl. .git) and any mounted host
+# credential (~/.ssh, ~/.codex). Drop the *runtime* process to an unprivileged
+# user. Everything above (apt, source-built git, `npm -g`, `uv sync`) needs root
+# and bakes into image layers; only the process that runs untrusted content drops
+# privilege here.
+#
+# No `chown` of /opt/harness is needed: `uv sync` writes the venv world-readable
+# (drwxr-xr-x) and UV_NO_SYNC=1 makes `uv run` read-only at runtime, so uid 1000
+# can execute it as-is (a `chown -R` would only duplicate the venv into a fat
+# extra layer). The mounted /workspace is writable because Docker Desktop maps
+# bind-mount ownership to the run-time uid; per-user scratch goes under $HOME.
+#
+# uid is fixed at 1000 and $HOME is /home/harness so the wrapper mounts host
+# credentials under the user's home (/home/harness/.ssh, /home/harness/.codex) —
+# where a non-root process can read them. /root is mode 700 and unreadable to
+# this user, so mounts MUST NOT target /root/... The ~/bin/harness wrapper in
+# docker/README.md mounts to /home/harness/... to match.
+# ---------------------------------------------------------------------------
+RUN useradd --create-home --uid 1000 --shell /bin/bash harness
+USER harness
+
 # One image, two entrypoints: the script dispatches `agent <TICKET>` (headless
 # per-session agent runtime) vs. `verb <args…>` / bare-verb (one-shot verb).
 # Bare-verb stays backward compatible with the launcher / ~/bin/harness wrapper,
