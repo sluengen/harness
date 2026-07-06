@@ -497,3 +497,49 @@ def test_context_gate_commands_use_extra_dev() -> None:
         "a surface test fails for all commands — match scripts/verify.sh's "
         "`uv run --extra dev` form (CAL-1003)."
     )
+
+
+# --- Hermes is design-only, not a built trigger (CAL-1009) --------------------
+#
+# The README once presented Hermes as a live trigger equal to `/harness run` —
+# a bullet ("the autonomous dispatcher occupying the same trigger slot") and an
+# ASCII diagram (`trigger ( /harness run CAL-42 | Hermes )`). But Hermes was
+# never built: its launcher was removed in CAL-712 and the design is retired to
+# specs/retired/hermes-orchestration.md. A reader must not mistake it for a
+# shipped trigger. Wherever the README names Hermes, a design-only caveat must
+# sit nearby (the same proximity-guard idiom the other doc checks here use).
+
+README_MD = REPO_ROOT / "README.md"
+
+#: Tokens that mark a Hermes mention as not-built. Lower-cased match.
+_HERMES_CAVEAT_TOKENS = ("design-only", "not built", "not yet built", "retired")
+
+#: Chars scanned on each side of a "Hermes" mention for a caveat token. Wide
+#: enough to let one caveat cover the adjacent bullet + diagram mentions.
+_HERMES_CAVEAT_WINDOW = 600
+
+
+def test_readme_does_not_present_hermes_as_built() -> None:
+    """Every README mention of Hermes carries a design-only caveat nearby.
+
+    Hermes is design-only — the launcher was removed (CAL-712) and the design is
+    retired (specs/retired/hermes-orchestration.md). The README must not present
+    it as a live/built trigger equal to `/harness run` (CAL-1009).
+    """
+    lowered = README_MD.read_text().lower()
+    uncaveated: list[int] = []
+    idx = lowered.find("hermes")
+    while idx != -1:
+        window = lowered[
+            max(0, idx - _HERMES_CAVEAT_WINDOW) : idx + _HERMES_CAVEAT_WINDOW
+        ]
+        if not any(tok in window for tok in _HERMES_CAVEAT_TOKENS):
+            uncaveated.append(idx)
+        idx = lowered.find("hermes", idx + len("hermes"))
+    assert not uncaveated, (
+        "README.md mentions Hermes without a design-only caveat nearby "
+        f"(char offsets {uncaveated}). Hermes was never built — the launcher was "
+        "removed in CAL-712 and the design is retired to "
+        "specs/retired/hermes-orchestration.md. Caveat every mention as "
+        "design-only, not a live trigger (CAL-1009)."
+    )
