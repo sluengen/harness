@@ -158,6 +158,66 @@ def test_check_git_does_not_pass_outside_a_repo() -> None:
     assert "repo" in msg.lower() or "git" in msg.lower()
 
 
+def test_check_git_version_passes_on_recent_git() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # The host git shipped by recent macOS/Homebrew is well past the floor.
+    status, msg = check_git_version(version_output="git version 2.50.1 (Apple Git-155)")
+    assert status == "PASS"
+    assert "2.50" in msg
+
+
+def test_check_git_version_passes_at_exact_threshold() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # The threshold is inclusive: 2.48 is the first git that understands the
+    # relativeWorktrees extension, so exactly 2.48 must PASS.
+    status, _msg = check_git_version(version_output="git version 2.48.0")
+    assert status == "PASS"
+
+
+def test_check_git_version_passes_on_newer_major() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # A higher major must pass regardless of minor (3.0 > 2.48).
+    status, _msg = check_git_version(version_output="git version 3.0.0")
+    assert status == "PASS"
+
+
+def test_check_git_version_fails_just_below_threshold() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # 2.47 is one minor below the floor: the first relative-worktree create would
+    # floor-raise the repo and then break every git op under this git, so FAIL.
+    status, msg = check_git_version(version_output="git version 2.47.9")
+    assert status == "FAIL"
+    # The FAIL message must name the found version and the required floor so the
+    # operator knows exactly what to upgrade.
+    assert "2.47" in msg
+    assert "2.48" in msg
+
+
+def test_check_git_version_fails_on_old_apple_system_git() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # The concrete host this guards: an un-upgraded macOS Apple system git, whose
+    # version string carries a parenthetical suffix that must not defeat parsing.
+    status, msg = check_git_version(version_output="git version 2.39.3 (Apple Git-146)")
+    assert status == "FAIL"
+    assert "2.39" in msg
+
+
+def test_check_git_version_warns_when_unparseable() -> None:
+    from harness.cli.doctor import check_git_version
+
+    # If the version string cannot be parsed, the precondition for the check could
+    # not be established — WARN rather than a spurious FAIL. This check FAILs only
+    # on the condition it actually tests (a version below the floor).
+    status, msg = check_git_version(version_output="not a git version string")
+    assert status == "WARN"
+    assert "git" in msg.lower()
+
+
 def test_check_db_passes_when_file_exists(tmp_path: Path) -> None:
     from harness.cli.doctor import check_db
 
@@ -289,6 +349,9 @@ def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:
     assert "db" in out
     assert "reviewer" in out
     assert "cli" in out
+    # The git-version check (CAL-979) must be wired into the aggregated command,
+    # not merely defined as a function — pin its label in the real output.
+    assert "git-version" in out
 
 
 def test_doctor_output_shows_pass_or_warn_or_fail_prefix(tmp_path: Path) -> None:
