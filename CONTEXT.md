@@ -21,10 +21,10 @@ stack:
   framework: Pydantic 2 / Typer / aiosqlite
 commands:
   install: "uv sync --extra dev"
-  lint:    "uv run ruff check ."
-  typecheck: "uv run mypy harness"
-  test:    "uv run pytest"
-  test_one: "uv run pytest <path/to/test_file.py::test_name>"
+  lint:    "uv run --extra dev ruff check ."
+  typecheck: "uv run --extra dev mypy harness"
+  test:    "uv run --extra dev pytest"
+  test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
   verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke. Run before merge/tag.
   run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:

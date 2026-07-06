@@ -406,3 +406,94 @@ def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
         f"`{_SSH_SOCKET_MOUNT}`. Docker Desktop supplies the host agent at that "
         "in-VM path at mount time — the mount must remain."
     )
+
+
+# --- CONTEXT.md gate commands must match scripts/verify.sh (CAL-1003) ----------
+#
+# CONTEXT.md is the agent-facing file of record for how to run this repo's gate.
+# Its `commands:` block once listed the bare `uv run pytest` / `uv run ruff …` /
+# `uv run mypy …` forms — all missing `--extra dev`, while scripts/verify.sh (the
+# canonical gate) runs every step with `uv run --extra dev`. Bare `uv run pytest`
+# is a documented failure mode in this repo (dependency resolution pulls a typer
+# version where a surface test fails for all commands), so the file of record was
+# teaching the failure mode. These guards pin CONTEXT.md's gate invocations to the
+# known-good `--extra dev` form that verify.sh — the canonical gate — uses, so the
+# two cannot drift.
+
+CONTEXT_MD = REPO_ROOT / "CONTEXT.md"
+VERIFY_SH = REPO_ROOT / "scripts" / "verify.sh"
+
+#: A `uv run` invocation — the form that needs `--extra dev` to resolve the dev
+#: dependency group. `uv sync --extra dev` is a different subcommand and already
+#: carries the flag, so the guard keys on `uv run` specifically (it must not flag
+#: the `install: "uv sync --extra dev"` command).
+_UV_RUN_RE = re.compile(r"\buv run\b")
+_UV_RUN_EXTRA_DEV_RE = re.compile(r"\buv run --extra dev\b")
+
+
+def _context_commands() -> dict[str, str]:
+    """Parse CONTEXT.md's ``commands:`` block into ``{name: invocation}``.
+
+    The block lives inside the front-matter ```yaml fence as ``name: "value"``
+    lines; parsed by regex (there is no yaml dependency) the same way the other
+    doc guards here read these files. The block ends at the next unindented key.
+    """
+    cmds: dict[str, str] = {}
+    in_block = False
+    for line in CONTEXT_MD.read_text().splitlines():
+        if re.match(r"^commands:\s*$", line):
+            in_block = True
+            continue
+        if in_block:
+            if re.match(r"^\S", line):  # next top-level key ends the block
+                break
+            m = re.match(r'^\s+(\w+):\s+"([^"]*)"', line)
+            if m:
+                cmds[m.group(1)] = m.group(2)
+    return cmds
+
+
+def test_verify_sh_uv_run_steps_use_extra_dev() -> None:
+    """Anchor: scripts/verify.sh runs every ``uv run`` step with ``--extra dev``.
+
+    This is the known-good form CONTEXT.md's gate commands are pinned to below.
+    If the canonical gate itself stopped using ``--extra dev``, the parity target
+    would be wrong — anchor the premise here (CAL-1003).
+    """
+    uv_runs = [
+        ln.strip()
+        for ln in VERIFY_SH.read_text().splitlines()
+        if _UV_RUN_RE.search(ln)
+    ]
+    assert uv_runs, "scripts/verify.sh has no `uv run` steps — parser or gate changed."
+    offenders = [ln for ln in uv_runs if not _UV_RUN_EXTRA_DEV_RE.search(ln)]
+    assert not offenders, (
+        "scripts/verify.sh has `uv run` steps missing `--extra dev`: "
+        f"{offenders!r}. The gate's known-good form is `uv run --extra dev` "
+        "(CAL-1003)."
+    )
+
+
+def test_context_gate_commands_use_extra_dev() -> None:
+    """CONTEXT.md's ``uv run`` gate commands carry ``--extra dev``, matching verify.sh.
+
+    Bare ``uv run pytest`` / ``uv run ruff …`` / ``uv run mypy …`` are a
+    documented failure mode (dependency resolution pulls a typer version where a
+    surface test fails for all commands). CONTEXT.md is the agent-facing file of
+    record — its gate invocations must be the known-good ``--extra dev`` forms the
+    canonical gate (scripts/verify.sh) uses, or the file teaches the failure mode
+    (CAL-1003).
+    """
+    cmds = _context_commands()
+    assert cmds, "Could not parse CONTEXT.md `commands:` block — parser drifted."
+    offenders = {
+        name: inv
+        for name, inv in cmds.items()
+        if _UV_RUN_RE.search(inv) and not _UV_RUN_EXTRA_DEV_RE.search(inv)
+    }
+    assert not offenders, (
+        "CONTEXT.md `commands:` block has `uv run` invocations missing "
+        f"`--extra dev`: {offenders!r}. Bare `uv run` pulls a typer version where "
+        "a surface test fails for all commands — match scripts/verify.sh's "
+        "`uv run --extra dev` form (CAL-1003)."
+    )
