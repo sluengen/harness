@@ -1,10 +1,42 @@
 # harness
 
-A set of **deterministic, audited verbs an agent calls** to drive a ticket end-to-end — not a pipeline that drives agents.
+An **audit and process layer for agent-driven development**: a small set of
+deterministic, audited verbs an agent calls to drive a ticket end-to-end — not a
+pipeline that drives agents.
 
 > The harness is a tool the agent uses, not an engine that uses the agent.
 
-**Status:** verb model (`start` / `review` / `close`). The earlier deterministic YAML workflow engine was retired in CAL-574; this README and [`SPEC.md`](./SPEC.md) §1–2 describe the current model.
+An AI agent does the judgement work — the code, the fixes, the decisions. The
+harness owns only what an audit trail depends on:
+
+- **SHA-bound review verdicts** — a `pass` binds to the exact git SHA it reviewed,
+  and the `close` gate refuses to merge anything a fresh review didn't cover.
+- **An append-only ledger** — each run's lifecycle (`start` / `review` / `close`)
+  is a row plus an event log in SQLite; that ledger *is* the audit trail.
+- **Builder / recorder separation** — the agent that promises delivery is not the
+  one that records it, which keeps the canonical record honest.
+- **Crash reclamation** — a run whose orchestrator dies mid-flight is detected by a
+  time heuristic and reclaimed, so a stalled ticket never wedges the queue.
+- **Versioned guidance distribution** — the skills, agents, and commands that
+  encode *how work happens here* are version-stamped and distributed from this repo.
+
+It is **dogfooded on its own development**: every change to the harness is built by
+running the harness on a ticket, through the same `start → review → close` verbs it
+ships.
+
+**Status:** verb model (`start` / `review` / `close`). The earlier deterministic
+YAML workflow engine was retired in CAL-574; this README and [`SPEC.md`](./SPEC.md)
+§1–2 describe the current model.
+
+## Is this turnkey? No — it's dogfood infrastructure
+
+**This is infrastructure one maintainer runs on their own machine, published to
+read and adapt — not a turnkey product.** Several pieces are deliberately
+operator-specific and assume a particular setup: the `~/bin/harness` Docker
+wrapper, the macOS Keychain OAuth flow, and the operator [`RUNBOOK.md`](./RUNBOOK.md).
+Treat the whole repo as a worked example to **adapt to taste**, not a dependency to
+install unchanged. The concepts — the SHA-bound gate, the append-only ledger, the
+builder/recorder split — are the portable part; the plumbing around them is not.
 
 ## What it does
 
@@ -41,6 +73,29 @@ harness verbs:  start / review / close   +   SQLite ledger   +   close gate
 ### Routing discipline
 
 The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` / `push` or a Linear mutation** for the run lifecycle. Every git and ticket state transition goes through a verb; `close` validates against the ledger as a backstop. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+
+## Quickstart
+
+The honest minimum: clone it and run the tests to see the verbs and the gate
+exercised. No turnkey install is promised — to actually *drive* tickets you need
+the operator setup under [Install](#install) and [Authentication](#authentication).
+
+```bash
+git clone https://github.com/sluengen/harness.git harness
+cd harness
+uv sync --extra dev          # resolve the dev dependency group (needs uv)
+uv run --extra dev pytest    # the full gate: unit + integration tests
+```
+
+A verb loop, end to end, is three commands — you (or an agent) do the implementing
+in between:
+
+```bash
+harness start CAL-42                      # open the run: worktree + ledger row + ticket → In Progress
+# ... write code + tests in the worktree, test-first ...
+harness review --run-id <run_id>          # a verdict bound to the current HEAD; fix + re-run until pass
+harness close CAL-42 --run-id <run_id>    # gate → merge → ticket Done
+```
 
 ## Install
 
@@ -144,6 +199,13 @@ Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude
 
 - **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
 - **Read first:** [`CONTEXT.md`](./CONTEXT.md) (agents) · [`SPEC.md`](./SPEC.md) §1–2 (design) · [`commands/harness.md`](./commands/harness.md) (verb contract).
+
+## Contributing & security
+
+Issues and pull requests are welcome and handled on a **best-effort** basis — this
+is a single-maintainer, dogfood project. See [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+for the contribution stance. To report a security issue, do **not** open a public
+issue — follow [`SECURITY.md`](./SECURITY.md) to disclose it privately.
 
 ## License
 
