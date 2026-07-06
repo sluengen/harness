@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: ground-specs-and-context-rollover
-status: accepted   # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-30
 related: [harden-loop-layer, spec-driven-development, spec-authoring, four-loops, CAL-922, CAL-923]
 ---

@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: adopt-feature-specs-harness-profile
-status: accepted           # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-13
 related: [merge-guidance-into-harness]   # esp. CAL-652 (single-surface convergence)
 ---

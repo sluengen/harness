@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: merge-guidance-into-harness
-status: accepted            # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-13
 related: [specs/proposals/harness-as-tool.md, specs/architecture-principles.md, CONTEXT.md, BOOTSTRAP.md, commands/harness.md]
 ---

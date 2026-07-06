@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: pre-launch-consolidation
-status: accepted           # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-15
 related: [specs/proposals/harness-as-tool.md, specs/architecture-principles.md, commands/build.md, commands/build-codex.md, commands/harness.md, commands/assess.md, agents/code-steward.md, agents/system-steward.md, skills/assessment-craft/SKILL.md, harness/cli/review.py, four-loops.html]
 ---
