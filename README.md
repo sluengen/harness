@@ -145,6 +145,10 @@ Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude
 - **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
 - **Read first:** [`CONTEXT.md`](./CONTEXT.md) (agents) · [`SPEC.md`](./SPEC.md) §1–2 (design) · [`commands/harness.md`](./commands/harness.md) (verb contract).
 
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
+
 ## Changelog
 
 ### 2026-06 — execution model inverted (verb model)
