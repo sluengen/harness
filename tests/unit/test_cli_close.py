@@ -184,6 +184,44 @@ def fetch_run_status(db_path: Path, run_id: str) -> str | None:
     return _sync(_fetch_run_status(db_path, run_id))
 
 
+async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT id, data_json FROM events "
+            "WHERE run_id = ? AND event_type = 'close'",
+            (run_id,),
+        ) as cur,
+    ):
+        return list(await cur.fetchall())
+
+
+def fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    return _sync(_fetch_close_events(db_path, run_id))
+
+
+def _install_close_event_failure_trigger(db_path: Path) -> None:
+    """Make the close-event INSERT fail deterministically at the DB layer.
+
+    A ``BEFORE INSERT`` trigger that ``RAISE(ABORT)``s only for the ``close``
+    event, so the failure lands on exactly the write CAL-1002 makes atomic —
+    and lands identically whether the emit runs on its own connection (the
+    pre-fix code) or inside the status-flip transaction (the fix). The review
+    seed (``event_type='review'``) is untouched, so the gate still passes.
+    """
+
+    async def _install() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "CREATE TRIGGER _fail_close_event BEFORE INSERT ON events "
+                "WHEN NEW.event_type = 'close' "
+                "BEGIN SELECT RAISE(ABORT, 'injected close-event write failure'); END"
+            )
+            await conn.commit()
+
+    _sync(_install())
+
+
 def _make_linear_stub(raise_on_transition: Exception | None = None) -> MagicMock:
     stub = MagicMock()
     if raise_on_transition is not None:
@@ -727,3 +765,95 @@ def test_close_succeeds_even_if_teardown_raises(repo: Path, db_path: Path) -> No
     assert payload["merged"] is True
     assert payload["ticket_done"] is True
     merge.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# CAL-1002: the status flip and the close event land in ONE transaction
+# ---------------------------------------------------------------------------
+
+
+def test_close_records_close_event_on_success(repo: Path, db_path: Path) -> None:
+    """A successful close appends exactly one ``close`` event carrying the run,
+    ticket and merged SHA — guards the atomic write against silently dropping
+    the audit event when the emit is inlined into the status-flip transaction."""
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    events = fetch_close_events(db_path, run_id)
+    assert len(events) == 1
+    data = json.loads(events[0][1])
+    assert data["run_id"] == run_id
+    assert data["ticket"] == "CAL-572"
+    assert data["merged_sha"] == head
+
+
+def test_close_transition_failure_after_merge_leaves_run_open(
+    repo: Path, db_path: Path
+) -> None:
+    """A Linear Done-transition failure AFTER merge+push exits 1 and leaves the
+    ledger consistent — the run stays ``open`` and no ``close`` event is written,
+    so close is re-drivable. Exercises the previously-unused
+    ``_make_linear_stub(raise_on_transition=...)`` path (CAL-1002)."""
+    from harness.linear import LinearRequestError
+
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub(
+        raise_on_transition=LinearRequestError("permission denied")
+    )
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    # Exit 1 (an unexpected error), not a gate refusal (no ``reason``).
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "reason" not in payload
+    assert "transition ticket to Done" in payload["error"]
+
+    # Merge+push happened before the failure; the Done transition was attempted.
+    merge.assert_called_once()
+    stub.transition_to_done.assert_called_once_with("CAL-572")
+
+    # Ledger stays consistent: run still open, no close event.
+    assert fetch_run_status(db_path, run_id) == "open"
+    assert fetch_close_events(db_path, run_id) == []
+
+
+def test_close_event_write_failure_leaves_ledger_consistent(
+    repo: Path, db_path: Path
+) -> None:
+    """If the close-event write fails, the status flip must NOT persist.
+
+    CAL-1002: before the fix ``_mark_run_closed`` committed ``status='closed'``
+    on its own connection, then emitted the ``close`` event on a *second*
+    connection — a failed event write left a terminal ``closed`` run with no
+    close event, an inconsistent ledger no retry can repair (nothing re-drives a
+    terminal run). The fix makes the flip and the event one ``BEGIN IMMEDIATE``
+    transaction, so a failed event write rolls the flip back: the run stays
+    ``open`` and re-drivable.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    _install_close_event_failure_trigger(db_path)
+
+    stub = _make_linear_stub()
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    # The ledger write failed → exit 1 (unexpected error, not a gate refusal).
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert "reason" not in payload
+
+    # The failure is AFTER merge+push and the Done transition.
+    merge.assert_called_once()
+    stub.transition_to_done.assert_called_once_with("CAL-572")
+
+    # Atomic: the failed close-event write rolled the status flip back.
+    assert fetch_run_status(db_path, run_id) == "open"
+    assert fetch_close_events(db_path, run_id) == []

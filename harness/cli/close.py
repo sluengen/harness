@@ -30,7 +30,9 @@ guarantee):
    ``git merge --no-ff`` the run branch into ``base_branch``.
 2. ``git push`` the base branch.
 3. Transition the Linear ticket to Done.
-4. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
+4. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
+   one transaction (CAL-1002), so a failed ledger write never strands a terminal
+   run with no close event.
 5. Reclaim the run's worktree and branch (``teardown_worktree``): the merge has
    landed, so the worktree directory and the branch — local, and on ``origin``
    if a checkpoint pushed it — are removed. This step is **best-effort**: a
@@ -72,7 +74,7 @@ from harness._time import iso_z
 from harness.cli._git import rev_parse_head, run_git, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
-from harness.events.emitter import EventEmitter
+from harness.events.schema import EVENT_TYPES
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -86,6 +88,12 @@ __all__ = ["close_command", "CloseOutput"]
 
 # The structured refusal reasons — exactly one is reported on a gate failure.
 RefusalReason = Literal["no_run", "dirty_worktree", "no_passing_review", "stale_review"]
+
+#: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
+#: assert guards against a rename drifting the inlined INSERT away from the
+#: canonical set (mirrors :data:`harness.cli._abandon.ABANDON_EVENT_TYPE`).
+_CLOSE_EVENT_TYPE = "close"
+assert _CLOSE_EVENT_TYPE in EVENT_TYPES
 
 
 class CloseOutput(BaseModel):
@@ -254,19 +262,20 @@ async def _run_close(
     except (LinearNotFound, LinearRequestError) as exc:
         raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
 
-    # 8. Flip the run row to closed and record the close event (audit trail).
+    # 8. Flip the run row to closed and record the close event in one
+    #    transaction — see ``_mark_run_closed`` (CAL-1002).
     closed_at = iso_z()
     try:
-        await _mark_run_closed(db_path, resolved_run_id)
-        await EventEmitter(db_path).emit(
-            run_id=resolved_run_id,
-            event_type="close",
-            data={
+        await _mark_run_closed(
+            db_path,
+            resolved_run_id,
+            event_data={
                 "run_id": resolved_run_id,
                 "ticket": ticket,
                 "merged_sha": head_sha,
                 "closed_at": closed_at,
             },
+            event_ts=closed_at,
         )
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"failed to record run close: {exc}", 1) from exc
@@ -343,14 +352,41 @@ async def _evaluate_gate(
 # ---------------------------------------------------------------------------
 
 
-async def _mark_run_closed(db_path: Path, run_id: str) -> None:
-    """Flip the ``runs`` row for ``run_id`` to ``status='closed'``."""
+async def _mark_run_closed(
+    db_path: Path,
+    run_id: str,
+    *,
+    event_data: dict[str, Any],
+    event_ts: str,
+) -> None:
+    """Flip the ``runs`` row to ``status='closed'`` and append its ``close`` event.
+
+    Both writes share **one** ``BEGIN IMMEDIATE`` transaction — commit once, or
+    roll back together (CAL-1002). Split across two connections, a crash between
+    the flip and the event stranded a terminal ``closed`` run with no ``close``
+    event: an inconsistent ledger no retry can repair (nothing re-drives a
+    terminal run). Mirrors the shared abandon transaction
+    (:func:`harness.cli._abandon.abandon_run_in_ledger`); the event INSERT is
+    inlined here — not via :class:`~harness.events.emitter.EventEmitter`, which
+    opens its own connection — so it shares this commit.
+    """
+    data_json = json.dumps(event_data)
     async with store.connect(db_path) as conn:
-        await conn.execute(
-            "UPDATE runs SET status = 'closed' WHERE run_id = ?",
-            (run_id,),
-        )
-        await conn.commit()
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            await conn.execute(
+                "UPDATE runs SET status = 'closed' WHERE run_id = ?",
+                (run_id,),
+            )
+            await conn.execute(
+                "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+                "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, None, _CLOSE_EVENT_TYPE, event_ts, None, data_json),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 # ---------------------------------------------------------------------------
