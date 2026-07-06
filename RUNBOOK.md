@@ -85,3 +85,35 @@ The decision, the optional cloud path, and the **per-target-repo gate rule**
 (off-machine viability is set by the *target's* gate — an Xcode/macOS-bound target
 stays local or on a macOS runner) are recorded in
 `specs/decisions/0001-cloud-runnable-harness-loop.md`.
+
+## Pre-public secret audit
+
+Going public exposes the full git history, and the decision on record is to
+**keep full history** (scrub only the current tree). That decision is gated on a
+history-wide secret audit — evidence the flip can cite.
+
+**Audit of record (2026-07-06):** `gitleaks v8.30.1` scanned the **complete
+history** (`git --log-opts="--all"`, 397 commits, ~5.22 MB) and reported
+**0 findings**. `.env` has **never** been added to the tree
+(`git log --all --diff-filter=A -- .env` is empty), and no env / private-key file
+is tracked. No history rewrite is required. An earlier regex sweep
+(`lin_api_` / `sk-ant-` / `ghp_` / OAuth patterns) agreed; the entropy scan is
+the stronger confirmation.
+
+`tests/unit/test_secret_hygiene.py` keeps the tree clean going forward — it fails
+if any dotenv / private-key / keystore file is ever committed, and pins the
+`.gitignore` rules that keep `.env` out of the index.
+
+**Re-run the scan** (no host install; official image, repo mounted read-only):
+
+```bash
+docker run --rm -v "$(pwd):/repo:ro" \
+  -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+  ghcr.io/gitleaks/gitleaks:latest git --log-opts="--all" --no-banner /repo
+# exit 0 + "no leaks found" = clean; exit 1 lists the leaks to triage.
+```
+
+Triage any future finding: a **real** secret returns the history-rewrite decision
+to the operator (do not rewrite history unattended); a **false positive** goes in
+a committed `.gitleaks.toml` allowlist. Re-run before the visibility flip and
+whenever history gains sensitive-looking content.
