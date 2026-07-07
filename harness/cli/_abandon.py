@@ -20,10 +20,9 @@ unknown or future status is *refused*, never silently overwritten to
 
 from __future__ import annotations
 
-import json
-
 import aiosqlite
 
+from harness.events.payloads import WorkflowFailedEventData
 from harness.events.schema import EVENT_TYPES
 from harness.state.schema import RUN_STATUSES
 
@@ -82,7 +81,7 @@ async def abandon_run_in_ledger(
             with exit code ``1`` when the event write fails (the status flip is
             rolled back, so the run stays abandonable on retry).
     """
-    event_data = json.dumps({"reason": reason})
+    event_data = WorkflowFailedEventData(reason=reason).model_dump_json()
 
     await conn.execute("BEGIN IMMEDIATE")
     try:

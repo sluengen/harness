@@ -49,6 +49,7 @@ from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, rev_parse_head, run_gi
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import CheckpointEventData
 
 __all__ = ["checkpoint_command", "CheckpointOutput"]
 
@@ -163,12 +164,12 @@ async def _run_checkpoint(
         await EventEmitter(db_path).emit(
             run_id=resolved_run_id,
             event_type="checkpoint",
-            data={
-                "run_id": resolved_run_id,
-                "branch": worktree_branch,
-                "pushed_sha": head_sha,
-                "pushed_at": iso_z(),
-            },
+            data=CheckpointEventData(
+                run_id=resolved_run_id,
+                branch=worktree_branch,
+                pushed_sha=head_sha,
+                pushed_at=iso_z(),
+            ).model_dump(),
         )
     except Exception as exc:  # noqa: BLE001
         raise _CheckpointError(f"failed to record checkpoint event: {exc}", 1) from exc
