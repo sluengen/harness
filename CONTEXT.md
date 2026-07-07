@@ -44,6 +44,9 @@ paths:
   proposals: specs/proposals/
   features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
   decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
+architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
+  files:
+    - harness/cli/review.py   # verb orchestration + prompt + SUBMIT parser + per-engine builders + failure detectors + fallback (CAL-1014)
 env:
   file: .env
   linear_token: LINEAR_API_KEY
