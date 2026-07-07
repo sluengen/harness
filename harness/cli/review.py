@@ -68,7 +68,7 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Literal, NamedTuple
 
 import typer
 from pydantic import BaseModel
@@ -78,6 +78,7 @@ from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import ReviewEventData
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
@@ -697,23 +698,23 @@ async def _run_review(
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
     created_at = iso_z()
-    event_data: dict[str, Any] = {
-        "run_id": resolved_run_id,
-        "reviewed_sha": reviewed_sha,
-        "verdict": parsed.verdict,
-        "issues": parsed.issues,
-        "engine": engine_used,
-        "convergence_check_required": needs_convergence_check,
-        "created_at": created_at,
-    }
-    # Record the fallback in the ledger — never silent (CAL-702 AC-4).  Present
-    # only when a Codex usage-limit forced the hop to Claude.
-    if fallback_from is not None:
-        event_data["fallback_from"] = fallback_from
-    if parsed.commit_message is not None:
-        event_data["commit_message"] = parsed.commit_message
-    if parsed.deferred_brief is not None:
-        event_data["deferred_brief"] = parsed.deferred_brief
+    # The typed contract for this payload (CAL-1012): the close gate reads
+    # ``reviewed_sha`` + ``verdict`` back out of it.  ``exclude_none=True``
+    # reproduces the verb's old ``if x is not None`` optional keys — the fallback
+    # marker (never silent, CAL-702 AC-4) and the commit_message / deferred_brief
+    # stay absent from the JSON when unset.
+    event_data = ReviewEventData(
+        run_id=resolved_run_id,
+        reviewed_sha=reviewed_sha,
+        verdict=parsed.verdict,
+        issues=parsed.issues,
+        engine=engine_used,
+        convergence_check_required=needs_convergence_check,
+        created_at=created_at,
+        fallback_from=fallback_from,
+        commit_message=parsed.commit_message,
+        deferred_brief=parsed.deferred_brief,
+    ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
     try:

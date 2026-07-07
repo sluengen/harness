@@ -80,6 +80,11 @@ from harness.cli._git import (
 )
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.events.payloads import (
+    REVIEW_REVIEWED_SHA_PATH,
+    REVIEW_VERDICT_PATH,
+    CloseEventData,
+)
 from harness.events.schema import EVENT_TYPES
 from harness.linear import (
     LinearClient,
@@ -280,12 +285,12 @@ async def _run_close(
         await _mark_run_closed(
             db_path,
             resolved_run_id,
-            event_data={
-                "run_id": resolved_run_id,
-                "ticket": ticket,
-                "merged_sha": head_sha,
-                "closed_at": closed_at,
-            },
+            event_data=CloseEventData(
+                run_id=resolved_run_id,
+                ticket=ticket,
+                merged_sha=head_sha,
+                closed_at=closed_at,
+            ).model_dump(),
             event_ts=closed_at,
         )
     except Exception as exc:  # noqa: BLE001
@@ -338,10 +343,13 @@ async def _evaluate_gate(
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT json_extract(data_json, '$.reviewed_sha') "
+            # The json paths are the single-sourced payload-key constants
+            # (CAL-1012), passed as bound parameters — SQLite accepts a bound
+            # json_extract path, so the gate holds no raw ``$.<key>`` literal.
+            "SELECT json_extract(data_json, ?) "
             "FROM events WHERE run_id = ? AND event_type = 'review' "
-            "AND json_extract(data_json, '$.verdict') = 'pass'",
-            (run_id,),
+            "AND json_extract(data_json, ?) = 'pass'",
+            (REVIEW_REVIEWED_SHA_PATH, run_id, REVIEW_VERDICT_PATH),
         ) as cur,
     ):
         rows = await cur.fetchall()
