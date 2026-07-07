@@ -39,7 +39,6 @@ designed for machine consumption.
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,6 +54,7 @@ from harness.cli._git import (
     teardown_worktree,
 )
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
 from harness.linear import (
@@ -109,17 +109,13 @@ class StartOutput(BaseModel):
     base_branch: str
 
 
-class _StartError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _StartError(VerbError):
+    """``start``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    Raised inside the async orchestration and translated to a Typer ``Exit``
-    by :func:`start_command`.
+    Raised inside the async orchestration and translated to a Typer ``Exit`` by
+    :func:`start_command` via :func:`run_verb`. The ``(message, code)`` carrier
+    is inherited from the base; ``start`` never sets a ``reason``.
     """
-
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
 
 
 def start_command(
@@ -155,8 +151,8 @@ def start_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_start(
                 ticket=ticket,
                 base=base,
@@ -164,13 +160,9 @@ def start_command(
                 repo_root=repo_root,
                 db_path=db_path,
             )
-        )
-    except _StartError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())

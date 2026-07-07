@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import aiosqlite
 
+from harness.cli._verb import VerbError
 from harness.events.payloads import WorkflowFailedEventData
 from harness.events.schema import EVENT_TYPES
 from harness.state.schema import RUN_STATUSES
@@ -50,13 +51,15 @@ ABANDON_EVENT_TYPE = "workflow_failed"
 assert ABANDON_EVENT_TYPE in EVENT_TYPES  # guard against a future rename drift
 
 
-class AbandonError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
+class AbandonError(VerbError):
+    """The abandon path's control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
+    Kept a *distinct* subclass (not a bare ``VerbError``) because it is caught
+    **specifically**: ``cancel``'s epilogue lets it flow through ``run_verb``,
+    and ``reclaim``'s per-ticket sweep loop catches ``AbandonError`` — not the
+    base — to translate a single ticket's abandon failure into a ``VerbError``.
+    It shares the base ``(message, code)`` carrier and never sets a ``reason``.
+    """
 
 
 async def abandon_run_in_ledger(

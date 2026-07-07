@@ -60,19 +60,20 @@ Exit codes (SPEC §11):
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Literal
 
 import aiosqlite
 import typer
+from pydantic import BaseModel
 
 from harness._time import iso_z, parse_iso_z
 from harness.cli._abandon import CANCELLABLE_STATUSES, AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
+from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
-from harness.cli.worktrees import _parse_duration
+from harness.cli._verb import VerbError, run_verb
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -84,7 +85,12 @@ from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
 
-__all__ = ["reclaim_command"]
+__all__ = [
+    "ReclaimOutput",
+    "ReclaimedEntry",
+    "SweepOutput",
+    "reclaim_command",
+]
 
 #: The reason recorded on the ``workflow_failed`` event a reclaim emits — distinct
 #: from ``cancel``'s ``'cancelled'`` so ``harness status`` surfaces
@@ -94,13 +100,46 @@ __all__ = ["reclaim_command"]
 _RECLAIM_REASON = "reclaimed"
 
 
-class _ReclaimError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
+class _ReclaimError(VerbError):
+    """``reclaim``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
+    The ``(message, code)`` carrier is inherited from the base; ``reclaim`` never
+    sets a ``reason``.
+    """
+
+
+class ReclaimedEntry(BaseModel):
+    """One reclaimed ticket inside a ``--stale`` sweep (no ``run_id`` — the sweep
+    reclaims by ticket)."""
+
+    ticket: str
+    outcome: str
+    branch_preserved: str | None
+
+
+class ReclaimOutput(BaseModel):
+    """Single-target reclaim result (``<run-id>`` or ``--ticket``).
+
+    Gives ``reclaim`` a typed output like every sibling verb (CAL-1013). ``run_id``
+    is ``None`` for a revert-only target (a ``--ticket`` with no local open run);
+    ``branch_preserved`` is the checkpoint-pushed WIP branch or ``None``.
+    """
+
+    run_id: str | None
+    ticket: str
+    outcome: str
+    branch_preserved: str | None
+
+
+class SweepOutput(BaseModel):
+    """``--stale`` sweep result over a project's In-Progress tickets."""
+
+    mode: Literal["stale-sweep"] = "stale-sweep"
+    project: str
+    older_than: str
+    scanned: int
+    reclaimed: list[ReclaimedEntry]
+    skipped: list[str]
 
 
 async def _resumable_branch(
@@ -204,7 +243,7 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
 
 async def _run_reclaim(
     db_path: Path, run_id_arg: str | None, ticket_arg: str | None
-) -> dict[str, object]:
+) -> ReclaimOutput:
     """Reclaim the resolved target; raise :class:`_ReclaimError` on refusal/error."""
     run_id, status, ticket, branch = await _resolve_target(
         db_path, run_id_arg, ticket_arg
@@ -214,12 +253,12 @@ async def _run_reclaim(
     # (by a prior reclaim/cancel), so there is nothing left to do — re-reverting
     # Linear and re-posting the comment would be noise.
     if status == "cancelled":
-        return {
-            "run_id": run_id,
-            "ticket": ticket,
-            "outcome": "already_reclaimed",
-            "branch_preserved": branch,
-        }
+        return ReclaimOutput(
+            run_id=run_id,
+            ticket=ticket,
+            outcome="already_reclaimed",
+            branch_preserved=branch,
+        )
 
     # Validate the run status (when a run row is in play). Refuse a finished
     # terminal run or an unrecognised status — only an in-flight run is reclaimed.
@@ -262,17 +301,17 @@ async def _run_reclaim(
                 raise _ReclaimError(exc.message, exc.code) from exc
         outcome = "reclaimed"
 
-    return {
-        "run_id": run_id,
-        "ticket": ticket,
-        "outcome": outcome,
-        "branch_preserved": branch,
-    }
+    return ReclaimOutput(
+        run_id=run_id,
+        ticket=ticket,
+        outcome=outcome,
+        branch_preserved=branch,
+    )
 
 
 async def _run_stale_sweep(
     db_path: Path, *, project: str, older_than: str, threshold: timedelta
-) -> dict[str, object]:
+) -> SweepOutput:
     """Enumerate the project's In-Progress tickets and reclaim each idle past
     ``threshold``; raise :class:`_ReclaimError` on a Linear/config failure.
 
@@ -299,7 +338,7 @@ async def _run_stale_sweep(
     # ``_time`` seam; both sides of the comparison are aware-UTC.
     cutoff = datetime.now(UTC) - threshold
 
-    reclaimed: list[dict[str, object]] = []
+    reclaimed: list[ReclaimedEntry] = []
     skipped: list[str] = []
     for issue in issues:
         identifier = str(issue["identifier"])
@@ -307,37 +346,34 @@ async def _run_stale_sweep(
         if updated < cutoff:
             result = await _run_reclaim(db_path, None, identifier)
             reclaimed.append(
-                {
-                    "ticket": identifier,
-                    "outcome": result["outcome"],
-                    "branch_preserved": result["branch_preserved"],
-                }
+                ReclaimedEntry(
+                    ticket=identifier,
+                    outcome=result.outcome,
+                    branch_preserved=result.branch_preserved,
+                )
             )
         else:
             skipped.append(identifier)
 
-    return {
-        "mode": "stale-sweep",
-        "project": project,
-        "older_than": older_than,
-        "scanned": len(issues),
-        "reclaimed": reclaimed,
-        "skipped": skipped,
-    }
-
-
-def _print_sweep(result: dict[str, object]) -> None:
-    """Human-readable summary of a ``--stale`` sweep (``--json`` emits ``result``)."""
-    reclaimed = cast("list[dict[str, object]]", result["reclaimed"])
-    skipped = cast("list[str]", result["skipped"])
-    typer.echo(
-        f"Swept {result['scanned']} In-Progress ticket(s) in {result['project']!r} "
-        f"(threshold {result['older_than']}): {len(reclaimed)} reclaimed, "
-        f"{len(skipped)} left in-flight."
+    return SweepOutput(
+        project=project,
+        older_than=older_than,
+        scanned=len(issues),
+        reclaimed=reclaimed,
+        skipped=skipped,
     )
-    for entry in reclaimed:
-        typer.echo(f"  reclaimed {entry['ticket']} ({entry['outcome']})")
-    for ident in skipped:
+
+
+def _print_sweep(result: SweepOutput) -> None:
+    """Human-readable summary of a ``--stale`` sweep (``--json`` emits ``result``)."""
+    typer.echo(
+        f"Swept {result.scanned} In-Progress ticket(s) in {result.project!r} "
+        f"(threshold {result.older_than}): {len(result.reclaimed)} reclaimed, "
+        f"{len(result.skipped)} left in-flight."
+    )
+    for entry in result.reclaimed:
+        typer.echo(f"  reclaimed {entry.ticket} ({entry.outcome})")
+    for ident in result.skipped:
         typer.echo(f"  skipped   {ident} (within threshold)")
 
 
@@ -376,7 +412,7 @@ def reclaim_command(
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
     db_path = _resolve_db_path(db)
 
-    try:
+    def _do() -> SweepOutput | ReclaimOutput:
         if stale:
             # Sweep mode owns the project; a single-target selector is ambiguous.
             if run_id is not None or ticket is not None:
@@ -391,8 +427,10 @@ def reclaim_command(
                 )
             # Parse the duration outside the event loop so a bad value exits 2
             # via typer.BadParameter, exactly like ``worktrees cleanup --age``.
+            # ``run_verb`` only catches ``VerbError``, so BadParameter propagates
+            # to Typer's own handler as before.
             threshold = _parse_duration(older_than)
-            result = asyncio.run(
+            return asyncio.run(
                 _run_stale_sweep(
                     db_path,
                     project=project,
@@ -400,41 +438,33 @@ def reclaim_command(
                     threshold=threshold,
                 )
             )
-        else:
-            # Exactly one selector: a bare run-id or --ticket, never both or neither.
-            if (run_id is None) == (ticket is None):
-                raise _ReclaimError(
-                    "provide exactly one of <run-id> or --ticket <ID>", 2
-                )
-            result = asyncio.run(_run_reclaim(db_path, run_id, ticket))
-    except _ReclaimError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        # Exactly one selector: a bare run-id or --ticket, never both or neither.
+        if (run_id is None) == (ticket is None):
+            raise _ReclaimError("provide exactly one of <run-id> or --ticket <ID>", 2)
+        return asyncio.run(_run_reclaim(db_path, run_id, ticket))
+
+    result = run_verb(_do, json_output=json_output)
 
     if json_output:
-        typer.echo(json.dumps(result))
+        typer.echo(result.model_dump_json())
         return
 
-    if result.get("mode") == "stale-sweep":
+    if isinstance(result, SweepOutput):
         _print_sweep(result)
         return
 
-    outcome = result["outcome"]
-    if outcome == "already_reclaimed":
+    if result.outcome == "already_reclaimed":
         typer.echo(
-            f"Run {result['run_id']} already reclaimed (no-op); "
-            f"ticket {result['ticket']} left as-is"
+            f"Run {result.run_id} already reclaimed (no-op); "
+            f"ticket {result.ticket} left as-is"
         )
-    elif outcome == "reverted":
+    elif result.outcome == "reverted":
         typer.echo(
-            f"Reverted ticket {result['ticket']} to Todo + reclaimed "
+            f"Reverted ticket {result.ticket} to Todo + reclaimed "
             "(no local run to reconcile)"
         )
     else:
         typer.echo(
-            f"Reclaimed run {result['run_id']} — ticket {result['ticket']} reverted "
-            f"to Todo; branch {result['branch_preserved']!r} preserved"
+            f"Reclaimed run {result.run_id} — ticket {result.ticket} reverted "
+            f"to Todo; branch {result.branch_preserved!r} preserved"
         )

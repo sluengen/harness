@@ -46,6 +46,7 @@ from harness._time import iso_z
 from harness.cli._abandon import AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._verb import run_verb
 from harness.state import store
 
 __all__ = ["cancel_command"]
@@ -92,14 +93,10 @@ def cancel_command(
     """Abandon an in-flight run — mark it cancelled and record the abandonment."""
     db_path = _resolve_db_path(db)
 
-    try:
-        asyncio.run(_run_cancel(db_path, run_id))
-    except AbandonError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+    run_verb(
+        lambda: asyncio.run(_run_cancel(db_path, run_id)),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(json.dumps({"run_id": run_id, "outcome": "cancelled"}))

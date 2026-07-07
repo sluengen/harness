@@ -37,7 +37,6 @@ Exit codes (SPEC §11):
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
 from pathlib import Path
 
@@ -48,6 +47,7 @@ from harness._time import iso_z
 from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import CheckpointEventData
 
@@ -68,13 +68,12 @@ class CheckpointOutput(BaseModel):
     pushed: bool
 
 
-class _CheckpointError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
+class _CheckpointError(VerbError):
+    """``checkpoint``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
+    The ``(message, code)`` carrier is inherited from the base; ``checkpoint``
+    never sets a ``reason``.
+    """
 
 
 def checkpoint_command(
@@ -103,16 +102,12 @@ def checkpoint_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_checkpoint(repo_root=repo_root, run_id=run_id, db_path=db_path)
-        )
-    except _CheckpointError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
