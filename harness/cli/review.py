@@ -77,6 +77,7 @@ from harness._time import iso_z
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.loop_budget import (
@@ -202,20 +203,16 @@ class ReviewOutput(BaseModel):
     convergence_check_required: bool = False
 
 
-class _ReviewError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _ReviewError(VerbError):
+    """``review``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``reason`` is an optional stable, machine-readable tag emitted on the error
-    JSON (mirroring ``close``'s ``{"error", "reason"}`` refusal shape) so a
-    caller can branch on the *kind* of failure — e.g. an infra wall vs an
-    unexpected error — rather than string-matching the human message (CAL-866).
+    ``review`` *sets* ``reason`` (an optional stable, machine-readable tag
+    emitted on the error JSON, mirroring ``close``'s ``{"error", "reason"}``
+    refusal shape) so a caller can branch on the *kind* of failure — e.g. an
+    infra wall vs an unexpected error — rather than string-matching the human
+    message (CAL-866). The ``(message, code, reason)`` carrier is inherited from
+    the base.
     """
-
-    def __init__(self, message: str, code: int, *, reason: str | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.reason = reason
 
 
 # ---------------------------------------------------------------------------
@@ -540,8 +537,8 @@ def review_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_review(
                 repo_root=repo_root,
                 run_id=run_id,
@@ -549,18 +546,9 @@ def review_command(
                 engine=engine,
                 runner=_default_runner,
             )
-        )
-    except _ReviewError as exc:
-        if json_output:
-            payload: dict[str, str] = {"error": exc.message}
-            # A stable ``reason`` lets the orchestrator branch on the failure
-            # kind (e.g. an infra wall) without parsing the human message.
-            if exc.reason is not None:
-                payload["reason"] = exc.reason
-            typer.echo(json.dumps(payload))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())

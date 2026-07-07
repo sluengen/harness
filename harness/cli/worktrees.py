@@ -27,14 +27,14 @@ matches the harness rule "never assume uncommitted work is stale".
 from __future__ import annotations
 
 import json
-import re
 import subprocess
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 
 from harness._time import iso_z, parse_iso_z
+from harness.cli._duration import _parse_duration
 from harness.cli._git import run_git, teardown_worktree
 from harness.identity import WORKTREES_SUBDIR
 
@@ -42,33 +42,6 @@ worktrees_app = typer.Typer(
     help="Inspect or clean up worktrees under .worktrees/harness/",
     no_args_is_help=True,
 )
-
-
-# ---------------------------------------------------------------------------
-# Duration parsing — accept ``30m``, ``12h``, ``7d``
-# ---------------------------------------------------------------------------
-
-
-_DURATION_RE = re.compile(r"^(?P<value>\d+)\s*(?P<unit>[smhd])$")
-
-
-def _parse_duration(text: str) -> timedelta:
-    """Parse a short duration string. Raises :class:`typer.BadParameter` on
-    bad input so the CLI exits 2 with a clear message."""
-    match = _DURATION_RE.match(text.strip())
-    if not match:
-        raise typer.BadParameter(
-            f"invalid duration {text!r}; expected forms like '30m', '12h', '7d'"
-        )
-    value = int(match.group("value"))
-    unit = match.group("unit")
-    if unit == "s":
-        return timedelta(seconds=value)
-    if unit == "m":
-        return timedelta(minutes=value)
-    if unit == "h":
-        return timedelta(hours=value)
-    return timedelta(days=value)
 
 
 # ---------------------------------------------------------------------------

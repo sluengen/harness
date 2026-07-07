@@ -80,6 +80,7 @@ from harness.cli._git import (
 )
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.cli._verb import VerbError, run_verb
 from harness.events.payloads import (
     REVIEW_REVIEWED_SHA_PATH,
     REVIEW_VERDICT_PATH,
@@ -128,18 +129,15 @@ class CloseOutput(BaseModel):
     status: str
 
 
-class _CloseError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _CloseError(VerbError):
+    """``close``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``reason`` is set for gate refusals so the command can print the structured
-    ``{"reason": ...}`` JSON; it is ``None`` for unexpected (exit 1) errors.
+    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`) so
+    the structured ``{"error", "reason"}`` JSON names the refusal kind; it is
+    left ``None`` for unexpected (exit 1) errors. The ``(message, code, reason)``
+    carrier is inherited from the base; every raise site passes ``reason=`` by
+    keyword.
     """
-
-    def __init__(self, message: str, code: int, reason: RefusalReason | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.reason = reason
 
 
 def close_command(
@@ -169,24 +167,17 @@ def close_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_close(
                 ticket=ticket,
                 repo_root=repo_root,
                 run_id=run_id,
                 db_path=db_path,
             )
-        )
-    except _CloseError as exc:
-        if json_output:
-            payload: dict[str, Any] = {"error": exc.message}
-            if exc.reason is not None:
-                payload["reason"] = exc.reason
-            typer.echo(json.dumps(payload))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
