@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.5.0 -->
+<!-- guidance:assess@0.6.0 -->
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code`, `architecture`, or `system`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
@@ -39,6 +39,9 @@ For every finding and every insight, create a Linear issue (`linear`), labelled 
 
 ### 3. Commit the report
 A report is advisory evidence, not a code change, so it needs no merge gate. Commit the dated report directly to the integration branch (`CONTEXT.md`) — no branch, no PR. The findings already live in the tracker; a PR per run would carry nothing reviewable and, under a scheduled cadence, pile up trivial approvals. Surface the summary, the finding counts by severity, and the filed ticket IDs to the user. (When the tracker is off, the report file *is* the deliverable — commit it the same way.)
+
+### 4. Apply retention
+After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): keep the latest report per scope plus any report with an open finding, and fold every superseded report into a one-line entry in the rolling `assessments/LOG.md`. This runs each pass so the directory stays a live index — the latest verdict per scope plus the open-finding tail — instead of accumulating a point-in-time file per run (at up to seven files a day, ~700 a year) whose findings are already fixed or ticketed. Never fold away a report with an open finding. Commit the compaction in the same step as the report.
 
 ## When there are no findings
 Still record the report (it is evidence the assessment ran) and say so plainly. Skip filing. Do not invent findings to justify the run.
