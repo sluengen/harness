@@ -6,6 +6,12 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Fixed — distributed hooks carry no empty `catch {}` (ESLint `no-empty`) (nano-erp THE-49)
+- **Source: nano-erp THE-49.** Three vendored guidance hooks swallowed advisory write failures with a bare, unmarked `catch {}`: `hooks/context-monitor.js` (`saveState`), `hooks/guidance-freshness.js` (`mark`), and `hooks/workflow-guard.js` (`markWarned`). ESLint's `no-empty` rule (part of the `@eslint/js` recommended config) errors on an empty block, so any consuming repo whose verify gate lints `hooks/` went red on errors it never introduced — nano-erp had to exclude `hooks/` from its ESLint config to get a green gate.
+- **The swallow is now documented, not silent.** Each catch carries a `/* best-effort: … ignore write failures */` comment — the writes are advisory (a state cache, two debounce markers) where a failure is deliberately ignored. A comment both satisfies `no-empty` and records the intent, per the "errors are never swallowed unexplained" principle. No behaviour change.
+- **Hook versions bumped so `/update-guidance` propagates the fix**: `hook-context-monitor` 0.1.0→0.1.1, `hook-workflow-guard` 0.1.0→0.1.1, `hook-guidance-freshness` 0.3.5→0.3.6 (headers + `registry.yaml`; registry self-version 0.5.36→0.5.37). Consuming locks recompute hashes on pull.
+- **Guard `tests/unit/test_hooks_no_empty_catch.py`** scans `hooks/*.js` for empty `catch` blocks and fails the gate on any — the harness gate is Python-only and never ran ESLint, which is why the empties slipped through. The guard measures the same failure mode at source so it can't recur downstream.
+
 ### Changed — rotate CHANGELOG.md at each dev→main release (CAL-1011)
 - **Source: CAL-1011 — the 2026-07-06 5-dimension top-to-bottom repo review.** `CHANGELOG.md` was append-only and never rotated: 65 entries under a single `## [Unreleased]` heading, 120KB in 410 lines (single lines up to ~1,100 chars). At v3 cadence it reaches megabytes within a year — a context tax on every agent that opens it.
 - **Released history re-homed to `CHANGELOG-archive/2026.md`.** Every entry already on `main` (CAL-835 and older) moved to a git-tracked per-year archive; the root keeps only the current `[Unreleased]` window (the dev-only entries newer than the last release) plus a pointer at the archive. The root dropped from 120KB/410 lines to ~22KB/~88 lines.

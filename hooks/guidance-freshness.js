@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.5
+// guidance:hook-guidance-freshness@0.3.6
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -42,7 +42,7 @@ const TICKET = /\b([A-Z]{2,5})-\d+\b/g;
 const STD = new Set(["RFC", "ISO", "SCA", "CVE", "UTF", "SHA", "HTTP", "ADR", "AES", "ID", "UUID", "AC"]);
 
 function recently(f) { try { return Date.now() - fs.statSync(f).mtimeMs < TTL_MS; } catch { return false; } }
-function mark(f) { try { fs.writeFileSync(f, String(Date.now())); } catch {} }
+function mark(f) { try { fs.writeFileSync(f, String(Date.now())); } catch { /* best-effort: advisory debounce marker, ignore write failures */ } }
 function read(p) { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } }
 function rel(cwd, file) { return file.startsWith(cwd) ? file.slice(cwd.length + 1) : file; }
 function headerVersion(c) { const m = c.match(/guidance:[\w-]+@([\d.]+)/); return m ? m[1] : null; }

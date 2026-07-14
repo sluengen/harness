@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-workflow-guard@0.1.0
+// guidance:hook-workflow-guard@0.1.1
 /**
  * Workflow guard (PreToolUse: Write|Edit).
  * Advisory warning when editing source code on the default branch or outside a
@@ -21,7 +21,7 @@ const NON_SOURCE = [/(^|\/)\.guidance-lock\.yaml$/, /(^|\/)CONTEXT\.md$/, /(^|\/
 function recentlyWarned() {
   try { return Date.now() - fs.statSync(DEBOUNCE).mtimeMs < TTL_MS; } catch { return false; }
 }
-function markWarned() { try { fs.writeFileSync(DEBOUNCE, String(Date.now())); } catch {} }
+function markWarned() { try { fs.writeFileSync(DEBOUNCE, String(Date.now())); } catch { /* best-effort: advisory debounce marker, ignore write failures */ } }
 function git(cmd) { try { return execSync(`git ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; } }
 
 function main() {
