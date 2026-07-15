@@ -38,15 +38,42 @@ sublicense your contribution, including under terms other than the two above.**
 You keep your copyright — this is a grant, not an assignment, and you can still
 do whatever you like with your own work.
 
-The reason is narrow and worth stating plainly rather than burying. Copyright in
-this repo currently sits with one person, which is what makes it possible to
-offer someone a licence other than the AGPL later — a commercial exception, say,
-or a move to a different licence entirely if the AGPL turns out to be the wrong
-call. Absent this grant, contributions arrive AGPL-only, the copyright becomes
-shared, and that option closes permanently the first time an outside PR is
-merged, because no one can relicense code they do not own. If you would rather
-not give the grant, say so in the PR — the change can still be discussed, and
-small fixes are easy to reimplement independently.
+**Patents.** You also grant the maintainer and anyone who receives software from
+this project a perpetual, worldwide, non-exclusive, no-charge, royalty-free,
+irrevocable patent licence to make, have made, use, offer to sell, sell, import
+and otherwise transfer your contribution. That licence covers only the patent
+claims you can license which your contribution — alone, or combined with this
+project — necessarily infringes. It is not a licence to your patent portfolio at
+large. If any entity starts patent litigation alleging that your contribution or
+this project infringes a patent, the patent licences granted to **that entity**
+under this section end on the day the suit is filed. (This is Apache-2.0's
+arrangement, near enough its wording.)
+
+**Your right to submit.** You represent that each contribution is your own
+original work, or that you otherwise have the right to submit it under the terms
+above; that you are legally entitled to grant these rights — in particular, if
+your employer has rights to work you produce, that you have their permission to
+contribute, or they have waived those rights; and that you are not knowingly
+including third-party material under terms incompatible with the licences above.
+If a contribution does contain third-party material, identify its source and
+licence in the pull request. Contributions are provided as-is, with no warranty
+of any kind — you are giving code away, not taking on an obligation.
+
+The patent and right-to-submit paragraphs are ordinary — they are what every
+contributor agreement says, and near enough Apache's words for a reason: standard
+text has been argued over for twenty years, and something drafted fresh here would
+only be worse.
+
+The **relicensing** grant is the unusual one, so here is why, plainly rather than
+buried. Copyright in this repo currently sits with one person, which is what makes
+it possible to offer someone a licence other than the AGPL later — a commercial
+exception, say, or a move to a different licence entirely if the AGPL turns out to
+be the wrong call. Absent that grant, contributions arrive AGPL-only, the
+copyright becomes shared, and that option closes permanently the first time an
+outside PR is merged, because no one can relicense code they do not own.
+
+If you would rather not give any of this, say so in the PR — the change can still
+be discussed, and small fixes are easy to reimplement independently.
 
 ## Security
 
