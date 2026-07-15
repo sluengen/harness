@@ -174,6 +174,9 @@ EXPECTED_REFUSAL_REASONS = {
     "dirty_worktree",
     "no_passing_review",
     "stale_review",
+    # CAL-1082 — the verify-gate backstop: a pass that cannot show the repo's
+    # gate ran is refused rather than trusted. A deliberate contract addition.
+    "no_gate_evidence",
 }
 
 

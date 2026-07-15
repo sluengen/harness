@@ -80,6 +80,7 @@ from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
+from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, run_gate
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
@@ -95,7 +96,8 @@ from harness.state import store
 # orchestration.  The detectors + breaker glue have one caller (`_run_review`);
 # splitting them off to chase the 500-line limit would fragment the verb, not
 # clarify it. The breaker *decision* is already factored out to
-# harness.loop_budget (pure).
+# harness.loop_budget (pure), and the verify gate to harness.gate (CAL-1082) —
+# this verb holds only their call sites.
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -107,7 +109,9 @@ __all__ = [
     "is_sandbox_blocked_defer",
     "EXIT_INFRA_FAILURE",
     "EXIT_BREAKER_TRIPPED",
+    "EXIT_GATE_FAILED",
     "SANDBOX_INIT_REASON",
+    "GATE_FAILED_REASON",
 ]
 
 # Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
@@ -414,8 +418,19 @@ EXIT_INFRA_FAILURE = 3
 # tripped (``review_cycle_ceiling`` / ``wall_clock_budget``).
 EXIT_BREAKER_TRIPPED = 4
 
+# Exit code for a red verify gate (CAL-1082). The repo's own gate
+# (``CONTEXT.md`` → ``verify:``) failed, so there is nothing worth reviewing: the
+# verb refuses BEFORE the engine, records no review event, and spends no tokens
+# on a red tree. Distinct from every other code — 2 is already the invocation
+# error — so the orchestrator can tell "your tests are red, go fix them" from a
+# rejected diff, an infra wall, or a bounded-out loop.
+EXIT_GATE_FAILED = 5
+
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
 SANDBOX_INIT_REASON = "sandbox_init_failure"
+
+# Machine-readable ``reason`` for a red verify gate (CAL-1082).
+GATE_FAILED_REASON = "gate_failed"
 
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
@@ -600,6 +615,41 @@ async def _run_review(
         if trip is not None:
             raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
 
+    # 1b. Run the repo's verify gate BEFORE invoking any engine (CAL-1082) — the
+    #     evidence that makes a recorded ``pass`` mean "the tests ran green"
+    #     rather than "a reviewer read the diff". Deliberately AFTER the spend
+    #     breakers above: a run that is already bounded out must not spend
+    #     minutes on a gate before being refused.
+    #
+    #     A red gate refuses here — no engine, no review event, no tokens spent
+    #     reviewing a red tree. An unconfigured gate is recorded as such and
+    #     proceeds: the harness cannot gate what a repo does not define, and the
+    #     ledger says so plainly instead of implying a gate ran.
+    gate_command = load_gate_command(repo_root)
+    gate_ran = False
+    gate_reason: str | None = GATE_NOT_CONFIGURED_REASON
+    gate_exit_code: int | None = None
+    if gate_command is not None:
+        gate_result = await asyncio.to_thread(run_gate, Path(worktree_path), gate_command)
+        if gate_result.exit_code != 0:
+            failed_as = (
+                "killed by the gate timeout"
+                if gate_result.exit_code is None
+                else f"exit {gate_result.exit_code}"
+            )
+            raise _ReviewError(
+                f"verify gate failed ({failed_as}): {gate_command!r}. No engine "
+                f"was invoked and no verdict was recorded — the harness does not "
+                f"review a red tree. Fix the failure in gate_output_tail and "
+                f"re-run review.",
+                EXIT_GATE_FAILED,
+                reason=GATE_FAILED_REASON,
+                extra={"gate_output_tail": gate_result.output_tail},
+            )
+        gate_ran = True
+        gate_reason = None
+        gate_exit_code = gate_result.exit_code
+
     # 2. Capture HEAD at review time — the load-bearing SHA binding (D2).
     try:
         reviewed_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
@@ -699,6 +749,10 @@ async def _run_review(
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
         created_at=created_at,
+        gate_ran=gate_ran,
+        gate_command=gate_command,
+        gate_exit_code=gate_exit_code,
+        gate_reason=gate_reason,
         fallback_from=fallback_from,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,

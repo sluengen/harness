@@ -151,8 +151,15 @@ def _emit_review(
     reviewed_sha: str,
     verdict: str,
     issues: list[str] | None = None,
+    gate: dict[str, Any] | None = None,
 ) -> None:
-    """Append a ``review`` event mirroring what ``harness review`` records."""
+    """Append a ``review`` event mirroring what ``harness review`` records.
+
+    ``gate`` defaults to the evidence a green verify gate records (CAL-1082) —
+    what a current ``harness review`` always writes — so these tests exercise the
+    close gate rather than its verify-gate backstop. Pass ``gate={}`` to seed the
+    *legacy* payload (no ``gate_ran`` key), which the backstop refuses.
+    """
 
     async def _emit() -> None:
         emitter = EventEmitter(db_path)
@@ -165,6 +172,11 @@ def _emit_review(
                 "verdict": verdict,
                 "issues": issues or [],
                 "created_at": "2026-06-10T00:00:00Z",
+                **(
+                    {"gate_ran": True, "gate_command": "bash scripts/verify.sh", "gate_exit_code": 0}
+                    if gate is None
+                    else gate
+                ),
             },
         )
 
@@ -420,6 +432,66 @@ def test_ac3_no_review_at_all(repo: Path, db_path: Path) -> None:
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
+
+
+# ---------------------------------------------------------------------------
+# CAL-1082 AC-6: a pass carrying no verify-gate evidence → no_gate_evidence
+# ---------------------------------------------------------------------------
+
+
+def test_pass_without_gate_evidence_is_refused(repo: Path, db_path: Path) -> None:
+    """A pass written before the verify gate existed carries no ``gate_ran`` key.
+
+    ``json_extract`` yields NULL for it, and the backstop reads that as "no
+    evidence a test ever ran" and refuses — fail-safe, so no ledger migration is
+    needed and a pre-CAL-1082 pass cannot be spent on a merge.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass", gate={})  # legacy payload
+    stub = _make_linear_stub()
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["reason"] == "no_gate_evidence"
+
+    merge.assert_not_called()
+    stub.transition_to_done.assert_not_called()
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+def test_pass_with_unconfigured_gate_is_allowed(repo: Path, db_path: Path) -> None:
+    """A repo defining no ``verify:`` records the absence honestly, and closes.
+
+    The harness cannot gate what a repo does not define; refusing here would
+    strand every repo without a gate, which is its own decision to make.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(
+        db_path, run_id, head, "pass", gate={"gate_ran": False, "gate_reason": "not_configured"}
+    )
+    stub = _make_linear_stub()
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 0, result.output
+    merge.assert_called_once()
+    stub.transition_to_done.assert_called_once()
+
+
+def test_pass_with_green_gate_evidence_closes(repo: Path, db_path: Path) -> None:
+    """The evidence a green gate records opens the close gate (the happy path)."""
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")  # defaults to green-gate evidence
+    stub = _make_linear_stub()
+
+    result, _ = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 0, result.output
 
 
 # ---------------------------------------------------------------------------
