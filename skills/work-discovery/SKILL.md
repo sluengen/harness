@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.1.0 -->
+<!-- guidance:work-discovery@0.2.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -46,15 +46,45 @@ spec needs problem, approach, and acceptance criteria.
 
 - If it **is** actionable, hand it to the routine's build surface.
 - If it **cannot** be actioned yet — it needs a decision, missing detail, or an
-  unfinished dependency — do not guess. Leave a comment on the ticket naming what
-  it needs, label it `decision`, and move on to the next candidate.
+  unfinished dependency — do not guess. Defer it: **surface it in the run's
+  report**, naming the ticket and what it needs, and move on to the next
+  candidate.
+
+### Deferring without a tracker write
+
+An unattended runner **cannot write to the tracker**. The host refuses an
+autonomous write to an external system that no human named — correctly — and this
+skill's audience is that runner. So a deferral is a *report*, not a comment on
+the ticket: name the ticket and what it needs in the run's output, and let the
+report carry it to a human.
+
+This is the fallback `/assess` already uses. The condition is not "does this repo
+have a tracker" but **"is the tracker available to this run"**, and it has two
+causes: the repo has none (`layers.linear: false`) or the run is unattended. Both
+land in the same place — keep the report, surface the finding.
+
+**Re-picking the deferred ticket next tick is acceptable**, and is the accepted
+cost of this path rather than an oversight. A deferral you cannot record on the
+ticket leaves it in the candidate set, so the next tick considers it again. That
+is cheap — re-reading one ticket costs seconds, and the tick is not burned: it
+continues to the next candidate, or falls through to the quality arm. It is also
+safer than the alternative. Re-deriving the judgment from current data each tick
+means a ticket a human has since fixed is picked up immediately, where a durable
+local "skip this" note would park it for as long as the note outlived the
+problem.
 
 ## The `decision` label — already-deferred work
 
-A ticket carrying the `decision` label was judged not-yet-actionable on an
-earlier pass and is waiting on a human. **Skip it.** Re-litigating it every tick
-wastes a run and risks inventing busywork; it re-enters the queue when the human
-clears the label.
+A ticket carrying the `decision` label is waiting on a human who already knows:
+someone with tracker access judged it not-yet-actionable and recorded that on the
+ticket. **Skip it** — the record exists, so re-judging it adds nothing, and it
+re-enters the queue when the human clears the label.
+
+The label is set by whoever *can* write to the tracker: a human triaging, or an
+attended session acting on a surfaced deferral. An unattended runner reads it and
+never sets it. That is why a labelled ticket is skipped while the runner's own
+deferrals are re-picked — the label means "recorded and waiting", and an
+unattended deferral has no record beyond the run's report.
 
 ## When nothing is actionable
 
