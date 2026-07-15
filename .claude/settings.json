@@ -10,10 +10,6 @@
       "Bash(git push origin *:dev)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:docs.python.org)",
-      "WebFetch(domain:docs.pydantic.dev)",
-      "WebFetch(domain:typer.tiangolo.com)",
-      "WebFetch(domain:docs.astral.sh)",
       "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": [

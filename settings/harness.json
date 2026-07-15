@@ -5,7 +5,12 @@
       "Write",
       "Edit",
       "Bash(*)",
-      "WebSearch"
+      "Bash(git push origin dev)",
+      "Bash(git push origin HEAD:dev)",
+      "Bash(git push origin *:dev)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": [
       "Bash(git push --force *)",
@@ -13,11 +18,23 @@
       "Bash(git push --force-with-lease *)",
       "Bash(git push * --force-with-lease *)",
       "Bash(git -C * push --force *)",
+      "Bash(git -C * push * --force *)",
+      "Bash(git push * +*)",
+      "Bash(git push origin +*)",
+      "Bash(git -C * push * +*)",
       "Bash(git reset --hard *)",
       "Bash(git -C * reset --hard *)",
+      "Bash(git merge * main)",
+      "Bash(git merge * main *)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~)",
       "Bash(rm -rf $HOME*)"
+    ]
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Pushing reviewed work to the `dev` integration branch (e.g. `git push origin dev`, `git push origin HEAD:dev`, `git push origin <sha>:dev`) is allowed. In this repo `dev` is the integration branch and the agent led review action is the merge gate, so a direct push of an already-reviewed commit does not bypass review. Force-pushes to dev remain blocked."
     ]
   },
   "hooks": {
