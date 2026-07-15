@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.7.0 -->
+<!-- guidance:code-quality@0.8.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -125,3 +125,9 @@ A passing test proves nothing when it feeds the code inputs or events no product
 ### A file over the hard limit is an auditable choice, not silent drift
 
 A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
+
+### Re-deriving what another layer owns is an auditable choice, not a default
+
+When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (Part B — Boundaries; `CONTEXT.md` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
+
+This is the duplication that review is least equipped to catch, because nothing is wrong yet when it lands. A re-derivation is correct in isolation and its change looks complete: the numbers agree on the day it ships. It turns into a defect only once a sibling surface renders the owning layer's number for the same quantity beside it — and then the two contradict each other while neither change is wrong on its face. The contradiction lives in the accumulation, so neither reviewer was positioned to see it, and it surfaces in an assessment pass long after both shipped. Spec time is the one point where a single person is looking at both layers, which is why the justification is owed there and not at review.
