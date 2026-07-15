@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.1.0
+// guidance:hook-git-push-guard@0.2.0
 /**
  * Git force-push guard (PreToolUse: Bash).
  *
@@ -43,6 +43,19 @@
  * unicode and the standard letter escapes) so the real word is seen. There is no
  * false-positive cost — no legitimate push hex-escapes its words.
  *
+ * **Command wrappers and path-qualified executables.** A wrapper runs its
+ * operands as the real command, so ``nohup git push --force …`` force-pushes
+ * while the outer executable is ``nohup``; and ``/usr/bin/git`` is the same
+ * program as ``git``. The guard therefore matches executables on their
+ * **basename** (as it already did for nested shells) and resolves past a leading
+ * wrapper to the command it runs. Because a wrapper may carry its own options and
+ * even a mandatory operand (``timeout 60 git …``, ``nice -n 5 git …``), the guard
+ * **scans** the wrapper's operands for the command rather than modelling each
+ * wrapper's option grammar — one unmodelled option would silently re-open the
+ * class, which is the failure this design rules out. The scan runs only when a
+ * wrapper prefix is present, so ``echo git push --force …`` (which merely prints)
+ * is untouched.
+ *
  * **Brace groups and functions.** ``{ git push --force; }`` and
  * ``f() { git push --force; }; f`` run their body in the current shell, so the
  * force-push is inline and literal — the lexer treats a word-boundary ``{`` / ``}``
@@ -65,9 +78,21 @@
  *   - a shell running a script **file** whose contents are unknowable
  *     (``bash deploy.sh``);
  *   - arbitrary generation / decoding of the command text (``base64 -d``, a
- *     built-up string) and dispatchers like ``xargs`` / ``find -exec``.
+ *     built-up string), and a dispatcher that runs a command it *builds* rather
+ *     than one written literally in the call (``find -exec``; ``xargs`` fed a
+ *     generated command). The literal ``xargs git push --force …`` spelling **is**
+ *     caught — it is a wrapper, not a generated command — but a dispatcher
+ *     assembling the push from its input is not statically knowable.
  * Adding a new obfuscation vector to this list (with a one-line justification) is
  * a valid resolution — the hook must never *silently* miss a class.
+ *
+ * **Authoritative control.** This hook is defence-in-depth, not the control of
+ * record. It is a denylist parser over a Turing-complete surface, so its coverage
+ * is inherently a moving target — the class above was found *after* four rounds of
+ * hardening. The authoritative protection for the branches that matter is
+ * **server-side branch protection** on ``dev``/``main``, which no client-side
+ * parse can be argued past; this hook narrows the window until that is in place
+ * and remains useful afterwards only as fast local feedback.
  *
  * On a force-push it emits the current PreToolUse deny contract
  * (``hookSpecificOutput.permissionDecision: "deny"``, exit 0). Otherwise it
@@ -356,8 +381,24 @@ function lex(command) {
 
 // A leading ``NAME=value`` environment assignment.
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// Leading command wrappers whose remaining args are still the real command.
-const WRAPPERS = new Set(["env"]);
+// Leading command wrappers whose remaining args are still the real command:
+// ``nohup git push --force …`` really force-pushes. A wrapper may carry its own
+// options and even a mandatory operand (``timeout 60 git …``), so stripping the
+// wrapper name alone does not reach the command — see :func:`resolveCommand`.
+const WRAPPERS = new Set([
+  "env",
+  "nohup",
+  "command",
+  "exec",
+  "nice",
+  "ionice",
+  "setsid",
+  "stdbuf",
+  "timeout",
+  "xargs",
+  "sudo",
+  "doas",
+]);
 // git *global* options that consume the following token as their argument, so
 // the sub-command is not mistaken for that argument.
 const GIT_GLOBAL_WITH_ARG = new Set([
@@ -383,8 +424,46 @@ const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ash", "ksh"]);
 /** Drop leading ``NAME=value`` assignments and ``env`` wrappers. */
 function stripPrefixes(tokens) {
   let i = 0;
-  while (i < tokens.length && (ASSIGNMENT.test(tokens[i]) || WRAPPERS.has(tokens[i]))) i++;
-  return tokens.slice(i);
+  let sawWrapper = false;
+  while (i < tokens.length && (ASSIGNMENT.test(tokens[i]) || WRAPPERS.has(basename(tokens[i])))) {
+    if (!ASSIGNMENT.test(tokens[i])) sawWrapper = true;
+    i++;
+  }
+  return { tokens: tokens.slice(i), sawWrapper };
+}
+
+/** The basename of an executable token: ``/usr/bin/git`` → ``git``. The guard
+ * matches executables on their basename, since a path-qualified spelling runs
+ * the same program. */
+function basename(token) {
+  return token.split("/").pop();
+}
+
+/** The tokens of the real command, resolved past any wrapper prefix.
+ *
+ * A wrapper's own options — and, for ``timeout``, a mandatory ``DURATION``
+ * operand — sit between the wrapper and the command, so ``stripPrefixes`` alone
+ * leaves ``timeout 60 git push --force`` pointing at ``60``. Rather than model
+ * each wrapper's option grammar (the brittle half: one unmodelled option
+ * silently re-opens the class), scan the wrapper's operands for the real
+ * command. The scan applies **only** when a wrapper prefix was actually present,
+ * so an ordinary command is untouched — ``echo git push --force …`` prints a
+ * string and is not a wrapper, so it is never scanned. Failure mode is
+ * deliberate: an over-broad match denies a command that was not a force-push,
+ * which is recoverable; an under-broad one lets a force-push through, which is
+ * not. */
+function resolveCommand(rawTokens) {
+  const { tokens, sawWrapper } = stripPrefixes(rawTokens);
+  if (tokens.length === 0 || isGit(tokens[0]) || !sawWrapper) return tokens;
+  const k = tokens.findIndex(isGit);
+  return k > 0 ? tokens.slice(k) : tokens;
+}
+
+/** True if an executable token invokes ``git``, by basename — so ``git``,
+ * ``/usr/bin/git`` and ``./git`` all match. (ANSI-C spellings such as
+ * ``$'\x67it'`` are already decoded to ``git`` by the lexer.) */
+function isGit(token) {
+  return basename(token) === "git";
 }
 
 /** Inline shell scripts a command runs as its own shell — the ``-c`` argument
@@ -392,9 +471,9 @@ function stripPrefixes(tokens) {
  * recursively. Without this, ``sh -c "git push --force …"`` would pass because
  * the outer executable is ``sh``, not ``git``. */
 function nestedScripts(rawTokens) {
-  const tokens = stripPrefixes(rawTokens);
+  const { tokens } = stripPrefixes(rawTokens);
   if (tokens.length === 0) return [];
-  const exec = tokens[0].split("/").pop();
+  const exec = basename(tokens[0]);
   if (SHELLS.has(exec)) {
     for (let k = 1; k < tokens.length; k++) {
       const t = tokens[k];
@@ -420,10 +499,10 @@ function nestedScripts(rawTokens) {
  * out of scope: its contents are unknowable and denying it is too broad. */
 function isBareShellFedExternally(tokens, pipedInto) {
   const stripped = stripPrefixes(tokens);
-  if (stripped.length === 0) return false;
-  if (!SHELLS.has(stripped[0].split("/").pop())) return false;
+  if (stripped.tokens.length === 0) return false;
+  if (!SHELLS.has(basename(stripped.tokens[0]))) return false;
   if (nestedScripts(tokens).length > 0) return false; // has a -c script; analysed directly
-  const hasInputRedirect = stripped.some((t) => t.includes("<"));
+  const hasInputRedirect = stripped.tokens.some((t) => t.includes("<"));
   return pipedInto || hasInputRedirect;
 }
 
@@ -431,8 +510,8 @@ function isBareShellFedExternally(tokens, pipedInto) {
  * ``git`` command whose push-ness / force form is obscured by a command
  * substitution the guard fails closed on). */
 function commandForcePushes(rawTokens) {
-  const tokens = stripPrefixes(rawTokens);
-  if (tokens.length === 0 || tokens[0] !== "git") return false;
+  const tokens = resolveCommand(rawTokens);
+  if (tokens.length === 0 || !isGit(tokens[0])) return false;
 
   // Walk past git's global options to the sub-command.
   let i = 1;
