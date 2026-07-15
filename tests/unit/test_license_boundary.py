@@ -40,6 +40,13 @@ Acceptance criteria (executable form):
   :func:`test_contributing_states_inbound_grant`).
 * **AC-5** — the installer carries the MIT notice into the target repo, or the
   carve-out is invisible where it matters (:func:`test_bootstrap_installs_the_guidance_licence`).
+
+Supersedes ``tests/unit/test_license.py`` (the CAL-1025 MIT guard), whose premise
+— "the repo ships an MIT license" — this change falsifies. Its two contracts that
+outlived it are kept here rather than dropped: both licences must be **git-tracked**
+(:func:`test_both_licences_are_tracked`), since a public reader sees only the
+committed tree and never the author's disk, and both must name the copyright holder
+(:func:`test_both_licences_name_the_copyright_holder`).
 """
 
 from __future__ import annotations
@@ -133,6 +140,33 @@ def test_license_scope_note_names_the_carve_out() -> None:
     assert "registry.yaml" in note, "the scope note must name the authoritative boundary"
 
 
+def test_both_licences_are_tracked() -> None:
+    """Both licence files are committed, not just present on disk (AC-1).
+
+    Inherited from the superseded CAL-1025 guard: a public reader sees only the
+    committed tree, so a licence that exists solely on an author's disk grants
+    nobody anything. Git-aware by construction.
+    """
+    assert _LICENSE.resolve() in tracked_files_under("LICENSE"), (
+        "No tracked LICENSE at the repo root — a public reader looks for it there."
+    )
+    assert _LICENSE_GUIDANCE.resolve() in tracked_files_under("LICENSE-GUIDANCE"), (
+        "No tracked LICENSE-GUIDANCE — the MIT carve-out would be invisible to a reader."
+    )
+
+
+def test_both_licences_name_the_copyright_holder() -> None:
+    """Both licences carry the copyright line (AC-1).
+
+    Inherited from the superseded CAL-1025 guard. The AGPL's own "how to apply"
+    appendix expects the notice, and MIT's grant is meaningless without one.
+    """
+    assert "Scott Luengen" in _LICENSE.read_text(), "LICENSE must name the copyright holder"
+    assert "Scott Luengen" in _LICENSE_GUIDANCE.read_text(), (
+        "LICENSE-GUIDANCE must name the copyright holder"
+    )
+
+
 def test_guidance_licence_is_mit() -> None:
     """``LICENSE-GUIDANCE`` carries MIT's operative text (AC-1)."""
     text = _LICENSE_GUIDANCE.read_text()
@@ -216,11 +250,11 @@ def test_boundary_check_catches_an_escaped_path() -> None:
     parse that returned nothing — would make the guards above pass by accident.
     """
     prefixes = _mit_scope_prefixes(_LICENSE_GUIDANCE.read_text())
-    assert _is_mit_scoped("skills/code-quality/SKILL.md", prefixes), "a real distributed file must be scoped"
-    assert not _is_mit_scoped("harness/cli/close.py", prefixes), "an engine file must not be scoped"
+    assert _is_mit_scoped("skills/code-quality/SKILL.md", prefixes), "a distributed file must scope"
+    assert not _is_mit_scoped("harness/cli/close.py", prefixes), "an engine file must not scope"
     # The registry parse must find the real distributed set, not an empty one.
     files = _registry_files(_REGISTRY.read_text())
-    assert "skills/code-quality/SKILL.md" in files, "registry files: parse did not find a known entry"
+    assert "skills/code-quality/SKILL.md" in files, "registry files: parse missed a known entry"
     assert "BOOTSTRAP.md" not in files, "the meta: block must stay out of the distributed set"
 
 
