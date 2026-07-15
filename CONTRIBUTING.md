@@ -25,6 +25,29 @@ If you do open a PR:
   for the exact commands and [`CLAUDE.md`](./CLAUDE.md) for how work happens here.
 - **Describe the problem and the approach**, not just the diff.
 
+## Inbound licensing
+
+This repo is split: the engine is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)) and
+the guidance the installer copies into other repos is **MIT**
+([`LICENSE-GUIDANCE`](./LICENSE-GUIDANCE)). A contribution is licensed under
+whichever of the two already covers the file it touches.
+
+Beyond that, **by opening a pull request you grant the maintainer a perpetual,
+worldwide, irrevocable, royalty-free right to use, modify, relicense and
+sublicense your contribution, including under terms other than the two above.**
+You keep your copyright — this is a grant, not an assignment, and you can still
+do whatever you like with your own work.
+
+The reason is narrow and worth stating plainly rather than burying. Copyright in
+this repo currently sits with one person, which is what makes it possible to
+offer someone a licence other than the AGPL later — a commercial exception, say,
+or a move to a different licence entirely if the AGPL turns out to be the wrong
+call. Absent this grant, contributions arrive AGPL-only, the copyright becomes
+shared, and that option closes permanently the first time an outside PR is
+merged, because no one can relicense code they do not own. If you would rather
+not give the grant, say so in the PR — the change can still be discussed, and
+small fixes are easy to reimplement independently.
+
 ## Security
 
 For anything security-sensitive, do **not** open a public issue — follow

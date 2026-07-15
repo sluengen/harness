@@ -211,7 +211,20 @@ issue — follow [`SECURITY.md`](./SECURITY.md) to disclose it privately.
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+Two licences, split along what gets installed where:
+
+- **The engine** — the `harness` CLI and its tooling — is **AGPL-3.0-only**
+  ([`LICENSE`](./LICENSE)). Use it for anything, including commercially; a
+  derivative you distribute or run as a network service carries the same
+  freedoms. It cannot be taken proprietary.
+- **The guidance** — the skills, agents, commands, templates, hooks, process doc
+  and settings the installer copies into *your* repo — is **MIT**
+  ([`LICENSE-GUIDANCE`](./LICENSE-GUIDANCE)). Install it into any repository,
+  including a closed-source one, and it encumbers nothing.
+
+The boundary is not hand-maintained prose: the `files:` block of
+[`registry.yaml`](./registry.yaml) *is* the set the installer copies out, so it
+defines what is MIT, and a test holds the two in correspondence.
 
 ## Changelog
 
