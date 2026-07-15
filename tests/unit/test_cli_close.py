@@ -145,6 +145,15 @@ def _seed_open_run(
     return run_id
 
 
+#: The verify-gate evidence a green gate records (CAL-1082) — what a current
+#: ``harness review`` always writes onto a ``review`` event.
+_GREEN_GATE_EVIDENCE = {
+    "gate_ran": True,
+    "gate_command": "bash scripts/verify.sh",
+    "gate_exit_code": 0,
+}
+
+
 def _emit_review(
     db_path: Path,
     run_id: str,
@@ -172,11 +181,7 @@ def _emit_review(
                 "verdict": verdict,
                 "issues": issues or [],
                 "created_at": "2026-06-10T00:00:00Z",
-                **(
-                    {"gate_ran": True, "gate_command": "bash scripts/verify.sh", "gate_exit_code": 0}
-                    if gate is None
-                    else gate
-                ),
+                **(_GREEN_GATE_EVIDENCE if gate is None else gate),
             },
         )
 

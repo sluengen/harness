@@ -91,8 +91,13 @@ class GateResult(NamedTuple):
 # ``verify:`` is a distinctly-named string key in CONTEXT.md, optionally quoted
 # and optionally trailed by a comment. A direct per-key match is robust here and
 # avoids pulling in a YAML parser for one string — the same trade
-# ``loop_budget._read_int_key`` makes for its integers.
-_VERIFY_KEY_PATTERN = r'^\s*verify:\s*"([^"]+)"\s*(?:#.*)?$|^\s*verify:\s*([^"#\s][^#]*?)\s*(?:#.*)?$'
+# ``loop_budget._read_int_key`` makes for its integers. Two alternatives: the
+# quoted form (group 1) takes the value verbatim, so a ``#`` inside it survives;
+# the bare form (group 2) stops at a trailing comment.
+_VERIFY_KEY_PATTERN = (
+    r'^\s*verify:\s*"([^"]+)"\s*(?:#.*)?$'
+    r'|^\s*verify:\s*([^"#\s][^#]*?)\s*(?:#.*)?$'
+)
 
 
 def load_gate_command(repo_root: Path) -> str | None:
@@ -137,9 +142,9 @@ def run_gate(
     """
     started = time.monotonic()
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S602 — repo-owned config; see docstring
             command,
-            shell=True,  # noqa: S602 — repo-owned config; see the docstring.
+            shell=True,
             cwd=worktree,
             capture_output=True,
             text=True,

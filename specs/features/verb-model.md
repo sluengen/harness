@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-07-02
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925]
+last_updated: 2026-07-16
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082]
 ---
 
 # Verb model — start / review / close
@@ -44,7 +44,7 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
-- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at }` (and optional `commit_message` / `deferred_brief`)
+- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), runs the repo's verify gate (below), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at, gate_ran }` (and optional `gate_command` / `gate_exit_code` / `gate_reason` / `commit_message` / `deferred_brief`)
 - AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is recorded as `verdict='fail'` with the sentinel issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a bad reviewer, it records the failure.
@@ -54,6 +54,18 @@ The agent acts on the verdict:
 - `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD. The loop is **bounded** by the spend breakers below.
 - `defer` → the implementation is shippable, but the review surfaced a genuinely out-of-scope finding; file a follow-up for it. Note the close gate opens **only** on a `verdict=pass` (`harness/cli/close.py` queries `verdict='pass'`; a run with only a `defer` is refused `no_passing_review`), so to close you still need a passing review bound to HEAD — obtain one before closing.
 - `pass` → proceed to close.
+
+#### Scenario: the verify gate runs before any engine
+
+`review` runs the repo's own verify gate (`CONTEXT.md` → `verify:`, read by `harness/gate.py`) **before** it invokes an engine, and records the outcome on the `review` event. This is what makes a recorded `pass` mean *the tests ran and were green* rather than *a reviewer read the diff* — until CAL-1082 the two were byte-identical in the ledger, and the only instruction to run the gate was prose addressed to a model. The verbs own "the durable record **and the gate**"; this is the second half.
+
+- GIVEN an open run whose repo configures `verify: "bash scripts/verify.sh"` and whose worktree passes it
+- WHEN the agent runs `harness review`
+- THEN the gate runs in the worktree, the engine is invoked, and the `review` event carries `gate_ran=true`, `gate_exit_code=0`, and the resolved `gate_command`
+- AND GIVEN instead the gate exits non-zero, THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `5` with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }` — the harness does not review a red tree, and spends no tokens doing it. The bounded (≤ 2 KB) tail is a deliberate exception to context economy: it is the *reason for the refusal*, so the agent can fix what broke without re-running the gate.
+- AND GIVEN instead the repo configures no `verify:` at all, THEN the engine runs and the event records `gate_ran=false, gate_reason="not_configured"` — the harness cannot gate what a repo does not define, so the ledger states the absence plainly instead of implying a gate ran, and `close` allows that pass.
+
+The gate is checked **after** the spend breakers below: a run already bounded out must not spend minutes on a gate before being refused. A repo whose toolchain this environment lacks now gets an honest `gate_failed` where it previously got a diff-only `pass` — an accepted consequence, since the harness must not certify what it cannot verify (the remedy is CAL-1084; until it lands, such a repo runs the harness host-natively, the same escape hatch ADR 0002 established for `--engine codex`).
 
 #### Scenario: the spend breakers bound the fix loop
 
@@ -87,7 +99,9 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), or `stale_review` (a pass exists but HEAD moved after it)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
+
+`no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
 `close` does **not** auto-commit. A dirty worktree is refused outright, because uncommitted edits are not in HEAD and so were never reviewed (`stale_review` catches a commit *after* review; only the clean-tree check catches an edit *without* committing — CAL-586, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`). A gate refusal is the gate doing its job and is never worked around — the verb never bypasses its own gate.
 

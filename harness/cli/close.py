@@ -407,7 +407,7 @@ def _has_gate_evidence(gate_ran: Any, gate_reason: Any) -> bool:
     """
     if gate_ran == 1:
         return True
-    return gate_reason == GATE_NOT_CONFIGURED_REASON
+    return bool(gate_reason == GATE_NOT_CONFIGURED_REASON)
 
 
 # ---------------------------------------------------------------------------

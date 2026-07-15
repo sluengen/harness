@@ -46,13 +46,24 @@ This block lists each command's public flags as registered today; `harness <cmd>
 | 0 | Command succeeded (including a recorded review `fail` — a *successful* review) |
 | 1 | Unexpected error (git failure, DB error, Linear error) |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
+| 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
+| 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
+| 5 | `review`: the repo's verify gate is red (`gate_failed`) — no engine ran, no verdict was recorded |
 | 130 | SIGINT (user cancelled) |
+
+Each of `review`'s dedicated codes exists so an orchestrating agent can tell the *kind* of stop apart without parsing prose: an environment wall (3), a bounded-out loop (4), and a red tree (5) call for three different responses, and none of them is a rejected diff.
 
 #### Scenario: a gate refusal exits 2
 
 - GIVEN `harness close` whose gate is not satisfied
 - WHEN it runs
-- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`)
+- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
+
+#### Scenario: a red verify gate exits 5
+
+- GIVEN `harness review` in a repo whose `CONTEXT.md` `verify:` command exits non-zero
+- WHEN it runs
+- THEN it exits 5 with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }`, having invoked no engine and recorded no `review` event (CAL-1082)
 
 ### JSON output is part of the public contract
 
