@@ -140,6 +140,35 @@ def test_license_scope_note_names_the_carve_out() -> None:
     assert "registry.yaml" in note, "the scope note must name the authoritative boundary"
 
 
+def test_scope_note_stays_within_licence_detection_margin() -> None:
+    """The scope note stays short enough that GitHub still detects AGPL-3.0 (AC-1).
+
+    The measuring test for the requirement the note puts at risk. GitHub detects
+    a licence with ``licensee``, which scores the file against each known licence
+    text by Dice coefficient and needs **98%** to report a match rather than
+    "Other". Prepended prose is foreign content: it dilutes the score, and the
+    sidebar badge is the single most visible signal that this repo is copyleft --
+    the whole point of the change. An earlier 157-word note scored ~98.6%, which
+    is a 0.6-point margin on an estimate, so the note was cut to a terse pointer
+    with the rationale left to README and LICENSE-GUIDANCE.
+
+    The bound is derived, not guessed. With ``b`` body words and ``n`` note
+    words, Dice is ``2b / ((n + b) + b)``; holding that at >= 99% against the
+    AGPL's 5,535 words allows ``n <= 111``. The assertion sits at 100 for
+    headroom, since this approximates licensee's tokenisation rather than
+    reproducing it -- it is a canary for a note that grew, not a precise oracle.
+    """
+    text = _LICENSE.read_text()
+    note, body = text.split(_AGPL_BODY_START)[0], _AGPL_BODY_START + text.split(_AGPL_BODY_START)[1]
+    note_words, body_words = len(note.split()), len(body.split())
+    dice = 2 * body_words / ((note_words + body_words) + body_words)
+    assert note_words <= 100, (
+        f"the LICENSE scope note is {note_words} words (max 100): it dilutes licence "
+        f"detection to ~{dice * 100:.1f}% and risks GitHub reporting 'Other' instead of "
+        "AGPL-3.0. Put the explanation in README.md or LICENSE-GUIDANCE, not here."
+    )
+
+
 def test_both_licences_are_tracked() -> None:
     """Both licence files are committed, not just present on disk (AC-1).
 

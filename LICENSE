@@ -2,26 +2,11 @@ harness -- licensing scope
 ==========================
 
 Copyright (C) 2026 Scott Luengen
-
-The GNU Affero General Public License v3.0 reproduced below governs the harness
-ENGINE: everything in this repository except the guidance files the installer
-copies into other repositories.
-
-Those guidance files are MIT-licensed instead -- see LICENSE-GUIDANCE, which
-declares the paths it covers. The authoritative boundary is the `files:` block
-of `registry.yaml`: by construction that is the set copied into a consuming
-repo, so a newly registered file inherits the correct licence without this note
-being edited.
-
-The split is deliberate. The engine is copyleft, so a fork cannot be taken
-proprietary -- use it for anything, including commercially, but a derivative you
-distribute or offer over a network must carry these same freedoms. The guidance
-is permissive, so it can be installed into any repository, including a
-closed-source one, without encumbering it.
-
 SPDX-License-Identifier: AGPL-3.0-only
 
-The unmodified text of the GNU Affero General Public License v3.0 follows.
+This licence governs the harness engine. The guidance files the installer copies
+into other repositories -- enumerated by the `files:` block of `registry.yaml` --
+are MIT licensed instead; see LICENSE-GUIDANCE. README.md explains the split.
 
 --------------------------------------------------------------------------
 
