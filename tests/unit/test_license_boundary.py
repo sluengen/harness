@@ -308,6 +308,47 @@ def test_contributing_states_inbound_grant() -> None:
     assert "AGPL-3.0" in text and "MIT" in text, "the inbound section must name both licences"
 
 
+def test_contributing_states_patent_grant() -> None:
+    """The inbound grant reaches patents, not just copyright (CAL-1080).
+
+    The CAL-1078 grant covered copyright alone, which leaves a contributor free
+    to contribute code reading on their own patent and later assert it against
+    the project or its users — a copyright licence does not reach patent claims.
+    The wording is Apache ICLA §3 plus Apache-2.0 §3's defensive termination
+    rather than bespoke drafting; standard text has survived adversarial use in a
+    way freshly-written prose has not.
+    """
+    text = _CONTRIBUTING.read_text().lower()
+    assert "patent" in text, "the inbound grant must include a patent grant"
+    for clause in ("make, have made, use", "royalty-free"):
+        assert clause in text, f"the patent grant is missing standard wording: {clause!r}"
+    assert "litigation" in text, (
+        "the patent grant must terminate for an entity that institutes patent litigation "
+        "(Apache-2.0 §3 defensive termination) — without it the grant is one-way"
+    )
+
+
+def test_contributing_states_right_to_submit() -> None:
+    """A contributor affirms the code is theirs to give (CAL-1080).
+
+    The DCO's entire purpose. Without it someone can contribute code they do not
+    own — an employer's, or copied from an incompatible source — and the project
+    has no recorded basis for having believed otherwise. Bound to the same
+    opening-a-PR assent as the rest of the grant rather than a per-commit
+    ``Signed-off-by``: one mechanism, deliberately, for a contributor base of zero.
+    """
+    text = _CONTRIBUTING.read_text().lower()
+    assert "right to submit" in text, "the contributor must affirm a right to submit"
+    assert "original" in text, "the representation must cover original creation"
+    assert "employer" in text, (
+        "the representation must address employer-owned IP — the most common way a "
+        "contributor lacks the right to grant"
+    )
+    assert "third-party" in text or "third party" in text, (
+        "the representation must address third-party material and its licence"
+    )
+
+
 def test_bootstrap_installs_the_guidance_licence() -> None:
     """The installer carries the MIT notice into the target repo (AC-5).
 
