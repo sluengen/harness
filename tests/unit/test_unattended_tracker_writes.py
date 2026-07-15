@@ -168,6 +168,26 @@ def test_work_discovery_names_the_unattended_fallback() -> None:
     )
 
 
+def test_work_discovery_anchors_the_report_destination() -> None:
+    """AC-1: "the run's report" must name a concrete destination, not a vague
+    one. ``/assess``'s fallback points at a git-committed dated report; a Build
+    deferral carries no code change, so it has no commit to ride on and its only
+    surface is the run's final output. The skill must say so plainly rather than
+    gesture at a "report" the repo defines nowhere."""
+    body = _section(SKILL.read_text(), "Actionability")
+    low = body.lower()
+    assert re.search(r"final output|run's output|routine's output", low), (
+        "work-discovery must anchor where a deferral actually lands — the "
+        "routine's final output — instead of naming an undefined 'report' "
+        "(CAL-1087 AC-1)."
+    )
+    assert re.search(r"no commit|carries no|no repo artifact", low), (
+        "work-discovery must state why a deferral has no repo artifact: it "
+        "carries no code change, so unlike /assess's committed report there is "
+        "no commit for it to ride on (CAL-1087 AC-1)."
+    )
+
+
 def test_work_discovery_explains_why_repicking_is_acceptable() -> None:
     """AC-1: the skill discharges the AC's explicit escape hatch — the deferral
     path does not remove the ticket from the next tick's candidate set, so the

@@ -55,13 +55,23 @@ spec needs problem, approach, and acceptance criteria.
 An unattended runner **cannot write to the tracker**. The host refuses an
 autonomous write to an external system that no human named — correctly — and this
 skill's audience is that runner. So a deferral is a *report*, not a comment on
-the ticket: name the ticket and what it needs in the run's output, and let the
-report carry it to a human.
+the ticket: name the ticket and what it needs, plainly enough that a reader who
+was not here can act on it.
 
 This is the fallback `/assess` already uses. The condition is not "does this repo
 have a tracker" but **"is the tracker available to this run"**, and it has two
 causes: the repo has none (`layers.linear: false`) or the run is unattended. Both
 land in the same place — keep the report, surface the finding.
+
+**Where the deferral lands: the routine's final output.** Be precise about this,
+because it is weaker than `/assess`'s fallback and the difference matters. An
+assessment commits a dated report to the integration branch, so its findings
+outlive the run in the repo. A deferral **carries no code change** — nothing was
+built — so there is no commit for it to ride on and no repo artifact holding it.
+Its only surface is what the routine reports back to whatever triggered it, and
+its durability is that trigger's, not the repo's. That path does work: this
+skill's own gap reached a human exactly that way and became a ticket. But state
+the deferral in the output as though it is the only record, because it is.
 
 **Re-picking the deferred ticket next tick is acceptable**, and is the accepted
 cost of this path rather than an oversight. A deferral you cannot record on the
