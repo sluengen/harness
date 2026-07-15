@@ -121,6 +121,36 @@ _MUST_DENY = [
     'printf "%s\\n" "git push --force origin dev" | sh',
     'sh <<< "git push --force origin dev"',
     'cat <(echo "git push --force origin dev") | bash',
+    # a path-qualified git is still git: the executable is matched on its
+    # basename, the way nested shells already are.
+    "/usr/bin/git push --force origin dev",
+    "./git push -f origin dev",
+    "/usr/local/bin/git push origin +HEAD:dev",
+    # command wrappers run their operands as the real command, so the force-push
+    # is one token further along. Each wrapper is pinned here, because an
+    # unpinned member of the set is how the whole class went unnoticed.
+    "env git push --force origin dev",  # the set's original member, previously unpinned
+    "nohup git push --force origin dev",
+    "command git push --force origin dev",
+    "exec git push -f origin dev",
+    "nice git push --force origin dev",
+    "ionice git push --force origin dev",
+    "setsid git push -f origin dev",
+    "stdbuf -o0 git push --force origin dev",  # wrapper carrying its own option
+    "xargs git push --force origin dev",
+    "nice -n 5 git push --force origin dev",  # option that consumes its argument
+    "exec -a fakename git push -f origin dev",
+    "timeout 60 git push --force origin dev",  # wrapper with a mandatory operand
+    "timeout --signal=KILL 60 git push -f origin dev",
+    # wrappers compose, with each other and with the existing prefix classes
+    "env nohup git push --force origin dev",
+    "nohup env FOO=bar git push -f origin dev",
+    "env /usr/bin/git push --force origin dev",  # wrapper + path-qualified git
+    "nohup git -C /some/worktree push --force origin dev",  # wrapper + git global opt
+    # a wrapper inside a nested shell script is caught by the same recursion
+    'sh -c "nohup git push --force origin dev"',
+    'bash -c "timeout 60 git push -f origin dev"',
+    'eval "nohup git push --force origin dev"',
 ]
 
 # Non-force pushes and non-push commands that MUST stay allowed — the exact
@@ -166,6 +196,17 @@ _MUST_ALLOW = [
     "git log --oneline | cat",
     # a bare shell running a script FILE (no pipe / redirect) is out of scope
     "bash deploy.sh",
+    # wrapper-stripping must not over-deny: the verbs' own pushes stay allowed
+    # when wrapped, and a wrapper on a non-push git command is untouched.
+    "nohup git push origin dev",
+    "timeout 60 git push origin HEAD:dev",
+    "env git status",
+    "nice git commit -m 'force the push through'",
+    "/usr/bin/git push origin dev",  # path-qualified, but not a force
+    "/usr/bin/git worktree remove --force /some/path",  # --force, sub-command not push
+    # a wrapper name used as an ordinary operand is not a wrapper prefix
+    "git commit -m 'add nohup to the wrapper set'",
+    "echo nohup git push --force origin dev",  # echo is not a wrapper
 ]
 
 
