@@ -24,10 +24,10 @@ Contract under test:
 * Refuses cleanly (exit 2) for an unknown run-id, a finished-terminal run, an
   unrecognised status, or an ambiguous invocation (both / neither selector).
   Idempotent — reclaiming an already-``cancelled`` run is a safe no-op.
-* ``--stale --project <name> [--older-than 90m]`` enumerates the project's
-  In-Progress tickets and reclaims each idle past the threshold (reusing the
-  single-target ``--ticket`` path per ticket), skipping any inside the threshold;
-  an empty / already-reverted project is a clean no-op.
+* ``--stale --project <name> [--older-than 90m]`` enumerates the project's active
+  tickets — In Progress **and** In Review (CAL-1103) — and reclaims each idle past
+  the threshold (reusing the single-target ``--ticket`` path per ticket), skipping
+  any inside the threshold; an empty / already-reverted project is a clean no-op.
 """
 
 from __future__ import annotations
@@ -206,12 +206,12 @@ def _make_linear_stub(
     return mock
 
 
-def _make_sweep_stub(in_progress: list[dict[str, str]]) -> MagicMock:
-    """A LinearClient mock for ``--stale``: ``fetch_in_progress_issues`` returns the
+def _make_sweep_stub(active: list[dict[str, str]]) -> MagicMock:
+    """A LinearClient mock for ``--stale``: ``fetch_reclaimable_issues`` returns the
     given list; the revert primitives are no-op AsyncMocks (the single stub serves
     both the enumeration and the per-ticket revert, which the sweep reuses)."""
     mock = MagicMock()
-    mock.fetch_in_progress_issues = AsyncMock(return_value=in_progress)
+    mock.fetch_reclaimable_issues = AsyncMock(return_value=active)
     mock.transition_to_unstarted = AsyncMock(return_value=None)
     mock.apply_label = AsyncMock(return_value=None)
     mock.post_comment = AsyncMock(return_value=None)
@@ -507,7 +507,8 @@ def test_reclaim_and_cancel_share_the_abandon_transaction() -> None:
 
 
 # ===========================================================================
-# CAL-736: --stale sweep — enumerate In-Progress tickets, reclaim the stale ones
+# CAL-736: --stale sweep — enumerate active (In Progress / In Review) tickets,
+# reclaim the stale ones (CAL-1103 broadened the enumeration to In Review)
 # ===========================================================================
 
 
@@ -523,7 +524,7 @@ def test_stale_sweep_reclaims_past_threshold(tmp_path: Path) -> None:
         stub,
     )
     assert result.exit_code == 0, result.output
-    stub.fetch_in_progress_issues.assert_awaited_once_with(project="Harness v3")
+    stub.fetch_reclaimable_issues.assert_awaited_once_with(project="Harness v3")
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-800")
 
     payload = json.loads(result.output)
@@ -531,6 +532,31 @@ def test_stale_sweep_reclaims_past_threshold(tmp_path: Path) -> None:
     assert payload["scanned"] == 1
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-800"]
     assert payload["skipped"] == []
+
+
+def test_stale_sweep_reclaims_stranded_in_review_ticket(tmp_path: Path) -> None:
+    """AC-5 (CAL-1103): a ticket ``review`` parked **In Review** whose orchestrator
+    then died is reclaimed to Todo just like a stranded In-Progress one.
+
+    The sweep enumerates both transient started states (``fetch_reclaimable_issues``
+    now includes In Review — pinned at the query level in
+    ``test_linear_reclaim_primitives``), so an In-Review ticket idle past the
+    threshold reaches the same per-ticket revert. Without this, a run that died
+    between ``review pass`` and ``close`` would wedge the queue: the ticket sits In
+    Review forever and the old sweep, In-Progress-only, never touched it."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))  # cloud regime: revert-only, no local run
+    stub = _make_sweep_stub([{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(120)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    # Reverted to Todo — the stranded In-Review ticket re-enters the queue.
+    stub.transition_to_unstarted.assert_awaited_once_with("CAL-900")
+    payload = json.loads(result.output)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-900"]
 
 
 def test_stale_sweep_skips_sub_threshold(tmp_path: Path) -> None:

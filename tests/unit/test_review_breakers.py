@@ -144,12 +144,16 @@ def _tracking_runner(stdout: str, calls: list[int]) -> Any:
     return _runner
 
 
-def _invoke(repo: Path, db_path: Path, runner: Any) -> Any:
+def _invoke(repo: Path, db_path: Path, runner: Any, *, linear_stub: Any | None = None) -> Any:
+    argv = ["review", "--repo", str(repo), "--db", str(db_path), "--run-id", _RUN_ID, "--json"]
     with mock.patch.object(review_mod, "_default_runner", runner):
-        return cli_runner.invoke(
-            app,
-            ["review", "--repo", str(repo), "--db", str(db_path), "--run-id", _RUN_ID, "--json"],
-        )
+        if linear_stub is None:
+            return cli_runner.invoke(app, argv)
+        with (
+            mock.patch.object(review_mod, "LinearClient", return_value=linear_stub),
+            mock.patch.object(review_mod, "linear_api_key", return_value="test-key"),
+        ):
+            return cli_runner.invoke(app, argv)
 
 
 def _review_events(db_path: Path) -> list[dict[str, Any]]:
@@ -183,6 +187,22 @@ def test_sixth_cycle_refuses_without_running_the_engine(repo: Path, db_path: Pat
     assert calls == [], "the engine must not run once the ceiling is reached"
     # No 6th review event recorded — only the 5 seeded fails remain.
     assert len(_review_events(db_path)) == 5
+
+
+def test_breaker_trip_leaves_ticket_state_untouched(repo: Path, db_path: Path) -> None:
+    """CAL-1103 AC-3: a breaker trip (exit 4) transitions nothing — the breaker
+    check runs *before* review's In-Review move, so an escalating run's ticket
+    stays where it stopped (In Progress)."""
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=5)
+    stub = mock.MagicMock()
+    stub.transition_to_in_review = mock.AsyncMock(return_value=None)
+    stub.transition_to_in_progress = mock.AsyncMock(return_value=None)
+
+    result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, []), linear_stub=stub)
+
+    assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
+    stub.transition_to_in_review.assert_not_awaited()
+    stub.transition_to_in_progress.assert_not_awaited()
 
 
 def test_fifth_cycle_still_runs(repo: Path, db_path: Path) -> None:

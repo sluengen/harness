@@ -40,6 +40,16 @@ Flow (one ``asyncio.run`` event loop for all I/O):
    enters the returned/printed JSON — the context-economy guarantee that keeps
    the orchestrating agent's context budget bounded.
 
+Tracker transition (CAL-1103): ``review`` owns the In-Review state.  It moves the
+ticket In Progress → **In Review** just before the engine runs (step 2b, after the
+breaker and gate-evidence checks, so the queue shows "reviewing" while the engine
+works), and hands it back to **In Progress** on a ``fail`` (it is being built
+again) — ``pass``/``defer`` leave it In Review for ``close`` (→ Done) or a
+follow-up.  The move is best-effort bookkeeping, never the record: a tracker-less
+run or a transition failure warns (or silently no-ops) but never loses the
+verdict, and a breaker (exit 4) / gate-evidence (exit 5) refusal fires *before*
+the move, so an escalating run's ticket stays where it stopped.
+
 Exit codes (mirroring ``harness start``):
 * 0 — success; the verdict JSON is printed (a recorded ``fail`` is still a
       successful *review*, exit 0 — deciding what to do with a fail is the
@@ -81,6 +91,14 @@ from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
+from harness.layers import linear_enabled
+from harness.linear import (
+    LinearClient,
+    LinearConfigError,
+    LinearNotFound,
+    LinearRequestError,
+    linear_api_key,
+)
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
@@ -92,7 +110,8 @@ from harness.state import store
 # scanner, the engine-failure detectors (usage-limit → Claude fallback, and two
 # sandbox walls → infra exit: codex's non-zero-exit/stderr case and its exit-0
 # masquerading-defer case; CAL-702/CAL-866/CAL-924), the ledger-backed spend
-# breakers (cycle ceiling + wall-clock; CAL-906), and the single-event-loop
+# breakers (cycle ceiling + wall-clock; CAL-906), the best-effort In-Review /
+# In-Progress tracker transitions (CAL-1103), and the single-event-loop
 # orchestration.  The detectors + breaker glue have one caller (`_run_review`);
 # splitting them off to chase the 500-line limit would fragment the verb, not
 # clarify it. The breaker *decision* is already factored out to
@@ -694,6 +713,15 @@ async def _run_review(
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
 
+    # 2b. Park the ticket In Review before the engine runs (CAL-1103) — the queue
+    #     shows "reviewing" while the (possibly long) engine works. Deliberately
+    #     AFTER the breaker (exit 4) and gate-evidence (exit 5) refusals above, so
+    #     an escalating or red-gated run leaves the ticket where it stopped. The
+    #     move is best-effort: a tracker-less run or a Linear hiccup never loses
+    #     the review (the verdict is the record; the transition is bookkeeping).
+    ticket = await _read_ticket(db_path, resolved_run_id)
+    await _park_ticket(repo_root, ticket, to="in_review")
+
     # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
     #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted
     #    Codex tier degrades the gate to a false ``fail`` exactly when relied
@@ -807,6 +835,13 @@ async def _run_review(
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to record review event: {exc}", 1) from exc
 
+    # 5b. A ``fail`` means the ticket is being built again — hand it back to In
+    #     Progress (CAL-1103). AFTER the review event is recorded, so a transition
+    #     failure can never lose the verdict (AC-4). ``pass``/``defer`` leave it In
+    #     Review for ``close`` or a follow-up.
+    if parsed.verdict == "fail":
+        await _park_ticket(repo_root, ticket, to="in_progress")
+
     # 6. Return ONLY the bounded verdict — the engine's stdout stays inside the
     #    verb.  ``engine`` reflects the engine that actually produced the
     #    verdict (``claude`` after a fallback); ``fallback_from`` lives on the
@@ -870,3 +905,66 @@ async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:
         return datetime.fromisoformat(str(row[0]))
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Tracker transition — review owns the In-Review state (CAL-1103)
+# ---------------------------------------------------------------------------
+
+
+async def _read_ticket(db_path: Path, run_id: str) -> str | None:
+    """The Linear ticket identifier recorded on the run row, or ``None``.
+
+    ``review`` moves this ticket In Review / back to In Progress (CAL-1103). A
+    missing DB or a row with no ``ticket`` yields ``None`` so the caller skips the
+    transition (there is nothing to move).
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute("SELECT ticket FROM runs WHERE run_id = ?", (run_id,)) as cur,
+    ):
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0])
+
+
+async def _park_ticket(
+    repo_root: Path, ticket: str | None, *, to: Literal["in_review", "in_progress"]
+) -> None:
+    """Best-effort Linear state move for the reviewed ticket (CAL-1103).
+
+    ``review`` parks the ticket In Review before the engine runs, and hands it
+    back to In Progress on a ``fail``. The move is **bookkeeping**; the verdict is
+    the record — so this never refuses the review:
+
+    * no ticket, tracker-less (``layers.linear: false``), or no ``LINEAR_API_KEY``
+      in the environment → a silent no-op (there is no tracker to move a ticket
+      in — the same posture ``close`` takes for a tracker-less run);
+    * an actual transition-call failure (``LinearNotFound`` / ``LinearRequestError``)
+      → a stderr warning, and the review proceeds — a tracker hiccup must never
+      lose a recorded verdict (AC-4).
+    """
+    if ticket is None or not linear_enabled(repo_root):
+        return
+    try:
+        api_key = linear_api_key()
+    except LinearConfigError:
+        # No tracker configured in this environment — behave tracker-less rather
+        # than refuse: the transition is bookkeeping, not the review record.
+        return
+    client = LinearClient(api_key=api_key)
+    try:
+        if to == "in_review":
+            await client.transition_to_in_review(ticket)
+        else:
+            await client.transition_to_in_progress(ticket)
+    except (LinearNotFound, LinearRequestError) as exc:
+        typer.echo(
+            f"warning: failed to move {ticket} to {to.replace('_', ' ')}: {exc}; "
+            f"the review verdict is recorded regardless (the transition is "
+            f"bookkeeping, not the record).",
+            err=True,
+        )
