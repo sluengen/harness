@@ -107,7 +107,7 @@ files:
   # --- hooks (Claude Code only; wired via the profile's settings file) ---
   hooks/prompt-guard.js:              { id: hook-prompt-guard,        version: 0.1.0, profiles: [harness] }
   hooks/workflow-guard.js:            { id: hook-workflow-guard,      version: 0.1.1, profiles: [harness] }
-  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.2.0, profiles: [harness] }
+  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.3.0, profiles: [harness] }
   hooks/context-monitor.js:           { id: hook-context-monitor,     version: 0.1.1, profiles: [harness] }
   hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.3.6, profiles: [harness] }
 

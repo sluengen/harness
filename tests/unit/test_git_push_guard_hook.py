@@ -35,11 +35,35 @@ These tests execute the hook as a node subprocess (in the style of
   hook under a ``PreToolUse`` matcher that covers ``Bash`` — so it is live here
   and delivered to every self-hosting target repo alongside the other hooks.
   :func:`test_hook_is_registered_for_pretooluse_bash`.
+
+CAL-1088 pins the hook's **recognition-set membership** so a set cannot gain a
+member without a matching deny case. The guard decides push-ness from three sets
+(``WRAPPERS`` / ``SHELLS`` / ``GIT_GLOBAL_WITH_ARG``); their membership was
+untested, which is how ``WRAPPERS``' lone member (``env``) slipped through with
+zero cases. Rather than restate the membership (a copy that drifts), these tests
+read the real sets the hook **exports** and derive one canonical deny case per
+member:
+
+* **AC-5 — every set member denies a canonical force-push.** The membership is
+  read from the hook via ``require()`` (not parsed from source), and each member
+  is exercised through its own construct.
+  :func:`test_every_set_member_denies_canonical_force_push`.
+* **AC-6 — an uncovered member fails the gate.** The same assertion the per-member
+  test uses raises for a would-be member the guard does not deny — so a member
+  added without a working deny path is a gate failure, demonstrated by execution
+  rather than asserted by inspection.
+  :func:`test_uncovered_set_member_fails_the_gate`.
+* **AC-7 — the derived cases are membership-locked, not a hand-written copy.** One
+  canonical case per member, read from the hook, adding coverage the narrative-
+  vector corpus omits (``sudo``/``doas``, ``zsh``/``dash``/``ash``/``ksh``, the
+  ``git`` global options) rather than duplicating it.
+  :func:`test_derived_cases_are_membership_locked_not_a_handwritten_copy`.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -280,4 +304,131 @@ def test_hook_is_registered_for_pretooluse_bash(settings_path: Path) -> None:
     raise AssertionError(
         f"git-push-guard.js is not registered under a PreToolUse Bash matcher in "
         f"{settings_path.relative_to(_REPO_ROOT)}"
+    )
+
+
+# --- CAL-1088: recognition-set membership is pinned by a derived deny corpus ---
+#
+# The guard decides push-ness from three recognition sets. Their *membership* is
+# the thing that silently went short (``WRAPPERS`` held only ``env`` and had no
+# cases). Instead of restating the membership here — a copy that drifts from the
+# source — these tests read the real sets the hook exports and derive the deny
+# corpus from them, so a set that gains a member gains a matching case for free.
+
+#: Turn one member of a recognition set into a canonical force-push that reaches
+#: ``git push --force`` *through that member's construct* — a wrapper prefix, a
+#: shell ``-c`` script, or a ``git`` global option that consumes its argument.
+#: ``x`` is an arbitrary operand for the global options that take one; the guard
+#: does not validate it, it only must be consumed so the ``push`` sub-command is
+#: read correctly.
+_CONSTRUCTS = {
+    "WRAPPERS": lambda m: f"{m} git push --force origin dev",
+    "SHELLS": lambda m: f'{m} -c "git push --force origin dev"',
+    "GIT_GLOBAL_WITH_ARG": lambda m: f"git {m} x push --force origin dev",
+}
+
+
+def _hook_sets() -> dict[str, list[str]]:
+    """The hook's recognition sets, read from the module it exports.
+
+    Runs a tiny node introspection subprocess that ``require()``s the hook and
+    dumps each set — the alternative the ticket rejected (regex-parsing the
+    ``new Set([...])`` literals) couples the test to source formatting. Requiring
+    the module does **not** run the hook: its auto-run is guarded by
+    ``require.main === module``. Skips when node is unavailable; fails loudly if
+    the hook does not export the sets (the mechanism this ticket adds).
+    """
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    script = (
+        "const h = require(process.env.HOOK_PATH);"
+        "const names = ['WRAPPERS', 'SHELLS', 'GIT_GLOBAL_WITH_ARG'];"
+        "const out = {};"
+        "for (const k of names) {"
+        "  if (!(h[k] instanceof Set)) {"
+        "    console.error('hook does not export set: ' + k);"
+        "    process.exit(3);"
+        "  }"
+        "  out[k] = [...h[k]];"
+        "}"
+        "process.stdout.write(JSON.stringify(out));"
+    )
+    proc = subprocess.run(
+        [node, "-e", script],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "HOOK_PATH": str(_HOOK)},
+        timeout=30,
+    )
+    assert proc.returncode == 0, (
+        "could not read the hook's recognition sets via require() — the hook must "
+        f"export WRAPPERS/SHELLS/GIT_GLOBAL_WITH_ARG (rc={proc.returncode}): "
+        f"{proc.stderr.strip()}"
+    )
+    return json.loads(proc.stdout)
+
+
+def _assert_member_denies(set_name: str, member: str, command: str) -> None:
+    """The single assertion both the per-member sweep (AC-5) and the teeth test
+    (AC-6) run: a recognition-set member must deny its canonical force-push."""
+    assert _is_denied(command), (
+        f"{set_name} member {member!r} does not deny a canonical force-push — "
+        f"a recognition-set member with no working deny path: {command!r}"
+    )
+
+
+# --- AC-5: every set member denies a canonical force-push ---------------------
+
+
+@pytest.mark.parametrize("set_name", list(_CONSTRUCTS))
+def test_every_set_member_denies_canonical_force_push(set_name: str) -> None:
+    members = _hook_sets()[set_name]
+    assert members, f"the hook exported no members for {set_name}"
+    template = _CONSTRUCTS[set_name]
+    for member in members:
+        _assert_member_denies(set_name, member, template(member))
+
+
+# --- AC-6: an uncovered member fails the gate (demonstrated, not inspected) ----
+
+
+def test_uncovered_set_member_fails_the_gate() -> None:
+    """A would-be set member the guard does not deny makes the very assertion the
+    per-member sweep uses raise — so adding a member without a working deny path
+    is a gate failure, shown by execution. ``definitelynotawrapper`` stands in
+    for such a member: it is not in ``WRAPPERS``, so its operands are not scanned
+    and the canonical force-push is *not* denied."""
+    bogus = "definitelynotawrapper"
+    command = _CONSTRUCTS["WRAPPERS"](bogus)
+    assert not _is_denied(command), (
+        "demonstration precondition failed: the stand-in member was denied, so it "
+        f"cannot represent an uncovered member: {command!r}"
+    )
+    with pytest.raises(AssertionError):
+        _assert_member_denies("WRAPPERS", bogus, command)
+
+
+# --- AC-7: the derived corpus is membership-locked, not a hand-written copy ----
+
+
+def test_derived_cases_are_membership_locked_not_a_handwritten_copy() -> None:
+    """One canonical case per member, read from the hook — not a re-listing of the
+    hand-written per-member deny lines. Proven two ways: the derived corpus is
+    exactly one command per member (minimal), and it covers members the
+    narrative-vector corpus omits entirely (``sudo``/``doas``, ``zsh``/``dash``/
+    ``ash``/``ksh``, the ``git`` global options), so it cannot be a copy of
+    :data:`_MUST_DENY`."""
+    sets = _hook_sets()
+    generated = [_CONSTRUCTS[name](m) for name, members in sets.items() for m in members]
+    total_members = sum(len(members) for members in sets.values())
+    assert len(generated) == total_members, (
+        "the derived corpus must be exactly one canonical case per member "
+        f"({total_members}), not a broader re-listing: got {len(generated)}"
+    )
+    novel = [command for command in generated if command not in _MUST_DENY]
+    assert novel, (
+        "every derived case already appears verbatim in _MUST_DENY — the derived "
+        "corpus must add coverage for members the hand-written cases omit, not "
+        "duplicate them"
     )

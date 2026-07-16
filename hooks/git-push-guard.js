@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.2.0
+// guidance:hook-git-push-guard@0.3.0
 /**
  * Git force-push guard (PreToolUse: Bash).
  *
@@ -614,9 +614,19 @@ function main() {
   passThrough();
 }
 
-try {
-  main();
-} catch {
-  // Fail open: the deny globs remain the backstop; never wedge every Bash call.
-  process.stdout.write(JSON.stringify({ continue: true }));
+if (require.main === module) {
+  try {
+    main();
+  } catch {
+    // Fail open: the deny globs remain the backstop; never wedge every Bash call.
+    process.stdout.write(JSON.stringify({ continue: true }));
+  }
 }
+
+// The recognition sets whose *membership* decides push-ness. Exported so the
+// guard's own test suite can derive its per-member deny corpus from the real
+// values rather than restating them (CAL-1088) — a set cannot gain a member
+// without a matching deny case. The ``require.main === module`` guard above means
+// importing the module for this introspection never runs the hook (which would
+// block reading stdin); run directly as a hook, ``main()`` still executes.
+module.exports = { WRAPPERS, SHELLS, GIT_GLOBAL_WITH_ARG };
