@@ -1,39 +1,20 @@
-"""Framework-defined state base — see ``specs/features/run-ledger.md`` ("BaseState").
+"""Canonical run-status vocabulary — see ``specs/features/run-ledger.md``.
 
-:class:`BaseState` holds the framework-defined run fields. It predates the
-verb model (CAL-574 retired the workflow engine that derived per-workflow
-state subclasses on top of this base); the run-state shape is now this base
-directly.
+This module owns :data:`RunStatus` / :data:`RUN_STATUSES`, the type-safe seam
+writers and CLI readers share for the ``runs.status`` string.
 
-The framework-supplied fields populated when a run begins:
-
-* ``run_id`` — opaque identifier for this run.
-* ``workflow_name`` — :attr:`Workflow.name`.
-* ``base_branch`` — branch the run was started against (for worktree
-  isolation).
-* ``worktree_path`` / ``worktree_branch`` — populated when the run's
-  first ``worktree.create`` step executes; ``None`` until then.
-* ``artifacts_dir`` — where the run writes prompt transcripts, review
-  artifacts, etc.
-* ``started_at`` — UTC timestamp the run was started.
-* ``notes`` — auto-populated, framework-managed log line buffer (see
-  ``specs/features/run-ledger.md`` for the ``BaseState`` field set). This module
-  declares the field; the engine-era bounded-merge writer that appended to
-  it was removed with the rest of the dead state surface in CAL-613.
-
-``extra="forbid"`` is set so an agent that hallucinates an unknown
-state field is rejected rather than silently persisted.
+It once also carried ``BaseState``, the engine-era pydantic model of the
+run-state shape. CAL-574 retired the workflow engine, leaving that model with no
+production importer; CAL-1107 deleted it. The persisted run shape now lives in
+the ``runs`` table schema (``harness.state.store``), and no model validates the
+(always-empty) ``state_json`` blob.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
 from typing import Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
-
-__all__ = ["BaseState", "RUN_STATUSES", "RunStatus"]
+__all__ = ["RUN_STATUSES", "RunStatus"]
 
 
 # Canonical run-status enum — see ``specs/features/run-ledger.md`` ("status values").
@@ -69,21 +50,3 @@ RunStatus = Literal[
 RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
 """Runtime view of the canonical run statuses — derived from
 :data:`RunStatus` so the two cannot drift."""
-
-
-class BaseState(BaseModel):
-    """Framework-defined fields prepended to every derived state class.
-
-    See module docstring and ``specs/features/run-ledger.md`` for the full rationale.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    workflow_name: str
-    base_branch: str
-    worktree_path: Path | None = None
-    worktree_branch: str | None = None
-    artifacts_dir: Path
-    started_at: datetime
-    notes: list[str] = Field(default_factory=list)

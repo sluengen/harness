@@ -76,7 +76,7 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 
 The canonical `event_type` set (`harness/events/schema.py`) is the four live-emitter types — `workflow_failed` (`harness cancel`), `review`, `close`, and `checkpoint` (`harness checkpoint` — the run-branch push that makes WIP durable, CAL-738). CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
 
-New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** below.
+New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613; the `BaseState` model that once described `state_json` was deleted in CAL-1107). The full DDL and the migration table are the **schema reference** below.
 
 ## Interface surface
 
@@ -84,7 +84,7 @@ New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrati
 
 ## Schema reference
 
-The full SQLite schema, migrations, status values, and the `BaseState` model — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
+The full SQLite schema, migrations, and status values — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
 
 > The engine-era per-node state machinery (`read_state` / `update_state` / `restore_state`) and the never-shipped v2-resume snapshot layer (`write_snapshot` / `read_latest_snapshot` + the `run_snapshots` table) were removed in CAL-613: they had no production caller after the deterministic engine was retired (CAL-574). Under the verb model the agent session — not a rehydrated state row — holds run context. The `runs.state_json` column survives (written as `"{}"` by `harness start`, surfaced as `state` in `harness status --json`) but is no longer merged or snapshotted.
 
@@ -158,25 +158,11 @@ Under the **verb model** (proposal [`harness-as-tool`](../proposals/harness-as-t
 
 The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the live verb-model statuses (`open` / `closed` / `cancelled`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`/`close`/`cancel` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
 
-### `BaseState`
+### `BaseState` (removed)
 
-Framework-defined fields prepended to every derived state class (largely vestigial under the verb model — no per-workflow state is derived; the agent session holds context):
+`harness/state/schema.py` once carried `BaseState`, the engine-era pydantic model of the run-state shape (`run_id`, `workflow_name`, `base_branch`, `worktree_path` / `worktree_branch`, `artifacts_dir`, `started_at`, `notes`). CAL-574 retired the workflow engine that derived per-workflow state on top of it, leaving the model with **no production importer** — nothing validated `state_json` against it — so CAL-1107 deleted it. The persisted run shape is now the `runs` table schema above; `state_json` survives as an always-`"{}"` blob no model validates. `harness/state/schema.py` now owns only the `RunStatus` / `RUN_STATUSES` vocabulary.
 
-```python
-class BaseState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    workflow_name: str
-    base_branch: str
-    worktree_path: Path | None = None
-    worktree_branch: str | None = None
-    artifacts_dir: Path
-    started_at: datetime
-    notes: list[str] = Field(default_factory=list)
-```
-
-`extra="forbid"` means an agent that hallucinates an unknown field is rejected at validation time. Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the live verb-model statuses (`open` / `closed` / `cancelled`) interleaved with the retired-engine statuses (see the status table above).
+Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the live verb-model statuses (`open` / `closed` / `cancelled`) interleaved with the retired-engine statuses (see the status table above).
 
 ## Known limitations
 

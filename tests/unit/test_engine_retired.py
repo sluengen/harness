@@ -282,29 +282,36 @@ def test_steward_procedure_survives_in_steward_agent() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-4 — status --json surfaces only artifact fields the state schema declares.
+# AC-4 — status --json surfaces only artifact fields the ledger actually persists.
 #
 # ``_ARTIFACT_KEYS`` drives the ``artifact_paths`` enrichment in
-# ``status --json``. Because ``BaseState`` sets ``extra="forbid"``, a validated
-# state can only ever carry keys that ``BaseState`` declares — any other key is
-# dead enrichment that no live run can populate, kept green only by a test that
+# ``status --json``. An artifact key that is not a real ``runs`` column can never
+# populate from a live run — it is dead enrichment, kept green only by a test that
 # fabricates the field. This guard turns the CAL-600 "no synthetic data masking
-# dead surface" principle into a failing test (would have caught CAL-607).
+# dead surface" principle into a failing test (would have caught CAL-607). It
+# anchored on ``BaseState.model_fields`` until CAL-1107 deleted that dead,
+# never-imported model; the persisted ``runs`` schema is now the source of truth.
 # ---------------------------------------------------------------------------
 
 
-def test_artifact_keys_are_declared_state_fields() -> None:
-    """Every ``_ARTIFACT_KEYS`` entry is a field the state schema declares."""
+async def test_artifact_keys_are_persisted_run_columns(tmp_path: Path) -> None:
+    """Every ``_ARTIFACT_KEYS`` entry is a real column on the ``runs`` table."""
     from harness.cli.query import _ARTIFACT_KEYS
-    from harness.state.schema import BaseState
+    from harness.state import store
 
-    declared = set(BaseState.model_fields)
-    undeclared = [k for k in _ARTIFACT_KEYS if k not in declared]
+    db_path = tmp_path / "harness.db"
+    await store.init_db(db_path)
+    async with store.connect(db_path) as conn, conn.execute(
+        "PRAGMA table_info(runs)"
+    ) as cur:
+        columns = {row[1] async for row in cur}
+
+    undeclared = [k for k in _ARTIFACT_KEYS if k not in columns]
     assert not undeclared, (
-        f"_ARTIFACT_KEYS contains keys no state class declares: {undeclared}. "
-        "BaseState forbids extra fields, so these can never populate from a real "
-        "run — they are dead enrichment. Add the field to BaseState (and a verb "
-        "that writes it) before surfacing it, or drop it from _ARTIFACT_KEYS."
+        f"_ARTIFACT_KEYS contains keys the runs table has no column for: "
+        f"{undeclared}. These can never populate from a real run — they are dead "
+        "enrichment. Add the column (and a verb that writes it) before surfacing "
+        "it, or drop it from _ARTIFACT_KEYS."
     )
 
 

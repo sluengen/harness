@@ -80,7 +80,7 @@ class Promotion(BaseModel):
     where to inspect the promotion.
 
     ``extra="forbid"`` so a writer that hallucinates an unknown field is rejected
-    rather than silently persisted (the same discipline as ``BaseState``).
+    rather than silently persisted.
     """
 
     model_config = ConfigDict(extra="forbid")

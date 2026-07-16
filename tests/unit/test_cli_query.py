@@ -884,9 +884,9 @@ def test_status_json_failure_reason_none_when_no_failure(tmp_path: Path) -> None
 def test_status_json_artifact_paths_populated_from_state(tmp_path: Path) -> None:
     """``artifact_paths`` surfaces non-None artifact fields from ``state``.
 
-    Only schema-declared artifact fields are injected — ``BaseState`` forbids
-    extra keys, so a real ``state`` blob can never carry anything else (guarded
-    by ``test_artifact_keys_are_declared_state_fields``).
+    Only persisted artifact fields are injected — an ``_ARTIFACT_KEYS`` entry
+    must be a real ``runs`` column, so a real run can never surface anything else
+    (guarded by ``test_artifact_keys_are_persisted_run_columns``).
     """
     db_path = tmp_path / ".harness" / "harness.db"
     state = {
