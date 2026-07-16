@@ -49,7 +49,7 @@ It validates the ticket, transitions it to In Progress, creates the worktree, an
 
 Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`). `cd` into `worktree_path`. Read `ticket.title` and `ticket.description` — that is your spec for this run. (Default base is `dev`; pass `--base` only to override.) If the ticket carries the `reclaimed` label, add `--resume` so the run continues from the dead run's preserved WIP branch when one exists (it falls back to a clean start otherwise) — see the Build routine's resume step.
 
-**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate locally as you go — `review` runs it too and **refuses a red tree** (below), so a local run is how you find out first, on your terms rather than as a refusal.
+**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
 
 **Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
 
@@ -66,7 +66,21 @@ harness review --run-id <run_id>                  # [--repo .] — engine defaul
 harness review --run-id <run_id> --engine codex   # cross-model review — host-only (see below)
 ```
 
-**The verb runs the repo's verify gate first.** Before any engine is invoked, `review` runs `CONTEXT.md` → `verify:` in the worktree and records the result on the ledger event — so a recorded `pass` means *the tests ran green*, not *a reviewer read the diff*. If the gate is red, the verb refuses outright: exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`, **no engine, no verdict recorded**. Fix what the tail reports and re-run `review`; do not try to route around it — a `pass` cannot be obtained over a red tree, and `close` refuses a pass carrying no gate evidence (`no_gate_evidence`). A repo that configures no `verify:` is recorded honestly (`gate_ran=false, gate_reason="not_configured"`) and proceeds.
+**You run the gate; the verb enforces and records the evidence.** Run `CONTEXT.md` → `verify:` in the worktree, capture its output to a file, and hand the result to `review`:
+
+```bash
+bash scripts/verify.sh > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
+harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log
+```
+
+The verb does **not** run the gate itself — the toolchain lives on your side, not in the verb's container, and no image can carry every target repo's toolchain (an Xcode target never runs in a Linux container). What the verb does is refuse to certify what it cannot show was verified:
+
+- **No `--gate-exit` while `verify:` is configured** → exit `5`, `reason=no_gate_evidence`. Silence is not a pass.
+- **`--gate-exit` non-zero** → exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`. **No engine, no verdict recorded.** Fix what the tail reports and re-run.
+- **Green** → the engine runs, and the `review` event records `gate_ran`, `gate_command`, `gate_exit_code`, and the log tail, bound to the reviewed SHA — so a recorded `pass` means *the gate ran green*, not *a reviewer read the diff*.
+- **No `verify:` configured** → recorded honestly (`gate_ran=false, gate_reason="not_configured"`) and review proceeds; the harness cannot gate what a repo does not define.
+
+Do not route around a refusal: `close` refuses a pass carrying no gate evidence (`no_gate_evidence`). Reporting a green exit code for a gate you did not run is falsifying the record the whole loop rests on.
 
 The selected engine (`--engine claude|codex`, **default `claude`**) reviews the diff against HEAD and records a verdict bound to that SHA. Both engines are **read-only CLI subprocesses** emitting the same `SUBMIT:` contract — never the Agent SDK; the engine's full reasoning stays inside the verb. You see only the bounded result (`ReviewOutput`), which records the `engine` that produced the verdict:
 
