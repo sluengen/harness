@@ -21,6 +21,7 @@ invariants that produce it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -91,6 +92,29 @@ def test_no_secret_is_mounted_under_root_home() -> None:
             f"stale mount target {stale!r} is unreadable under the non-root user; "
             "mount host credentials under /home/harness/... instead"
         )
+
+
+def _ssh_forwarding_block(readme: str) -> str:
+    """Return the populated ``SSH_AGENT_ARGS=( ... )`` array literal (the one that
+    forwards the agent socket), or "" if absent."""
+    for block in re.findall(r"SSH_AGENT_ARGS=\((.*?)\)", readme, re.DOTALL):
+        if "/ssh-auth.sock:/ssh-agent" in block:
+            return block
+    return ""
+
+
+def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
+    """Docker Desktop forwards the agent socket as ``srw-rw---- root root``; the
+    container runs uid 1000 (non-root, CAL-1008), so it can only ``connect()`` to
+    the group-rw socket via group 0. The forwarding block must add ``--group-add
+    0`` next to the socket mount — without it every ``git push`` over SSH (close /
+    checkpoint) fails ``Permission denied (publickey)`` on a healthy host agent."""
+    block = _ssh_forwarding_block(_readme())
+    assert block, "no populated SSH_AGENT_ARGS block found in docker/README.md"
+    assert "--group-add 0" in block, (
+        "the ssh-agent forwarding block must include '--group-add 0' so the "
+        "non-root container user can reach the root-owned, group-rw agent socket"
+    )
 
 
 # ---------------------------------------------------------------------------
