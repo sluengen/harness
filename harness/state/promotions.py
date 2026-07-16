@@ -73,10 +73,11 @@ class Promotion(BaseModel):
 
     The fields expose enough for an outer orchestrator to branch without scraping
     text (ADR 0003): the branch endpoints and the promotion branch, the current
-    ``status`` and the ``gated_sha`` the PR gate reads, the bounded repair
-    ``attempts`` count, the terminal ``pr_url`` / ``escalation_ticket``, and a
-    bounded ``evidence`` reference (e.g. the captured gate-log path). ``repo`` /
-    ``worktree_path`` name where to inspect the promotion.
+    ``status``, the ``merged_sha`` a clean merge records (CAL-1115) and the
+    ``gated_sha`` the PR gate reads, the bounded repair ``attempts`` count, the
+    terminal ``pr_url`` / ``escalation_ticket``, and a bounded ``evidence``
+    reference (e.g. the captured gate-log path). ``repo`` / ``worktree_path`` name
+    where to inspect the promotion.
 
     ``extra="forbid"`` so a writer that hallucinates an unknown field is rejected
     rather than silently persisted (the same discipline as ``BaseState``).
@@ -93,6 +94,7 @@ class Promotion(BaseModel):
     updated_at: str
     worktree_path: str | None = None
     promotion_branch: str | None = None
+    merged_sha: str | None = None
     gated_sha: str | None = None
     attempts: int = 0
     pr_url: str | None = None

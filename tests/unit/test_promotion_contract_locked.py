@@ -39,7 +39,8 @@ cli_runner = CliRunner()
 #: The locked top-level keys ``promote status`` emits (the ``Promotion`` view).
 #: Adding, dropping, or renaming a key is an output-contract change — a
 #: *major*-level event under "Surface is a versioned interface". Update this
-#: snapshot only with that deliberate version decision.
+#: snapshot only with that deliberate version decision. ``merged_sha`` was added
+#: in CAL-1115 (a clean merge records its HEAD there).
 EXPECTED_PROMOTION_OUTPUT_KEYS = {
     "promotion_id",
     "repo",
@@ -50,6 +51,7 @@ EXPECTED_PROMOTION_OUTPUT_KEYS = {
     "updated_at",
     "worktree_path",
     "promotion_branch",
+    "merged_sha",
     "gated_sha",
     "attempts",
     "pr_url",
