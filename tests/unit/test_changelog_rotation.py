@@ -42,21 +42,35 @@ _ARCHIVE = _REPO_ROOT / _ARCHIVE_DIR / "2026.md"
 _ROOT_BYTE_BOUND = 60_000
 _ROOT_LINE_BOUND = 250
 
-#: Distinctive strings from *released* entries (on ``main`` before this change) —
-#: they must live in the archive and be gone from the root. ``18 skills → 12`` is
-#: the oldest entry (bottom of the file); the installer/onboarding realign is
-#: CAL-835, the boundary released entry.
+#: Distinctive strings from *released* entries — they must live in the archive
+#: and be gone from the root. These sentinels pin the **rotation boundary**, so
+#: they move at each release: an entry graduates from ``_UNRELEASED_SENTINELS``
+#: to here when the ``dev → main`` promotion ships it. Updating them is the
+#: deliberate step the release performs, the way the verb-contract lock forces
+#: its snapshot to be re-taken on purpose rather than drift.
+#:
+#: ``18 skills → 12`` is the oldest entry overall; the installer/onboarding
+#: realign (CAL-835) was the boundary at the CAL-1011 rotation. The last three
+#: are the 2026-07-16 release window (CAL-906 oldest … CAL-1108 newest), which
+#: rotated whole.
 _RELEASED_SENTINELS = (
     "18 skills → 12",
     "realign the installer/onboarding doc names",
+    "ledger-backed spend breakers for the autonomous loop",  # CAL-906
+    "a terminal `shipped` status for proposals",  # CAL-1009
+    "the cleanup pre-flight is sanctioned",  # CAL-1108
 )
 
 #: Distinctive strings from *unreleased* entries (dev-only, newer than the last
 #: release) — they must stay in the root ``[Unreleased]`` window.
-_UNRELEASED_SENTINELS = (
-    "a terminal `shipped` status for proposals",  # CAL-1009 (newest)
-    "ledger-backed spend breakers for the autonomous loop",  # CAL-906 (oldest kept)
-)
+#:
+#: **Empty immediately after a release**, which is the correct state rather than
+#: a gap: the promotion rotates the whole window, so nothing is dev-only until
+#: the next change lands. The contract the window itself carries is pinned by
+#: :func:`test_root_keeps_the_unreleased_window`'s heading assertion, which does
+#: not depend on this tuple. Add a sentinel here when an entry should survive a
+#: future rotation.
+_UNRELEASED_SENTINELS: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
