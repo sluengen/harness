@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from harness import promotion as promotion_mod
 from harness.cli import _git as git_mod
 from harness.cli import checkpoint as checkpoint_mod
 from harness.cli import close as close_mod
@@ -103,6 +104,20 @@ def test_start_fetch_passes_network_timeout(monkeypatch: pytest.MonkeyPatch) -> 
     assert rev == [None]
 
 
+def test_promote_fetch_origin_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion.fetch_origin`` is a network site (CAL-1004): its
+    ``git fetch origin`` carries the network timeout."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_mod, "run_git", _recorder(calls))
+
+    promotion_mod.fetch_origin(Path("/repo"))
+
+    fetch = [t for a, t in calls if a[0] == "fetch"]
+    assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
 def test_close_fetch_and_push_pass_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,6 +188,17 @@ def test_start_fetch_timeout_returns_none(monkeypatch: pytest.MonkeyPatch) -> No
     """A fetch that times out is a clean restart signal, not a raised error."""
     monkeypatch.setattr(start_mod, "run_git", _raise_timeout_on("fetch"))
     assert start_mod._fetch_origin_branch(Path("/repo"), "harness/x") is None
+
+
+def test_promote_fetch_origin_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fetch that times out is surfaced as a ``PromotionMechanicsError`` — the
+    promotion cannot proceed on unreachable refs (not a silent restart)."""
+    monkeypatch.setattr(promotion_mod, "run_git", _raise_timeout_on("fetch"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_mod.fetch_origin(Path("/repo"))
+    assert exc_info.value.reason == "fetch_failed"
 
 
 def test_close_fetch_timeout_raises_close_error(

@@ -17,6 +17,7 @@ The remote is a local bare repo, so ``git fetch origin`` is real but offline.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -24,7 +25,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from harness import promotion as mechanics
 from harness.cli import app
+from harness.state import promotions
+from harness.state.promotions import Promotion
 
 cli_runner = CliRunner()
 
@@ -244,3 +248,116 @@ def test_continue_on_unknown_promotion_is_not_found(work: Path) -> None:
     )
     assert result.exit_code == 2, result.output
     assert json.loads(result.output)["error"] == "not_found"
+
+
+def test_continue_on_clean_promotion_is_not_resumable(work: Path) -> None:
+    """``continue`` only resumes a conflict awaiting repair — a clean ``opened``
+    merge has nothing to continue and is refused ``not_resumable``."""
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert started["status"] == "opened"
+
+    result = cli_runner.invoke(
+        app, ["promote", "continue", "--promotion-id", started["promotion_id"], "--repo", str(work)]
+    )
+    assert result.exit_code == 2, result.output
+    refusal = json.loads(result.output)
+    assert refusal["reason"] == "not_resumable"
+    assert refusal["status"] == "opened"
+
+
+def test_continue_with_missing_worktree_is_refused(work: Path) -> None:
+    """An ``agent_may_fix`` promotion whose worktree directory is gone is refused
+    ``worktree_missing`` — there is nothing to resume from."""
+    db_path = work / ".harness" / "harness.db"
+    promo = Promotion(
+        promotion_id="p-missing",
+        repo=str(work),
+        from_branch="dev",
+        to_branch="staging",
+        status="agent_may_fix",
+        created_at="2026-07-17T00:00:00Z",
+        updated_at="2026-07-17T00:00:00Z",
+        worktree_path=str(work / ".worktrees" / "harness" / "gone"),
+    )
+    asyncio.run(promotions.insert_promotion(promo, db_path=db_path))
+
+    result = cli_runner.invoke(
+        app, ["promote", "continue", "--promotion-id", "p-missing", "--repo", str(work)]
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "worktree_missing"
+
+
+# --- mechanics-level failure branches (parity with WorktreeNode) --------------
+
+
+def test_fetch_origin_nonzero_raises(tmp_path: Path) -> None:
+    """A non-zero ``git fetch origin`` (an unreachable remote) surfaces as
+    ``fetch_failed`` — the promotion cannot proceed on stale refs."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "dev")
+    _git(repo, "remote", "add", "origin", str(tmp_path / "does-not-exist.git"))
+    with pytest.raises(mechanics.PromotionMechanicsError) as exc_info:
+        mechanics.fetch_origin(repo)
+    assert exc_info.value.reason == "fetch_failed"
+
+
+def test_create_worktree_refuses_existing_path(work: Path) -> None:
+    """``create_promotion_worktree`` never silently reuses a path — a pre-existing
+    directory at the promotion-id location is refused ``worktree_exists``."""
+    mechanics.fetch_origin(work)
+    existing = work / ".worktrees" / "harness" / "collide"
+    existing.mkdir(parents=True)
+    with pytest.raises(mechanics.PromotionMechanicsError) as exc_info:
+        mechanics.create_promotion_worktree(
+            work, "collide", to_branch="staging", branch_name="promote/x"
+        )
+    assert exc_info.value.reason == "worktree_exists"
+
+
+def test_create_worktree_fails_on_unknown_target(work: Path) -> None:
+    """``git worktree add`` from a target ``origin`` does not carry surfaces as
+    ``worktree_create_failed`` and leaves no half-made directory behind."""
+    mechanics.fetch_origin(work)
+    with pytest.raises(mechanics.PromotionMechanicsError) as exc_info:
+        mechanics.create_promotion_worktree(
+            work, "badtarget", to_branch="ghost", branch_name="promote/x"
+        )
+    assert exc_info.value.reason == "worktree_create_failed"
+    assert not (work / ".worktrees" / "harness" / "badtarget").exists()
+
+
+def test_unrelated_histories_is_merge_failed(tmp_path: Path) -> None:
+    """A pair whose branches share no history is a real git error (not a content
+    conflict): ``start`` refuses ``merge_failed`` and tears its worktree down."""
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "-b", "dev", str(origin))
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(work, "init", "-b", "dev")
+    _git(work, "config", "user.email", "test@example.com")
+    _git(work, "config", "user.name", "Test")
+    _git(work, "remote", "add", "origin", str(origin))
+    (work / ".gitignore").write_text(".harness/\n.worktrees/\n")
+    (work / "a.txt").write_text("dev root\n")
+    _git(work, "add", ".")
+    _git(work, "commit", "-m", "dev root")
+    _git(work, "push", "-u", "origin", "dev")
+    # An orphan staging with no shared ancestry.
+    _git(work, "checkout", "--orphan", "staging")
+    _git(work, "rm", "-rf", ".")
+    (work / "b.txt").write_text("staging root\n")
+    _git(work, "add", ".")
+    _git(work, "commit", "-m", "staging root")
+    _git(work, "push", "-u", "origin", "staging")
+    _git(work, "checkout", "dev")
+
+    result = _start(work, "--from", "dev", "--to", "staging")
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "merge_failed"
+    # The fresh worktree was cleaned up — nothing left to resume from.
+    assert not (work / ".worktrees" / "harness").exists() or not any(
+        (work / ".worktrees" / "harness").iterdir()
+    )
