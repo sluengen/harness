@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.1.5 -->
+<!-- guidance:reviewer@0.1.6 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -37,11 +37,11 @@ Most Medium and Low findings are small fixes on code already touched — return 
 
 ## Review engine — Claude in-container, Codex host-only
 
-`harness review` selects the engine with `--engine claude|codex` (**default `claude`**). **In-container, the engine is Claude**: Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container, so `--engine codex` degrades there. Rather than grant that container new privileges — it reviews untrusted diffs — `--engine codex` is a **host-only** cross-model option, run where `bwrap` and `~/.codex` auth are available (ADR [`0002`](../specs/decisions/0002-in-container-review-engine.md)). So a `/harness run` review inside the container reviews on Claude; reach for host-side `--engine codex` when you want a deliberate cross-model second opinion.
+`harness review` selects the engine with `--engine claude|codex` (**default `claude`**). **In-container, the engine is Claude**: Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container, so `--engine codex` degrades there. Rather than grant that container new privileges — it reviews untrusted diffs — `--engine codex` is a **host-only** cross-model option, run where `bwrap` and `~/.codex` auth are available (the harness's in-container-review-engine decision, ADR 0002). So a `/harness run` review inside the container reviews on Claude; reach for host-side `--engine codex` when you want a deliberate cross-model second opinion.
 
 ## The review→fix stop rule
 
-One bounded rule governs how many times a run may loop through fix → re-review before it stops and escalates — the same rule the harness enforces in code (`harness/loop_budget.py`, thresholds in `CONTEXT.md` → `loop:`):
+One bounded rule governs how many times a run may loop through fix → re-review before it stops and escalates — the same rule the harness enforces in code (thresholds in `CONTEXT.md` → `loop:`):
 
 - **Cycles 1–3 run unconditionally.** A FAIL in this window is normal iteration — fix the root cause and re-review.
 - **After the 3rd, assess convergence on each FAIL** before spending another cycle. If the fixes are not converging on the same shrinking set of issues, stop and escalate rather than churn.

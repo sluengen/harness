@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.6.0 -->
+<!-- guidance:assess@0.6.1 -->
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code`, `architecture`, or `system`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
@@ -7,7 +7,7 @@ Runs the `steward` over the codebase (or the guidance itself), produces a dated 
 
 ## One steward, scope selects the standards
 
-There is **one** `steward` agent — the *process*. The scope you pass names the *what*, and the *domain standards* are skills the steward pulls just-in-time (`specs/architecture-principles.md`, "Assessment layering"). The command does not pick an agent per domain; it parameterises the one steward.
+There is **one** `steward` agent — the *process*. The scope you pass names the *what*, and the *domain standards* are skills the steward pulls just-in-time (the "Assessment layering" decision). The command does not pick an agent per domain; it parameterises the one steward.
 
 | Scope | Domain skills (pulled JIT) | Audits |
 |---|---|---|
