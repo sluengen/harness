@@ -193,6 +193,32 @@ def test_automode_sanctions_assess_finding_filing() -> None:
     )
 
 
+def test_automode_sanctions_the_worktree_cleanup_preflight() -> None:
+    """CAL-1108: `/harness routine build` step 0 instructs the merged-worktree
+    cleanup as its housekeeping pre-flight, and it was refused on every tick —
+    the same guidance-instructs-what-the-runner-cannot-do shape CAL-1087 fixed
+    everywhere else.
+
+    The bound is what makes it safe, and it is the whole question for a delete:
+    the command removes only branches already merged into an integration branch,
+    plus orphaned directories past the age threshold. It never touches an
+    unmerged or in-flight worktree — including a reclaimed ticket's preserved WIP
+    branch, which lives on `origin` and is fetched by `--resume`."""
+    clause = _clause_containing("worktrees cleanup")
+    assert clause, (
+        "autoMode.allow must sanction the `harness worktrees cleanup --merged` "
+        "pre-flight that `/harness routine build` step 0 instructs (CAL-1108)."
+    )
+    assert "merged" in clause, (
+        "the cleanup clause must name the merged-only bound — the property that "
+        "makes a delete safe is that the branch already landed (CAL-1108)."
+    )
+    assert "unmerged" in clause, (
+        "the cleanup clause must state what it will NOT touch. An allowance to "
+        "delete is only as safe as the boundary it names (CAL-1108)."
+    )
+
+
 def test_automode_sanctions_the_gated_close_verb() -> None:
     """CAL-1087: `harness close` is what lands a finished run — the Linear
     transition plus the merge. Unsanctioned, the loop can build and review its

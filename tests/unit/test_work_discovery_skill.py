@@ -223,6 +223,59 @@ def test_runbook_triggers_are_thin_callers() -> None:
 # --- AC-2: the runbook documents the scheduled-task re-sync --------------------
 
 
+# --- CAL-1108: a refused write is a config gap, not a bug in this skill -------
+
+
+def test_work_discovery_still_instructs_the_deferral_write() -> None:
+    """CAL-1108 (the regression guard proper): the deferral step must keep
+    instructing the tracker write — a comment naming what the ticket needs, and
+    the ``decision`` label.
+
+    This is pinned because it was once removed. A CAL-1087 build rewrote the step
+    to "surface it in the run's report" on the premise that an unattended runner
+    cannot write to a tracker; the premise was false (the refusal names writes
+    *the task file requests* — a **configuration** gap), and the rewrite would
+    have shipped, auto-pulling, to every consuming repo whose posture already
+    permits the write, telling a capable runner to go quiet. Reverted whole; this
+    guard is what makes the reversion stick."""
+    body = _section(SKILL.read_text(), "Actionability")
+    assert "comment" in body.lower(), (
+        "work-discovery's deferral step must still instruct a comment naming "
+        "what the ticket needs. If a refusal prompted its removal, fix the "
+        "posture instead — the write is sanctioned in settings, not disowned "
+        "here (CAL-1108)."
+    )
+    assert "`decision`" in body, (
+        "work-discovery's deferral step must still instruct the `decision` "
+        "label — it is what removes the ticket from the next tick's candidate "
+        "set (CAL-1108)."
+    )
+
+
+def test_work_discovery_names_the_posture_lever() -> None:
+    """CAL-1108: the skill must name the lever, so an agent whose write is
+    refused fixes the configuration rather than concluding this skill is wrong.
+
+    Without this, the refusal reads as a guidance bug — and the agent's next move
+    is to hand-edit its *installed* guidance, which the process doc forbids, or
+    to file an upstream ticket against a step that was never broken. It has gone
+    that way twice."""
+    text = SKILL.read_text()
+    assert "autoMode" in text, (
+        "work-discovery must name `autoMode.allow` — the natural-language "
+        "allowlist that sanctions an unattended run's writes — as the lever to "
+        "reach for when a write is refused (CAL-1108)."
+    )
+    assert "settings/" in text, (
+        "work-discovery must name where the posture lives (the profile's "
+        "settings file), not merely that one exists (CAL-1108)."
+    )
+    assert re.search(r"configuration|posture", text, re.IGNORECASE), (
+        "work-discovery must state the direction of the fix: a refused write is "
+        "a configuration gap, so change the posture, not this skill (CAL-1108)."
+    )
+
+
 def test_runbook_documents_trigger_resync() -> None:
     """AC-2: ``RUNBOOK.md`` documents re-syncing the two user-local scheduled
     tasks into thin callers of the versioned routine, and names the drift it
