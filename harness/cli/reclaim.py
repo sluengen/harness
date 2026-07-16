@@ -74,6 +74,7 @@ from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
+from harness.layers import linear_enabled
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -84,6 +85,12 @@ from harness.linear import (
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
+
+# size: one cohesive verb — the single-target reclaim (revert → reconcile →
+# preserve) plus the --stale sweep that is defined as an enumerate-and-filter
+# layer *over* that same path, which splitting would only scatter across files.
+# CAL-1104 threaded the tracker layer through both arms so a tracker-less repo
+# reclaims locally, pushing it just over the 500-line limit.
 
 __all__ = [
     "ReclaimOutput",
@@ -242,9 +249,19 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
 
 
 async def _run_reclaim(
-    db_path: Path, run_id_arg: str | None, ticket_arg: str | None
+    db_path: Path,
+    run_id_arg: str | None,
+    ticket_arg: str | None,
+    *,
+    tracker: bool = True,
 ) -> ReclaimOutput:
-    """Reclaim the resolved target; raise :class:`_ReclaimError` on refusal/error."""
+    """Reclaim the resolved target; raise :class:`_ReclaimError` on refusal/error.
+
+    ``tracker`` is the repo's ``layers.linear`` (CAL-1104). With it off there is
+    no ticket to revert, so step 1 is skipped and reclaim reduces to its local
+    half — reconcile the ledger, preserve the branch — which is the half that
+    unblocks a fresh ``start`` on the same identifier.
+    """
     run_id, status, ticket, branch = await _resolve_target(
         db_path, run_id_arg, ticket_arg
     )
@@ -279,8 +296,11 @@ async def _run_reclaim(
                 2,
             )
 
-    # 1. Revert the ticket FIRST (load-bearing — see module docstring).
-    await _revert_ticket(ticket, run_id, branch)
+    # 1. Revert the ticket FIRST (load-bearing — see module docstring). Skipped
+    #    tracker-less: there is no ticket state for the next run to read, so the
+    #    ordering the revert-first rule protects does not arise.
+    if tracker:
+        await _revert_ticket(ticket, run_id, branch)
 
     # 2. Reconcile the local ledger SECOND (secondary cleanup), only when there
     #    is an in-flight run to flip. The branch/worktree are left intact (D4).
@@ -310,7 +330,12 @@ async def _run_reclaim(
 
 
 async def _run_stale_sweep(
-    db_path: Path, *, project: str, older_than: str, threshold: timedelta
+    db_path: Path,
+    *,
+    project: str,
+    older_than: str,
+    threshold: timedelta,
+    tracker: bool = True,
 ) -> SweepOutput:
     """Enumerate the project's In-Progress tickets and reclaim each idle past
     ``threshold``; raise :class:`_ReclaimError` on a Linear/config failure.
@@ -319,7 +344,23 @@ async def _run_stale_sweep(
     every stale ticket is reclaimed through :func:`_run_reclaim`'s ``--ticket``
     arm, so the revert + ledger-reconcile + branch-preserve behaviour is shared,
     not re-implemented. A ticket inside the threshold is left untouched.
+
+    Tracker-less (``layers.linear: false``, CAL-1104) the sweep is a **clean
+    no-op**: staleness keys entirely on the tracker's ``updatedAt`` (proposal
+    D2), so with no tracker there is no In-Progress ticket state to enumerate and
+    the honest result is "scanned nothing". It reports empty rather than failing
+    because the Build routine runs this every tick as a pre-flight — an error
+    here would wedge the loop it exists to unblock.
     """
+    if not tracker:
+        return SweepOutput(
+            project=project,
+            older_than=older_than,
+            scanned=0,
+            reclaimed=[],
+            skipped=[],
+        )
+
     try:
         api_key = linear_api_key()
     except LinearConfigError as exc:
@@ -411,6 +452,10 @@ def reclaim_command(
 ) -> None:
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
     db_path = _resolve_db_path(db)
+    # ``reclaim`` has no ``--repo`` flag: like its read-side siblings it is
+    # anchored on the CWD (the same place ``_resolve_db_path`` defaults the
+    # ledger to), so the layer is read from the CWD's CONTEXT.md (CAL-1104).
+    tracker = linear_enabled(Path.cwd())
 
     def _do() -> SweepOutput | ReclaimOutput:
         if stale:
@@ -436,12 +481,13 @@ def reclaim_command(
                     project=project,
                     older_than=older_than,
                     threshold=threshold,
+                    tracker=tracker,
                 )
             )
         # Exactly one selector: a bare run-id or --ticket, never both or neither.
         if (run_id is None) == (ticket is None):
             raise _ReclaimError("provide exactly one of <run-id> or --ticket <ID>", 2)
-        return asyncio.run(_run_reclaim(db_path, run_id, ticket))
+        return asyncio.run(_run_reclaim(db_path, run_id, ticket, tracker=tracker))
 
     result = run_verb(_do, json_output=json_output)
 

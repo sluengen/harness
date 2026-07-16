@@ -90,6 +90,7 @@ from harness.events.payloads import (
 )
 from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
+from harness.layers import linear_enabled
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -128,6 +129,11 @@ class CloseOutput(BaseModel):
     Git merge/push output stays inside the verb and never appears here
     (context-economy AC).  The fields are the bounded status an orchestrating
     agent needs to confirm the close landed.
+
+    ``ticket_done`` records whether a tracker transition actually happened, so a
+    tracker-less close (``layers.linear: false``, CAL-1104) reports ``False`` —
+    the merge still landed. It is not a success flag: read ``merged`` /
+    ``status`` for that.
     """
 
     run_id: str
@@ -251,12 +257,17 @@ async def _run_close(
         raise _CloseError(gate[1], 2, reason=gate[0])
 
     # 5. Validate Linear is configured before any local side effect, so a
-    #    missing key does not leave a half-merged tree.
-    try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
-        raise _CloseError(str(exc), 2) from exc
-    client = LinearClient(api_key=api_key)
+    #    missing key does not leave a half-merged tree. Tracker-less
+    #    (``layers.linear: false``, CAL-1104) there is nothing to configure and
+    #    nothing to transition — the gate above is unchanged, so the merge is
+    #    protected exactly as it is with a tracker.
+    client: LinearClient | None = None
+    if linear_enabled(repo_root):
+        try:
+            api_key = linear_api_key()
+        except LinearConfigError as exc:
+            raise _CloseError(str(exc), 2) from exc
+        client = LinearClient(api_key=api_key)
 
     # 6. Merge + push (sync git, offloaded to a thread).  Output is captured and
     #    discarded inside the verb — it never enters the printed JSON.
@@ -272,11 +283,15 @@ async def _run_close(
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
 
-    # 7. Transition the ticket to Done (remote side effect).
-    try:
-        await client.transition_to_done(ticket)
-    except (LinearNotFound, LinearRequestError) as exc:
-        raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
+    # 7. Transition the ticket to Done (remote side effect). Skipped tracker-less
+    #    — and reported as such in step 10 rather than claimed.
+    ticket_done = False
+    if client is not None:
+        try:
+            await client.transition_to_done(ticket)
+        except (LinearNotFound, LinearRequestError) as exc:
+            raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
+        ticket_done = True
 
     # 8. Flip the run row to closed and record the close event in one
     #    transaction — see ``_mark_run_closed`` (CAL-1002).
@@ -319,7 +334,7 @@ async def _run_close(
         ticket=ticket,
         reviewed_sha=head_sha,
         merged=True,
-        ticket_done=True,
+        ticket_done=ticket_done,
         status="closed",
     )
 

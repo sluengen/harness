@@ -162,12 +162,12 @@ No separate `verify` command in v1. Gate execution is part of `start` and `conti
 
 Spawned implementation issues:
 
-- 1 → [CAL-1112](https://linear.app/form-coffee/issue/CAL-1112/record-promotion-branch-policy-and-lifecycle-design)
-- 2 → [CAL-1113](https://linear.app/form-coffee/issue/CAL-1113/add-promotion-mvp-cli-surface-contract)
-- 3 → [CAL-1114](https://linear.app/form-coffee/issue/CAL-1114/add-promotion-ledger-and-json-contracts)
-- 4 → [CAL-1115](https://linear.app/form-coffee/issue/CAL-1115/implement-promotion-worktree-and-merge-mechanics)
-- 5 → [CAL-1116](https://linear.app/form-coffee/issue/CAL-1116/run-promotion-gate-and-capture-evidence)
-- 6 → [CAL-1117](https://linear.app/form-coffee/issue/CAL-1117/create-promotion-prs-from-deterministic-evidence)
-- 7 → [CAL-1118](https://linear.app/form-coffee/issue/CAL-1118/escalate-blocked-promotions-into-linear-tickets)
-- 8 → [CAL-1119](https://linear.app/form-coffee/issue/CAL-1119/document-outer-agent-promotion-routine)
-- 9 → [CAL-1120](https://linear.app/form-coffee/issue/CAL-1120/document-sequenced-per-repo-update-guidance-jobs)
+- 1 → CAL-1112
+- 2 → CAL-1113
+- 3 → CAL-1114
+- 4 → CAL-1115
+- 5 → CAL-1116
+- 6 → CAL-1117
+- 7 → CAL-1118
+- 8 → CAL-1119
+- 9 → CAL-1120
