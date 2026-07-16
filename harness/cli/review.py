@@ -73,12 +73,10 @@ Exit codes (mirroring ``harness start``):
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal
 
 import typer
 from pydantic import BaseModel
@@ -88,6 +86,19 @@ from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.review_protocol import (
+    _REVIEW_PROMPT,
+    DEFAULT_ENGINE,
+    Engine,
+    Runner,
+    RunResult,
+    Verdict,
+    _build_cmd,
+    is_codex_usage_limit,
+    is_sandbox_blocked_defer,
+    is_sandbox_init_failure,
+    scan_submit_line,
+)
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
@@ -106,17 +117,18 @@ from harness.loop_budget import (
 )
 from harness.state import store
 
-# size: one cohesive verb — the review prompt, bounded output model, SUBMIT-line
-# scanner, the engine-failure detectors (usage-limit → Claude fallback, and two
-# sandbox walls → infra exit: codex's non-zero-exit/stderr case and its exit-0
-# masquerading-defer case; CAL-702/CAL-866/CAL-924), the ledger-backed spend
-# breakers (cycle ceiling + wall-clock; CAL-906), the best-effort In-Review /
-# In-Progress tracker transitions (CAL-1103), and the single-event-loop
-# orchestration.  The detectors + breaker glue have one caller (`_run_review`);
-# splitting them off to chase the 500-line limit would fragment the verb, not
-# clarify it. The breaker *decision* is already factored out to
-# harness.loop_budget (pure), and the verify gate to harness.gate (CAL-1082) —
-# this verb holds only their call sites.
+# size: the review verb — one cohesive orchestration on a single asyncio event
+# loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
+# wall-clock; CAL-906), the verify-gate evidence check (CAL-1082), HEAD-bound SHA
+# capture, the usage-limit → Claude fallback (CAL-702), event emission, and the
+# best-effort In-Review / In-Progress tracker transitions (CAL-1103).  The pure
+# engine-protocol layer — the prompt, the SUBMIT scanner, the per-engine command
+# builder, and the three engine-failure detectors — was split out to
+# harness.cli.review_protocol (CAL-1107); this verb imports and re-exports it.
+# What remains is verb glue with a single caller (`_run_review`): the breaker
+# *decision* is already in harness.loop_budget (pure) and the gate in
+# harness.gate, so this holds only their call sites — splitting them further
+# would fragment the verb, not clarify it.
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -134,69 +146,10 @@ __all__ = [
     "NO_GATE_EVIDENCE_REASON",
 ]
 
-# Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
-NO_SUBMIT_SENTINEL = "reviewer emitted no valid SUBMIT line"
-
-# The verdicts the SUBMIT line may carry.  Anything else is treated as garbled.
-_VALID_VERDICTS: frozenset[str] = frozenset({"pass", "fail", "defer"})
-
-Verdict = Literal["pass", "fail", "defer"]
-
-# The review engines.  Both are CLI subprocesses emitting the same ``SUBMIT:``
-# contract — never the Agent SDK (CAL-701; architecture-principles "a review
-# engine is a CLI subprocess").  ``claude`` is the default: it is available on
-# the standard tier and auto-compacts, so the gate does not degrade to a false
-# ``fail`` when the Codex tier is depleted.  ``codex`` stays opt-in for a
-# cross-model second opinion.
-Engine = Literal["claude", "codex"]
-DEFAULT_ENGINE: Engine = "claude"
-
-class RunResult(NamedTuple):
-    """The full result of one engine subprocess: stdout, stderr, exit code.
-
-    The CAL-702 usage-limit fallback needs stderr **and** the exit code to tell
-    an exhausted Codex tier from an ordinary failure — the limit signal lands on
-    stderr with a non-zero exit, never on stdout (captured empirically). The
-    runner therefore returns all three rather than streaming stdout alone.
-    """
-
-    stdout: str
-    stderr: str
-    returncode: int
-
-
-# A runner takes keyword args (cmd, stdin, env, cwd, timeout) and returns a
-# RunResult. Default = the real engine subprocess; tests inject a fake. The
-# ``timeout`` (seconds, or None) is the per-subprocess ceiling (CAL-1004); a
-# fake may accept and ignore it.
-Runner = Callable[..., Awaitable[RunResult]]
-
-
-# ---------------------------------------------------------------------------
-# Review prompt
-# ---------------------------------------------------------------------------
-
-_REVIEW_PROMPT = """\
-You are the reviewer. Review the implementation at the current git HEAD of this
-worktree against the ticket's acceptance criteria and the repository's
-engineering standards.
-
-When you have finished, you MUST signal your verdict by emitting a single line
-of the exact form:
-
-SUBMIT: <json>
-
-where <json> is a JSON object with these fields:
-  - verdict: one of "pass", "fail", "defer"
-  - issues: array of strings (empty on a clean pass; the blocking findings on a
-    fail; the reason to defer on a defer)
-  - commit_message: string (optional) — a suggested commit message on a pass
-  - deferred_brief: string (optional) — a brief for the deferred follow-up
-
-Emit exactly one SUBMIT line. Example:
-
-SUBMIT: {"verdict": "pass", "issues": []}
-"""
+# The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
+# builder, failure detectors) lives in :mod:`harness.cli.review_protocol` and is
+# imported above; the names are re-exported here so ``from harness.cli.review
+# import scan_submit_line`` (and the tests' ``review_mod.<name>``) keep resolving.
 
 
 # ---------------------------------------------------------------------------
@@ -240,88 +193,10 @@ class _ReviewError(VerbError):
 
 
 # ---------------------------------------------------------------------------
-# SUBMIT-line scanner
+# Default runner (real subprocess) — production path. The prompt, the SUBMIT
+# scanner, and the per-engine ``_build_cmd`` builder are imported from
+# harness.cli.review_protocol.
 # ---------------------------------------------------------------------------
-
-
-class _Parsed(BaseModel):
-    """Internal parse result of the SUBMIT line."""
-
-    verdict: Verdict
-    issues: list[str]
-    commit_message: str | None = None
-    deferred_brief: str | None = None
-
-
-def scan_submit_line(stdout: str) -> _Parsed:
-    """Scan codex stdout for the first valid ``SUBMIT: <json>`` line.
-
-    A line is valid when it starts with ``SUBMIT:`` (after stripping), the JSON
-    after the prefix parses to an object, and ``verdict`` is one of
-    ``pass``/``fail``/``defer``.  Missing, malformed, or unknown-verdict SUBMIT
-    lines yield a recorded ``fail`` carrying the :data:`NO_SUBMIT_SENTINEL`
-    issue — the verb never raises on a bad reviewer, it records the failure.
-    """
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("SUBMIT:"):
-            continue
-        json_part = stripped[len("SUBMIT:"):].strip()
-        try:
-            payload = json.loads(json_part)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        verdict = payload.get("verdict")
-        if verdict not in _VALID_VERDICTS:
-            continue
-        raw_issues = payload.get("issues", [])
-        issues = [str(i) for i in raw_issues] if isinstance(raw_issues, list) else []
-        commit_message = payload.get("commit_message")
-        deferred_brief = payload.get("deferred_brief")
-        return _Parsed(
-            verdict=verdict,
-            issues=issues,
-            commit_message=commit_message if isinstance(commit_message, str) else None,
-            deferred_brief=deferred_brief if isinstance(deferred_brief, str) else None,
-        )
-
-    # No parseable SUBMIT line — record a fail with the sentinel issue.
-    return _Parsed(verdict="fail", issues=[NO_SUBMIT_SENTINEL])
-
-
-# ---------------------------------------------------------------------------
-# Engine command builders + default runner (real subprocess) — production path.
-# ---------------------------------------------------------------------------
-
-
-def _build_cmd(engine: Engine) -> list[str]:
-    """Build the review invocation for ``engine`` — a CLI subprocess (CAL-701).
-
-    Both engines are headless CLIs fed the review prompt on **stdin** and scanned
-    for a single ``SUBMIT: <json>`` line; neither uses the Agent SDK.  Both run
-    **read-only**: the diff under review and the ticket are untrusted prompt
-    content, so a read-only posture stops prompt-injection from mutating the host.
-
-    * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
-      it may read files / run read-only git, but carries no edit/write/bypass
-      capability).
-    * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
-      (matching the published ``commands/build.md`` Codex-engine guidance), reading
-      the prompt from ``-`` (stdin).  This replaces the earlier
-      ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
-    """
-    if engine == "claude":
-        return ["claude", "-p", "--permission-mode", "plan"]
-    return [
-        "codex",
-        "exec",
-        "--sandbox",
-        "read-only",
-        "--ephemeral",
-        "-",
-    ]
 
 
 async def _default_runner(
@@ -379,50 +254,12 @@ async def _default_runner(
 
 
 # ---------------------------------------------------------------------------
-# Codex usage-limit detection (CAL-702)
+# Verb exit codes + machine-readable refusal reasons.  The engine-failure
+# detectors that classify a subprocess result (usage-limit, the two sandbox
+# walls) live in harness.cli.review_protocol; the exit codes and reasons below
+# are the verb's own contract — they name the breaker / gate / infra outcomes the
+# orchestrator branches on — so they stay here.
 # ---------------------------------------------------------------------------
-
-# The stable phrase ``codex exec`` prints to **stderr** when the tier is
-# exhausted, captured empirically (CAL-702, 2026-06-15). The full real line was:
-#
-#   ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/
-#   explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase
-#   more credits or try again at Jun 18th, 2026 8:18 PM.
-#
-# The URLs and the reset date vary run-to-run; the lowercased phrase below is the
-# invariant core. On a usage limit stdout is empty and the process exits 1.
-_CODEX_USAGE_LIMIT_MARKER = "you've hit your usage limit"
-
-
-def is_codex_usage_limit(stderr: str, returncode: int) -> bool:
-    """True iff a Codex run failed *specifically* because the tier is exhausted.
-
-    Matches narrowly — the stable usage-limit phrase (case-insensitive) on a
-    non-zero exit — so an ordinary Codex failure does NOT trigger fallback.
-    Errors are never swallowed: a real review failure stays a visible ``fail``;
-    only a verified quota wall degrades gracefully to the Claude engine.
-    """
-    if returncode == 0:
-        return False
-    return _CODEX_USAGE_LIMIT_MARKER in stderr.lower()
-
-
-# ---------------------------------------------------------------------------
-# Review-engine sandbox/init-failure detection (CAL-866)
-# ---------------------------------------------------------------------------
-
-# The stable phrase **bwrap** prints to stderr when it cannot create a user
-# namespace — e.g. ``codex exec --sandbox read-only`` running inside a
-# non-privileged Docker container whose seccomp profile blocks ``CLONE_NEWUSER``.
-# The real captured line was:
-#
-#   bwrap: No permissions to create a new namespace
-#
-# This is an *environment* failure: the engine never got far enough to review
-# anything.  Lowercased invariant core below; the ``bwrap:`` prefix is dropped so
-# the match survives a differently-prefixed wrapper, while staying specific
-# enough that an ordinary failure mentioning "namespace" does not match.
-_SANDBOX_INIT_MARKER = "no permissions to create a new namespace"
 
 # Exit code for an infra failure (the review engine could not run at all).
 # Distinct from a code-review ``fail`` (exit 0), an unexpected error (1), and an
@@ -464,54 +301,6 @@ NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
 # no review event is recorded and the run stops with a distinct, greppable tag
 # rather than hanging until an external kill (exit 143).
 ENGINE_TIMEOUT_REASON = "engine_timeout"
-
-
-def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
-    """True iff a review engine failed because its sandbox could not initialize.
-
-    Mirrors :func:`is_codex_usage_limit`: a narrow stderr match (the stable
-    bwrap namespace phrase, case-insensitive) on a non-zero exit.  Such a failure
-    is *infra*, not a code-review verdict — the engine never reviewed the diff —
-    so the verb surfaces it distinctly (a dedicated exit + ``reason``) instead of
-    letting it fall through to a recorded ``fail``.  The narrowness keeps an
-    ordinary review failure a visible ``fail``: a clean exit, or a failure
-    without the marker, returns ``False``.
-    """
-    if returncode == 0:
-        return False
-    return _SANDBOX_INIT_MARKER in stderr.lower()
-
-
-def is_sandbox_blocked_defer(verdict: str, issues: list[str], engine: Engine) -> bool:
-    """True iff a Codex ``defer`` is really a sandbox-blocked non-review (CAL-924).
-
-    :func:`is_sandbox_init_failure` catches the case where ``codex exec`` itself
-    exits non-zero with the bwrap marker on **stderr**.  It MISSES the subtler
-    case seen in the CAL-906 dogfood: ``codex exec`` exits **0**, but every
-    read-only command it shells out to inspect the diff is killed by bwrap, so
-    Codex reviews nothing yet emits a well-formed
-    ``SUBMIT: {"verdict": "defer", ...}`` whose reasoning is "I could not run any
-    command (bwrap: no permissions to create a new namespace)".  That reads as a
-    normal, shippable ``defer`` though no review happened.
-
-    This detector reads the OTHER channel: the same bwrap marker
-    (:data:`_SANDBOX_INIT_MARKER`, case-insensitive) inside the reviewer's own
-    reasoning — the parsed ``issues``.  It is deliberately narrow:
-
-    * only a ``defer`` — a blocked review cannot ``pass`` or ``fail`` without
-      inspecting the diff, so pass/fail are left untouched;
-    * only the ``codex`` engine — ``claude`` runs in plan mode, never bwrap, so a
-      Claude ``defer`` that merely quotes the phrase is never swallowed.
-
-    A genuine, well-founded defer (a real out-of-scope finding, no marker) stays
-    a recorded ``defer``.  (Honest limit: a codex review that genuinely inspects
-    the diff yet quotes the exact bwrap phrase in its finding would be caught —
-    an acceptably rare shape, weighed against a review that never ran silently
-    shipping.)
-    """
-    if engine != "codex" or verdict != "defer":
-        return False
-    return _SANDBOX_INIT_MARKER in " ".join(issues).lower()
 
 
 async def _invoke_engine(

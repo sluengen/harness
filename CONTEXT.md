@@ -47,7 +47,7 @@ paths:
   decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
 architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
   files:
-    - harness/cli/review.py   # verb orchestration + prompt + SUBMIT parser + per-engine builders + failure detectors + fallback (CAL-1014)
+    - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107 (CAL-1014)
 env:
   file: .env
   linear_token: LINEAR_API_KEY
