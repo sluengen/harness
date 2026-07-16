@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-06-16
-linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739]
+last_updated: 2026-07-16
+linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113]
 ---
 
 # CLI surface — the fixed verb contract
@@ -35,9 +35,22 @@ harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-
 harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]
+
+# Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
+harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
+harness promote continue  [--repo <p>] [--json]   # resume after one bounded repair
+harness promote status    [--repo <p>] [--json]   # read-only lifecycle state
+harness promote pr        [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR
+harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
 ```
 
 This block lists each command's public flags as registered today; `harness <cmd> --help` and the agent-facing [`commands/harness.md`](../../commands/harness.md) are the authoritative per-flag reference. The audited verbs (`start` / `review` / `close`) drive the run lifecycle through the gate; their behaviour is the [verb model](verb-model.md). `start --resume` is the read side of reclamation: when the picked ticket is `reclaimed` and a checkpoint-pushed WIP branch survives, `start` bases the worktree on that branch (fetch + continue) instead of off `dev`, so the new run recovers the dead run's work; it records `base_branch` unchanged (the merge target stays `dev`) and degrades to a clean start when no durable WIP exists (CAL-739, proposal `stale-run-reclamation` D4). `checkpoint` is a fourth lifecycle verb the orchestrating run calls *between* `start` and `close` — after each green increment it pushes the run's `worktree_branch` to `origin` so committed WIP survives the container dying, and appends a `checkpoint` event bound to the pushed SHA. It pushes **only** the feature branch — never the base, never a merge — so the `close` gate is untouched; the event is the durable-WIP signal `reclaim` reads to report a resumable branch (CAL-738, proposal `stale-run-reclamation` D4). Three maintenance commands also mutate, but **outside** the gated lifecycle: `cancel` writes the [run ledger](run-ledger.md) — it marks an in-flight run `cancelled` (a close-without-merge), stamps `completed_at`, and emits a `workflow_failed` event; `reclaim` recovers a run whose orchestrator died — it reverts the stranded Linear ticket to Todo (with a `reclaimed` label + comment), then reuses `cancel`'s ledger transaction to clear the `open` row (so a fresh `start` is not blocked), while **preserving** the worktree/branch; its `--stale` sweep enumerates a project's In-Progress tickets and reclaims each whose Linear `updatedAt` is idle past `--older-than` (default 90m) — keying on time alone (proposal D2), since a dead run's liveness cannot be observed — reusing the single-ticket path per ticket (the bulk pre-flight the Build routine calls); `worktrees cleanup` mutates git/the filesystem by removing stale worktree directories with `git worktree remove --force` (the branch itself is retained). The read/inspection commands surface the ledger without mutating it. Every command runs as a one-shot container exactly as the human's `~/bin/harness` does.
+
+### The promotion lifecycle group
+
+`harness promote` drives release movement as a first-class, audited lifecycle over the universal `dev → staging → main` topology ([ADR 0003](../decisions/0003-promotion-lifecycle.md)). Its v1 subcommands are the real orchestrator **pause points**: `start` opens a promotion (create the worktree + promotion branch, attempt the `--from` → `--to` merge, and classify the result); `continue` resumes after one bounded, in-policy repair; `status` reports the lifecycle state (read-only); `pr` is the success finalizer (push the promotion branch, open the PR); `escalate` is the non-success terminal path (file/update a Linear ticket and mark the promotion `escalated`). The surface is locked in v1 (CAL-1113); the mechanics land against it — the ledger + JSON contracts (CAL-1114), worktree/merge (CAL-1115), gate evidence (CAL-1116), PR creation (CAL-1117), and escalation (CAL-1118) — so the current subcommand bodies are contract stubs that report `not_implemented` rather than half-performing a promotion.
+
+There is **no separate `verify` command** in v1, by design. Gate execution runs *inside* `start` and `continue` — a promotion cannot reach `pr_ready` without fresh gate evidence, the same evidence discipline the `review` / `close` gate enforces — so a standalone `verify` would name a step that is never an independent orchestrator pause/resume point. The pause points are exactly where the outer agent stops and re-enters (open, resume-after-repair, read, finalize, escalate); running the gate is a phase of `start` / `continue`, not a state the orchestrator parks at, so it earns no command of its own.
 
 ### Exit codes are a stable contract
 
