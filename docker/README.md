@@ -192,7 +192,10 @@ directory with no flags or env-var setup.
   (`/run/host-services/ssh-auth.sock`, provided by Docker Desktop) is forwarded
   into the container instead. `GIT_SSH_COMMAND` is set with `-F /dev/null` so the
   macOS `~/.ssh/config` (which carries `UseKeychain yes`, an option Linux ssh
-  rejects) is ignored; auth comes from the forwarded agent.
+  rejects) is ignored; auth comes from the forwarded agent. Docker Desktop
+  exposes that socket as `root`-owned, group-rw, so the wrapper adds
+  `--group-add 0` — the non-root `harness` user (uid 1000) otherwise cannot
+  connect to it and every push fails `Permission denied (publickey)`.
   > **Scope the forwarded key.** The container runs untrusted diff content, and a
   > forwarded agent can authenticate as you to **any** host your loaded keys
   > reach. Load only a key **scoped to the target remote(s)** into the agent for
@@ -279,11 +282,22 @@ fi
 # fallback on every close). Gate on the host actually having a reachable agent
 # holding a key, and let Docker Desktop supply the socket at mount time. Falls
 # back to no-agent on hosts without one.
+#
+# The forwarded socket is `srw-rw---- root root` inside the container. The image
+# runs as `harness` (uid 1000, CAL-1008), which is not root and not in group
+# root, so it cannot connect() to it: every `git push` over SSH fails
+# `Permission denied (publickey)` with an otherwise healthy host agent. The
+# socket is group-rw, so join group 0 to reach it. This does NOT weaken CAL-1008:
+# /root stays mode 700, no mounted credential is group-root, and the only
+# group-0-writable paths are /tmp, /var/tmp and /run/lock, already 1777.
+# Mounting the key instead is a dead end — on macOS it is passphrase-protected in
+# the Keychain and unusable from the mounted file (see "SSH credentials" above).
 SSH_AGENT_ARGS=()
 if [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
   SSH_AGENT_ARGS=(
     -v /run/host-services/ssh-auth.sock:/ssh-agent
     -e SSH_AUTH_SOCK=/ssh-agent
+    --group-add 0
   )
 fi
 
