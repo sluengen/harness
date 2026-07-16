@@ -2,7 +2,7 @@
 name: design-system
 description: Use when doing frontend work in a repo whose design-system layer is on — building UI with its tokens, primitives, and patterns rather than degrading them. Routing and discipline, not a copy of the rules. Pair with ux-design for new-surface design.
 ---
-<!-- guidance:design-system@0.3.0 -->
+<!-- guidance:design-system@0.3.1 -->
 # Design System
 
 How to do frontend work without degrading the design system. Applies only when the repo's `design_system` layer is on; the system itself (tokens, primitives, principles) lives at the path in `CONTEXT.md`, often a dedicated subpackage or repo. This skill is routing and discipline, not a copy of the rules.
@@ -27,6 +27,8 @@ If a primitive exists for what you are building (button, card, field, badge, emp
 **Composition chrome a value scan can't see.** A sheet header, card shell, or list row is a *composition* of several token rules. Every value in it is already a token, so a raw-value scan sees nothing wrong even when the same composition is reimplemented inline across many files — the duplication lives at the composition layer, invisible to a value scan. Before adding chrome composed of three or more token rules, grep for an existing primitive; if that same composition already appears in three or more files, extract one. The rule of three applies to compositions, not just raw values.
 
 **Extract, then finish adopting.** Extracting a primitive is not done at the first callsite. When you extract one from N inline copies, enumerate all N callsites in the ticket's acceptance criteria and migrate every one — or file an explicit follow-up listing the un-migrated callsites by `file:line`. A primitive with partial adoption is drift the value scan cannot see: the inline copies it was meant to retire become a maintained second source of truth.
+
+**Materialise a primitive only when a consumer adopts it in the same change.** A primitive with zero callsites is not a design system — it is dead code the value scan cannot see: it passes every token-purity rule while the composition it was meant to own is duplicated inline and drifts. Build it *from* the first consumer, not ahead of one. A gate should fail an unadopted primitive — adopt it or delete it.
 
 ## Adoption vs conformance
 
