@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.0 -->
+<!-- guidance:harness@0.1.7 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -170,7 +170,7 @@ The loop:
 
 1. **Pick the next ticket** — invoke the **`work-discovery` skill**. It owns the discovery logic: which Todo tickets in project `<repo.project>` (resolved from `CONTEXT.md` → `repo.project`) to consider, how to rank them, and which already-deferred ones to skip. The pick criteria are single-homed in that skill, not restated here — this command owns only the control flow around the invocation.
 2. **Check it is wholly actionable** — apply the `work-discovery` skill's actionability test.
-   - If the skill judges it **not** actionable (it needs a human decision or missing detail), defer it by the skill's deferral path — an unattended runner cannot write to the tracker, so it surfaces the deferral in this run's report and moves on. Then re-pick (step 1) or, if nothing remains, go to step 5.
+   - If the skill judges it **not** actionable (it needs a human decision or missing detail), add a comment to the ticket naming what it needs and label it `decision`. Then re-pick (step 1) or, if nothing remains, go to step 5.
    - If it **can** be actioned, implement it: `/harness run <TICKET>` (primary), or `/build <TICKET>` (fallback) where the harness tool is unavailable.
 3. **Resume a reclaimed ticket from its preserved WIP branch.** If the picked ticket carries the `reclaimed` label, it was reverted from a run whose orchestrator died (the pre-flight, step 0) and may have a **checkpoint-pushed WIP branch**. Start it with `harness start <TICKET> --resume` so the new run continues from that branch (fetch + continue) instead of a clean branch off `dev`, recovering the dead run's work rather than redoing it. When no durable WIP exists — the reclaim preserved no branch, or the branch no longer fetches — `--resume` **falls back** to a normal clean start automatically; it is best-effort and never blocks the queue. Either path is safe from double-merge: the resumed run still merges into `dev`, and `close`'s HEAD-bound gate (a `pass` whose reviewed SHA == HEAD) holds. The resumed worktree already carries the prior WIP, so re-orient via `git log` before continuing (proposal `stale-run-reclamation` D4). A non-`reclaimed` ticket starts normally (no `--resume`).
 4. **Branch off `dev`.** Take your branch off of `dev`. Linear access is via the GraphQL API; the key is in the `.env` file in the repo.

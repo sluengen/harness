@@ -21,6 +21,22 @@ Two guards, because they fail for different reasons:
 * **AC-1/AC-2/AC-4 — the posture is actually present.** Byte-identity alone would
   survive deleting the posture from *both* files, so the promoted content is
   pinned directly against the distributable.
+
+CAL-1087 extends the ``autoMode`` half. The routine's versioned guidance
+instructs three tracker writes — a deferral comment plus the ``decision`` label
+(``work-discovery``, ``/harness routine build`` step 2) and a Linear issue per
+finding (``/assess`` step 2) — and the loop's own ``harness close`` transitions
+the ticket it built. None was sanctioned, so an unattended run had them refused
+with *"the scheduled task explicitly limits write actions to those the task file
+requests"*. That is a **configuration** gap, not a property of unattended runs:
+the same guidance writes to Linear fine wherever the posture names the action.
+The fix belongs here, where the posture is versioned and distributed, rather
+than in guidance degraded to match one under-configured trigger.
+
+Each clause must carry the **bound** that makes it safe, because the clause text
+is what the classifier reads. These tests pin the bound, not merely the
+permission — an allowance that lost its rationale would be a wider grant wearing
+the same name.
 """
 
 from __future__ import annotations
@@ -124,4 +140,80 @@ def test_distributable_omits_stack_specific_webfetch_domains(rule: str) -> None:
     assert rule not in _distributable()["permissions"]["allow"], (
         f"{rule} is Python-stack-specific and must not ship to every repo; "
         f"it belongs in .claude/settings.local.json"
+    )
+
+
+# --- CAL-1087: the writes the routine's own guidance instructs are sanctioned --
+
+
+def _automode_allow() -> list[str]:
+    return [c for c in _distributable()["autoMode"]["allow"] if c != "$defaults"]
+
+
+def _clause_containing(*terms: str) -> str | None:
+    """The single autoMode clause mentioning every one of *terms*, if any."""
+    for clause in _automode_allow():
+        if all(term in clause for term in terms):
+            return clause
+    return None
+
+
+def test_automode_sanctions_the_routine_deferral_write() -> None:
+    """CAL-1087: `work-discovery` tells the routine to comment on a ticket it
+    judged not-yet-actionable and label it `decision`. The posture must permit
+    the write the guidance instructs, bounded to the queue the routine pulls
+    from — otherwise the deferral is refused and the ticket wedges the queue with
+    the reason recorded nowhere a human looks."""
+    clause = _clause_containing("`decision`")
+    assert clause, (
+        "autoMode.allow must sanction the deferral write `work-discovery` "
+        "instructs — a comment plus the `decision` label (CAL-1087)."
+    )
+    assert "comment" in clause.lower(), (
+        "the deferral clause must name the comment, not only the label — the "
+        "comment is what tells the human why the ticket was deferred."
+    )
+    assert "queue" in clause.lower(), (
+        "the deferral clause must state its bound: the queue the routine pulls "
+        "from. An unbounded 'may write to Linear' is a wider grant (CAL-1087)."
+    )
+
+
+def test_automode_sanctions_assess_finding_filing() -> None:
+    """CAL-1087: `/assess` step 2 files every finding and insight as an issue —
+    the assessment's entire output. A finding it cannot file is lost."""
+    clause = _clause_containing("/assess")
+    assert clause, (
+        "autoMode.allow must sanction filing an `/assess` pass's findings as "
+        "issues — the step its own guidance instructs (CAL-1087)."
+    )
+    assert "queue" in clause.lower(), (
+        "the filing clause must state its bound: findings land on the repo's "
+        "Build queue for triage (CAL-1087)."
+    )
+
+
+def test_automode_sanctions_the_gated_close_verb() -> None:
+    """CAL-1087: `harness close` is what lands a finished run — the Linear
+    transition plus the merge. Unsanctioned, the loop can build and review its
+    own work but never ship it.
+
+    The clause must carry the bound that makes it safe: the verb refuses unless
+    a passing review is bound to the current HEAD, so it cannot land unreviewed
+    work. That is the same reviewed-work-only condition the dev-push clause
+    rests on — the permission rides on the gate, not on trust."""
+    clause = _clause_containing("harness close")
+    assert clause, (
+        "autoMode.allow must sanction `harness close` — without it the loop "
+        "cannot land the work it built and reviewed (CAL-1087)."
+    )
+    for term in ("reviewed SHA", "HEAD"):
+        assert term in clause, (
+            f"the close clause must name its gate ({term!r}): the permission is "
+            "safe only because the verb refuses a review that does not cover "
+            "what would merge (CAL-1087)."
+        )
+    assert "stale_review" in clause, (
+        "the close clause must name the refusal reasons that enforce the gate, "
+        "so the bound is auditable rather than asserted (CAL-1087)."
     )

@@ -67,7 +67,7 @@ files:
   # proposal harden-loop-layer WS2/B2). Justified as a distributed skill because the
   # harness is guidance other repos self-host: every self-hosting repo's routine is a
   # second consumer, so it is reuse, not premature abstraction.
-  skills/work-discovery/SKILL.md: { id: work-discovery,          version: 0.2.0, profiles: [harness] }
+  skills/work-discovery/SKILL.md: { id: work-discovery,          version: 0.1.0, profiles: [harness] }
 
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
@@ -81,7 +81,7 @@ files:
   commands/start.md:                  { id: start,                    version: 0.3.0, profiles: [harness] }
   commands/review.md:                 { id: review,                   version: 0.1.3, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
-  commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
+  commands/assess.md:                 { id: assess,                   version: 0.6.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.5.2, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.4.0, profiles: [harness] }
   # The harness's own pipeline command — a distributed surface unit since CAL-764
@@ -90,7 +90,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.0, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.1.7, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
@@ -115,7 +115,7 @@ files:
   process/harness.md:                 { id: process-harness,          version: 0.4.5, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
-  settings/harness.json:              { id: settings-harness,         version: 0.3.0, profiles: [harness] }
+  settings/harness.json:              { id: settings-harness,         version: 0.4.0, profiles: [harness] }
 
 # Source-managed + version-stamped, but NOT installed into a repo (the installer and the registry itself).
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.

@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.7.0 -->
+<!-- guidance:assess@0.6.0 -->
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code`, `architecture`, or `system`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
@@ -33,12 +33,7 @@ Structure and tests stay *lenses inside* `code` — folding them keeps the surfa
 Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following `assessment-craft`: a summary, findings (each with the four parts and a severity), and up to three systemic insights. Zero findings is a valid result.
 
 ### 2. File the findings
-For every finding and every insight, create a Linear issue (`linear`), labelled by source (`review-finding` / `review-insight`) and severity-mapped to priority. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time.
-
-**When the tracker is unavailable to this run: skip filing, keep the dated report, and surface the findings directly — the report is the deliverable.** The condition is not "does this repo have a tracker" but *is the tracker available to this run*, and two causes reach the same fallback:
-
-- **The repo has no tracker** (`CONTEXT.md` `layers.linear: false`) — static, per-repo.
-- **The run is unattended** — no human is in the turn to name the write, so the host refuses it. That block is correct, not a failure to route around: the findings ride out in the report, which step 3 commits to the integration branch, so they survive a run nobody watched. A human triages them into the tracker from there.
+For every finding and every insight, create a Linear issue (`linear`), labelled by source (`review-finding` / `review-insight`) and severity-mapped to priority. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time. **If this repo has no tracker** (`CONTEXT.md` `layers.linear: false`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
 
 **The `architecture` scope files only actionable risks.** An architecture report's value is largely narrative — the verdict, what is working, the trade-offs to preserve (`templates/assessment.md`, the architecture report shape). File **only** the actionable architecture risks and recommendations; do **not** file positive observations or stable trade-offs as tickets — they live in the report, not the backlog. A useful architecture pass may file **zero** tickets while still recording a verdict and a watchlist; that is a valid outcome, not a failed run.
 
