@@ -17,6 +17,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
+import harness.cli._git as gitmod
 from harness.cli._git import teardown_worktree
 
 
@@ -104,6 +107,40 @@ def test_best_effort_never_raises(tmp_path: Path) -> None:
         worktree_path=root / ".worktrees" / "harness" / "NOPE",
         branch="harness/NOPE",
         delete_remote=True,
+    )
+
+
+@pytest.mark.parametrize("hostile", ["--all", "-D", "--force", "-"])
+def test_refuses_flag_like_branch_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hostile: str
+) -> None:
+    """A branch name parsed from an untrusted tracker comment is argv-safe but a
+    leading ``-`` could be read by git as an *option* rather than a branch (e.g.
+    ``git branch -D --all``). teardown refuses such a name: no ``branch -D`` and
+    no ``push --delete`` git command may carry it (go-public security review)."""
+    root = _init_repo(tmp_path / "repo")
+    calls: list[tuple[str, ...]] = []
+    real = gitmod.run_git
+
+    def spy(repo_root: Path, *args: str, **kwargs: object) -> object:
+        calls.append(args)
+        return real(repo_root, *args, **kwargs)
+
+    monkeypatch.setattr(gitmod, "run_git", spy)
+
+    # Best-effort contract holds — a hostile name never raises.
+    teardown_worktree(
+        root,
+        worktree_path=root / ".worktrees" / "harness" / "X",
+        branch=hostile,
+        delete_remote=True,
+    )
+
+    assert not any(a[:2] == ("branch", "-D") for a in calls), (
+        f"a flag-like branch name {hostile!r} reached `git branch -D`"
+    )
+    assert not any("--delete" in a for a in calls), (
+        f"a flag-like branch name {hostile!r} reached `git push ... --delete`"
     )
 
 

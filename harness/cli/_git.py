@@ -129,6 +129,22 @@ def resolve_base_branch(repo_root: Path, explicit: str | None = None) -> str:
     )
 
 
+def _is_safe_branch_arg(branch: str) -> bool:
+    """True iff ``branch`` is safe to pass as a git branch-name positional.
+
+    A run's branch is ULID-shaped (``harness/<ULID>``), but a resumed run's name
+    can originate in an untrusted tracker comment (the reclaim / handoff markers
+    parsed in ``harness.linear``). Such a value is already argv-safe — every git
+    call here is list-form, never ``shell=True`` — but a name with a leading
+    ``-`` would be read by git as an *option*, not a branch (``git branch -D
+    --all``). Refusing a ``-``-prefixed name at this sink neutralises that
+    flag-injection without needing to trust the source (go-public security
+    review). Real branch names (``harness/…``) are never dash-prefixed, so no
+    legitimate teardown is affected.
+    """
+    return not branch.startswith("-")
+
+
 def teardown_worktree(
     repo_root: Path,
     *,
@@ -163,7 +179,10 @@ def teardown_worktree(
     ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that is the main
     checkout (or anything outside the run-worktree area) skips removal entirely —
     the ``rmtree`` fallback must never be able to destroy the repository itself.
-    The branch operations still run (deleting a merged run branch is safe).
+    The branch operations still run (deleting a merged run branch is safe) —
+    unless ``branch`` is flag-like (leading ``-``), which :func:`_is_safe_branch_arg`
+    refuses so an untrusted, tracker-parsed name cannot be read by git as an
+    option instead of a branch.
     """
     worktrees_area = (repo_root / WORKTREES_SUBDIR).resolve()
     resolved = worktree_path.resolve()
@@ -176,7 +195,7 @@ def teardown_worktree(
             # Orphaned directory — git won't remove what it no longer tracks.
             shutil.rmtree(worktree_path, ignore_errors=True)
     run_git(repo_root, "worktree", "prune")
-    if branch:
+    if branch and _is_safe_branch_arg(branch):
         run_git(repo_root, "branch", "-D", branch)
         if delete_remote:
             # A network op — bound it (CAL-1004). Teardown is best-effort and
