@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -14,30 +13,27 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def engines_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin both review engines as present, so a CLI-level doctor test states a
-    fact about ``doctor`` rather than about the machine running it (CAL-1110).
+def engines_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin both review engines as *live* — on PATH and their ``--version`` probe
+    runs — so a CLI-level doctor test states a fact about ``doctor`` rather than
+    about the machine running it (CAL-1110).
 
-    ``check_reviewer`` resolves ``claude`` / ``codex`` through a real
-    ``shutil.which`` lookup when its paths are not injected. The CLI-level tests
-    invoke the whole command, so they inherit that lookup: on a developer's
-    machine ``claude`` is installed and every check passes, while on a clean host
-    — every CI runner — the reviewer check FAILs and ``doctor`` correctly exits 1.
-    A test asserting "with no failures, doctor exits 0" was therefore *assuming*
-    its own precondition instead of establishing it, and only failed once CI
-    finally ran (release PR #161, the first CI run in 670 commits).
-
-    Anything other than the two engines delegates to the real ``shutil.which``,
-    so no unrelated lookup is silently stubbed.
+    ``check_reviewer`` now runs a real liveness probe per engine (CAL-1083):
+    ``_probe_engine`` resolves the binary with ``shutil.which`` **and** shells
+    out to ``<binary> --version``. Pinning ``shutil.which`` alone is no longer
+    enough — the probe would still exec a binary the CI host lacks and report it
+    as ``cannot_run``. So patch the probe itself to report both engines live; the
+    decision logic that maps probe outcomes to PASS/WARN/FAIL is exercised
+    directly by the unit tests below. Before this, a CLI-level "doctor exits 0"
+    test *assumed* its own precondition instead of establishing it, and only
+    failed once CI finally ran (release PR #161, the first CI run in 670 commits).
     """
-    real_which = shutil.which
+    from harness.cli import doctor
 
-    def fake_which(cmd: str, *args: object, **kwargs: object) -> str | None:
-        if cmd in ("claude", "codex"):
-            return f"/usr/local/bin/{cmd}"
-        return real_which(cmd, *args, **kwargs)  # type: ignore[arg-type]
+    def fake_probe(binary: str, *args: object, **kwargs: object) -> doctor.EngineProbe:
+        return doctor.EngineProbe("ok", f"/usr/local/bin/{binary}")
 
-    monkeypatch.setattr(shutil, "which", fake_which)
+    monkeypatch.setattr(doctor, "_probe_engine", fake_probe)
 
 
 # ---------------------------------------------------------------------------
@@ -266,38 +262,141 @@ def test_check_db_warns_when_not_found(tmp_path: Path) -> None:
     assert "not found" in msg.lower() or "first run" in msg.lower()
 
 
-def test_check_reviewer_passes_when_both_engines_present() -> None:
-    from harness.cli.doctor import check_reviewer
+# ---------------------------------------------------------------------------
+# Engine liveness probe (CAL-1083) — a binary on PATH is not proof it can run
+# ---------------------------------------------------------------------------
 
+
+def test_probe_engine_absent_when_not_on_path() -> None:
+    from harness.cli.doctor import EngineProbe, _probe_engine
+
+    probe = _probe_engine("claude", which=lambda _cmd: None)
+    assert probe == EngineProbe("absent", None)
+
+
+def test_probe_engine_ok_when_version_exits_zero() -> None:
+    import subprocess
+
+    from harness.cli.doctor import _probe_engine
+
+    def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="1.2.3\n", stderr="")
+
+    probe = _probe_engine(
+        "claude", which=lambda _cmd: "/usr/local/bin/claude", run=fake_run
+    )
+    assert probe.outcome == "ok"
+    assert probe.path == "/usr/local/bin/claude"
+
+
+def test_probe_engine_cannot_run_when_version_exits_nonzero() -> None:
+    import subprocess
+
+    from harness.cli.doctor import _probe_engine
+
+    # On PATH but the probe exits non-zero: "installed but cannot execute here",
+    # not "not installed" — the distinction this check exists to draw.
+    def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+
+    probe = _probe_engine(
+        "codex", which=lambda _cmd: "/usr/local/bin/codex", run=fake_run
+    )
+    assert probe.outcome == "cannot_run"
+    assert probe.path == "/usr/local/bin/codex"
+
+
+def test_probe_engine_cannot_run_when_exec_raises() -> None:
+    from harness.cli.doctor import _probe_engine
+
+    # A binary that cannot even be launched (OSError) is also "cannot execute
+    # here", not absent — it was found on PATH.
+    def fake_run(*_a: object, **_k: object) -> object:
+        raise OSError("cannot exec")
+
+    probe = _probe_engine(
+        "codex", which=lambda _cmd: "/usr/local/bin/codex", run=fake_run
+    )
+    assert probe.outcome == "cannot_run"
+
+
+# ---------------------------------------------------------------------------
+# check_reviewer maps probe outcomes to PASS/WARN/FAIL (CAL-1083)
+# ---------------------------------------------------------------------------
+
+
+def test_check_reviewer_passes_when_both_engines_live() -> None:
+    from harness.cli.doctor import EngineProbe, check_reviewer
+
+    # AC-2: in a healthy environment both engine probes ran → PASS.
     status, msg = check_reviewer(
-        claude_path="/usr/local/bin/claude", codex_path="/usr/local/bin/codex"
+        claude_probe=EngineProbe("ok", "/usr/local/bin/claude"),
+        codex_probe=EngineProbe("ok", "/usr/local/bin/codex"),
     )
     assert status == "PASS"
     assert "claude" in msg.lower()
     assert "codex" in msg.lower()
 
 
-def test_check_reviewer_fails_when_claude_missing() -> None:
-    from harness.cli.doctor import check_reviewer
+def test_check_reviewer_fails_when_claude_absent() -> None:
+    from harness.cli.doctor import EngineProbe, check_reviewer
 
     # claude has been the default review engine since CAL-701 (review.py); a host
     # missing it fails `harness review` at runtime, so doctor must FAIL — not the
-    # old WARN, which let a broken host pass. An explicit empty path forces the
-    # not-found branch deterministically (None would trigger a real PATH lookup).
-    status, msg = check_reviewer(claude_path="", codex_path="/usr/local/bin/codex")
+    # old WARN, which let a broken host pass.
+    status, msg = check_reviewer(
+        claude_probe=EngineProbe("absent", None),
+        codex_probe=EngineProbe("ok", "/usr/local/bin/codex"),
+    )
     assert status == "FAIL"
     assert "claude" in msg.lower()
 
 
-def test_check_reviewer_warns_when_only_codex_missing() -> None:
-    from harness.cli.doctor import check_reviewer
+def test_check_reviewer_fails_when_claude_present_but_cannot_run() -> None:
+    from harness.cli.doctor import EngineProbe, check_reviewer
 
-    # codex is the opt-in cross-model second opinion (`--engine codex`); its
-    # absence is not fatal because the default claude review still works, so a
-    # missing codex is a WARN, not a FAIL.
-    status, msg = check_reviewer(claude_path="/usr/local/bin/claude", codex_path="")
+    # AC-1 (claude variant): a binary on PATH whose liveness probe cannot run is
+    # "installed but cannot execute" — a FAIL naming the wall, distinct from a
+    # clean "not installed". A PATH-only check would have let this host pass.
+    status, msg = check_reviewer(
+        claude_probe=EngineProbe("cannot_run", "/usr/local/bin/claude"),
+        codex_probe=EngineProbe("ok", "/usr/local/bin/codex"),
+    )
+    assert status == "FAIL"
+    assert "claude" in msg.lower()
+    assert "cannot" in msg.lower() or "could not" in msg.lower()
+
+
+def test_check_reviewer_warns_when_codex_absent() -> None:
+    from harness.cli.doctor import EngineProbe, check_reviewer
+
+    # codex is the opt-in cross-model second opinion (`--engine codex`); simply
+    # not being installed is not fatal because the default claude review still
+    # works, so an absent codex is a WARN, not a FAIL.
+    status, msg = check_reviewer(
+        claude_probe=EngineProbe("ok", "/usr/local/bin/claude"),
+        codex_probe=EngineProbe("absent", None),
+    )
     assert status == "WARN"
     assert "codex" in msg.lower()
+
+
+def test_check_reviewer_fails_when_codex_present_but_cannot_run_cites_adr_0002() -> None:
+    from harness.cli.doctor import EngineProbe, check_reviewer
+
+    # AC-1 (codex variant): codex on PATH but unable to run is "installed but
+    # cannot execute" — a FAIL whose reason names the wall and cites ADR 0002
+    # (the unprivileged container cannot open the user namespace codex's bwrap
+    # sandbox needs; a real `--engine codex` review is host-only). This is
+    # distinct from codex simply being absent (the WARN above): a present-but-
+    # broken engine is a misconfiguration, an absent optional engine is a choice.
+    status, msg = check_reviewer(
+        claude_probe=EngineProbe("ok", "/usr/local/bin/claude"),
+        codex_probe=EngineProbe("cannot_run", "/usr/local/bin/codex"),
+    )
+    assert status == "FAIL"
+    assert "codex" in msg.lower()
+    assert "0002" in msg
 
 
 def test_check_cli_passes_when_version_exits_zero() -> None:
@@ -316,6 +415,44 @@ def test_check_cli_fails_when_version_exits_nonzero() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Verify-gate config check (CAL-1083) — an unenforced gate should be visible
+# ---------------------------------------------------------------------------
+
+
+def test_check_verify_config_passes_when_configured(tmp_path: Path) -> None:
+    from harness.cli.doctor import check_verify_config
+
+    (tmp_path / "CONTEXT.md").write_text('verify:  "bash scripts/verify.sh"\n')
+    status, msg = check_verify_config(repo_root=tmp_path)
+    assert status == "PASS"
+    assert "bash scripts/verify.sh" in msg
+
+
+def test_check_verify_config_warns_when_absent(tmp_path: Path) -> None:
+    # AC-3: a CONTEXT.md with no `verify:` produces a WARN naming the evidence-
+    # model consequence (review records `not_configured`; a `pass` for this repo
+    # carries no test evidence), NOT a FAIL — a repo may legitimately define no
+    # gate, and doctor must not block it.
+    from harness.cli.doctor import check_verify_config
+
+    (tmp_path / "CONTEXT.md").write_text("repo:\n  name: demo\n")
+    status, msg = check_verify_config(repo_root=tmp_path)
+    assert status == "WARN"
+    assert "not_configured" in msg
+    lower = msg.lower()
+    assert "no test evidence" in lower or "unenforced" in lower
+
+
+def test_check_verify_config_warns_when_no_context_md(tmp_path: Path) -> None:
+    # No CONTEXT.md at all resolves to "no gate defined" — a WARN, the same as an
+    # empty `verify:` (load_gate_command returns None for both).
+    from harness.cli.doctor import check_verify_config
+
+    status, msg = check_verify_config(repo_root=tmp_path)
+    assert status == "WARN"
+
+
+# ---------------------------------------------------------------------------
 # CLI integration — harness doctor command
 # ---------------------------------------------------------------------------
 
@@ -328,13 +465,13 @@ def test_doctor_command_registered_in_app() -> None:
 
 
 def test_doctor_command_exits_zero_on_pass_or_warn(
-    tmp_path: Path, engines_on_path: None
+    tmp_path: Path, engines_live: None
 ) -> None:
     """With no failures, doctor exits 0.
 
-    ``engines_on_path`` establishes the no-failure precondition this asserts;
-    without it the test only holds on a host that happens to have ``claude``
-    installed (CAL-1110).
+    ``engines_live`` establishes the no-failure precondition this asserts;
+    without it the test only holds on a host that happens to have both engines
+    installed *and* runnable (CAL-1110, CAL-1083).
     """
     db = tmp_path / ".harness" / "harness.db"
     result = runner.invoke(
@@ -348,7 +485,7 @@ def test_doctor_command_exits_zero_on_pass_or_warn(
 
 
 def test_doctor_command_exits_one_on_failure(
-    tmp_path: Path, engines_on_path: None
+    tmp_path: Path, engines_live: None
 ) -> None:
     """A FAILing check must propagate as a non-zero (exit 1) CLI status.
 
@@ -358,7 +495,7 @@ def test_doctor_command_exits_one_on_failure(
     (CAL-941). That branch returns FAIL before the ~/.claude fallback, so it
     fails regardless of the host's home directory.
 
-    ``engines_on_path`` makes auth the *only* FAIL (CAL-1110). Without it, a host
+    ``engines_live`` makes auth the *only* FAIL (CAL-1110). Without it, a host
     with no ``claude`` produces a second, unrelated FAIL — and this test would
     then pass on the reviewer's failure even if the auth branch it exists to pin
     had stopped failing.
@@ -383,7 +520,9 @@ def test_doctor_command_exits_one_on_failure(
     assert "auth" in fail_lines[0]
 
 
-def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:
+def test_doctor_command_output_contains_check_labels(
+    tmp_path: Path, engines_live: None
+) -> None:
     """Output must include the named checks."""
     db = tmp_path / ".harness" / "harness.db"
     result = runner.invoke(
@@ -399,6 +538,35 @@ def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:
     # The git-version check (CAL-979) must be wired into the aggregated command,
     # not merely defined as a function — pin its label in the real output.
     assert "git-version" in out
+    # The verify-gate config check (CAL-1083) must be wired in too.
+    assert "verify" in out
+
+
+def test_doctor_command_fails_when_engine_installed_but_cannot_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-1 end-to-end: an engine on PATH whose liveness probe cannot run makes
+    the aggregated ``doctor`` command FAIL (exit 1) with a reason naming the wall
+    — here the codex/container case, whose reason cites ADR 0002.
+    """
+    from harness.cli import doctor
+
+    def fake_probe(binary: str, *_a: object, **_k: object) -> doctor.EngineProbe:
+        if binary == "codex":
+            return doctor.EngineProbe("cannot_run", "/usr/local/bin/codex")
+        return doctor.EngineProbe("ok", "/usr/local/bin/claude")
+
+    monkeypatch.setattr(doctor, "_probe_engine", fake_probe)
+    db = tmp_path / ".harness" / "harness.db"
+    result = runner.invoke(
+        app,
+        ["doctor", "--db", str(db)],
+        env={"ANTHROPIC_API_KEY": "sk-test"},
+    )
+    assert result.exit_code == 1, result.stdout
+    reviewer_lines = [ln for ln in result.stdout.splitlines() if "reviewer" in ln]
+    assert reviewer_lines and "[FAIL]" in reviewer_lines[0], result.stdout
+    assert "0002" in result.stdout
 
 
 def test_doctor_output_shows_pass_or_warn_or_fail_prefix(tmp_path: Path) -> None:

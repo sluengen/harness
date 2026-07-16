@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import typer
 
@@ -189,41 +192,155 @@ def check_db(db_path: Path | None = None) -> tuple[str, str]:
     )
 
 
-def check_reviewer(
-    claude_path: str | None = None,
-    codex_path: str | None = None,
-) -> tuple[str, str]:
-    """Report whether the review-engine binaries are on PATH.
+class EngineProbe(NamedTuple):
+    """The result of probing one review engine.
 
-    ``review`` defaults to the ``claude`` engine (since CAL-701); ``codex`` is
-    the opt-in ``--engine codex`` cross-model second opinion. A missing
-    ``claude`` is therefore fatal to the default review path — it FAILs, where
-    the old codex-only check would let such a host pass. A missing ``codex``
-    only costs the optional second opinion, so it is a WARN. Pass ``""`` for
-    either to force its not-found branch in tests (``None`` triggers a real
-    PATH lookup).
+    ``outcome`` is one of ``"absent"`` (not on PATH), ``"cannot_run"`` (on PATH
+    but its ``--version`` liveness probe could not run here), or ``"ok"`` (on
+    PATH and the probe ran). ``path`` is the resolved binary path, or ``None``
+    when absent. The three-way outcome is the whole point of CAL-1083: a binary
+    on PATH is not proof it can run.
     """
-    import shutil
 
-    if claude_path is None:
-        claude_path = shutil.which("claude")
-    if codex_path is None:
-        codex_path = shutil.which("codex")
+    outcome: str
+    path: str | None
 
-    if not claude_path:
+
+def _probe_engine(
+    binary: str,
+    which: Callable[[str], str | None] | None = None,
+    run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> EngineProbe:
+    """Resolve ``binary`` on PATH and run ``<binary> --version`` as a liveness probe.
+
+    Distinguishes *not installed* (``absent``) from *installed but cannot execute
+    here* (``cannot_run``) — the distinction doctor's PATH-only check could not
+    draw. A ``--version`` probe is deliberately minimal: it proves the binary
+    **launches** in this environment without invoking the engine's review
+    sandbox. Per ADR 0002, codex's real review shells out through ``bwrap``,
+    which a ``--version`` never touches — so a passing probe proves launch, not
+    that a cross-model review will run in-container. A binary that is on PATH but
+    exits non-zero or cannot be exec'd at all (``OSError``) is ``cannot_run``, not
+    ``absent`` — it was found, it just does not work here.
+
+    ``which`` / ``run`` are injectable for tests; ``None`` uses the real
+    ``shutil.which`` / ``subprocess.run``.
+    """
+    if which is None:
+        which = shutil.which
+    path = which(binary)
+    if not path:
+        return EngineProbe("absent", None)
+    if run is None:
+        run = subprocess.run
+    try:
+        result = run(
+            [binary, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return EngineProbe("cannot_run", path)
+    if result.returncode != 0:
+        return EngineProbe("cannot_run", path)
+    return EngineProbe("ok", path)
+
+
+def check_reviewer(
+    claude_probe: EngineProbe | None = None,
+    codex_probe: EngineProbe | None = None,
+) -> tuple[str, str]:
+    """Report whether the review engines can actually *run*, not just resolve on PATH.
+
+    ``review`` defaults to the ``claude`` engine (since CAL-701); ``codex`` is the
+    opt-in ``--engine codex`` cross-model second opinion. Doctor probes each with
+    ``<binary> --version`` (CAL-1083), because a binary on PATH is not proof it
+    runs here — in the ``harness:dev`` container ``codex`` is always on PATH but a
+    real review cannot run (ADR 0002).
+
+    - **claude** is the default engine, so *every* failure mode is fatal: absent
+      → FAIL; on PATH but its probe cannot run → FAIL naming the wall (a PATH-only
+      check would have let this host pass).
+    - **codex** is optional, so the two failure modes differ. Simply *absent* is a
+      WARN — the default claude review still works. But *on PATH yet unable to
+      run* is a misconfiguration worth failing on: FAIL naming the wall and citing
+      ADR 0002 (the unprivileged container cannot open the user namespace codex's
+      ``bwrap`` sandbox needs; a genuine ``--engine codex`` review is host-only).
+
+    Pass an :class:`EngineProbe` for either to force a branch in tests; ``None``
+    runs the real probe.
+    """
+    if claude_probe is None:
+        claude_probe = _probe_engine("claude")
+    if codex_probe is None:
+        codex_probe = _probe_engine("codex")
+
+    # claude — the default engine — is fatal in every failure mode.
+    if claude_probe.outcome == "absent":
         return (
             "FAIL",
             "claude not found on PATH — the default review engine; "
             "`harness review` will fail until it is installed",
         )
-    if not codex_path:
+    if claude_probe.outcome == "cannot_run":
+        return (
+            "FAIL",
+            f"claude at {claude_probe.path} is on PATH but its liveness probe "
+            "(`claude --version`) could not run here — installed but cannot "
+            "execute; `harness review` will fail on the default engine",
+        )
+
+    # claude runs — assess the opt-in codex engine.
+    if codex_probe.outcome == "absent":
         return (
             "WARN",
-            f"claude at {claude_path}; codex not found on PATH — the opt-in "
-            "`--engine codex` cross-model review is unavailable "
+            f"claude runs ({claude_probe.path}); codex not found on PATH — the "
+            "opt-in `--engine codex` cross-model review is unavailable "
             "(default claude review still works)",
         )
-    return ("PASS", f"claude at {claude_path}; codex at {codex_path}")
+    if codex_probe.outcome == "cannot_run":
+        return (
+            "FAIL",
+            f"codex at {codex_probe.path} is on PATH but its liveness probe "
+            "(`codex --version`) could not run here — installed but cannot "
+            "execute (ADR 0002: codex's bwrap sandbox needs a user namespace the "
+            "unprivileged container cannot open; a genuine `--engine codex` "
+            "review is host-only)",
+        )
+    return (
+        "PASS",
+        f"claude runs ({claude_probe.path}); codex runs ({codex_probe.path}) "
+        "— note ADR 0002: a real `--engine codex` review is host-only, which "
+        "`--version` cannot verify",
+    )
+
+
+def check_verify_config(repo_root: Path | None = None) -> tuple[str, str]:
+    """WARN when the repo's ``CONTEXT.md`` configures no ``verify:`` gate command.
+
+    Under the CAL-1082 evidence model ``review`` records an unconfigured gate
+    honestly (``gate_reason='not_configured'``) and proceeds — the harness cannot
+    gate what a repo does not define — but an unenforced gate is worth surfacing:
+    a ``pass`` for such a repo certifies only that a reviewer ran, with no test
+    evidence behind it. This is a **WARN, not a FAIL**: a repo may legitimately
+    define no gate, and doctor must not block it. Reuses
+    :func:`harness.gate.load_gate_command` (``None`` for both an absent
+    ``CONTEXT.md`` and a missing ``verify:`` key) rather than re-parsing.
+    """
+    from harness.gate import load_gate_command
+
+    if repo_root is None:
+        repo_root = Path.cwd()
+    command = load_gate_command(repo_root)
+    if command:
+        return ("PASS", f"verify gate configured: {command}")
+    return (
+        "WARN",
+        "no `verify:` command in CONTEXT.md — `review` records the gate as "
+        "`not_configured` and proceeds, so a `pass` for this repo carries no "
+        "test evidence and the merge gate is unenforced",
+    )
 
 
 def check_cli(
@@ -274,6 +391,7 @@ def doctor_command(
         ("git-version", check_git_version()),
         ("db", check_db(db_path)),
         ("reviewer", check_reviewer()),
+        ("verify", check_verify_config()),
         ("cli", check_cli()),
     ]
 
