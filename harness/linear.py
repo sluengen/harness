@@ -129,29 +129,35 @@ query FetchIssue($id: String!) {
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
         return {k: raw.get(k) for k in _TICKET_FIELDS}
 
-    async def fetch_in_progress_issues(
+    async def fetch_reclaimable_issues(
         self, *, project: str
     ) -> list[dict[str, str]]:
-        """List the In-Progress issues in ``project`` as ``[{identifier, updated_at}]``.
+        """List the reclaimable issues in ``project`` as ``[{identifier, updated_at}]``.
 
         The enumeration the ``harness reclaim --stale`` sweep (CAL-736) filters by
-        age.  Scoped to the named project and the **In Progress** state by name, so
-        the other ``started`` state — In Review, a legitimate handoff — is never
-        swept up.  ``updated_at`` carries Linear's ``updatedAt`` (ISO-8601 UTC):
-        the staleness signal the sweep compares against its threshold (proposal
-        D2).  Requests up to 100 issues unpaged — a single project never holds more
-        simultaneously-In-Progress tickets than that.
+        age.  Scoped to the named project and **both** transient ``started`` states
+        — **In Progress** *and* **In Review** — by name.  Before CAL-1103 In Review
+        was only ever a human handoff, so the sweep deliberately skipped it; now
+        ``review`` parks a reviewed ticket In Review as a normal step of the
+        autonomous verb loop, so a dead orchestrator between ``review`` and
+        ``close`` can strand a ticket there — exactly the wedged-queue failure the
+        sweep exists to unblock.  Staleness (the ``updatedAt`` threshold, proposal
+        D2) remains the only abandonment signal: a live review→close never idles
+        that long, so a stale ticket in either state is a dead run.  ``updated_at``
+        carries Linear's ``updatedAt`` (ISO-8601 UTC): the staleness signal the
+        sweep compares against its threshold.  Requests up to 100 issues unpaged —
+        a single project never holds more simultaneously-active tickets than that.
 
         Raises:
             LinearRequestError: the API returned an error or an unexpected response.
         """
         query = """
-query InProgressIssues($project: String!) {
+query ReclaimableIssues($project: String!) {
   issues(
     first: 100
     filter: {
       project: { name: { eq: $project } }
-      state: { name: { eq: "In Progress" } }
+      state: { name: { in: ["In Progress", "In Review"] } }
     }
   ) {
     nodes {
@@ -328,6 +334,25 @@ query HandoffBranch($id: String!) {
         """
         await self._transition(
             identifier, state_type="unstarted", preferred_name="todo"
+        )
+
+    async def transition_to_in_review(self, identifier: str) -> None:
+        """Transition issue ``identifier`` to its In Review state.
+
+        The transition ``review`` owns (CAL-1103): a ticket parked here is being
+        reviewed, distinct from In Progress (being built).  In Review shares the
+        ``started`` type with In Progress, so this disambiguates by **name** —
+        :meth:`_transition` prefers a state literally named "In Review", falling
+        back to the first ``started`` state only if none is named that.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, no ``started``
+                workflow state is configured on the issue's team, or the
+                ``issueUpdate`` mutation did not report ``success: true``.
+        """
+        await self._transition(
+            identifier, state_type="started", preferred_name="in review"
         )
 
     async def apply_label(self, identifier: str, name: str) -> None:
