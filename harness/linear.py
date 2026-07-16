@@ -28,6 +28,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 from harness.reclaim_marker import (
@@ -196,41 +197,71 @@ query ReclaimableIssues($project: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
-        # ``last: 20`` — Linear's default connection order is oldest-first, so
-        # ``first`` would return the *oldest* comments and drop the freshest
-        # reclaim marker (posted just before the re-pick) off the page on a
-        # ticket with >20 comments. Window newest-first so the latest marker is
-        # always present (CAL-1005).
-        query = """
-query ResumeBranch($id: String!) {
-  issue(id: $id) {
-    labels { nodes { name } }
-    comments(last: 20) { nodes { body createdAt } }
-  }
-}
+        return await self._latest_marked_branch(
+            identifier,
+            marker=RECLAIM_MARKER,
+            parser=parse_preserved_branch,
+            require_label=RECLAIM_LABEL,
+        )
+
+    async def _latest_marked_branch(
+        self,
+        identifier: str,
+        *,
+        marker: str,
+        parser: Callable[[str], str | None],
+        require_label: str | None = None,
+    ) -> str | None:
+        """The branch named by the latest comment carrying ``marker``, or ``None``.
+
+        The shared read path behind :meth:`fetch_resume_branch` (death-keyed
+        reclaim) and :meth:`fetch_handoff_branch` (proactive context-rollover),
+        which differ only in three parameters: the comment ``marker`` they scan
+        for, the ``parser`` that pulls the ref out of a matching body, and — for
+        reclaim only — a ``require_label`` gate. The **latest** matching comment
+        wins (a ticket marked more than once resumes from its freshest branch),
+        and every non-match (no ``require_label``, no marked comment, a marker
+        that preserved no branch) returns ``None`` so the caller restarts clean.
+
+        ``last: 20`` — Linear's default connection order is oldest-first, so
+        ``first`` would return the *oldest* comments and drop the freshest marker
+        (posted just before the re-pick) off the page on a ticket with >20
+        comments. Window newest-first so the latest marker is always present
+        (CAL-1005). Labels are queried only when a ``require_label`` gate applies.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        labels_block = "labels { nodes { name } }\n    " if require_label else ""
+        query = f"""
+query MarkedBranch($id: String!) {{
+  issue(id: $id) {{
+    {labels_block}comments(last: 20) {{ nodes {{ body createdAt }} }}
+  }}
+}}
 """
         data = await self._request(query, {"id": identifier})
         issue = (data.get("data") or {}).get("issue")
         if issue is None:
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
 
-        label_names = {
-            (n.get("name") or "").lower()
-            for n in (issue.get("labels") or {}).get("nodes", [])
-        }
-        if RECLAIM_LABEL not in label_names:
-            return None
+        if require_label is not None:
+            label_names = {
+                (n.get("name") or "").lower()
+                for n in (issue.get("labels") or {}).get("nodes", [])
+            }
+            if require_label not in label_names:
+                return None
 
         comment_nodes: list[dict[str, Any]] = (
             (issue.get("comments") or {}).get("nodes", [])
         )
-        reclaim_comments = [
-            c for c in comment_nodes if RECLAIM_MARKER in (c.get("body") or "")
-        ]
-        if not reclaim_comments:
+        marked = [c for c in comment_nodes if marker in (c.get("body") or "")]
+        if not marked:
             return None
-        latest = max(reclaim_comments, key=lambda c: c.get("createdAt") or "")
-        return parse_preserved_branch(latest.get("body") or "")
+        latest = max(marked, key=lambda c: c.get("createdAt") or "")
+        return parser(latest.get("body") or "")
 
     async def fetch_handoff_branch(self, identifier: str) -> str | None:
         """The preserved WIP branch a **proactively handed-off** ticket continues from.
@@ -256,31 +287,11 @@ query ResumeBranch($id: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
-        # ``last: 20`` — window newest-first so the freshest handoff marker is
-        # in the page even when the ticket has >20 comments (CAL-1005; see the
-        # matching note in ``fetch_resume_branch``).
-        query = """
-query HandoffBranch($id: String!) {
-  issue(id: $id) {
-    comments(last: 20) { nodes { body createdAt } }
-  }
-}
-"""
-        data = await self._request(query, {"id": identifier})
-        issue = (data.get("data") or {}).get("issue")
-        if issue is None:
-            raise LinearNotFound(f"Linear issue {identifier!r} not found")
-
-        comment_nodes: list[dict[str, Any]] = (
-            (issue.get("comments") or {}).get("nodes", [])
+        return await self._latest_marked_branch(
+            identifier,
+            marker=HANDOFF_MARKER,
+            parser=parse_handoff_branch,
         )
-        handoff_comments = [
-            c for c in comment_nodes if HANDOFF_MARKER in (c.get("body") or "")
-        ]
-        if not handoff_comments:
-            return None
-        latest = max(handoff_comments, key=lambda c: c.get("createdAt") or "")
-        return parse_handoff_branch(latest.get("body") or "")
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Transition issue ``identifier`` to the first In Progress state.
