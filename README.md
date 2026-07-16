@@ -228,6 +228,11 @@ defines what is MIT, and a test holds the two in correspondence.
 
 ## Changelog
 
+### 2026-07 — relicensed, and the unattended-run posture reaches consumers
+
+- **Relicensed to a two-licence split** (CAL-1078, CAL-1080). The engine — the `harness` CLI and its tooling — is now **AGPL-3.0-only**; the guidance the installer copies into your repo (skills, agents, commands, templates, hooks, process doc, settings) is **MIT**, so it can be installed into a closed-source repo and encumber nothing. The boundary is the `files:` block of [`registry.yaml`](./registry.yaml), held in correspondence by a test; the inbound contribution grant covers patents and right-to-submit. See [`## License`](#license).
+- **The unattended-run posture ships to consumers instead of only running here** (CAL-1081, CAL-1087, CAL-1108). The autonomous Build loop may make the tracker writes its own guidance instructs — deferring a not-yet-actionable ticket, reverting a run stranded by a dead orchestrator, running its own worktree housekeeping — each governed by a natural-language `autoMode.allow` allowlist clause that names the write and states the bound that makes it safe. The rule that *an instructed write which is refused is a configuration gap, not a bug in the skill* now travels in the distributed surface rather than living only in this repo's operator lore.
+
 ### 2026-06 — execution model inverted (verb model)
 
 - **Orchestration boundary inverted** (proposal [`harness-as-tool`](./specs/proposals/harness-as-tool.md), accepted 2026-06-09). The harness no longer drives the build; a Claude session orchestrates and implements, calling three deterministic verbs.
