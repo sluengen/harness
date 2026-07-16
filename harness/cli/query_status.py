@@ -161,8 +161,6 @@ def status_command(
 
     # Human form — compact, scannable.
     typer.echo(f"run_id:           {row['run_id']}")
-    typer.echo(f"workflow_name:    {row['workflow_name']}")
-    typer.echo(f"workflow_version: {row['workflow_version']}")
     typer.echo(f"status:           {row['status']}")
     typer.echo(f"started_at:       {row['started_at']}")
     typer.echo(f"completed_at:     {row['completed_at'] or '-'}")

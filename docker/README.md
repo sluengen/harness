@@ -25,6 +25,15 @@ exits. The entrypoint selects the role — `agent <TICKET>` drives the full
 `/harness run` loop headless, `verb <args…>` (or a bare verb) runs a single
 `start` / `review` / `close` / read command.
 
+The image is the harness's **own** runtime, not the target project's. It carries
+only what the verbs themselves need; it does **not** carry the target repo's
+toolchain, and the target's verify gate runs **host-side**, not in this
+container. The orchestrator runs `CONTEXT.md → verify:` in the worktree and hands
+the result to `review` (`--gate-exit`/`--gate-log`) — the evidence model that
+lets a recorded `pass` mean "the gate ran green" without the image needing every
+target's build tools (CAL-1082; no image can carry an arbitrary repo's
+toolchain, e.g. an Xcode target never runs in a Linux container).
+
 ## Files
 
 | Path | Purpose |
