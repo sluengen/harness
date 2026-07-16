@@ -61,7 +61,7 @@ files:
   # gates whether it engages, not whether it installs). ux-design applies to any
   # user-facing surface, independent of that layer — never gate it. (Install-time
   # layer gating is unbuilt; do not omit profile files by layer — CAL-749.)
-  skills/design-system/SKILL.md: { id: design-system,            version: 0.3.0, profiles: [harness] }
+  skills/design-system/SKILL.md: { id: design-system,            version: 0.3.1, profiles: [harness] }
   skills/ux-design/SKILL.md: { id: ux-design,                version: 0.2.0, profiles: [harness] }
   # Discovery knowledge the unattended routine invokes — its single home (CAL-907,
   # proposal harden-loop-layer WS2/B2). Justified as a distributed skill because the
