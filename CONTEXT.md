@@ -21,15 +21,19 @@ stack:
   framework: Pydantic 2 / Typer / aiosqlite
 commands:
   install: "uv sync --extra dev"
-  lint:    "uv run ruff check ."
-  typecheck: "uv run mypy harness"
-  test:    "uv run pytest"
-  test_one: "uv run pytest <path/to/test_file.py::test_name>"
+  lint:    "uv run --extra dev ruff check ."
+  typecheck: "uv run --extra dev mypy harness"
+  test:    "uv run --extra dev pytest"
+  test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
   verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke. Run before merge/tag.
   run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
   release: main         # PRs from dev → main for releases
+loop:                   # ledger-backed spend breakers for the autonomous loop (CAL-906; read by harness/loop_budget.py)
+  max_review_cycles: 6           # hard ceiling — the run stops + escalates on REACHING the 6th review→fix cycle (cycles 1–3 unconditional; 4–5 assess convergence). One coherent stop rule with agents/reviewer.md.
+  wall_clock_budget_minutes: 90  # per-run wall-clock budget; deliberately mirrors the stale-run reclamation staleness threshold — if one moves, move both.
+  engine_timeout_seconds: 600    # per-subprocess ceiling for the review engine (claude -p / codex exec); a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Sit it at or below the ops kill so the clean exit wins (CAL-1004).
 conventions:
   commit_format: "type(scope): description — feat / fix / chore / docs / refactor / test / spec"
 tools:
@@ -39,7 +43,10 @@ paths:
   tests: tests/
   proposals: specs/proposals/
   features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
-  decisions: specs/   # ADRs not yet separated into decisions/; design docs in specs/
+  decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
+architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
+  files:
+    - harness/cli/review.py   # verb orchestration + prompt + SUBMIT parser + per-engine builders + failure detectors + fallback (CAL-1014)
 env:
   file: .env
   linear_token: LINEAR_API_KEY
@@ -72,12 +79,18 @@ The ledger is a complete audit trail **only if nothing hand-rolls a `git merge` 
 
 ## Decisions index
 
-No formal `decisions/` directory exists yet. Major design decisions are in `specs/` and inline in `SPEC.md`. ADRs should go in `specs/decisions/` when first created.
+Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design decisions remain in `specs/` and inline in `SPEC.md`.
+
+- **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
+- **[0002 — The in-container review engine is Claude; `--engine codex` is a host-only option](specs/decisions/0002-in-container-review-engine.md)** (CAL-925). Codex's `bwrap` sandbox cannot open a user namespace in the unprivileged `harness:dev` container (CAL-866), so `--engine codex` degrades in-container. Rather than loosen container privileges — it reviews untrusted diffs — the in-container engine is **Claude**, and `--engine codex` is a **host-only** cross-model option. No image privilege change.
 
 ## Where deeper truth lives
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
 - **The verb contract the agent drives** → `commands/harness.md`
+- **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
+- **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
+- **In-container review engine (Claude in-container; `--engine codex` host-only)** → `specs/decisions/0002-in-container-review-engine.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")

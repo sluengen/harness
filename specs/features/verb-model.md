@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-570, CAL-574, CAL-586, CAL-661]
+last_updated: 2026-07-02
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925]
 ---
 
 # Verb model — start / review / close
@@ -38,20 +38,33 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 `harness review [--run-id <id>] [--engine claude|codex]` runs the selected review engine (`--engine`, **default `claude`**; CAL-701) against the worktree's current HEAD and records a verdict **bound to the exact SHA reviewed** — the load-bearing detail behind decision D2: the `close` gate refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused. Each engine is a **read-only CLI subprocess** (`claude -p --permission-mode plan` or `codex exec --sandbox read-only`) emitting the same `SUBMIT:` contract — never the Agent SDK (see the "Review engine" principle in `architecture-principles.md`).
 
+**The in-container review engine is Claude; `--engine codex` is host-only** (ADR [0002](../decisions/0002-in-container-review-engine.md), CAL-925). Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container (`CLONE_NEWUSER` blocked, CAL-866), so a real `--engine codex` review degrades there. Rather than loosen the container's privileges — it reviews untrusted diffs — the decision keeps the container's engine Claude and treats `--engine codex` as a host-only cross-model option, where `bwrap` and `~/.codex` auth are available. So inside `~/bin/harness` and the `/harness run` verb loop, review runs on Claude.
+
 #### Scenario: a review pass
 
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
-- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`)
-- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`) — the engine's full reasoning stays inside the verb (context economy)
+- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at }` (and optional `commit_message` / `deferred_brief`)
+- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is recorded as `verdict='fail'` with the sentinel issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a bad reviewer, it records the failure.
 
 The agent acts on the verdict:
 
-- `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD.
+- `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD. The loop is **bounded** by the spend breakers below.
 - `defer` → the implementation is shippable, but the review surfaced a genuinely out-of-scope finding; file a follow-up for it. Note the close gate opens **only** on a `verdict=pass` (`harness/cli/close.py` queries `verdict='pass'`; a run with only a `defer` is refused `no_passing_review`), so to close you still need a passing review bound to HEAD — obtain one before closing.
 - `pass` → proceed to close.
+
+#### Scenario: the spend breakers bound the fix loop
+
+The `review` verb is the loop boundary, so it enforces two **ledger-backed spend breakers** there (`harness/loop_budget.py`; thresholds read from `CONTEXT.md` → `loop:`, defaults `max_review_cycles: 6` / `wall_clock_budget_minutes: 90`). The harness cannot see the orchestrating session's token meter, but it can observe the ledger — so it bounds the *behaviours* that burn tokens:
+
+- GIVEN a run that has already recorded **5** `review` events
+- WHEN the agent runs `harness review` a 6th time
+- THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `4` with `{ "error": ..., "reason": "review_cycle_ceiling" }` — the run stops and escalates to the user (cycles 1–3 run unconditionally; cycles 4–5 carry a `convergence_check_required` advisory on a fail so the agent assesses convergence; the 6th is the hard ceiling, double the unconditional three).
+- AND likewise, GIVEN a run whose `started_at` is older than the 90-minute wall-clock budget, WHEN the agent runs `harness review`, THEN the verb refuses the same way with `reason=wall_clock_budget` (deliberately mirroring the stale-run reclamation staleness threshold — if one moves, move both).
+
+This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md` also state. The breakers are checked at the verb boundary, not mid-session: a run that runs away *between* verbs is bounded by the wall-clock check at the next boundary, not interrupted mid-thought — the honest limit of ledger-backed breakers, and the reason true token/$ metering is deferred.
 
 ### `close` — enforce the gate, then merge
 
@@ -89,6 +102,8 @@ One execution model, **two triggers** that produce an identical execution path: 
 ## Interface surface
 
 The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is [`commands/harness.md`](../../commands/harness.md). The verb implementations live in `harness/cli/start.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
+
+Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb.py`) — and translates it through one epilogue, `run_verb`, so the error-JSON shape is single-sourced rather than re-declared per verb (CAL-1013). The shape: `{"error": <message>}` on stdout under `--json`, plus a machine-readable `"reason"` **only when set** (absent, never `null`). `review` and `close` set a `reason` (the gate-refusal kinds above; an infra-wall tag for `review`); the other verbs leave it unset, keeping their bare `{"error"}` shape. The `--json` *default* stays a per-verb choice (orchestrator-consumed verbs default it on; the human-facing `reclaim` / `cancel` default it off) and is deliberately not unified. `reclaim` emits a typed `ReclaimOutput` / `SweepOutput` like every sibling verb.
 
 ## Known limitations
 

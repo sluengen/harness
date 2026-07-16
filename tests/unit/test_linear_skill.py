@@ -204,3 +204,39 @@ def test_no_live_reference_to_old_skill_id() -> None:
         "Update them to `linear`, or (in a migration doc) use the documented fold "
         "form ``linear-sync` → `linear`` (CAL-714 AC-4; CAL-750)."
     )
+
+
+# --- CAL-910: externalise the PR-id auto-transition trap ----------------------
+
+
+def test_skill_warns_pr_id_auto_transition_on_merge() -> None:
+    """The skill documents that a merged PR auto-transitions every ticket it names.
+
+    Linear's GitHub integration links an issue when its id appears in the PR
+    branch / title / body / commit and moves it to **Done** on merge — even when
+    the PR only *spawned* the ticket rather than completing it. A spawn-PR (e.g.
+    proposal acceptance listing its breakdown) that names those ids therefore
+    falsely closes the tickets it just created. The skill is the single home for
+    Linear behaviour, so this trap must live there, not only in session memory
+    (CAL-910).
+    """
+    text = LINEAR_SKILL.read_text().lower()
+
+    # the integration behaviour: id in a PR surface -> auto-Done on merge
+    assert "merge" in text and ("auto" in text) and "done" in text, (
+        "the linear skill must document that a *merged* PR *auto*-transitions a "
+        "linked ticket to *Done* (CAL-910)."
+    )
+    # the actionable rule turns on whether the PR completes vs only spawns the ticket
+    assert "spawn" in text and ("complete" in text), (
+        "the linear skill must state the spawn-vs-complete rule: a ticket id goes in "
+        "the PR only when the PR completes that ticket; a PR that merely spawns / "
+        "references tickets must keep their ids out (CAL-910)."
+    )
+    # it must name the linking surfaces a spawn-PR has to keep ids out of
+    surfaces = ("branch", "title", "body", "commit")
+    present = [s for s in surfaces if s in text]
+    assert len(present) >= 3, (
+        "the linear skill must name the PR surfaces that link an id to a PR — at "
+        f"least three of branch / title / body / commit; found {present} (CAL-910)."
+    )

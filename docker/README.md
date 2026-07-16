@@ -9,6 +9,16 @@ A self-contained Python 3.11-slim image with the harness pre-installed via
 `uv`. The host project repo is mounted at `/workspace`, so worktrees and the
 SQLite state database (`.harness/harness.db`) live on the host filesystem.
 
+The image ships **git 2.50.x compiled from source** rather than the base OS
+package. `harness start` creates each run's worktree in-container but that same
+worktree is operated on from the host, so its `.git`/`gitdir` pointers must be
+written in **relative** form to resolve across the `/workspace`↔`/Users/...`
+mount boundary (`worktree.useRelativePaths`, git ≥ 2.48). Debian trixie freezes
+git at 2.47.3, which cannot write — or even open — a relative-pointer worktree,
+so the Dockerfile's `git-build` stage compiles a matching git and copies it in
+(see [`specs/features/worktree-lifecycle.md`](../specs/features/worktree-lifecycle.md)).
+A **host** using this layout likewise needs git ≥ 2.48.
+
 The image is **not** a long-running service. The harness CLI is a one-shot
 process: each `docker run` invokes one verb (or one headless agent run) and
 exits. The entrypoint selects the role — `agent <TICKET>` drives the full
@@ -19,7 +29,7 @@ exits. The entrypoint selects the role — `agent <TICKET>` drives the full
 
 | Path | Purpose |
 |------|---------|
-| `docker/Dockerfile` | Image definition. Python 3.11-slim, deps via `uv sync --frozen --no-dev`, ENTRYPOINT `uv run harness`. |
+| `docker/Dockerfile` | Image definition. Python 3.11-slim, a `git-build` stage compiling git 2.50.x (relative worktrees need ≥ 2.48; trixie ships 2.47.3), deps via `uv sync --frozen --no-dev`, ENTRYPOINT `uv run harness`. |
 | `docker/docker-compose.yml` | Dev compose with mount, working dir, env vars, and `host.docker.internal` bridge. |
 | `.dockerignore` (repo root) | Excludes `.venv/`, `tests/`, `.git/`, `.worktrees/`, `.harness/`, `__pycache__/`, etc. |
 
@@ -83,10 +93,17 @@ Codex uses subscription auth (`auth_mode: chatgpt`) stored in
 the `codex` CLI can read its credentials. No `OPENAI_API_KEY` is needed or
 passed.
 
+The mount is **read-only** (`:ro`). Unlike `~/.claude` — which the in-container
+Claude engine writes session state to, so it must stay read-write — the
+in-container review engine is Claude, not Codex (`--engine codex` is host-only,
+[ADR 0002](../specs/decisions/0002-in-container-review-engine.md)). Nothing in
+the container writes `~/.codex`, so read-only removes that write surface without
+breaking anything.
+
 ```bash
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.codex":/root/.codex \
+  -v "$HOME/.codex":/home/harness/.codex:ro \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
   review --run-id 01J...
@@ -118,13 +135,13 @@ docker build -t harness:dev -f docker/Dockerfile .
 cd /abs/path/to/your-repo
 docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
-  -v "$HOME/.claude":/root/.claude:ro \
+  -v "$HOME/.claude":/home/harness/.claude:ro \
   -e LINEAR_API_KEY \
   harness:dev \
   start CAL-123
 ```
 
-(Replace the `-v "$HOME/.claude":/root/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above.)
+(Replace the `-v "$HOME/.claude":/home/harness/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above. The mount targets `/home/harness` because the container runs as the non-root `harness` user — see [Thin shell wrapper](#thin-shell-wrapper-binharness).)
 
 ### Via compose
 
@@ -154,11 +171,17 @@ directory with no flags or env-var setup.
 - **`LINEAR_API_KEY`** — reads from a `.env` file in the current directory if
   not already in the shell environment.
 - **Claude OAuth** — extracts the access token from the macOS Keychain
-  (`Claude Code-credentials`) on each invocation. No manual token setup or
-  `~/.claude` mount needed; the Keychain is the source of truth on macOS.
-- **Codex OAuth** — mounts `~/.codex` into the container. Codex uses
-  subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
-  no `OPENAI_API_KEY` is required or passed.
+  (`Claude Code-credentials`) on each invocation, and **refreshes it first if it
+  is expired or about to expire** (via `claude -p ok`, which makes the CLI write a
+  fresh token back to the Keychain) so a stale token never reaches the container
+  (CAL-941). No manual token setup or `~/.claude` mount needed; the Keychain is
+  the source of truth on macOS.
+- **Codex OAuth** — mounts `~/.codex` **read-only** into the container. Codex
+  uses subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
+  no `OPENAI_API_KEY` is required or passed. Read-only is safe because the
+  in-container review engine is Claude, not Codex (`--engine codex` is host-only,
+  [ADR 0002](../specs/decisions/0002-in-container-review-engine.md)) — nothing in
+  the container writes `~/.codex`.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
@@ -170,6 +193,17 @@ directory with no flags or env-var setup.
   into the container instead. `GIT_SSH_COMMAND` is set with `-F /dev/null` so the
   macOS `~/.ssh/config` (which carries `UseKeychain yes`, an option Linux ssh
   rejects) is ignored; auth comes from the forwarded agent.
+  > **Scope the forwarded key.** The container runs untrusted diff content, and a
+  > forwarded agent can authenticate as you to **any** host your loaded keys
+  > reach. Load only a key **scoped to the target remote(s)** into the agent for
+  > a harness run (e.g. a deploy key for the repo, not your account-wide key), so
+  > an in-container compromise cannot push to unrelated hosts on your behalf.
+- **Non-root user** — the container runs as the unprivileged `harness` user
+  (uid 1000), not root (CAL-1008), so an in-container compromise is not root over
+  the mounted repo or credentials. Host credentials are therefore mounted under
+  that user's home (`/home/harness/.ssh`, `/home/harness/.codex`) — reachable by
+  a non-root process — **not** `/root/...`, which is mode `700` and unreadable to
+  it.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
 
@@ -207,11 +241,33 @@ fi
 # HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
 # container and would reject the mounted repo, breaking cross-repo runs. Pin it.
 
-# Pull Claude OAuth token from macOS Keychain (containers can't access Keychain directly).
+# Pull the Claude OAuth token from the macOS Keychain (containers can't read the
+# Keychain directly). The stored access token is short-lived (a few hours), so
+# passing it verbatim long after `claude /login` makes every in-container `claude`
+# call 401 — which surfaces as a false `review` failure (CAL-941). So read the
+# token AND its expiry, and if the token is missing or within 5 min of expiring,
+# trigger the Claude CLI's own refresh host-side (`claude -p ok` makes the CLI
+# exchange the stored refreshToken and write a fresh token back to the Keychain),
+# then re-read. Both are forwarded (CLAUDE_CODE_OAUTH_EXPIRES_AT too) so
+# `harness doctor` can flag a stale token instead of failing silently in review.
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['claudeAiOauth']['accessToken'])" 2>/dev/null || true)
-  export CLAUDE_CODE_OAUTH_TOKEN
+  _read_claude_token() {
+    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin)['claudeAiOauth'];t=d.get('accessToken') or '';print(t, int(d.get('expiresAt') or 0)) if t else None" 2>/dev/null
+  }
+  read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
+  _now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
+  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || "${CLAUDE_CODE_OAUTH_EXPIRES_AT:-0}" -le "$((_now_ms + 300000))" ]]; then
+    if command -v claude >/dev/null 2>&1; then
+      # macOS ships no `timeout`; use it (or coreutils `gtimeout`) when present.
+      if command -v timeout >/dev/null 2>&1; then _t=(timeout 60)
+      elif command -v gtimeout >/dev/null 2>&1; then _t=(gtimeout 60)
+      else _t=(); fi
+      ${_t[@]+"${_t[@]}"} claude -p ok >/dev/null 2>&1 || true
+      read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
+    fi
+  fi
+  export CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT
 fi
 
 # Forward the host ssh-agent for `git push` over SSH (the close verb).
@@ -234,13 +290,14 @@ fi
 exec docker run --rm $([[ -t 0 ]] && echo "-it") \
   -v "$(pwd)":/workspace \
   -w /workspace \
-  -v "$HOME/.ssh":/root/.ssh:ro \
-  -v "$HOME/.codex":/root/.codex \
+  -v "$HOME/.ssh":/home/harness/.ssh:ro \
+  -v "$HOME/.codex":/home/harness/.codex:ro \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
-  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts' \
+  -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
+  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
   -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
   -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
   -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
@@ -269,10 +326,17 @@ not using the locally-built `harness:dev`.
 
 ### Token expiry
 
-The OAuth token extracted from the Keychain has an expiry. The wrapper fetches
-a fresh token on every invocation, so as long as your local Claude Code session
-is active the token will be valid. If you see auth errors, run `claude /login`
-on the host to refresh the Keychain entry.
+The OAuth token extracted from the Keychain is short-lived (a few hours). The
+wrapper reads its `expiresAt` and, when the token is missing or within 5 minutes
+of expiring, triggers the Claude CLI's own refresh host-side (`claude -p ok`,
+which exchanges the stored refresh token and writes a fresh access token back to
+the Keychain) before passing it in — so a run started long after `claude /login`
+still authenticates in the container (CAL-941). The freshness (`expiresAt`) is
+forwarded as `CLAUDE_CODE_OAUTH_EXPIRES_AT`, and `harness doctor` fails loudly on
+an expired token rather than letting `review` 401 silently. If the refresh cannot
+run — the stored refresh token is itself dead, or `claude` is not on `PATH` — the
+wrapper falls back to the stale token and `doctor` reports it; run `claude /login`
+on the host to re-establish the Keychain entry.
 
 ## Notes / caveats
 

@@ -39,7 +39,7 @@ designed for machine consumption.
 from __future__ import annotations
 
 import asyncio
-import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -48,8 +48,13 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import run_git, teardown_worktree
+from harness.cli._git import (
+    NETWORK_GIT_TIMEOUT_SECONDS,
+    run_git,
+    teardown_worktree,
+)
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
 from harness.linear import (
@@ -61,6 +66,12 @@ from harness.linear import (
 )
 from harness.state import store
 from harness.worktree import WorktreeNode, WorktreeNodeError
+
+# size: one cohesive verb — the start orchestration plus the Linear/resume
+# helpers and the DB + worktree rollback that keep its side effects atomic,
+# which splitting would only scatter across files. CAL-1007 un-swallowed the
+# two silent DB error paths (surface a failed read, warn on a failed rollback)
+# inline, pushing it just over the 500-line limit.
 
 __all__ = ["start_command", "StartOutput", "TicketContext"]
 
@@ -98,17 +109,13 @@ class StartOutput(BaseModel):
     base_branch: str
 
 
-class _StartError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _StartError(VerbError):
+    """``start``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    Raised inside the async orchestration and translated to a Typer ``Exit``
-    by :func:`start_command`.
+    Raised inside the async orchestration and translated to a Typer ``Exit`` by
+    :func:`start_command` via :func:`run_verb`. The ``(message, code)`` carrier
+    is inherited from the base; ``start`` never sets a ``reason``.
     """
-
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
 
 
 def start_command(
@@ -144,8 +151,8 @@ def start_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_start(
                 ticket=ticket,
                 base=base,
@@ -153,13 +160,9 @@ def start_command(
                 repo_root=repo_root,
                 db_path=db_path,
             )
-        )
-    except _StartError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
@@ -317,14 +320,29 @@ async def _resolve_resume_start_point(
 ) -> str | None:
     """The git commit a resumed run starts from, or ``None`` for a clean start.
 
-    Reads the reclaimed ticket's preserved (checkpoint-pushed) branch from Linear
-    and fetches it from ``origin``, returning the fetched tip SHA. Best-effort
-    throughout: no preserved branch, a branch that no longer fetches, or a Linear
-    probe error all return ``None`` so the run restarts clean rather than block
-    the queue (proposal ``stale-run-reclamation`` D4 / CAL-739).
+    Reads the ticket's preserved (checkpoint-pushed) branch from Linear and
+    fetches it from ``origin``, returning the fetched tip SHA. Two sources feed
+    resume, tried in order:
+
+    1. **Death-keyed reclamation** (``fetch_resume_branch`` — proposal
+       ``stale-run-reclamation`` D4 / CAL-739): a ``reclaimed`` ticket whose dead
+       run left a checkpoint-pushed branch.
+    2. **Proactive context-rollover handoff** (``fetch_handoff_branch`` —
+       proposal ``ground-specs-and-context-rollover`` WS-B / CAL-923): an alive
+       session near its context limit handed off the **same** (still In-Progress)
+       ticket. Its handoff marker carries no ``reclaimed`` label, so the
+       reclamation reader skips it — hence the explicit fall-through here.
+
+    Best-effort throughout: no preserved branch from either source, a branch that
+    no longer fetches, or a Linear probe error all return ``None`` so the run
+    restarts clean rather than block the queue. ``base`` (the merge target) is
+    unchanged either way, so ``close``'s HEAD-bound gate keeps the resumed run
+    safe from double-merge whichever source supplied the branch.
     """
     try:
         branch = await client.fetch_resume_branch(ticket)
+        if not branch:
+            branch = await client.fetch_handoff_branch(ticket)
     except (LinearNotFound, LinearRequestError):
         return None
     if not branch:
@@ -339,8 +357,17 @@ def _fetch_origin_branch(repo_root: Path, branch: str) -> str | None:
     branch name a later op could move. A non-zero fetch (the branch is no longer
     on ``origin``) or an unresolvable ``FETCH_HEAD`` returns ``None``: a clean
     restart, not an error. Sync — offloaded via :func:`asyncio.to_thread`.
+
+    The fetch is a network op, so it carries a timeout (CAL-1004); a fired
+    timeout is the same ``None`` a failed fetch already returns — resume degrades
+    to a clean start rather than hanging or raising.
     """
-    fetch = run_git(repo_root, "fetch", "origin", branch)
+    try:
+        fetch = run_git(
+            repo_root, "fetch", "origin", branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if fetch.returncode != 0:
         return None
     head = run_git(repo_root, "rev-parse", "FETCH_HEAD")
@@ -378,8 +405,16 @@ async def _find_open_run(
             ) as cur,
         ):
             row = await cur.fetchone()
-    except Exception:
-        return None
+    except aiosqlite.Error as exc:
+        # An uninitialized DB (the file exists but the `runs` table was never
+        # created) genuinely has no open run — treat that one case as empty.
+        # Every other read failure (a locked or corrupt DB) is a real error:
+        # surface it with its cause rather than masquerading as "no existing
+        # run", which would let start proceed and later report the misleading
+        # "concurrent start conflict but no existing run found".
+        if isinstance(exc, aiosqlite.OperationalError) and "no such table" in str(exc).lower():
+            return None
+        raise _StartError(f"failed to read run database: {exc}", 1) from exc
 
     if row is None:
         return None
@@ -432,15 +467,27 @@ async def _insert_open_run(
 
 
 async def _delete_run_row(db_path: Path, run_id: str) -> None:
-    """Delete the ``runs`` row for ``run_id``, best-effort (no exception on failure)."""
+    """Delete the ``runs`` row for ``run_id``, best-effort — never raises.
+
+    A failed rollback is not re-raised: the original error that triggered the
+    rollback keeps priority. But it is no longer silent — a failed delete leaves
+    an orphan ``open`` row whose partial unique index blocks *every* future
+    ``start`` for that ticket, so it warns to stderr naming the ``run_id`` and
+    the manual remedy instead of swallowing the failure.
+    """
     try:
         if not db_path.exists():
             return
         async with store.connect(db_path) as conn:
             await conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
             await conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass  # Best-effort rollback — original error takes priority.
+    except Exception as exc:  # noqa: BLE001 — best-effort: must not mask the original error
+        typer.echo(
+            f"warning: failed to roll back run row {run_id!r}: {exc}. "
+            f"An orphaned open run may remain and block future starts for this "
+            f"ticket — clear it with `harness cancel {run_id}` or `harness reclaim`.",
+            err=True,
+        )
 
 
 # ---------------------------------------------------------------------------

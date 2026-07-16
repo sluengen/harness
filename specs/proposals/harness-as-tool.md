@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: harness-as-tool
-status: accepted            # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-09
 related: [SPEC.md, specs/retired/hermes-control-model.md, specs/retired/build-workflow.md, commands/harness.md]
 ---

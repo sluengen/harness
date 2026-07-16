@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-06-14
-linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693]
+last_updated: 2026-07-06
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -22,7 +22,7 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 - GIVEN `harness start <ticket>` succeeds
 - THEN it inserts a `runs` row with `status='open'`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, and `started_at`
 - WHEN `harness close` passes its gate
-- THEN the same row flips to `status='closed'` and a terminal `close` event is appended
+- THEN the same row flips to `status='closed'` and a terminal `close` event is appended — **both in one `BEGIN IMMEDIATE` transaction**: a failed event write rolls the status flip back, so a run can never land `closed` with no `close` event (an inconsistent ledger no retry can repair, since nothing re-drives a terminal run) (CAL-1002). This mirrors the shared abandon transaction the `cancel`/`reclaim` scenarios use.
 
 #### Scenario: a cancelled run
 
@@ -43,6 +43,8 @@ The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalle
 ### The review verdict and its reviewed SHA live on an event, not a column
 
 The gate's load-bearing datum — the SHA a passing review was bound to — is **not** a `runs` column. `harness review` appends a `review` event whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`). `engine` records which review engine produced the verdict (`claude` | `codex`, CAL-701). When an explicit `--engine codex` run hits an exhausted tier, the verb falls back once to Claude (CAL-702): `engine` then reads `claude` and an optional `fallback_from: "codex"` records the substitution, so the gate stays *available* without the fallback ever being silent.
+
+Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`. The emitting verb builds the model (field names checked statically); a reader that `json_extract`s a key imports the field-derived path/key constant from that one module (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review`.
 
 #### Scenario: the close gate query
 

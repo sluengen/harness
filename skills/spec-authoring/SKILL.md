@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.4.0 -->
+<!-- guidance:spec-authoring@0.6.0 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -58,7 +58,11 @@ A proposal's outcome is explicit: **accepted** (spawns change specs; records its
 
 A single, concrete piece of work. The Linear issue is its home (`linear`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
 
+**Grounding (before the change spec).** Ground the spec in current reality before writing it: verify every fact it will rest on that names a **file / function / flag / version / decision** against the code as it is *now* — not as memory or a system-reminder recalls it (a recalled fact reflects what was true when it was written). Record what you find as a **`Grounding`** section in the change spec (`templates/change.md`): verified facts each anchored to a `path:line` (or a current version / flag value), any decision the ticket assumed settled that is actually open or already superseded (surface it now, not mid-build), and open questions. Where a sub-agent host is available, a read-only `researcher` agent produces this brief in its own context and the executor records it verbatim; where none is available, the executor self-grounds inline — the fallback. Grounding always happens, scaled to size: a one-line fix gets a one-line grounding ("verified `foo.py:rename_flag` still exists"), not a research essay. The recorded section makes grounding auditable and pulls decisions forward to creation time — its honest limit is that it evidences the step was *recorded*, not that grounding was genuinely performed.
+
 **Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `CONTEXT.md` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
+
+**Lifecycle sweep (conditional).** For any state-changing operation — a create / update / delete, or anything that mutates stored state — enumerate the **derived artifacts** of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state, per artifact, what happens to it. "Unaffected" is an acceptable answer; silence is not. This is the sweep that catches the write path that ships its primary mutation but drops a derived artifact — a stale cache, an unrevoked share token, a count left un-decremented — the defect class review keeps finding one artifact at a time. Do it at design time, in the change spec, where it is cheapest; a change that mutates no stored state has no sweep to do, so say so and move on.
 
 ## Feature spec
 

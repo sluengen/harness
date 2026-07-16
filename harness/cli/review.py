@@ -52,7 +52,12 @@ Exit codes (mirroring ``harness start``):
       machine-readable ``reason`` so the orchestrator can tell "the environment
       couldn't run the review" apart from "the diff was rejected" (CAL-866).
       This is NOT a code-review ``fail`` and NOT shippable, so it does not reuse
-      ``defer`` or record a verdict — no review event is written.
+      ``defer`` or record a verdict — no review event is written.  Two shapes hit
+      this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
+      (CAL-866), *and* ``codex`` exiting 0 but emitting a well-formed ``defer``
+      whose reasoning is the same bwrap wall — every read-only command it ran was
+      blocked, so it reviewed nothing (CAL-924).  Both mean the diff was never
+      reviewed, so both are infra, not a verdict.
 """
 
 from __future__ import annotations
@@ -61,8 +66,9 @@ import asyncio
 import json
 import os
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Literal, NamedTuple
 
 import typer
 from pydantic import BaseModel
@@ -71,13 +77,25 @@ from harness._time import iso_z
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import ReviewEventData
+from harness.loop_budget import (
+    convergence_check_required,
+    evaluate_breakers,
+    load_loop_budget,
+)
+from harness.state import store
 
 # size: one cohesive verb — the review prompt, bounded output model, SUBMIT-line
-# scanner, both engine-failure detectors (usage-limit → Claude fallback,
-# sandbox-init → infra exit; CAL-702/CAL-866), and the single-event-loop
-# orchestration. The detectors have one caller (`_run_review`); splitting them
-# off to chase the 500-line limit would fragment the verb, not clarify it.
+# scanner, the engine-failure detectors (usage-limit → Claude fallback, and two
+# sandbox walls → infra exit: codex's non-zero-exit/stderr case and its exit-0
+# masquerading-defer case; CAL-702/CAL-866/CAL-924), the ledger-backed spend
+# breakers (cycle ceiling + wall-clock; CAL-906), and the single-event-loop
+# orchestration.  The detectors + breaker glue have one caller (`_run_review`);
+# splitting them off to chase the 500-line limit would fragment the verb, not
+# clarify it. The breaker *decision* is already factored out to
+# harness.loop_budget (pure).
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -86,7 +104,9 @@ __all__ = [
     "RunResult",
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
+    "is_sandbox_blocked_defer",
     "EXIT_INFRA_FAILURE",
+    "EXIT_BREAKER_TRIPPED",
     "SANDBOX_INIT_REASON",
 ]
 
@@ -121,8 +141,10 @@ class RunResult(NamedTuple):
     returncode: int
 
 
-# A runner takes keyword args (cmd, stdin, env, cwd) and returns a RunResult.
-# Default = the real engine subprocess; tests inject a fake.
+# A runner takes keyword args (cmd, stdin, env, cwd, timeout) and returns a
+# RunResult. Default = the real engine subprocess; tests inject a fake. The
+# ``timeout`` (seconds, or None) is the per-subprocess ceiling (CAL-1004); a
+# fake may accept and ignore it.
 Runner = Callable[..., Awaitable[RunResult]]
 
 
@@ -165,6 +187,12 @@ class ReviewOutput(BaseModel):
     appears here (context-economy AC).  ``commit_message`` / ``deferred_brief``
     are persisted to the ledger event but deliberately kept off the printed
     surface to hold the printed JSON to the minimal verdict the agent needs.
+
+    ``convergence_check_required`` is a bounded advisory (CAL-906): ``True`` when
+    this fail lands past the unconditional review→fix cycles and below the
+    ceiling, so the build agent must assess whether the fixes are converging
+    before spending another cycle. It is a single bool — no engine reasoning —
+    so it does not breach the context-economy guarantee.
     """
 
     verdict: Verdict
@@ -172,22 +200,19 @@ class ReviewOutput(BaseModel):
     reviewed_sha: str
     run_id: str
     engine: Engine
+    convergence_check_required: bool = False
 
 
-class _ReviewError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _ReviewError(VerbError):
+    """``review``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``reason`` is an optional stable, machine-readable tag emitted on the error
-    JSON (mirroring ``close``'s ``{"error", "reason"}`` refusal shape) so a
-    caller can branch on the *kind* of failure — e.g. an infra wall vs an
-    unexpected error — rather than string-matching the human message (CAL-866).
+    ``review`` *sets* ``reason`` (an optional stable, machine-readable tag
+    emitted on the error JSON, mirroring ``close``'s ``{"error", "reason"}``
+    refusal shape) so a caller can branch on the *kind* of failure — e.g. an
+    infra wall vs an unexpected error — rather than string-matching the human
+    message (CAL-866). The ``(message, code, reason)`` carrier is inherited from
+    the base.
     """
-
-    def __init__(self, message: str, code: int, *, reason: str | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.reason = reason
 
 
 # ---------------------------------------------------------------------------
@@ -281,12 +306,19 @@ async def _default_runner(
     stdin: str,
     env: dict[str, str],
     cwd: Path | None,
+    timeout: float | None = None,
 ) -> RunResult:
     """Run ``cmd`` as a subprocess, feed ``stdin``, capture stdout/stderr/exit.
 
     stderr and the exit code are captured (no longer discarded) so the Codex
     usage-limit fallback (CAL-702) can detect an exhausted tier: the limit
     signal lands on stderr with a non-zero exit, never on stdout.
+
+    ``timeout`` (seconds) caps the engine subprocess (CAL-1004). On expiry the
+    process is killed and reaped and the run is failed as infra — a hung engine
+    never reviewed the diff, so it is not a verdict — via ``_ReviewError``
+    (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`). ``None`` keeps the
+    old unbounded behaviour for any direct caller that opts out.
     """
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -297,7 +329,24 @@ async def _default_runner(
         cwd=cwd,
         limit=8 * 1024 * 1024,  # engines can emit large lines (file reads, diffs)
     )
-    stdout_bytes, stderr_bytes = await process.communicate(stdin.encode())
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            process.communicate(stdin.encode()), timeout=timeout
+        )
+    except TimeoutError:
+        # asyncio.wait_for raises the builtin TimeoutError (3.11+) after
+        # cancelling communicate(); the child is still alive. Kill and reap it so
+        # no zombie/orphan survives, then surface the infra failure.
+        process.kill()
+        await process.wait()
+        raise _ReviewError(
+            f"review engine exceeded its {timeout:.0f}s timeout and was killed; "
+            "this is an environment/infra failure (a hung engine never reviewed "
+            "the diff), not a code-review verdict. Raise engine_timeout_seconds "
+            "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
+            EXIT_INFRA_FAILURE,
+            reason=ENGINE_TIMEOUT_REASON,
+        ) from None
     return RunResult(
         stdout=stdout_bytes.decode(errors="replace"),
         stderr=stderr_bytes.decode(errors="replace"),
@@ -357,8 +406,23 @@ _SANDBOX_INIT_MARKER = "no permissions to create a new namespace"
 # rejected diff (CAL-866).
 EXIT_INFRA_FAILURE = 3
 
+# Exit code for a tripped spend breaker (the run hit the review-cycle ceiling or
+# the wall-clock budget; CAL-906). Distinct from every other code so the
+# orchestrator can tell "stop and escalate, the loop is bounded out" from a
+# rejected diff or an infra wall. Like the infra failure, no review event is
+# recorded and the engine never runs — the carried ``reason`` names which breaker
+# tripped (``review_cycle_ceiling`` / ``wall_clock_budget``).
+EXIT_BREAKER_TRIPPED = 4
+
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
 SANDBOX_INIT_REASON = "sandbox_init_failure"
+
+# Machine-readable ``reason`` for a review engine killed by the subprocess
+# timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
+# the diff, so this is infra (``EXIT_INFRA_FAILURE``), not a code-review verdict:
+# no review event is recorded and the run stops with a distinct, greppable tag
+# rather than hanging until an external kill (exit 143).
+ENGINE_TIMEOUT_REASON = "engine_timeout"
 
 
 def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
@@ -377,15 +441,58 @@ def is_sandbox_init_failure(stderr: str, returncode: int) -> bool:
     return _SANDBOX_INIT_MARKER in stderr.lower()
 
 
-async def _invoke_engine(runner: Runner, engine: Engine, cwd: Path) -> RunResult:
-    """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``."""
+def is_sandbox_blocked_defer(verdict: str, issues: list[str], engine: Engine) -> bool:
+    """True iff a Codex ``defer`` is really a sandbox-blocked non-review (CAL-924).
+
+    :func:`is_sandbox_init_failure` catches the case where ``codex exec`` itself
+    exits non-zero with the bwrap marker on **stderr**.  It MISSES the subtler
+    case seen in the CAL-906 dogfood: ``codex exec`` exits **0**, but every
+    read-only command it shells out to inspect the diff is killed by bwrap, so
+    Codex reviews nothing yet emits a well-formed
+    ``SUBMIT: {"verdict": "defer", ...}`` whose reasoning is "I could not run any
+    command (bwrap: no permissions to create a new namespace)".  That reads as a
+    normal, shippable ``defer`` though no review happened.
+
+    This detector reads the OTHER channel: the same bwrap marker
+    (:data:`_SANDBOX_INIT_MARKER`, case-insensitive) inside the reviewer's own
+    reasoning — the parsed ``issues``.  It is deliberately narrow:
+
+    * only a ``defer`` — a blocked review cannot ``pass`` or ``fail`` without
+      inspecting the diff, so pass/fail are left untouched;
+    * only the ``codex`` engine — ``claude`` runs in plan mode, never bwrap, so a
+      Claude ``defer`` that merely quotes the phrase is never swallowed.
+
+    A genuine, well-founded defer (a real out-of-scope finding, no marker) stays
+    a recorded ``defer``.  (Honest limit: a codex review that genuinely inspects
+    the diff yet quotes the exact bwrap phrase in its finding would be caught —
+    an acceptably rare shape, weighed against a review that never ran silently
+    shipping.)
+    """
+    if engine != "codex" or verdict != "defer":
+        return False
+    return _SANDBOX_INIT_MARKER in " ".join(issues).lower()
+
+
+async def _invoke_engine(
+    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None
+) -> RunResult:
+    """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``.
+
+    ``timeout`` is forwarded to the runner as the per-subprocess ceiling
+    (CAL-1004). A ``_ReviewError`` the runner already raised — the timeout
+    infra-failure carries its own exit code and ``reason`` — passes through
+    unchanged; only *other* exceptions are wrapped as the generic exit-1 error.
+    """
     try:
         return await runner(
             cmd=_build_cmd(engine),
             stdin=_REVIEW_PROMPT,
             env=dict(os.environ),
             cwd=cwd,
+            timeout=timeout,
         )
+    except _ReviewError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
 
@@ -430,8 +537,8 @@ def review_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_review(
                 repo_root=repo_root,
                 run_id=run_id,
@@ -439,18 +546,9 @@ def review_command(
                 engine=engine,
                 runner=_default_runner,
             )
-        )
-    except _ReviewError as exc:
-        if json_output:
-            payload: dict[str, str] = {"error": exc.message}
-            # A stable ``reason`` lets the orchestrator branch on the failure
-            # kind (e.g. an infra wall) without parsing the human message.
-            if exc.reason is not None:
-                payload["reason"] = exc.reason
-            typer.echo(json.dumps(payload))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
@@ -482,6 +580,26 @@ async def _run_review(
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
 
+    # 1a. Enforce the ledger-backed spend breakers BEFORE running an engine
+    #     (CAL-906). This verb is the loop boundary, so the cycle ceiling and the
+    #     per-run wall-clock are checked here against state already in the ledger:
+    #     the count of prior ``review`` events and the run's ``started_at``. A
+    #     trip records NO review event and never invokes an engine — it raises the
+    #     refusal contract (a dedicated exit + machine-readable ``reason``) so the
+    #     orchestrator stops and escalates rather than spinning the fix loop.
+    budget = load_loop_budget(repo_root)
+    prior_review_count = await _count_review_events(db_path, resolved_run_id)
+    started_at = await _read_started_at(db_path, resolved_run_id)
+    if started_at is not None:
+        trip = evaluate_breakers(
+            prior_review_count=prior_review_count,
+            started_at=started_at,
+            now=datetime.now(UTC),
+            budget=budget,
+        )
+        if trip is not None:
+            raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
+
     # 2. Capture HEAD at review time — the load-bearing SHA binding (D2).
     try:
         reviewed_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
@@ -496,7 +614,10 @@ async def _run_review(
     engine_used: Engine = engine
     fallback_from: Engine | None = None
 
-    result = await _invoke_engine(runner, engine, Path(worktree_path))
+    # The configured per-subprocess ceiling (CAL-1004): a hung engine is killed
+    # and surfaced as infra rather than hanging this verb until an external kill.
+    engine_timeout = budget.engine_timeout_seconds
+    result = await _invoke_engine(runner, engine, Path(worktree_path), timeout=engine_timeout)
 
     # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
     # namespace in a non-privileged container) is INFRA, not a verdict — the
@@ -520,31 +641,68 @@ async def _run_review(
     if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
         fallback_from = "codex"
         engine_used = "claude"
-        result = await _invoke_engine(runner, "claude", Path(worktree_path))
+        result = await _invoke_engine(
+            runner, "claude", Path(worktree_path), timeout=engine_timeout
+        )
 
     # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
     #    full stdout/stderr stays local to the verb — only the verdict escapes.
     parsed = scan_submit_line(result.stdout)
 
+    # 4a. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
+    #     sandbox-blocked non-review, not a shippable defer (CAL-924): ``codex
+    #     exec`` exited 0, but every read-only command it ran to inspect the diff
+    #     was killed by bwrap, so it reviewed nothing.  The stderr/non-zero
+    #     detector above misses this (exit 0, marker on stdout not stderr), so
+    #     surface it as the SAME infra failure (CAL-866 contract) — dedicated exit
+    #     + ``reason``, NO review event — rather than recording a ``defer`` for a
+    #     review that never happened.  ``engine_used`` (not the requested engine)
+    #     is what ran: a usage-limit fallback would already have flipped it to
+    #     claude, and a claude ``defer`` is never treated this way.
+    if is_sandbox_blocked_defer(parsed.verdict, parsed.issues, engine_used):
+        raise _ReviewError(
+            "review engine could not initialize its sandbox (bwrap: no "
+            "permissions to create a new namespace); codex exec exited 0 but "
+            "every command it ran to inspect the diff was blocked, so it "
+            "reviewed nothing and emitted an empty 'defer'. This is an "
+            "environment/infra failure, not a code-review verdict. Run review "
+            "where the engine can create a user namespace, or use a different "
+            "--engine.",
+            EXIT_INFRA_FAILURE,
+            reason=SANDBOX_INIT_REASON,
+        )
+
+    # 4b. The convergence advisory (CAL-906): this review is cycle
+    #     ``prior_review_count + 1``. A fail past the unconditional window and
+    #     below the ceiling tells the build agent to assess whether the fixes are
+    #     converging before spending another cycle. A bounded bool — no engine
+    #     reasoning — surfaced on both the printed verdict and the ledger event.
+    needs_convergence_check = convergence_check_required(
+        cycles_completed=prior_review_count + 1,
+        verdict=parsed.verdict,
+        budget=budget,
+    )
+
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
     created_at = iso_z()
-    event_data: dict[str, Any] = {
-        "run_id": resolved_run_id,
-        "reviewed_sha": reviewed_sha,
-        "verdict": parsed.verdict,
-        "issues": parsed.issues,
-        "engine": engine_used,
-        "created_at": created_at,
-    }
-    # Record the fallback in the ledger — never silent (CAL-702 AC-4).  Present
-    # only when a Codex usage-limit forced the hop to Claude.
-    if fallback_from is not None:
-        event_data["fallback_from"] = fallback_from
-    if parsed.commit_message is not None:
-        event_data["commit_message"] = parsed.commit_message
-    if parsed.deferred_brief is not None:
-        event_data["deferred_brief"] = parsed.deferred_brief
+    # The typed contract for this payload (CAL-1012): the close gate reads
+    # ``reviewed_sha`` + ``verdict`` back out of it.  ``exclude_none=True``
+    # reproduces the verb's old ``if x is not None`` optional keys — the fallback
+    # marker (never silent, CAL-702 AC-4) and the commit_message / deferred_brief
+    # stay absent from the JSON when unset.
+    event_data = ReviewEventData(
+        run_id=resolved_run_id,
+        reviewed_sha=reviewed_sha,
+        verdict=parsed.verdict,
+        issues=parsed.issues,
+        engine=engine_used,
+        convergence_check_required=needs_convergence_check,
+        created_at=created_at,
+        fallback_from=fallback_from,
+        commit_message=parsed.commit_message,
+        deferred_brief=parsed.deferred_brief,
+    ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
     try:
@@ -566,4 +724,56 @@ async def _run_review(
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
         engine=engine_used,
+        convergence_check_required=needs_convergence_check,
     )
+
+
+# ---------------------------------------------------------------------------
+# Ledger reads for the spend breakers (CAL-906)
+# ---------------------------------------------------------------------------
+
+
+async def _count_review_events(db_path: Path, run_id: str) -> int:
+    """Count the ``review`` events already recorded for ``run_id``.
+
+    This is the prior review→fix cycle count the cycle ceiling is measured
+    against. A missing DB (no run yet) counts as zero.
+    """
+    if not db_path.exists():
+        return 0
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review'",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:
+    """Read the run's ``started_at`` as an aware datetime, or ``None``.
+
+    ``runs.started_at`` is written with a plain ``.isoformat()`` (offset form, no
+    trailing ``Z``); ``datetime.fromisoformat`` round-trips it (and also accepts
+    the trailing-``Z`` form historical/seeded rows may carry, on Python 3.11+).
+    A missing row or an unparseable value yields ``None`` so the wall-clock
+    breaker degrades to "do not trip" rather than erroring the verb.
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT started_at FROM runs WHERE run_id = ?",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(row[0]))
+    except ValueError:
+        return None

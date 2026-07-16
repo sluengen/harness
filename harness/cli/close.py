@@ -30,7 +30,9 @@ guarantee):
    ``git merge --no-ff`` the run branch into ``base_branch``.
 2. ``git push`` the base branch.
 3. Transition the Linear ticket to Done.
-4. Flip the ``runs`` row to ``status='closed'`` and emit a ``close`` event.
+4. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
+   one transaction (CAL-1002), so a failed ledger write never strands a terminal
+   run with no close event.
 5. Reclaim the run's worktree and branch (``teardown_worktree``): the merge has
    landed, so the worktree directory and the branch — local, and on ``origin``
    if a checkpoint pushed it — are removed. This step is **best-effort**: a
@@ -62,6 +64,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -69,10 +72,21 @@ import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
-from harness.cli._git import rev_parse_head, run_git, teardown_worktree
+from harness.cli._git import (
+    NETWORK_GIT_TIMEOUT_SECONDS,
+    rev_parse_head,
+    run_git,
+    teardown_worktree,
+)
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
-from harness.events.emitter import EventEmitter
+from harness.cli._verb import VerbError, run_verb
+from harness.events.payloads import (
+    REVIEW_REVIEWED_SHA_PATH,
+    REVIEW_VERDICT_PATH,
+    CloseEventData,
+)
+from harness.events.schema import EVENT_TYPES
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -82,10 +96,21 @@ from harness.linear import (
 )
 from harness.state import store
 
+# size: one cohesive verb — the close gate plus the integrate → merge → push →
+# teardown lifecycle it guards, which splitting would only scatter across files.
+# CAL-1004 added the network-timeout guards (fetch/push) inline, per run_git's
+# caller-owns-error-policy contract, pushing it just over the 500-line limit.
+
 __all__ = ["close_command", "CloseOutput"]
 
 # The structured refusal reasons — exactly one is reported on a gate failure.
 RefusalReason = Literal["no_run", "dirty_worktree", "no_passing_review", "stale_review"]
+
+#: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
+#: assert guards against a rename drifting the inlined INSERT away from the
+#: canonical set (mirrors :data:`harness.cli._abandon.ABANDON_EVENT_TYPE`).
+_CLOSE_EVENT_TYPE = "close"
+assert _CLOSE_EVENT_TYPE in EVENT_TYPES
 
 
 class CloseOutput(BaseModel):
@@ -104,18 +129,15 @@ class CloseOutput(BaseModel):
     status: str
 
 
-class _CloseError(Exception):
-    """Internal control-flow exception carrying a message and an exit code.
+class _CloseError(VerbError):
+    """``close``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``reason`` is set for gate refusals so the command can print the structured
-    ``{"reason": ...}`` JSON; it is ``None`` for unexpected (exit 1) errors.
+    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`) so
+    the structured ``{"error", "reason"}`` JSON names the refusal kind; it is
+    left ``None`` for unexpected (exit 1) errors. The ``(message, code, reason)``
+    carrier is inherited from the base; every raise site passes ``reason=`` by
+    keyword.
     """
-
-    def __init__(self, message: str, code: int, reason: RefusalReason | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.reason = reason
 
 
 def close_command(
@@ -145,24 +167,17 @@ def close_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_close(
                 ticket=ticket,
                 repo_root=repo_root,
                 run_id=run_id,
                 db_path=db_path,
             )
-        )
-    except _CloseError as exc:
-        if json_output:
-            payload: dict[str, Any] = {"error": exc.message}
-            if exc.reason is not None:
-                payload["reason"] = exc.reason
-            typer.echo(json.dumps(payload))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
@@ -254,19 +269,20 @@ async def _run_close(
     except (LinearNotFound, LinearRequestError) as exc:
         raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
 
-    # 8. Flip the run row to closed and record the close event (audit trail).
+    # 8. Flip the run row to closed and record the close event in one
+    #    transaction — see ``_mark_run_closed`` (CAL-1002).
     closed_at = iso_z()
     try:
-        await _mark_run_closed(db_path, resolved_run_id)
-        await EventEmitter(db_path).emit(
-            run_id=resolved_run_id,
-            event_type="close",
-            data={
-                "run_id": resolved_run_id,
-                "ticket": ticket,
-                "merged_sha": head_sha,
-                "closed_at": closed_at,
-            },
+        await _mark_run_closed(
+            db_path,
+            resolved_run_id,
+            event_data=CloseEventData(
+                run_id=resolved_run_id,
+                ticket=ticket,
+                merged_sha=head_sha,
+                closed_at=closed_at,
+            ).model_dump(),
+            event_ts=closed_at,
         )
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"failed to record run close: {exc}", 1) from exc
@@ -318,10 +334,13 @@ async def _evaluate_gate(
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT json_extract(data_json, '$.reviewed_sha') "
+            # The json paths are the single-sourced payload-key constants
+            # (CAL-1012), passed as bound parameters — SQLite accepts a bound
+            # json_extract path, so the gate holds no raw ``$.<key>`` literal.
+            "SELECT json_extract(data_json, ?) "
             "FROM events WHERE run_id = ? AND event_type = 'review' "
-            "AND json_extract(data_json, '$.verdict') = 'pass'",
-            (run_id,),
+            "AND json_extract(data_json, ?) = 'pass'",
+            (REVIEW_REVIEWED_SHA_PATH, run_id, REVIEW_VERDICT_PATH),
         ) as cur,
     ):
         rows = await cur.fetchall()
@@ -343,14 +362,41 @@ async def _evaluate_gate(
 # ---------------------------------------------------------------------------
 
 
-async def _mark_run_closed(db_path: Path, run_id: str) -> None:
-    """Flip the ``runs`` row for ``run_id`` to ``status='closed'``."""
+async def _mark_run_closed(
+    db_path: Path,
+    run_id: str,
+    *,
+    event_data: dict[str, Any],
+    event_ts: str,
+) -> None:
+    """Flip the ``runs`` row to ``status='closed'`` and append its ``close`` event.
+
+    Both writes share **one** ``BEGIN IMMEDIATE`` transaction — commit once, or
+    roll back together (CAL-1002). Split across two connections, a crash between
+    the flip and the event stranded a terminal ``closed`` run with no ``close``
+    event: an inconsistent ledger no retry can repair (nothing re-drives a
+    terminal run). Mirrors the shared abandon transaction
+    (:func:`harness.cli._abandon.abandon_run_in_ledger`); the event INSERT is
+    inlined here — not via :class:`~harness.events.emitter.EventEmitter`, which
+    opens its own connection — so it shares this commit.
+    """
+    data_json = json.dumps(event_data)
     async with store.connect(db_path) as conn:
-        await conn.execute(
-            "UPDATE runs SET status = 'closed' WHERE run_id = ?",
-            (run_id,),
-        )
-        await conn.commit()
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            await conn.execute(
+                "UPDATE runs SET status = 'closed' WHERE run_id = ?",
+                (run_id,),
+            )
+            await conn.execute(
+                "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+                "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, None, _CLOSE_EVENT_TYPE, event_ts, None, data_json),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -403,8 +449,19 @@ def _merge_and_push(
     """
     output: list[str] = []
 
-    def _run(cwd: Path, *args: str) -> None:
-        result = run_git(cwd, *args)
+    def _run(cwd: Path, *args: str, timeout: float | None = None) -> None:
+        # A fired network timeout (fetch/push) raises TimeoutExpired rather than
+        # returning a non-zero result — convert it to the same _CloseError shape
+        # so close fails cleanly instead of leaking a raw traceback (CAL-1004).
+        try:
+            result = run_git(cwd, *args, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise _CloseError(
+                f"git {' '.join(args)} exceeded the {timeout:.0f}s network "
+                f"timeout in {cwd}; the remote may be unreachable — retry close "
+                "once it is back",
+                1,
+            ) from exc
         output.append(result.stdout)
         output.append(result.stderr)
         if result.returncode != 0:
@@ -420,7 +477,7 @@ def _merge_and_push(
     # Integrate the current origin/<base> BEFORE merging, so a base that advanced
     # during the run does not reject the push as non-fast-forward (CAL-777). Fetch
     # the remote tip into FETCH_HEAD and fast-forward the local base to it.
-    _run(repo_root, "fetch", "origin", base_branch)
+    _run(repo_root, "fetch", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
     ff = run_git(repo_root, "merge", "--ff-only", "FETCH_HEAD")
     output.append(ff.stdout)
     output.append(ff.stderr)
@@ -458,6 +515,6 @@ def _merge_and_push(
             1,
         )
 
-    _run(repo_root, "push", "origin", base_branch)
+    _run(repo_root, "push", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
 
     return "".join(output)

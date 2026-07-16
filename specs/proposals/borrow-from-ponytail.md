@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: borrow-from-ponytail
-status: accepted            # draft | under-decision | accepted | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-06-15
 related: [CAL-710, CAL-711]
 ---

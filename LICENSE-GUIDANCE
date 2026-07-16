@@ -1,0 +1,60 @@
+harness -- guidance licence (MIT)
+=================================
+
+Copyright (c) 2026 Scott Luengen
+
+The harness engine is licensed under the GNU Affero General Public License v3.0
+(see LICENSE). This file is the exception to that: the guidance files the
+harness installs into other repositories are licensed under the MIT License
+reproduced below, and the MIT terms alone govern them.
+
+The reason for the exception is the install model. The installer physically
+copies these files into your repository and commits them there, so a copyleft
+licence on them would reach into a codebase that merely adopted the
+methodology. It does not: you may install this guidance into any repository,
+including a proprietary one, modify it freely, and are under no obligation to
+publish anything as a result.
+
+SPDX-License-Identifier: MIT
+
+Scope -- "the Software" below means every file under these paths:
+
+    agents/
+    commands/
+    hooks/
+    process/
+    settings/
+    skills/
+    templates/
+
+The authoritative boundary is the `files:` block of `registry.yaml`, which by
+construction enumerates exactly what the installer copies into a consuming
+repo. The paths above are the directories that block spans; `registry.yaml`
+governs if the two ever disagree, and a test holds them in correspondence
+(tests/unit/test_license_boundary.py). Everything outside these paths -- the
+CLI in `harness/`, its tests, and its build and container tooling -- is the
+engine, and is AGPL-3.0-only.
+
+--------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Scott Luengen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

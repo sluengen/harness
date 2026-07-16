@@ -51,6 +51,19 @@ def repo(tmp_path: Path) -> Iterator[Path]:
     yield repo_root
 
 
+def _git_version() -> tuple[int, int]:
+    """The (major, minor) of the git on PATH — for gating relative-worktree assertions."""
+    out = subprocess.run(
+        ["git", "--version"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    # "git version 2.50.1 (Apple Git-155)" -> (2, 50)
+    parts = out.split()[2].split(".")
+    return int(parts[0]), int(parts[1])
+
+
+_SUPPORTS_RELATIVE_WORKTREES = _git_version() >= (2, 48)
+
+
 def _branch_exists(repo_root: Path, name: str) -> bool:
     proc = subprocess.run(
         ["git", "branch", "--list", name],
@@ -180,6 +193,45 @@ async def test_ac7_missing_base_branch_raises_clean(repo: Path) -> None:
 
     leftover = repo / ".worktrees" / "harness" / "run-bad"
     assert not leftover.exists()
+
+# ---------------------------------------------------------------------------
+# Relative, prune-safe pointers (CAL-935)
+#
+# The worktree `.git` file and the admin `gitdir` pointer must be written in
+# RELATIVE form so they resolve identically across the host<->container mount
+# boundary (/Users/... vs /workspace) — eliminating the manual gitdir-pointer
+# flip. Relative pointers are also prune-safe: an absolute pointer that does not
+# resolve in the current namespace makes `git worktree list` mark the worktree
+# `prunable`, and a concurrent prune then deletes its admin dir (CAL-866).
+# Requires git >= 2.48 (worktree.useRelativePaths); skipped otherwise.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _SUPPORTS_RELATIVE_WORKTREES,
+    reason="git < 2.48 has no worktree.useRelativePaths; the image mandates >= 2.48",
+)
+async def test_create_writes_relative_prune_safe_pointers(repo: Path) -> None:
+    """create() writes relative worktree pointers, and the worktree is not prunable."""
+    node = WorktreeNode()
+    await node.create(run_id="run-rel", repo_root=repo, base="main")
+
+    wt = repo / ".worktrees" / "harness" / "run-rel"
+
+    # 1. The worktree's `.git` pointer is relative (no leading '/').
+    dotgit = (wt / ".git").read_text().strip()
+    assert dotgit.startswith("gitdir: ")
+    wt_target = dotgit[len("gitdir: ") :]
+    assert not wt_target.startswith("/"), f"worktree .git is absolute: {wt_target!r}"
+
+    # 2. The admin gitdir pointer (repo/.git/worktrees/<id>/gitdir) is relative.
+    admin_gitdir = (repo / ".git" / "worktrees" / "run-rel" / "gitdir").read_text().strip()
+    assert not admin_gitdir.startswith("/"), f"admin gitdir is absolute: {admin_gitdir!r}"
+
+    # 3. git does not consider the worktree prunable (the CAL-866 data-loss trigger).
+    listing = _git(repo, "worktree", "list", "--porcelain").stdout
+    assert "prunable" not in listing, f"worktree marked prunable:\n{listing}"
+
 
 # ---------------------------------------------------------------------------
 # branch_prefix parameter

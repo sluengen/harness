@@ -11,6 +11,7 @@ exactly as the existing client tests do.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -504,6 +505,80 @@ async def test_fetch_resume_branch_none_when_no_reclaim_comment(
     assert await client.fetch_resume_branch("CAL-739") is None
 
 
+# ---------------------------------------------------------------------------
+# fetch_handoff_branch — the preserved branch a proactively-handed-off ticket
+# continues from (CAL-923). Keyed on the handoff marker, NOT the reclaimed label:
+# a proactive handoff keeps the ticket In Progress with no label.
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_handoff_branch_returns_latest_and_needs_no_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ticket with a handoff comment returns its branch — with **no** ``reclaimed``
+    label (a proactive handoff stays In Progress). The latest handoff comment wins."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    old = format_handoff_comment("H1", "harness/old", when="2026-07-02T00:00:00Z")
+    new = format_handoff_comment("H2", "harness/new", when="2026-07-02T00:02:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [old, "an unrelated comment", new])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") == "harness/new"
+
+
+async def test_fetch_handoff_branch_ignores_a_reclaim_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-collision at the reader level: a ticket carrying only a death-keyed
+    reclaim comment yields None from the handoff reader — the proactive path never
+    resumes from a reclamation's branch."""
+    from harness.reclaim_marker import format_reclaim_comment
+
+    body = format_reclaim_comment("R1", "harness/reclaimed", when="2026-07-02T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue(["reclaimed"], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") is None
+
+
+async def test_fetch_handoff_branch_none_when_preserved_no_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A handoff that preserved no durable WIP (the sentinel) → None, so resume
+    degrades to a clean restart."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    body = format_handoff_comment("H1", None, when="2026-07-02T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [body])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-923") is None
+
+
+async def test_fetch_handoff_branch_raises_not_found_for_null_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing issue raises LinearNotFound, mirroring fetch_resume_branch."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.fetch_handoff_branch("CAL-999")
+
+
 async def test_fetch_resume_branch_raises_not_found_for_null_issue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -516,3 +591,87 @@ async def test_fetch_resume_branch_raises_not_found_for_null_issue(
     client = LinearClient(api_key="fake-key")
     with pytest.raises(LinearNotFound):
         await client.fetch_resume_branch("CAL-999")
+
+
+# ---------------------------------------------------------------------------
+# Pagination window (CAL-1005): on a >20-comment ticket the newest reclaim /
+# handoff marker must still land in the fetched window. The earlier queries
+# asked for ``comments(first: 20)``; Linear's default connection order is
+# oldest-first, so ``first: 20`` returns the *oldest* 20 and the freshest
+# marker (posted just before resume) falls off the page. These tests mock the
+# GraphQL boundary as a real pagination window would behave, so they are RED
+# against ``first:`` and GREEN once the query windows newest-first.
+# ---------------------------------------------------------------------------
+
+
+def _paginating_request(
+    labels: list[str], comments: list[str]
+) -> Any:
+    """A ``_request`` fake that honours the query's ``first:`` / ``last:`` window.
+
+    ``comments`` is the full ordered comment history, oldest-first (index 0 is
+    the oldest). Each node's ``createdAt`` increases with its index, so ``max``
+    over ``createdAt`` mirrors real recency. The fake reads the ``first: N`` /
+    ``last: N`` argument out of the query and returns only that slice — the
+    oldest N for ``first``, the newest N for ``last`` — exactly as Linear's
+    default-order connection would. This is what makes an unwindowed
+    ``first: 20`` query genuinely lose the newest marker in the fixture.
+    """
+    nodes = [
+        {"body": body, "createdAt": f"2026-06-16T00:{i:02d}:00.000Z"}
+        for i, body in enumerate(comments)
+    ]
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        match = re.search(r"comments\((first|last):\s*(\d+)\)", query)
+        assert match is not None, f"comments query has no first/last window: {query!r}"
+        direction, count_str = match.group(1), match.group(2)
+        count = int(count_str)
+        window = nodes[:count] if direction == "first" else nodes[-count:]
+        return {
+            "data": {
+                "issue": {
+                    "labels": {"nodes": [{"name": n} for n in labels]},
+                    "comments": {"nodes": window},
+                }
+            }
+        }
+
+    return fake_request
+
+
+async def test_fetch_resume_branch_finds_newest_marker_beyond_first_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On a 25-comment ticket, the newest reclaim comment is the last one — it
+    must still resolve. With an oldest-first ``first: 20`` window it falls off
+    the page and resume degrades to a clean restart (the CAL-1005 bug)."""
+    from harness.reclaim_marker import format_reclaim_comment
+
+    marker = format_reclaim_comment(
+        "R1", "harness/newest", when="2026-06-16T00:24:00Z"
+    )
+    comments = [f"chatter {i}" for i in range(24)] + [marker]  # 25 total, marker newest
+    monkeypatch.setattr(
+        LinearClient, "_request", _paginating_request(["reclaimed"], comments)
+    )
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_resume_branch("CAL-1005") == "harness/newest"
+
+
+async def test_fetch_handoff_branch_finds_newest_marker_beyond_first_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The handoff reader has the same window bug: on a 25-comment ticket the
+    newest handoff comment (posted just before the rollover) must resolve."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    marker = format_handoff_comment(
+        "H1", "harness/newest", when="2026-06-16T00:24:00Z"
+    )
+    comments = [f"chatter {i}" for i in range(24)] + [marker]  # 25 total, marker newest
+    monkeypatch.setattr(
+        LinearClient, "_request", _paginating_request([], comments)
+    )
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_handoff_branch("CAL-1005") == "harness/newest"

@@ -37,17 +37,19 @@ Exit codes (SPEC §11):
 from __future__ import annotations
 
 import asyncio
-import json
+import subprocess
 from pathlib import Path
 
 import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
-from harness.cli._git import rev_parse_head, run_git
+from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
+from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import CheckpointEventData
 
 __all__ = ["checkpoint_command", "CheckpointOutput"]
 
@@ -66,13 +68,12 @@ class CheckpointOutput(BaseModel):
     pushed: bool
 
 
-class _CheckpointError(Exception):
-    """Internal control-flow exception carrying a message and an exit code."""
+class _CheckpointError(VerbError):
+    """``checkpoint``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.message = message
-        self.code = code
+    The ``(message, code)`` carrier is inherited from the base; ``checkpoint``
+    never sets a ``reason``.
+    """
 
 
 def checkpoint_command(
@@ -101,16 +102,12 @@ def checkpoint_command(
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    try:
-        output = asyncio.run(
+    output = run_verb(
+        lambda: asyncio.run(
             _run_checkpoint(repo_root=repo_root, run_id=run_id, db_path=db_path)
-        )
-    except _CheckpointError as exc:
-        if json_output:
-            typer.echo(json.dumps({"error": exc.message}))
-        else:
-            typer.echo(exc.message, err=True)
-        raise typer.Exit(code=exc.code) from exc
+        ),
+        json_output=json_output,
+    )
 
     if json_output:
         typer.echo(output.model_dump_json())
@@ -162,12 +159,12 @@ async def _run_checkpoint(
         await EventEmitter(db_path).emit(
             run_id=resolved_run_id,
             event_type="checkpoint",
-            data={
-                "run_id": resolved_run_id,
-                "branch": worktree_branch,
-                "pushed_sha": head_sha,
-                "pushed_at": iso_z(),
-            },
+            data=CheckpointEventData(
+                run_id=resolved_run_id,
+                branch=worktree_branch,
+                pushed_sha=head_sha,
+                pushed_at=iso_z(),
+            ).model_dump(),
         )
     except Exception as exc:  # noqa: BLE001
         raise _CheckpointError(f"failed to record checkpoint event: {exc}", 1) from exc
@@ -190,7 +187,19 @@ def _push_branch(*, worktree_path: Path, branch: str) -> str:
     logging; that output is deliberately *not* propagated into the printed JSON
     (context-economy). Raises :class:`_CheckpointError` on a non-zero push.
     """
-    result = run_git(worktree_path, "push", "origin", branch)
+    # A network op — bound it (CAL-1004). A fired timeout becomes the same
+    # _CheckpointError a non-zero push already raises; the checkpoint is
+    # best-effort, so the caller notes it and keeps working either way.
+    try:
+        result = run_git(
+            worktree_path, "push", "origin", branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _CheckpointError(
+            f"git push origin {branch} exceeded the "
+            f"{NETWORK_GIT_TIMEOUT_SECONDS:.0f}s network timeout in {worktree_path}",
+            1,
+        ) from exc
     if result.returncode != 0:
         raise _CheckpointError(
             f"git push origin {branch} failed in {worktree_path}: "

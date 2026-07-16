@@ -32,6 +32,7 @@ import aiosqlite
 import typer
 
 from harness.cli._query_common import _resolve_db_path, _safe_json_loads
+from harness.events.payloads import WORKFLOW_FAILED_REASON_KEY
 
 # ---------------------------------------------------------------------------
 # Artifact-path extraction
@@ -106,7 +107,7 @@ async def _fetch_enriched_status(db_path: Path, run_id: str) -> dict[str, Any]:
         if row is not None:
             data = _safe_json_loads(row[0])
             if isinstance(data, dict):
-                result["failure_reason"] = data.get("reason")
+                result["failure_reason"] = data.get(WORKFLOW_FAILED_REASON_KEY)
 
     return result
 

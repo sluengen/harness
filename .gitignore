@@ -13,6 +13,11 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
 # Env / secrets
 .env
 .env.*

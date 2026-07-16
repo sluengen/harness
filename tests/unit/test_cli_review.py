@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
 import unittest.mock as mock
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +107,11 @@ def _seed_open_run(db_path: Path, repo: Path, run_id: str = "01JRUNREVIEWXXXXXXX
                     str(repo),
                     f"harness/{run_id}",
                     "CAL-571",
-                    "2026-06-10T00:00:00Z",
+                    # A *recent* started_at: the CAL-906 wall-clock breaker is
+                    # measured from this, so a stale literal would trip it before
+                    # the engine runs. These tests exercise the review flow, not
+                    # the breaker (that is test_review_breakers.py).
+                    datetime.now(UTC).isoformat(),
                     1234,
                 ),
             )
@@ -154,7 +161,12 @@ def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         return review_mod.RunResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
@@ -194,7 +206,12 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         captured["cmd"] = cmd
         return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)
@@ -354,8 +371,16 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
-    # Only the bounded verdict fields are present (engine is provenance, CAL-701).
-    assert set(payload.keys()) <= {"verdict", "issues", "reviewed_sha", "run_id", "engine"}
+    # Only the bounded verdict fields are present (engine is provenance, CAL-701;
+    # convergence_check_required is the bounded CAL-906 advisory bool).
+    assert set(payload.keys()) <= {
+        "verdict",
+        "issues",
+        "reviewed_sha",
+        "run_id",
+        "engine",
+        "convergence_check_required",
+    }
     assert payload["verdict"] == "fail"
     assert payload["issues"] == ["one issue"]
 
@@ -527,7 +552,12 @@ def _make_engine_runner(
     """
 
     async def _runner(
-        *, cmd: list[str], stdin: str, env: dict[str, str], cwd: Path | None
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
     ) -> review_mod.RunResult:
         engine = "codex" if cmd[0] == "codex" else "claude"
         order.append(engine)
@@ -553,6 +583,95 @@ def test_ac3_matcher_false_on_near_miss_failure() -> None:
 def test_ac3_matcher_false_on_clean_exit_even_with_phrase() -> None:
     """A zero exit never counts as a usage limit (narrow match, no false hop)."""
     assert review_mod.is_codex_usage_limit(_REAL_CODEX_USAGE_LIMIT_STDERR, 0) is False
+
+
+# ---------------------------------------------------------------------------
+# CAL-1004: a hung review engine is bounded by a subprocess timeout — it does
+# not hang the verb forever waiting on the external kill. On expiry the process
+# is killed and the run surfaces the infra-failure shape (exit 3 + a stable,
+# machine-readable reason), never a code-review verdict.
+# ---------------------------------------------------------------------------
+
+
+def test_default_runner_kills_hung_engine_and_raises_infra_exit3() -> None:
+    """A never-returning engine subprocess hits the ceiling → infra exit 3 + reason.
+
+    Exercises the REAL mechanism: a genuinely hanging child process (a python
+    sleep that ignores stdin and never exits) under a tiny timeout. ``asyncio``'s
+    ``wait_for`` must fire, the process must be killed (so the test returns
+    promptly rather than blocking on the 30s sleep), and ``_default_runner`` must
+    raise the ``_ReviewError`` carrying ``EXIT_INFRA_FAILURE`` and the stable
+    ``ENGINE_TIMEOUT_REASON`` — not a swallowed failure, not a verdict.
+    """
+    hang = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    async def _run() -> None:
+        await review_mod._default_runner(
+            cmd=hang,
+            stdin="ignored",
+            env=dict(os.environ),
+            cwd=None,
+            timeout=0.2,
+        )
+
+    with pytest.raises(review_mod._ReviewError) as excinfo:
+        asyncio.run(_run())
+    err = excinfo.value
+    assert err.code == review_mod.EXIT_INFRA_FAILURE == 3
+    assert err.reason == review_mod.ENGINE_TIMEOUT_REASON == "engine_timeout"
+
+
+def test_default_runner_no_timeout_still_runs_to_completion() -> None:
+    """With ``timeout=None`` the runner keeps its old unbounded behaviour.
+
+    A fast-exiting child returns its RunResult normally — the timeout is a
+    ceiling, not a mandatory wait, so the no-timeout path is unchanged.
+    """
+    echo = [sys.executable, "-c", "print('SUBMIT: {\"verdict\": \"pass\", \"issues\": []}')"]
+
+    async def _run() -> review_mod.RunResult:
+        return await review_mod._default_runner(
+            cmd=echo, stdin="", env=dict(os.environ), cwd=None, timeout=None
+        )
+
+    result = asyncio.run(_run())
+    assert result.returncode == 0
+    assert "SUBMIT:" in result.stdout
+
+
+def test_review_cli_surfaces_engine_timeout_as_exit3_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """End-to-end: a timed-out engine surfaces exit 3 + ``reason`` on the CLI JSON.
+
+    Injects a runner that raises the timeout ``_ReviewError`` (as the real
+    ``_default_runner`` does on expiry) and drives the full ``review`` command.
+    The verb must exit 3, print the machine-readable ``reason``, and record NO
+    review event — a hung engine never reviewed the diff, so it is infra, not a
+    verdict (mirrors the sandbox-init contract).
+    """
+    run_id = _seed_open_run(db_path, repo)
+
+    async def _timeout_runner(
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
+    ) -> review_mod.RunResult:
+        raise review_mod._ReviewError(
+            "review engine exceeded its timeout and was killed",
+            review_mod.EXIT_INFRA_FAILURE,
+            reason=review_mod.ENGINE_TIMEOUT_REASON,
+        )
+
+    result = _invoke(repo, db_path, run_id, _timeout_runner)
+    assert result.exit_code == 3, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "engine_timeout"
+    # No verdict recorded: infra failure, not a review.
+    assert fetch_review_events(db_path) == []
 
 
 # AC-1 / AC-4: a usage-limit Codex run falls back to Claude exactly once, the
@@ -803,3 +922,115 @@ def test_cal866_genuine_no_submit_on_clean_exit_still_fails(
     assert len(events) == 1
     assert events[0]["data"]["verdict"] == "fail"
     assert SENTINEL in events[0]["data"]["issues"]
+
+
+# ---------------------------------------------------------------------------
+# CAL-924 — a bwrap-blocked Codex ``defer`` is INFRA, not a shippable verdict.
+#
+# The CAL-866 detector keys on codex's OWN non-zero exit + the bwrap marker on
+# STDERR.  It misses the subtler case seen in the CAL-906 dogfood: ``codex exec``
+# exits **0**, but every read-only command it shells out to inspect the diff is
+# killed by bwrap, so Codex reviews nothing yet emits a well-formed
+# ``SUBMIT: {"verdict": "defer", ...}`` whose reasoning is "I could not run any
+# command (bwrap: No permissions to create a new namespace)".  That read as a
+# normal, shippable ``defer`` — a review that never happened.  The fix surfaces
+# it as the SAME infra signal as CAL-866 (exit EXIT_INFRA_FAILURE, reason
+# sandbox_init_failure, NO review event), narrowed to a Codex ``defer`` carrying
+# the marker so a genuine defer — or any Claude verdict — is never swallowed.
+# ---------------------------------------------------------------------------
+
+# A realistic bwrap-blocked codex stdout: exit 0, a well-formed ``defer`` whose
+# issue text is the reviewer explaining every command was killed by the wall.
+_BWRAP_BLOCKED_DEFER_STDOUT = (
+    'SUBMIT: {"verdict": "defer", "issues": ["I could not inspect the diff: '
+    "every command I ran failed with 'bwrap: No permissions to create a new "
+    "namespace', so I reviewed nothing.\"]}\n"
+)
+
+
+# AC-2 (narrowness) — the matcher: true only on a Codex ``defer`` whose reasoning
+# carries the bwrap marker; false on a genuine defer, a non-defer verdict, or a
+# Claude verdict.
+
+
+def test_cal924_matcher_true_on_bwrap_blocked_codex_defer() -> None:
+    issues = [
+        "I could not inspect the diff: every command failed with 'bwrap: No "
+        "permissions to create a new namespace'."
+    ]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "codex") is True
+
+
+def test_cal924_matcher_false_on_genuine_codex_defer() -> None:
+    """A genuine defer (real finding, no bwrap marker) is never swallowed."""
+    issues = ["The retry knob needs its own ticket — out of scope here."]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "codex") is False
+
+
+def test_cal924_matcher_false_on_non_defer_verdict() -> None:
+    """Only a ``defer`` masquerades this way; pass/fail stay untouched."""
+    issues = ["bwrap: No permissions to create a new namespace"]
+    assert review_mod.is_sandbox_blocked_defer("pass", issues, "codex") is False
+    assert review_mod.is_sandbox_blocked_defer("fail", issues, "codex") is False
+
+
+def test_cal924_matcher_false_on_claude_engine() -> None:
+    """Claude runs in plan mode, not bwrap — a Claude defer is never infra."""
+    issues = ["bwrap: No permissions to create a new namespace"]
+    assert review_mod.is_sandbox_blocked_defer("defer", issues, "claude") is False
+
+
+def test_cal924_matcher_disjoint_from_stderr_detector() -> None:
+    """The two sandbox detectors read different channels and never conflate.
+
+    The CAL-866 detector keys on stderr + a non-zero exit; this one keys on the
+    parsed defer's issue text at exit 0.  A clean stdout defer is not a stderr
+    failure, and a genuine defer is not blocked.
+    """
+    # The exit-0 defer marker is invisible to the stderr/non-zero detector.
+    assert review_mod.is_sandbox_init_failure("", 0) is False
+    # A genuine defer with no marker is not blocked.
+    assert review_mod.is_sandbox_blocked_defer("defer", ["out of scope"], "codex") is False
+
+
+# AC-1 / AC-3: a bwrap-blocked codex defer surfaces as the CAL-866 infra signal —
+# a dedicated non-zero exit + machine-readable ``reason`` — and records NO event.
+
+
+def test_cal924_bwrap_blocked_defer_surfaces_as_infra_not_verdict(
+    repo: Path, db_path: Path
+) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner(_BWRAP_BLOCKED_DEFER_STDOUT, returncode=0)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+
+    # Same dedicated exit + reason as the CAL-866 stderr case — one contract.
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert result.exit_code not in (0, 1, 2)
+    payload = json.loads(result.output)
+    assert payload["reason"] == review_mod.SANDBOX_INIT_REASON
+    assert "error" in payload
+
+    # A review that never happened must NOT read as a defer (or any verdict).
+    assert fetch_review_events(db_path) == []
+
+
+# AC-2 / AC-3: a genuine defer (the reviewer actually inspected the diff) is
+# still recorded as a ``defer`` verdict — the detector stays narrow.
+
+
+def test_cal924_genuine_codex_defer_still_recorded(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    genuine = (
+        'SUBMIT: {"verdict": "defer", "issues": ["Refactoring the store belongs '
+        'in its own ticket; out of scope here."]}\n'
+    )
+    runner = _make_runner(genuine, returncode=0)
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
+    assert result.exit_code == 0, result.output
+
+    events = fetch_review_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["verdict"] == "defer"

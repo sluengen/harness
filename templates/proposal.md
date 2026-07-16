@@ -1,7 +1,7 @@
-<!-- guidance:template-proposal@0.1.1 -->
+<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: {short-slug}
-status: draft            # draft | under-decision | accepted | rejected | split
+status: draft            # draft | under-decision | accepted | shipped | rejected | split
 date: YYYY-MM-DD
 related: []              # feature specs or other proposals
 ---

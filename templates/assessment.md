@@ -1,9 +1,11 @@
-<!-- guidance:template-assessment@0.2.0 -->
+<!-- guidance:template-assessment@0.3.0 -->
 # Assessment report (the steward's output format)
 
 The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, severity, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
 
 **Filename.** `assessments/<YYYY-MM-DD>-<scope>.md` — e.g. `assessments/2026-06-15-system-and-code.md`. The dated `assessments/` directory is the convention; do **not** write `steward-<domain>-<date>.md` at the repo root.
+
+**Retention.** `assessments/` keeps only the **latest report per scope** plus **any report with an open finding**; every other report is *superseded* and folds into a rolling `assessments/LOG.md`, one line each — `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`. A finding is *open* until its ticket is closed (or it is otherwise resolved); a report is superseded when it is not the latest for its scope **and** none of its findings are still open. **Never fold away a report that still has an open finding.** This holds the directory to roughly one file per scope plus the live-finding tail — a running index, not a growing pile of point-in-time reports whose findings are already fixed (noise) or tracked in the tracker. `/assess` applies this after committing each report (`commands/assess.md`).
 
 ---
 

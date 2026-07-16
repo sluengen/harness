@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-context-monitor@0.1.0
+// guidance:hook-context-monitor@0.1.1
 /**
  * Context monitor (PostToolUse).
  * Estimates context usage from the session transcript size and warns when it
@@ -23,7 +23,7 @@ const EVERY = 5;                      // only check every N tool uses
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { return { n: 0, level: 0 }; }
 }
-function saveState(s) { try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch {} }
+function saveState(s) { try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch { /* best-effort: advisory state cache, ignore write failures */ } }
 
 function main() {
   const input = JSON.parse(fs.readFileSync(0, "utf8"));
