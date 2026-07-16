@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-07-06
-linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002]
+last_updated: 2026-07-17
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -60,6 +60,10 @@ WHERE run_id = ? AND event_type = 'review'
 ```
 
 Storing the reviewed SHA on the append-only event (rather than mutating a `runs` column) keeps the full review history auditable and is why decision D2 needed no schema migration — the `events` table already holds arbitrary JSON. `start` emits **no** event (the open run *is* the `runs` row); so the audit trail is the `runs` row **plus** its events, not the events alone.
+
+### The promotion ledger — a sibling table (CAL-1114)
+
+The [promotion lifecycle](cli-surface.md#the-promotion-lifecycle-group) ([ADR 0003](../decisions/0003-promotion-lifecycle.md)) records its state in a **sibling `promotions` table** in the same per-project `.harness/harness.db`, owned by `harness/state/promotions.py`. It is deliberately separate from `runs`/`events`: `close` gates a ticket's integration into `dev`, promotion gates branch movement toward release, and the two lifecycles must not weaken each other — so a promotion is not a `runs` row. Each promotion is a `Promotion` (Pydantic, `extra="forbid"`) stored as a JSON blob keyed by `promotion_id`, with a denormalized `status` column for querying; it reads back by promotion id so an outer orchestrator can pause after the harness classifies a merge+gate attempt and resume by re-reading the state it left. The `Promotion` model carries the branch endpoints and promotion branch, the lifecycle `status` (`opened` / `pr_ready` / `agent_may_fix` / `needs_ticket` / `blocked` / `pr_opened` / `escalated` / `cancelled`), the `gated_sha` the PR gate reads, the bounded repair `attempts` count, the terminal `pr_url` / `escalation_ticket`, and a bounded `evidence` reference. The **PR gate** (`pr_gate_satisfied`) passes only for a `pr_ready` promotion carrying a gated SHA — the same evidence discipline this run ledger's review→close gate enforces, applied to release movement. The table is created lazily on first write; a read that predates any write returns `None`. The subcommands that surface it are in [cli-surface.md](cli-surface.md#the-promotion-lifecycle-group).
 
 ## Data model
 

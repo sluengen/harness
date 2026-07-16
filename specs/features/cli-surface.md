@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-07-16
-linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113]
+last_updated: 2026-07-17
+linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114]
 ---
 
 # CLI surface — the fixed verb contract
@@ -39,8 +39,8 @@ harness version                           [--json]
 # Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
 harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
 harness promote continue  [--repo <p>] [--json]   # resume after one bounded repair
-harness promote status    [--repo <p>] [--json]   # read-only lifecycle state
-harness promote pr        [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR
+harness promote status    [--promotion-id <id>] [--repo <p>] [--db <p>] [--json]   # read a promotion by id: the typed ledger view
+harness promote pr        [--promotion-id <id>] [--repo <p>] [--db <p>] [--json]   # success finalizer: push the promotion branch + open the PR (gated)
 harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
 ```
 
@@ -48,7 +48,9 @@ This block lists each command's public flags as registered today; `harness <cmd>
 
 ### The promotion lifecycle group
 
-`harness promote` drives release movement as a first-class, audited lifecycle over the universal `dev → staging → main` topology ([ADR 0003](../decisions/0003-promotion-lifecycle.md)). Its v1 subcommands are the real orchestrator **pause points**: `start` opens a promotion (create the worktree + promotion branch, attempt the `--from` → `--to` merge, and classify the result); `continue` resumes after one bounded, in-policy repair; `status` reports the lifecycle state (read-only); `pr` is the success finalizer (push the promotion branch, open the PR); `escalate` is the non-success terminal path (file/update a Linear ticket and mark the promotion `escalated`). The surface is locked in v1 (CAL-1113); the mechanics land against it — the ledger + JSON contracts (CAL-1114), worktree/merge (CAL-1115), gate evidence (CAL-1116), PR creation (CAL-1117), and escalation (CAL-1118) — so the current subcommand bodies are contract stubs that report `not_implemented` rather than half-performing a promotion.
+`harness promote` drives release movement as a first-class, audited lifecycle over the universal `dev → staging → main` topology ([ADR 0003](../decisions/0003-promotion-lifecycle.md)). Its v1 subcommands are the real orchestrator **pause points**: `start` opens a promotion (create the worktree + promotion branch, attempt the `--from` → `--to` merge, and classify the result); `continue` resumes after one bounded, in-policy repair; `status` reports the lifecycle state (read-only); `pr` is the success finalizer (push the promotion branch, open the PR); `escalate` is the non-success terminal path (file/update a Linear ticket and mark the promotion `escalated`). The surface is locked in v1 (CAL-1113); the mechanics land against it — the ledger + JSON contract (CAL-1114), worktree/merge (CAL-1115), gate evidence (CAL-1116), PR creation (CAL-1117), and escalation (CAL-1118).
+
+The **promotion ledger + read-path JSON contract** landed with CAL-1114. Promotion state persists in a sibling `promotions` table in the same per-project `.harness/harness.db` — one row per promotion, a `Promotion` JSON blob keyed by `promotion_id`, read back by id so a later invocation reads what an earlier one wrote (the [run ledger](run-ledger.md) records the promotion table). Two subcommands are wired to it: `promote status --promotion-id <id>` reads a promotion and emits the typed `Promotion` view (a structured `not_found` when the id is unknown), and `promote pr --promotion-id <id>` enforces the **PR gate** — it is refused with `{ "reason": "gate_not_satisfied" }` unless the promotion is `pr_ready` with a fresh gated SHA (the same evidence discipline `review`/`close` enforce). The three write-path bodies — `start` / `continue` / `escalate` — remain contract stubs that report `not_implemented` until their mechanics land; a gate-*satisfied* `pr` also reports `not_implemented`, since the PR push itself is CAL-1117 (the refusal is CAL-1114's, the push is not).
 
 There is **no separate `verify` command** in v1, by design. Gate execution runs *inside* `start` and `continue` — a promotion cannot reach `pr_ready` without fresh gate evidence, the same evidence discipline the `review` / `close` gate enforces — so a standalone `verify` would name a step that is never an independent orchestrator pause/resume point. The pause points are exactly where the outer agent stops and re-enters (open, resume-after-repair, read, finalize, escalate); running the gate is a phase of `start` / `continue`, not a state the orchestrator parks at, so it earns no command of its own.
 

@@ -1,18 +1,20 @@
 """``harness promote`` v1 surface contract — CAL-1113 (ADR 0003).
 
 The promotion lifecycle (``dev -> staging -> main``, ADR 0003) is driven through a
-``harness promote`` command group. This ticket locks that **surface** before any
-mechanics exist: the group registers its v1 subcommands with stable flags, and
-each subcommand is a contract stub that reports ``not_implemented`` rather than
-half-doing a promotion. The mechanics — ledger + JSON contracts (CAL-1114),
-worktree/merge (CAL-1115), gate evidence (CAL-1116), PR creation (CAL-1117),
-escalation (CAL-1118) — fill the stub bodies against this fixed surface.
+``harness promote`` command group. CAL-1113 locked that **surface** before any
+mechanics existed: the group registers its v1 subcommands with stable flags. The
+mechanics then fill the stub bodies against that fixed surface — the ledger +
+read-path JSON contract (CAL-1114), worktree/merge (CAL-1115), gate evidence
+(CAL-1116), PR creation (CAL-1117), escalation (CAL-1118).
 
 Command-name/subcommand-set drift is locked in ``test_cli_surface_locked.py``;
-this module exercises the *stubs* — that they are invocable, expose the
-documented flags, and emit a structured ``not_implemented`` marker with the
-stable exit code, so an orchestrator can tell "surface exists, mechanics
-pending" apart from a real error.
+this module exercises the surface: every subcommand is invocable and exposes its
+documented flags, and the three still-stubbed write-path bodies
+(``start`` / ``continue`` / ``escalate``) emit a structured ``not_implemented``
+marker with the stable exit code, so an orchestrator can tell "surface exists,
+mechanics pending" apart from a real error. The two ledger-backed read-path
+bodies wired in CAL-1114 (``status`` / ``pr``) have their JSON contract locked in
+``test_promotion_contract_locked.py``.
 """
 
 from __future__ import annotations
@@ -31,6 +33,12 @@ cli_runner = CliRunner()
 #: assert against the live app.
 _SUBCOMMANDS = ("start", "continue", "status", "pr", "escalate")
 
+#: The write-path subcommands whose bodies are still contract stubs. ``status`` /
+#: ``pr`` were wired to the ledger in CAL-1114 (they need ``--promotion-id`` and
+#: no longer emit ``not_implemented`` on a bare invocation), so they are locked in
+#: ``test_promotion_contract_locked.py`` instead.
+_STUB_SUBCOMMANDS = ("start", "continue", "escalate")
+
 
 def test_promote_group_help_lists_the_v1_subcommands() -> None:
     """``harness promote --help`` names the five v1 subcommands (surface exists)."""
@@ -47,13 +55,14 @@ def test_promote_subcommand_help_is_invocable(sub: str) -> None:
     assert result.exit_code == 0, result.output
 
 
-@pytest.mark.parametrize("sub", _SUBCOMMANDS)
+@pytest.mark.parametrize("sub", _STUB_SUBCOMMANDS)
 def test_promote_stub_reports_not_implemented(sub: str) -> None:
-    """Each stub emits a structured ``not_implemented`` marker and exits 2.
+    """Each still-stubbed write-path body emits ``not_implemented`` and exits 2.
 
     A contract stub must not masquerade as success (exit 0) nor as an
     infrastructure error — it reports, in machine-readable form, that the surface
     is locked but the mechanics are pending, so an orchestrator branches cleanly.
+    (``status`` / ``pr`` are wired in CAL-1114 — see the contract-lock module.)
     """
     result = cli_runner.invoke(app, ["promote", sub])
     assert result.exit_code == 2, result.output
