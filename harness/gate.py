@@ -1,52 +1,60 @@
-"""The repo's verify gate, as the harness runs it — CAL-1082.
+"""The repo's verify gate, as the harness *records* it — CAL-1082.
 
 The close gate enforced three things — a run exists, the worktree is clean, and a
 ``verdict='pass'`` is bound to HEAD — and **none of them was evidence that a test
-ever executed**. The only instruction to run the gate lived in prose addressed to
-a model (``commands/harness.md``: "Run the repo's verify gate locally as you
-go"), enforced by nothing. So a ``pass`` from a reviewer that merely *read* the
-diff was byte-identical in the ledger to one backed by a green test suite —
-against this repo's own iron law ("no completion claim without fresh evidence")
-and against ``CONTEXT.md``'s claim that the harness owns "the durable record
-**and the gate**".
+ever ran**. The only instruction to run the gate lived in prose addressed to a
+model (``commands/harness.md``: "Run the repo's verify gate locally as you go"),
+enforced by nothing. So a ``pass`` from a reviewer that merely *read* the diff was
+byte-identical in the ledger to one backed by a green test suite — against this
+repo's own iron law ("no completion claim without fresh evidence") and against
+``CONTEXT.md``'s claim that the harness owns "the durable record **and the
+gate**".
 
-This module is the missing half: it reads the repo's configured gate command and
-runs it. ``harness review`` calls it before invoking any engine, records the
-result on the ``review`` event, and refuses a red tree outright — so the ledger's
-``pass`` now *means* something a reader can check.
+This module is the missing half, and it is deliberately **not** an executor.
 
-It deliberately mirrors :mod:`harness.loop_budget`, the standing precedent for
-this shape: config read out of ``CONTEXT.md`` in its own module, with a
-documented fallback when the key is absent, called from a verb rather than
-inlined into it. ``review.py`` is on the architecture watchlist — it already
-carries verb orchestration, the prompt, the SUBMIT parser, the per-engine
-builders, the failure detectors, and the fallback — so the gate lands here, as a
-seam by construction, and ``review.py`` grows only a call site.
+Evidence, not execution
+-----------------------
+The harness stays a **scaffold**: it owns the durable record and the gate, not
+the toolchain. An earlier build of this ticket had ``review`` *run* the gate
+in-container and proved the catch-22 that settles the design — the image cannot
+carry every target repo's toolchain. ``harness:dev`` is built ``--no-dev``, so
+not even this repo's own ``ruff`` is present; a Node target would need Node; an
+Xcode target can never run in a Linux container at all. An executing verb would
+therefore have to either bloat the image toward every ecosystem or hand a
+diff-only ``pass`` to the repos it could not run — and the harness would be
+unable to close its own tickets.
 
-**The gate is run, not sandboxed further.** The container that runs it is
-already the unprivileged one that reviews untrusted diffs (ADR 0002); running a
-repo's own test suite executes repo-controlled code by definition, so the gate
-grants no privilege the review did not already have. Loosening the container to
-accommodate an exotic toolchain was weighed and rejected there; a repo whose
-toolchain the container lacks gets an honest ``gate_failed`` instead of a
-diff-only ``pass`` (CAL-1084 closes that gap).
+So the gate runs **where the toolchain already lives**: the orchestrating
+session, host-side, in the worktree. It hands the result to ``review``
+(``--gate-exit``/``--gate-log``), and the verb *enforces and records* it —
+refusing to invoke any engine without fresh green evidence.
+
+The evidence is **self-reported**, which grants no new trust: any process that
+can write the workspace can already forge a ledger event, so this sits exactly on
+the ledger's existing filesystem trust boundary rather than moving it. The
+authoritative control over what actually merges is server-side branch protection
+(CAL-1029), not this record. What the record buys is that a ``pass`` now *states*
+whether a gate ran, so a reader — and ``close`` — can tell the two apart.
+
+It mirrors :mod:`harness.loop_budget`, the standing precedent for this shape:
+config read out of ``CONTEXT.md`` in its own module, with a documented fallback
+when the key is absent, called from a verb rather than inlined into it.
+``review.py`` is on the architecture watchlist — it already carries verb
+orchestration, the prompt, the SUBMIT parser, the per-engine builders, the
+failure detectors, and the fallback — so the gate lands here, as a seam by
+construction, and ``review.py`` grows only a call site.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
-import time
 from pathlib import Path
-from typing import NamedTuple
 
 __all__ = [
-    "DEFAULT_GATE_TIMEOUT_SECONDS",
     "GATE_NOT_CONFIGURED_REASON",
     "GATE_OUTPUT_TAIL_LIMIT",
-    "GateResult",
     "load_gate_command",
-    "run_gate",
+    "read_gate_log_tail",
 ]
 
 #: Recorded as the ``review`` event's ``gate_reason`` when the repo configures no
@@ -55,33 +63,13 @@ __all__ = [
 #: value to tell an honest "no gate configured" from missing evidence.
 GATE_NOT_CONFIGURED_REASON = "not_configured"
 
-#: How much of a failed gate's output rides on the refusal JSON. The tail — not
-#: the head — because the diagnostic lines (the failing assertion, the summary)
-#: come last. A deliberate, bounded exception to the verb's context-economy rule:
-#: this is the *reason for the refusal*, not engine reasoning, and without it the
-#: agent must re-run the whole gate just to learn what broke.
+#: How much of a gate's output is recorded, and how much rides on a refusal. The
+#: tail — not the head — because the diagnostic lines (the failing assertion, the
+#: summary) come last. A deliberate, bounded exception to the verb's
+#: context-economy rule: this is the *reason for the refusal*, not engine
+#: reasoning, and without it the agent must re-read the whole log to learn what
+#: broke.
 GATE_OUTPUT_TAIL_LIMIT = 2048
-
-#: The per-gate subprocess ceiling. A hung gate must not hang the verb forever —
-#: the same gap ``engine_timeout_seconds`` closes for the review engine
-#: (CAL-1004). Fixed, not a ``CONTEXT.md`` key: a repo needing a different bound
-#: is its own change (CAL-1082 "out of scope"). 15 minutes clears a full
-#: lint → typecheck → test suite with room to spare.
-DEFAULT_GATE_TIMEOUT_SECONDS = 900
-
-
-class GateResult(NamedTuple):
-    """The outcome of one gate run.
-
-    ``exit_code`` is ``None`` when the gate started but never reported one — it
-    was killed by the timeout. The caller treats any non-zero-or-``None`` code as
-    a failure, so a killed gate refuses rather than passing silently.
-    """
-
-    ran: bool
-    exit_code: int | None
-    output_tail: str
-    duration_ms: int
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +91,9 @@ _VERIFY_KEY_PATTERN = (
 def load_gate_command(repo_root: Path) -> str | None:
     """The repo's ``verify:`` command from ``repo_root/CONTEXT.md``, else ``None``.
 
+    Read **for the record** — to name the gate on the review event, and to know
+    whether this repo defines one at all. It is never executed here.
+
     ``None`` means *this repo defines no gate* — both when ``CONTEXT.md`` is
     absent entirely and when it configures no ``verify:`` key. The caller records
     that absence as :data:`GATE_NOT_CONFIGURED_REASON` rather than inventing a
@@ -121,67 +112,23 @@ def load_gate_command(repo_root: Path) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Execution
+# Evidence intake — read what the orchestrator's gate run produced
 # ---------------------------------------------------------------------------
 
 
-def run_gate(
-    worktree: Path, command: str, timeout_s: int = DEFAULT_GATE_TIMEOUT_SECONDS
-) -> GateResult:
-    """Run ``command`` in ``worktree``; capture its exit code and output tail.
+def read_gate_log_tail(log_path: Path | None) -> str:
+    """The bounded tail of the gate log at ``log_path``; ``""`` when unavailable.
 
-    Run through a shell because ``CONTEXT.md``'s ``verify:`` **is** a shell
-    command line — the retired workflow engine's ``verify`` node ran it the same
-    way, and real values (``bash scripts/verify.sh``, ``npm run verify && npm
-    test``) need shell semantics. This grants nothing: the command is repo-owned
-    config at the same trust level as the test suite it invokes, and running that
-    suite already executes repo-controlled code.
-
-    stdout and stderr are merged — a failing gate scatters its diagnosis across
-    both, and the tail is only useful if it is the *whole* tail.
+    ``--gate-log`` is **optional** and best-effort: an absent, unreadable, or
+    undecodable log degrades to no tail rather than failing the verb. The
+    load-bearing half of the evidence is the exit code, which arrives as its own
+    flag; the tail is a diagnostic convenience, and losing it must not turn a
+    green gate into a refusal.
     """
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(  # noqa: S602 — repo-owned config; see docstring
-            command,
-            shell=True,
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            stdin=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return GateResult(
-            ran=True,
-            exit_code=None,
-            output_tail=_tail(
-                f"{_decode(exc.stdout)}{_decode(exc.stderr)}\n"
-                f"[gate killed after {timeout_s}s — exceeded the gate timeout]"
-            ),
-            duration_ms=_elapsed_ms(started),
-        )
-    return GateResult(
-        ran=True,
-        exit_code=completed.returncode,
-        output_tail=_tail(f"{completed.stdout}{completed.stderr}"),
-        duration_ms=_elapsed_ms(started),
-    )
-
-
-def _elapsed_ms(started: float) -> int:
-    return int((time.monotonic() - started) * 1000)
-
-
-def _decode(stream: str | bytes | None) -> str:
-    """A ``TimeoutExpired``'s partial output, which may be bytes or absent."""
-    if stream is None:
+    if log_path is None:
         return ""
-    if isinstance(stream, bytes):
-        return stream.decode(errors="replace")
-    return stream
-
-
-def _tail(output: str) -> str:
-    """The last :data:`GATE_OUTPUT_TAIL_LIMIT` characters of ``output``."""
-    return output[-GATE_OUTPUT_TAIL_LIMIT:]
+    try:
+        text = log_path.read_text(errors="replace")
+    except OSError:
+        return ""
+    return text[-GATE_OUTPUT_TAIL_LIMIT:]

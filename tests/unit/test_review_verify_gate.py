@@ -1,20 +1,35 @@
-"""CAL-1082 — ``review`` runs the repo's verify gate and records the evidence.
+"""CAL-1082 — ``review`` requires recorded verify-gate evidence.
 
 The verb loop's close gate checked three things (a run exists, the worktree is
 clean, a ``verdict='pass'`` is bound to HEAD) — none of them evidence that a test
-ever *executed*. So a ``pass`` from a reviewer that only read the diff was
+ever *ran*. So a ``pass`` from a reviewer that only read the diff was
 byte-identical in the ledger to one backed by a green gate, against this repo's
 own iron law ("no completion claim without fresh evidence").
 
-These tests pin the fix end to end:
+The harness stays a **scaffold**: the gate runs where the toolchain lives (the
+orchestrating session, host-side), and the verb *enforces and records* the
+evidence rather than executing the gate itself. An earlier build had ``review``
+run the gate in-container and proved the catch-22 that motivates this shape — the
+image cannot carry every target repo's toolchain (``harness:dev`` is built
+``--no-dev``, so not even this repo's own gate runs there; an Xcode target never
+runs in a Linux container).
 
-* :mod:`harness.gate` reads ``CONTEXT.md`` → ``verify:`` and runs it (AC-1);
-* ``review`` runs that gate **before** any engine, records the evidence on the
-  ``review`` event (AC-2), refuses a red gate without spawning the engine (AC-3)
-  and carries the bounded output tail on the refusal (AC-4), and records the
-  absence honestly when no gate is configured (AC-5);
-* ``close`` refuses a pass carrying no gate evidence (AC-6);
-* the spend breakers still refuse *before* the gate spends any time (AC-7).
+These tests pin the evidence contract:
+
+* :mod:`harness.gate` reads ``CONTEXT.md`` → ``verify:`` for the record, and
+  bounds a log tail (AC-1/AC-2);
+* ``review`` refuses exit 5 ``no_gate_evidence`` when a gate is configured and no
+  evidence is supplied, before any engine (AC-1);
+* ``--gate-exit`` non-zero refuses exit 5 ``gate_failed`` with the bounded tail
+  and records no event (AC-2);
+* green evidence → the engine runs and the event carries the evidence bound to
+  ``reviewed_sha`` (AC-3);
+* an unconfigured ``verify:`` records ``not_configured`` and proceeds (AC-4);
+* the verb never *executes* the gate command, so no in-container toolchain is
+  required (AC-6);
+* the spend breakers still refuse *before* the gate is considered.
+
+``close``'s side of the contract (AC-5) lives in ``test_cli_close.py``.
 
 They inject a fake engine runner and seed the ledger directly, exactly like
 ``test_review_breakers.py``.
@@ -40,7 +55,7 @@ from harness.gate import (
     GATE_NOT_CONFIGURED_REASON,
     GATE_OUTPUT_TAIL_LIMIT,
     load_gate_command,
-    run_gate,
+    read_gate_log_tail,
 )
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
@@ -95,6 +110,12 @@ def _write_context(repo: Path, verify: str | None) -> None:
         body += f'verify: "{verify}"\n'
     body += "```\n"
     (repo / "CONTEXT.md").write_text(body)
+
+
+def _write_log(repo: Path, text: str) -> Path:
+    log = repo / "gate.log"
+    log.write_text(text)
+    return log
 
 
 def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) -> str:
@@ -163,11 +184,21 @@ def _tracking_runner(stdout: str, calls: list[int]) -> Any:
     return _runner
 
 
-def _invoke(repo: Path, db_path: Path, runner: Any) -> Any:
+def _invoke(repo: Path, db_path: Path, runner: Any, *gate_args: str) -> Any:
     with mock.patch.object(review_mod, "_default_runner", runner):
         return cli_runner.invoke(
             app,
-            ["review", "--repo", str(repo), "--db", str(db_path), "--run-id", _RUN_ID, "--json"],
+            [
+                "review",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--run-id",
+                _RUN_ID,
+                "--json",
+                *gate_args,
+            ],
         )
 
 
@@ -184,7 +215,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# AC-1: load_gate_command reads CONTEXT.md → verify:
+# load_gate_command reads CONTEXT.md → verify: (for the record, not to run it)
 # ---------------------------------------------------------------------------
 
 
@@ -194,189 +225,223 @@ def test_load_gate_command_reads_the_verify_key(tmp_path: Path) -> None:
 
 
 def test_load_gate_command_is_none_without_context_md(tmp_path: Path) -> None:
-    """No CONTEXT.md at all → nothing to gate on."""
     assert load_gate_command(tmp_path) is None
 
 
 def test_load_gate_command_is_none_when_verify_key_absent(tmp_path: Path) -> None:
-    """A CONTEXT.md that configures no ``verify:`` → nothing to gate on."""
     _write_context(tmp_path, None)
     assert load_gate_command(tmp_path) is None
 
 
 def test_load_gate_command_reads_this_repos_own_context() -> None:
-    """The real CONTEXT.md at the repo root resolves — the parser is not a
-    tmp-path-only fiction (this repo's canonical gate is scripts/verify.sh)."""
-    repo_root = Path(__file__).resolve().parents[2]
-    assert load_gate_command(repo_root) == "bash scripts/verify.sh"
-
-
-def test_run_gate_reports_exit_code_and_runs_in_the_worktree(tmp_path: Path) -> None:
-    """The gate runs with cwd=worktree, so a repo-relative command resolves."""
-    (tmp_path / "ok.sh").write_text("exit 0\n")
-    result = run_gate(tmp_path, "bash ok.sh", timeout_s=30)
-    assert result.ran is True
-    assert result.exit_code == 0
-
-
-def test_run_gate_captures_a_failure_exit_code_and_output(tmp_path: Path) -> None:
-    (tmp_path / "bad.sh").write_text("echo 'boom happened'\nexit 3\n")
-    result = run_gate(tmp_path, "bash bad.sh", timeout_s=30)
-    assert result.exit_code == 3
-    assert "boom happened" in result.output_tail
+    """The real CONTEXT.md parses — the regex is pinned against the live file."""
+    assert load_gate_command(Path(__file__).resolve().parents[2]) == "bash scripts/verify.sh"
 
 
 # ---------------------------------------------------------------------------
-# AC-2: a green gate → engine runs, evidence lands on the ledger event
+# read_gate_log_tail — the tail, bounded (the diagnosis is at the end)
 # ---------------------------------------------------------------------------
 
 
-def test_green_gate_records_evidence_on_the_review_event(repo: Path, db_path: Path) -> None:
-    """The persisted event — not the printed output — carries the gate evidence."""
-    _write_context(repo, "bash ok.sh")
-    (repo / "ok.sh").write_text("exit 0\n")
-    _seed_run(db_path, repo)
-    calls: list[int] = []
+def test_read_gate_log_tail_returns_the_tail_not_the_head(tmp_path: Path) -> None:
+    log = tmp_path / "gate.log"
+    log.write_text("HEAD-MARKER\n" + ("x" * GATE_OUTPUT_TAIL_LIMIT) + "\nTAIL-MARKER")
+    tail = read_gate_log_tail(log)
+    assert tail.endswith("TAIL-MARKER")
+    assert "HEAD-MARKER" not in tail
+    assert len(tail) <= GATE_OUTPUT_TAIL_LIMIT
 
-    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
 
-    assert result.exit_code == 0, result.output
-    assert calls == [1], "a green gate must let the engine run"
-    events = _review_events(db_path)
-    assert len(events) == 1
-    assert events[0]["gate_ran"] is True
-    assert events[0]["gate_exit_code"] == 0
-    assert events[0]["gate_command"] == "bash ok.sh"
+def test_read_gate_log_tail_is_empty_for_a_missing_log(tmp_path: Path) -> None:
+    """An unreadable log degrades to no tail — evidence stands on the exit code."""
+    assert read_gate_log_tail(tmp_path / "nope.log") == ""
+
+
+def test_read_gate_log_tail_is_empty_when_no_log_is_given() -> None:
+    assert read_gate_log_tail(None) == ""
 
 
 # ---------------------------------------------------------------------------
-# AC-3: a red gate → exit 5, no event, no engine
+# AC-1: verify: configured + no evidence → exit 5 no_gate_evidence, no engine
 # ---------------------------------------------------------------------------
 
 
-def test_red_gate_refuses_before_the_engine(repo: Path, db_path: Path) -> None:
-    _write_context(repo, "bash bad.sh")
-    (repo / "bad.sh").write_text("echo 'tests failed'\nexit 1\n")
+def test_missing_evidence_refuses_before_the_engine(repo: Path, db_path: Path) -> None:
+    _write_context(repo, "bash scripts/verify.sh")
     _seed_run(db_path, repo)
     calls: list[int] = []
 
     result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
 
     assert result.exit_code == review_mod.EXIT_GATE_FAILED
-    payload = json.loads(result.output)
-    assert payload["reason"] == review_mod.GATE_FAILED_REASON
-    assert calls == [], "the engine must not be spawned on a red gate"
-    assert _review_events(db_path) == [], "a red gate records no review event"
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == review_mod.NO_GATE_EVIDENCE_REASON
+    assert calls == [], "the engine must not run without gate evidence"
+    assert _review_events(db_path) == [], "no event may be recorded on a refusal"
 
 
 # ---------------------------------------------------------------------------
-# AC-4: the refusal carries the gate's output tail, bounded to <= 2 KB
+# AC-2: --gate-exit non-zero → exit 5 gate_failed + bounded tail, no event
 # ---------------------------------------------------------------------------
 
 
-def test_red_gate_refusal_carries_a_bounded_output_tail(repo: Path, db_path: Path) -> None:
-    """A gate emitting > 2 KB is carried as its *tail*, bounded to the limit —
-    the agent can act on the failure without re-running it, and the verb's
-    context economy still holds."""
-    _write_context(repo, "bash noisy.sh")
-    # 8000 chars of noise, then the line that actually explains the failure.
-    (repo / "noisy.sh").write_text(
-        "python3 -c \"print('x' * 8000)\"\necho 'FINAL_FAILURE_LINE'\nexit 1\n"
+def test_red_evidence_refuses_with_the_bounded_tail(repo: Path, db_path: Path) -> None:
+    _write_context(repo, "bash scripts/verify.sh")
+    _seed_run(db_path, repo)
+    log = _write_log(repo, "HEAD-NOISE\n" + "y" * GATE_OUTPUT_TAIL_LIMIT + "\nFAILED test_x")
+    calls: list[int] = []
+
+    result = _invoke(
+        repo, db_path, _tracking_runner(_PASS_LINE, calls),
+        "--gate-exit", "1", "--gate-log", str(log),
     )
-    _seed_run(db_path, repo)
-
-    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))
 
     assert result.exit_code == review_mod.EXIT_GATE_FAILED
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == review_mod.GATE_FAILED_REASON
     tail = payload["gate_output_tail"]
-    assert len(tail) <= GATE_OUTPUT_TAIL_LIMIT, f"tail is {len(tail)} chars, over the limit"
-    assert GATE_OUTPUT_TAIL_LIMIT == 2048
-    # It is the *tail*: the last, most diagnostic output survives the bounding.
-    assert "FINAL_FAILURE_LINE" in tail
+    assert tail.endswith("FAILED test_x")
+    assert "HEAD-NOISE" not in tail
+    assert len(tail) <= GATE_OUTPUT_TAIL_LIMIT
+    assert calls == [], "a red gate must not spend tokens on a review"
+    assert _review_events(db_path) == []
 
 
 # ---------------------------------------------------------------------------
-# AC-5: no verify: configured → the absence is recorded honestly, close allows
+# AC-3: green evidence → engine runs, evidence on the event bound to the SHA
+# ---------------------------------------------------------------------------
+
+
+def test_green_evidence_records_the_evidence_on_the_event(repo: Path, db_path: Path) -> None:
+    _write_context(repo, "bash scripts/verify.sh")
+    _seed_run(db_path, repo)
+    log = _write_log(repo, "42 passed in 1.2s")
+    calls: list[int] = []
+
+    result = _invoke(
+        repo, db_path, _tracking_runner(_PASS_LINE, calls),
+        "--gate-exit", "0", "--gate-log", str(log),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert calls == [1], "green evidence must let the engine run"
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    (event,) = _review_events(db_path)
+    assert event["gate_ran"] is True
+    assert event["gate_command"] == "bash scripts/verify.sh"
+    assert event["gate_exit_code"] == 0
+    assert event["gate_output_tail"] == "42 passed in 1.2s"
+    assert event["reviewed_sha"] == head, "evidence is bound to the reviewed SHA"
+
+
+# ---------------------------------------------------------------------------
+# AC-4: no verify: configured → not_configured recorded; review proceeds
 # ---------------------------------------------------------------------------
 
 
 def test_unconfigured_gate_records_the_absence_and_runs_the_engine(
     repo: Path, db_path: Path
 ) -> None:
-    """The harness cannot gate what a repo does not define — it says so plainly
-    rather than implying a gate ran."""
     _write_context(repo, None)
     _seed_run(db_path, repo)
     calls: list[int] = []
 
     result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
 
-    assert result.exit_code == 0, result.output
-    assert calls == [1]
-    event = _review_events(db_path)[0]
+    assert result.exit_code == 0, result.stdout
+    assert calls == [1], "the harness cannot gate what a repo does not define"
+    (event,) = _review_events(db_path)
     assert event["gate_ran"] is False
     assert event["gate_reason"] == GATE_NOT_CONFIGURED_REASON
-    assert "gate_exit_code" not in event, "no exit code when the gate never ran"
+    assert event.get("gate_command") is None
 
 
 # ---------------------------------------------------------------------------
-# AC-7: a tripped spend breaker refuses BEFORE the gate spends any time
+# AC-6: the verb never EXECUTES the gate — no in-container toolchain needed
 # ---------------------------------------------------------------------------
 
 
-def test_tripped_breaker_refuses_before_the_gate_runs(repo: Path, db_path: Path) -> None:
-    """A run bounded out must not spend minutes on a gate before being refused.
+def test_the_verb_never_executes_the_gate_command(repo: Path, db_path: Path) -> None:
+    """The scaffold decision, pinned behaviourally.
 
-    The gate command writes a marker file; its absence proves the gate never ran.
+    ``verify:`` here would create a sentinel and exit non-zero *if it ran*. The
+    verb records the command string as evidence metadata and never invokes it, so
+    the sentinel never appears and the supplied green evidence stands. This is
+    what dissolves the ``--no-dev`` image catch-22: the gate runs host-side,
+    where the toolchain lives.
     """
-    marker = repo / "gate-ran.marker"
-    _write_context(repo, f"touch {marker.name}")
+    sentinel = repo / "gate-executed.sentinel"
+    _write_context(repo, f"touch {sentinel} && exit 7")
     _seed_run(db_path, repo)
-    _seed_reviews(db_path, 5)  # the 6th review trips the cycle ceiling
+    calls: list[int] = []
 
-    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))
+    result = _invoke(
+        repo, db_path, _tracking_runner(_PASS_LINE, calls), "--gate-exit", "0"
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert not sentinel.exists(), "the verb must not execute the repo's gate command"
+    assert calls == [1]
+
+
+def test_gate_module_spawns_no_subprocess() -> None:
+    """No execution path survives in the gate module (the scaffold decision)."""
+    source = (Path(review_mod.__file__).parent.parent / "gate.py").read_text()
+    assert "subprocess" not in source
+    assert not hasattr(__import__("harness.gate", fromlist=["x"]), "run_gate")
+
+
+# ---------------------------------------------------------------------------
+# The spend breakers still refuse before the gate is considered
+# ---------------------------------------------------------------------------
+
+
+def test_tripped_breaker_refuses_before_the_gate(repo: Path, db_path: Path) -> None:
+    """A bounded-out run is refused without demanding gate evidence first."""
+    _write_context(repo, "bash scripts/verify.sh")
+    _seed_run(db_path, repo)
+    _seed_reviews(db_path, 5)
+    calls: list[int] = []
+
+    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
 
     assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
-    assert json.loads(result.output)["reason"] == REVIEW_CYCLE_CEILING_REASON
-    assert not marker.exists(), "the gate must not run once a breaker has tripped"
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == REVIEW_CYCLE_CEILING_REASON
+    assert calls == []
 
 
 def test_wall_clock_trip_also_precedes_the_gate(repo: Path, db_path: Path) -> None:
-    marker = repo / "gate-ran.marker"
-    _write_context(repo, f"touch {marker.name}")
-    _seed_run(db_path, repo, started_at=datetime.now(UTC) - timedelta(minutes=91))
+    _write_context(repo, "bash scripts/verify.sh")
+    _seed_run(db_path, repo, started_at=datetime.now(UTC) - timedelta(minutes=120))
+    calls: list[int] = []
 
-    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))
+    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
 
     assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
-    assert not marker.exists()
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
-# AC-8: the reader constant is derived from the model (the rename guard)
+# The payload contract the close backstop reads
 # ---------------------------------------------------------------------------
 
 
 def test_gate_ran_path_is_derived_from_the_model() -> None:
-    """``REVIEW_GATE_RAN_PATH`` is derived via ``_field_path``, so renaming the
-    field raises at import rather than silently breaking the close backstop."""
     assert REVIEW_GATE_RAN_PATH == "$.gate_ran"
     assert "gate_ran" in ReviewEventData.model_fields
 
 
 def test_gate_ran_is_always_present_on_a_new_event() -> None:
-    """``gate_ran`` is a non-optional bool, so ``exclude_none=True`` never drops
-    it — a new event always states its gate evidence, either way."""
-    dumped = ReviewEventData(
-        run_id="R1",
-        reviewed_sha="abc",
+    """``gate_ran`` is non-optional, so it survives ``exclude_none=True``."""
+    data = ReviewEventData(
+        run_id=_RUN_ID,
         verdict="pass",
         issues=[],
+        reviewed_sha="abc",
         engine="claude",
         convergence_check_required=False,
         created_at="2026-07-16T00:00:00Z",
         gate_ran=False,
-        gate_reason=GATE_NOT_CONFIGURED_REASON,
-    ).model_dump(exclude_none=True)
-    assert dumped["gate_ran"] is False
+    )
+    assert "gate_ran" in json.loads(data.model_dump_json(exclude_none=True))

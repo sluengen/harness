@@ -42,8 +42,10 @@ class ReviewEventData(BaseModel):
     absent from the JSON exactly as before.
 
     The ``gate_*`` fields are the verify-gate evidence (CAL-1082) — what makes a
-    recorded ``pass`` mean "the tests ran and were green" rather than "a reviewer
-    read the diff". They are **flat**, not nested under a sub-object, because
+    recorded ``pass`` mean "the gate ran and was green" rather than "a reviewer
+    read the diff". The orchestrator runs the gate and reports the result; the
+    verb records it here, bound to ``reviewed_sha``. They are **flat**, not
+    nested under a sub-object, because
     :func:`_field_path` derives only top-level ``$.<field>`` paths and the close
     gate reads one of them. ``gate_ran`` is a non-optional bool, so it survives
     ``exclude_none=True`` and is always present on a new event; on a *pre-existing*
@@ -63,6 +65,7 @@ class ReviewEventData(BaseModel):
     gate_command: str | None = None
     gate_exit_code: int | None = None
     gate_reason: str | None = None
+    gate_output_tail: str | None = None
     fallback_from: str | None = None
     commit_message: str | None = None
     deferred_brief: str | None = None

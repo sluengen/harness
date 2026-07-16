@@ -80,7 +80,7 @@ from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
-from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, run_gate
+from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
@@ -112,6 +112,7 @@ __all__ = [
     "EXIT_GATE_FAILED",
     "SANDBOX_INIT_REASON",
     "GATE_FAILED_REASON",
+    "NO_GATE_EVIDENCE_REASON",
 ]
 
 # Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
@@ -418,12 +419,13 @@ EXIT_INFRA_FAILURE = 3
 # tripped (``review_cycle_ceiling`` / ``wall_clock_budget``).
 EXIT_BREAKER_TRIPPED = 4
 
-# Exit code for a red verify gate (CAL-1082). The repo's own gate
-# (``CONTEXT.md`` → ``verify:``) failed, so there is nothing worth reviewing: the
-# verb refuses BEFORE the engine, records no review event, and spends no tokens
-# on a red tree. Distinct from every other code — 2 is already the invocation
-# error — so the orchestrator can tell "your tests are red, go fix them" from a
-# rejected diff, an infra wall, or a bounded-out loop.
+# Exit code for a verify gate that cannot certify the tree (CAL-1082) — either
+# the orchestrator's gate went red, or it supplied no evidence that a gate ran at
+# all. Both mean there is nothing worth reviewing: the verb refuses BEFORE the
+# engine, records no review event, and spends no tokens. Distinct from every
+# other code — 2 is already the invocation error — so the orchestrator can tell
+# "your gate is red / you never ran it" from a rejected diff, an infra wall, or a
+# bounded-out loop.
 EXIT_GATE_FAILED = 5
 
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
@@ -431,6 +433,11 @@ SANDBOX_INIT_REASON = "sandbox_init_failure"
 
 # Machine-readable ``reason`` for a red verify gate (CAL-1082).
 GATE_FAILED_REASON = "gate_failed"
+
+# Machine-readable ``reason`` for a configured gate whose evidence was never
+# supplied (CAL-1082). The orchestrator must run the gate and pass the result;
+# silence is not a pass.
+NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
 
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
@@ -538,6 +545,20 @@ def review_command(
         "--engine",
         help="Review engine: claude (default) or codex. Both run read-only.",
     ),
+    gate_exit: int | None = typer.Option(
+        None,
+        "--gate-exit",
+        help=(
+            "Exit code of the repo's verify gate (CONTEXT.md → verify:), which "
+            "you run in the worktree before review. Required when a gate is "
+            "configured; non-zero refuses."
+        ),
+    ),
+    gate_log: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--gate-log",
+        help="File holding the gate's output; its tail is recorded as evidence.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         True,
         "--json/--no-json",
@@ -548,6 +569,11 @@ def review_command(
 
     The engine is a read-only CLI subprocess (``--engine claude|codex``,
     default claude) emitting the ``SUBMIT:`` contract — never the Agent SDK.
+
+    You run the repo's verify gate; this verb enforces and records the evidence
+    (``--gate-exit``/``--gate-log``). It refuses to invoke any engine without
+    fresh green evidence — see :mod:`harness.gate` for why the gate runs on your
+    side and not in here.
     """
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
@@ -559,6 +585,8 @@ def review_command(
                 run_id=run_id,
                 db_path=db_path,
                 engine=engine,
+                gate_exit=gate_exit,
+                gate_log=gate_log,
                 runner=_default_runner,
             )
         ),
@@ -582,6 +610,8 @@ async def _run_review(
     run_id: str | None,
     db_path: Path,
     engine: Engine,
+    gate_exit: int | None = None,
+    gate_log: Path | None = None,
     runner: Runner,
 ) -> ReviewOutput:
     """Drive the review flow; raise :class:`_ReviewError` on failure."""
@@ -615,40 +645,48 @@ async def _run_review(
         if trip is not None:
             raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
 
-    # 1b. Run the repo's verify gate BEFORE invoking any engine (CAL-1082) — the
-    #     evidence that makes a recorded ``pass`` mean "the tests ran green"
-    #     rather than "a reviewer read the diff". Deliberately AFTER the spend
-    #     breakers above: a run that is already bounded out must not spend
-    #     minutes on a gate before being refused.
+    # 1b. Enforce the repo's verify-gate EVIDENCE before invoking any engine
+    #     (CAL-1082) — what makes a recorded ``pass`` mean "the gate ran green"
+    #     rather than "a reviewer read the diff". The verb does not *run* the
+    #     gate: the toolchain lives host-side, with the orchestrator (see
+    #     ``harness.gate``). Deliberately AFTER the spend breakers above: a run
+    #     that is already bounded out is refused on that, not on its gate.
     #
-    #     A red gate refuses here — no engine, no review event, no tokens spent
-    #     reviewing a red tree. An unconfigured gate is recorded as such and
-    #     proceeds: the harness cannot gate what a repo does not define, and the
-    #     ledger says so plainly instead of implying a gate ran.
+    #     Missing or red evidence refuses here — no engine, no review event, no
+    #     tokens spent on a tree that cannot certify itself. An unconfigured gate
+    #     is recorded as such and proceeds: the harness cannot gate what a repo
+    #     does not define, and the ledger says so plainly instead of implying a
+    #     gate ran.
     gate_command = load_gate_command(repo_root)
     gate_ran = False
     gate_reason: str | None = GATE_NOT_CONFIGURED_REASON
     gate_exit_code: int | None = None
+    gate_output_tail: str | None = None
     if gate_command is not None:
-        gate_result = await asyncio.to_thread(run_gate, Path(worktree_path), gate_command)
-        if gate_result.exit_code != 0:
-            failed_as = (
-                "killed by the gate timeout"
-                if gate_result.exit_code is None
-                else f"exit {gate_result.exit_code}"
-            )
+        if gate_exit is None:
             raise _ReviewError(
-                f"verify gate failed ({failed_as}): {gate_command!r}. No engine "
-                f"was invoked and no verdict was recorded — the harness does not "
-                f"review a red tree. Fix the failure in gate_output_tail and "
-                f"re-run review.",
+                f"no verify-gate evidence supplied. This repo configures a gate "
+                f"({gate_command!r}); run it in the worktree and pass the result "
+                f"(--gate-exit <code> [--gate-log <path>]). No engine was invoked "
+                f"and no verdict was recorded — the harness does not certify what "
+                f"it cannot show was verified.",
+                EXIT_GATE_FAILED,
+                reason=NO_GATE_EVIDENCE_REASON,
+            )
+        gate_output_tail = await asyncio.to_thread(read_gate_log_tail, gate_log)
+        if gate_exit != 0:
+            raise _ReviewError(
+                f"verify gate failed (exit {gate_exit}): {gate_command!r}. No "
+                f"engine was invoked and no verdict was recorded — the harness "
+                f"does not review a red tree. Fix the failure in "
+                f"gate_output_tail and re-run review.",
                 EXIT_GATE_FAILED,
                 reason=GATE_FAILED_REASON,
-                extra={"gate_output_tail": gate_result.output_tail},
+                extra={"gate_output_tail": gate_output_tail},
             )
         gate_ran = True
         gate_reason = None
-        gate_exit_code = gate_result.exit_code
+        gate_exit_code = gate_exit
 
     # 2. Capture HEAD at review time — the load-bearing SHA binding (D2).
     try:
@@ -753,6 +791,7 @@ async def _run_review(
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,
+        gate_output_tail=gate_output_tail,
         fallback_from=fallback_from,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
