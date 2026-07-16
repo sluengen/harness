@@ -16,7 +16,9 @@ the two pure, deterministic pieces that carry a *measurable* rule:
 
 from __future__ import annotations
 
+import subprocess
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -88,3 +90,33 @@ def test_branch_name_slugs_slashes_in_branch_components() -> None:
     promotion branch (no accidental nested ref)."""
     name = promotion.promotion_branch_name("release/1.x", "main", day=date(2026, 7, 17))
     assert name == "promote/2026-07-17-release-1.x-to-main"
+
+
+# --- branch_head (the AC-3 freshness read) ------------------------------------
+
+
+def test_branch_head_reads_the_tip(tmp_path: Path) -> None:
+    """``branch_head`` returns the resolved tip SHA of an existing local branch."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "dev", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@e.com"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    (repo / "f.txt").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "c"], check=True, capture_output=True)
+    tip = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert promotion.branch_head(repo, "dev") == tip
+
+
+def test_branch_head_is_none_for_an_unknown_branch(tmp_path: Path) -> None:
+    """An absent branch resolves to ``None`` (not an error) — the caller decides
+    what an unresolvable ref means (``promote pr`` falls through rather than
+    treating it as stale)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "dev", str(repo)], check=True, capture_output=True)
+    assert promotion.branch_head(repo, "ghost") is None

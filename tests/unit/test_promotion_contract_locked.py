@@ -59,10 +59,11 @@ EXPECTED_PROMOTION_OUTPUT_KEYS = {
     "evidence",
 }
 
-#: The locked ``promote pr`` gate-refusal reasons. Exactly one is emitted in the
-#: ``{"reason": ...}`` payload on a gate failure, and an orchestrator branches on
-#: it — so the enum is interface (AC-4).
-EXPECTED_PROMOTION_REFUSAL_REASONS = {"gate_not_satisfied"}
+#: The locked ``promote pr`` gate-refusal reasons emitted in the ``{"reason": ...}``
+#: payload, which an orchestrator branches on — so the enum is interface.
+#: ``gate_not_satisfied`` (AC-4) and ``stale_gate`` (CAL-1116 AC-3: the branch tip
+#: moved past the gated SHA).
+EXPECTED_PROMOTION_REFUSAL_REASONS = {"gate_not_satisfied", "stale_gate"}
 
 
 def _promotion(**overrides: object) -> Promotion:

@@ -21,9 +21,10 @@ and conflict classification — it knows nothing about the ledger or Typer:
 * :func:`conflicted_files` / :func:`abort_merge` / :func:`complete_merge` — the
   resume primitives ``continue`` drives after a bounded, in-policy repair.
 
-No PR, no push, no auto-merge, and **no gate** (gate evidence is CAL-1116): the
-merge commit lands only in the promotion worktree, and only ``promote pr``
-(CAL-1117) ever pushes it. Never a direct push to ``staging`` / ``main``.
+This module is git-only: no PR, no push, no auto-merge, and no *gate* — the merge
+commit lands only in the promotion worktree. Gate execution + evidence capture is
+its sibling :mod:`harness.promotion_gate` (CAL-1116), and only ``promote pr``
+(CAL-1117) ever pushes the branch. Never a direct push to ``staging`` / ``main``.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ __all__ = [
     "PromotionMechanicsError",
     "abort_merge",
     "attempt_merge",
+    "branch_head",
     "classify_conflicts",
     "complete_merge",
     "conflicted_files",
@@ -350,6 +352,20 @@ def complete_merge(worktree: Path) -> MergeOutcome:
             reason="merge_commit_failed",
         )
     return MergeOutcome(clean=True, merged_sha=_head(worktree))
+
+
+def branch_head(repo_root: Path, branch: str) -> str | None:
+    """The tip SHA of local ``branch`` in ``repo_root``, or ``None`` if unresolvable.
+
+    Reads the branch ref without a worktree, so it answers "has the gated tree
+    moved?" even after the promotion worktree is gone (``promote pr``'s freshness
+    check, CAL-1116 AC-3). ``None`` — an absent or ambiguous ref — is *not* an
+    error here: the caller decides what an unresolvable branch means.
+    """
+    result = run_git(repo_root, "rev-parse", "--verify", "--quiet", branch)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _head(worktree: Path) -> str:
