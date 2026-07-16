@@ -1,12 +1,12 @@
-"""Guard: the documented ``~/bin/harness`` Docker wrapper must refresh a stale
+"""Guard: the versioned ``~/bin/harness`` Docker wrapper must refresh a stale
 Claude OAuth token before passing it into the container (CAL-941).
 
-The wrapper's canonical text lives in ``docker/README.md`` (the live copy at
-``~/bin/harness`` is synced from it). Passing the **static** Keychain access
-token — the pre-CAL-941 behaviour — makes every in-container ``claude`` call 401
-once the token expires, which surfaces as a false ``review`` failure. This guard
-asserts the documented wrapper still carries the refresh contract so it cannot
-regress to the static-token form unnoticed.
+The wrapper's source is the versioned ``docker/harness-wrapper.sh`` (CAL-1123),
+which a user symlinks or copies onto their ``PATH`` as ``harness``. Passing the
+**static** Keychain access token — the pre-CAL-941 behaviour — makes every
+in-container ``claude`` call 401 once the token expires, which surfaces as a
+false ``review`` failure. This guard asserts the versioned wrapper still carries
+the refresh contract so it cannot regress to the static-token form unnoticed.
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ from __future__ import annotations
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DOCKER_README = PROJECT_ROOT / "docker" / "README.md"
+DOCKER_WRAPPER = PROJECT_ROOT / "docker" / "harness-wrapper.sh"
 
 
 def _readme() -> str:
-    return DOCKER_README.read_text()
+    return DOCKER_WRAPPER.read_text()
 
 
 def test_wrapper_reads_token_expiry() -> None:

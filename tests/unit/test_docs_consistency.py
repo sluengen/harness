@@ -281,6 +281,9 @@ def test_changelog_present_and_referenced_by_freshness_hook() -> None:
 #     different paths.
 
 DOCKER_README = REPO_ROOT / "docker" / "README.md"
+#: The wrapper is a versioned file (CAL-1123), not a README heredoc; the guards
+#: below lock its *code* against the installed artifact, not prose.
+DOCKER_WRAPPER = REPO_ROOT / "docker" / "harness-wrapper.sh"
 
 #: The wrapper enables cross-repo execution with two moves: mount the caller's
 #: CWD at /workspace, and pin the fail-closed allowlist (workspace.py, CAL-584)
@@ -304,7 +307,7 @@ def test_wrapper_pins_allowlist_to_container_workspace() -> None:
     """The cross-repo claim is backed by the documented wrapper (CAL-675).
 
     `/harness run` runs cross-repo only because the ``~/bin/harness`` wrapper
-    (canonical text in ``docker/README.md``) mounts the caller's CWD at
+    (versioned at ``docker/harness-wrapper.sh``) mounts the caller's CWD at
     ``/workspace`` *and* sets the ``HARNESS_WORKSPACE_ROOTS`` allowlist to that
     same in-container ``/workspace`` — so the fail-closed guard in
     ``workspace.py`` (CAL-584) admits the mounted repo. The allowlist must be a
@@ -314,19 +317,19 @@ def test_wrapper_pins_allowlist_to_container_workspace() -> None:
     then rejects ``/workspace`` and breaks every verb — the regression a review
     of CAL-675 caught. Lock both the mount and the pin.
     """
-    text = DOCKER_README.read_text()
+    text = DOCKER_WRAPPER.read_text()
     assert _WRAPPER_MOUNTS_CWD_RE.search(text), (
-        "docker/README.md's wrapper no longer mounts the CWD at /workspace "
+        "docker/harness-wrapper.sh no longer mounts the CWD at /workspace "
         '(`-v "$(pwd)":/workspace`). That mount is what makes the verbs '
         "repo-agnostic — without it the cross-repo claim (CAL-675) is false."
     )
     assert _WRAPPER_PINS_ALLOWLIST_RE.search(text), (
-        "docker/README.md's wrapper no longer pins "
+        "docker/harness-wrapper.sh no longer pins "
         "`-e HARNESS_WORKSPACE_ROOTS=/workspace`. It must set the in-container "
         "allowlist to a literal /workspace (CAL-584/CAL-675)."
     )
     assert not _WRAPPER_FORWARDS_HOST_RE.search(text), (
-        "docker/README.md's wrapper forwards the host's HARNESS_WORKSPACE_ROOTS "
+        "docker/harness-wrapper.sh forwards the host's HARNESS_WORKSPACE_ROOTS "
         "into the container (bare `-e HARNESS_WORKSPACE_ROOTS` or a "
         "`${HARNESS_WORKSPACE_ROOTS:-…}` default). Inside the container the repo "
         "is /workspace, so a host path rejects it — pin `=/workspace` instead "
@@ -389,21 +392,21 @@ def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
     every close. The fix keys the gate off the host's own agent and lets Docker
     Desktop provide the socket at mount time; the mount itself must stay.
     """
-    text = DOCKER_README.read_text()
+    text = DOCKER_WRAPPER.read_text()
     assert not _SSH_VM_SOCKET_TEST_RE.search(text), (
-        "docker/README.md's wrapper still gates ssh forwarding on "
+        "docker/harness-wrapper.sh still gates ssh forwarding on "
         "`[[ -S /run/host-services/ssh-auth.sock ]]`. That socket exists only "
         "inside the Docker VM, so the host-side test is always false and "
         "forwarding never enables. Gate on the host agent "
         "(`[[ -n \"${SSH_AUTH_SOCK:-}\" ]] && ssh-add -l`) instead."
     )
     assert _SSH_HOST_AGENT_GATE_RE.search(text), (
-        "docker/README.md's wrapper no longer gates on the host's own agent "
+        "docker/harness-wrapper.sh no longer gates on the host's own agent "
         "(SSH_AUTH_SOCK + ssh-add). The forward must enable when the host has a "
         "reachable agent holding a key."
     )
     assert _SSH_SOCKET_MOUNT in text, (
-        "docker/README.md's wrapper no longer mounts "
+        "docker/harness-wrapper.sh no longer mounts "
         f"`{_SSH_SOCKET_MOUNT}`. Docker Desktop supplies the host agent at that "
         "in-VM path at mount time — the mount must remain."
     )
