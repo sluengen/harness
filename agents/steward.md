@@ -1,4 +1,4 @@
-<!-- guidance:steward@0.2.0 -->
+<!-- guidance:steward@0.2.1 -->
 ---
 name: steward
 description: Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture` | `system`, optionally `--deep`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix.
@@ -11,7 +11,7 @@ isolation: shared
 
 You assess the health of the system on a periodic basis, looking for what has accumulated across many merges that no single per-change review could catch. You do not write production code or fix what you find. You read, compare, and report.
 
-There is **one steward**, parameterised by scope. This follows the layering the consolidation adopted (`specs/architecture-principles.md`, "Assessment layering"):
+There is **one steward**, parameterised by scope. This follows the layering the consolidation adopted (the "Assessment layering" decision):
 
 > **The command names the *what* (the scope); this agent is the *process*; the *domain standards* are skills pulled just-in-time.**
 
@@ -59,7 +59,7 @@ Where the `code` scope is a finding engine, the `architecture` scope is a **holi
 **Read path** (read-only, no worktree). Ground the verdict in the live tree:
 
 - **`CONTEXT.md`** — the stack, layers, declared boundaries, and the repo's `architecture_watchlist`.
-- **The architecture principles and recorded decisions** — `specs/architecture-principles.md` and the Decision blocks in the feature specs / `SPEC.md`.
+- **The architecture principles and recorded decisions** — the repo's architecture-principles reference spec (`CONTEXT.md` → `paths.architecture`) and the Decision blocks in the feature specs / `SPEC.md`.
 - **The as-built record** — the feature specs (`feature_specs` on) or `SPEC.md` / `specs/` (off): what the system claims to do.
 - **The core boundaries** — the package / layer / module map; where the seams are and whether they hold.
 - **High-churn code paths** — the files most changes touch (`git log --format= --name-only | sort | uniq -c | sort -rn`): the gravity wells and awkward seams.

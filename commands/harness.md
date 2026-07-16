@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.8 -->
+<!-- guidance:harness@0.1.9 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -19,7 +19,7 @@ This is **not** a wrapper that hands the ticket to a black-box workflow. *You* �
 
 ### Prerequisites
 
-`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, see `docker/README.md` — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
+`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, set it up per the harness app's Docker-wrapper instructions — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
 
 `LINEAR_API_KEY` must be in a `.env` file at the target repo root (gitignored). The wrapper reads it automatically — no `source .env` needed.
 
@@ -69,7 +69,7 @@ harness review --run-id <run_id> --engine codex   # cross-model review — host-
 **You run the gate; the verb enforces and records the evidence.** Run `CONTEXT.md` → `verify:` in the worktree, capture its output to a file, and hand the result to `review`:
 
 ```bash
-bash scripts/verify.sh > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
+bash <your verify gate> > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
 harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log
 ```
 
@@ -90,7 +90,7 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 
 `claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude: `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
 
-**In-container, the review engine is Claude; `--engine codex` is host-only** (ADR [`0002`](../specs/decisions/0002-in-container-review-engine.md)). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
+**In-container, the review engine is Claude; `--engine codex` is host-only** (the harness's in-container-review-engine decision, ADR 0002). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
 
 Act on `verdict`:
 
@@ -147,7 +147,7 @@ When a build is **alive but nearing its context limit** mid-ticket, hand off gra
 | Comment marker | `Context-rollover handoff by \`harness checkpoint\`` | `Reclaimed by \`harness reclaim\`` |
 | Resume reader | `fetch_handoff_branch` (marker-gated, no label) | `fetch_resume_branch` (`reclaimed`-label-gated) |
 
-Because the two use **distinct marker strings** and occupy **distinct Linear states**, `start --resume` resolves the right branch for each — a handoff comment is never read as a reclaim comment, and vice versa (pinned in `tests/unit/test_reclaim_marker.py`). `start --resume` tries the reclaim source first, then falls through to the handoff source, so one flag serves both.
+Because the two use **distinct marker strings** and occupy **distinct Linear states**, `start --resume` resolves the right branch for each — a handoff comment is never read as a reclaim comment, and vice versa (pinned by the harness's reclaim-marker tests). `start --resume` tries the reclaim source first, then falls through to the handoff source, so one flag serves both.
 
 ---
 
@@ -159,7 +159,7 @@ Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle
 
 > **The Linear project is resolved from `CONTEXT.md`, not hardcoded.** Both loops operate on one Linear project — the Build queue. Resolve it at runtime from `CONTEXT.md` → `repo.project` (the same way `/harness ingest` resolves the team from `repo.linear`), so this distributed command needs no per-repo hand-edit. Below, `<repo.project>` stands for that value; in the harness repo it is `Harness v3`.
 
-> **Default: always-on local. Cloud is optional.** A routine normally runs on the always-on device via a **local trigger**: it shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy (the macOS scheduled task driving `/harness routine build` — see `RUNBOOK.md`). This is local-trigger because a cloud runner cannot reach `~/bin/harness` or the local checkout — and it is the default because it already works and costs nothing per run. An **off-machine** path is *possible* — the harness's own loop runs against the native `harness` entry point (`uv tool install .`, no Docker) with credentials as secrets and the **Claude** review engine — but if ever needed it is a **Claude cloud routine**, **not** GitHub Actions (rejected: a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). The decision, the optional cloud path, and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are recorded in `specs/decisions/0001-cloud-runnable-harness-loop.md`. Cloud-enabling self-hosting *target* repos remains out of scope.
+> **Default: always-on local. Cloud is optional.** A routine normally runs on the always-on device via a **local trigger**: it shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy (an always-on scheduled task driving `/harness routine build`). This is local-trigger because a cloud runner cannot reach `~/bin/harness` or the local checkout — and it is the default because it already works and costs nothing per run. The trigger itself is configured in the app and is **not** part of this command; whatever fires it must be a **thin caller** that invokes `/harness routine build` and nothing more (*version the logic, not the schedule*). An **off-machine** path is *possible* — the harness's own loop runs against the native `harness` entry point (`uv tool install .`, no Docker) with credentials as secrets and the **Claude** review engine — but if ever needed it is a **Claude cloud routine**, **not** GitHub Actions (rejected: a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). The optional cloud path and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are the harness's own recorded design decisions. Cloud-enabling self-hosting *target* repos remains out of scope.
 
 ### /harness routine build
 
@@ -285,5 +285,5 @@ Next: /harness run <ISSUE-ID>
 ### Related
 
 - `/harness run` — orchestrates the `start → review → close` verb loop for a given ticket
-- `harness/cli/start.py`, `harness/cli/review.py`, `harness/cli/close.py` — the three verbs `/harness run` drives
-- `specs/proposals/harness-as-tool.md` — the proposal behind the verb-loop model
+- The three verbs `/harness run` drives — `start`, `review`, and `close` (implemented in the harness app)
+- The proposal behind the verb-loop model (the harness's "harness-as-tool" design)
