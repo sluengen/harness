@@ -40,6 +40,18 @@ class ReviewEventData(BaseModel):
     three ``str | None`` fields mirror the verb's ``if x is not None`` optional
     keys: dump with ``model_dump(exclude_none=True)`` so an unset optional stays
     absent from the JSON exactly as before.
+
+    The ``gate_*`` fields are the verify-gate evidence (CAL-1082) — what makes a
+    recorded ``pass`` mean "the gate ran and was green" rather than "a reviewer
+    read the diff". The orchestrator runs the gate and reports the result; the
+    verb records it here, bound to ``reviewed_sha``. They are **flat**, not
+    nested under a sub-object, because
+    :func:`_field_path` derives only top-level ``$.<field>`` paths and the close
+    gate reads one of them. ``gate_ran`` is a non-optional bool, so it survives
+    ``exclude_none=True`` and is always present on a new event; on a *pre-existing*
+    event the key is simply absent, ``json_extract`` returns ``NULL``, and the
+    close backstop reads that as "no evidence" and refuses. Fail-safe, no
+    migration.
     """
 
     run_id: str
@@ -49,6 +61,11 @@ class ReviewEventData(BaseModel):
     engine: str
     convergence_check_required: bool
     created_at: str
+    gate_ran: bool
+    gate_command: str | None = None
+    gate_exit_code: int | None = None
+    gate_reason: str | None = None
+    gate_output_tail: str | None = None
     fallback_from: str | None = None
     commit_message: str | None = None
     deferred_brief: str | None = None
@@ -103,6 +120,12 @@ def _field_path(model: type[BaseModel], field: str) -> str:
 #: ``json_extract`` paths the close gate reads from a ``review`` payload.
 REVIEW_REVIEWED_SHA_PATH = _field_path(ReviewEventData, "reviewed_sha")
 REVIEW_VERDICT_PATH = _field_path(ReviewEventData, "verdict")
+
+#: ``json_extract`` paths the close gate reads for the verify-gate evidence
+#: backstop (CAL-1082): a pass whose ``gate_ran`` is absent/false — and whose
+#: ``gate_reason`` is not the honest "no gate configured" — is refused.
+REVIEW_GATE_RAN_PATH = _field_path(ReviewEventData, "gate_ran")
+REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")

@@ -18,7 +18,7 @@ The Typer app (`harness/cli/__init__.py`) is the public contract. The surface is
 ```
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json/--no-json]   # --resume: continue a reclaimed ticket from its checkpoint-pushed WIP branch when one exists; else a clean start
-harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
+harness review            [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--engine <e>] [--repo <p>] [--db <p>] [--json/--no-json]   # --gate-exit/--gate-log: evidence that YOU ran CONTEXT.md → verify: — required when the repo configures one; the verb never runs the gate itself. --engine: claude (default) | codex
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]   # push the run branch to origin mid-flight so committed WIP survives the container dying — pushes only the feature branch, never merges
 
@@ -46,13 +46,25 @@ This block lists each command's public flags as registered today; `harness <cmd>
 | 0 | Command succeeded (including a recorded review `fail` — a *successful* review) |
 | 1 | Unexpected error (git failure, DB error, Linear error) |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
+| 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
+| 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
+| 5 | `review`: the verify gate cannot certify the tree — red evidence (`gate_failed`) or none supplied (`no_gate_evidence`); no engine ran, no verdict was recorded |
 | 130 | SIGINT (user cancelled) |
+
+Each of `review`'s dedicated codes exists so an orchestrating agent can tell the *kind* of stop apart without parsing prose: an environment wall (3), a bounded-out loop (4), and a tree that cannot show it is green (5) call for three different responses, and none of them is a rejected diff.
 
 #### Scenario: a gate refusal exits 2
 
 - GIVEN `harness close` whose gate is not satisfied
 - WHEN it runs
-- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`)
+- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
+
+#### Scenario: missing or red gate evidence exits 5
+
+- GIVEN `harness review` in a repo that configures a `CONTEXT.md` `verify:` command
+- WHEN it runs with no `--gate-exit`
+- THEN it exits 5 with `reason=no_gate_evidence`, having invoked no engine and recorded no `review` event (CAL-1082)
+- AND WHEN it runs with a non-zero `--gate-exit`, THEN it exits 5 with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }`, the same way
 
 ### JSON output is part of the public contract
 

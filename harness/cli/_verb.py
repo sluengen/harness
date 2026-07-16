@@ -18,12 +18,22 @@ set one — emit ``{"error": ..., "reason": ...}``. Absent, never ``null``. This
 is the uniform shape; the ``--json`` *default* stays a per-verb choice
 (orchestrator-consumed verbs default it on; the human-facing ``reclaim`` /
 ``cancel`` default it off) and is deliberately not unified here.
+
+Recorded decision — the ``extra`` field
+---------------------------------------
+Some refusals carry *data* the caller needs to act, not just a tag: a red verify
+gate carries the gate's bounded output tail, so the agent can fix what broke
+without re-running the gate (CAL-1082). That data is machine-readable, so it
+belongs in its own key rather than concatenated into the human ``message`` —
+and composing the error JSON is exactly this epilogue's job. ``extra`` is
+**optional**, merged under the reserved ``error`` / ``reason`` keys (which it
+cannot override), so every verb that does not set it keeps its JSON unchanged.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
 import typer
@@ -38,24 +48,33 @@ class VerbError(Exception):
 
     Raised inside a verb's async orchestration and translated to a Typer
     ``Exit`` by :func:`run_verb`. ``reason`` is an optional stable tag emitted
-    on the error JSON (see the module docstring's recorded decision).
+    on the error JSON, and ``extra`` optional structured data to emit alongside
+    it (see the module docstring's recorded decisions).
     """
 
-    def __init__(self, message: str, code: int, *, reason: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        code: int,
+        *,
+        reason: str | None = None,
+        extra: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
         self.reason = reason
+        self.extra = extra
 
 
 def run_verb(work: Callable[[], _T], *, json_output: bool) -> _T:
     """Run ``work``; on :class:`VerbError` emit the uniform error output + exit.
 
     Returns ``work()``'s result on success. On a raised ``VerbError`` it prints
-    ``{"error": ...}`` (plus ``"reason"`` only when set) to stdout under
-    ``json_output``, else the human message to stderr, then raises
-    ``typer.Exit(code)``. Any non-``VerbError`` propagates unchanged — so a
-    ``typer.BadParameter`` still exits 2 through Typer's own handler.
+    ``{"error": ...}`` (plus ``"reason"`` and any ``extra`` keys, only when set)
+    to stdout under ``json_output``, else the human message to stderr, then
+    raises ``typer.Exit(code)``. Any non-``VerbError`` propagates unchanged — so
+    a ``typer.BadParameter`` still exits 2 through Typer's own handler.
     """
     try:
         return work()
@@ -64,6 +83,12 @@ def run_verb(work: Callable[[], _T], *, json_output: bool) -> _T:
             payload: dict[str, Any] = {"error": exc.message}
             if exc.reason is not None:
                 payload["reason"] = exc.reason
+            if exc.extra is not None:
+                # ``error`` / ``reason`` are reserved: a stray ``extra`` key can
+                # add to the contract but never redefine it.
+                payload.update(
+                    {k: v for k, v in exc.extra.items() if k not in ("error", "reason")}
+                )
             typer.echo(json.dumps(payload))
         else:
             typer.echo(exc.message, err=True)

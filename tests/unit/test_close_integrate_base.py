@@ -254,6 +254,9 @@ def _seed_open_run(
 
 
 def _emit_pass(db_path: Path, run_id: str, reviewed_sha: str) -> None:
+    """A pass as ``harness review`` records one — including the verify-gate
+    evidence the close gate's backstop requires (CAL-1082)."""
+
     async def _emit() -> None:
         await EventEmitter(db_path).emit(
             run_id=run_id,
@@ -264,6 +267,9 @@ def _emit_pass(db_path: Path, run_id: str, reviewed_sha: str) -> None:
                 "verdict": "pass",
                 "issues": [],
                 "created_at": "2026-06-18T00:00:00Z",
+                "gate_ran": True,
+                "gate_command": "bash scripts/verify.sh",
+                "gate_exit_code": 0,
             },
         )
 

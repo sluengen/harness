@@ -56,7 +56,12 @@ def _sync(coro: Any) -> Any:
 
 
 def test_review_event_data_required_keys() -> None:
-    """A minimal review payload dumps exactly the always-present keys."""
+    """A minimal review payload dumps exactly the always-present keys.
+
+    ``gate_ran`` is among them (CAL-1082): it is a non-optional bool, so a new
+    event always states its verify-gate evidence — there is no shape in which a
+    fresh ``review`` event stays silent about whether the gate ran.
+    """
     dumped = ReviewEventData(
         run_id="R1",
         reviewed_sha="abc123",
@@ -65,6 +70,7 @@ def test_review_event_data_required_keys() -> None:
         engine="claude",
         convergence_check_required=False,
         created_at="2026-06-10T00:00:00Z",
+        gate_ran=False,
     ).model_dump(exclude_none=True)
 
     assert dumped == {
@@ -75,6 +81,7 @@ def test_review_event_data_required_keys() -> None:
         "engine": "claude",
         "convergence_check_required": False,
         "created_at": "2026-06-10T00:00:00Z",
+        "gate_ran": False,
     }
 
 
@@ -89,10 +96,15 @@ def test_review_event_data_omits_unset_optionals() -> None:
         engine="claude",
         convergence_check_required=True,
         created_at="2026-06-10T00:00:00Z",
+        gate_ran=True,
     ).model_dump(exclude_none=True)
 
     for optional in ("fallback_from", "commit_message", "deferred_brief"):
         assert optional not in dumped
+    # The gate optionals behave the same way: unset stays absent, so a payload
+    # never claims an exit code for a gate that reported none.
+    for gate_optional in ("gate_command", "gate_exit_code", "gate_reason"):
+        assert gate_optional not in dumped
 
 
 def test_review_event_data_includes_set_optionals() -> None:
@@ -104,6 +116,9 @@ def test_review_event_data_includes_set_optionals() -> None:
         engine="claude",
         convergence_check_required=False,
         created_at="2026-06-10T00:00:00Z",
+        gate_ran=True,
+        gate_command="bash scripts/verify.sh",
+        gate_exit_code=0,
         fallback_from="codex",
         commit_message="msg",
         deferred_brief="brief",
@@ -112,6 +127,8 @@ def test_review_event_data_includes_set_optionals() -> None:
     assert dumped["fallback_from"] == "codex"
     assert dumped["commit_message"] == "msg"
     assert dumped["deferred_brief"] == "brief"
+    assert dumped["gate_command"] == "bash scripts/verify.sh"
+    assert dumped["gate_exit_code"] == 0
 
 
 def test_checkpoint_event_data_keys() -> None:
@@ -209,6 +226,9 @@ def _emit_review_via_model(
             engine="claude",
             convergence_check_required=False,
             created_at="2026-06-10T00:00:00Z",
+            gate_ran=True,
+            gate_command="bash scripts/verify.sh",
+            gate_exit_code=0,
         ).model_dump(exclude_none=True)
         await EventEmitter(db_path).emit(
             run_id=run_id, event_type="review", data=data
