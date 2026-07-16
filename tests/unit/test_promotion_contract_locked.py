@@ -3,8 +3,9 @@
 CAL-1113 locked the promote *surface* (command names + flags); this locks the
 *data* an orchestrator reads back off the read-path commands, the same way
 ``test_verb_contract_locked.py`` locks the build verbs' output. Two commands
-carry a real contract in v1 (the mechanics for ``start`` / ``continue`` /
-``escalate`` land later):
+carry the read-path contract this module locks (the write-path mechanics for
+``start`` / ``continue`` landed in CAL-1115 and ``escalate`` in CAL-1118, each
+with their own test module):
 
 * ``promote status`` emits the typed ``Promotion`` view — its top-level keys are
   locked (AC-2), read from the JSON the production CLI actually echoes.

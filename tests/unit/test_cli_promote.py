@@ -9,17 +9,15 @@ read-path JSON contract (CAL-1114), worktree/merge (CAL-1115), gate evidence
 
 Command-name/subcommand-set drift is locked in ``test_cli_surface_locked.py``;
 this module exercises the surface: every subcommand is invocable and exposes its
-documented flags, and the three still-stubbed write-path bodies
-(``start`` / ``continue`` / ``escalate``) emit a structured ``not_implemented``
-marker with the stable exit code, so an orchestrator can tell "surface exists,
-mechanics pending" apart from a real error. The two ledger-backed read-path
-bodies wired in CAL-1114 (``status`` / ``pr``) have their JSON contract locked in
-``test_promotion_contract_locked.py``.
+documented flags. As of CAL-1118 the whole surface is wired — no subcommand
+remains a ``not_implemented`` stub. The mechanics each have their own module: the
+ledger + read-path JSON contract (``status`` / ``pr``) in
+``test_promotion_contract_locked.py``, the worktree/merge openers (``start`` /
+``continue``) in ``test_cli_promote_start.py``, and escalation
+(``escalate``) in ``test_cli_promote_escalate.py``.
 """
 
 from __future__ import annotations
-
-import json
 
 import pytest
 from typer.testing import CliRunner
@@ -32,13 +30,6 @@ cli_runner = CliRunner()
 #: the SPEC §11 / cli-surface.md surface blocks, which the surface-lock tests
 #: assert against the live app.
 _SUBCOMMANDS = ("start", "continue", "status", "pr", "escalate")
-
-#: The write-path subcommands whose bodies are still contract stubs. ``status`` /
-#: ``pr`` were wired to the ledger in CAL-1114, and ``start`` / ``continue`` to the
-#: worktree/merge mechanics in CAL-1115 (they do real git work and are covered in
-#: ``test_cli_promote_start.py``), so only ``escalate`` (CAL-1118) still emits
-#: ``not_implemented`` on a bare invocation.
-_STUB_SUBCOMMANDS = ("escalate",)
 
 
 def test_promote_group_help_lists_the_v1_subcommands() -> None:
@@ -54,22 +45,6 @@ def test_promote_subcommand_help_is_invocable(sub: str) -> None:
     """Each subcommand's ``--help`` renders (the command is really registered)."""
     result = cli_runner.invoke(app, ["promote", sub, "--help"])
     assert result.exit_code == 0, result.output
-
-
-@pytest.mark.parametrize("sub", _STUB_SUBCOMMANDS)
-def test_promote_stub_reports_not_implemented(sub: str) -> None:
-    """Each still-stubbed write-path body emits ``not_implemented`` and exits 2.
-
-    A contract stub must not masquerade as success (exit 0) nor as an
-    infrastructure error — it reports, in machine-readable form, that the surface
-    is locked but the mechanics are pending, so an orchestrator branches cleanly.
-    (``status`` / ``pr`` are wired in CAL-1114 — see the contract-lock module.)
-    """
-    result = cli_runner.invoke(app, ["promote", sub])
-    assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
-    assert payload["error"] == "not_implemented"
-    assert payload["command"] == f"promote {sub}"
 
 
 def test_promote_start_exposes_from_and_to_flags() -> None:

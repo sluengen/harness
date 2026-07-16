@@ -488,6 +488,126 @@ mutation AddComment($issueId: String!, $body: String!) {
                 f"response: {result!r}"
             )
 
+    async def create_issue(
+        self,
+        *,
+        team_key: str,
+        project_name: str | None,
+        title: str,
+        description: str,
+    ) -> dict[str, str]:
+        """Create a Todo issue on team ``team_key`` and return ``{identifier, url}``.
+
+        The primitive behind ``harness promote escalate`` (CAL-1118): file a fresh
+        escalation ticket carrying the promotion evidence. Resolves the team id
+        from its key, the Todo (``unstarted``) workflow state, and — when
+        ``project_name`` is given — the project id by name, all at runtime (never a
+        hard-coded UUID, the same discipline as :meth:`apply_label`), then fires
+        ``issueCreate`` into that team/project/state.
+
+        Raises:
+            LinearNotFound: no team with ``team_key`` exists.
+            LinearRequestError: the API errored, ``project_name`` names no project
+                on the team, the team has no ``unstarted`` (Todo) state, or
+                ``issueCreate`` did not return an issue.
+        """
+        team_query = """
+query TeamForIssue($key: String!) {
+  teams(filter: { key: { eq: $key } }, first: 1) {
+    nodes {
+      id
+      states { nodes { id name type } }
+      projects { nodes { id name } }
+    }
+  }
+}
+"""
+        data = await self._request(team_query, {"key": team_key})
+        team_nodes = ((data.get("data") or {}).get("teams") or {}).get("nodes") or []
+        if not team_nodes:
+            raise LinearNotFound(f"Linear team {team_key!r} not found")
+        team = team_nodes[0]
+        team_id: str = team["id"]
+
+        state_id = self._select_todo_state(team, team_key)
+        project_id = self._resolve_project_id(team, project_name, team_key)
+
+        mutation = """
+mutation CreateIssue(
+  $teamId: String!
+  $title: String!
+  $description: String!
+  $stateId: String
+  $projectId: String
+) {
+  issueCreate(
+    input: {
+      teamId: $teamId
+      title: $title
+      description: $description
+      stateId: $stateId
+      projectId: $projectId
+    }
+  ) {
+    success
+    issue {
+      identifier
+      url
+    }
+  }
+}
+"""
+        result = await self._request(
+            mutation,
+            {
+                "teamId": team_id,
+                "title": title,
+                "description": description,
+                "stateId": state_id,
+                "projectId": project_id,
+            },
+        )
+        payload = (result.get("data") or {}).get("issueCreate") or {}
+        issue = payload.get("issue")
+        if not payload.get("success") or not issue:
+            raise LinearRequestError(
+                f"Linear issueCreate did not return an issue for team {team_key!r}; "
+                f"response: {result!r}"
+            )
+        return {"identifier": str(issue["identifier"]), "url": str(issue["url"])}
+
+    @staticmethod
+    def _select_todo_state(team: dict[str, Any], team_key: str) -> str:
+        """The team's Todo state id — a state named "Todo", else the first
+        ``unstarted`` state (the same name-then-type resolution as
+        :meth:`transition_to_unstarted`)."""
+        nodes: list[dict[str, Any]] = (team.get("states") or {}).get("nodes", [])
+        candidates = [n for n in nodes if n.get("type") == "unstarted"]
+        if not candidates:
+            raise LinearRequestError(
+                f"Linear team {team_key!r} has no 'unstarted' (Todo) workflow state"
+            )
+        named = [n for n in candidates if (n.get("name") or "").lower() == "todo"]
+        return str((named[0] if named else candidates[0])["id"])
+
+    @staticmethod
+    def _resolve_project_id(
+        team: dict[str, Any], project_name: str | None, team_key: str
+    ) -> str | None:
+        """The id of the team's project named ``project_name``, or ``None`` when no
+        project was requested. Raises when a named project is not found."""
+        if project_name is None:
+            return None
+        nodes: list[dict[str, Any]] = (team.get("projects") or {}).get("nodes", [])
+        project = next(
+            (p for p in nodes if (p.get("name") or "") == project_name), None
+        )
+        if project is None:
+            raise LinearRequestError(
+                f"Linear team {team_key!r} has no project named {project_name!r}"
+            )
+        return str(project["id"])
+
     async def _transition(
         self, identifier: str, *, state_type: str, preferred_name: str
     ) -> None:
