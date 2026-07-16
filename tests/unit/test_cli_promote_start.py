@@ -414,19 +414,73 @@ def _pr(work: Path, promotion_id: str) -> object:
     )
 
 
-def test_pr_on_fresh_green_promotion_reaches_push_stub(work: Path) -> None:
+def test_pr_on_fresh_green_promotion_publishes(
+    work: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A ``pr_ready`` promotion whose branch HEAD still equals the gated SHA passes
-    both gates and reaches the (CAL-1117) push stub — ``not_implemented``."""
+    both gates and publishes (CAL-1117): the promotion branch is pushed to origin,
+    the PR is opened, and the promotion reaches ``pr_opened`` with the URL recorded
+    (AC-1/AC-3). ``gh`` is stubbed — the push against the bare origin is real."""
+    _configure_gate(work, "exit 0")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert started["status"] == "pr_ready"
+    branch = str(started["promotion_branch"])
+    staging_before = _git(work, "rev-parse", "origin/staging").strip()
+
+    captured: dict[str, object] = {}
+
+    def _fake_create(repo_root, *, base, head, title, body):
+        captured.update(base=base, head=head, title=title, body=body)
+        from harness.promotion_pr import PullRequestOutcome
+
+        return PullRequestOutcome(url="https://github.com/o/r/pull/12")
+
+    monkeypatch.setattr(promote_cli, "create_pull_request", _fake_create)
+
+    result = _pr(work, str(started["promotion_id"]))
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "pr_opened"
+    assert payload["pr_url"] == "https://github.com/o/r/pull/12"
+
+    # AC-3: the PR opens into the target branch, from the promotion branch.
+    assert captured["base"] == "staging"
+    assert captured["head"] == branch
+
+    # AC-2 / AC-5: only the promotion branch was pushed — origin/staging is untouched
+    # (never advanced to the gated SHA by a forbidden direct target-branch push).
+    assert _git(work, "rev-parse", f"origin/{branch}").strip() == started["gated_sha"]
+    assert _git(work, "rev-parse", "origin/staging").strip() == staging_before
+    assert staging_before != started["gated_sha"]
+
+
+def test_pr_push_failure_is_a_structured_refusal(
+    work: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed branch push surfaces as a structured ``push_failed`` refusal (exit 2)
+    with the promotion left un-advanced — never a bare traceback."""
     _configure_gate(work, "exit 0")
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
     assert started["status"] == "pr_ready"
 
+    def _boom(repo_root, branch):
+        raise mechanics.PromotionMechanicsError("remote rejected", reason="push_failed")
+
+    monkeypatch.setattr(promote_cli, "push_promotion_branch", _boom)
+
     result = _pr(work, str(started["promotion_id"]))
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
-    assert payload["error"] == "not_implemented"
-    assert payload["command"] == "promote pr"
+    assert json.loads(result.output)["reason"] == "push_failed"
+
+    # The promotion is untouched — still pr_ready, no PR URL.
+    status = cli_runner.invoke(
+        app, ["promote", "status", "--promotion-id", started["promotion_id"], "--repo", str(work)]
+    )
+    after = json.loads(status.output)
+    assert after["status"] == "pr_ready"
+    assert after["pr_url"] is None
 
 
 def test_pr_refused_when_branch_head_moved_past_gated_sha(work: Path) -> None:

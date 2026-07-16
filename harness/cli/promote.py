@@ -26,10 +26,13 @@ CAL-1116 now runs the **gate + evidence capture** inside those openers
   a failed gate has now spent the bounded attempt → ``needs_ticket``), and
   increments the repair ``attempts`` count.
 
-Still deferred: PR creation (CAL-1117) and ``escalate`` (CAL-1118) — whose body
-remains a ``not_implemented`` stub. ``pr`` enforces two gates (the ``pr_ready`` +
-gated-SHA PR gate, and the CAL-1116 branch-HEAD freshness check) and, once both
-pass, falls through to ``not_implemented`` (the PR push is CAL-1117's).
+CAL-1117 now wires ``pr`` — the success finalizer. It enforces two gates (the
+``pr_ready`` + gated-SHA PR gate, and the CAL-1116 branch-HEAD freshness check) and,
+once both pass, **publishes**: it pushes only the promotion branch, opens a PR into
+the target with a body drafted from deterministic facts, and records the PR URL +
+the terminal ``pr_opened`` state (the publication mechanics live in the sibling
+:mod:`harness.promotion_pr`). Still deferred: ``escalate`` (CAL-1118), whose body
+remains a ``not_implemented`` stub.
 
 The five subcommands are the real orchestrator **pause points**:
 
@@ -39,7 +42,8 @@ The five subcommands are the real orchestrator **pause points**:
   classification and the gate, incrementing the attempt count.
 * ``status``   — read-only: report a promotion's current lifecycle state.
 * ``pr``       — the success finalizer: push the promotion branch and open the PR
-  (gated — refused unless the promotion is ``pr_ready`` with fresh gate evidence).
+  from deterministic facts (gated — refused unless the promotion is ``pr_ready``
+  with fresh gate evidence), then record ``pr_opened``.
 * ``escalate`` — the non-success terminal path: file/update a Linear ticket with
   the evidence and mark the promotion ``escalated``.
 
@@ -48,6 +52,12 @@ There is deliberately **no ``verify`` command**: gate execution lives *inside*
 gate evidence), so a standalone ``verify`` would name a step that is never an
 independent pause/resume point.
 """
+
+# size: one cohesive command group — the five promotion-lifecycle subcommands
+# (start / continue / status / pr / escalate) and their shared refuse/emit
+# prologue. The heavy mechanics already live in sibling modules (harness/promotion.py
+# merge, promotion_gate.py gate, promotion_pr.py publish); splitting the CLI itself
+# would scatter one orchestrator surface across files for no cohesion gain.
 
 from __future__ import annotations
 
@@ -65,6 +75,13 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id
 from harness.promotion_gate import classify_gate_failure, run_promotion_gate
+from harness.promotion_pr import (
+    build_pr_body,
+    build_pr_title,
+    collect_promotion_facts,
+    create_pull_request,
+    push_promotion_branch,
+)
 from harness.state import promotions
 from harness.state.promotions import Promotion, PromotionStatus
 
@@ -395,7 +412,7 @@ def pr_command(
         True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Open the promotion PR — gated (CAL-1114); the push itself lands in CAL-1117."""
+    """Open the promotion PR — gated (CAL-1114), then push + create the PR (CAL-1117)."""
     promotion = _read_or_not_found("pr", promotion_id, repo, db)
 
     # AC-4: PR creation is refused unless the promotion is pr_ready with a gated
@@ -440,8 +457,59 @@ def pr_command(
             branch_head=live_head,
         )
 
-    # Gate satisfied and fresh — the actual push + PR creation is CAL-1117.
-    _not_implemented("pr", promotion_id=promotion_id, status=promotion.status)
+    # Both gates pass — publish (CAL-1117). Push ONLY the promotion branch (AC-2),
+    # draft the PR prose from deterministic facts (AC-4), open the PR into the
+    # target branch (AC-3), and record the PR URL + the terminal `pr_opened` state.
+    # A push / gh failure surfaces as a structured refusal, never a bare traceback.
+    branch = promotion.promotion_branch
+    gated_sha = promotion.gated_sha
+    if branch is None or gated_sha is None:
+        # pr_gate_satisfied guarantees a gated SHA, and a real pr_ready promotion
+        # always carries its branch. A row missing either is malformed — refuse
+        # rather than push a None ref. (Also narrows the Optionals for the push.)
+        integrity_reason: PromotionRefusalReason = "gate_not_satisfied"
+        _refuse(
+            integrity_reason,
+            "promotion is missing its branch or gated SHA — cannot open a PR",
+            command="promote pr",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+
+    db_path = resolve_verb_db_path(db, repo_root)
+    try:
+        push_promotion_branch(repo_root, branch)
+        facts = collect_promotion_facts(
+            repo_root,
+            from_branch=promotion.from_branch,
+            to_branch=promotion.to_branch,
+            gated_sha=gated_sha,
+        )
+        outcome = create_pull_request(
+            repo_root,
+            base=promotion.to_branch,
+            head=branch,
+            title=build_pr_title(facts),
+            body=build_pr_body(facts, evidence=promotion.evidence),
+        )
+    except mechanics.PromotionMechanicsError as exc:
+        _refuse(
+            exc.reason,
+            str(exc),
+            command="promote pr",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+
+    updated = promotion.model_copy(
+        update={
+            "status": "pr_opened",
+            "pr_url": outcome.url,
+            "updated_at": iso_z(),
+        }
+    )
+    asyncio.run(promotions.update_promotion(updated, db_path=db_path))
+    typer.echo(updated.model_dump_json())
 
 
 @promote_app.command("escalate", help="File a Linear ticket and mark the promotion escalated.")

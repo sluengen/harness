@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from harness import promotion as promotion_mod
+from harness import promotion_pr as promotion_pr_mod
 from harness.cli import _git as git_mod
 from harness.cli import checkpoint as checkpoint_mod
 from harness.cli import close as close_mod
@@ -118,6 +119,20 @@ def test_promote_fetch_origin_passes_network_timeout(
     assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
 
 
+def test_promote_pr_push_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion_pr.push_promotion_branch`` is a network site (CAL-1004):
+    its ``git push origin <branch>:<branch>`` carries the network timeout."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _recorder(calls))
+
+    promotion_pr_mod.push_promotion_branch(Path("/repo"), "promote/x")
+
+    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
 def test_close_fetch_and_push_pass_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -199,6 +214,17 @@ def test_promote_fetch_origin_timeout_raises_mechanics_error(
     with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
         promotion_mod.fetch_origin(Path("/repo"))
     assert exc_info.value.reason == "fetch_failed"
+
+
+def test_promote_pr_push_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A push that times out is surfaced as a ``PromotionMechanicsError``
+    (``push_failed``) — never a raw ``TimeoutExpired`` traceback."""
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _raise_timeout_on("push"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_pr_mod.push_promotion_branch(Path("/repo"), "promote/x")
+    assert exc_info.value.reason == "push_failed"
 
 
 def test_close_fetch_timeout_raises_close_error(

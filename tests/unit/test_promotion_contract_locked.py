@@ -162,17 +162,50 @@ def test_pr_refused_when_pr_ready_but_no_gated_sha(
     assert json.loads(result.output)["reason"] == "gate_not_satisfied"
 
 
-def test_pr_gate_satisfied_falls_through_to_not_implemented(
+def test_pr_gate_satisfied_publishes_and_records_pr_opened(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A gate-satisfied ``pr`` is *not* refused: it reaches the (still-stubbed) PR
-    push path, which reports ``not_implemented`` (CAL-1117 fills it in)."""
-    db = _seed(tmp_path, _promotion(status="pr_ready", gated_sha="abc123"))
+    """A gate-satisfied ``pr`` is *not* refused: it reaches the publish path
+    (CAL-1117), records the PR URL, and advances to the terminal ``pr_opened`` state.
+    The git push + ``gh`` call are stubbed so this stays a pure contract test."""
+    db = _seed(
+        tmp_path,
+        _promotion(
+            status="pr_ready", gated_sha="abc123", promotion_branch="promote/x"
+        ),
+    )
+
+    from harness.cli import promote as promote_cli
+    from harness.promotion_pr import PromotionFacts, PullRequestOutcome
+
+    monkeypatch.setattr(promote_cli, "push_promotion_branch", lambda repo, branch: None)
+    monkeypatch.setattr(
+        promote_cli,
+        "collect_promotion_facts",
+        lambda repo, *, from_branch, to_branch, gated_sha: PromotionFacts(
+            from_branch=from_branch,
+            to_branch=to_branch,
+            gated_sha=gated_sha,
+            commit_subjects=(),
+            linear_ids=(),
+            changed_specs=(),
+        ),
+    )
+    monkeypatch.setattr(
+        promote_cli,
+        "create_pull_request",
+        lambda repo, *, base, head, title, body: PullRequestOutcome(
+            url="https://github.com/o/r/pull/1"
+        ),
+    )
+
     result = _invoke(tmp_path, monkeypatch, ["promote", "pr", "--promotion-id", "p1"], db)
-    assert result.exit_code == 2, result.output
+    assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["error"] == "not_implemented"
-    assert payload["command"] == "promote pr"
+    assert payload["status"] == "pr_opened"
+    assert payload["pr_url"] == "https://github.com/o/r/pull/1"
+    # The output still carries exactly the locked Promotion key set.
+    assert set(payload) == EXPECTED_PROMOTION_OUTPUT_KEYS
 
 
 def test_pr_unknown_promotion_id_is_not_found(
