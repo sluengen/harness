@@ -94,6 +94,19 @@ def _start(work: Path, *args: str) -> subprocess.CompletedProcess[str] | object:
     )
 
 
+def _configure_gate(work: Path, command: str) -> None:
+    """Commit a ``CONTEXT.md`` with ``verify: "<command>"`` onto both branches so the
+    promotion worktree (merged from them) carries the gate config the promotion
+    runs (CAL-1116). Leaves the work repo back on ``dev``."""
+    for branch in ("staging", "dev"):
+        _git(work, "checkout", branch)
+        (work / "CONTEXT.md").write_text(f'commands:\n  verify: "{command}"\n')
+        _git(work, "add", "CONTEXT.md")
+        _git(work, "commit", "-m", f"gate config on {branch}")
+        _git(work, "push", "origin", branch)
+    _git(work, "checkout", "dev")
+
+
 # --- AC-1: clean merge --------------------------------------------------------
 
 
@@ -127,6 +140,47 @@ def test_clean_merge_creates_worktree_and_records_merged_head(work: Path) -> Non
     )
     assert status.exit_code == 0, status.output
     assert json.loads(status.output)["merged_sha"] == merged
+
+
+# --- AC-1 / AC-2: the gate runs inside a clean start (CAL-1116) ----------------
+
+
+def test_clean_merge_green_gate_is_pr_ready(work: Path) -> None:
+    """A clean merge whose configured gate passes reaches ``pr_ready`` and records
+    the gated SHA (== merged HEAD) plus bounded evidence (AC-1, AC-2)."""
+    _configure_gate(work, "printf gate-ok; exit 0")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+
+    payload = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert payload["status"] == "pr_ready"
+    assert payload["gated_sha"] == payload["merged_sha"]
+    assert payload["gated_sha"]
+    assert "gate-ok" in payload["evidence"]
+
+
+def test_clean_merge_red_gate_needs_ticket(work: Path) -> None:
+    """A clean merge whose gate fails is out of local repair authority in v1 —
+    ``needs_ticket`` with bounded evidence and no gated SHA (AC-4)."""
+    _configure_gate(work, "printf gate-broke 1>&2; exit 1")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+
+    payload = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert payload["status"] == "needs_ticket"
+    assert payload["gated_sha"] is None
+    assert payload["merged_sha"]  # the merge still happened
+    assert "gate-broke" in payload["evidence"]
+
+
+def test_clean_merge_without_gate_config_stays_opened(work: Path) -> None:
+    """With no ``verify:`` in the merged tree there is nothing to run: the clean
+    merge rests at ``opened`` (ungated) — it cannot advance to ``pr_ready`` without
+    evidence (matches review/close's ``not_configured`` honesty)."""
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+
+    payload = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert payload["status"] == "opened"
+    assert payload["gated_sha"] is None
+    assert payload["evidence"] is None
 
 
 # --- AC-2: conflict path ------------------------------------------------------
@@ -287,6 +341,92 @@ def test_continue_with_missing_worktree_is_refused(work: Path) -> None:
     )
     assert result.exit_code == 2, result.output
     assert json.loads(result.output)["reason"] == "worktree_missing"
+
+
+# --- CAL-1116: the gate runs inside continue, and pr enforces gate freshness ---
+
+
+def _continue(work: Path, promotion_id: str) -> dict[str, object]:
+    result = cli_runner.invoke(
+        app, ["promote", "continue", "--promotion-id", promotion_id, "--repo", str(work)]
+    )
+    assert result.exit_code == 0, result.output
+    return json.loads(result.output)
+
+
+def test_continue_green_gate_reaches_pr_ready(work: Path) -> None:
+    """After the orchestrator resolves the conflict, ``continue`` re-runs the gate;
+    a green gate advances the resumed merge to ``pr_ready`` with a gated SHA."""
+    _configure_gate(work, "printf gate-ok; exit 0")
+    payload = _start_conflict(work)
+    worktree = Path(str(payload["worktree_path"]))
+    (worktree / "README.md").write_text("resolved\n")
+    _git(worktree, "add", "README.md")
+
+    resumed = _continue(work, str(payload["promotion_id"]))
+    assert resumed["status"] == "pr_ready"
+    assert resumed["attempts"] == 1
+    assert resumed["gated_sha"] == resumed["merged_sha"]
+    assert "gate-ok" in resumed["evidence"]
+
+
+def test_continue_red_gate_needs_ticket(work: Path) -> None:
+    """A resumed merge whose gate fails has spent its one bounded repair — it
+    escalates to ``needs_ticket`` with bounded evidence and no gated SHA."""
+    _configure_gate(work, "printf still-red 1>&2; exit 1")
+    payload = _start_conflict(work)
+    worktree = Path(str(payload["worktree_path"]))
+    (worktree / "README.md").write_text("resolved\n")
+    _git(worktree, "add", "README.md")
+
+    resumed = _continue(work, str(payload["promotion_id"]))
+    assert resumed["status"] == "needs_ticket"
+    assert resumed["attempts"] == 1
+    assert resumed["gated_sha"] is None
+    assert "still-red" in resumed["evidence"]
+
+
+def _pr(work: Path, promotion_id: str) -> object:
+    return cli_runner.invoke(
+        app, ["promote", "pr", "--promotion-id", promotion_id, "--repo", str(work)]
+    )
+
+
+def test_pr_on_fresh_green_promotion_reaches_push_stub(work: Path) -> None:
+    """A ``pr_ready`` promotion whose branch HEAD still equals the gated SHA passes
+    both gates and reaches the (CAL-1117) push stub — ``not_implemented``."""
+    _configure_gate(work, "exit 0")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert started["status"] == "pr_ready"
+
+    result = _pr(work, str(started["promotion_id"]))
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "not_implemented"
+    assert payload["command"] == "promote pr"
+
+
+def test_pr_refused_when_branch_head_moved_past_gated_sha(work: Path) -> None:
+    """AC-3: once the promotion branch tip moves past the gated SHA, the recorded
+    green gate no longer covers what would be pushed — ``promote pr`` refuses
+    ``stale_gate``."""
+    _configure_gate(work, "exit 0")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert started["status"] == "pr_ready"
+    worktree = Path(str(started["worktree_path"]))
+
+    # Someone commits onto the promotion branch after the gate — HEAD != gated_sha.
+    (worktree / "extra.txt").write_text("post-gate change\n")
+    _git(worktree, "add", "extra.txt")
+    _git(worktree, "commit", "-m", "sneak a change past the gate")
+
+    result = _pr(work, str(started["promotion_id"]))
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "stale_gate"
+    assert payload["gated_sha"] == started["gated_sha"]
 
 
 # --- mechanics-level failure branches (parity with WorktreeNode) --------------
