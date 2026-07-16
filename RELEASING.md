@@ -22,8 +22,7 @@ Cutting a release starts by summarising what shipped since the last one and open
 ## Pre-release
 
 - [ ] All work for the release is merged to `main`
-- [ ] `CHANGELOG` section in `README.md` is written and accurate
-- [ ] Version roadmap tables in `README.md` and `CLAUDE.md` reflect what shipped vs what's next
+- [ ] `CHANGELOG` section in `README.md` is written and accurate — the newest era covers what shipped in this window (era granularity; the per-ticket record is `CHANGELOG-archive/<year>.md`)
 
 ## Verification gate
 
