@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.1.0 -->
+<!-- guidance:work-discovery@0.2.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -48,6 +48,28 @@ spec needs problem, approach, and acceptance criteria.
 - If it **cannot** be actioned yet — it needs a decision, missing detail, or an
   unfinished dependency — do not guess. Leave a comment on the ticket naming what
   it needs, label it `decision`, and move on to the next candidate.
+
+## When a tracker write is refused
+
+The host can refuse a write this skill instructs — the comment, the label, a
+transition — in an unattended run. **That is a configuration gap, not a bug in
+this skill.** The refusal names its own condition: an action no human named in
+the turn and no configuration sanctioned. The lever is the profile's settings
+(`settings/<profile>.json` → `autoMode.allow`), a natural-language allowlist
+whose clauses name what an autonomous run may do and state the bound that makes
+each one safe. Where the posture names the deferral write, the same routine in
+the same guidance makes it without trouble.
+
+So **fix the posture, not this skill.** Rewriting the deferral step into "report
+it instead" reads like a fix and is not one: this skill ships to every repo on
+this guidance, including those whose posture already permits the write, so the
+rewrite tells a capable runner to go quiet and wedges the queue wherever it
+lands. That has been tried; it is why this section exists.
+
+When the posture cannot be changed from this run — the settings are the
+operator's call, and granting yourself a permission is rightly refused — surface
+the deferral in the run's output and name the clause that is missing. The report
+reaches a human, and a human can grant it.
 
 ## The `decision` label — already-deferred work
 
