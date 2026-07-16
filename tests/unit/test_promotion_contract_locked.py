@@ -109,7 +109,7 @@ def test_status_emits_locked_output_keys(
 def test_status_output_keys_match_the_model() -> None:
     """The locked key set is exactly the ``Promotion`` model's fields — so the
     snapshot cannot silently drift from the model it projects."""
-    assert EXPECTED_PROMOTION_OUTPUT_KEYS == set(Promotion.model_fields)
+    assert set(Promotion.model_fields) == EXPECTED_PROMOTION_OUTPUT_KEYS
 
 
 def test_status_unknown_promotion_id_is_not_found(

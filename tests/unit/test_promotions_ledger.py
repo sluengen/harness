@@ -134,7 +134,7 @@ _EXPECTED_STATUSES = {
 def test_promotion_status_enum_is_the_locked_set() -> None:
     """``PromotionStatus`` holds exactly the ADR-0003 lifecycle states (AC-3)."""
     assert set(get_args(PromotionStatus)) == _EXPECTED_STATUSES
-    assert PROMOTION_STATUSES == frozenset(_EXPECTED_STATUSES)
+    assert frozenset(_EXPECTED_STATUSES) == PROMOTION_STATUSES
 
 
 def test_promotion_status_includes_ac3_semantics() -> None:
