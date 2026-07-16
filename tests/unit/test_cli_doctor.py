@@ -2,13 +2,42 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def engines_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin both review engines as present, so a CLI-level doctor test states a
+    fact about ``doctor`` rather than about the machine running it (CAL-1110).
+
+    ``check_reviewer`` resolves ``claude`` / ``codex`` through a real
+    ``shutil.which`` lookup when its paths are not injected. The CLI-level tests
+    invoke the whole command, so they inherit that lookup: on a developer's
+    machine ``claude`` is installed and every check passes, while on a clean host
+    — every CI runner — the reviewer check FAILs and ``doctor`` correctly exits 1.
+    A test asserting "with no failures, doctor exits 0" was therefore *assuming*
+    its own precondition instead of establishing it, and only failed once CI
+    finally ran (release PR #161, the first CI run in 670 commits).
+
+    Anything other than the two engines delegates to the real ``shutil.which``,
+    so no unrelated lookup is silently stubbed.
+    """
+    real_which = shutil.which
+
+    def fake_which(cmd: str, *args: object, **kwargs: object) -> str | None:
+        if cmd in ("claude", "codex"):
+            return f"/usr/local/bin/{cmd}"
+        return real_which(cmd, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(shutil, "which", fake_which)
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +327,15 @@ def test_doctor_command_registered_in_app() -> None:
     assert "doctor" in result.stdout
 
 
-def test_doctor_command_exits_zero_on_pass_or_warn(tmp_path: Path) -> None:
-    """With no failures, doctor exits 0."""
+def test_doctor_command_exits_zero_on_pass_or_warn(
+    tmp_path: Path, engines_on_path: None
+) -> None:
+    """With no failures, doctor exits 0.
+
+    ``engines_on_path`` establishes the no-failure precondition this asserts;
+    without it the test only holds on a host that happens to have ``claude``
+    installed (CAL-1110).
+    """
     db = tmp_path / ".harness" / "harness.db"
     result = runner.invoke(
         app,
@@ -311,7 +347,9 @@ def test_doctor_command_exits_zero_on_pass_or_warn(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
 
 
-def test_doctor_command_exits_one_on_failure(tmp_path: Path) -> None:
+def test_doctor_command_exits_one_on_failure(
+    tmp_path: Path, engines_on_path: None
+) -> None:
     """A FAILing check must propagate as a non-zero (exit 1) CLI status.
 
     The pass/warn cases pin exit 0; without this, the FAIL → typer.Exit(code=1)
@@ -319,6 +357,11 @@ def test_doctor_command_exits_one_on_failure(tmp_path: Path) -> None:
     ANTHROPIC_API_KEY and supply an OAuth token whose expiry is in the past
     (CAL-941). That branch returns FAIL before the ~/.claude fallback, so it
     fails regardless of the host's home directory.
+
+    ``engines_on_path`` makes auth the *only* FAIL (CAL-1110). Without it, a host
+    with no ``claude`` produces a second, unrelated FAIL — and this test would
+    then pass on the reviewer's failure even if the auth branch it exists to pin
+    had stopped failing.
     """
     db = tmp_path / ".harness" / "harness.db"
     result = runner.invoke(
@@ -331,9 +374,13 @@ def test_doctor_command_exits_one_on_failure(tmp_path: Path) -> None:
         },
     )
     assert result.exit_code == 1, result.stdout
-    # Pin that exit 1 came from a real doctor FAIL line, not a stray exception.
-    assert "[FAIL]" in result.stdout
-    assert "auth" in result.stdout
+    # Pin that exit 1 came from a real doctor FAIL line, not a stray exception —
+    # and that the FAIL is the auth one, not some other check failing by accident.
+    fail_lines = [ln for ln in result.stdout.splitlines() if "[FAIL]" in ln]
+    assert len(fail_lines) == 1, (
+        f"expected auth to be the only FAIL, got: {fail_lines}"
+    )
+    assert "auth" in fail_lines[0]
 
 
 def test_doctor_command_output_contains_check_labels(tmp_path: Path) -> None:

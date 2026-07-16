@@ -58,6 +58,15 @@ def _docker_available() -> bool:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.docker,
+    # The global pytest-timeout cap is 120s, which exists to kill a *hung* test.
+    # This build is not hung, it is genuinely long: with no layer cache it
+    # source-builds git (CAL-935 / CAL-1008) and measured 165s cold on the
+    # author's machine, with a CI runner slower still. Without this override the
+    # fixture's own 600s build budget is unreachable — pytest kills the test at
+    # 120s first — so the module failed on every cold cache and passed on every
+    # warm one (CAL-1110). Scoped to this module: the global default stays 120s
+    # for the other ~1500 tests.
+    pytest.mark.timeout(600),
     pytest.mark.skipif(
         not _docker_available(),
         reason="docker daemon not available (skipping docker integration test)",
