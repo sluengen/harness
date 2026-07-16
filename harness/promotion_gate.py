@@ -89,11 +89,10 @@ def run_promotion_gate(worktree: Path, *, command: str) -> GateEvidence:
             timeout=PROMOTION_GATE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        return GateEvidence(
-            command=command,
-            exit_code=None,
-            evidence=_tail(_coerce(exc.stdout) + _coerce(exc.stderr)),
-        )
+        # ``text=True`` gives str (or None) streams; join whatever partial output
+        # the killed gate produced (``str(...)`` keeps this total for the checker).
+        partial = str(exc.stdout or "") + str(exc.stderr or "")
+        return GateEvidence(command=command, exit_code=None, evidence=_tail(partial))
     except OSError as exc:
         return GateEvidence(
             command=command, exit_code=None, evidence=_tail(str(exc))
@@ -124,12 +123,3 @@ def classify_gate_failure(evidence: GateEvidence) -> str:
 def _tail(text: str) -> str:
     """The last :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT` characters of ``text``."""
     return text[-GATE_OUTPUT_TAIL_LIMIT:]
-
-
-def _coerce(value: str | bytes | None) -> str:
-    """Best-effort decode of a subprocess stream that may be ``None``/``bytes``."""
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode(errors="replace")
-    return value

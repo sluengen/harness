@@ -27,6 +27,8 @@ from typer.testing import CliRunner
 
 from harness import promotion as mechanics
 from harness.cli import app
+from harness.cli import promote as promote_cli
+from harness.promotion_gate import GateEvidence
 from harness.state import promotions
 from harness.state.promotions import Promotion
 
@@ -169,6 +171,26 @@ def test_clean_merge_red_gate_needs_ticket(work: Path) -> None:
     assert payload["gated_sha"] is None
     assert payload["merged_sha"]  # the merge still happened
     assert "gate-broke" in payload["evidence"]
+
+
+def test_clean_merge_blocked_when_gate_unrunnable(
+    work: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clean merge whose gate could not be executed at all (an infra failure,
+    ``exit_code=None``) maps to ``blocked`` — the promotion cannot proceed on
+    infrastructure grounds. Drives the CLI into the ``blocked`` outcome by forcing
+    an unlaunchable gate result."""
+    _configure_gate(work, "true")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+
+    def _unrunnable(worktree: Path, *, command: str) -> GateEvidence:
+        return GateEvidence(command=command, exit_code=None, evidence="cannot exec")
+
+    monkeypatch.setattr(promote_cli, "run_promotion_gate", _unrunnable)
+    payload = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert payload["status"] == "blocked"
+    assert payload["gated_sha"] is None
+    assert payload["evidence"] == "cannot exec"
 
 
 def test_clean_merge_without_gate_config_stays_opened(work: Path) -> None:

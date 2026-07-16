@@ -8,8 +8,12 @@ the harness-owned deterministic facts an outer orchestrator reads back; the CLI
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+import pytest
+
+from harness import promotion_gate
 from harness.gate import GATE_OUTPUT_TAIL_LIMIT
 from harness.promotion_gate import (
     GateEvidence,
@@ -38,15 +42,45 @@ def test_red_gate_captures_stderr_and_is_not_passed(tmp_path: Path) -> None:
     assert "boom" in evidence.evidence
 
 
-def test_unlaunchable_gate_is_not_launched(tmp_path: Path) -> None:
+def test_unknown_binary_is_a_launched_red_gate(tmp_path: Path) -> None:
     """A command that exits non-zero via the shell's not-found path is still
-    *launched* (the shell ran); a genuinely unexecutable gate would surface an
-    OSError, which the runner maps to ``exit_code=None``. Here we assert the shell
-    path: 127 is a real exit code, so it is ``launched`` (a red gate)."""
+    *launched* (the shell ran and reported 127) — a red gate, not an infra
+    failure. Distinguishes the shell-127 case from a genuine launch failure."""
     evidence = run_promotion_gate(tmp_path, command="definitely-not-a-real-binary-xyz")
-    # The shell runs and reports 127 — a launched, red gate, not an infra failure.
     assert evidence.launched
     assert not evidence.passed
+
+
+def test_launch_failure_maps_to_not_launched(tmp_path: Path) -> None:
+    """A genuine launch failure — here an ``OSError`` from a non-existent working
+    directory — is the real ``exit_code=None`` path: the gate could not run at all,
+    so it is *not* launched (an infrastructure failure the caller maps to
+    ``blocked``). This exercises run_promotion_gate's ``except OSError`` branch, not
+    a hand-built ``GateEvidence``."""
+    evidence = run_promotion_gate(tmp_path / "does-not-exist", command="true")
+    assert not evidence.launched
+    assert evidence.exit_code is None
+    assert not evidence.passed
+
+
+def test_timeout_maps_to_not_launched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate that exceeds :data:`PROMOTION_GATE_TIMEOUT_SECONDS` is killed and
+    surfaced as ``exit_code=None`` (an infra failure → ``blocked``), with its
+    partial output bounded — exercising the ``except TimeoutExpired`` branch."""
+
+    def _raise_timeout(*args: object, **kwargs: object) -> None:
+        # text=True gives str output; stderr=None exercises the None-stream path.
+        raise subprocess.TimeoutExpired(
+            cmd="verify", timeout=1.0, output="partial-out", stderr=None
+        )
+
+    monkeypatch.setattr(promotion_gate.subprocess, "run", _raise_timeout)
+    evidence = run_promotion_gate(tmp_path, command="sleep 999")
+    assert not evidence.launched
+    assert evidence.exit_code is None
+    assert "partial-out" in evidence.evidence
 
 
 # --- AC-5: the evidence bound is measured --------------------------------------
