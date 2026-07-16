@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.8.0 -->
+<!-- guidance:code-quality@0.9.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -131,3 +131,9 @@ A file past the hard line limit (Part B — 500 lines for a module/file by defau
 When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (Part B — Boundaries; `CONTEXT.md` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
 
 This is the duplication that review is least equipped to catch, because nothing is wrong yet when it lands. A re-derivation is correct in isolation and its change looks complete: the numbers agree on the day it ships. It turns into a defect only once a sibling surface renders the owning layer's number for the same quantity beside it — and then the two contradict each other while neither change is wrong on its face. The contradiction lives in the accumulation, so neither reviewer was positioned to see it, and it surfaces in an assessment pass long after both shipped. Spec time is the one point where a single person is looking at both layers, which is why the justification is owed there and not at review.
+
+### Narrowing a nullable is a whole-call-graph change, not a grep-and-replace
+
+When a change narrows a nullable at a boundary — coercing an absent or null value to a concrete one, or asserting it non-null — the worklist is every *transitive consumer* of that field, enumerated by following the type to its readers, not the callsites a grep for the coercion operator returns. A coercion and the reader it feeds are frequently in different files: grepping the operator finds where the value is narrowed; it does not find a downstream reader, one or more files away, that still assumes the old nullable contract and does arithmetic or a comparison on the coerced value.
+
+The type system enumerates the readers for free — widen or retype the field and follow what breaks to each consumer. A grep for the coercion is a starting point for that enumeration, never its boundary: the callsite that reads the narrowed value without knowing it was narrowed is exactly the one the operator search cannot see, and it is where the defect lands.
