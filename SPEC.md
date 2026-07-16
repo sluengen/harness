@@ -278,7 +278,17 @@ harness cancel    <run-id>                    # abandon an in-flight run (close 
 harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
 harness doctor                                # system health checks
 harness version                           [--json]
+
+# Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
+harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
+harness promote continue  [--repo <p>] [--json]   # resume after one bounded repair
+harness promote status    [--repo <p>] [--json]   # read-only lifecycle state
+harness promote pr        [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR
+harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
 ```
+
+There is no `harness promote verify` in v1: the gate runs inside `start` /
+`continue`, never as a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).
 
 #### Harness-as-tool verbs
 
