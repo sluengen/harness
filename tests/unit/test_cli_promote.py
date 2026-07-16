@@ -34,10 +34,11 @@ cli_runner = CliRunner()
 _SUBCOMMANDS = ("start", "continue", "status", "pr", "escalate")
 
 #: The write-path subcommands whose bodies are still contract stubs. ``status`` /
-#: ``pr`` were wired to the ledger in CAL-1114 (they need ``--promotion-id`` and
-#: no longer emit ``not_implemented`` on a bare invocation), so they are locked in
-#: ``test_promotion_contract_locked.py`` instead.
-_STUB_SUBCOMMANDS = ("start", "continue", "escalate")
+#: ``pr`` were wired to the ledger in CAL-1114, and ``start`` / ``continue`` to the
+#: worktree/merge mechanics in CAL-1115 (they do real git work and are covered in
+#: ``test_cli_promote_start.py``), so only ``escalate`` (CAL-1118) still emits
+#: ``not_implemented`` on a bare invocation.
+_STUB_SUBCOMMANDS = ("escalate",)
 
 
 def test_promote_group_help_lists_the_v1_subcommands() -> None:
@@ -84,9 +85,10 @@ def test_promote_start_exposes_from_and_to_flags() -> None:
 
 
 def test_promote_start_defaults_are_dev_to_staging() -> None:
-    """The stub echoes its resolved endpoints so the design default is observable:
-    ``--from`` defaults to ``dev`` and ``--to`` to ``staging`` (ADR 0003)."""
-    result = cli_runner.invoke(app, ["promote", "start"])
-    payload = json.loads(result.output)
-    assert payload["from"] == "dev"
-    assert payload["to"] == "staging"
+    """The design default ``dev`` → ``staging`` is documented on the endpoints
+    (ADR 0003). Asserted via ``--help`` rather than a bare run — ``start`` now does
+    real git work, so its full behaviour is covered in ``test_cli_promote_start.py``."""
+    result = cli_runner.invoke(app, ["promote", "start", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "dev" in result.output
+    assert "staging" in result.output

@@ -281,7 +281,7 @@ harness version                           [--json]
 
 # Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
 harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
-harness promote continue  [--repo <p>] [--json]   # resume after one bounded repair
+harness promote continue  [--promotion-id <id>] [--repo <p>] [--json]   # resume an agent_may_fix promotion after one bounded repair
 harness promote status    [--promotion-id <id>] [--repo <p>] [--json]   # read a promotion by id: typed ledger view
 harness promote pr        [--promotion-id <id>] [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR (gated)
 harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket

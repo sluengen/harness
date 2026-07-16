@@ -7,17 +7,28 @@ main`` topology (`specs/decisions/0003-promotion-lifecycle.md`). An external
 orchestrator triggers it and may repair within a narrow policy; the harness owns
 every state transition and records it in a promotion ledger.
 
-CAL-1113 registered the group and its five subcommands with stable flags. This
-module now also carries CAL-1114 — the **read-path JSON contract** over the
-promotion ledger (:mod:`harness.state.promotions`): ``status`` reads a promotion
-by id and emits the typed :class:`~harness.state.promotions.Promotion` view, and
-``pr`` enforces the PR gate (it refuses unless the promotion is ``pr_ready`` with
-a gated SHA). The three write-path bodies — ``start`` / ``continue`` /
-``escalate`` — are still **stubs** reporting ``not_implemented``; their mechanics
-land against this fixed surface (worktree/merge CAL-1115, gate evidence CAL-1116,
-PR creation CAL-1117, escalation CAL-1118). ``pr`` on a gate-*satisfied*
-promotion also reports ``not_implemented`` — the refusal is CAL-1114's, the PR
-push itself is CAL-1117's.
+CAL-1113 registered the group and its five subcommands with stable flags;
+CAL-1114 added the **read-path JSON contract** over the promotion ledger
+(:mod:`harness.state.promotions`): ``status`` reads a promotion by id and emits
+the typed :class:`~harness.state.promotions.Promotion` view, and ``pr`` enforces
+the PR gate. CAL-1115 now wires the **worktree/merge mechanics** for the two
+write-path openers, ``start`` and ``continue``, on top of the pure
+:mod:`harness.promotion` library:
+
+* ``start`` fetches ``origin``, validates the ``--from`` → ``--to`` pair, creates
+  the promotion worktree/branch **from the target**, attempts the merge, and
+  records the promotion. A clean merge lands ``status='opened'`` with the
+  ``merged_sha``; a conflict lands the classification (``agent_may_fix`` /
+  ``needs_ticket``) and leaves the worktree resumable, returning the conflicted
+  files.
+* ``continue`` resumes an ``agent_may_fix`` promotion after one bounded, in-policy
+  repair: it commits the resolved merge, records the ``merged_sha``, and
+  increments the repair ``attempts`` count.
+
+Still deferred: gate evidence (a merge only reaches ``pr_ready`` in CAL-1116), PR
+creation (CAL-1117), and ``escalate`` (CAL-1118) — whose body remains a
+``not_implemented`` stub. ``pr`` on a gate-*satisfied* promotion also reports
+``not_implemented`` (the refusal is CAL-1114's, the PR push CAL-1117's).
 
 The five subcommands are the real orchestrator **pause points**:
 
@@ -42,12 +53,17 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
 import typer
 
+from harness import promotion as mechanics
+from harness._time import iso_z
+from harness.cli._git import teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.identity import generate_run_id
 from harness.state import promotions
+from harness.state.promotions import Promotion
 
 #: The ``harness promote pr`` gate-refusal reasons — the machine-readable enum an
 #: orchestrator branches on when a PR is refused (AC-4). One member in v1: the
@@ -116,6 +132,35 @@ def _read_or_not_found(
     return promotion
 
 
+def _refuse(reason: str, message: str, **extra: object) -> NoReturn:
+    """Emit a structured mechanics refusal and exit 2.
+
+    The write-path analogue of ``_not_found`` for the start/continue mechanics: a
+    machine-readable ``reason`` (from :class:`~harness.promotion.PromotionMechanicsError`
+    or a CLI-level guard) plus the human ``error`` message and any ``extra`` an
+    orchestrator needs to act (e.g. the conflicted files), so a refusal is never
+    a bare non-zero exit.
+    """
+    payload: dict[str, object] = {"error": message, "reason": reason, **extra}
+    typer.echo(json.dumps(payload))
+    raise typer.Exit(code=_STUB_EXIT)
+
+
+def _emit_promotion(promotion: Promotion, outcome: mechanics.MergeOutcome) -> None:
+    """Echo the promotion view plus the merge's live ``conflict_files`` list.
+
+    ``start`` / ``continue`` return the full :class:`Promotion` state (so an
+    orchestrator sees ``status`` / ``merged_sha`` / ``attempts`` directly) with an
+    extra ``conflict_files`` key carrying the merge outcome's conflicted paths
+    (empty on a clean merge) — the structured conflict data of AC-2.
+    """
+    payload = {
+        **json.loads(promotion.model_dump_json()),
+        "conflict_files": list(outcome.conflict_files),
+    }
+    typer.echo(json.dumps(payload))
+
+
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
 def start_command(
     repo: Path = typer.Option(
@@ -127,25 +172,148 @@ def start_command(
     to_branch: str = typer.Option(
         "staging", "--to", help="Target branch to promote into (default: staging)."
     ),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
+    ),
     json_output: bool = typer.Option(
-        False, "--json", help="Emit machine-readable JSON."
+        True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Open a promotion (stub — CAL-1115+ implements the worktree/merge)."""
-    _not_implemented("start", repo=str(repo), **{"from": from_branch, "to": to_branch})
+    """Open a promotion: create the worktree/branch, attempt the merge, classify (CAL-1115)."""
+    repo_root = resolve_repo_root_or_exit(repo)
+    db_path = resolve_verb_db_path(db, repo_root)
+
+    # 1. Refresh the remote refs and validate the pair BEFORE any state — an
+    #    invalid pair or an unreachable remote leaves no worktree and no row.
+    try:
+        mechanics.fetch_origin(repo_root)
+        mechanics.validate_branch_pair(repo_root, from_branch, to_branch)
+    except mechanics.PromotionMechanicsError as exc:
+        _refuse(
+            exc.reason,
+            str(exc),
+            command="promote start",
+            **{"from": from_branch, "to": to_branch},
+        )
+
+    # 2. Mint the promotion id and create the worktree/branch from the target.
+    promotion_id = generate_run_id()
+    branch_name = mechanics.promotion_branch_name(from_branch, to_branch)
+    try:
+        worktree = mechanics.create_promotion_worktree(
+            repo_root, promotion_id, to_branch=to_branch, branch_name=branch_name
+        )
+    except mechanics.PromotionMechanicsError as exc:
+        _refuse(exc.reason, str(exc), command="promote start")
+
+    # 3. Attempt the merge and classify. A genuine git error (no conflicted
+    #    paths) tears the fresh worktree down — there is nothing to resume.
+    try:
+        outcome = mechanics.attempt_merge(worktree, from_branch=from_branch)
+    except mechanics.PromotionMechanicsError as exc:
+        teardown_worktree(repo_root, worktree_path=worktree, branch=branch_name)
+        _refuse(exc.reason, str(exc), command="promote start")
+
+    # 4. Record the promotion. A clean merge is `opened` (awaiting the gate,
+    #    CAL-1116) with its merged HEAD; a conflict carries its classification.
+    now = iso_z()
+    status = "opened" if outcome.clean else outcome.classification
+    promotion = Promotion(
+        promotion_id=promotion_id,
+        repo=str(repo_root),
+        from_branch=from_branch,
+        to_branch=to_branch,
+        status=status,  # type: ignore[arg-type]  # classify_conflicts returns a PromotionStatus
+        created_at=now,
+        updated_at=now,
+        worktree_path=str(worktree),
+        promotion_branch=branch_name,
+        merged_sha=outcome.merged_sha,
+        attempts=0,
+    )
+    asyncio.run(promotions.insert_promotion(promotion, db_path=db_path))
+    _emit_promotion(promotion, outcome)
 
 
 @promote_app.command("continue", help="Resume a promotion after one bounded repair.")
 def continue_command(
+    promotion_id: str = typer.Option(
+        ..., "--promotion-id", help="Id of the promotion to resume."
+    ),
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repo root of the open promotion."
     ),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
+    ),
     json_output: bool = typer.Option(
-        False, "--json", help="Emit machine-readable JSON."
+        True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Resume after a bounded repair (stub — CAL-1115/1116 implement the retry)."""
-    _not_implemented("continue", repo=str(repo))
+    """Resume an ``agent_may_fix`` promotion after a bounded repair (CAL-1115)."""
+    repo_root = resolve_repo_root_or_exit(repo)
+    db_path = resolve_verb_db_path(db, repo_root)
+    promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
+    if promotion is None:
+        typer.echo(
+            json.dumps(
+                {
+                    "error": "not_found",
+                    "command": "promote continue",
+                    "promotion_id": promotion_id,
+                }
+            )
+        )
+        raise typer.Exit(code=_STUB_EXIT)
+
+    # Only a conflict awaiting repair (`agent_may_fix`) is resumable: a clean
+    # `opened` merge has nothing to continue, and `needs_ticket` must escalate.
+    if promotion.status != "agent_may_fix":
+        _refuse(
+            "not_resumable",
+            f"promotion {promotion_id} is {promotion.status!r}, not 'agent_may_fix' — "
+            "only a conflict awaiting repair can be continued",
+            command="promote continue",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+
+    if promotion.worktree_path is None or not Path(promotion.worktree_path).exists():
+        _refuse(
+            "worktree_missing",
+            f"promotion {promotion_id} has no resumable worktree at "
+            f"{promotion.worktree_path!r}",
+            command="promote continue",
+            promotion_id=promotion_id,
+        )
+
+    worktree = Path(promotion.worktree_path)
+
+    # Complete the repaired merge — refuses `dirty_worktree` (with the still-
+    # unresolved files) if the orchestrator's repair left any conflict unstaged.
+    try:
+        outcome = mechanics.complete_merge(worktree)
+    except mechanics.PromotionMechanicsError as exc:
+        _refuse(
+            exc.reason,
+            str(exc),
+            command="promote continue",
+            promotion_id=promotion_id,
+            conflict_files=list(mechanics.conflicted_files(worktree)),
+        )
+
+    # Repair accepted: record the merged HEAD, count the attempt (ADR 0003 "one
+    # bounded attempt"), and move to `opened` (awaiting the gate, CAL-1116).
+    updated = promotion.model_copy(
+        update={
+            "status": "opened",
+            "merged_sha": outcome.merged_sha,
+            "attempts": promotion.attempts + 1,
+            "updated_at": iso_z(),
+        }
+    )
+    asyncio.run(promotions.update_promotion(updated, db_path=db_path))
+    _emit_promotion(updated, outcome)
 
 
 @promote_app.command("status", help="Report a promotion's lifecycle state (read-only).")
