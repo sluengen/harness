@@ -17,9 +17,11 @@ linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
 
 `harness start` calls `WorktreeNode.create(run_id, repo_root, base)`.
 
+The `base` is **resolved from the repo's branch model** rather than hardcoded (CAL-1106): an explicit `--base` wins, else `branches.integration` from the repo's CONTEXT.md, else the repo's origin default branch (`git symbolic-ref refs/remotes/origin/HEAD`), else `dev` as the back-compat fallback (`harness.cli._git.resolve_base_branch`). A repo configured `integration: dev` — like the harness itself — is unchanged; a `main`/`trunk` repo no longer has to pass `--base` on every call.
+
 #### Scenario: `harness start` creates the worktree
 
-- GIVEN `harness start <ticket>` with base branch `<base>` (default `dev`)
+- GIVEN `harness start <ticket>` whose base branch `<base>` is resolved as above (default `dev`)
 - WHEN the helper's `create` runs
 - THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git -c worktree.useRelativePaths=true worktree add -b harness/<run_id> <path> <base>`
 - AND if the path already exists it raises rather than silently reuse; on a `git` failure it best-effort cleans up any half-baked directory before raising
@@ -71,7 +73,7 @@ From the main checkout `harness close` runs `git checkout <base>`, integrates th
 
 #### Scenario: `--merged` deletes the worktree and its branch
 
-- GIVEN a worktree whose branch is merged into `dev` (or `main` / `master`), its branch pushed to `origin`
+- GIVEN a worktree whose branch is merged into the repo's configured integration base (`branches.integration`, else the origin default, else `dev` — the same `resolve_base_branch` resolution `start` uses, CAL-1106), its branch pushed to `origin`
 - WHEN `harness worktrees cleanup --merged` runs
 - THEN it removes the directory and deletes the branch locally and on `origin`
 - AND an orphaned directory (no live worktree registration) older than `--age` is still removed via the `rmtree` fallback

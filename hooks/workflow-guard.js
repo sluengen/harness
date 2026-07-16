@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-workflow-guard@0.1.1
+// guidance:hook-workflow-guard@0.1.2
 /**
  * Workflow guard (PreToolUse: Write|Edit).
  * Advisory warning when editing source code on the default branch or outside a
@@ -36,7 +36,7 @@ function main() {
   const branch = git("rev-parse --abbrev-ref HEAD");
   const isWorktree = git("rev-parse --is-inside-work-tree") === "true" &&
     git("rev-parse --git-common-dir") !== git("rev-parse --git-dir");
-  const onDefault = /^(main|master|dev|develop)$/.test(branch);
+  const onDefault = /^(main|master|dev|develop|trunk)$/.test(branch);
 
   if (onDefault || !isWorktree) {
     markWarned();
