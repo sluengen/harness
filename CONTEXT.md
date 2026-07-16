@@ -29,7 +29,8 @@ commands:
   run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
-  release: main         # PRs from dev → main for releases
+  staging: staging      # first-class nightly stabilized release candidate; promotion merges dev → staging, gates there (ADR 0003)
+  release: main         # promotion opens PRs staging → main for releases (topology: dev → staging → main; ADR 0003)
 loop:                   # ledger-backed spend breakers for the autonomous loop (CAL-906; read by harness/loop_budget.py)
   max_review_cycles: 6           # hard ceiling — the run stops + escalates on REACHING the 6th review→fix cycle (cycles 1–3 unconditional; 4–5 assess convergence). One coherent stop rule with agents/reviewer.md.
   wall_clock_budget_minutes: 90  # per-run wall-clock budget; deliberately mirrors the stale-run reclamation staleness threshold — if one moves, move both.
@@ -83,6 +84,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 
 - **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
 - **[0002 — The in-container review engine is Claude; `--engine codex` is a host-only option](specs/decisions/0002-in-container-review-engine.md)** (CAL-925). Codex's `bwrap` sandbox cannot open a user namespace in the unprivileged `harness:dev` container (CAL-866), so `--engine codex` degrades in-container. Rather than loosen container privileges — it reviews untrusted diffs — the in-container engine is **Claude**, and `--engine codex` is a **host-only** cross-model option. No image privilege change.
+- **[0003 — Promotion is an audited harness lifecycle over a universal `dev → staging → main` topology](specs/decisions/0003-promotion-lifecycle.md)** (CAL-1112). `staging` becomes a first-class stabilized release candidate; promotion follows the verb model (an external orchestrator triggers, the harness owns every state transition). The harness pushes only the promotion branch and creates the PR — no direct target pushes, no auto-merge — with one bounded, escalation-first repair attempt. Policy/docs record only; the mechanics land in CAL-1113–1118.
 
 ## Where deeper truth lives
 
@@ -91,6 +93,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
 - **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
 - **In-container review engine (Claude in-container; `--engine codex` host-only)** → `specs/decisions/0002-in-container-review-engine.md`
+- **Promotion lifecycle + branch policy (`dev → staging → main`; harness-owned, agent-agnostic)** → `specs/decisions/0003-promotion-lifecycle.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
 - **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
