@@ -218,12 +218,15 @@ def test_status_prints_summary_for_known_run(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     out = result.stdout
     assert "R1" in out
-    assert "feature" in out
     assert "completed" in out
     assert "2026-05-08T12:00:00Z" in out
     assert "2026-05-08T12:30:00Z" in out
     # exit_code 0 must appear somewhere recognisable.
     assert "0" in out
+    # The engine-era workflow fields are always empty (CAL-574 retired the
+    # engine); the human form no longer echoes them (CAL-1107 item 2).
+    assert "workflow_name" not in out
+    assert "workflow_version" not in out
 
 
 def test_status_json_returns_full_row(tmp_path: Path) -> None:
