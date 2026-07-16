@@ -26,13 +26,21 @@ CAL-1116 now runs the **gate + evidence capture** inside those openers
   a failed gate has now spent the bounded attempt → ``needs_ticket``), and
   increments the repair ``attempts`` count.
 
-CAL-1117 now wires ``pr`` — the success finalizer. It enforces two gates (the
+CAL-1117 wired ``pr`` — the success finalizer. It enforces two gates (the
 ``pr_ready`` + gated-SHA PR gate, and the CAL-1116 branch-HEAD freshness check) and,
 once both pass, **publishes**: it pushes only the promotion branch, opens a PR into
 the target with a body drafted from deterministic facts, and records the PR URL +
 the terminal ``pr_opened`` state (the publication mechanics live in the sibling
-:mod:`harness.promotion_pr`). Still deferred: ``escalate`` (CAL-1118), whose body
-remains a ``not_implemented`` stub.
+:mod:`harness.promotion_pr`).
+
+CAL-1118 now wires ``escalate`` — the non-success terminal path. It files (or, when
+the promotion is already linked, comments on) a Linear ticket carrying the promotion
+evidence — id, endpoints, branch/worktree, conflict files, gate summary, next action
+(the content is rendered by the sibling :mod:`harness.promotion_escalation`; the
+Linear I/O is :meth:`harness.linear.LinearClient.create_issue` / ``post_comment``) —
+then records the escalation ticket id and the terminal ``escalated`` state. Missing
+Linear credentials return a structured ``blocked`` result rather than a raw failure.
+The whole ``promote`` surface is now wired; no subcommand remains a stub.
 
 The five subcommands are the real orchestrator **pause points**:
 
@@ -69,11 +77,20 @@ from typing import Literal, NoReturn, cast
 import typer
 
 from harness import promotion as mechanics
+from harness import repo_config
 from harness._time import iso_z
 from harness.cli._git import teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id
+from harness.linear import (
+    LinearClient,
+    LinearConfigError,
+    LinearNotFound,
+    LinearRequestError,
+    linear_api_key,
+)
+from harness.promotion_escalation import build_escalation_body, build_escalation_title
 from harness.promotion_gate import classify_gate_failure, run_promotion_gate
 from harness.promotion_pr import (
     build_pr_body,
@@ -102,28 +119,11 @@ promote_app = typer.Typer(
     no_args_is_help=True,
 )
 
-#: Exit code for a contract stub — an invocation the surface accepts but whose
-#: mechanics are not yet wired. Reuses the stable "invocation / not satisfied"
-#: code (2) rather than inventing a new one; the ``not_implemented`` marker in
-#: the payload distinguishes it from a bad-flags refusal.
+#: Exit code for a structured, machine-readable refusal — a ``not_found`` id, a
+#: mechanics refusal, or a gate that is not satisfied. The stable "invocation /
+#: not satisfied" code (2); the payload's ``error`` / ``reason`` marker
+#: distinguishes each case from a real (non-zero, unstructured) error.
 _STUB_EXIT = 2
-
-
-def _not_implemented(subcommand: str, **extra: object) -> None:
-    """Emit the structured ``not_implemented`` marker for a stubbed subcommand and
-    exit with the stub code, so an orchestrator can tell "surface exists,
-    mechanics pending" apart from a real error."""
-    payload: dict[str, object] = {
-        "error": "not_implemented",
-        "command": f"promote {subcommand}",
-        "detail": (
-            "the promote surface is locked (CAL-1113); mechanics land per "
-            "CAL-1114+ (ADR 0003)"
-        ),
-        **extra,
-    }
-    typer.echo(json.dumps(payload))
-    raise typer.Exit(code=_STUB_EXIT)
 
 
 def _read_or_not_found(
@@ -512,14 +512,138 @@ def pr_command(
     typer.echo(updated.model_dump_json())
 
 
-@promote_app.command("escalate", help="File a Linear ticket and mark the promotion escalated.")
+def _promotion_conflict_files(promotion: Promotion) -> tuple[str, ...]:
+    """The promotion worktree's conflicted paths — best-effort, never raises.
+
+    Read live from the worktree (the conflicts are not stored on the row). An
+    absent or already-clean worktree yields none, so escalation stays robust even
+    when the worktree was torn down or never conflicted. A git-exec failure
+    (``OSError``) also degrades to empty rather than crashing the safety path.
+    """
+    if promotion.worktree_path is None:
+        return ()
+    worktree = Path(promotion.worktree_path)
+    if not worktree.exists():
+        return ()
+    try:
+        return mechanics.conflicted_files(worktree)
+    except OSError:
+        return ()
+
+
+def _reescalation_comment(body: str) -> str:
+    """Prefix the escalation body as a re-escalation update comment (AC-2)."""
+    return (
+        "**Re-escalation update** — the promotion re-entered the escalate path "
+        "with the current evidence below.\n\n" + body
+    )
+
+
+@promote_app.command(
+    "escalate", help="File/update a Linear ticket and mark the promotion escalated."
+)
 def escalate_command(
+    promotion_id: str = typer.Option(
+        ..., "--promotion-id", help="Id of the promotion to escalate."
+    ),
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repo root of the promotion."
     ),
+    team: str | None = typer.Option(
+        None, "--team", help="Linear team key (default: CONTEXT.md repo.linear)."
+    ),
+    project: str | None = typer.Option(
+        None, "--project", help="Linear project name (default: CONTEXT.md repo.project)."
+    ),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
+    ),
     json_output: bool = typer.Option(
-        False, "--json", help="Emit machine-readable JSON."
+        True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Escalate a blocked promotion (stub — CAL-1118 implements escalation)."""
-    _not_implemented("escalate", repo=str(repo))
+    """Escalate a blocked promotion: file or update a Linear ticket, mark it
+    ``escalated`` (CAL-1118). Idempotent — a promotion already linked to an
+    escalation ticket is commented on, not duplicated (AC-2)."""
+    promotion = _read_or_not_found("escalate", promotion_id, repo, db)
+    repo_root = resolve_repo_root_or_exit(repo)
+    db_path = resolve_verb_db_path(db, repo_root)
+
+    # AC-4: missing Linear credentials → a structured `blocked` result (never a
+    # raw traceback). The promotion row is left untouched — escalation did not
+    # happen, so its state must not advance to `escalated`.
+    try:
+        api_key = linear_api_key()
+    except LinearConfigError as exc:
+        _refuse(
+            "blocked",
+            str(exc),
+            command="promote escalate",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+
+    # Resolve the escalation target — the flags override CONTEXT.md's
+    # repo.linear / repo.project defaults (the Grounding: team/project come from
+    # CONTEXT.md). A project is optional (the issue still files without one); a
+    # team is required, since `issueCreate` cannot place an issue without it.
+    team_key = team or repo_config.repo_linear_team(repo_root)
+    project_name = project or repo_config.repo_project(repo_root)
+    if team_key is None:
+        _refuse(
+            "unresolved_target",
+            "no Linear team to escalate into — pass --team or set repo.linear in "
+            "CONTEXT.md",
+            command="promote escalate",
+            promotion_id=promotion_id,
+        )
+
+    body = build_escalation_body(
+        promotion, conflict_files=_promotion_conflict_files(promotion)
+    )
+    client = LinearClient(api_key=api_key)
+    try:
+        if promotion.escalation_ticket is None:
+            # AC-1: first escalation — file a Todo issue carrying the evidence.
+            created = asyncio.run(
+                client.create_issue(
+                    team_key=team_key,
+                    project_name=project_name,
+                    title=build_escalation_title(promotion),
+                    description=body,
+                )
+            )
+            ticket_id = created["identifier"]
+            escalation_url: str | None = created["url"]
+            action = "created"
+        else:
+            # AC-2: already linked — comment on the existing ticket, no duplicate.
+            ticket_id = promotion.escalation_ticket
+            asyncio.run(
+                client.post_comment(ticket_id, _reescalation_comment(body))
+            )
+            escalation_url = None
+            action = "updated"
+    except (LinearNotFound, LinearRequestError) as exc:
+        _refuse(
+            "escalation_failed",
+            str(exc),
+            command="promote escalate",
+            promotion_id=promotion_id,
+        )
+
+    # AC-3: record the escalation ticket + the terminal `escalated` state.
+    updated = promotion.model_copy(
+        update={
+            "status": "escalated",
+            "escalation_ticket": ticket_id,
+            "updated_at": iso_z(),
+        }
+    )
+    asyncio.run(promotions.update_promotion(updated, db_path=db_path))
+    payload = {
+        **json.loads(updated.model_dump_json()),
+        "action": action,
+        "escalation_url": escalation_url,
+    }
+    typer.echo(json.dumps(payload))
