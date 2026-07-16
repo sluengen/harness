@@ -561,10 +561,11 @@ def test_worktrees_cleanup_merged_removes_branch_merged_into_dev(
 ) -> None:
     """``--merged`` treats a branch merged into ``dev`` as a removal candidate.
 
-    ``dev`` is this repo's integration branch, so a worktree whose branch has
-    landed on ``dev`` (the common case) must be cleaned up. This locks the real
-    check — ``dev``, ``main``, *and* ``master`` — that the ``--merged`` help and
-    docstring describe.
+    With no CONTEXT.md configuring a branch model, ``resolve_base_branch`` falls
+    back to ``dev`` (this repo's integration branch), so a worktree whose branch
+    has landed on ``dev`` (the common case) must be cleaned up. The configured
+    non-``dev`` case is locked by
+    ``test_worktrees_cleanup_merged_uses_configured_base`` (CAL-1106).
     """
     repo_root = tmp_path
     subprocess.run(
@@ -639,6 +640,40 @@ def test_worktrees_cleanup_merged_deletes_remote_branch(tmp_path: Path) -> None:
         check=True, capture_output=True, text=True,
     ).stdout
     assert "harness/R-pushed" not in remote_refs
+
+
+def test_worktrees_cleanup_merged_uses_configured_base(tmp_path: Path) -> None:
+    """CAL-1106: ``--merged`` reclaims a branch merged into the repo's *configured*
+    integration branch, not just the literal ``dev``/``main``/``master`` set.
+
+    A ``trunk``-based repo — whose branch names are absent from the old hardcoded
+    set — must still have its merged worktrees reclaimed once CONTEXT.md declares
+    ``branches.integration: trunk``.
+    """
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "trunk", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    (repo_root / "CONTEXT.md").write_text("branches:\n  integration: trunk\n")
+    subprocess.run(
+        ["git", "-C", str(repo_root), "add", "-A"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "-q", "-m", "init"], check=True
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-trunk"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add", "-b",
+         "harness/R-trunk", str(wt)],
+        check=True,
+    )
+
+    result = runner.invoke(
+        app, ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    assert "R-trunk" in result.stdout
 
 
 def test_worktrees_cleanup_age_removes_orphaned_dir(tmp_path: Path) -> None:

@@ -24,7 +24,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from harness.branch_config import integration_branch
 from harness.identity import WORKTREES_SUBDIR
+
+#: The back-compat fallback base branch when neither CONTEXT.md nor the repo's
+#: origin default resolves one — the harness's own integration branch (CAL-1106).
+DEFAULT_BASE_BRANCH = "dev"
 
 # Default ceiling (seconds) for a *network* git call — ``fetch`` / ``push`` /
 # ``push --delete`` (CAL-1004). These reach a remote and can hang indefinitely on
@@ -83,6 +88,45 @@ def rev_parse_head(worktree_path: Path) -> str:
             f"git rev-parse HEAD failed for {worktree_path}: {result.stderr.strip()}"
         )
     return result.stdout.strip()
+
+
+def origin_default_branch(repo_root: Path) -> str | None:
+    """The repo's default branch per ``origin/HEAD``, or ``None`` if unresolvable.
+
+    Reads ``git symbolic-ref refs/remotes/origin/HEAD`` (set by ``git clone``) and
+    strips the ``refs/remotes/origin/`` prefix. Returns ``None`` when there is no
+    ``origin`` remote or ``origin/HEAD`` was never recorded (e.g. a repo created
+    with ``git init`` and a bare ``remote add`` but no clone) — a local call, no
+    timeout needed. The caller supplies the fallback.
+    """
+    result = run_git(repo_root, "symbolic-ref", "refs/remotes/origin/HEAD")
+    if result.returncode != 0:
+        return None
+    ref = result.stdout.strip()
+    prefix = "refs/remotes/origin/"
+    branch = ref[len(prefix):] if ref.startswith(prefix) else ref
+    return branch or None
+
+
+def resolve_base_branch(repo_root: Path, explicit: str | None = None) -> str:
+    """Resolve the base branch a run builds off / a merged worktree is reclaimed
+    against, without hardcoding this repo's ``dev`` into a generic scaffold (CAL-1106).
+
+    Resolution order (first hit wins):
+
+    1. ``explicit`` — a caller-supplied value (``start --base``).
+    2. ``branches.integration`` from the repo's CONTEXT.md
+       (:func:`harness.branch_config.integration_branch`).
+    3. The repo's actual default branch (:func:`origin_default_branch`).
+    4. :data:`DEFAULT_BASE_BRANCH` (``"dev"``) — the back-compat fallback, so a
+       repo that configures nothing behaves exactly as before.
+    """
+    return (
+        explicit
+        or integration_branch(repo_root)
+        or origin_default_branch(repo_root)
+        or DEFAULT_BASE_BRANCH
+    )
 
 
 def teardown_worktree(

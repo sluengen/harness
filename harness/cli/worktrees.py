@@ -14,10 +14,11 @@ Filters for ``cleanup``:
   than the supplied duration (``30m``, ``12h``, ``7d``). Reclaims orphaned
   directories regardless of branch; **retains** the branch (an aged worktree may
   hold unmerged work).
-* ``--merged`` — remove worktrees whose branch is fully merged into
-  ``dev``, ``main``, or ``master`` (the integration/release bases), **and delete
-  that merged branch** (local, and on ``origin`` if it was pushed) — it is
-  provably integrated, so the branch is dead weight (CAL-767).
+* ``--merged`` — remove worktrees whose branch is fully merged into the repo's
+  configured integration base (``branches.integration`` in CONTEXT.md, else the
+  origin default, else ``dev`` — CAL-1106), **and delete that merged branch**
+  (local, and on ``origin`` if it was pushed) — it is provably integrated, so the
+  branch is dead weight (CAL-767).
 
 Without filters, ``cleanup`` is a no-op (it prints "kept" lines so the
 operator sees what would have been candidate). The conservative default
@@ -35,7 +36,7 @@ import typer
 
 from harness._time import iso_z, parse_iso_z
 from harness.cli._duration import _parse_duration
-from harness.cli._git import run_git, teardown_worktree
+from harness.cli._git import resolve_base_branch, run_git, teardown_worktree
 from harness.identity import WORKTREES_SUBDIR
 
 worktrees_app = typer.Typer(
@@ -143,16 +144,20 @@ def list_command(
 
 
 def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
-    """Return True if ``branch`` is fully merged into ``dev``, ``main``, or ``master``.
+    """Return True if ``branch`` is fully merged into the repo's integration base.
 
-    ``--merged`` is conservative: an absent branch ref counts as not-merged
-    so we never remove a worktree whose ref state we can't read.
+    The base is resolved from the repo's branch model (CAL-1106) —
+    ``branches.integration`` in CONTEXT.md, else the origin default branch, else
+    ``dev`` — rather than a hardcoded ``dev``/``main``/``master`` set that never
+    reclaimed a ``trunk``/``develop`` repo's worktrees.
+
+    ``--merged`` is conservative: an absent branch ref (or an unreadable base)
+    counts as not-merged so we never remove a worktree whose ref state we can't
+    read.
     """
-    for base in ("dev", "main", "master"):
-        proc = run_git(repo_root, "merge-base", "--is-ancestor", branch, base)
-        if proc.returncode == 0:
-            return True
-    return False
+    base = resolve_base_branch(repo_root)
+    proc = run_git(repo_root, "merge-base", "--is-ancestor", branch, base)
+    return proc.returncode == 0
 
 
 @worktrees_app.command(
@@ -171,8 +176,9 @@ def cleanup_command(
         False,
         "--merged",
         help=(
-            "Remove worktrees whose branch is merged into dev, main, or master, "
-            "and delete that merged branch (local + remote)."
+            "Remove worktrees whose branch is merged into the repo's configured "
+            "integration base (CONTEXT.md branches.integration, else the origin "
+            "default, else dev), and delete that merged branch (local + remote)."
         ),
     ),
 ) -> None:

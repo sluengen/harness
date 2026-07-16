@@ -60,6 +60,7 @@ from pydantic import BaseModel
 
 from harness.cli._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
+    resolve_base_branch,
     run_git,
     teardown_worktree,
 )
@@ -131,10 +132,12 @@ class _StartError(VerbError):
 
 def start_command(
     ticket: str = typer.Argument(..., help="Linear ticket identifier (e.g. CAL-570)."),
-    base: str = typer.Option(
-        "dev",
+    base: str | None = typer.Option(
+        None,
         "--base",
-        help="Base branch for the worktree (the merge target). Defaults to ``dev``.",
+        help="Base branch for the worktree (the merge target). Defaults to the "
+        "repo's CONTEXT.md ``branches.integration``, then its origin default "
+        "branch, then ``dev`` (CAL-1106).",
     ),
     resume: bool = typer.Option(  # noqa: B008
         False,
@@ -161,12 +164,16 @@ def start_command(
     """Open a run: validate ticket, transition to In Progress, create worktree, record ledger."""
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
+    # Resolve the base branch: an explicit --base wins, else the repo's configured
+    # integration branch, else its origin default, else "dev" (CAL-1106). Done here
+    # (sync, with repo_root in hand) so the async flow receives a concrete branch.
+    resolved_base = resolve_base_branch(repo_root, base)
 
     output = run_verb(
         lambda: asyncio.run(
             _run_start(
                 ticket=ticket,
-                base=base,
+                base=resolved_base,
                 resume=resume,
                 repo_root=repo_root,
                 db_path=db_path,
