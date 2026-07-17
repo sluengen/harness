@@ -104,7 +104,17 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran), or `dirty_base_checkout` (the base checkout is not merge-safe)
+
+#### Scenario: the base checkout is not merge-safe
+
+- GIVEN an open run whose gate is satisfied, but whose **base checkout** carries uncommitted tracked changes or a merge already in progress
+- WHEN the agent runs `harness close`
+- THEN the verb exits 2 with `reason=dirty_base_checkout`, having mutated nothing
+
+`close` merges in the base checkout — shared state that, unlike the run worktree, no gate conjunct covers. Git cannot reliably reconstruct uncommitted changes present when a merge began, so a conflict over a dirty base checkout cannot be cleanly undone; the guarantee that a refusal leaves the repository as it found it only holds from a clean start, which is why the check precedes every mutation (CAL-1151). It counts **tracked** changes only — an untracked scratch file cannot affect a merge, and counting it would wedge every close.
+
+A merge this verb *does* start is always restored: a conflict aborts before returning, and if that restore fails, the residue is reported **alongside** the original conflict reason rather than swallowed — a silent cleanup failure is what stranded the checkout in the field, and left close's own prescribed recovery (rebase → re-review → close) failing with git's unrelated `you need to resolve your current index first`.
 
 `no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 

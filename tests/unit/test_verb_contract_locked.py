@@ -177,6 +177,13 @@ EXPECTED_REFUSAL_REASONS = {
     # CAL-1082 — the verify-gate backstop: a pass that cannot show the repo's
     # gate ran is refused rather than trusted. A deliberate contract addition.
     "no_gate_evidence",
+    # CAL-1151 — the base checkout is not merge-safe (uncommitted tracked
+    # changes, or a merge already in progress left by a racing/dead close).
+    # Refused before the merge mutates it, because git cannot reliably undo a
+    # merge begun over uncommitted changes. A deliberate contract addition: the
+    # recovery differs from dirty_worktree's (that one means the *run* worktree —
+    # commit and re-review; this one means the *base* checkout — clean it up).
+    "dirty_base_checkout",
 }
 
 
