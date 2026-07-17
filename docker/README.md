@@ -170,6 +170,72 @@ HARNESS_TARGET_REPO=/abs/path/to/your-repo \
 Omit `HARNESS_TARGET_REPO` to run the harness against the harness repo
 itself (useful for nightly self-reviews).
 
+## Trap — the host and the container share one `.venv`
+
+**Rule: never run a container against a worktree while a host gate runs there.
+Serialize them.**
+
+The mount that makes everything above work is also a trap. `-v "$(pwd)":/workspace`
+bind-mounts the target repo, and `<worktree>/.venv` lives *inside* that mount — so
+the host and the container share one virtualenv directory while needing **different
+platforms**. A Linux container venv and a macOS host venv cannot both occupy it.
+Whichever runs second overwrites the other, and the loser's interpreter becomes a
+dangling symlink.
+
+In practice the container is the one that wins the race and the host gate is the
+one that breaks: the venv is left pointing at `/usr/local/bin/python3`, which does
+not exist on an Apple Silicon host.
+
+### The signature
+
+This failure is precise and cheap to recognise — worth knowing by sight, because
+it looks far worse than it is:
+
+- **Exactly 5 tests fail**; the other ~1880 pass.
+- Each fails with `FileNotFoundError: .../.venv/bin/python`.
+- The five are the only ones that spawn `sys.executable` as a **subprocess**
+  (`test_cli_module_entrypoint_still_works`, two in `test_cli_review`, two in
+  `test_smoke`).
+
+That ratio is the tell. A clobbered venv **only bites processes spawned after
+it** — pytest's own parent interpreter is already loaded in memory, so every test
+that stays in-process passes normally. A broad breakage would not spare 1880 tests.
+
+### The diagnostic
+
+```bash
+grep home <worktree>/.venv/pyvenv.cfg
+```
+
+A healthy **host** venv reads `/opt/homebrew/...` or
+`~/.local/share/uv/python/cpython-3.11-macos-aarch64-none`. A clobbered one reads
+`home = /usr/local/bin` — the container's Linux interpreter.
+
+### The fix
+
+```bash
+rm -rf <worktree>/.venv
+```
+
+Then re-run the gate; it rebuilds the venv for the host. Nothing else is damaged —
+the venv is derived state.
+
+### What actually triggers it (scoped to what has been observed)
+
+Both observations were of an **ad-hoc container run against a worktree** — a
+hand-run diagnostic probe, where the mechanism was plausibly a `.claude` hook
+invoking the container's `uv`. That is the only confirmed trigger.
+
+`harness review` runs the same image against the same cwd and is therefore a
+**suspect**, but it has **never been observed** clobbering the venv across ~30
+ticks of fail→fix→re-gate, and a mid-review check found the venv still macOS. So
+do **not** remove the venv prophylactically: reach for the fix when you see the
+signature above, not as a ritual. Treating an unproven cause as fact would mask
+the real trigger if this resurfaces.
+
+The gate never does this to itself — `scripts/verify.sh` contains no `docker` at
+all.
+
 ## Thin shell wrapper (`~/bin/harness`)
 
 **This is the recommended way to run the harness.** Install once; use from any
