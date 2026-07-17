@@ -235,6 +235,70 @@ bounded gate-output summary, and the branch/worktree to inspect — then records
 rather than a raw failure, leaving the promotion row untouched so a human can
 supply the credentials and re-escalate.
 
+## The guidance-update routine — sequenced per-repo `update-guidance` jobs
+
+Guidance ships from this repo (the guidance source) and is **copied into** every
+consuming repo, so a harness release does not propagate itself. After a release
+makes a new guidance version available on `main`, each consuming repo has to pull
+that version in, prove it still passes its **own** gate, and move it toward
+release. This is the **sibling routine** the promotion routine above defers to: it
+reuses the same per-repo promotion mechanics, but it is **not** part of the
+promotion lifecycle, and the harness does **not** run it as one fleet-wide
+operation.
+
+**One job per repo, fired in sequence — not a fleet-wide harness operation.**
+Guidance propagation is deliberately *not* a single monolithic harness command
+that fans out across the fleet. Each consuming repo owns its **own** scheduled
+`update-guidance` job; the outer **scheduler/orchestrator** (Hermes, a cron, a
+human) fires those jobs **in sequence**, one repo after another. The harness
+supplies only the per-repo promotion mechanics each job calls — it never
+orchestrates the fleet itself. Keeping the jobs separate is exactly what lets one
+repo fail without wedging the rest: a single fleet-wide harness operation would
+halt the whole chain on the first failure and obscure which repo broke.
+
+### One repo's job
+
+For a single consuming repo, its scheduled job runs:
+
+1. **Pull the guidance** — run `/update-guidance` in the repo, which pulls the new
+   guidance version from the source and stamps the installed files.
+2. **Gate it with the repo's own gate** — run **that repo's** configured verify
+   gate on the result. The gate is per-repo: an Xcode target gates on
+   `xcodebuild`, this repo on `scripts/verify.sh`. A guidance bump that breaks a
+   repo's gate is caught **in that repo**, before it moves toward release.
+3. **Promote it through the repo's own path — or escalate.** On a green gate, the
+   job opens a promotion of the guidance update through **that repo's own**
+   `dev → staging` promotion path (the promotion routine above). On a red gate or
+   a promotion block, it **escalates** instead of forcing the update through.
+
+Every step uses **that repo's own** gate and **that repo's own** promotion path —
+the harness gives each job the same audited promotion surface, and each job drives
+it independently against its own branches. No job reaches into another repo.
+
+### Failure policy — file a ticket, then continue or stop
+
+A job that cannot complete — a gate failure, a promotion block, a missing
+credential — **files or updates a Linear ticket** and hands off to a human rather
+than wedging the chain silently. The ticket carries, at minimum:
+
+- the **repo** that failed,
+- the **guidance version** it was moving to,
+- the **gate output** summary (the evidence of *why* it failed), and
+- the **next action** a human should take.
+
+The sequence then **continues or stops per documented policy** — a per-repo
+failure does not silently halt every later repo's job. The default is to
+**continue** the remaining repos (each is independent, so one repo's broken bump
+does not block another's) and let the filed tickets carry the failures; a policy
+may instead **stop** the chain when a failure is likely to recur everywhere (for
+example, a malformed release). Either way the choice is **explicit and recorded**,
+never an unexplained silent wedge.
+
+*(The cross-repo scheduler that fires these jobs is out of scope here — this
+runbook documents the per-repo job shape and its failure policy, not a fleet-wide
+scheduler implementation, and not any automatic guidance-update mechanics inside
+the harness.)*
+
 ## Pre-public secret audit
 
 Going public exposes the full git history, and the decision on record is to
