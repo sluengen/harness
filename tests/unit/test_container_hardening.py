@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,24 @@ def _readme() -> str:
 
 def _wrapper() -> str:
     return WRAPPER.read_text()
+
+
+def _shellcheck_unavailable_warning() -> str | None:
+    """The visibility warning to emit when ``shellcheck`` is not on ``PATH``, else
+    ``None`` (CAL-1150).
+
+    Factored out of :func:`test_wrapper_is_shellcheck_clean` so the "the skip is
+    visible, not silent" behaviour (AC3) is unit-testable without invoking
+    ``pytest.skip``. When shellcheck is present the guard runs its real assertion,
+    so there is nothing to warn about.
+    """
+    if shutil.which("shellcheck") is not None:
+        return None
+    return (
+        "shellcheck is not installed, so the docker/harness-wrapper.sh "
+        "shellcheck-clean guard did not run (bash -n remains the always-on "
+        "floor). Install shellcheck to enforce SC-class warnings on the wrapper."
+    )
 
 
 def _last_user_directive(dockerfile: str) -> str | None:
@@ -124,12 +143,59 @@ def test_wrapper_is_bash_syntax_clean() -> None:
     )
 
 
+def test_wrapper_builds_tty_flags_without_command_substitution() -> None:
+    """AC1/AC2 (CAL-1150): the ``-it`` flags are assembled via a bash array —
+    the shellcheck-clean idiom the file already uses for ``SSH_AGENT_ARGS`` —
+    not an unquoted ``$(...)`` command substitution (SC2046). This guards the fix
+    on hosts where shellcheck itself is unavailable (the always-on host): ``bash
+    -n`` does not catch SC2046, so without this a future edit could silently
+    reintroduce the warning. The array preserves the TTY behaviour: ``-it`` is
+    passed when stdin is a terminal and omitted otherwise."""
+    wrapper = _wrapper()
+    assert '$([[ -t 0 ]] && echo' not in wrapper, (
+        "the SC2046-prone `$([[ -t 0 ]] && echo \"-it\")` command substitution must "
+        "be gone — it word-splits unquoted (shellcheck SC2046)"
+    )
+    assert "TTY_ARGS=(" in wrapper, (
+        "the wrapper must build the -it flags in a TTY_ARGS array, mirroring "
+        "SSH_AGENT_ARGS"
+    )
+    assert '${TTY_ARGS[@]+"${TTY_ARGS[@]}"}' in wrapper, (
+        "TTY_ARGS must expand with the set-or-empty-safe array idiom "
+        '${TTY_ARGS[@]+\"${TTY_ARGS[@]}\"}, so an empty array passes no argument'
+    )
+
+
+def test_shellcheck_skip_is_visible_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC3 (CAL-1150): when shellcheck is absent the guard does not *silently*
+    skip — :func:`_shellcheck_unavailable_warning` returns a message the guard
+    emits as a warning, so the gate's warnings summary reports that the wrapper
+    shellcheck check did not run."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    message = _shellcheck_unavailable_warning()
+    assert message is not None
+    assert "shellcheck" in message
+
+
+def test_no_shellcheck_warning_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC3 (CAL-1150): when shellcheck *is* available there is nothing to warn
+    about — the guard runs the real assertion, so no visibility warning fires."""
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/shellcheck")
+    assert _shellcheck_unavailable_warning() is None
+
+
 def test_wrapper_is_shellcheck_clean() -> None:
     """AC1 (ideal): the wrapper is shellcheck-clean where shellcheck is available.
-    Skipped when the linter is absent (it is not in the image or on every host),
-    so ``bash -n`` above remains the always-on floor."""
+    When the linter is absent (it is not in the image or on every host) the guard
+    warns and skips rather than skipping silently (AC3, CAL-1150), so the gate
+    surfaces that the check did not run; ``bash -n`` above remains the always-on
+    floor."""
     shellcheck = shutil.which("shellcheck")
     if shellcheck is None:
+        warnings.warn(
+            _shellcheck_unavailable_warning(),
+            stacklevel=2,
+        )
         pytest.skip("shellcheck not installed; bash -n is the always-on floor")
     result = subprocess.run(
         [shellcheck, str(WRAPPER)],
