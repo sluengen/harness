@@ -168,7 +168,16 @@ if [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
   )
 fi
 
-exec docker run --rm $([[ -t 0 ]] && echo "-it") \
+# Allocate a TTY only for an interactive stdin. Built as an array so the empty
+# case passes NO argument (an unquoted `$(…)` command substitution would word-split
+# — shellcheck SC2046 — and a quoted "" would pass a bogus empty argument to
+# `docker run`). Mirrors the SSH_AGENT_ARGS idiom above.
+TTY_ARGS=()
+if [[ -t 0 ]]; then
+  TTY_ARGS=(-it)
+fi
+
+exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -v "$(pwd)":/workspace \
   -w /workspace \
   -v "$HOME/.ssh":/home/harness/.ssh:ro \
