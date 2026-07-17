@@ -109,7 +109,7 @@ Confirmed with the user (2026-06-09): (a) full engine retirement — `release`/`
 
 ## Breakdown
 
-Each item is shippable on its own. Spawned 2026-06-09: **1→[CAL-570](https://linear.app/calibrate-coffee/issue/CAL-570), 2→[CAL-571](https://linear.app/calibrate-coffee/issue/CAL-571), 3→[CAL-572](https://linear.app/calibrate-coffee/issue/CAL-572), 4→[CAL-573](https://linear.app/calibrate-coffee/issue/CAL-573), 5→[CAL-574](https://linear.app/calibrate-coffee/issue/CAL-574), 6→[CAL-575](https://linear.app/calibrate-coffee/issue/CAL-575), 7→[CAL-576](https://linear.app/calibrate-coffee/issue/CAL-576)** (blocks-relations: 1,2→3→{4,5}; 4→7). Items 1–3 are the core; 4 wires it; 5–6 keep the codebase and specs honest; 7 is the Hermes follow-up.
+Each item is shippable on its own. Spawned 2026-06-09: **1→CAL-570, 2→CAL-571, 3→CAL-572, 4→CAL-573, 5→CAL-574, 6→CAL-575, 7→CAL-576** (blocks-relations: 1,2→3→{4,5}; 4→7). Items 1–3 are the core; 4 wires it; 5–6 keep the codebase and specs honest; 7 is the Hermes follow-up.
 
 1. **`harness start <TICKET>` verb** — validate ticket exists + move to In Progress + create worktree + open a `runs` row (run_id, ticket, base, worktree, `status=open`); returns run_id + worktree path + ticket-context JSON. Re-homes `build.yaml`'s fetch/set-in-progress/setup mechanics as a verb.
 2. **`harness review` verb** — run codex against HEAD; record `verdict`/`issues`/**reviewed-SHA** as a ledger event; return verdict JSON. Productionises the `CodexAgent` adapter (currently gated behind `proc_fn=`).
