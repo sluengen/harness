@@ -8,8 +8,13 @@ side-effects the ADR reserves for ``promote pr`` (ADR 0003, "PR authority"):
 
 * :func:`push_promotion_branch` — publish **only** the promotion branch to
   ``origin`` via an explicit ``<branch>:<branch>`` refspec. Never a bare
-  ``git push`` (which could advance a tracking branch) and never a target branch:
-  direct pushes to ``staging`` / ``main`` are out of scope for v1.
+  ``git push`` (which could advance a tracking branch) and never a target branch.
+  This is the **release hop's** publication: ``staging → main`` is PR-only.
+* :func:`push_target_branch` — the **staging hop's** publication: advance the
+  target branch itself to the gated SHA. Scoped to :data:`DIRECT_PUSH_TARGET`
+  (``staging``) by a structural guard, so ``main`` is unreachable by direct push
+  from this module however it is called (ADR 0003 as amended 2026-07-17: staging
+  is *derived*, main is *decided*).
 * :func:`collect_promotion_facts` — read the deterministic facts of the promotion
   from git: the commit range ``origin/<to>..<gated_sha>``, the Linear IDs in those
   commit subjects, and the changed ``specs/`` paths.
@@ -47,6 +52,7 @@ from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git
 # ``harness.cli.promote`` does. The guard test in ``test_promotion_pr.py`` pins it.
 
 __all__ = [
+    "DIRECT_PUSH_TARGET",
     "PromotionFacts",
     "PullRequestOutcome",
     "build_pr_body",
@@ -54,7 +60,22 @@ __all__ = [
     "collect_promotion_facts",
     "create_pull_request",
     "push_promotion_branch",
+    "push_target_branch",
 ]
+
+#: The **only** target branch a promotion may advance by a direct push — the
+#: staging hop (``CONTEXT.md`` ``branches.staging``). ADR 0003 originally forbade
+#: direct target pushes on both hops; the 2026-07-17 amendment scopes that rule to
+#: the *release* hop, because **staging is derived and main is decided**: nothing
+#: is judged at the staging hop (the gate *is* the decision), while ``main``
+#: remains the single human decision point.
+#:
+#: This constant is the structural guard's whole allowlist, and ``main``'s absence
+#: from it is what makes a direct release push unreachable. It is a literal rather
+#: than a ``CONTEXT.md`` read for the same reason the rest of the branch model
+#: still is (``start.py`` / ``worktrees.py`` hardcode ``dev``/``main``/``master``);
+#: reading the model from config is CAL-1106.
+DIRECT_PUSH_TARGET = "staging"
 
 
 def _publish_error(message: str, *, reason: str) -> _mechanics.PromotionMechanicsError:
@@ -116,6 +137,50 @@ def push_promotion_branch(repo_root: Path, branch: str) -> None:
     on a non-zero push or a fired network timeout.
     """
     refspec = f"{branch}:{branch}"
+    try:
+        result = run_git(
+            repo_root, "push", "origin", refspec, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _publish_error(
+            f"git push origin {refspec} exceeded the {NETWORK_GIT_TIMEOUT_SECONDS}s "
+            "network timeout; the remote may be unreachable",
+            reason="push_failed",
+        ) from exc
+    if result.returncode != 0:
+        raise _publish_error(
+            f"git push origin {refspec} failed: {result.stderr.strip()}",
+            reason="push_failed",
+        )
+
+
+def push_target_branch(repo_root: Path, *, target: str, gated_sha: str) -> None:
+    """Advance ``target`` on ``origin`` to ``gated_sha`` — the **staging hop only**.
+
+    The publication half of an automatic ``dev → staging`` promotion: the gated
+    candidate becomes ``staging`` itself, with no PR, so the nightly promotion
+    completes without a human (ADR 0003 as amended 2026-07-17).
+
+    ``target`` must be :data:`DIRECT_PUSH_TARGET`. Any other branch — ``main`` above
+    all — raises ``PromotionMechanicsError`` (``reason='direct_push_refused'``)
+    **before any git runs**. The guard is deliberately here rather than in the
+    caller: "the release hop opens a PR" must be a property of the code, not a
+    convention an orchestrator (or a future caller) can quietly break.
+
+    The refspec is an explicit ``<gated_sha>:refs/heads/<target>``: exactly one ref
+    moves, it is named in full (no bare ``git push``, no tracking-branch surprise),
+    and the pushed commit is precisely the one the gate covered rather than
+    whatever a branch tip has since become. Git's default non-fast-forward refusal
+    still applies, so a ``target`` that moved under us fails loudly as
+    ``push_failed`` (→ escalation) instead of clobbering it.
+    """
+    if target != DIRECT_PUSH_TARGET:
+        raise _publish_error(
+            f"refusing a direct push to {target!r}: only {DIRECT_PUSH_TARGET!r} may "
+            "be advanced directly — the release hop opens a pull request",
+            reason="direct_push_refused",
+        )
+    refspec = f"{gated_sha}:refs/heads/{target}"
     try:
         result = run_git(
             repo_root, "push", "origin", refspec, timeout=NETWORK_GIT_TIMEOUT_SECONDS

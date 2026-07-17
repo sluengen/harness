@@ -48,16 +48,24 @@ __all__ = [
 # The promotion lifecycle states (ADR 0003). ``opened`` is the initial state once
 # the row/worktree/branch exist and the merge has been attempted; the middle four
 # (``pr_ready`` / ``agent_may_fix`` / ``needs_ticket`` / ``blocked``) are the
-# policy classifications a merge+gate attempt returns; ``pr_opened`` and
-# ``escalated`` are the two terminal paths; ``cancelled`` records a withdrawn or
+# policy classifications a merge+gate attempt returns; ``promoted``, ``pr_opened``
+# and ``escalated`` are the terminal paths; ``cancelled`` records a withdrawn or
 # superseded promotion (recorded, never deleted). The blob column is plain
 # ``TEXT`` without a CHECK constraint, so this Literal is the type-safe seam.
+#
+# The two hops have **distinct** terminal successes, because they finish
+# differently (CAL-1158): the staging hop lands the candidate on the target itself
+# and is done (``promoted``), while the release hop's success is an *open PR* a
+# human still merges (``pr_opened``). Collapsing them would record "a PR was
+# opened" for a promotion that opened none — a false entry in the audit trail the
+# ledger exists to keep honest.
 PromotionStatus = Literal[
     "opened",
     "pr_ready",
     "agent_may_fix",
     "needs_ticket",
     "blocked",
+    "promoted",
     "pr_opened",
     "escalated",
     "cancelled",

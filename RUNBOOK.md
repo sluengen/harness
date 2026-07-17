@@ -149,18 +149,22 @@ For one promotion (either flow), the outer agent runs:
      • blocked        → go to step 5 (escalate)
      • opened         → ungated (no verify: configured); treat per repo policy
 3. (inspect any time) harness promote status --promotion-id <id> --json
-4. harness promote pr --promotion-id <id>
-     → pushes ONLY the promotion branch, opens the PR into the target from
-       deterministic facts, records pr_opened. Stop — success.
+4. harness promote pr --promotion-id <id>     ← the success finalizer; the hop
+                                                selects the mechanism
+     → --to staging: advances staging itself to the gated SHA, opens NO PR,
+       records promoted. Stop — success, nothing pending.
+     → --to main:    pushes ONLY the promotion branch, opens the PR into the
+       target from deterministic facts, records pr_opened. Stop — success, a
+       human merges it.
 5. harness promote escalate --promotion-id <id>
      → files/updates a Linear ticket with the evidence, records escalated.
        Stop — a human owns it now.
 ```
 
-The outer agent **stops** on either terminal — `pr_opened` (a PR is waiting for a
-human/CI merge) or `escalated` (a ticket is waiting for a human). It does not loop
-past a terminal, and it does not retry a `needs_ticket`/`blocked` promotion by
-re-running `start`.
+The outer agent **stops** on any terminal — `promoted` (the staging hop landed;
+nothing is pending), `pr_opened` (a release PR is waiting for a human/CI merge), or
+`escalated` (a ticket is waiting for a human). It does not loop past a terminal, and
+it does not retry a `needs_ticket`/`blocked` promotion by re-running `start`.
 
 ### The commands and the states it branches on
 
@@ -171,7 +175,7 @@ The five subcommands are the orchestrator's stable pause points:
 | `harness promote start --from <src> --to <dst>` | Open a promotion: create the worktree/branch, attempt the merge, run the gate on a clean merge, and return a policy classification. |
 | `harness promote continue --promotion-id <id>` | Resume an `agent_may_fix` promotion after **one** bounded repair: commit the resolved merge, re-run the gate, increment the attempt count. |
 | `harness promote status --promotion-id <id> --json` | Read-only: report the promotion's current lifecycle state. |
-| `harness promote pr --promotion-id <id>` | Success finalizer: push the promotion branch and open the PR (refused unless the promotion is `pr_ready` with fresh gate evidence). |
+| `harness promote pr --promotion-id <id>` | Success finalizer (refused unless the promotion is `pr_ready` with fresh gate evidence). The hop selects the mechanism: `--to staging` advances staging to the gated SHA with no PR (`promoted`); `--to main` pushes the promotion branch and opens the release PR (`pr_opened`). |
 | `harness promote escalate --promotion-id <id>` | Non-success terminal: file/update a Linear ticket with the evidence and mark the promotion `escalated`. |
 
 Every command emits machine-readable JSON carrying the promotion's `status`. The
@@ -180,11 +184,12 @@ lifecycle states the orchestrator branches on:
 | State | Meaning — what the outer agent does |
 |---|---|
 | `opened` | The row/worktree/branch exist and the merge was attempted, but nothing is gated yet (no `verify:` configured — ungated). Treat per repo policy. |
-| `pr_ready` | Clean merge **and** a green gate, with a recorded `gated_sha`. Open the PR (`promote pr`). |
+| `pr_ready` | Clean merge **and** a green gate, with a recorded `gated_sha`. Publish it (`promote pr`) — landing staging, or opening the release PR. |
 | `agent_may_fix` | A small, in-policy conflict or gate failure. Make **one** bounded repair, then `promote continue`. |
 | `needs_ticket` | A real block beyond local repair authority. Escalate (`promote escalate`) — do not repair. |
 | `blocked` | The promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base) rather than a code decision. Escalate. |
-| `pr_opened` | Terminal success: the branch is pushed and the PR is created. Stop. |
+| `promoted` | Terminal success on the **staging hop**: staging was advanced to the gated SHA. Nothing is pending. Stop. |
+| `pr_opened` | Terminal success on the **release hop**: the branch is pushed and the PR is created, awaiting a human/CI merge. Stop. |
 | `escalated` | Terminal non-success: a Linear ticket carries the evidence. Stop. |
 | `cancelled` | A withdrawn or superseded promotion — recorded, never deleted, and never acted on by the routine. |
 
@@ -196,17 +201,19 @@ it does not scrape prose.
 The harness owns every promotion lifecycle transition. The outer agent **must
 not**, under any orchestrator:
 
-- **Push the target/release branch directly.** Only `harness promote pr` pushes,
-  and it pushes **only the promotion branch** — never `staging` or `main`.
+- **Push the target/release branch directly.** Only `harness promote pr` pushes.
+  That staging advances on a green gate is the **harness's** authority, exercised
+  inside the audited lifecycle — not a licence for the outer agent to touch a
+  target branch. `main` is never direct-pushed, by anyone.
 - **Open, close, or merge a PR outside the harness.** PR creation is
   `harness promote pr`'s job; a PR opened outside it is off-ledger. The harness
   never auto-merges the release PR — that stays a human/CI act.
 - **Mutate Linear promotion state outside the harness.** Escalation tickets and
   their promotion links are `harness promote escalate`'s job; the outer agent does
   not create, transition, or comment on promotion tickets out of band.
-- **Mark a promotion done.** Terminal state (`pr_opened` / `escalated`) is a
-  ledger transition the harness records — the orchestrator observes it, it does
-  not assert it.
+- **Mark a promotion done.** Terminal state (`promoted` / `pr_opened` /
+  `escalated`) is a ledger transition the harness records — the orchestrator
+  observes it, it does not assert it.
 
 Every one of these is a lifecycle state transition, and every transition belongs
 in the harness ledger. Doing any of them **outside the harness** puts git, PR, or

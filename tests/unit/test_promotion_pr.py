@@ -220,6 +220,108 @@ def test_push_promotion_branch_raises_on_timeout(
     assert exc_info.value.reason == "push_failed"
 
 
+# --- CAL-1158: the staging hop lands directly; the release hop never does ------
+
+
+def test_push_target_branch_advances_staging_to_the_gated_sha(
+    promoted: dict[str, object],
+) -> None:
+    """The staging hop publishes the gated merge onto ``staging`` itself (AC-1).
+
+    The real push against the bare origin proves the target branch actually moves
+    to the gated SHA — the behaviour ``push_promotion_branch`` deliberately does
+    not have.
+    """
+    repo = Path(str(promoted["repo"]))
+    branch = str(promoted["branch"])
+    gated_sha = str(promoted["gated_sha"])
+    dev_before = _git(repo, "rev-parse", "origin/dev").strip()
+
+    promotion_pr.push_target_branch(repo, target="staging", gated_sha=gated_sha)
+
+    assert _git(repo, "rev-parse", "origin/staging").strip() == gated_sha
+    # AC-5: exactly one ref moved — dev is untouched, and the promotion branch was
+    # never published (the staging hop needs no `promote/*` ref on origin).
+    assert _git(repo, "rev-parse", "origin/dev").strip() == dev_before
+    remote_branches = _git(repo, "branch", "-r")
+    assert f"origin/{branch}" not in remote_branches
+
+
+def test_push_target_branch_uses_explicit_single_ref_refspec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-5 — the push names an explicit ``<sha>:refs/heads/<target>`` refspec, so
+    exactly one ref moves and the pushed commit is precisely the gated one."""
+    calls: list[tuple[str, ...]] = []
+
+    def _fake(cwd: Path, *args: str, timeout: float | None = None):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=["git"], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(promotion_pr, "run_git", _fake)
+    promotion_pr.push_target_branch(Path("/repo"), target="staging", gated_sha="abc123")
+    assert calls == [("push", "origin", "abc123:refs/heads/staging")]
+
+
+@pytest.mark.parametrize("target", ["main", "master", "release", "dev", "prod"])
+def test_push_target_branch_refuses_every_target_but_staging(
+    target: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-4 — a direct push to ``main`` (or any non-staging branch) is structurally
+    unreachable: the refusal lives in the function, not in a caller convention, and
+    **no git push runs**. Attempting it is the proof.
+    """
+    calls: list[tuple[str, ...]] = []
+
+    def _fake(cwd: Path, *args: str, timeout: float | None = None):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=["git"], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(promotion_pr, "run_git", _fake)
+    with pytest.raises(PromotionMechanicsError) as exc_info:
+        promotion_pr.push_target_branch(Path("/repo"), target=target, gated_sha="abc123")
+    assert exc_info.value.reason == "direct_push_refused"
+    assert calls == [], f"a direct push to {target!r} must not reach git"
+
+
+def test_direct_push_target_is_staging_alone() -> None:
+    """The eligible-target constant is exactly ``staging`` — the structural guard's
+    whole allowlist. ``main`` being absent is what makes AC-4 hold."""
+    assert promotion_pr.DIRECT_PUSH_TARGET == "staging"
+
+
+def test_push_target_branch_raises_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected target push (e.g. staging moved under us) surfaces as
+    ``push_failed`` — never a silent no-op, so the promotion escalates."""
+
+    def _fail(cwd: Path, *args: str, timeout: float | None = None):
+        return subprocess.CompletedProcess(
+            args=["git"], returncode=1, stdout="", stderr="non-fast-forward"
+        )
+
+    monkeypatch.setattr(promotion_pr, "run_git", _fail)
+    with pytest.raises(PromotionMechanicsError) as exc_info:
+        promotion_pr.push_target_branch(Path("/repo"), target="staging", gated_sha="abc")
+    assert exc_info.value.reason == "push_failed"
+
+
+def test_push_target_branch_raises_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fired network timeout is converted to ``push_failed`` — never a raw
+    ``TimeoutExpired`` traceback (CAL-1004 convention)."""
+
+    def _timeout(cwd: Path, *args: str, timeout: float | None = None):
+        raise subprocess.TimeoutExpired(cmd="git push", timeout=timeout or 0)
+
+    monkeypatch.setattr(promotion_pr, "run_git", _timeout)
+    with pytest.raises(PromotionMechanicsError) as exc_info:
+        promotion_pr.push_target_branch(Path("/repo"), target="staging", gated_sha="abc")
+    assert exc_info.value.reason == "push_failed"
+
+
 # --- AC-3: create the PR via gh -----------------------------------------------
 
 

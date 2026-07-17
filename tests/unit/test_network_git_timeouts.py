@@ -133,6 +133,21 @@ def test_promote_pr_push_passes_network_timeout(
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
 
 
+def test_promote_target_push_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion_pr.push_target_branch`` is a network site (CAL-1004): the
+    staging hop's ``git push origin <sha>:refs/heads/staging`` carries the network
+    timeout too (CAL-1158)."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _recorder(calls))
+
+    promotion_pr_mod.push_target_branch(Path("/repo"), target="staging", gated_sha="abc")
+
+    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
 def test_close_fetch_and_push_pass_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,6 +246,20 @@ def test_promote_pr_push_timeout_raises_mechanics_error(
     monkeypatch.setattr(promotion_pr_mod, "run_git", _raise_timeout_on("push"))
     with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
         promotion_pr_mod.push_promotion_branch(Path("/repo"), "promote/x")
+    assert exc_info.value.reason == "push_failed"
+
+
+def test_promote_target_push_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A staging-hop target push that times out is surfaced as ``push_failed`` —
+    never a raw ``TimeoutExpired``, so a half-published promotion escalates
+    (CAL-1158)."""
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _raise_timeout_on("push"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_pr_mod.push_target_branch(
+            Path("/repo"), target="staging", gated_sha="abc"
+        )
     assert exc_info.value.reason == "push_failed"
 
 

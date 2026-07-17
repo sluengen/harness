@@ -116,15 +116,23 @@ async def test_init_promotions_is_idempotent(tmp_path: Path) -> None:
 # --- AC-3: the lifecycle-status enum ------------------------------------------
 
 #: The promotion lifecycle states (ADR 0003). ``opened`` is the initial state;
-#: ``pr_opened`` / ``escalated`` are the two terminal paths; ``cancelled`` is the
-#: withdrawn/superseded record. The middle four are the policy classifications a
-#: merge+gate attempt returns.
+#: ``promoted`` / ``pr_opened`` / ``escalated`` are the terminal paths;
+#: ``cancelled`` is the withdrawn/superseded record. The middle four are the policy
+#: classifications a merge+gate attempt returns.
+#:
+#: ``promoted`` was added in CAL-1158, when the two hops gained distinct terminal
+#: successes: the staging hop lands the candidate on the target and is done, while
+#: the release hop's success is an open PR a human still merges. Updating this
+#: snapshot is the deliberate version decision a golden set cannot force
+#: mechanically — a *new* state is additive (no orchestrator branch on an existing
+#: state changes meaning), so it is a minor, not a breaking, surface event.
 _EXPECTED_STATUSES = {
     "opened",
     "pr_ready",
     "agent_may_fix",
     "needs_ticket",
     "blocked",
+    "promoted",
     "pr_opened",
     "escalated",
     "cancelled",

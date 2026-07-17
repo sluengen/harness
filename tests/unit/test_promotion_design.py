@@ -118,7 +118,69 @@ def test_adr_records_pr_authority() -> None:
     )
     assert "auto-merge" in low or "auto merge" in low or "direct" in low, (
         "ADR must record that direct target-branch pushes / auto-merge are out "
-        "of scope for v1"
+        "of scope for the release hop"
+    )
+
+
+# --- CAL-1158 AC-6: the amendment is recorded, with its rationale -------------
+
+
+def test_adr_records_the_staging_hop_amendment_and_its_rationale() -> None:
+    """AC-6 — the ADR records the 2026-07-17 decision *and why*.
+
+    The rationale is the load-bearing half: without "staging is derived, main is
+    decided" the amendment reads as a safety rule being weakened, and the next
+    reader re-litigates it. The ticket and date make it traceable.
+    """
+    text = _read(ADR)
+    low = text.lower()
+    assert "CAL-1158" in text, "ADR must cite the amending ticket (AC-6)"
+    assert "2026-07-17" in text, "ADR must date the amendment (AC-6)"
+    assert "derived" in low and "decided" in low, (
+        "ADR must record the amendment's rationale — staging is *derived* (the "
+        "gate is the decision) while main is *decided* (the human decision point)"
+    )
+    assert "promoted" in low, (
+        "ADR must record the `promoted` terminal state the staging hop reaches"
+    )
+
+
+def test_adr_scopes_the_no_direct_push_rule_to_the_release_hop() -> None:
+    """AC-6 — the rule is scoped, not deleted: main stays PR-only.
+
+    A reader must be able to tell which hop each rule governs. The failure this
+    guards is the original wording's: one rule stated for "target branches" that
+    silently bound a hop its rationale never reached.
+    """
+    low = _read(ADR).lower()
+    assert "release hop" in low, (
+        "ADR must name the *release hop* as what the no-direct-push / no-auto-merge "
+        "rule is scoped to"
+    )
+    assert "staging hop" in low, (
+        "ADR must name the *staging hop* as the direct-push path"
+    )
+    assert "auto-merge remains out of scope" in low or "auto-merge" in low, (
+        "ADR must keep auto-merge out of scope"
+    )
+
+
+def test_adr_mechanism_wording_does_not_contradict_the_pr_rule() -> None:
+    """AC-6 — the topology section no longer reads as a direct merge *onto* staging.
+
+    The original line 22 ("Promotion merges `dev → staging`, runs the gate there")
+    described the topology in mechanism terms that contradicted the PR-authority
+    section, and misled the person configuring branch protection. The merge happens
+    on the *candidate*; only a green candidate advances the target.
+    """
+    low = _read(ADR).lower()
+    assert "candidate" in low, (
+        "the topology section must describe the merge as landing on the promotion "
+        "*candidate*, not on staging itself"
+    )
+    assert "promotion merges `dev → staging`, runs the gate there" not in low, (
+        "the contradicting mechanism wording must be gone: it reads as a direct "
+        "merge onto staging while the PR-authority section governs the real path"
     )
 
 
