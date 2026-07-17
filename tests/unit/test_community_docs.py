@@ -3,8 +3,9 @@
 The harness went public (2026-07-06 open-sourcing decision). A public repo needs
 a minimum set of community surfaces, and they must not silently rot away:
 
-* a root ``SECURITY.md`` naming a **private** disclosure path and disclaiming a
-  bug bounty (a public repo must not imply a reward it will not pay);
+* a root ``SECURITY.md`` naming a **private** disclosure path, disclaiming a
+  bug bounty (a public repo must not imply a reward it will not pay), and stating
+  the **ledger's trust boundary** (CAL-1029);
 * a stated **contribution stance** (a root ``CONTRIBUTING.md``) that addresses
   both issues and pull requests, so a would-be contributor knows what to expect;
 * a ``README`` that both **points at** those surfaces (or they are undiscoverable)
@@ -49,6 +50,40 @@ def test_security_md_states_private_disclosure_and_no_bounty() -> None:
     assert "no bug bounty" in text, (
         "SECURITY.md must state plainly that there is no bug bounty, so the policy "
         "does not imply a reward this project will not pay (CAL-1028)."
+    )
+
+
+def test_security_md_states_the_ledger_trust_boundary() -> None:
+    """SECURITY.md states what the ledger and close gate do *not* guarantee (CAL-1029).
+
+    The repo's headline claim is that it is an **audited** verb loop: every state
+    transition is recorded and ``close`` refuses without a HEAD-bound passing
+    review. A public reader can reasonably read "audit trail" as tamper-evidence
+    and conclude the gate is a security control. It is not. The ledger is a local
+    SQLite file, so anything holding workspace write access — the agent itself
+    included — can append or rewrite an event, and the close gate is a workflow
+    aid rather than a cryptographic attestation. Left unsaid, that gap is a
+    security claim the project never made but a reader would hear, which is the
+    kind of thing a disclosure policy exists to head off before someone builds a
+    control on top of it.
+
+    Pins the load-bearing statement, not the wording: the boundary must be named
+    on the record, however it is phrased.
+    """
+    text = _SECURITY.read_text().lower()
+    assert "ledger" in text, (
+        "SECURITY.md must name the ledger — the surface whose trust boundary a "
+        "reader would otherwise have to infer from the word 'audited' (CAL-1029)."
+    )
+    assert "write access" in text, (
+        "SECURITY.md must state *who* can forge an event: anything with workspace "
+        "write access. A trust boundary with no named actor is not a boundary "
+        "(CAL-1029)."
+    )
+    assert "attestation" in text or "tamper" in text, (
+        "SECURITY.md must disclaim cryptographic attestation / tamper-evidence — "
+        "the close gate is a workflow aid, and a public reader must not mistake it "
+        "for a security control (CAL-1029)."
     )
 
 

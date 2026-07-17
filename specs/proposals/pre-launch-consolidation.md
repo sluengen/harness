@@ -78,7 +78,7 @@ The three majors were decided with the user (2026-06-15); the tweaks of 2026-06-
 
 Each item is a shippable change spec → Linear issue (team **CAL**, project **Harness v3**), built test-first via `/harness run`. Sequenced A before B.
 
-> **Filed 2026-06-15:** [CAL-701](https://linear.app/calibrate-coffee/issue/CAL-701) (A1) → [CAL-702](https://linear.app/calibrate-coffee/issue/CAL-702) (A2) · [CAL-703](https://linear.app/calibrate-coffee/issue/CAL-703) (A3) — both blocked by A1; [CAL-704](https://linear.app/calibrate-coffee/issue/CAL-704) (B1) → [CAL-705](https://linear.app/calibrate-coffee/issue/CAL-705) (B2). Linear `blocks` relations set: A1▸A2, A1▸A3, B1▸B2.
+> **Filed 2026-06-15:** CAL-701 (A1) → CAL-702 (A2) · CAL-703 (A3) — both blocked by A1; CAL-704 (B1) → CAL-705 (B2). Linear `blocks` relations set: A1▸A2, A1▸A3, B1▸B2.
 
 **Workstream A — Unified review engine (launch-blocker):**
 

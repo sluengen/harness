@@ -8,6 +8,15 @@ surfaces must never appear in a tracked file:
 * the **personal home path** — an absolute ``/Users/<name>`` path from the
   author's machine — which leaks a username and is meaningless to any reader.
 
+A workspace **rename** does not retire the old slug (CAL-1029). The workspace was
+``calibrate-coffee`` before it became ``form-coffee``, and the CAL-1027 scrub was
+written against the then-current slug only — so it stripped the ``form-coffee``
+URLs and left 24 ``calibrate-coffee`` ones standing in ``specs/``, invisible to
+this guard for being spelled with yesterday's name. A stale URL leaks the same
+two things a live one does (the private org's identity and a map of ticket ids);
+that it now 404s is not redaction. Every slug this workspace has ever answered
+to is forbidden, so the tuple below grows on a rename rather than being swapped.
+
 Bare ``CAL-xxx`` ticket ids are deliberately **kept** (opaque to outsiders and
 load-bearing in the run ledger); this guard targets only the two surfaces above.
 
@@ -29,12 +38,14 @@ from tests._gitutil import tracked_files_under
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Built from fragments on purpose — see the module docstring. Joined at runtime
-# these equal the two forbidden literals; split in source, this file stays clean
+# these equal the forbidden literals; split in source, this file stays clean
 # and is still scanned like every other tracked file (no self-exclusion carve-out
 # that could hide a real leak in this very file).
 _WORKSPACE_URL = "linear.app/" + "form-coffee"
+#: The pre-rename slug. Kept forbidden forever — see the module docstring.
+_WORKSPACE_URL_LEGACY = "linear.app/" + "calibrate-coffee"
 _PERSONAL_PATH = "/Users/" + "scottluengen"
-_FORBIDDEN = (_WORKSPACE_URL, _PERSONAL_PATH)
+_FORBIDDEN = (_WORKSPACE_URL, _WORKSPACE_URL_LEGACY, _PERSONAL_PATH)
 
 
 def _offenders() -> list[str]:

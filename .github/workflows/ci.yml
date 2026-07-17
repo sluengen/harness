@@ -10,6 +10,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege, declared here rather than inherited from the repo-level
+# default: a default widened in the GitHub UI silently widens every job that
+# declares nothing, and this workflow runs on every push to main. Lint-and-test
+# needs only the checkout. Pinned by tests/unit/test_ci_workflow_permissions.py.
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
