@@ -150,27 +150,29 @@ def test_distributable_denies_the_git_dash_c_worktree_variants(rule: str) -> Non
     )
 
 
-def test_gh_pr_merge_is_deliberately_not_denied_yet() -> None:
-    """CAL-1142 AC-3, recorded decision: `Bash(gh pr merge *)` is the fifth deny
-    rule the form repo carries and the harness deliberately does **not** adopt
-    yet.
+def test_gh_pr_merge_is_denied() -> None:
+    """CAL-1140 discharges the deferral CAL-1142 AC-3 recorded here.
 
-    Denying it aligns with "all integration goes through the `close` verb"
-    (dogfooding), but it also breaks the autonomous `/assess`-report PR fallback
-    (report -> feature branch -> `gh pr create` -> `gh pr merge`), which is the
-    only way an unattended idle tick lands its advisory report until the
-    direct-report-commit sanction (CAL-1140) ships. So the deny is coupled to
-    CAL-1140 and is deferred until then; this ticket adopts only the four
-    `git -C *` rules.
+    `Bash(gh pr merge *)` is the fifth deny rule the form repo carries. CAL-1142
+    adopted the other four and deferred this one, because denying it would have
+    stranded the unattended idle arm: the `/assess`-report PR fallback (report ->
+    feature branch -> `gh pr create` -> `gh pr merge`) was the only route by
+    which a tick could land its advisory report, and the deny would have closed
+    it. The deferral was therefore coupled to CAL-1140 — "adopt it only in
+    concert" — and this is that concert: the advisory-report clause above
+    sanctions the direct commit, so the fallback is no longer the only route and
+    the coupling condition is discharged.
 
-    This test is the executable record of that deferral: it pins the rule
-    *absent* so adding it is a deliberate act that trips here and points the
-    author at CAL-1140, rather than a silent tightening that strands the idle
-    arm."""
-    assert "Bash(gh pr merge *)" not in _distributable()["permissions"]["deny"], (
-        "`Bash(gh pr merge *)` is deferred pending CAL-1140 (the direct-report-"
-        "commit sanction) — denying it now breaks the unattended `/assess`-report "
-        "PR fallback. Adopt it only in concert with CAL-1140 (CAL-1142 AC-3)."
+    What the deny buys is the dogfooding invariant: all integration goes through
+    the `close` verb, whose gate refuses anything but a passing review bound to
+    HEAD. A `gh pr merge` is the one route that lands work while leaving the runs
+    ledger with no record of it, which is precisely what the verb loop exists to
+    prevent."""
+    assert "Bash(gh pr merge *)" in _distributable()["permissions"]["deny"], (
+        "`Bash(gh pr merge *)` must be denied: all integration goes through the "
+        "`close` verb and its HEAD-bound gate. CAL-1142 AC-3 deferred this deny "
+        "only until CAL-1140's advisory-report clause removed the idle arm's "
+        "dependency on the PR fallback."
     )
 
 
@@ -230,7 +232,7 @@ def test_automode_sanctions_the_routine_deferral_write() -> None:
 def test_automode_sanctions_assess_finding_filing() -> None:
     """CAL-1087: `/assess` step 2 files every finding and insight as an issue —
     the assessment's entire output. A finding it cannot file is lost."""
-    clause = _clause_containing("/assess")
+    clause = _clause_containing("/assess", "Creating Linear issues")
     assert clause, (
         "autoMode.allow must sanction filing an `/assess` pass's findings as "
         "issues — the step its own guidance instructs (CAL-1087)."
@@ -290,4 +292,50 @@ def test_automode_sanctions_the_gated_close_verb() -> None:
     assert "stale_review" in clause, (
         "the close clause must name the refusal reasons that enforce the gate, "
         "so the bound is auditable rather than asserted (CAL-1087)."
+    )
+
+
+def test_automode_sanctions_the_advisory_assess_report_commit() -> None:
+    """CAL-1140: `/assess` steps 3-4 instruct the routine to commit its dated
+    report — plus the retention compaction of the rolling log — directly to the
+    integration branch, because the report carries nothing reviewable and a PR
+    per run would pile up trivial approvals under a scheduled cadence.
+
+    The only dev-push clause was scoped to *already-reviewed* work, and an
+    assessment report is committed unreviewed, so whether the write was
+    sanctioned at all was ambiguous. The ambiguity resolved permissive in
+    practice — an unattended tick pushed a report with no denial — which is the
+    argument for stating the clause rather than against it: a posture that works
+    only because the classifier read an ambiguous clause charitably is one
+    re-reading away from an idle arm that silently loses its report every tick.
+
+    The bound is advisory-only, and it is what separates this from the
+    reviewed-work clause it must not widen: the commit may touch `assessments/`
+    and nothing else.
+    """
+    clause = _clause_containing("advisory", "assessments/LOG.md")
+    assert clause, (
+        "autoMode.allow must sanction the advisory `/assess` report commit that "
+        "`/assess` steps 3-4 instruct — including the `assessments/LOG.md` "
+        "retention compaction they put in the same commit (CAL-1140)."
+    )
+    assert "only `assessments/`" in clause, (
+        "the advisory-report clause must name its bound: the commit touches "
+        "`assessments/` and nothing else. An unbounded 'may commit to dev' is "
+        "the reviewed-work clause widened to code, which CAL-1140 puts out of "
+        "scope."
+    )
+    assert "never code" in clause, (
+        "the advisory-report clause must state what it will NOT touch. An "
+        "allowance to push to an integration branch is only as safe as the "
+        "boundary it names (CAL-1140)."
+    )
+    assert "open finding" in clause, (
+        "the retention half deletes superseded report files, so the clause must "
+        "carry the rule that makes that delete safe: never fold away a report "
+        "with an open finding (`/assess` step 4)."
+    )
+    assert "force-push" in clause.lower(), (
+        "the advisory-report clause must restate that force-pushes to `dev` stay "
+        "blocked — it grants a push, and the deny block is what bounds it."
     )
