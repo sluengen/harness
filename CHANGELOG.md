@@ -6,6 +6,12 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Added — tests own the state they mutate (CAL-1161)
+- `engineering-principles` **0.3.0 → 0.4.0**, `registry.yaml` **0.5.48 → 0.5.49**. A new principle: the suite provisions its own instance and disposes of it at teardown, never borrowing state that outlives the run.
+- **Source: a consumer repo paid for its absence twice.** `form`'s backend suite was pointed at its shared dev database, so the documented test command destroyed dev and simulator seed data on every run — and the posture had already accreted two ticket-numbered cleanup workarounds for the residue it left behind (a stale migration stamp that silently no-opped the next boot; a removed table whose FK constraints blocked schema setup). Neither was a bug in a test. Both were the posture. form's accepted proposal retires it; this records the general rule so the next repo does not rediscover it — `nano-erp` was about to build the same shape.
+- **Placed in `engineering-principles`, not `test-driven-development`.** `test_skill_boundary_dedup` AC-1b fixes that boundary: this skill owns principles, operational skills reference them. TDD's nearest rule ("test real behaviour, not mocks") is about real-vs-mock, not isolation — nothing is duplicated, so no cross-reference is owed and none was added.
+- **The principle keeps real infrastructure.** Owning the instance is the point; mocking the dependency is a different (and worse) answer. Pinned by `tests/unit/test_tests_own_state_principle.py`, scoped to "The principles" so a mention elsewhere in the file cannot satisfy it.
+
 ### Fixed — drop the stale org gloss on the Linear team prefix
 - `CONTEXT.md` annotated `linear: CAL` as "team prefix — Calibrate-coffee (CAL)". That name no longer exists: the Linear organization is `form.` and team `CAL` is *named* `form.`, so the comment documented a workspace that had been renamed out from under it. It was **wrong**, not merely stale.
 - **Deleted rather than corrected.** `CAL` is an opaque team key and the only thing the API uses — the routines resolve the team by key and the project by name, and nothing has ever read the expansion. It existed solely to go out of date. Correcting it to `form.` would publish a *current* private org name into generic infrastructure other repos self-host, which is worse than the dead one it replaced.
