@@ -36,6 +36,12 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 - WHEN `harness reclaim <run-id>` (or `--ticket <ID>`) runs
 - THEN it first reverts the Linear ticket to **Todo** (+ a `reclaimed` label and comment), then reuses the `cancel` ledger transaction to set `status='cancelled'` + stamp `completed_at` + emit a `workflow_failed` event with `reason='reclaimed'` — clearing the `open` row so a fresh `harness start` is not blocked. The worktree/branch are **preserved**, not pruned (proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md) D4). `cancel` and `reclaim` share one ledger-abandon transaction (`harness/cli/_abandon.py`); they differ only in the recorded `reason`.
 
+#### Scenario: a deferred ticket (triage, not a build run)
+
+- GIVEN the unattended Build routine picks a Todo ticket the `work-discovery` skill judges **not** wholly actionable
+- WHEN `harness defer <ticket> --reason <text>` runs
+- THEN it posts the reason as a comment on the ticket, **additively** applies the `decision` label (`issueAddLabel`, never a full-set replace), and records a `defer` event — anchored on its own terminal `runs` row (`workflow_name='defer'`, `status='closed'`, no worktree) because a defer has no build run and the `events` FK needs one. The `'closed'` status keeps the row clear of `idx_runs_ticket_open`, so a later `harness start` on the same ticket is never blocked (CAL-1143). A ticket not on the Build queue (`repo.project`) is refused with a structured `reason` before any write; a tracker-less repo is a clean no-op.
+
 The partial unique index `idx_runs_ticket_open ON runs(ticket) WHERE status = 'open'` keeps at most one `open` run per ticket, so a concurrent `harness start` cannot insert a second open row (CAL-570).
 
 The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalled` / `paused`) belong to the **retired** deterministic engine (CAL-574) and survive only so historical rows validate. `RUN_STATUSES` / the `RunStatus` `Literal` in `harness/state/schema.py` enumerates both the verb-model statuses and the retired-engine ones, so a status read out of any `runs` row validates against one type-safe seam (CAL-583); the column itself is plain `TEXT` (no `CHECK`).
@@ -44,7 +50,7 @@ The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalle
 
 The gate's load-bearing datum — the SHA a passing review was bound to — is **not** a `runs` column. `harness review` appends a `review` event whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`). `engine` records which review engine produced the verdict (`claude` | `codex`, CAL-701). When an explicit `--engine codex` run hits an exhausted tier, the verb falls back once to Claude (CAL-702): `engine` then reads `claude` and an optional `fallback_from: "codex"` records the substitution, so the gate stays *available* without the fallback ever being silent.
 
-Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`. The emitting verb builds the model (field names checked statically); a reader that `json_extract`s a key imports the field-derived path/key constant from that one module (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review`.
+Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`, `DeferEventData`. The emitting verb builds the model (field names checked statically); a reader that `json_extract`s a key imports the field-derived path/key constant from that one module (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review`.
 
 #### Scenario: the close gate query
 

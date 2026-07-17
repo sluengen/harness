@@ -276,6 +276,7 @@ harness worktrees cleanup                 [--age <duration>] [--merged]
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
 harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket; record a defer event (CAL-1143)
 harness doctor                                # system health checks
 harness version                           [--json]
 

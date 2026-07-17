@@ -46,8 +46,14 @@ spec needs problem, approach, and acceptance criteria.
 
 - If it **is** actionable, hand it to the routine's build surface.
 - If it **cannot** be actioned yet — it needs a decision, missing detail, or an
-  unfinished dependency — do not guess. Leave a comment on the ticket naming what
-  it needs, label it `decision`, and move on to the next candidate.
+  unfinished dependency — do not guess. Record the deferral — a comment naming
+  what it needs plus the `decision` label — and move on to the next candidate.
+  Where the routine provides a **`defer` verb** (as `/harness routine build`
+  does: `harness defer <TICKET> --reason <text>`), call it — it posts the
+  comment, additively applies `decision`, and records the decision in the audit
+  trail, so triage is an audited action like the lifecycle verbs rather than a
+  hand-rolled tracker write. Where there is no such verb, make the comment +
+  label through the `linear` skill directly.
 
 ## When a tracker write is refused
 

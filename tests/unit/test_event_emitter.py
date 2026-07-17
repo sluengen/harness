@@ -28,8 +28,15 @@ from harness.state import store
 # ---------------------------------------------------------------------------
 
 #: The canonical set — every type a live verb emits. CAL-713 pruned this to the
-#: post-engine live set; CAL-738 added ``checkpoint`` (the run-branch push).
-LIVE_EVENT_TYPES: list[EventType] = ["workflow_failed", "review", "close", "checkpoint"]
+#: post-engine live set; CAL-738 added ``checkpoint`` (the run-branch push);
+#: CAL-1143 added ``defer`` (the audited triage write).
+LIVE_EVENT_TYPES: list[EventType] = [
+    "workflow_failed",
+    "review",
+    "close",
+    "checkpoint",
+    "defer",
+]
 
 #: Retired deterministic-engine types (CAL-574). No live code emits these; the
 #: emitter now rejects them on write. Kept here as a test fixture so the

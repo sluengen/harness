@@ -99,6 +99,21 @@ class CloseEventData(BaseModel):
     closed_at: str
 
 
+class DeferEventData(BaseModel):
+    """Payload of a ``defer`` event — the audited record of a triage deferral
+    (CAL-1143): the ticket set aside, why, and the Build queue it was bound to.
+
+    No reader ``json_extract``-s these fields back out (unlike ``review``, whose
+    ``reviewed_sha``/``verdict`` the close gate reads); the payload exists so the
+    triage decision is inspectable in the audit trail like every other event."""
+
+    run_id: str
+    ticket: str
+    reason: str
+    project: str
+    deferred_at: str
+
+
 def _field_name(model: type[BaseModel], field: str) -> str:
     """The model's field name, verified to exist.
 
