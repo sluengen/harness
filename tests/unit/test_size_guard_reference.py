@@ -38,8 +38,9 @@ exemptions) is exercised by :func:`test_reference_respects_exemptions` and
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
@@ -134,6 +135,26 @@ def test_reference_ignores_incidental_ticket_cite(
         tmp_path / "big.py", _HARD_LIMIT + 1, marker="# see PROJ-42 for the design"
     )
     assert find_offenders(tmp_path, globs=("**/*.py",), limit=_HARD_LIMIT) == ["big.py"]
+
+
+@pytest.mark.parametrize(
+    ("suffix", "marker"),
+    [
+        ("js", "// size: one cohesive module"),
+        ("css", "/* size: one cohesive sheet */"),
+        ("html", "<!-- size: one cohesive document -->"),
+    ],
+)
+def test_reference_recognizes_non_hash_comment_markers(
+    find_offenders: Callable[..., list[str]], tmp_path: Path, suffix: str, marker: str
+) -> None:
+    """The default marker travels beyond ``#``: ``//``, ``/* */`` and ``<!-- -->``
+    comment styles justify an over-limit file, so a JS/CSS/HTML adopter is not
+    silently broken (the rule is language-agnostic; the default covers the common
+    comment leaders and ``SIZE_MARKER`` is editable for the rest)."""
+    name = f"big.{suffix}"
+    _write_lines(tmp_path / name, _HARD_LIMIT + 1, marker=marker)
+    assert find_offenders(tmp_path, globs=(f"**/*.{suffix}",), limit=_HARD_LIMIT) == []
 
 
 def test_reference_respects_exemptions(

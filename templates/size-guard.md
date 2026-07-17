@@ -17,7 +17,7 @@ for cohesion but a good tripwire: language-agnostic, zero-tooling, cheap to
 check, so the rule travels to any repo in any language.
 
 This guard is the *measuring test* the rule needs. It keys on the explicit
-`# size:` marker, **not** an incidental ticket cite — a long file that merely
+`size:` marker, **not** an incidental ticket cite — a long file that merely
 mentions an issue key for unrelated provenance is not a size decision, and must
 not pass. To justify via a tracking ticket, name it in the reason:
 `# size: kept whole; split tracked in <your-issue-key>`.
@@ -26,13 +26,16 @@ not pass. To justify via a tracking ticket, name it in the reason:
 
 1. Copy the code block below into your test suite (e.g.
    `tests/unit/test_source_file_size.py`).
-2. Edit the three config constants for your repo:
+2. Edit the config constants for your repo:
    - `SOURCE_GLOBS` — the source globs to scan (relative to the repo root).
    - `HARD_LIMIT` — the line ceiling (the shared default is `500`).
    - `EXEMPTIONS` — repo-relative POSIX paths that are long by nature, not by
      accreted logic (generated schemas, declarative data). Keep it empty unless
      a file genuinely qualifies; a wrong entry either exempts real logic or
      fails a schema file spuriously.
+   - `SIZE_MARKER` — the marker regex. The default recognizes the common comment
+     leaders (`#`, `//`, `/* */`, `<!-- -->`), so most repos leave it alone; edit
+     it for another comment syntax (SQL `--`, Lisp `;`).
 3. Point `test_source_files_are_under_limit_or_justified` at your repo root —
    adjust the `parents[...]` index to your test's depth.
 
@@ -65,10 +68,14 @@ HARD_LIMIT: int = 500
 # Keep this empty unless a file genuinely qualifies.
 EXEMPTIONS: frozenset[str] = frozenset()
 
-# A justification is a comment carrying ``size:`` followed by a non-empty reason.
-# It keys on the explicit marker, not an incidental ticket cite: a bare issue-key
-# reference is design provenance, not a size decision, and must not satisfy it.
-_SIZE_MARKER = re.compile(r"#.*\bsize:\s*\S")
+# The marker: a comment carrying ``size:`` followed by a non-empty reason. The
+# default recognizes the common comment leaders — ``#`` (Python, shell, YAML),
+# ``//`` and ``/* */`` (C, JS, TS, Go, Rust, CSS), ``<!-- -->`` (HTML, XML,
+# Markdown). For another comment syntax (SQL ``--``, Lisp ``;``) edit this regex.
+# It keys on the explicit ``size:`` marker, not an incidental ticket cite: a bare
+# issue-key reference is design provenance, not a size decision, and must not
+# satisfy it.
+SIZE_MARKER = re.compile(r"(?:#|//|/\*|<!--).*\bsize:\s*\S")
 
 
 def find_offenders(
@@ -77,6 +84,7 @@ def find_offenders(
     globs: tuple[str, ...] = SOURCE_GLOBS,
     limit: int = HARD_LIMIT,
     exemptions: frozenset[str] = EXEMPTIONS,
+    marker: re.Pattern[str] = SIZE_MARKER,
 ) -> list[str]:
     """Return repo-relative paths of over-limit source files lacking a marker."""
     root = Path(root)
@@ -91,7 +99,7 @@ def find_offenders(
             if rel in exemptions:
                 continue
             text = path.read_text(encoding="utf-8")
-            if len(text.splitlines()) > limit and not _SIZE_MARKER.search(text):
+            if len(text.splitlines()) > limit and not marker.search(text):
                 offenders.append(rel)
     return offenders
 
