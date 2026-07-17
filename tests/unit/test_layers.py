@@ -20,7 +20,7 @@ from harness.layers import linear_enabled
 _BOTH_KEYS = """\
 repo:
   name: harness
-  linear: CAL   # team prefix — Calibrate-coffee (CAL)
+  linear: CAL   # team prefix
   project: Harness v3
 layers:
   linear: {switch}

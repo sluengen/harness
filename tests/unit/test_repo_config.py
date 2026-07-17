@@ -21,7 +21,7 @@ _CONTEXT = """\
 
 repo:
   name: harness
-  linear: CAL   # team prefix — Calibrate-coffee (CAL)
+  linear: CAL   # team prefix
   project: Harness v3   # the project the routines pull from
 layers:
   linear: true
