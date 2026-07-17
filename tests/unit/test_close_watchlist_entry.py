@@ -36,10 +36,11 @@ CONTEXT = REPO_ROOT / "CONTEXT.md"
 #: The gravity well this ticket puts under the watchlist.
 WATCHLISTED_FILE = "harness/cli/close.py"
 
-#: Deliberately NOT armed: ``linear.py``'s 757 lines are guard-mandated cohesion —
-#: the CAL-731 embed guard forces every Linear GraphQL call into the one client
-#: (justified at ``linear.py:42``), so a trigger there would fire on changes with
-#: no decision to make.
+#: Deliberately NOT armed: ``linear.py``'s size is guard-mandated cohesion — the
+#: CAL-731 embed guard forces every Linear GraphQL call into the one client (its
+#: ``# size:`` justification), so the surface grows one query-method at a time and
+#: a trigger there would fire on changes with no decision to make. No line count is
+#: quoted here on purpose: the file grows by design, so a number would date.
 EXCLUDED_FILE = "harness/linear.py"
 
 
@@ -116,7 +117,7 @@ def test_linear_py_is_deliberately_not_on_the_watchlist() -> None:
     assert not covering, (
         f"`{EXCLUDED_FILE}` must NOT be armed on the architecture watchlist — its "
         "size is guard-mandated cohesion (the CAL-731 embed guard forces every "
-        "Linear GraphQL call into the one client, justified at `linear.py:42`), so "
-        f"the trigger would fire with no decision to make; covered by {covering} "
+        "Linear GraphQL call into the one client, per its `# size:` justification), "
+        f"so the trigger would fire with no decision to make; covered by {covering} "
         "(CAL-1139 AC-2)."
     )
