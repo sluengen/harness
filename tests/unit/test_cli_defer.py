@@ -53,7 +53,9 @@ def _run_sync(coro: object) -> object:
         loop.close()
 
 
-def _write_context(repo_root: Path, *, linear: bool = True, project: str | None = _BUILD_PROJECT) -> None:
+def _write_context(
+    repo_root: Path, *, linear: bool = True, project: str | None = _BUILD_PROJECT
+) -> None:
     """Write a minimal CONTEXT.md the verb reads for ``repo.project`` + the layer."""
     project_line = f"  project: {project}\n" if project is not None else ""
     text = (
@@ -120,7 +122,9 @@ def _fetch_defer_events(db_path: Path) -> list[dict[str, Any]]:
 # ===========================================================================
 
 
-def test_defer_posts_comment_applies_label_and_records_event(tmp_path: Path, monkeypatch: Any) -> None:
+def test_defer_posts_comment_applies_label_and_records_event(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """``defer`` posts the reason as a comment, additively applies ``decision``, and
     records a ``defer`` event; exits 0."""
     _write_context(tmp_path)
