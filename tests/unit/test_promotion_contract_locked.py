@@ -168,11 +168,19 @@ def test_pr_gate_satisfied_publishes_and_records_pr_opened(
 ) -> None:
     """A gate-satisfied ``pr`` is *not* refused: it reaches the publish path
     (CAL-1117), records the PR URL, and advances to the terminal ``pr_opened`` state.
-    The git push + ``gh`` call are stubbed so this stays a pure contract test."""
+    The git push + ``gh`` call are stubbed so this stays a pure contract test.
+
+    Seeded on the **release** hop (``to_branch='main'``): since CAL-1158 the
+    ``pr_opened`` contract this locks is the release hop's: the staging hop
+    direct-pushes and terminates at ``promoted`` instead."""
     db = _seed(
         tmp_path,
         _promotion(
-            status="pr_ready", gated_sha="abc123", promotion_branch="promote/x"
+            status="pr_ready",
+            gated_sha="abc123",
+            promotion_branch="promote/x",
+            from_branch="staging",
+            to_branch="main",
         ),
     )
 

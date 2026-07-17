@@ -418,57 +418,53 @@ def test_pr_on_fresh_green_promotion_publishes(
     work: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A ``pr_ready`` promotion whose branch HEAD still equals the gated SHA passes
-    both gates and publishes (CAL-1117): the promotion branch is pushed to origin,
-    the PR is opened, and the promotion reaches ``pr_opened`` with the URL recorded
-    (AC-1/AC-3). ``gh`` is stubbed — the push against the bare origin is real."""
+    both gates and publishes (CAL-1117) — end-to-end from a real ``start``.
+
+    This module's hop is ``dev → staging``, which CAL-1158 made a **direct push**:
+    publishing lands the gated candidate on ``staging`` itself and opens no PR, so
+    the promotion reaches the terminal ``promoted`` state. The push against the bare
+    origin is real. (Which path each hop takes — and that ``staging → main`` still
+    opens a PR — is owned by ``test_promote_staging_hop.py``.)"""
     _configure_gate(work, "exit 0")
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
     assert started["status"] == "pr_ready"
-    branch = str(started["promotion_branch"])
-    staging_before = _git(work, "rev-parse", "origin/staging").strip()
+    gated_sha = str(started["gated_sha"])
 
-    captured: dict[str, object] = {}
+    def _no_pr(*args: object, **kwargs: object):
+        raise AssertionError("the staging hop must not open a PR (CAL-1158)")
 
-    def _fake_create(repo_root, *, base, head, title, body):
-        captured.update(base=base, head=head, title=title, body=body)
-        from harness.promotion_pr import PullRequestOutcome
-
-        return PullRequestOutcome(url="https://github.com/o/r/pull/12")
-
-    monkeypatch.setattr(promote_cli, "create_pull_request", _fake_create)
+    monkeypatch.setattr(promote_cli, "create_pull_request", _no_pr)
 
     result = _pr(work, str(started["promotion_id"]))
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["status"] == "pr_opened"
-    assert payload["pr_url"] == "https://github.com/o/r/pull/12"
+    assert payload["status"] == "promoted"
+    assert payload["pr_url"] is None
 
-    # AC-3: the PR opens into the target branch, from the promotion branch.
-    assert captured["base"] == "staging"
-    assert captured["head"] == branch
-
-    # AC-2 / AC-5: only the promotion branch was pushed — origin/staging is untouched
-    # (never advanced to the gated SHA by a forbidden direct target-branch push).
-    assert _git(work, "rev-parse", f"origin/{branch}").strip() == started["gated_sha"]
-    assert _git(work, "rev-parse", "origin/staging").strip() == staging_before
-    assert staging_before != started["gated_sha"]
+    # The gated candidate is now staging itself — the promotion is complete.
+    _git(work, "fetch", "origin")
+    assert _git(work, "rev-parse", "origin/staging").strip() == gated_sha
 
 
 def test_pr_push_failure_is_a_structured_refusal(
     work: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed branch push surfaces as a structured ``push_failed`` refusal (exit 2)
-    with the promotion left un-advanced — never a bare traceback."""
+    """A failed push surfaces as a structured ``push_failed`` refusal (exit 2)
+    with the promotion left un-advanced — never a bare traceback.
+
+    On this module's ``dev → staging`` hop the push is the **target** push
+    (CAL-1158); a rejected one (e.g. staging moved under us) must leave the
+    promotion ``pr_ready`` so it can be re-gated, not half-finished."""
     _configure_gate(work, "exit 0")
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
     assert started["status"] == "pr_ready"
 
-    def _boom(repo_root, branch):
+    def _boom(repo_root, *, target, gated_sha):
         raise mechanics.PromotionMechanicsError("remote rejected", reason="push_failed")
 
-    monkeypatch.setattr(promote_cli, "push_promotion_branch", _boom)
+    monkeypatch.setattr(promote_cli, "push_target_branch", _boom)
 
     result = _pr(work, str(started["promotion_id"]))
     assert result.exit_code == 2, result.output

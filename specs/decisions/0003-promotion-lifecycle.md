@@ -19,7 +19,7 @@ The repo already chose an always-on local loop as the default substrate for auto
 ### Branch topology — universal `dev → staging → main`, `staging` first-class
 
 - **`dev`** is moving integration: feature branches base from it and `close` merges them back into it.
-- **`staging`** is the nightly **stabilized release candidate** — the new first-class branch this ADR adds. Promotion merges `dev → staging`, runs the gate there, and only a green staging candidate advances.
+- **`staging`** is the nightly **stabilized release candidate** — the new first-class branch this ADR adds. Promotion merges `dev` into a promotion candidate branched from `staging`, runs the gate on that candidate, and — only if it is green — advances `staging` to it. The merge happens on the candidate, never on `staging` itself: nothing lands on a target branch until the gate has passed on exactly what would land.
 - **`main`** is intentional release: promotion opens a PR `staging → main`.
 
 There is **no interim `dev → main` compatibility path**. The three-tier model is common, understandable, and safer for autonomous promotion. This is recorded as policy in `CONTEXT.md` (`branches:`); the branch-model *code* (`harness/cli/start.py`, `harness/cli/worktrees.py`) still hardcodes `dev`/`main`/`master` today — reading the model from `CONTEXT.md` is separate work (CAL-1106), so this ADR changes policy and docs only, with no runtime behaviour change.
@@ -29,15 +29,16 @@ There is **no interim `dev → main` compatibility path**. The three-tier model 
 A promotion row moves through:
 
 - **`opened`** — the promotion row, worktree, and promotion branch exist; the merge has been attempted.
-- **`pr_ready`** — the merge was clean and the gate is green; the promotion may open its PR.
+- **`pr_ready`** — the merge was clean and the gate is green; the promotion may publish (land the staging hop, or open the release PR).
 - **`agent_may_fix`** — a small, in-policy conflict or gate failure the orchestrator may repair once (see repair authority).
 - **`needs_ticket`** — the block is real but out of local repair authority; it must become a human-owned Linear ticket.
 - **`blocked`** — the promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base) rather than on a code decision.
-- **`pr_opened`** — terminal success: the promotion branch is pushed and the PR is created.
+- **`promoted`** — terminal success on the **staging hop**: the target branch was advanced to the gated SHA. Nothing further is pending (amended 2026-07-17, below).
+- **`pr_opened`** — terminal success on the **release hop**: the promotion branch is pushed and the PR is created.
 - **`escalated`** — terminal non-success: a Linear ticket carries the evidence.
 - **`cancelled`/`abandoned`** — the promotion was withdrawn or superseded; recorded, never deleted.
 
-`pr_ready`, `agent_may_fix`, `needs_ticket`, and `blocked` are the **policy classifications** the harness returns from a merge+gate attempt; `pr_opened` and `escalated` are the two terminal paths.
+`pr_ready`, `agent_may_fix`, `needs_ticket`, and `blocked` are the **policy classifications** the harness returns from a merge+gate attempt; `promoted`, `pr_opened`, and `escalated` are the terminal paths. The two successes are distinct because the hops finish differently: `promoted` is *done*, while `pr_opened` still waits on a human. A promotion that opened no PR must not record `pr_opened` — the ledger is the audit trail, and it does not round off.
 
 ### Repair authority — one bounded attempt
 
@@ -48,9 +49,18 @@ The orchestrator may repair only small, low-semantic problems, and only **once**
 
 After a bounded edit the orchestrator calls `continue`, which re-runs classification and the gate and increments the attempt count. A promotion **cannot become `pr_ready` without fresh gate evidence** — the same evidence discipline the `review`/`close` gate already enforces (`code-quality`).
 
-### PR authority — the harness creates the PR; it never auto-merges
+### PR authority — the harness creates the release PR; it never auto-merges
 
-The harness pushes **only the promotion branch** and creates the PR; a model or agent may draft the PR prose from deterministic facts (commit range, Linear IDs, changed specs, gate evidence), but the source facts are the harness's. **Direct target-branch pushes and auto-merge are out of scope for v1** — merging the release PR stays a deliberate human/CI act. The orchestrator must not push release branches, open or close PRs outside the promotion command, mutate Linear promotion state, or mark a promotion done; those are lifecycle transitions and belong in the harness ledger.
+> **Amended 2026-07-17 (CAL-1158).** As first accepted, this section applied one rule to both hops: "Direct target-branch pushes and auto-merge are out of scope for v1." That over-applied a **release-hop** rule — its own stated rationale reached only as far as "merging the *release* PR stays a deliberate human/CI act" — and it foreclosed the nightly `dev → staging` automation this ADR exists to enable: a cron would gate the candidate, open a PR into staging, and stop, waiting for a human to merge a PR with no reviewer and no question to answer. The rule is now **scoped to the release hop**. The paragraph below is the amended decision.
+
+**Staging is derived; main is decided.** That distinction sets where the authority sits:
+
+- **The staging hop (`dev → staging`) direct-pushes on a green gate.** Nothing is judged there — the gate *is* the decision — so the harness advances `staging` to the gated SHA and opens no PR, and the promotion terminates at `promoted`. The push is bounded three ways: it happens **only** on a green gate (a red gate cannot reach `pr_ready`, so it cannot publish); it moves **exactly one ref**, via an explicit refspec naming the gated SHA; and the eligible target is a **structural allowlist of `staging` alone**, so the code cannot direct-push a release branch however it is called.
+- **The release hop (`staging → main`) is PR-only, and never auto-merges.** The harness pushes **only the promotion branch** and creates the PR; a model or agent may draft the PR prose from deterministic facts (commit range, Linear IDs, changed specs, gate evidence), but the source facts are the harness's. Merging it stays a deliberate human/CI act — `main` is the single human decision point in the topology, and **auto-merge remains out of scope**.
+
+Rejected: **PR + auto-merge on the staging hop.** It would need `gh pr merge` un-denied, repo auto-merge enabled, and auto-merge permitted through staging's protection — more moving parts, more standing authority, to produce a PR nobody reads.
+
+The orchestrator's own limits are unchanged: it must not push target branches, open or close PRs outside the promotion command, mutate Linear promotion state, or mark a promotion done; those are lifecycle transitions and belong in the harness ledger. The staging push is the **harness's** authority, exercised inside the audited lifecycle — it is not a licence for the outer agent to touch a target branch.
 
 ### Escalation
 

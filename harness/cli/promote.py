@@ -28,10 +28,21 @@ CAL-1116 now runs the **gate + evidence capture** inside those openers
 
 CAL-1117 wired ``pr`` — the success finalizer. It enforces two gates (the
 ``pr_ready`` + gated-SHA PR gate, and the CAL-1116 branch-HEAD freshness check) and,
-once both pass, **publishes**: it pushes only the promotion branch, opens a PR into
-the target with a body drafted from deterministic facts, and records the PR URL +
-the terminal ``pr_opened`` state (the publication mechanics live in the sibling
-:mod:`harness.promotion_pr`).
+once both pass, **publishes** (the publication mechanics live in the sibling
+:mod:`harness.promotion_pr`). CAL-1158 then split publication by **hop**, because
+the two hops finish differently — *staging is derived, main is decided*:
+
+* the **staging hop** (``--to staging``) advances the target itself to the gated
+  SHA and opens **no** PR, reaching the terminal ``promoted`` state — nothing is
+  judged there, so the green gate is the whole decision and the nightly promotion
+  completes without a human;
+* the **release hop** (``--to main``) is unchanged: push only the promotion branch,
+  open a PR into the target from deterministic facts, record ``pr_opened``. Merging
+  it stays a deliberate human act — the single decision point.
+
+The command keeps the name ``pr`` (the locked v1 surface; there is deliberately no
+``promote land``) — it is *the success finalizer*, and the hop selects the
+mechanism.
 
 CAL-1118 now wires ``escalate`` — the non-success terminal path. It files (or, when
 the promotion is already linked, comments on) a Linear ticket carrying the promotion
@@ -93,11 +104,13 @@ from harness.linear import (
 from harness.promotion_escalation import build_escalation_body, build_escalation_title
 from harness.promotion_gate import classify_gate_failure, run_promotion_gate
 from harness.promotion_pr import (
+    DIRECT_PUSH_TARGET,
     build_pr_body,
     build_pr_title,
     collect_promotion_facts,
     create_pull_request,
     push_promotion_branch,
+    push_target_branch,
 )
 from harness.state import promotions
 from harness.state.promotions import Promotion, PromotionStatus
@@ -457,10 +470,10 @@ def pr_command(
             branch_head=live_head,
         )
 
-    # Both gates pass — publish (CAL-1117). Push ONLY the promotion branch (AC-2),
-    # draft the PR prose from deterministic facts (AC-4), open the PR into the
-    # target branch (AC-3), and record the PR URL + the terminal `pr_opened` state.
-    # A push / gh failure surfaces as a structured refusal, never a bare traceback.
+    # Both gates pass — publish. HOW depends on the hop (CAL-1158): the staging hop
+    # lands the gated candidate on the target itself and is done; the release hop
+    # pushes the promotion branch and opens a PR for a human to merge. A push / gh
+    # failure surfaces as a structured refusal, never a bare traceback.
     branch = promotion.promotion_branch
     gated_sha = promotion.gated_sha
     if branch is None or gated_sha is None:
@@ -477,6 +490,61 @@ def pr_command(
         )
 
     db_path = resolve_verb_db_path(db, repo_root)
+    if promotion.to_branch == DIRECT_PUSH_TARGET:
+        updated = _land_on_target(
+            promotion, repo_root=repo_root, gated_sha=gated_sha, promotion_id=promotion_id
+        )
+    else:
+        updated = _open_release_pr(
+            promotion,
+            repo_root=repo_root,
+            branch=branch,
+            gated_sha=gated_sha,
+            promotion_id=promotion_id,
+        )
+    asyncio.run(promotions.update_promotion(updated, db_path=db_path))
+    typer.echo(updated.model_dump_json())
+
+
+def _land_on_target(
+    promotion: Promotion, *, repo_root: Path, gated_sha: str, promotion_id: str
+) -> Promotion:
+    """Publish the **staging hop**: advance the target to the gated SHA; no PR.
+
+    Staging is *derived* — the green gate is the whole decision, so there is no PR
+    to open and nothing for a human to judge (ADR 0003 as amended 2026-07-17). Only
+    the target ref moves: the promotion branch is deliberately **not** pushed, since
+    no PR will reference it. Terminal state is ``promoted``, not ``pr_opened`` —
+    the ledger must not claim a PR that does not exist.
+    """
+    try:
+        push_target_branch(repo_root, target=promotion.to_branch, gated_sha=gated_sha)
+    except mechanics.PromotionMechanicsError as exc:
+        _refuse(
+            exc.reason,
+            str(exc),
+            command="promote pr",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+    return promotion.model_copy(update={"status": "promoted", "updated_at": iso_z()})
+
+
+def _open_release_pr(
+    promotion: Promotion,
+    *,
+    repo_root: Path,
+    branch: str,
+    gated_sha: str,
+    promotion_id: str,
+) -> Promotion:
+    """Publish the **release hop**: push the promotion branch and open the PR.
+
+    ``main`` is *decided* — merging the release PR stays a deliberate human/CI act,
+    so the harness pushes only the promotion branch (never the target), drafts the
+    prose from deterministic facts, and records the PR URL + the terminal
+    ``pr_opened`` state (CAL-1117, ADR 0003 "PR authority").
+    """
     try:
         push_promotion_branch(repo_root, branch)
         facts = collect_promotion_facts(
@@ -500,16 +568,13 @@ def pr_command(
             promotion_id=promotion_id,
             status=promotion.status,
         )
-
-    updated = promotion.model_copy(
+    return promotion.model_copy(
         update={
             "status": "pr_opened",
             "pr_url": outcome.url,
             "updated_at": iso_z(),
         }
     )
-    asyncio.run(promotions.update_promotion(updated, db_path=db_path))
-    typer.echo(updated.model_dump_json())
 
 
 def _promotion_conflict_files(promotion: Promotion) -> tuple[str, ...]:

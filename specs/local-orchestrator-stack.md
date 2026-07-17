@@ -124,14 +124,14 @@ The four stop conditions, and what this orchestrator does on each:
 
 | State | The local orchestrator's action |
 |---|---|
-| `pr_ready` | Clean merge and a green gate. Call `promote pr`. The model may draft PR prose from the harness's deterministic facts. **Stop** — the PR waits for a human/CI merge; the harness never auto-merges. |
+| `pr_ready` | Clean merge and a green gate. Call `promote pr`, then **stop**. On the staging hop it lands the candidate on `staging` and is done (`promoted`); on the release hop the model may draft PR prose from the harness's deterministic facts, and the PR then waits for a human/CI merge — the harness never auto-merges. |
 | `agent_may_fix` | A small, in-policy conflict or gate failure. The local model may attempt **one** bounded repair in the worktree, then `promote continue`. If the re-gate fails, the attempt is spent — do not try a second. |
 | `needs_ticket` | Beyond local repair authority. `promote escalate` and **stop**. Do not repair, and do not re-run `start` to retry. |
 | `blocked` | Infrastructure, not code — missing credentials, remote permission, unclean base. `promote escalate` and **stop**. A local model cannot fix these and must not try. |
 
 `status` is the source of truth: the orchestrator reads these off the JSON, it
-never scrapes prose. Both terminals (`pr_opened`, `escalated`) end the run — the
-orchestrator does not loop past them.
+never scrapes prose. Every terminal (`promoted`, `pr_opened`, `escalated`) ends the
+run — the orchestrator does not loop past them.
 
 ## Scheduling
 

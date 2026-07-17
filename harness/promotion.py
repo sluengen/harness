@@ -24,7 +24,9 @@ and conflict classification — it knows nothing about the ledger or Typer:
 This module is git-only: no PR, no push, no auto-merge, and no *gate* — the merge
 commit lands only in the promotion worktree. Gate execution + evidence capture is
 its sibling :mod:`harness.promotion_gate` (CAL-1116), and only ``promote pr``
-(CAL-1117) ever pushes the branch. Never a direct push to ``staging`` / ``main``.
+(CAL-1117) ever publishes — pushing the promotion branch for a release PR, or (on
+the staging hop only, CAL-1158) advancing ``staging`` itself to the gated SHA.
+``main`` is never direct-pushed.
 """
 
 from __future__ import annotations
