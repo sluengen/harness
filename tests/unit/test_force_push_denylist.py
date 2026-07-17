@@ -53,6 +53,12 @@ _MUST_DENY = [
     "git push --force origin dev",
     "git push origin --force-with-lease dev",
     "git -C /some/worktree push --force origin dev",
+    # CAL-1142: `git -C <worktree> push --force-with-lease …` — the unattended
+    # routine operates on worktrees via `git -C`, and the pre-existing `-C` deny
+    # covered only plain `--force`, not `--force-with-lease`, so this walked
+    # straight through the guard. Both flag positions.
+    "git -C /some/worktree push --force-with-lease origin dev",
+    "git -C /some/worktree push origin --force-with-lease dev",
 ]
 
 # Plain, non-force pushes that MUST stay allowed (never matched by a deny glob).
