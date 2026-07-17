@@ -10,7 +10,7 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix — Calibrate-coffee (CAL)
+  linear: CAL   # team prefix
   project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
 layers:
   linear: true
@@ -97,7 +97,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 - **Promotion lifecycle + branch policy (`dev → staging → main`; harness-owned, agent-agnostic)** → `specs/decisions/0003-promotion-lifecycle.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
-- **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
+- **Linear (issues / in-flight work)** → linear.app (team: CAL, project "Harness v3")
 
 ## Gotchas
 

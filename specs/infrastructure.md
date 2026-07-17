@@ -34,7 +34,7 @@ Branch model: feature branches base from and merge back to `dev` (integration); 
 
 | Service | Used for | Managed where |
 |---|---|---|
-| Linear | Issue tracking and the change-spec home | Team **CAL** (Calibrate-coffee), project **Harness v3**; GraphQL API only — no CLI |
+| Linear | Issue tracking and the change-spec home | Team **CAL**, project **Harness v3**; GraphQL API only — no CLI |
 | Anthropic / Claude Code | The orchestrating + implementing agent | OAuth token (see Secrets) |
 | OpenAI Codex | The `review` verb's reviewer | Subscription auth via `~/.codex`, mounted into the review container |
 | GitHub | Code hosting, CI, tag-based releases | `sluengen/harness`; release process in `RELEASING.md` |
