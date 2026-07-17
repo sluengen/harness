@@ -63,6 +63,19 @@ _PROMOTED_DENIES = [
     "Bash(git merge * main *)",
 ]
 
+#: CAL-1142: the `git -C <path>` variants of the force-with-lease push and the
+#: merge-into-main denies. The base globs denied `git push --force-with-lease …`
+#: and `git merge … main`, but not their `git -C <worktree> …` forms — and
+#: `git -C <worktree>` is exactly how the unattended routine drives a worktree
+#: without `cd`, so a worktree-targeted destructive command walked straight
+#: through the guard. Promoted to match the form repo's stricter deny block.
+_PROMOTED_DENIES_GIT_DASH_C = [
+    "Bash(git -C * push --force-with-lease *)",
+    "Bash(git -C * push * --force-with-lease *)",
+    "Bash(git -C * merge * main)",
+    "Bash(git -C * merge * main *)",
+]
+
 #: Pushing an already-reviewed commit to the `dev` integration branch. Profile-general:
 #: every repo on this profile integrates on `dev` with the agent-led review as the
 #: merge gate, so a direct push of reviewed work does not bypass review.
@@ -123,6 +136,41 @@ def test_distributable_denies_the_force_push_forms_the_base_globs_miss(rule: str
     """AC-1: the `+refspec` / `-C`-reordered bypasses are denied for consumers too."""
     assert rule in _distributable()["permissions"]["deny"], (
         f"{rule} is missing from the distributable's deny list"
+    )
+
+
+@pytest.mark.parametrize("rule", _PROMOTED_DENIES_GIT_DASH_C)
+def test_distributable_denies_the_git_dash_c_worktree_variants(rule: str) -> None:
+    """CAL-1142: the `git -C <worktree>` force-with-lease-push and merge-into-main
+    variants are denied for consumers too — the base globs missed them, and the
+    unattended routine drives worktrees via `git -C`, so this is the gap that
+    matters most for an autonomous run."""
+    assert rule in _distributable()["permissions"]["deny"], (
+        f"{rule} is missing from the distributable's deny list"
+    )
+
+
+def test_gh_pr_merge_is_deliberately_not_denied_yet() -> None:
+    """CAL-1142 AC-3, recorded decision: `Bash(gh pr merge *)` is the fifth deny
+    rule the form repo carries and the harness deliberately does **not** adopt
+    yet.
+
+    Denying it aligns with "all integration goes through the `close` verb"
+    (dogfooding), but it also breaks the autonomous `/assess`-report PR fallback
+    (report -> feature branch -> `gh pr create` -> `gh pr merge`), which is the
+    only way an unattended idle tick lands its advisory report until the
+    direct-report-commit sanction (CAL-1140) ships. So the deny is coupled to
+    CAL-1140 and is deferred until then; this ticket adopts only the four
+    `git -C *` rules.
+
+    This test is the executable record of that deferral: it pins the rule
+    *absent* so adding it is a deliberate act that trips here and points the
+    author at CAL-1140, rather than a silent tightening that strands the idle
+    arm."""
+    assert "Bash(gh pr merge *)" not in _distributable()["permissions"]["deny"], (
+        "`Bash(gh pr merge *)` is deferred pending CAL-1140 (the direct-report-"
+        "commit sanction) — denying it now breaks the unattended `/assess`-report "
+        "PR fallback. Adopt it only in concert with CAL-1140 (CAL-1142 AC-3)."
     )
 
 
