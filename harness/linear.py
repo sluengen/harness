@@ -130,6 +130,36 @@ query FetchIssue($id: String!) {
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
         return {k: raw.get(k) for k in _TICKET_FIELDS}
 
+    async def fetch_issue_project(self, identifier: str) -> str | None:
+        """Return the name of the project issue ``identifier`` belongs to, or ``None``.
+
+        The Build-queue membership check ``harness defer`` binds to (CAL-1143):
+        the verb only defers a ticket on this repo's ``repo.project``, so it reads
+        the ticket's project name and compares. ``None`` means the issue is on no
+        project — the caller treats that as "not on the Build queue".
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        query = """
+query IssueProject($id: String!) {
+  issue(id: $id) {
+    id
+    project {
+      name
+    }
+  }
+}
+"""
+        data = await self._request(query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        project = issue.get("project") or {}
+        name = project.get("name")
+        return str(name) if name else None
+
     async def fetch_reclaimable_issues(
         self, *, project: str
     ) -> list[dict[str, str]]:

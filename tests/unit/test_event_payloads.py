@@ -34,6 +34,7 @@ from harness.events.payloads import (
     WORKFLOW_FAILED_REASON_KEY,
     CheckpointEventData,
     CloseEventData,
+    DeferEventData,
     ReviewEventData,
     WorkflowFailedEventData,
     _field_name,
@@ -156,6 +157,19 @@ def test_close_event_data_keys() -> None:
 def test_workflow_failed_event_data_keys() -> None:
     assert WorkflowFailedEventData(reason="reclaimed").model_dump() == {
         "reason": "reclaimed"
+    }
+
+
+def test_defer_event_data_keys() -> None:
+    assert DeferEventData(
+        run_id="R1", ticket="CAL-1143", reason="needs a decision", project="Harness v3",
+        deferred_at="t",
+    ).model_dump() == {
+        "run_id": "R1",
+        "ticket": "CAL-1143",
+        "reason": "needs a decision",
+        "project": "Harness v3",
+        "deferred_at": "t",
     }
 
 

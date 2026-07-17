@@ -27,6 +27,7 @@ import typer
 from harness.cli.cancel import cancel_command
 from harness.cli.checkpoint import checkpoint_command
 from harness.cli.close import close_command
+from harness.cli.defer import defer_command
 from harness.cli.doctor import doctor_command
 from harness.cli.promote import promote_app
 from harness.cli.query import (
@@ -70,6 +71,9 @@ app.command(name="cancel", help="Abandon an in-flight run (close without merge).
 )
 app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to Todo and reconcile the ledger.")(  # noqa: E501
     reclaim_command
+)
+app.command(name="defer", help="Defer a not-yet-actionable ticket: comment + additive `decision` label + a ledger event.")(  # noqa: E501
+    defer_command
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
