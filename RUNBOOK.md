@@ -108,6 +108,12 @@ conflict is worth a bounded repair. It never sits inside the harness surface.
 jobs — is a sibling routine documented separately; it is not part of this
 promotion loop.)*
 
+One concrete, cheap occupant of that outer-agent slot — OpenCode driving the
+verbs non-interactively with a local MLX model, on a `launchd` schedule — is
+spiked in [`specs/local-orchestrator-stack.md`](specs/local-orchestrator-stack.md).
+It is a **hypothesis, not yet validated**, and nothing in this section depends on
+it: the contract below is what any orchestrator follows.
+
 ### The two flows
 
 Two promotions run on this topology, on different cadences:

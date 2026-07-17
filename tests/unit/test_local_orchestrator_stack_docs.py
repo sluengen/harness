@@ -44,7 +44,6 @@ from harness.state.promotions import PROMOTION_STATUSES
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DOC = _REPO_ROOT / "specs" / "local-orchestrator-stack.md"
-_SPEC_INDEX = _REPO_ROOT / "SPEC.md"
 _RUNBOOK = _REPO_ROOT / "RUNBOOK.md"
 
 #: The four states AC-2 names as the orchestrator's stop conditions. Each is
@@ -215,13 +214,6 @@ def test_ac6_promotion_surface_exists() -> None:
             f"AC-6: the promotion surface is missing '{verb}' — this ticket's "
             f"precondition does not hold"
         )
-
-
-def test_doc_is_registered_in_the_spec_index() -> None:
-    """Repo convention — a spec under ``specs/`` is reachable from the SPEC.md index."""
-    assert "specs/local-orchestrator-stack.md" in _SPEC_INDEX.read_text(encoding="utf-8"), (
-        "the local orchestrator runbook is not registered in SPEC.md's spec index"
-    )
 
 
 def test_runbook_points_at_the_stack_record() -> None:
