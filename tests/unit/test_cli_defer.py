@@ -147,6 +147,26 @@ def test_defer_posts_comment_applies_label_and_records_event(
     assert events[0]["reason"] == "needs a human call on scope"
 
 
+def test_defer_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
+    """``--json`` on a successful defer emits the typed ``DeferOutput`` — outcome
+    ``deferred``, the bound Build queue, and the synthetic run id."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "needs a call", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ticket"] == "CAL-999"
+    assert payload["outcome"] == "deferred"
+    assert payload["project"] == _BUILD_PROJECT
+    assert payload["run_id"]
+
+
 def test_defer_applies_label_additively(tmp_path: Path, monkeypatch: Any) -> None:
     """The label is applied via the additive primitive (``apply_label`` →
     ``issueAddLabel``), not a full-set replacement that would clobber other labels."""
