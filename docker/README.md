@@ -191,6 +191,17 @@ directory with no flags or env-var setup.
   in-container review engine is Claude, not Codex (`--engine codex` is host-only,
   [ADR 0002](../specs/decisions/0002-in-container-review-engine.md)) — nothing in
   the container writes `~/.codex`.
+- **Image freshness** — rebuilds `harness:dev` when this repo's `harness/`
+  source is newer than the image (CAL-1144). Nothing else rebuilds the image
+  after a merge to `dev`, so a verb that ships is otherwise invisible to the next
+  run, which sees only `No such command '<verb>'` and reads it as missing code
+  rather than a stale image. The check compares `docker image inspect` against
+  `git log -1 --format=%ct -- harness/`, costs ~10ms, and fires a build **only**
+  when the source actually moved — once per merge, against a warm layer cache. A
+  rebuild that fails exits non-zero rather than falling through to the stale
+  image, and all of its output goes to **stderr** so the verbs' JSON contract on
+  stdout stays parseable. An explicit `HARNESS_IMAGE` is never rebuilt: a pinned
+  tag is the caller's to manage.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
