@@ -49,6 +49,12 @@ On a gate failure the verb exits non-zero with a structured refusal carrying a
   re-review before close.
 * ``no_passing_review`` — no ``review`` event with ``verdict='pass'`` at all.
 * ``stale_review`` — a pass exists but for a different SHA (HEAD advanced).
+* ``dirty_base_checkout`` — the *base* checkout (as opposed to the run
+  worktree) is not merge-safe: it carries uncommitted tracked changes, or a
+  merge left in progress by a racing or dead close. Refused before the merge
+  touches it, because git cannot reliably undo a merge begun over uncommitted
+  changes — so "leave the checkout as we found it" is only guaranteeable from a
+  clean start (CAL-1151).
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
@@ -104,6 +110,12 @@ from harness.state import store
 # teardown lifecycle it guards, which splitting would only scatter across files.
 # CAL-1004 added the network-timeout guards (fetch/push) inline, per run_git's
 # caller-owns-error-policy contract, pushing it just over the 500-line limit.
+# CAL-1151 added the base-checkout safety (precondition + verified restore) to
+# the git concern this module already carries. That concern is now the clear seam
+# — the watchlist entry (CAL-1139) names the gate/ledger/git mix — but extracting
+# it is deferred to CAL-1154, which redesigns where the merge happens at all: a
+# refactor landing in the same diff as a behaviour fix to the merge path would
+# make both harder to review, and the seam is better cut with that change in hand.
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -114,6 +126,7 @@ RefusalReason = Literal[
     "no_passing_review",
     "stale_review",
     "no_gate_evidence",
+    "dirty_base_checkout",
 ]
 
 #: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
@@ -488,6 +501,43 @@ def _status_porcelain(worktree_path: Path) -> str:
     return result.stdout.strip()
 
 
+def _merge_in_progress(repo_root: Path) -> bool:
+    """Whether ``repo_root`` has a merge in progress (``MERGE_HEAD`` present)."""
+    result = run_git(repo_root, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")
+    return result.returncode == 0
+
+
+def _base_checkout_residue(repo_root: Path) -> str:
+    """Tracked-file residue in the base checkout — ``''`` when it is merge-safe.
+
+    ``--untracked-files=no`` is deliberate: an untracked file does not affect
+    whether a merge can be undone, so counting it would wedge every close behind
+    a stray scratch file in the working copy. Raises :class:`_CloseError` on a
+    git failure rather than reporting a false-clean.
+    """
+    result = run_git(repo_root, "status", "--porcelain", "--untracked-files=no")
+    if result.returncode != 0:
+        raise _CloseError(f"git status failed for {repo_root}: {result.stderr.strip()}", 1)
+    return result.stdout.strip()
+
+
+def _restore_base_checkout(repo_root: Path) -> str:
+    """Undo a merge this verb started; return residue it could **not** restore.
+
+    Returns ``''`` once the checkout is clean again. The abort's exit code is
+    deliberately not the verdict — what matters is whether the checkout actually
+    came back clean, which is what the caller reports. Any residue is returned
+    rather than swallowed: a cleanup that silently failed is how a conflict
+    refusal stranded the checkout in the first place (CAL-1151).
+    """
+    if _merge_in_progress(repo_root):
+        run_git(repo_root, "merge", "--abort")
+    result = run_git(repo_root, "status", "--porcelain", "--untracked-files=no")
+    if result.returncode != 0:
+        return f"git status failed: {result.stderr.strip()}"
+    return result.stdout.strip()
+
+
 def _merge_and_push(
     *,
     repo_root: Path,
@@ -538,6 +588,31 @@ def _merge_and_push(
                 1,
             )
 
+    # The base checkout is shared state — and, unlike the run worktree (which
+    # ``_run_close`` refuses when dirty), nothing has validated it. Refuse to
+    # start a merge that could not be cleanly undone, rather than discover it on
+    # the conflict path: git cannot reliably reconstruct uncommitted changes that
+    # were present when a merge began ("hard to back out of in the case of a
+    # conflict"), so leaving the checkout as we found it is only guaranteeable
+    # from a clean start. Both checks precede every mutation below (CAL-1151).
+    if _merge_in_progress(repo_root):
+        raise _CloseError(
+            f"the {base_branch} checkout at {repo_root} has a merge already in "
+            f"progress: another close, or a manual merge, left it mid-merge. "
+            f"Resolve it (or `git merge --abort` in {repo_root}), then close again",
+            2,
+            reason="dirty_base_checkout",
+        )
+    residue = _base_checkout_residue(repo_root)
+    if residue:
+        raise _CloseError(
+            f"the {base_branch} checkout at {repo_root} has uncommitted tracked "
+            f"changes, so a merge into it could not be safely undone on a conflict; "
+            f"commit or stash them, then close again:\n{residue}",
+            2,
+            reason="dirty_base_checkout",
+        )
+
     # Operate from the main repo checkout so the base branch's working tree is
     # what advances.
     _run(repo_root, "checkout", base_branch)
@@ -568,20 +643,42 @@ def _merge_and_push(
     output.append(merge.stdout)
     output.append(merge.stderr)
     if merge.returncode != 0:
-        # A genuine conflict between the reviewed run branch and the changes that
-        # landed on origin/<base> during the run. Abort to leave the checkout
-        # clean (the run stays resumable — the worktree and the passing review
-        # are untouched), and fail with a clear message rather than the raw git
-        # conflict dump. Recovery: rebase the run branch on the updated base,
-        # re-review (a fresh HEAD → a fresh pass), and close again.
-        run_git(repo_root, "merge", "--abort")
-        raise _CloseError(
-            f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
-            f"with changes that landed on origin/{base_branch} during the run; "
-            f"rebase the run branch on the updated {base_branch}, re-review, and "
-            f"close again",
-            1,
-        )
+        # Two different non-zero shapes hide behind one exit code: git either
+        # started the merge and hit a conflict (MERGE_HEAD is present), or
+        # refused to start it at all. Reporting the second as a conflict sends
+        # the caller off to rebase work that would in fact merge cleanly, so
+        # decide which happened *before* restoring — the abort erases the
+        # evidence (CAL-1151).
+        conflicted = _merge_in_progress(repo_root)
+        leftover = _restore_base_checkout(repo_root)
+        if conflicted:
+            # A genuine conflict between the reviewed run branch and the changes
+            # that landed on origin/<base> during the run. The merge is aborted
+            # above, so the run stays resumable — worktree and passing review
+            # untouched — and the message is a clear one, not the raw git
+            # conflict dump. Recovery: rebase the run branch on the updated base,
+            # re-review (a fresh HEAD → a fresh pass), and close again.
+            message = (
+                f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
+                f"with changes that landed on origin/{base_branch} during the run; "
+                f"rebase the run branch on the updated {base_branch}, re-review, and "
+                f"close again"
+            )
+        else:
+            message = (
+                f"cannot merge {worktree_branch} into {base_branch}: git refused to "
+                f"start the merge in {repo_root}: {merge.stderr.strip()}"
+            )
+        if leftover:
+            # The restore itself failed. Say so alongside the real reason rather
+            # than returning the reason alone and leaving the caller to discover
+            # a stranded checkout by tripping over it on the next close.
+            message += (
+                f". The {base_branch} checkout could not be restored and still holds "
+                f"merge residue — run `git merge --abort` in {repo_root} before "
+                f"retrying:\n{leftover}"
+            )
+        raise _CloseError(message, 1)
 
     _run(repo_root, "push", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
 

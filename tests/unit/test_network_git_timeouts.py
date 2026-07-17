@@ -137,7 +137,13 @@ def test_close_fetch_and_push_pass_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[tuple[str, ...], float | None]] = []
-    monkeypatch.setattr(close_mod, "run_git", _recorder(calls))
+    # ``rev-parse --verify --quiet MERGE_HEAD`` exits non-zero when no merge is in
+    # progress — i.e. a clean base checkout, which is the happy path this pins. The
+    # recorder's default zero-exit would otherwise read as "a merge is in progress"
+    # and trip close's base-checkout precondition (CAL-1151).
+    monkeypatch.setattr(
+        close_mod, "run_git", _recorder(calls, on={"rev-parse": _ok(returncode=1)})
+    )
 
     close_mod._merge_and_push(
         repo_root=Path("/repo"), base_branch="dev", worktree_branch="harness/x"
@@ -147,8 +153,9 @@ def test_close_fetch_and_push_pass_network_timeout(
     push = [t for a, t in calls if a[:2] == ("push", "origin")]
     assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
-    # Local git in the same flow (checkout, the two merges) carries no timeout.
-    local = [t for a, t in calls if a[0] in {"checkout", "merge"}]
+    # Local git in the same flow — checkout, the two merges, and the base-checkout
+    # precondition's rev-parse/status probes — carries no timeout.
+    local = [t for a, t in calls if a[0] in {"checkout", "merge", "rev-parse", "status"}]
     assert local and all(t is None for t in local)
 
 
