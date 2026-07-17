@@ -19,7 +19,74 @@
 # Override the image with HARNESS_IMAGE=harness:some-tag harness start ...
 set -euo pipefail
 
-IMAGE="${HARNESS_IMAGE:-harness:dev}"
+DEFAULT_IMAGE="harness:dev"
+IMAGE="${HARNESS_IMAGE:-$DEFAULT_IMAGE}"
+
+# Image-staleness guard (CAL-1144). Nothing rebuilds the image after a merge to
+# `dev`, so a verb that ships is invisible to the next unattended tick: the loop
+# sees only `No such command '<verb>'` and diagnoses missing code rather than a
+# stale image. That happened for real with the `defer` verb (CAL-1143). The check
+# lives here because the wrapper is the one component every verb goes through —
+# `doctor` is not run every tick, which is the failure mode being fixed.
+#
+# When the source is newer than the image we rebuild rather than refuse: the loop
+# is unattended, and a hard error would trade a silent stale image for a queue
+# that wedges every hour until a human rebuilds. The rebuild fires only when the
+# source actually moved — once per merge, against a warm layer cache — never per
+# invocation, which would be unaffordable (a cold --no-cache build costs ~165s).
+#
+# Everything below writes to STDERR: stdout carries the verbs' JSON contract,
+# which the orchestrating loop parses.
+
+# The versioned wrapper lives at <repo>/docker/harness-wrapper.sh and is symlinked
+# onto PATH, so its own resolved location — not $(pwd) — identifies the source to
+# compare against. $(pwd) is the *target* repo, which is frequently not this one.
+_wrapper_source_root() {
+  local src="${BASH_SOURCE[0]}"
+  local dir
+  while [[ -L "$src" ]]; do
+    dir=$(cd -P "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    if [[ "$src" != /* ]]; then src="$dir/$src"; fi
+  done
+  (cd -P "$(dirname "$src")/.." && pwd)
+}
+
+# `docker image inspect` reports RFC3339 UTC with nanoseconds; git `%ct` reports
+# epoch seconds. Normalise to epoch so neither timezone nor precision can skew
+# the comparison (`stat -f %SB` prints local time — do not reach for it).
+_rfc3339_to_epoch() {
+  python3 -c '
+import datetime, re, sys
+s = sys.argv[1].strip().replace("Z", "+00:00")
+s = re.sub(r"\.(\d{6})\d+", r".\1", s)
+print(int(datetime.datetime.fromisoformat(s).timestamp()))
+' "$1" 2>/dev/null
+}
+
+# Only guard the default tag. An explicit HARNESS_IMAGE is the caller's to
+# manage: rebuilding a deliberately-pinned tag off this tree would clobber it.
+if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
+  _source_root=$(_wrapper_source_root)
+  _image_created=$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null || true)
+  _source_committed=$(git -C "$_source_root" log -1 --format=%ct -- harness/ 2>/dev/null || true)
+  # Both signals absent = nothing to compare (no image yet, or the wrapper was
+  # copied out of its checkout against advice). Stay a no-op and let the verb run.
+  if [[ -n "$_image_created" && -n "$_source_committed" ]]; then
+    _image_epoch=$(_rfc3339_to_epoch "$_image_created" || true)
+    if [[ -n "${_image_epoch:-}" && "$_source_committed" -gt "$_image_epoch" ]]; then
+      echo "harness: $IMAGE is stale — harness/ has moved since the image was built ($_image_created)." >&2
+      echo "harness: rebuilding it now (docker build -t $IMAGE -f docker/Dockerfile . in $_source_root)" >&2
+      if ! docker build -t "$IMAGE" -f "$_source_root/docker/Dockerfile" "$_source_root" >&2; then
+        echo "harness: rebuild FAILED — refusing to run a stale $IMAGE." >&2
+        echo "harness: a verb that shipped since $_image_created would be missing from it," >&2
+        echo "harness: surfacing as \"No such command\". Fix the build, or rebuild by hand:" >&2
+        echo "harness:   docker build -t $IMAGE -f docker/Dockerfile ." >&2
+        exit 1
+      fi
+    fi
+  fi
+fi
 
 # Pull LINEAR_API_KEY from the shell or a local .env file.
 if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
