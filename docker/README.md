@@ -201,7 +201,12 @@ directory with no flags or env-var setup.
   rebuild that fails exits non-zero rather than falling through to the stale
   image, and all of its output goes to **stderr** so the verbs' JSON contract on
   stdout stays parseable. An explicit `HARNESS_IMAGE` is never rebuilt: a pinned
-  tag is the caller's to manage.
+  tag is the caller's to manage. The guard needs a source tree to compare
+  against, so it runs only from a **symlinked** install; a **copied** wrapper
+  (see [Copy](#installation) below) resolves outside any checkout, and once an
+  image exists it warns once on stderr — naming the detached-copy cause and the
+  symlink remedy — then runs the verb unguarded rather than failing (CAL-1153).
+  Symlink the wrapper to arm the guard.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
