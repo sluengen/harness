@@ -2,7 +2,7 @@
 name: engineering-principles
 description: Use when designing or changing any code — the durable principles every change is measured against (simplicity over cleverness, smallest change, no premature abstraction, separation of concerns, errors never swallowed). Load when making a design decision or judging whether a change fits the codebase's standards.
 ---
-<!-- guidance:engineering-principles@0.3.0 -->
+<!-- guidance:engineering-principles@0.4.0 -->
 # Engineering Principles
 
 The durable values every design, change, and review is measured against. The architect designs to them, the developer builds to them, the reviewer reviews against them. When the three load the same principles, "what you build" cannot drift from "what you are judged on."
@@ -26,6 +26,8 @@ These are universal. Each repo extends them with its own principles in `CONTEXT.
 **Design for extension, not speculation.** Leave room to add, but do not build the addition until it is asked for. Speculative generality ages worse than a focused solution you replace later.
 
 **Atomic, reversible increments.** Every commit leaves the project working. A change you cannot revert in one step is too big. Small steps are how you stay able to back out.
+
+**Tests own the state they mutate.** Real infrastructure is the right call, but the suite provisions its own instance and disposes of it at teardown — it never borrows state that outlives the run. A suite pointed at a shared database or a live account eventually destroys work that mattered, and until it does it accretes cleanup workarounds for the residue it leaves behind. Make the isolation structural; a rule everyone has to remember is the weaker fix.
 
 **Minimal dependencies.** Every dependency is a standing cost: supply chain, upgrade burden, surface area. Each must earn its keep, and one doing two jobs should be split or dropped.
 
