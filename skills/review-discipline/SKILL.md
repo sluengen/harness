@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.5.4 -->
+<!-- guidance:review-discipline@0.6.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -23,6 +23,7 @@ One question: **does the output meet the requirements?**
 4. **Check scope.** Was anything added that was not asked for? Was anything in-scope skipped? (Per `code-quality` Part A.)
 5. **Check intent.** Does it meet the spirit, not just the letter? A technically-compliant solution that misses the point fails.
 6. **For code: verify TDD.** Every acceptance criterion has a test. Tests were written to fail first (the diff and history should show it). Tests are meaningful, not trivially true.
+7. **Check the criteria are current, and any renegotiation is on the ticket.** Review against the acceptance criteria *as they stand on the ticket now* — not a remembered earlier version. A builder who found a criterion wrong mid-build must have renegotiated it *on the Linear issue* (comment with the evidence, amend the criterion there — `spec-authoring`), and you flag that amendment in the review report. A criterion renegotiated only in a commit body or PR description — never amended on the ticket — is a Stage 1 **FAIL** even when the engineering call is right: the canonical record is the ticket, so a Done ticket whose current criteria the diff did not meet is a false record, regardless of how sound the reasoning buried in the commit was. (A raw file-size criterion is itself a Stage 1 gap — `spec-authoring` forbids it; the structural outcome is what the spec should state.)
 
 **If Stage 1 fails, stop.** Report what is missing. Issue a FAIL. Do not review quality.
 
