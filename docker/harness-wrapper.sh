@@ -70,8 +70,15 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   _source_root=$(_wrapper_source_root)
   _image_created=$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null || true)
   _source_committed=$(git -C "$_source_root" log -1 --format=%ct -- harness/ 2>/dev/null || true)
-  # Both signals absent = nothing to compare (no image yet, or the wrapper was
-  # copied out of its checkout against advice). Stay a no-op and let the verb run.
+  # Three cases, split so the middle one is reachable (CAL-1153):
+  #   image + source present -> compare, and rebuild if stale (below).
+  #   image present, source absent -> this wrapper is a detached COPY, not a
+  #     symlink into its checkout, so there is no source tree to compare the
+  #     image against and the guard cannot run. Warn once — do not fail: the verb
+  #     still works, and refusing would break a working deployment for a guard
+  #     that is only a convenience.
+  #   image absent -> nothing to guard yet (about to build, or fails on its own
+  #     terms). Stay a silent no-op.
   if [[ -n "$_image_created" && -n "$_source_committed" ]]; then
     _image_epoch=$(_rfc3339_to_epoch "$_image_created" || true)
     if [[ -n "${_image_epoch:-}" && "$_source_committed" -gt "$_image_epoch" ]]; then
@@ -85,6 +92,9 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
         exit 1
       fi
     fi
+  elif [[ -n "$_image_created" && -z "$_source_committed" ]]; then
+    echo "harness: image-freshness guard disabled — this wrapper is a detached copy, not a symlink into its checkout, so $IMAGE cannot be checked against its source and a stale image would run unguarded." >&2
+    echo "harness: symlink it to restore the guard (see docker/README.md): ln -sf <repo>/docker/harness-wrapper.sh \"\$(command -v harness)\"" >&2
   fi
 fi
 

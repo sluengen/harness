@@ -209,3 +209,160 @@ def test_overridden_image_is_left_alone(tmp_path: Path) -> None:
     )
     assert "docker run" in calls
     assert result.returncode == 0
+
+
+# --- The detached-copy deployment (CAL-1153) --------------------------------
+#
+# The guard resolves its source root from the wrapper's own location and asks
+# git for ``harness/``'s last-commit time there. A wrapper **symlinked** onto
+# PATH resolves to its real checkout, so the guard runs; a wrapper **copied**
+# onto PATH resolves outside any checkout, git returns nothing, and the guard
+# has no tree to compare against. That second deployment is the one in real use,
+# and the tests above never exercise it — they run the wrapper straight from the
+# checkout with a git stub that answers unconditionally.
+#
+# These tests reproduce the distinction faithfully with a **repo-aware** git
+# stub: like real ``git -C <dir> log``, it answers only when ``<dir>`` is a
+# checkout (has a ``.git``) and fails otherwise. So whether ``_source_committed``
+# comes back populated turns on where the executed wrapper physically lives,
+# exactly as it does in production — not on a stub flag.
+_GIT_STUB_REPO_AWARE = """#!/usr/bin/env bash
+echo "git $*" >> "$STUB_LOG"
+_cdir="."
+_prev=""
+for a in "$@"; do
+  if [[ "$_prev" == "-C" ]]; then _cdir="$a"; fi
+  _prev="$a"
+done
+for a in "$@"; do
+  if [[ "$a" == "log" ]]; then
+    if [[ -e "$_cdir/.git" ]]; then echo "${STUB_SOURCE_EPOCH:-0}"; exit 0; fi
+    echo "fatal: not a git repository" >&2; exit 128
+  fi
+  if [[ "$a" == "config" ]]; then echo "Test User"; exit 0; fi
+done
+exit 0
+"""
+
+
+def _run_exe(
+    exe: Path, cwd: Path, tmp_path: Path, **stub_env: str
+) -> subprocess.CompletedProcess[str]:
+    """Run an arbitrary wrapper ``exe`` (a copy or a symlink) with a repo-aware
+    git stub, from working directory ``cwd``. Mirrors ``_run_wrapper`` but lets
+    the caller place the executed wrapper where it likes, so its resolved source
+    root — checkout or not — is what the guard actually sees."""
+    stub_bin = tmp_path / "bin"
+    stub_bin.mkdir(parents=True, exist_ok=True)
+    for name, body in (("docker", _DOCKER_STUB), ("git", _GIT_STUB_REPO_AWARE)):
+        path = stub_bin / name
+        path.write_text(body)
+        path.chmod(0o755)
+
+    log = tmp_path / "calls.log"
+    log.write_text("")
+
+    env = dict(os.environ)
+    env.pop("SSH_AUTH_SOCK", None)
+    env.update(
+        {
+            "PATH": f"{stub_bin}:{env['PATH']}",
+            "STUB_LOG": str(log),
+            "CLAUDE_CODE_OAUTH_TOKEN": "test-token",
+            **stub_env,
+        }
+    )
+    result = subprocess.run(
+        [str(exe), "start", "CAL-1"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        env=env,
+    )
+    result.calls = log.read_text()  # type: ignore[attr-defined]
+    return result
+
+
+def _detached_copy(tmp_path: Path) -> Path:
+    """Copy the real wrapper to a path whose parent is not a git checkout, the
+    way ``~/bin/harness`` is a copy under ``~`` rather than a symlink into the
+    repo. ``tmp_path/detached/`` has no ``.git``, so the guard's source root
+    resolves outside any checkout."""
+    detached = tmp_path / "detached"
+    detached.mkdir(parents=True, exist_ok=True)
+    dest = detached / "harness"
+    dest.write_bytes(WRAPPER.read_bytes())
+    dest.chmod(0o755)
+    return dest
+
+
+def test_detached_copy_with_image_warns_and_still_runs_the_verb(
+    tmp_path: Path,
+) -> None:
+    """AC1/AC3: a copied wrapper cannot compare the image against a source tree.
+    With an image present it must not stay silent — it warns (naming the
+    detached-copy cause and the symlink remedy) and still runs the verb, exit
+    code unchanged. This is the deployment in real use, previously untested."""
+    exe = _detached_copy(tmp_path)
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "docker run" in calls, (
+        f"the verb must still run from a detached copy:\n{calls}"
+    )
+    assert "docker build" not in calls, (
+        f"the guard cannot run without a source tree — it must not rebuild:\n{calls}"
+    )
+    assert result.returncode == 0, "a detached copy must not change the exit code"
+    err = result.stderr.lower()
+    assert "detached copy" in err, (
+        f"the warning must name the detached-copy cause:\n{result.stderr}"
+    )
+    assert "symlink" in err, (
+        f"the warning must point at the symlink remedy:\n{result.stderr}"
+    )
+    assert result.stdout.strip() == "", (
+        f"the warning must not write to stdout (it carries JSON):\n{result.stdout}"
+    )
+
+
+def test_detached_copy_with_no_image_is_silent(tmp_path: Path) -> None:
+    """AC2: with no image there is nothing to guard — a detached copy stays a
+    silent no-op, exactly as before. The warning is about an *unguarded image*,
+    not about being a copy per se."""
+    exe = _detached_copy(tmp_path)
+    result = _run_exe(exe, tmp_path, tmp_path)  # STUB_IMAGE_CREATED unset -> no image
+
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "docker build" not in calls, f"no image -> no rebuild:\n{calls}"
+    assert "docker run" in calls, f"the verb must still run:\n{calls}"
+    assert "detached copy" not in result.stderr.lower(), (
+        f"no image -> nothing to guard -> no warning:\n{result.stderr}"
+    )
+    assert result.returncode == 0
+
+
+def test_symlinked_wrapper_still_arms_the_guard(tmp_path: Path) -> None:
+    """AC4 (regression): the symlinked deployment must keep working. A symlink
+    into the checkout resolves — via the wrapper's ``readlink`` chain — to the
+    real source root, so the guard runs and a stale image is rebuilt. Proven by
+    the rebuild firing where the detached copy above stayed silent."""
+    link_dir = tmp_path / "link"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    exe = link_dir / "harness"
+    exe.symlink_to(WRAPPER)
+
+    result = _run_exe(
+        exe,
+        tmp_path,
+        tmp_path,
+        STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339,
+        STUB_SOURCE_EPOCH=str(IMAGE_INSTANT_EPOCH + ONE_HOUR),
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "docker build" in calls, (
+        f"a symlinked wrapper resolves to its checkout and must arm the guard:\n{calls}"
+    )
+    assert "detached copy" not in result.stderr.lower(), (
+        f"a symlinked wrapper is not a detached copy — no such warning:\n{result.stderr}"
+    )
