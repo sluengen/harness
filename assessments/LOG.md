@@ -47,3 +47,4 @@ findings referenced across the folded reports were confirmed completed/canceled.
 - 2026-07-02 · code · tree healthy; loop-hardening well-built, the breaker decision extracted to a pure unit-tested module · findings: CAL-866 (Low), resolved
 - 2026-07-06 · code · tree healthy; incremental pass, no new findings; two minimal production deltas (CAL-935, CAL-941) · findings: none new (prior CAL-935/937/941/979 all closed)
 - 2026-07-17 · code · tree healthy; 07-15 backlog fully drained (CODE-1/2/INSIGHT-2 fixed at root), gate green at `d484116` · findings: none new
+- 2026-07-18 · code · tree clean; CAL-1151 (unsafe-base-checkout refusal) + CAL-1158 (staging direct-push) landed sound, gate green at `1b4a12f` (1955 tests) · findings: none new
