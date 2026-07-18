@@ -143,7 +143,9 @@ def test_green_staging_promotion_pushes_staging_and_opens_no_pr(
     without a human, so ``create_pull_request`` must never be called.
     """
     _advance(work, "dev", "feature.txt", "shipped\n", "CAL-1158: add feature on dev")
-    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    started = json.loads(
+        _start(work, "--from", "dev", "--to", "staging", "--gate-exit", "0").output
+    )
     assert started["status"] == "pr_ready", started
     gated_sha = str(started["gated_sha"])
 
@@ -176,7 +178,10 @@ def test_red_gate_staging_promotion_does_not_push_staging(
     _advance(work, "dev", "feature.txt", "broken\n", "CAL-1158: add failing feature")
     staging_before = _git(work, "rev-parse", "origin/staging").strip()
 
-    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    # The caller's host-side gate went red — reported via --gate-exit 1.
+    started = json.loads(
+        _start(work, "--from", "dev", "--to", "staging", "--gate-exit", "1").output
+    )
     assert started["status"] != "pr_ready", started
     assert started["gated_sha"] is None
 
@@ -204,7 +209,9 @@ def test_green_main_promotion_opens_a_pr_and_never_pushes_main(
     _advance(work, "staging", "feature.txt", "candidate\n", "CAL-1158: stage a feature")
     main_before = _git(work, "rev-parse", "origin/main").strip()
 
-    started = json.loads(_start(work, "--from", "staging", "--to", "main").output)
+    started = json.loads(
+        _start(work, "--from", "staging", "--to", "main", "--gate-exit", "0").output
+    )
     assert started["status"] == "pr_ready", started
     branch = str(started["promotion_branch"])
 

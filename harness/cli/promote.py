@@ -11,20 +11,25 @@ CAL-1113 registered the group and its five subcommands with stable flags;
 CAL-1114 added the **read-path JSON contract** over the promotion ledger
 (:mod:`harness.state.promotions`); CAL-1115 wired the **worktree/merge mechanics**
 for the write-path openers on top of the pure :mod:`harness.promotion` library;
-CAL-1116 now runs the **gate + evidence capture** inside those openers
+CAL-1116 added the gate + evidence step, and **CAL-1159 moved the gate host-side**:
+the verb no longer executes the gate (the ``harness:dev`` image is built
+``--no-dev`` and cannot run a target repo's toolchain — the ``review`` boundary,
+CAL-1082), so the caller runs it in the worktree and reports the result via
+``--gate-exit`` / ``--gate-log``, and the verb *classifies* it
 (:mod:`harness.promotion_gate`):
 
 * ``start`` fetches ``origin``, validates the ``--from`` → ``--to`` pair, creates
   the promotion worktree/branch **from the target**, and attempts the merge. A
   conflict lands the classification (``agent_may_fix`` / ``needs_ticket``) and
-  leaves the worktree resumable; a **clean** merge then runs the verify gate →
-  ``pr_ready`` (green, recording ``gated_sha`` + bounded ``evidence``),
-  ``needs_ticket`` / ``blocked`` (a failed / unrunnable gate), or ``opened`` (no
-  ``verify:`` configured — ungated).
-* ``continue`` resumes an ``agent_may_fix`` promotion after one bounded, in-policy
-  repair: it commits the resolved merge, **re-runs the gate** on it (same mapping;
-  a failed gate has now spent the bounded attempt → ``needs_ticket``), and
-  increments the repair ``attempts`` count.
+  leaves the worktree resumable; a **clean** merge is classified against the
+  caller's reported gate → ``pr_ready`` (green ``--gate-exit 0``, recording
+  ``gated_sha`` + bounded ``evidence``), ``needs_ticket`` (a red gate),
+  ``gate_pending`` (a gate is defined but no evidence supplied — merged, awaiting a
+  host-side gate), or ``opened`` (no ``verify:`` configured — ungated).
+* ``continue`` resumes an ``agent_may_fix`` conflict after one bounded, in-policy
+  repair (commit the resolved merge, spend the attempt) **or** a ``gate_pending``
+  merge (nothing to repair), then classifies the caller's reported gate the same
+  way — a red gate that has spent the bounded repair lands ``needs_ticket``.
 
 CAL-1117 wired ``pr`` — the success finalizer. It enforces two gates (the
 ``pr_ready`` + gated-SHA PR gate, and the CAL-1116 branch-HEAD freshness check) and,
@@ -66,10 +71,10 @@ The five subcommands are the real orchestrator **pause points**:
 * ``escalate`` — the non-success terminal path: file/update a Linear ticket with
   the evidence and mark the promotion ``escalated``.
 
-There is deliberately **no ``verify`` command**: gate execution lives *inside*
-``start`` and ``continue`` (a promotion cannot reach ``pr_ready`` without fresh
-gate evidence), so a standalone ``verify`` would name a step that is never an
-independent pause/resume point.
+There is deliberately **no ``verify`` command**: the gate is not a harness verb at
+all (CAL-1159) — the caller runs it host-side and reports the result to ``start`` /
+``continue`` via ``--gate-exit`` / ``--gate-log``, exactly as the build ``review``
+gate works. A standalone ``verify`` would name a step the harness does not perform.
 """
 
 # size: one cohesive command group — the five promotion-lifecycle subcommands
@@ -102,7 +107,7 @@ from harness.linear import (
     linear_api_key,
 )
 from harness.promotion_escalation import build_escalation_body, build_escalation_title
-from harness.promotion_gate import classify_gate_failure, run_promotion_gate
+from harness.promotion_gate import classify_gate_failure, evidence_from_report
 from harness.promotion_pr import (
     DIRECT_PUSH_TARGET,
     build_pr_body,
@@ -181,43 +186,74 @@ def _refuse(reason: str, message: str, **extra: object) -> NoReturn:
     raise typer.Exit(code=_STUB_EXIT)
 
 
-def _emit_promotion(promotion: Promotion, outcome: mechanics.MergeOutcome) -> None:
+def _emit_promotion(
+    promotion: Promotion, outcome: mechanics.MergeOutcome, **extra: object
+) -> None:
     """Echo the promotion view plus the merge's live ``conflict_files`` list.
 
     ``start`` / ``continue`` return the full :class:`Promotion` state (so an
     orchestrator sees ``status`` / ``merged_sha`` / ``attempts`` directly) with an
     extra ``conflict_files`` key carrying the merge outcome's conflicted paths
-    (empty on a clean merge) — the structured conflict data of AC-2.
+    (empty on a clean merge) — the structured conflict data of AC-2. ``extra``
+    carries any additional write-path markers (e.g. ``reason=no_gate_evidence`` on
+    a ``gate_pending`` result) an orchestrator branches on.
     """
     payload = {
         **json.loads(promotion.model_dump_json()),
         "conflict_files": list(outcome.conflict_files),
+        **extra,
     }
     typer.echo(json.dumps(payload))
 
 
-def _gate_clean_merge(
-    worktree: Path, merged_sha: str | None
+def _classify_gate(
+    worktree: Path,
+    *,
+    merged_sha: str | None,
+    gate_exit: int | None,
+    gate_log: Path | None,
 ) -> tuple[PromotionStatus, str | None, str | None]:
-    """Run the verify gate on a cleanly-merged promotion worktree; map it to state.
+    """Map a cleanly-merged promotion's *reported* gate result to lifecycle state.
 
-    Returns ``(status, gated_sha, evidence)`` for a clean merge whose HEAD is
-    ``merged_sha`` (CAL-1116). The gate command is read from the *worktree's*
-    ``CONTEXT.md`` (the merged tree gates itself). The mapping:
+    The gate runs **host-side, in the caller's session** — the verb never executes
+    it (CAL-1159, the ``review`` boundary). This reads whether the merged tree
+    *defines* a gate (from the worktree's ``CONTEXT.md``) and classifies the
+    evidence the caller supplied via ``--gate-exit``/``--gate-log``. Returns
+    ``(status, gated_sha, evidence)`` for a clean merge whose HEAD is
+    ``merged_sha``:
 
     * no ``verify:`` configured → ``opened`` (ungated; cannot advance to
       ``pr_ready`` without evidence — the review/close ``not_configured`` posture);
-    * green → ``pr_ready`` with ``gated_sha = merged_sha`` and bounded evidence;
-    * red / unrunnable → :func:`~harness.promotion_gate.classify_gate_failure`
-      (``needs_ticket`` / ``blocked``) with bounded evidence and no gated SHA.
+    * a gate is defined but no evidence supplied (``gate_exit is None``) →
+      ``gate_pending``: the merge is done and the worktree waits to be gated
+      host-side (AC-1). Silence is not a pass;
+    * green (``--gate-exit 0``) → ``pr_ready`` with ``gated_sha = merged_sha`` and
+      bounded evidence drawn from the supplied log (AC-2);
+    * red (non-zero ``--gate-exit``) →
+      :func:`~harness.promotion_gate.classify_gate_failure` (``needs_ticket``)
+      with bounded evidence and no gated SHA (AC-3).
     """
     command = load_gate_command(worktree)
     if command is None:
         return "opened", None, None
-    evidence = run_promotion_gate(worktree, command=command)
+    if gate_exit is None:
+        return "gate_pending", None, None
+    evidence = evidence_from_report(command, gate_exit=gate_exit, gate_log=gate_log)
     if evidence.passed:
         return "pr_ready", merged_sha, evidence.evidence
     return classify_gate_failure(evidence), None, evidence.evidence  # type: ignore[return-value]
+
+
+def _gate_pending_marker(status: PromotionStatus) -> dict[str, object]:
+    """The ``no_gate_evidence`` marker to emit when a merge rests at ``gate_pending``.
+
+    ``gate_pending`` is a legitimate pause point (like ``agent_may_fix``), not a
+    refusal — the merge succeeded and the worktree is preserved to be gated. The
+    machine-readable ``reason`` tells the orchestrator *why* it did not advance to
+    ``pr_ready``: no gate evidence was supplied, so run the gate and resume via
+    ``continue --gate-exit``. Any other status emits no marker.
+    """
+    return {"reason": "no_gate_evidence"} if status == "gate_pending" else {}
 
 
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
@@ -230,6 +266,18 @@ def start_command(
     ),
     to_branch: str = typer.Option(
         "staging", "--to", help="Target branch to promote into (default: staging)."
+    ),
+    gate_exit: int | None = typer.Option(
+        None,
+        "--gate-exit",
+        help="Exit code of the caller's host-side verify gate on the merged tree "
+        "(CAL-1159). Omit to leave a gated repo at 'gate_pending' for the caller to "
+        "gate and resume via 'continue'.",
+    ),
+    gate_log: Path | None = typer.Option(
+        None,
+        "--gate-log",
+        help="Path to the gate's captured output; a bounded tail is recorded as evidence.",
     ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
@@ -273,13 +321,17 @@ def start_command(
         teardown_worktree(repo_root, worktree_path=worktree, branch=branch_name)
         _refuse(exc.reason, str(exc), command="promote start")
 
-    # 4. Record the promotion. A clean merge runs the gate (CAL-1116) → `pr_ready`
-    #    (green, with a gated SHA), `needs_ticket`/`blocked` (failed), or `opened`
-    #    (no gate configured); a conflict carries its merge classification.
+    # 4. Record the promotion. A clean merge is classified against the caller's
+    #    reported gate (CAL-1159) → `pr_ready` (green, with a gated SHA),
+    #    `needs_ticket` (red), `gate_pending` (a gate is defined but no evidence was
+    #    supplied — merged, awaiting a host-side gate), or `opened` (no gate
+    #    configured); a conflict carries its merge classification.
     now = iso_z()
     status: PromotionStatus
     if outcome.clean:
-        status, gated_sha, evidence = _gate_clean_merge(worktree, outcome.merged_sha)
+        status, gated_sha, evidence = _classify_gate(
+            worktree, merged_sha=outcome.merged_sha, gate_exit=gate_exit, gate_log=gate_log
+        )
     else:
         # A conflict's classification is always a PromotionStatus (agent_may_fix /
         # needs_ticket); typed str|None on MergeOutcome, narrowed here.
@@ -301,7 +353,14 @@ def start_command(
         attempts=0,
     )
     asyncio.run(promotions.insert_promotion(promotion, db_path=db_path))
-    _emit_promotion(promotion, outcome)
+    _emit_promotion(promotion, outcome, **_gate_pending_marker(status))
+
+
+#: The promotion states ``continue`` can resume. ``agent_may_fix`` — a merge
+#: conflict awaiting one bounded repair; ``gate_pending`` — a clean merge awaiting
+#: the caller's host-side gate evidence (CAL-1159). A clean ``opened`` merge has
+#: nothing to continue and ``needs_ticket`` must escalate.
+_RESUMABLE_STATUSES: frozenset[str] = frozenset({"agent_may_fix", "gate_pending"})
 
 
 @promote_app.command("continue", help="Resume a promotion after one bounded repair.")
@@ -312,6 +371,17 @@ def continue_command(
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repo root of the open promotion."
     ),
+    gate_exit: int | None = typer.Option(
+        None,
+        "--gate-exit",
+        help="Exit code of the caller's host-side verify gate on the resolved/merged "
+        "tree (CAL-1159). Omit to leave a gated repo at 'gate_pending'.",
+    ),
+    gate_log: Path | None = typer.Option(
+        None,
+        "--gate-log",
+        help="Path to the gate's captured output; a bounded tail is recorded as evidence.",
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
     ),
@@ -319,7 +389,16 @@ def continue_command(
         True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Resume an ``agent_may_fix`` promotion after a bounded repair (CAL-1115)."""
+    """Resume a promotion: complete a bounded repair, or classify a supplied gate.
+
+    Two states resume here (CAL-1115, CAL-1159). An ``agent_may_fix`` conflict is
+    completed (the one bounded repair, attempt counted) and then classified against
+    the caller's gate evidence — the staged resolution *is* the merged tree, so a
+    gate the caller ran on it is valid. A ``gate_pending`` merge is already
+    committed; ``continue`` only classifies the gate the caller has since run.
+    Either way the gate runs host-side and is reported via ``--gate-exit`` /
+    ``--gate-log`` (the ``review`` boundary), never executed by the verb.
+    """
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
@@ -335,13 +414,11 @@ def continue_command(
         )
         raise typer.Exit(code=_STUB_EXIT)
 
-    # Only a conflict awaiting repair (`agent_may_fix`) is resumable: a clean
-    # `opened` merge has nothing to continue, and `needs_ticket` must escalate.
-    if promotion.status != "agent_may_fix":
+    if promotion.status not in _RESUMABLE_STATUSES:
         _refuse(
             "not_resumable",
-            f"promotion {promotion_id} is {promotion.status!r}, not 'agent_may_fix' — "
-            "only a conflict awaiting repair can be continued",
+            f"promotion {promotion_id} is {promotion.status!r}, not one of "
+            f"{sorted(_RESUMABLE_STATUSES)} — nothing to continue",
             command="promote continue",
             promotion_id=promotion_id,
             status=promotion.status,
@@ -358,36 +435,48 @@ def continue_command(
 
     worktree = Path(promotion.worktree_path)
 
-    # Complete the repaired merge — refuses `dirty_worktree` (with the still-
-    # unresolved files) if the orchestrator's repair left any conflict unstaged.
-    try:
-        outcome = mechanics.complete_merge(worktree)
-    except mechanics.PromotionMechanicsError as exc:
-        _refuse(
-            exc.reason,
-            str(exc),
-            command="promote continue",
-            promotion_id=promotion_id,
-            conflict_files=list(mechanics.conflicted_files(worktree)),
-        )
+    if promotion.status == "agent_may_fix":
+        # Complete the repaired merge — refuses `dirty_worktree` (with the still-
+        # unresolved files) if the orchestrator's repair left any conflict unstaged.
+        # The bounded attempt (ADR 0003) is spent here, whatever the gate then says.
+        try:
+            outcome = mechanics.complete_merge(worktree)
+        except mechanics.PromotionMechanicsError as exc:
+            _refuse(
+                exc.reason,
+                str(exc),
+                command="promote continue",
+                promotion_id=promotion_id,
+                conflict_files=list(mechanics.conflicted_files(worktree)),
+            )
+        merged_sha = outcome.merged_sha
+        attempts = promotion.attempts + 1
+    else:
+        # `gate_pending`: the merge is already committed (start, or a prior
+        # continue). There is nothing to repair — only the caller's gate to
+        # classify — so no attempt is spent.
+        outcome = mechanics.MergeOutcome(clean=True, merged_sha=promotion.merged_sha)
+        merged_sha = promotion.merged_sha
+        attempts = promotion.attempts
 
-    # Repair accepted: count the attempt (ADR 0003 "one bounded attempt") and run
-    # the gate on the resolved merge (CAL-1116). Green → `pr_ready` with a gated
-    # SHA; a failed gate has now spent the bounded repair → `needs_ticket` /
-    # `blocked`; no gate configured → `opened` (ungated).
-    status, gated_sha, evidence = _gate_clean_merge(worktree, outcome.merged_sha)
+    # Classify against the gate the caller ran host-side. Green → `pr_ready` (gated
+    # SHA == merged HEAD); red → `needs_ticket`; no evidence yet → `gate_pending`
+    # (run the gate and resume); no gate configured → `opened` (ungated).
+    status, gated_sha, evidence = _classify_gate(
+        worktree, merged_sha=merged_sha, gate_exit=gate_exit, gate_log=gate_log
+    )
     updated = promotion.model_copy(
         update={
             "status": status,
-            "merged_sha": outcome.merged_sha,
+            "merged_sha": merged_sha,
             "gated_sha": gated_sha,
             "evidence": evidence,
-            "attempts": promotion.attempts + 1,
+            "attempts": attempts,
             "updated_at": iso_z(),
         }
     )
     asyncio.run(promotions.update_promotion(updated, db_path=db_path))
-    _emit_promotion(updated, outcome)
+    _emit_promotion(updated, outcome, **_gate_pending_marker(status))
 
 
 @promote_app.command("status", help="Report a promotion's lifecycle state (read-only).")

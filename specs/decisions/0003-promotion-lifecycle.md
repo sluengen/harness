@@ -19,7 +19,7 @@ The repo already chose an always-on local loop as the default substrate for auto
 ### Branch topology — universal `dev → staging → main`, `staging` first-class
 
 - **`dev`** is moving integration: feature branches base from it and `close` merges them back into it.
-- **`staging`** is the nightly **stabilized release candidate** — the new first-class branch this ADR adds. Promotion merges `dev` into a promotion candidate branched from `staging`, runs the gate on that candidate, and — only if it is green — advances `staging` to it. The merge happens on the candidate, never on `staging` itself: nothing lands on a target branch until the gate has passed on exactly what would land.
+- **`staging`** is the nightly **stabilized release candidate** — the new first-class branch this ADR adds. Promotion merges `dev` into a promotion candidate branched from `staging`, the gate runs on that candidate (host-side, reported to the harness — CAL-1159, below), and — only if it is green — the harness advances `staging` to it. The merge happens on the candidate, never on `staging` itself: nothing lands on a target branch until the gate has passed on exactly what would land.
 - **`main`** is intentional release: promotion opens a PR `staging → main`.
 
 There is **no interim `dev → main` compatibility path**. The three-tier model is common, understandable, and safer for autonomous promotion. This is recorded as policy in `CONTEXT.md` (`branches:`); the branch-model *code* (`harness/cli/start.py`, `harness/cli/worktrees.py`) still hardcodes `dev`/`main`/`master` today — reading the model from `CONTEXT.md` is separate work (CAL-1106), so this ADR changes policy and docs only, with no runtime behaviour change.
@@ -28,7 +28,8 @@ There is **no interim `dev → main` compatibility path**. The three-tier model 
 
 A promotion row moves through:
 
-- **`opened`** — the promotion row, worktree, and promotion branch exist; the merge has been attempted.
+- **`opened`** — the promotion row, worktree, and promotion branch exist; the merge has been attempted and the repo configures no `verify:` gate (ungated).
+- **`gate_pending`** — the merge was clean and the repo **does** define a `verify:` gate, but no gate evidence has been supplied yet; the worktree waits to be gated host-side (added CAL-1159, below).
 - **`pr_ready`** — the merge was clean and the gate is green; the promotion may publish (land the staging hop, or open the release PR).
 - **`agent_may_fix`** — a small, in-policy conflict or gate failure the orchestrator may repair once (see repair authority).
 - **`needs_ticket`** — the block is real but out of local repair authority; it must become a human-owned Linear ticket.
@@ -40,6 +41,8 @@ A promotion row moves through:
 
 `pr_ready`, `agent_may_fix`, `needs_ticket`, and `blocked` are the **policy classifications** the harness returns from a merge+gate attempt; `promoted`, `pr_opened`, and `escalated` are the terminal paths. The two successes are distinct because the hops finish differently: `promoted` is *done*, while `pr_opened` still waits on a human. A promotion that opened no PR must not record `pr_opened` — the ledger is the audit trail, and it does not round off.
 
+> **Amended 2026-07-18 (CAL-1159) — the gate runs host-side, not in the verb.** As first built (CAL-1116), `start`/`continue` *executed* the merged tree's `verify:` command inside the verb's container. But the `harness:dev` image is built `--no-dev` and cannot carry a target repo's toolchain (no ruff/mypy/pytest) — the same catch-22 that settled the build `review` gate (`code-quality`, "evidence, not execution"): no image can run every ecosystem's gate. In-container the gate returned green having run zero checks, so `pr_ready` was **unreachable through the production wrapper** and the whole success path was dead. The gate now runs **where the toolchain already lives** — the orchestrating session, host-side, in the promotion worktree — and is reported to the verb via `--gate-exit` / `--gate-log`; the verb *classifies* the evidence rather than executing the gate. A clean merge that defines a gate but has no evidence yet rests at the new **`gate_pending`** state (silence is not a pass); green evidence advances it to `pr_ready`, red to `needs_ticket`. This changes *who runs the gate*, not the invariant it protects: a promotion still cannot reach `pr_ready` without fresh gate evidence bound to the merged SHA.
+
 ### Repair authority — one bounded attempt
 
 The orchestrator may repair only small, low-semantic problems, and only **once** before the promotion must escalate:
@@ -47,7 +50,7 @@ The orchestrator may repair only small, low-semantic problems, and only **once**
 - **Allowed:** docs / changelog / generated-summary / spec-prose conflicts; small source conflicts under a configured file/line threshold; obvious formatting or import-order gate failures.
 - **Escalate instead of repair:** schema migrations; auth / payment / security / release / deployment scripts; package-lock conflicts unless a repo opts in; conflicts over the file threshold; a second gate failure after one bounded fix; missing credentials or remote-permission failures; ambiguous branch topology or an unclean base.
 
-After a bounded edit the orchestrator calls `continue`, which re-runs classification and the gate and increments the attempt count. A promotion **cannot become `pr_ready` without fresh gate evidence** — the same evidence discipline the `review`/`close` gate already enforces (`code-quality`).
+After a bounded edit the orchestrator runs the gate on the resolved tree host-side and calls `continue` with the resulting `--gate-exit` / `--gate-log` (CAL-1159), which completes the merge, classifies the evidence, and increments the attempt count. A promotion **cannot become `pr_ready` without fresh gate evidence** — the same evidence discipline the `review`/`close` gate already enforces (`code-quality`).
 
 ### PR authority — the harness creates the release PR; it never auto-merges
 

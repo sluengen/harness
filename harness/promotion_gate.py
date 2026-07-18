@@ -1,57 +1,51 @@
-"""Promotion gate execution + evidence capture — CAL-1116 (ADR 0003).
+"""Promotion gate evidence + classification — CAL-1116, revised by CAL-1159.
 
 Where :mod:`harness.promotion` owns the git half of promotion, this owns the
-**gate** half: run the repo's configured verify command inside the promotion
-worktree, capture *bounded* evidence, and classify a failure so an outer
-orchestrator can branch without ever seeing an unbounded log.
+**gate** half: turn the caller's gate result into *bounded* evidence and classify
+a failure so an outer orchestrator can branch without ever seeing an unbounded
+log.
 
-Unlike the build ``review`` gate — which the orchestrator runs host-side and
-merely *reports* to the verb (:mod:`harness.gate`, "evidence, not execution") —
-promotion **executes** the gate itself. The design difference is deliberate: the
-promotion loop is the local always-on steward (ADR 0001), running where the
-repo's toolchain already lives, so gate execution is deterministic harness work
-the merge+classify step owns rather than a step the orchestrator brokers (ADR
-0003 / the accepted ``local-promotion-steward`` proposal). Gate *config* is still
-read from ``CONTEXT.md`` through the one seam :mod:`harness.gate` already owns
-(:func:`~harness.gate.load_gate_command`), and the evidence is bounded by the
-same :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT` the review gate uses — this
-module adds only the executor and the failure policy.
+CAL-1116 originally had the verb **execute** the gate itself, inside the
+promotion worktree. CAL-1159 retired that: the ``harness:dev`` image is built
+``--no-dev`` and cannot run this repo's ``verify:`` toolchain (no ruff/mypy/pytest),
+so an in-container gate returned green having run zero checks and the promotion
+success path was unreachable through the production wrapper. The gate now runs
+**where the toolchain already lives** — the orchestrating session, host-side, in
+the worktree — and hands the verb its result via ``--gate-exit``/``--gate-log``,
+exactly as the build ``review`` gate does (:mod:`harness.gate`, "evidence, not
+execution"). This module is therefore the *classifier*, not the *executor*: it
+builds :class:`GateEvidence` from the supplied report and maps a non-green result
+to a promotion status. Gate *config* (whether the repo defines a gate at all) is
+still read from ``CONTEXT.md`` through the one seam :mod:`harness.gate` owns
+(:func:`~harness.gate.load_gate_command`); the evidence tail is bounded by the
+same :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT` the review gate uses.
 """
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.gate import GATE_OUTPUT_TAIL_LIMIT
+from harness.gate import read_gate_log_tail
 
 __all__ = [
-    "PROMOTION_GATE_TIMEOUT_SECONDS",
     "GateEvidence",
     "classify_gate_failure",
-    "run_promotion_gate",
+    "evidence_from_report",
 ]
-
-#: Wall-clock ceiling for a single promotion gate run. A gate that has not
-#: finished by here is killed and surfaced as an infrastructure failure
-#: (``exit_code=None`` → ``blocked``) rather than hanging the promotion — the same
-#: shape as the review engine's ``engine_timeout_seconds``. Deliberately generous
-#: (30 min) because a full verify (lint → typecheck → test → smoke) is slower than
-#: a single review subprocess.
-PROMOTION_GATE_TIMEOUT_SECONDS = 1800
 
 
 @dataclass(frozen=True)
 class GateEvidence:
-    """The bounded, machine-readable result of one promotion gate run.
+    """The bounded, machine-readable result of one gate run the caller reported.
 
-    ``exit_code`` is the verify command's exit status, or ``None`` when the gate
-    could not be run to completion at all (a launch error or a timeout) — an
-    *infrastructure* failure distinct from a command that ran and returned
-    non-zero. ``evidence`` is the tail of combined stdout+stderr, capped at
-    :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT`, so the outer orchestrator never
-    receives an unbounded log (AC-4).
+    ``exit_code`` is the verify command's exit status. It is ``None`` only for a
+    gate that could not be run to completion at all (an *infrastructure* failure) —
+    a distinction the caller draws on their side; a supplied ``--gate-exit`` always
+    carries a real status, so ``None`` is the degenerate case a hand-built evidence
+    can still express. ``evidence`` is the bounded tail of the caller's gate log,
+    capped at :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT`, so the outer
+    orchestrator never receives an unbounded log.
     """
 
     command: str
@@ -69,37 +63,22 @@ class GateEvidence:
         return self.exit_code == 0
 
 
-def run_promotion_gate(worktree: Path, *, command: str) -> GateEvidence:
-    """Execute ``command`` in ``worktree`` and return bounded :class:`GateEvidence`.
+def evidence_from_report(
+    command: str, *, gate_exit: int, gate_log: Path | None
+) -> GateEvidence:
+    """Build bounded :class:`GateEvidence` from the caller's reported gate result.
 
-    The command is the repo's own ``verify:`` string from ``CONTEXT.md`` (a
-    trusted, in-repo source), run through the shell so a compound gate
-    (``ruff && mypy && pytest``) works verbatim. A launch error or a timeout maps
-    to ``exit_code=None`` (an infrastructure failure the caller classifies
-    ``blocked``); otherwise the real exit status is recorded. Output is always
-    tail-bounded before it leaves this function.
+    ``gate_exit`` is the exit status the orchestrator's host-side gate run
+    returned (the load-bearing half of the evidence); ``gate_log`` is the optional
+    path to its captured output, read tail-bounded and best-effort — an absent or
+    unreadable log degrades to an empty tail rather than failing, mirroring
+    ``review``'s :func:`~harness.gate.read_gate_log_tail`. ``command`` is the
+    repo's ``verify:`` string, carried only for the record.
     """
-    try:
-        result = subprocess.run(  # noqa: S602 — the gate is the repo's own trusted verify: command
-            command,
-            shell=True,
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-            timeout=PROMOTION_GATE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        # ``text=True`` gives str (or None) streams; join whatever partial output
-        # the killed gate produced (``str(...)`` keeps this total for the checker).
-        partial = str(exc.stdout or "") + str(exc.stderr or "")
-        return GateEvidence(command=command, exit_code=None, evidence=_tail(partial))
-    except OSError as exc:
-        return GateEvidence(
-            command=command, exit_code=None, evidence=_tail(str(exc))
-        )
-    combined = (result.stdout or "") + (result.stderr or "")
     return GateEvidence(
-        command=command, exit_code=result.returncode, evidence=_tail(combined)
+        command=command,
+        exit_code=gate_exit,
+        evidence=read_gate_log_tail(gate_log),
     )
 
 
@@ -118,8 +97,3 @@ def classify_gate_failure(evidence: GateEvidence) -> str:
     if not evidence.launched:
         return "blocked"
     return "needs_ticket"
-
-
-def _tail(text: str) -> str:
-    """The last :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT` characters of ``text``."""
-    return text[-GATE_OUTPUT_TAIL_LIMIT:]
