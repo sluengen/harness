@@ -36,6 +36,26 @@ def engines_live(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor, "_probe_engine", fake_probe)
 
 
+@pytest.fixture
+def wrapper_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``check_wrapper`` to PASS so a CLI-level doctor test states a fact
+    about ``doctor`` rather than about the container the suite runs in (CAL-1149).
+
+    ``check_wrapper`` defaults to ``in_container=Path("/.dockerenv").exists()``,
+    and with no ``HARNESS_WRAPPER_STATUS`` in a *containerized* test run (the
+    review sandbox, CI-in-container) it takes the "in-container, no verdict"
+    branch and FAILs — leaking ambient host/container state into assertions about
+    unrelated checks. This is the same coupling ``engines_live`` fixes for the
+    reviewer probe; pin the wrapper check the same way so exit-code / FAIL-count
+    assertions hold on host and in-container alike.
+    """
+    from harness.cli import doctor
+
+    monkeypatch.setattr(
+        doctor, "check_wrapper", lambda *a, **k: ("PASS", "wrapper pinned (test)")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check-function isolation tests — each check is independently testable
 # ---------------------------------------------------------------------------
@@ -545,7 +565,7 @@ def test_doctor_command_registered_in_app() -> None:
 
 
 def test_doctor_command_exits_zero_on_pass_or_warn(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """With no failures, doctor exits 0.
 
@@ -565,7 +585,7 @@ def test_doctor_command_exits_zero_on_pass_or_warn(
 
 
 def test_doctor_command_exits_one_on_failure(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """A FAILing check must propagate as a non-zero (exit 1) CLI status.
 
@@ -601,7 +621,7 @@ def test_doctor_command_exits_one_on_failure(
 
 
 def test_doctor_command_output_contains_check_labels(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """Output must include the named checks."""
     db = tmp_path / ".harness" / "harness.db"
@@ -620,6 +640,8 @@ def test_doctor_command_output_contains_check_labels(
     assert "git-version" in out
     # The verify-gate config check (CAL-1083) must be wired in too.
     assert "verify" in out
+    # The wrapper-drift check (CAL-1149) must be wired in, not just defined.
+    assert "wrapper" in out
 
 
 def test_doctor_command_fails_when_engine_installed_but_cannot_run(
