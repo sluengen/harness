@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.11.0 -->
+<!-- guidance:code-quality@0.12.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -39,6 +39,10 @@ The build-time application of `engineering-principles`' *smallest change that sa
 ### A removal sweeps for its dependents
 
 A deletion looks finished the moment the code is gone — but it is only half-done if its dependents still point at the removed name. **A removal is not complete until you grep for the removed name — constraint names in exception handlers, feature names in config / testpaths / docs — and delete or update every dependent. The diff of a removal should include its dependents.** What survives otherwise is dead contract: a handler guarding a constraint that no longer exists, a config key for a deleted feature, a doc describing a path that is gone. Grep the name; the diff is the proof the sweep happened.
+
+### An extraction sweeps for its copies
+
+The mirror image of a removal. An extraction is not complete until you grep the whole tree for the extracted pattern — not just the locations the ticket or finding named. A finding's location list is a starting point, not the boundary; it is only ever as wide as the grep that produced it. **Diff every copy you find against the body you are making canonical before you delete it: a copy whose body *differs* is the finding, not the leftover.** A surviving copy with a divergent body is strictly worse than the duplication you set out to remove, because the extraction's green diff now certifies a unification that did not happen.
 
 ### Carry-forward, not silent cleanup
 

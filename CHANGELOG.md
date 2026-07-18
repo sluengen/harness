@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — `code-quality` Part A: an extraction sweeps for its copies (CAL-1172)
+- **`skills/code-quality/SKILL.md` (`code-quality`) 0.11.0 → 0.12.0** (registry **0.5.56 → 0.5.57**). Part A gains *An extraction sweeps for its copies*, the mirror of *A removal sweeps for its dependents*: an extraction is not complete until you grep the whole tree for the pattern (a finding's location list is a starting point, not the boundary), and a copy whose body *differs* is the finding, not the leftover — a surviving divergent copy makes the green diff certify a unification that did not happen. Guidance-source import of nano-erp steward insight CODE-INSIGHT-3.
+
 ### Changed — the feature template demands a production call site per exported entry (CAL-1171)
 - **`templates/feature.md` (`template-feature`) 0.1.1 → 0.2.0** (registry **0.5.55 → 0.5.56**). Interface surface now makes the reviewer name a production caller for each exported entry (a test is not a consumer); an entry with no caller routes to Known limitations ("no consumer yet: adopt or retire by {ticket}") instead of being listed as delivered API — so a framework proven only against a fixture test can't ship provable-but-unconsumed. Guidance-source import of nano-erp steward insight CODE-INSIGHT-2.
 
