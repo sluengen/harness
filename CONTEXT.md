@@ -10,10 +10,10 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix
+  linear: CAL   # team prefix — the tracker address, read only when tracker: linear
   project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
+tracker: linear   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. Replaces the old layers.linear, whose name collided with repo.linear above (CAL-1164)
 layers:
-  linear: true
   design_system: false
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
 stack:
