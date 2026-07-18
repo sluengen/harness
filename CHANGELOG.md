@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Added — `doctor` flags a drifted `~/bin/harness` wrapper (CAL-1149)
+- An 8th `doctor` check, `check_wrapper`, catches a hand-copied `~/bin/harness` that has silently drifted from the versioned `docker/harness-wrapper.sh` — the rot that leaves a shipped wrapper fix (the image-staleness guard, credential-path fixes) inert until someone re-copies by hand. `doctor` runs in-container where the wrapper is unmounted, so the wrapper compares itself host-side (`_wrapper_status`) and forwards a verdict via `HARNESS_WRAPPER_STATUS` (`symlink`→PASS / `copy`→WARN / `drifted`,`detached`→FAIL); when the var is absent, container-presence (`/.dockerenv`) distinguishes a stale pre-check wrapper (FAIL) from a native run with no wrapper on PATH (PASS) — the AC-3 line between a drifted copy and no wrapper at all.
+
 ### Changed — CI runs on `dev`, not only `main` (CAL-1030)
 - `.github/workflows/ci.yml` now triggers `push`/`pull_request` on `[main, dev]` (was `[main]`). The `push: dev` trigger verifies each merged state — including the close verb's direct pushes — so hermetic clean-clone verification and merge-skew detection between concurrently-landed runs arrive at each merge instead of waiting for the release PR. The coverage floor is already enforced in CI (`scripts/verify.sh` runs `pytest --cov-fail-under=90`, pinned by CAL-1015). New `test_ci_workflow_triggers.py` guards the `dev` trigger on both events. Decision by Scott (2026-07-18): enable now on the private repo; the free tier's metered minutes are negligible for a ~30s suite.
 

@@ -36,6 +36,26 @@ def engines_live(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor, "_probe_engine", fake_probe)
 
 
+@pytest.fixture
+def wrapper_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``check_wrapper`` to PASS so a CLI-level doctor test states a fact
+    about ``doctor`` rather than about the container the suite runs in (CAL-1149).
+
+    ``check_wrapper`` defaults to ``in_container=Path("/.dockerenv").exists()``,
+    and with no ``HARNESS_WRAPPER_STATUS`` in a *containerized* test run (the
+    review sandbox, CI-in-container) it takes the "in-container, no verdict"
+    branch and FAILs — leaking ambient host/container state into assertions about
+    unrelated checks. This is the same coupling ``engines_live`` fixes for the
+    reviewer probe; pin the wrapper check the same way so exit-code / FAIL-count
+    assertions hold on host and in-container alike.
+    """
+    from harness.cli import doctor
+
+    monkeypatch.setattr(
+        doctor, "check_wrapper", lambda *a, **k: ("PASS", "wrapper pinned (test)")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check-function isolation tests — each check is independently testable
 # ---------------------------------------------------------------------------
@@ -453,6 +473,86 @@ def test_check_verify_config_warns_when_no_context_md(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# check_wrapper — the on-PATH wrapper must be the versioned source (CAL-1149)
+#
+# ``doctor`` runs in-container, where ``~/bin/harness`` is not mounted, so it
+# cannot read the on-PATH wrapper itself. The wrapper does the comparison
+# host-side (the one place both it and its versioned source are readable) and
+# forwards a verdict as ``HARNESS_WRAPPER_STATUS``; ``check_wrapper`` maps it.
+# A wrapper predating this ticket does not set the var — doctor then reads its
+# own container-presence to distinguish that stale wrapper (in-container → FAIL)
+# from a native run with no wrapper at all (not in-container → PASS). That split
+# is what lets AC-3 tell "drifted copy" from "no wrapper on PATH".
+# ---------------------------------------------------------------------------
+
+
+def test_check_wrapper_passes_on_symlinked_install() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    status, msg = check_wrapper(env={"HARNESS_WRAPPER_STATUS": "symlink"})
+    assert status == "PASS"
+    assert "symlink" in msg.lower()
+
+
+def test_check_wrapper_fails_on_drifted_copy() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    # A copy whose content has already fallen behind the versioned wrapper —
+    # the exact rot this ticket exists to surface. FAIL, and name the remedy.
+    status, msg = check_wrapper(env={"HARNESS_WRAPPER_STATUS": "drifted"})
+    assert status == "FAIL"
+    lower = msg.lower()
+    assert "drift" in lower
+    assert "symlink" in lower  # names the fix (AC-2)
+
+
+def test_check_wrapper_fails_on_detached_copy() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    # A copy outside any checkout (the real ~/bin/harness deployment before the
+    # relink): no source tree to track, guaranteed to rot silently → FAIL.
+    status, msg = check_wrapper(env={"HARNESS_WRAPPER_STATUS": "detached"})
+    assert status == "FAIL"
+    lower = msg.lower()
+    assert "detached" in lower
+    assert "symlink" in lower
+
+
+def test_check_wrapper_warns_on_identical_copy() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    # A copy byte-identical today but not a symlink: not yet drifted, but it will
+    # the moment the repo moves. A WARN, not a hard FAIL.
+    status, msg = check_wrapper(env={"HARNESS_WRAPPER_STATUS": "copy"})
+    assert status == "WARN"
+    assert "copy" in msg.lower()
+
+
+def test_check_wrapper_fails_on_old_wrapper_in_container() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    # No HARNESS_WRAPPER_STATUS but running in-container: a wrapper mediated this
+    # run (only the wrapper starts the container) yet did not self-report, so it
+    # predates this check — a stale copy. FAIL and point at the re-symlink.
+    status, msg = check_wrapper(env={}, in_container=True)
+    assert status == "FAIL"
+    assert "symlink" in msg.lower()
+
+
+def test_check_wrapper_passes_when_no_wrapper_native_run() -> None:
+    from harness.cli.doctor import check_wrapper
+
+    # No HARNESS_WRAPPER_STATUS and NOT in a container: doctor was run natively,
+    # with no Docker wrapper on PATH — there is no wrapper to drift. This is the
+    # third AC-3 state ("a wrapper not on PATH at all"), distinct from a drifted
+    # copy: a PASS, not a FAIL.
+    status, msg = check_wrapper(env={}, in_container=False)
+    assert status == "PASS"
+    lower = msg.lower()
+    assert "native" in lower or "no wrapper" in lower
+
+
+# ---------------------------------------------------------------------------
 # CLI integration — harness doctor command
 # ---------------------------------------------------------------------------
 
@@ -465,7 +565,7 @@ def test_doctor_command_registered_in_app() -> None:
 
 
 def test_doctor_command_exits_zero_on_pass_or_warn(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """With no failures, doctor exits 0.
 
@@ -485,7 +585,7 @@ def test_doctor_command_exits_zero_on_pass_or_warn(
 
 
 def test_doctor_command_exits_one_on_failure(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """A FAILing check must propagate as a non-zero (exit 1) CLI status.
 
@@ -521,7 +621,7 @@ def test_doctor_command_exits_one_on_failure(
 
 
 def test_doctor_command_output_contains_check_labels(
-    tmp_path: Path, engines_live: None
+    tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:
     """Output must include the named checks."""
     db = tmp_path / ".harness" / "harness.db"
@@ -540,6 +640,8 @@ def test_doctor_command_output_contains_check_labels(
     assert "git-version" in out
     # The verify-gate config check (CAL-1083) must be wired in too.
     assert "verify" in out
+    # The wrapper-drift check (CAL-1149) must be wired in, not just defined.
+    assert "wrapper" in out
 
 
 def test_doctor_command_fails_when_engine_installed_but_cannot_run(

@@ -367,6 +367,83 @@ def check_cli(
     return ("FAIL", f"harness version exited {exit_code}")
 
 
+# The one-line remedy the wrapper-drift messages point at.
+_RESYMLINK = (
+    'ln -sf <repo>/docker/harness-wrapper.sh "$(command -v harness)" '
+    "(see docker/README.md)"
+)
+
+
+def check_wrapper(
+    env: dict[str, str] | None = None,
+    in_container: bool | None = None,
+) -> tuple[str, str]:
+    """Pass if the ``harness`` wrapper on ``PATH`` is a symlink to the versioned
+    ``docker/harness-wrapper.sh``; FAIL if it is a drifted or detached copy.
+
+    A hand-copied ``~/bin/harness`` silently rots: a shipped wrapper fix (the
+    image-staleness guard, credential-path fixes) is inert until someone
+    re-copies by hand, and nothing tells them to (CAL-1149). ``doctor`` is the
+    external observer that catches it — the wrapper cannot check itself, since a
+    stale copy would be running the stale check.
+
+    doctor runs *in-container*, where ``~/bin/harness`` is not mounted, so it
+    cannot read the on-PATH wrapper directly. The wrapper does the comparison
+    host-side (the one place both it and its versioned source are readable) and
+    forwards the verdict as ``HARNESS_WRAPPER_STATUS`` — ``symlink`` (a symlink
+    into the checkout), ``copy`` (a byte-identical copy, not yet drifted but it
+    will), ``drifted`` (a copy already behind its source), or ``detached`` (a
+    copy outside any checkout, with no source to track).
+
+    When the variable is **absent**, the wrapper predates this check — or doctor
+    was not run through the wrapper at all. Those two are told apart by
+    container-presence, the signal AC-3 turns on: only the wrapper starts the
+    container, so *in-container with no verdict* is an old wrapper that could not
+    self-report (a stale copy → FAIL), while *not in a container* is a native run
+    with no wrapper on PATH to drift (→ PASS). That is the distinction between a
+    "drifted copy" and "a wrapper not on PATH at all".
+    """
+    if env is None:
+        import os
+
+        env = dict(os.environ)
+    if in_container is None:
+        in_container = Path("/.dockerenv").exists()
+
+    status = env.get("HARNESS_WRAPPER_STATUS")
+    if status == "symlink":
+        return ("PASS", "wrapper on PATH is symlinked to docker/harness-wrapper.sh")
+    if status == "copy":
+        return (
+            "WARN",
+            "wrapper on PATH is a copy, not a symlink — it will drift as the repo "
+            f"moves; re-symlink: {_RESYMLINK}",
+        )
+    if status == "drifted":
+        return (
+            "FAIL",
+            "wrapper on PATH has drifted from docker/harness-wrapper.sh — shipped "
+            f"wrapper fixes are not running; re-symlink: {_RESYMLINK}",
+        )
+    if status == "detached":
+        return (
+            "FAIL",
+            "wrapper on PATH is a detached copy outside any checkout — it silently "
+            f"rots as fixes ship; re-symlink: {_RESYMLINK}",
+        )
+    # No verdict forwarded.
+    if in_container:
+        return (
+            "FAIL",
+            "wrapper on PATH predates the drift check (CAL-1149) and did not "
+            f"self-report — it is a stale copy; re-symlink: {_RESYMLINK}",
+        )
+    return (
+        "PASS",
+        "not run via the Docker wrapper (native install) — no wrapper on PATH to check",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
@@ -393,6 +470,7 @@ def doctor_command(
         ("reviewer", check_reviewer()),
         ("verify", check_verify_config()),
         ("cli", check_cli()),
+        ("wrapper", check_wrapper()),
     ]
 
     any_fail = False

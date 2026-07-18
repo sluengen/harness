@@ -366,3 +366,87 @@ def test_symlinked_wrapper_still_arms_the_guard(tmp_path: Path) -> None:
     assert "detached copy" not in result.stderr.lower(), (
         f"a symlinked wrapper is not a detached copy — no such warning:\n{result.stderr}"
     )
+
+
+# --- The wrapper-drift status forwarded to doctor (CAL-1149) -----------------
+#
+# ``doctor`` runs in-container and cannot read the on-PATH ``~/bin/harness``
+# (host-only, never mounted). The wrapper is the one place both the invoked
+# wrapper and its versioned source are readable, so it computes the drift
+# verdict host-side and forwards it as ``HARNESS_WRAPPER_STATUS`` on the
+# ``docker run`` line; ``check_wrapper`` maps it to PASS/WARN/FAIL. These tests
+# execute the real wrapper and assert the verdict it forwards for each
+# deployment, the same repo-aware way the freshness tests above do.
+
+
+def test_symlinked_wrapper_forwards_symlink_status(tmp_path: Path) -> None:
+    """A symlink into the checkout resolves to the versioned source, so the
+    wrapper forwards ``HARNESS_WRAPPER_STATUS=symlink`` — the PASS state."""
+    link_dir = tmp_path / "link"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    exe = link_dir / "harness"
+    exe.symlink_to(WRAPPER)
+
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=symlink" in calls, (
+        f"a symlinked wrapper must forward the symlink status:\n{calls}"
+    )
+
+
+def test_detached_copy_forwards_detached_status(tmp_path: Path) -> None:
+    """A copy under a directory that is not a checkout has no versioned source to
+    compare against, so the wrapper forwards ``HARNESS_WRAPPER_STATUS=detached``
+    — the FAIL state doctor reports. This is the ~/bin/harness deployment the
+    ticket exists to catch."""
+    exe = _detached_copy(tmp_path)
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=detached" in calls, (
+        f"a detached copy must forward the detached status:\n{calls}"
+    )
+
+
+def _copy_in_checkout(tmp_path: Path, *, drift: bool) -> Path:
+    """A wrapper copied *into* a checkout's ``docker/`` dir (not a symlink). Its
+    source root resolves to a directory that DOES contain a versioned
+    ``harness-wrapper.sh``, so the status turns on ``cmp``: byte-identical →
+    ``copy``, differing → ``drifted``. The invoked file is always the real
+    wrapper (so it runs); only the versioned sibling is perturbed for the drift
+    case, exercising the bash ``cmp -s`` / path-resolution logic itself."""
+    docker_dir = tmp_path / "repo" / "docker"
+    docker_dir.mkdir(parents=True, exist_ok=True)
+    body = WRAPPER.read_bytes()
+    # The versioned sibling the status compares against; a hair different for the
+    # drift case so the invoked copy no longer matches it.
+    (docker_dir / "harness-wrapper.sh").write_bytes(
+        body + (b"\n# a change the on-PATH copy has not picked up\n" if drift else b"")
+    )
+    exe = docker_dir / "harness"
+    exe.write_bytes(body)
+    exe.chmod(0o755)
+    return exe
+
+
+def test_identical_copy_in_checkout_forwards_copy_status(tmp_path: Path) -> None:
+    """A copy byte-identical to its versioned sibling forwards
+    ``HARNESS_WRAPPER_STATUS=copy`` — the WARN state (not yet drifted, but it
+    will). Exercises the wrapper's own ``cmp -s`` equal branch."""
+    exe = _copy_in_checkout(tmp_path, drift=False)
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=copy" in calls, (
+        f"a byte-identical copy must forward the copy status:\n{calls}"
+    )
+
+
+def test_drifted_copy_in_checkout_forwards_drifted_status(tmp_path: Path) -> None:
+    """A copy whose content has fallen behind its versioned sibling forwards
+    ``HARNESS_WRAPPER_STATUS=drifted`` — the FAIL state doctor reports, and the
+    case AC-4 names. Exercises the wrapper's own ``cmp -s`` differing branch."""
+    exe = _copy_in_checkout(tmp_path, drift=True)
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=drifted" in calls, (
+        f"a drifted copy must forward the drifted status:\n{calls}"
+    )

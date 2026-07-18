@@ -52,6 +52,33 @@ _wrapper_source_root() {
   (cd -P "$(dirname "$src")/.." && pwd)
 }
 
+# Wrapper-drift status (CAL-1149). `doctor` runs in-container and cannot read the
+# on-PATH wrapper (`~/bin/harness` is host-only, never mounted), so here — where
+# both the invoked wrapper and its versioned source are readable — is the only
+# place the comparison can be made. Compute the verdict and forward it as
+# HARNESS_WRAPPER_STATUS; `check_wrapper` surfaces it. A wrapper predating this
+# does not set the var, and doctor uses its own container-presence to tell that
+# stale wrapper from a native run with no wrapper at all. Emits one of:
+#   symlink  — a symlink into the checkout; stays in lockstep on `git pull`
+#   copy     — a byte-identical copy today, but it will silently rot
+#   drifted  — a copy that has already fallen behind its versioned source
+#   detached — a copy outside any checkout; no source tree to track (the real
+#              ~/bin/harness deployment this ticket exists to catch)
+_wrapper_status() {
+  local invoked="${BASH_SOURCE[0]}"
+  local versioned
+  versioned="$(_wrapper_source_root)/docker/harness-wrapper.sh"
+  if [[ ! -f "$versioned" ]]; then
+    echo detached
+  elif [[ -L "$invoked" ]]; then
+    echo symlink
+  elif cmp -s "$invoked" "$versioned"; then
+    echo copy
+  else
+    echo drifted
+  fi
+}
+
 # `docker image inspect` reports RFC3339 UTC with nanoseconds; git `%ct` reports
 # epoch seconds. Normalise to epoch so neither timezone nor precision can skew
 # the comparison (`stat -f %SB` prints local time — do not reach for it).
@@ -185,6 +212,7 @@ exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
+  -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
   -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
