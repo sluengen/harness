@@ -68,7 +68,7 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
-from harness.layers import linear_enabled
+from harness.layers import linear_enabled, tracker_config_error
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -202,10 +202,16 @@ async def _run_start(
     db_path: Path,
 ) -> StartOutput:
     """Drive the full start flow; raise :class:`_StartError` on any failure."""
-    # 0. Read the tracker layer (CAL-1104). With ``layers.linear: false`` the
-    # repo has no tracker, so steps 1–3 have nothing to talk to: the argument is
-    # an opaque run identifier rather than a ticket to fetch. The layer defaults
-    # on, so a repo that has not opted out is unaffected.
+    # 0. Read the tracker switch (CAL-1104, CAL-1164). ``tracker: none`` (or the
+    # ``layers.linear: false`` back-compat) means the repo has no tracker, so
+    # steps 1–3 have nothing to talk to: the argument is an opaque run identifier
+    # rather than a ticket to fetch. The switch defaults on, so a repo that has
+    # not opted out is unaffected. First reject an incoherent switch/address pair
+    # up front, before any key check or side effect — a run must not start on a
+    # config that contradicts itself.
+    config_error = tracker_config_error(repo_root)
+    if config_error is not None:
+        raise _StartError(config_error, 2)
     tracker = linear_enabled(repo_root)
 
     client: LinearClient | None = None

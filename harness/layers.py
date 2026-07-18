@@ -162,18 +162,25 @@ def tracker_config_error(repo_root: Path) -> str | None:
       the exact second-source-of-truth this ticket removes.
 
     ``github`` is not checked here: its backend and config are out of scope
-    (CAL-1105). A missing CONTEXT.md is not an inconsistency — it reads as the
-    conservative default and has nothing to contradict.
+    (CAL-1105). A missing CONTEXT.md — or a CONTEXT.md that declares *no* tracker
+    switch at all — is not an inconsistency: the backend reads as the conservative
+    ``linear`` default and there is no explicit statement to contradict, so an
+    unconfigured repo is left to fail later at the key check, exactly as today.
+    Only an **explicit** switch (a ``tracker:`` key, or a back-compat
+    ``layers.linear``) is held to the address it implies.
     """
     text = _read_context(repo_root)
     if text is None:
         return None
 
+    has_tracker_key = _TRACKER_KEY.search(text) is not None
+    layers = _layers_linear(text)
+    explicit = has_tracker_key or layers is not None
     backend = _tracker_from_text(text)
     address = _repo_linear(text)
     has_address = address is not None and address.lower() != "none"
 
-    if backend == "linear" and not has_address:
+    if explicit and backend == "linear" and not has_address:
         return (
             "tracker: linear requires a repo.linear address, but repo.linear is "
             "unset or 'none' — set the address, or set tracker: none"
@@ -187,14 +194,12 @@ def tracker_config_error(repo_root: Path) -> str | None:
     # A second, derivable boolean that disagrees with an explicit tracker: is the
     # very state this ticket removes. Only flag it when tracker: is explicit —
     # otherwise layers.linear *is* the source (the back-compat path above).
-    if _TRACKER_KEY.search(text) is not None:
-        layers = _layers_linear(text)
-        if layers is not None:
-            layers_on = layers.lower() != "false"
-            if layers_on != (backend != "none"):
-                return (
-                    f"tracker: {backend} contradicts layers.linear: {layers} — "
-                    "remove layers.linear; tracker: is the single source of truth"
-                )
+    if has_tracker_key and layers is not None:
+        layers_on = layers.lower() != "false"
+        if layers_on != (backend != "none"):
+            return (
+                f"tracker: {backend} contradicts layers.linear: {layers} — "
+                "remove layers.linear; tracker: is the single source of truth"
+            )
 
     return None

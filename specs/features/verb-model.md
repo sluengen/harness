@@ -120,22 +120,22 @@ A merge this verb *does* start is always restored: a conflict aborts before retu
 
 `close` does **not** auto-commit. A dirty worktree is refused outright, because uncommitted edits are not in HEAD and so were never reviewed (`stale_review` catches a commit *after* review; only the clean-tree check catches an edit *without* committing — CAL-586, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`). A gate refusal is the gate doing its job and is never worked around — the verb never bypasses its own gate.
 
-### The tracker layer — `layers.linear`
+### The tracker switch — `tracker:`
 
-Every tracker touchpoint above is conditional on the target repo's `CONTEXT.md` → `layers.linear` (CAL-1104). The switch is read by `harness/layers.py`, the same read-config-from-CONTEXT-by-regex shape as `harness/loop_budget.py` (breaker thresholds) and `harness/gate.py`. It defaults **on**, so everything above describes the ordinary case.
+Every tracker touchpoint above is conditional on the target repo's `CONTEXT.md` → `tracker:` (CAL-1104, CAL-1164). `tracker: linear | github | none` is the **single source of truth** for whether a tracker is wired and which backend — one top-level field, so no second boolean can contradict it. It replaces the CAL-1104 `layers.linear` switch, whose name collided with the `repo.linear` address and whose on/off state was derivable from — yet unenforced against — that address. The switch is read by `harness/layers.py` (`tracker()` / `linear_enabled()`), the same read-config-from-CONTEXT-by-regex shape as `harness/loop_budget.py` (breaker thresholds) and `harness/gate.py`. It defaults **on** (`linear`), so everything above describes the ordinary case. (`github` names a backend that is not yet implemented — CAL-1105.)
 
 #### Scenario: a repo with no tracker
 
-- GIVEN a repo whose `CONTEXT.md` sets `layers.linear: false`, and **no** `LINEAR_API_KEY`
+- GIVEN a repo whose `CONTEXT.md` sets `tracker: none`, and **no** `LINEAR_API_KEY`
 - WHEN the agent drives `start → review → close`
 - THEN no verb validates a key, fetches an issue, or transitions anything, and the run completes green
 - AND `start`'s `<ticket>` argument is an **opaque run identifier** — carried verbatim (so `idx_runs_ticket_open` still refuses a duplicate open run) and emitted with `title` / `description` / `url` / `id` left `null` rather than invented
 - AND `close` reports `ticket_done: false` — the honest record of a transition that did not happen, not a failure
 - AND `reclaim` keeps its local half (reconcile the ledger, preserve the branch) and skips the revert; `reclaim --stale` is a clean no-op, because staleness keys entirely on the tracker's `updatedAt` and there is nothing to enumerate
 
-The gate is **unchanged** by the layer: `close` evaluates the reviewed-SHA gate *before* the tracker step, so a tracker-less close with no passing review still refuses `no_passing_review`. Tracker-less does not mean gate-less — pinned by `test_tracker_less_layer.py`.
+The gate is **unchanged** by the switch: `close` evaluates the reviewed-SHA gate *before* the tracker step, so a tracker-less close with no passing review still refuses `no_passing_review`. Tracker-less does not mean gate-less — pinned by `test_tracker_less_layer.py`.
 
-The default is deliberately conservative: a missing `CONTEXT.md`, a missing `layers:` block, a missing key, or an unrecognised value all read as **on**. A repo that has not opted out keeps today's behaviour — including failing fast on a missing `LINEAR_API_KEY` — rather than degrading into a tracker-less run because a file could not be parsed. `linear:` appears twice in a real `CONTEXT.md` (`repo.linear`, the team prefix; `layers.linear`, the switch), so the reader resolves the `layers:` block before matching — an unscoped match reads the prefix and never sees the switch.
+The default is deliberately conservative: a missing `CONTEXT.md`, a missing `tracker:` key (with no `layers.linear`), or an unrecognised value all read as **on** (`linear`). A repo that has not opted out keeps today's behaviour — including failing fast on a missing `LINEAR_API_KEY` — rather than degrading into a tracker-less run because a file could not be parsed. **Back-compat:** a repo not yet migrated has no `tracker:` key, so the reader falls back to `layers.linear` (`false` → `none`, otherwise → `linear`); that fallback still resolves the `layers:` block before matching, because `linear:` appears twice in an un-migrated `CONTEXT.md` (`repo.linear`, the team prefix; `layers.linear`, the old switch) and an unscoped match reads the prefix first. An **incoherent** switch/address pair — `tracker: linear` with no `repo.linear`, `tracker: none` with a dangling address, or a lingering `layers.linear` that disagrees with an explicit `tracker:` — is rejected up front by `start` (`tracker_config_error`, pinned by `test_tracker.py` and `test_cli_start.py`), before any key check or side effect.
 
 `review` has no tracker touchpoint to gate: it records a verdict to the ledger and never calls the tracker. Should it gain one (CAL-1103 would move the ticket to In Review), that transition takes the same layer check.
 
@@ -157,7 +157,7 @@ Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb
 
 - The orchestration *between* verbs is deliberately not reproducible: it varies with the agent, which buys full context retention and graceful degradation to manual driving on a verb failure (decision D1). Reproducibility applies to the verbs, not the end-to-end run.
 - A run can be abandoned without merging via `harness cancel` (close-without-merge); see [cli-surface.md](cli-surface.md).
-- A run whose orchestrator died mid-flight is recovered via `harness reclaim` — it reverts the stranded Linear ticket to Todo (so dependents unblock) and reuses `cancel`'s ledger transaction to clear the `open` row, while preserving the worktree/branch. See [run-ledger.md](run-ledger.md) and the accepted proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md). Tracker-less (`layers.linear: false`) only the local half runs, and the time-keyed `--stale` sweep has no tracker state to read — so recovering a dead run there is a manual `reclaim <run-id>`, not an automatic sweep.
+- A run whose orchestrator died mid-flight is recovered via `harness reclaim` — it reverts the stranded Linear ticket to Todo (so dependents unblock) and reuses `cancel`'s ledger transaction to clear the `open` row, while preserving the worktree/branch. See [run-ledger.md](run-ledger.md) and the accepted proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md). Tracker-less (`tracker: none`) only the local half runs, and the time-keyed `--stale` sweep has no tracker state to read — so recovering a dead run there is a manual `reclaim <run-id>`, not an automatic sweep.
 
 ## Decisions
 

@@ -388,6 +388,39 @@ def test_ac4_invalid_ticket_nonzero_exit_no_side_effects(
 
 
 # ---------------------------------------------------------------------------
+# CAL-1164: an incoherent tracker/address config is rejected before any work
+# ---------------------------------------------------------------------------
+
+
+def test_incoherent_tracker_config_rejected_before_side_effects(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``tracker: linear`` with no ``repo.linear`` address → start refuses up front.
+
+    The coherence guard fires at step 0, before the key check or any fetch, so it
+    is the *config* error the caller sees (naming ``repo.linear``), not a
+    downstream missing-key error, and nothing is created.
+    """
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    (repo / "CONTEXT.md").write_text(
+        "repo:\n  name: acme\n  linear: none\ntracker: linear\n"
+    )
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-m", "incoherent tracker config")
+
+    result = cli_runner.invoke(
+        app,
+        ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+    )
+
+    assert result.exit_code != 0
+    assert "repo.linear" in result.output
+    assert fetch_runs(db_path) == []
+    wt_root = repo / ".worktrees" / "harness"
+    assert not wt_root.exists() or not list(wt_root.iterdir())
+
+
+# ---------------------------------------------------------------------------
 # AC-5: --json output validates against the documented schema (both paths)
 # ---------------------------------------------------------------------------
 
