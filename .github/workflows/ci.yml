@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,7 +12,7 @@ concurrency:
 
 # Least privilege, declared here rather than inherited from the repo-level
 # default: a default widened in the GitHub UI silently widens every job that
-# declares nothing, and this workflow runs on every push to main. Lint-and-test
+# declares nothing, and this workflow runs on every push to main and dev. Lint-and-test
 # needs only the checkout. Pinned by tests/unit/test_ci_workflow_permissions.py.
 permissions:
   contents: read
