@@ -254,6 +254,37 @@ def test_automode_sanctions_assess_finding_filing() -> None:
     )
 
 
+def test_automode_assess_filing_clause_targets_todo_with_its_bounds() -> None:
+    """CAL-1168: the operator widened the filing target from Backlog (a "new item
+    for a human to triage") to **Todo always** — accepting a self-feeding loop
+    where a later unattended tick may build a finding with no human in between.
+
+    A wider grant must carry the bound that makes it safe, because the clause
+    text is what the classifier reads. The two guards the operator named are the
+    assessment's **severity bar** at filing time and the merge-time **review
+    gate** before anything ships; the clause must state both, and it must no
+    longer frame every filing as landing in a human-triaged holding state."""
+    clause = _clause_containing("/assess", "Creating Linear issues")
+    assert clause, "the assess-filing clause must exist (CAL-1087/CAL-1168)."
+    assert "Todo" in clause, (
+        "the filing clause must name Todo as the target — the operator decided "
+        "findings file to Todo always, not Backlog (CAL-1168)."
+    )
+    assert "severity bar" in clause.lower(), (
+        "the widened clause must name the severity bar — one of the two guards "
+        "the operator accepted for the self-feeding loop (CAL-1168)."
+    )
+    assert "review gate" in clause.lower(), (
+        "the widened clause must name the merge-time review gate — the second "
+        "guard before anything a filed finding produces ships (CAL-1168)."
+    )
+    assert "a new item for a human to triage" not in clause, (
+        "the old Backlog framing ('a new item for a human to triage') must be "
+        "gone — Todo means a tick may build the finding without a human between "
+        "(CAL-1168)."
+    )
+
+
 def test_automode_sanctions_the_worktree_cleanup_preflight() -> None:
     """CAL-1108: `/harness routine build` step 0 instructs the merged-worktree
     cleanup as its housekeeping pre-flight, and it was refused on every tick —

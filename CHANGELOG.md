@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — `/assess` findings file to Todo, with a widened autoMode clause (CAL-1168)
+- **`commands/assess.md` (`assess`) 0.6.1 → 0.7.0** (registry **0.5.54 → 0.5.55**). Step 2 now files findings and insights to **Todo** (was ad hoc), with the Build project attached and severity-mapped priority. The assess-filing `autoMode.allow` clause carries the operator's verbatim-approved text (byte-identical across both settings copies), replacing the "new item for a human to triage" Backlog framing; the bounds on the self-feeding loop are the assessment severity bar and the merge-time review gate. Completes the ticket-protocol-hygiene verb slice (CAL-1165/1166/1167).
+
 ### Added — `harness defer v2`: `--needs`, assign-on-defer, approved autoMode clause (CAL-1167)
 - **`commands/harness.md` (`harness`) 0.1.9 → 0.2.0** (registry **0.5.53 → 0.5.54**). `harness defer` gains `--needs decision|operator` (selects the hold label, default `decision` — backward compatible), **assigns the ticket to the operator** (Linear `viewer`, via the new `LinearClient.assign_to_viewer` — the machine-readable hold signal), and records the `needs` kind in the `defer` event. Completes the assignment-write gap CAL-1166 opened. The reworded `autoMode.allow` deferral clause is the operator's verbatim-approved text, byte-identical across both settings copies.
 
