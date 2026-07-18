@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Fixed — `checkpoint` re-pushes a rebased run branch (force-with-lease) (CAL-1162)
+- `harness checkpoint` now pushes with `--force-with-lease` instead of a plain push. Rebase-before-close rewrites the run branch when `dev` advances mid-run, so a plain push was rejected non-fast-forward and durability silently reverted to the pre-rebase commit; the lease lets the rewritten tip re-checkpoint while still refusing when `origin` carries an unseen commit — surfaced as the named `reason='stale_remote'` outcome, not a raw git blob. As-built (`cli-surface.md`, `worktree-lifecycle.md`) now states what `start --resume` fetches after a rebase and when it can be stale.
+
 ### Changed — `/assess` findings file to Todo, with a widened autoMode clause (CAL-1168)
 - **`commands/assess.md` (`assess`) 0.6.1 → 0.7.0** (registry **0.5.54 → 0.5.55**). Step 2 now files findings and insights to **Todo** (was ad hoc), with the Build project attached and severity-mapped priority. The assess-filing `autoMode.allow` clause carries the operator's verbatim-approved text (byte-identical across both settings copies), replacing the "new item for a human to triage" Backlog framing; the bounds on the self-feeding loop are the assessment severity bar and the merge-time review gate. Completes the ticket-protocol-hygiene verb slice (CAL-1165/1166/1167).
 

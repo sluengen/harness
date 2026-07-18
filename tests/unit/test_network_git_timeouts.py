@@ -83,7 +83,9 @@ def test_checkpoint_push_passes_network_timeout(
 
     checkpoint_mod._push_branch(worktree_path=Path("/wt"), branch="harness/x")
 
-    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    # The push carries the force-with-lease flag (CAL-1162), so it is no longer
+    # positionally ("push", "origin") — match on the leading verb instead.
+    push = [t for a, t in calls if a and a[0] == "push"]
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
 
 

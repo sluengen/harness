@@ -46,6 +46,8 @@ The `base` is **resolved from the repo's branch model** rather than hardcoded (C
 - AND `close` therefore merges into `<base>` and its HEAD-bound gate keeps the resumed run safe from double-merge
 - AND when no durable WIP exists — the reclaim preserved no branch, or `<wip>` no longer fetches — `start_point` is `None` and it falls back to a clean start off `<base>` (best-effort; resume never blocks the queue)
 
+**What `--resume` fetches after a rebase.** `--resume` fetches whatever tip the dead run last *checkpointed to `origin`* — so the freshness of the resume point is exactly the freshness of the last successful checkpoint. Because [`checkpoint`](run-ledger.md) force-with-lease-pushes (CAL-1162), a rebase-before-close that rewrote `<wip>` **re-checkpoints cleanly**, and `--resume` fetches the rebased tip — not the stale pre-rebase one. The tip can be stale only when the final checkpoint after that rebase did **not** land: either it was never attempted (the run died between the rebase and the next checkpoint), or the force-with-lease lease *refused* it because `origin` carried a commit the run had not seen (`reason='stale_remote'`) — and that refusal is a **named outcome the run sees**, not a silent lapse. In that lapsed case `--resume` fetches the pre-rebase tip and the resumed run re-encounters the conflict the rebase had resolved; the durability guarantee is best-effort, and a stale resume degrades to redoing the rebase, never a wrong merge (the HEAD-bound `close` gate still holds).
+
 ### Rollback — `start` removes its own worktree on a later failure
 
 `start` creates the worktree as a **local** side effect before it touches the ledger or Linear, so any later failure rolls it back.
