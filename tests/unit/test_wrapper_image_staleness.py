@@ -366,3 +366,42 @@ def test_symlinked_wrapper_still_arms_the_guard(tmp_path: Path) -> None:
     assert "detached copy" not in result.stderr.lower(), (
         f"a symlinked wrapper is not a detached copy — no such warning:\n{result.stderr}"
     )
+
+
+# --- The wrapper-drift status forwarded to doctor (CAL-1149) -----------------
+#
+# ``doctor`` runs in-container and cannot read the on-PATH ``~/bin/harness``
+# (host-only, never mounted). The wrapper is the one place both the invoked
+# wrapper and its versioned source are readable, so it computes the drift
+# verdict host-side and forwards it as ``HARNESS_WRAPPER_STATUS`` on the
+# ``docker run`` line; ``check_wrapper`` maps it to PASS/WARN/FAIL. These tests
+# execute the real wrapper and assert the verdict it forwards for each
+# deployment, the same repo-aware way the freshness tests above do.
+
+
+def test_symlinked_wrapper_forwards_symlink_status(tmp_path: Path) -> None:
+    """A symlink into the checkout resolves to the versioned source, so the
+    wrapper forwards ``HARNESS_WRAPPER_STATUS=symlink`` — the PASS state."""
+    link_dir = tmp_path / "link"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    exe = link_dir / "harness"
+    exe.symlink_to(WRAPPER)
+
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=symlink" in calls, (
+        f"a symlinked wrapper must forward the symlink status:\n{calls}"
+    )
+
+
+def test_detached_copy_forwards_detached_status(tmp_path: Path) -> None:
+    """A copy under a directory that is not a checkout has no versioned source to
+    compare against, so the wrapper forwards ``HARNESS_WRAPPER_STATUS=detached``
+    — the FAIL state doctor reports. This is the ~/bin/harness deployment the
+    ticket exists to catch."""
+    exe = _detached_copy(tmp_path)
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    assert "HARNESS_WRAPPER_STATUS=detached" in calls, (
+        f"a detached copy must forward the detached status:\n{calls}"
+    )
