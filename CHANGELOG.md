@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — CI runs on `dev`, not only `main` (CAL-1030)
+- `.github/workflows/ci.yml` now triggers `push`/`pull_request` on `[main, dev]` (was `[main]`). The `push: dev` trigger verifies each merged state — including the close verb's direct pushes — so hermetic clean-clone verification and merge-skew detection between concurrently-landed runs arrive at each merge instead of waiting for the release PR. The coverage floor is already enforced in CI (`scripts/verify.sh` runs `pytest --cov-fail-under=90`, pinned by CAL-1015). New `test_ci_workflow_triggers.py` guards the `dev` trigger on both events. Decision by Scott (2026-07-18): enable now on the private repo; the free tier's metered minutes are negligible for a ~30s suite.
+
 ### Changed — `code-quality` Part A: an extraction sweeps for its copies (CAL-1172)
 - **`skills/code-quality/SKILL.md` (`code-quality`) 0.11.0 → 0.12.0** (registry **0.5.56 → 0.5.57**). Part A gains *An extraction sweeps for its copies*, the mirror of *A removal sweeps for its dependents*: an extraction is not complete until you grep the whole tree for the pattern (a finding's location list is a starting point, not the boundary), and a copy whose body *differs* is the finding, not the leftover — a surviving divergent copy makes the green diff certify a unification that did not happen. Guidance-source import of nano-erp steward insight CODE-INSIGHT-3.
 

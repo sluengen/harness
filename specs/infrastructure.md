@@ -17,7 +17,7 @@ N/A — the harness serves no network traffic and owns no domains.
 
 | Service | Platform | Source | Notes |
 |---|---|---|---|
-| CI (verification gate) | GitHub Actions | `.github/workflows/ci.yml` | Runs `scripts/verify.sh` (ruff → mypy → pytest → CLI smoke) on push/PR to `main`. `ubuntu-latest`, `uv`, Python 3.11, 10-minute job timeout |
+| CI (verification gate) | GitHub Actions | `.github/workflows/ci.yml` | Runs `scripts/verify.sh` (ruff → mypy → pytest → CLI smoke) on push/PR to `main` and `dev`. The `push: dev` trigger verifies each merged state (incl. the close verb's direct pushes) and catches merge skew between concurrently-landed runs. `ubuntu-latest`, `uv`, Python 3.11, 10-minute job timeout |
 | Local execution (primary) | Docker — the `~/bin/harness` wrapper | `docker/` | Builds the `harness:dev` image; mounts CWD as `/workspace`; each verb is a one-shot `docker run`. See `docker/README.md` |
 | Local execution (alternate) | Native — `uv tool install .` | repo root | Installs the `harness` console script on PATH; credentials must be set manually. Use when Docker is unavailable |
 | Container registry | — | — | Not yet published; the image is built locally as `harness:dev` (override with `HARNESS_IMAGE`). GHCR publish is tracked in **CAL-623** |
