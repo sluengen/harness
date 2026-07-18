@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — ticket protocol codified in the `linear` skill (CAL-1165)
+- **0.4.2 → 0.5.0** (registry **0.5.51 → 0.5.52**). Todo/Backlog filing rules, assignment = the human-hold skip signal, `operator` label, `projectId`/`assigneeId` on create.
+
 ### Fixed — a promotion gate whose toolchain can't run is `blocked`, not a false code ticket (CAL-1160)
 - **`classify_gate_failure` asked "did the shell start?" when the policy is "did the checks run?"** It keyed `blocked` (infrastructure) off `exit_code is None`, but every real gate is `bash scripts/verify.sh` — bash always launches. CAL-1159 made the caller report a real exit code via `--gate-exit`, so `exit_code is None` never occurs: `blocked` was **unreachable in production**, and every non-green gate — including a missing toolchain (observed live as `error: Failed to spawn: ruff`) — classified `needs_ticket` and would file a false Linear ticket blaming the promoted tree.
 - **Fix: a reserved exit code the gate emits deliberately.** `harness/gate.py` gains `GATE_UNRUNNABLE_EXIT` (`97` — outside every tool's failure range 0–5 and the shell-reserved band 126–165); `classify_gate_failure` maps it to `blocked`. A red tree still exits the tool's own code and stays `needs_ticket` — deterministic, no output-sniffing. The caller forwards the code verbatim (nothing new asked of it); `escalate` is untouched, since the orchestrator branches on the classification.
