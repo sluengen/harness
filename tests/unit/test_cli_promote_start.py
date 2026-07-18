@@ -28,6 +28,7 @@ from typer.testing import CliRunner
 from harness import promotion as mechanics
 from harness.cli import app
 from harness.cli import promote as promote_cli
+from harness.gate import GATE_UNRUNNABLE_EXIT
 from harness.state import promotions
 from harness.state.promotions import Promotion
 
@@ -187,6 +188,39 @@ def test_clean_merge_red_gate_needs_ticket(work: Path, tmp_path: Path) -> None:
     assert payload["gated_sha"] is None
     assert payload["merged_sha"]  # the merge still happened
     assert "gate-broke" in payload["evidence"]
+
+
+def test_clean_merge_unrunnable_gate_is_blocked(work: Path, tmp_path: Path) -> None:
+    """CAL-1160: a clean merge whose host-side gate could not run — reported via the
+    reserved ``--gate-exit GATE_UNRUNNABLE_EXIT`` — classifies ``blocked`` (an
+    infrastructure failure), not ``needs_ticket`` (a red tree).
+
+    This drives ``blocked`` through the **real classifier path** with no
+    monkeypatch and no fabricated ``exit_code=None`` — the reachability the old
+    ``test_clean_merge_blocked_when_gate_unrunnable`` faked (it stubbed the
+    now-retired ``run_promotion_gate`` to return ``None``, a value no real
+    ``--gate-exit`` produces). ``blocked`` here is what keeps the orchestrator from
+    escalating an environment problem as a code fix."""
+    _configure_gate(work, "bash scripts/verify.sh")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    log = _gate_log(tmp_path, "gate precondition failed: 'ruff' is not runnable\n")
+
+    result = _start(
+        work,
+        "--from",
+        "dev",
+        "--to",
+        "staging",
+        "--gate-exit",
+        str(GATE_UNRUNNABLE_EXIT),
+        "--gate-log",
+        log,
+    )
+    payload = json.loads(result.output)
+    assert payload["status"] == "blocked"
+    assert payload["gated_sha"] is None
+    assert payload["merged_sha"]  # the merge still happened
+    assert "precondition failed" in payload["evidence"]
 
 
 def test_success_path_reachable_when_configured_gate_would_fail(

@@ -53,6 +53,7 @@ from pathlib import Path
 __all__ = [
     "GATE_NOT_CONFIGURED_REASON",
     "GATE_OUTPUT_TAIL_LIMIT",
+    "GATE_UNRUNNABLE_EXIT",
     "load_gate_command",
     "read_gate_log_tail",
 ]
@@ -70,6 +71,20 @@ GATE_NOT_CONFIGURED_REASON = "not_configured"
 #: reasoning, and without it the agent must re-read the whole log to learn what
 #: broke.
 GATE_OUTPUT_TAIL_LIMIT = 2048
+
+#: The exit code a verify gate emits when its **toolchain could not run at all** —
+#: a missing tool, a broken venv, an absent precondition — as opposed to running
+#: the checks and finding the tree red. It lets the promotion classifier tell an
+#: *infrastructure* failure (``blocked``) apart from a *code* failure
+#: (``needs_ticket``): under CAL-1159 the gate runs host-side and reports a real
+#: exit code via ``--gate-exit``, so the old "the gate could not be launched at
+#: all" signal (``exit_code is None``) never occurs for a real gate — bash always
+#: launches — and ``blocked`` would be unreachable without a reserved code the gate
+#: emits deliberately (CAL-1160). A sentinel outside every tool's own failure
+#: range (ruff/mypy/pytest exit 0–5) and outside the shell-reserved band (126–165),
+#: so a genuine red tree can never collide with it. ``scripts/verify.sh`` carries
+#: the same literal in its preflight; ``test_verify_gate_unrunnable`` locks the two.
+GATE_UNRUNNABLE_EXIT = 97
 
 
 # ---------------------------------------------------------------------------

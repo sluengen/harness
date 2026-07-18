@@ -197,7 +197,7 @@ lifecycle states the orchestrator branches on:
 | `pr_ready` | Clean merge **and** a green gate (reported via `--gate-exit 0`), with a recorded `gated_sha`. Publish it (`promote pr`) — landing staging, or opening the release PR. |
 | `agent_may_fix` | A small, in-policy conflict or gate failure. Make **one** bounded repair, then `promote continue`. |
 | `needs_ticket` | A real block beyond local repair authority. Escalate (`promote escalate`) — do not repair. |
-| `blocked` | The promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base) rather than a code decision. Escalate. |
+| `blocked` | The promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base, or a gate whose toolchain could not run — the reserved `GATE_UNRUNNABLE_EXIT`, CAL-1160) rather than a code decision. Escalate. |
 | `promoted` | Terminal success on the **staging hop**: staging was advanced to the gated SHA. Nothing is pending. Stop. |
 | `pr_opened` | Terminal success on the **release hop**: the branch is pushed and the PR is created, awaiting a human/CI merge. Stop. |
 | `escalated` | Terminal non-success: a Linear ticket carries the evidence. Stop. |

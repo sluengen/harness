@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.gate import GATE_OUTPUT_TAIL_LIMIT
+from harness.gate import GATE_OUTPUT_TAIL_LIMIT, GATE_UNRUNNABLE_EXIT
 from harness.promotion_gate import (
     GateEvidence,
     classify_gate_failure,
@@ -101,4 +101,19 @@ def test_unlaunchable_gate_classifies_blocked() -> None:
     """A gate that could not be executed at all (``exit_code=None``) is an
     infrastructure failure, not a code decision — it classifies ``blocked``."""
     evidence = GateEvidence(command="verify", exit_code=None, evidence="")
+    assert classify_gate_failure(evidence) == "blocked"
+
+
+def test_reserved_unrunnable_exit_classifies_blocked() -> None:
+    """A gate that exits the reserved :data:`GATE_UNRUNNABLE_EXIT` — bash *launched*
+    but its toolchain could not run (the observed ``error: Failed to spawn: ruff``,
+    infrastructure not a red tree) — classifies ``blocked``, not ``needs_ticket``,
+    even though the exit code is a real int (CAL-1160).
+
+    This is the production path CAL-1159's ``--gate-exit`` made real: a caller
+    always supplies a concrete exit code, so ``exit_code=None`` never occurs and
+    ``blocked`` was unreachable without keying off the reserved code."""
+    evidence = GateEvidence(
+        command="verify", exit_code=GATE_UNRUNNABLE_EXIT, evidence="Failed to spawn: ruff"
+    )
     assert classify_gate_failure(evidence) == "blocked"
