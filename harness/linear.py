@@ -529,6 +529,60 @@ mutation AddComment($issueId: String!, $body: String!) {
                 f"response: {result!r}"
             )
 
+    async def assign_to_viewer(self, identifier: str) -> None:
+        """Assign issue ``identifier`` to the authenticated user — the operator.
+
+        Agents authenticate with the operator's own API key and have no Linear
+        identity of their own, so the API's ``viewer`` **is** the operator; an
+        assignee at all is the machine-readable "a human holds this" signal the
+        ``work-discovery`` held-tickets skip rule reads. Resolves the viewer id
+        and the issue's UUID in one query, then fires ``issueUpdate(assigneeId)``.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, the key resolved no
+                viewer, or ``issueUpdate`` did not report ``success: true``.
+        """
+        resolve_query = """
+query IssueAndViewer($id: String!) {
+  viewer {
+    id
+  }
+  issue(id: $id) {
+    id
+  }
+}
+"""
+        data = await self._request(resolve_query, {"id": identifier})
+        payload = data.get("data") or {}
+        issue = payload.get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        viewer_id = (payload.get("viewer") or {}).get("id")
+        if not viewer_id:
+            raise LinearRequestError(
+                "Linear resolved no viewer for the API key; cannot assign "
+                f"{identifier!r} to the operator"
+            )
+        issue_id: str = issue["id"]
+
+        mutation = """
+mutation AssignIssue($id: String!, $assigneeId: String!) {
+  issueUpdate(id: $id, input: {assigneeId: $assigneeId}) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"id": issue_id, "assigneeId": viewer_id}
+        )
+        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueUpdate did not report success assigning {identifier!r}; "
+                f"response: {result!r}"
+            )
+
     async def create_issue(
         self,
         *,

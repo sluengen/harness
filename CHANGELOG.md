@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Added — `harness defer v2`: `--needs`, assign-on-defer, approved autoMode clause (CAL-1167)
+- **`commands/harness.md` (`harness`) 0.1.9 → 0.2.0** (registry **0.5.53 → 0.5.54**). `harness defer` gains `--needs decision|operator` (selects the hold label, default `decision` — backward compatible), **assigns the ticket to the operator** (Linear `viewer`, via the new `LinearClient.assign_to_viewer` — the machine-readable hold signal), and records the `needs` kind in the `defer` event. Completes the assignment-write gap CAL-1166 opened. The reworded `autoMode.allow` deferral clause is the operator's verbatim-approved text, byte-identical across both settings copies.
+
 ### Changed — `work-discovery` skips on assignment, defers with assignment (CAL-1166)
 - **0.2.0 → 0.3.0** (registry **0.5.52 → 0.5.53**). The skip rule now keys on **assignment to a human** (primary, any state) with a transitional `decision`/`operator` label OR; the deferral step assigns the operator alongside the comment + label. Guidance only — the `defer` verb's assignment write and its `autoMode` clause are CAL-1167.
 

@@ -111,6 +111,7 @@ class DeferEventData(BaseModel):
     ticket: str
     reason: str
     project: str
+    needs: str
     deferred_at: str
 
 

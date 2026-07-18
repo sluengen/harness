@@ -64,7 +64,7 @@ EXPECTED_SURFACE = {
     "runs",  # read / inspection
     "cancel",
     "reclaim",
-    "defer",  # triage: comment + additive `decision` label + ledger event (CAL-1143)
+    "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
     "doctor",
     "version",
     "worktrees",

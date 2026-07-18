@@ -209,15 +209,16 @@ def _clause_containing(*terms: str) -> str | None:
 
 
 def test_automode_sanctions_the_routine_deferral_write() -> None:
-    """CAL-1087: `work-discovery` tells the routine to comment on a ticket it
-    judged not-yet-actionable and label it `decision`. The posture must permit
-    the write the guidance instructs, bounded to the queue the routine pulls
-    from — otherwise the deferral is refused and the ticket wedges the queue with
-    the reason recorded nowhere a human looks."""
+    """CAL-1087/CAL-1167: `work-discovery` tells the routine to comment on a
+    ticket it judged not-yet-actionable, label it `decision`/`operator`, and
+    assign it to the operator. The posture must permit the write the guidance
+    instructs, bounded to the queue the routine pulls from — otherwise the
+    deferral is refused and the ticket wedges the queue with the reason recorded
+    nowhere a human looks."""
     clause = _clause_containing("`decision`")
     assert clause, (
         "autoMode.allow must sanction the deferral write `work-discovery` "
-        "instructs — a comment plus the `decision` label (CAL-1087)."
+        "instructs — a comment plus the `decision`/`operator` label (CAL-1087)."
     )
     assert "comment" in clause.lower(), (
         "the deferral clause must name the comment, not only the label — the "
@@ -226,6 +227,16 @@ def test_automode_sanctions_the_routine_deferral_write() -> None:
     assert "queue" in clause.lower(), (
         "the deferral clause must state its bound: the queue the routine pulls "
         "from. An unbounded 'may write to Linear' is a wider grant (CAL-1087)."
+    )
+    assert "assign" in clause.lower(), (
+        "CAL-1167: the deferral now assigns the ticket to the operator — the "
+        "machine-readable hold signal. The clause must name the assignment, the "
+        "new write class it sanctions."
+    )
+    assert "operator" in clause.lower(), (
+        "the deferral clause must state the assignment's bound: the only "
+        "assignee it ever sets is the operator, never a re-scope or reassignment "
+        "of others' work (CAL-1167)."
     )
 
 
