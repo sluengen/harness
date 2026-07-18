@@ -161,9 +161,10 @@ def test_clean_merge_green_gate_is_pr_ready(work: Path, tmp_path: Path) -> None:
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     log = _gate_log(tmp_path, "gate-ok all green\n")
 
-    payload = json.loads(
-        _start(work, "--from", "dev", "--to", "staging", "--gate-exit", "0", "--gate-log", log).output
+    result = _start(
+        work, "--from", "dev", "--to", "staging", "--gate-exit", "0", "--gate-log", log
     )
+    payload = json.loads(result.output)
     assert payload["status"] == "pr_ready"
     assert payload["gated_sha"] == payload["merged_sha"]
     assert payload["gated_sha"]
@@ -178,9 +179,10 @@ def test_clean_merge_red_gate_needs_ticket(work: Path, tmp_path: Path) -> None:
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     log = _gate_log(tmp_path, "gate-broke: 1 failed\n")
 
-    payload = json.loads(
-        _start(work, "--from", "dev", "--to", "staging", "--gate-exit", "1", "--gate-log", log).output
+    result = _start(
+        work, "--from", "dev", "--to", "staging", "--gate-exit", "1", "--gate-log", log
     )
+    payload = json.loads(result.output)
     assert payload["status"] == "needs_ticket"
     assert payload["gated_sha"] is None
     assert payload["merged_sha"]  # the merge still happened
@@ -204,9 +206,10 @@ def test_success_path_reachable_when_configured_gate_would_fail(
     _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
     log = _gate_log(tmp_path, "caller ran the real gate host-side: all green\n")
 
-    payload = json.loads(
-        _start(work, "--from", "dev", "--to", "staging", "--gate-exit", "0", "--gate-log", log).output
+    result = _start(
+        work, "--from", "dev", "--to", "staging", "--gate-exit", "0", "--gate-log", log
     )
+    payload = json.loads(result.output)
     # The dead path is alive: pr_ready with the gated SHA == the merged HEAD.
     assert payload["status"] == "pr_ready"
     assert payload["gated_sha"] == payload["merged_sha"]
