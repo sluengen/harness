@@ -1,100 +1,78 @@
-"""Promotion gate execution + evidence capture — CAL-1116 (ADR 0003).
+"""Promotion gate evidence + classification — CAL-1116, revised by CAL-1159.
 
-The pure mechanics of running the repo's verify gate inside a promotion worktree
-and turning the result into bounded evidence + a policy classification. These are
-the harness-owned deterministic facts an outer orchestrator reads back; the CLI
-(:mod:`harness.cli.promote`) only maps them onto lifecycle state.
+CAL-1159 retired the in-verb gate *executor* (``run_promotion_gate``): the
+``harness:dev`` image cannot run a target repo's toolchain, so the gate runs
+host-side and is *reported* to the verb via ``--gate-exit`` / ``--gate-log``. What
+remains here is the pure classifier — build bounded :class:`GateEvidence` from the
+caller's report, and map a non-green result to a promotion status.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-import pytest
-
-from harness import promotion_gate
 from harness.gate import GATE_OUTPUT_TAIL_LIMIT
 from harness.promotion_gate import (
     GateEvidence,
     classify_gate_failure,
-    run_promotion_gate,
+    evidence_from_report,
 )
 
+# --- evidence_from_report: build bounded evidence from the caller's report -----
 
-def test_green_gate_passes_with_bounded_evidence(tmp_path: Path) -> None:
-    """A zero-exit command is ``passed`` and ``launched`` with its output captured."""
-    evidence = run_promotion_gate(tmp_path, command="printf hello; exit 0")
+
+def test_green_report_is_passed_and_launched(tmp_path: Path) -> None:
+    """A zero exit code reported by the caller is ``passed`` and ``launched``, with
+    the gate log's tail captured as evidence."""
+    log = tmp_path / "gate.log"
+    log.write_text("hello\n")
+    evidence = evidence_from_report("verify", gate_exit=0, gate_log=log)
     assert evidence.passed
     assert evidence.launched
     assert evidence.exit_code == 0
     assert "hello" in evidence.evidence
 
 
-def test_red_gate_captures_stderr_and_is_not_passed(tmp_path: Path) -> None:
-    """A non-zero command is ``launched`` but not ``passed``; stderr is captured."""
-    evidence = run_promotion_gate(
-        tmp_path, command="printf boom 1>&2; exit 3"
-    )
+def test_red_report_is_launched_but_not_passed(tmp_path: Path) -> None:
+    """A non-zero reported exit code is ``launched`` (the caller ran it) but not
+    ``passed``; the log tail is captured."""
+    log = tmp_path / "gate.log"
+    log.write_text("boom\n")
+    evidence = evidence_from_report("verify", gate_exit=3, gate_log=log)
     assert not evidence.passed
     assert evidence.launched
     assert evidence.exit_code == 3
     assert "boom" in evidence.evidence
 
 
-def test_unknown_binary_is_a_launched_red_gate(tmp_path: Path) -> None:
-    """A command that exits non-zero via the shell's not-found path is still
-    *launched* (the shell ran and reported 127) — a red gate, not an infra
-    failure. Distinguishes the shell-127 case from a genuine launch failure."""
-    evidence = run_promotion_gate(tmp_path, command="definitely-not-a-real-binary-xyz")
-    assert evidence.launched
-    assert not evidence.passed
+def test_missing_log_degrades_to_empty_evidence() -> None:
+    """``--gate-log`` is optional and best-effort: an absent path degrades to an
+    empty tail rather than failing — the exit code is the load-bearing half."""
+    evidence = evidence_from_report("verify", gate_exit=0, gate_log=None)
+    assert evidence.passed
+    assert evidence.evidence == ""
 
 
-def test_launch_failure_maps_to_not_launched(tmp_path: Path) -> None:
-    """A genuine launch failure — here an ``OSError`` from a non-existent working
-    directory — is the real ``exit_code=None`` path: the gate could not run at all,
-    so it is *not* launched (an infrastructure failure the caller maps to
-    ``blocked``). This exercises run_promotion_gate's ``except OSError`` branch, not
-    a hand-built ``GateEvidence``."""
-    evidence = run_promotion_gate(tmp_path / "does-not-exist", command="true")
-    assert not evidence.launched
-    assert evidence.exit_code is None
-    assert not evidence.passed
+def test_unreadable_log_degrades_to_empty_evidence(tmp_path: Path) -> None:
+    """A ``--gate-log`` path that cannot be read degrades to an empty tail; a lost
+    diagnostic must not turn a green gate into a refusal."""
+    evidence = evidence_from_report(
+        "verify", gate_exit=0, gate_log=tmp_path / "does-not-exist.log"
+    )
+    assert evidence.passed
+    assert evidence.evidence == ""
 
 
-def test_timeout_maps_to_not_launched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A gate that exceeds :data:`PROMOTION_GATE_TIMEOUT_SECONDS` is killed and
-    surfaced as ``exit_code=None`` (an infra failure → ``blocked``), with its
-    partial output bounded — exercising the ``except TimeoutExpired`` branch."""
-
-    def _raise_timeout(*args: object, **kwargs: object) -> None:
-        # text=True gives str output; stderr=None exercises the None-stream path.
-        raise subprocess.TimeoutExpired(
-            cmd="verify", timeout=1.0, output="partial-out", stderr=None
-        )
-
-    monkeypatch.setattr(promotion_gate.subprocess, "run", _raise_timeout)
-    evidence = run_promotion_gate(tmp_path, command="sleep 999")
-    assert not evidence.launched
-    assert evidence.exit_code is None
-    assert "partial-out" in evidence.evidence
-
-
-# --- AC-5: the evidence bound is measured --------------------------------------
+# --- the evidence bound is measured --------------------------------------------
 
 
 def test_evidence_is_bounded_to_the_tail_limit(tmp_path: Path) -> None:
-    """Gate output longer than :data:`GATE_OUTPUT_TAIL_LIMIT` is truncated to exactly
-    the limit — the bounded-evidence contract (AC-4) measured against its bound
-    (AC-5). The orchestrator never receives an unbounded log."""
-    # Emit well over the limit, then fail so this is a captured red-gate tail.
-    overflow = GATE_OUTPUT_TAIL_LIMIT * 3
-    evidence = run_promotion_gate(
-        tmp_path, command=f"printf 'x%.0s' $(seq 1 {overflow}); exit 1"
-    )
+    """A gate log longer than :data:`GATE_OUTPUT_TAIL_LIMIT` is truncated to exactly
+    the limit — the bounded-evidence contract measured against its bound. The
+    orchestrator never receives an unbounded log."""
+    log = tmp_path / "gate.log"
+    log.write_text("x" * (GATE_OUTPUT_TAIL_LIMIT * 3))
+    evidence = evidence_from_report("verify", gate_exit=1, gate_log=log)
     assert not evidence.passed
     assert len(evidence.evidence) == GATE_OUTPUT_TAIL_LIMIT
 
@@ -102,11 +80,9 @@ def test_evidence_is_bounded_to_the_tail_limit(tmp_path: Path) -> None:
 def test_evidence_keeps_the_tail_not_the_head(tmp_path: Path) -> None:
     """The kept slice is the *tail* — the diagnostic last lines (a failing summary),
     not the first — mirroring the review gate's tail discipline."""
-    overflow = GATE_OUTPUT_TAIL_LIMIT + 100
-    evidence = run_promotion_gate(
-        tmp_path,
-        command=f"printf 'x%.0s' $(seq 1 {overflow}); printf TAILMARK; exit 1",
-    )
+    log = tmp_path / "gate.log"
+    log.write_text("x" * (GATE_OUTPUT_TAIL_LIMIT + 100) + "TAILMARK")
+    evidence = evidence_from_report("verify", gate_exit=1, gate_log=log)
     assert evidence.evidence.endswith("TAILMARK")
     assert len(evidence.evidence) == GATE_OUTPUT_TAIL_LIMIT
 
@@ -122,7 +98,7 @@ def test_launched_red_gate_classifies_needs_ticket() -> None:
 
 
 def test_unlaunchable_gate_classifies_blocked() -> None:
-    """A gate that could not be executed at all is an infrastructure failure, not a
-    code decision — it classifies ``blocked``."""
+    """A gate that could not be executed at all (``exit_code=None``) is an
+    infrastructure failure, not a code decision — it classifies ``blocked``."""
     evidence = GateEvidence(command="verify", exit_code=None, evidence="")
     assert classify_gate_failure(evidence) == "blocked"

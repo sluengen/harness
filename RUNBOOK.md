@@ -120,9 +120,10 @@ Two promotions run on this topology, on different cadences:
 
 - **Nightly `dev → staging` (the stabilized candidate).** A cron trigger fires the
   outer agent once a night. It opens a promotion from `dev` into `staging`, lets
-  the harness merge and gate, repairs one bounded conflict/gate failure if policy
-  permits, and on a green candidate opens the candidate PR. This is the routine,
-  repetitive movement the loop exists to automate.
+  the harness merge, runs the verify gate on the merged tree host-side and reports
+  the result, repairs one bounded conflict/gate failure if policy permits, and on a
+  green candidate opens the candidate PR. This is the routine, repetitive movement
+  the loop exists to automate.
 - **Deliberate `staging → main` (the release).** A human (or a deliberately-fired
   schedule) opens a promotion from `staging` into `main` when a stabilized
   candidate is ready to release. The loop is identical; only the trigger is
@@ -138,13 +139,21 @@ For one promotion (either flow), the outer agent runs:
 ```text
 1. harness promote start --repo <repo> --from <src> --to <dst>
      → the harness fetches origin, validates the pair, creates the promotion
-       worktree/branch from the target, attempts the merge, and (on a clean
-       merge) runs the verify gate. It returns one structured state.
+       worktree/branch from the target, and attempts the merge. It does NOT run
+       the gate — the caller does (step 2a). It returns one structured state.
 2. branch on that state:
+     • gate_pending   → 2a. run the repo's verify gate in the promotion worktree
+                            (host-side, where the toolchain lives), capturing its
+                            output to a log; then:
+                            harness promote continue --promotion-id <id>
+                              --gate-exit <code> --gate-log <path>
+                            → green → pr_ready; red → needs_ticket. Branch again.
+     • agent_may_fix  → make ONE bounded, in-policy repair in the worktree, run
+                        the gate on the resolved tree, then:
+                        harness promote continue --promotion-id <id>
+                          --gate-exit <code> --gate-log <path>
+                        (completes the repair + classifies the gate); branch again
      • pr_ready       → go to step 4 (open the PR)
-     • agent_may_fix  → make ONE bounded, in-policy repair in the worktree,
-                        then: harness promote continue --promotion-id <id>
-                        (re-classify + re-gate); branch on the new state
      • needs_ticket   → go to step 5 (escalate)
      • blocked        → go to step 5 (escalate)
      • opened         → ungated (no verify: configured); treat per repo policy
@@ -172,8 +181,8 @@ The five subcommands are the orchestrator's stable pause points:
 
 | Command | Role |
 |---|---|
-| `harness promote start --from <src> --to <dst>` | Open a promotion: create the worktree/branch, attempt the merge, run the gate on a clean merge, and return a policy classification. |
-| `harness promote continue --promotion-id <id>` | Resume an `agent_may_fix` promotion after **one** bounded repair: commit the resolved merge, re-run the gate, increment the attempt count. |
+| `harness promote start --from <src> --to <dst> [--gate-exit <c> --gate-log <p>]` | Open a promotion: create the worktree/branch, attempt the merge, and classify. A clean merge that defines a gate rests at `gate_pending` until the caller supplies gate evidence — the verb never runs the gate (the `review` boundary). |
+| `harness promote continue --promotion-id <id> [--gate-exit <c> --gate-log <p>]` | Resume a promotion: complete an `agent_may_fix` repair (**one** bounded attempt) or a `gate_pending` merge, then classify the caller's supplied gate evidence — green → `pr_ready`, red → `needs_ticket`. |
 | `harness promote status --promotion-id <id> --json` | Read-only: report the promotion's current lifecycle state. |
 | `harness promote pr --promotion-id <id>` | Success finalizer (refused unless the promotion is `pr_ready` with fresh gate evidence). The hop selects the mechanism: `--to staging` advances staging to the gated SHA with no PR (`promoted`); `--to main` pushes the promotion branch and opens the release PR (`pr_opened`). |
 | `harness promote escalate --promotion-id <id>` | Non-success terminal: file/update a Linear ticket with the evidence and mark the promotion `escalated`. |
@@ -183,8 +192,9 @@ lifecycle states the orchestrator branches on:
 
 | State | Meaning — what the outer agent does |
 |---|---|
-| `opened` | The row/worktree/branch exist and the merge was attempted, but nothing is gated yet (no `verify:` configured — ungated). Treat per repo policy. |
-| `pr_ready` | Clean merge **and** a green gate, with a recorded `gated_sha`. Publish it (`promote pr`) — landing staging, or opening the release PR. |
+| `opened` | The row/worktree/branch exist and the merge was attempted, but the repo configures **no** `verify:` gate (ungated). Treat per repo policy. |
+| `gate_pending` | Clean merge, the repo **does** define a `verify:` gate, and no evidence is supplied yet. Run the gate in the worktree host-side, then `promote continue --gate-exit <c> --gate-log <p>`. The verb never runs the gate itself. |
+| `pr_ready` | Clean merge **and** a green gate (reported via `--gate-exit 0`), with a recorded `gated_sha`. Publish it (`promote pr`) — landing staging, or opening the release PR. |
 | `agent_may_fix` | A small, in-policy conflict or gate failure. Make **one** bounded repair, then `promote continue`. |
 | `needs_ticket` | A real block beyond local repair authority. Escalate (`promote escalate`) — do not repair. |
 | `blocked` | The promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base) rather than a code decision. Escalate. |
@@ -233,12 +243,15 @@ Repair is **one bounded attempt**, and only for small, low-semantic problems:
   fix; missing credentials or remote-permission failures; an ambiguous topology or
   an unclean base.
 
-After a bounded edit the orchestrator calls `promote continue` **once**, which
-re-runs classification and the gate and increments the attempt count. A promotion
-**cannot become `pr_ready` without fresh gate evidence** — the same evidence
-discipline the `review`/`close` gate enforces. If that re-gate fails, the bounded
-attempt is spent and the promotion moves to `needs_ticket`; the outer agent does
-not try a second repair.
+After a bounded edit the orchestrator runs the verify gate on the resolved tree
+host-side and calls `promote continue --gate-exit <c> --gate-log <p>` **once**,
+which completes the merge, classifies that supplied evidence, and increments the
+attempt count. A promotion **cannot become `pr_ready` without fresh gate
+evidence** — the same evidence discipline the `review`/`close` gate enforces, and
+for the same reason: the verb's container cannot carry every target repo's
+toolchain, so the caller runs the gate where the toolchain lives. If that gate is
+red, the bounded attempt is spent and the promotion moves to `needs_ticket`; the
+outer agent does not try a second repair.
 
 **Escalation** is a first-class terminal path, not an error. `harness promote
 escalate` files (or, when the promotion is already linked, comments on) a Linear

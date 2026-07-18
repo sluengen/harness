@@ -122,12 +122,16 @@ async def test_init_promotions_is_idempotent(tmp_path: Path) -> None:
 #:
 #: ``promoted`` was added in CAL-1158, when the two hops gained distinct terminal
 #: successes: the staging hop lands the candidate on the target and is done, while
-#: the release hop's success is an open PR a human still merges. Updating this
-#: snapshot is the deliberate version decision a golden set cannot force
-#: mechanically — a *new* state is additive (no orchestrator branch on an existing
-#: state changes meaning), so it is a minor, not a breaking, surface event.
+#: the release hop's success is an open PR a human still merges. ``gate_pending``
+#: was added in CAL-1159, when the gate moved host-side: a clean merge that defines
+#: a gate but has no supplied evidence yet rests here, distinct from an ungated
+#: ``opened``. Updating this snapshot is the deliberate version decision a golden
+#: set cannot force mechanically — a *new* state is additive (no orchestrator
+#: branch on an existing state changes meaning), so it is a minor, not a breaking,
+#: surface event.
 _EXPECTED_STATUSES = {
     "opened",
+    "gate_pending",
     "pr_ready",
     "agent_may_fix",
     "needs_ticket",

@@ -46,12 +46,22 @@ __all__ = [
 
 
 # The promotion lifecycle states (ADR 0003). ``opened`` is the initial state once
-# the row/worktree/branch exist and the merge has been attempted; the middle four
-# (``pr_ready`` / ``agent_may_fix`` / ``needs_ticket`` / ``blocked``) are the
-# policy classifications a merge+gate attempt returns; ``promoted``, ``pr_opened``
-# and ``escalated`` are the terminal paths; ``cancelled`` records a withdrawn or
+# the row/worktree/branch exist and the merge has been attempted *and* no gate is
+# configured (ungated); ``gate_pending`` is a clean merge whose repo *does* define
+# a ``verify:`` gate but whose evidence the caller has not yet supplied — the merge
+# is done and the worktree waits to be gated host-side (CAL-1159). The middle
+# classifications (``pr_ready`` / ``agent_may_fix`` / ``needs_ticket`` / ``blocked``)
+# are what a merge+gate attempt returns; ``promoted``, ``pr_opened`` and
+# ``escalated`` are the terminal paths; ``cancelled`` records a withdrawn or
 # superseded promotion (recorded, never deleted). The blob column is plain
 # ``TEXT`` without a CHECK constraint, so this Literal is the type-safe seam.
+#
+# ``gate_pending`` is deliberately distinct from ``opened``: since CAL-1159 the
+# verb no longer runs the gate itself (the container cannot carry every target
+# repo's toolchain — the ``review`` boundary, CAL-1082), so a clean merge that
+# defines a gate can only *await* the caller's ``--gate-exit``/``--gate-log``.
+# Overloading ``opened`` would make "done, ungated" indistinguishable from "merged,
+# needs gating" — a distinction the orchestrator must branch on, so it is a state.
 #
 # The two hops have **distinct** terminal successes, because they finish
 # differently (CAL-1158): the staging hop lands the candidate on the target itself
@@ -61,6 +71,7 @@ __all__ = [
 # ledger exists to keep honest.
 PromotionStatus = Literal[
     "opened",
+    "gate_pending",
     "pr_ready",
     "agent_may_fix",
     "needs_ticket",
