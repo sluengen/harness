@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.gate import read_gate_log_tail
+from harness.gate import GATE_UNRUNNABLE_EXIT, read_gate_log_tail
 
 __all__ = [
     "GateEvidence",
@@ -86,14 +86,23 @@ def classify_gate_failure(evidence: GateEvidence) -> str:
     """Classify a *non-green* gate result into a promotion status.
 
     Call only when ``evidence`` is not ``passed``. The policy is deterministic —
-    it keys on whether the gate ran, not on parsing its output:
+    it keys on whether the *checks* ran, not on parsing gate output:
 
-    * ``blocked`` — the gate could not be executed (``exit_code is None``): an
-      infrastructure failure, not a code decision.
-    * ``needs_ticket`` — the gate ran and failed: the promoted tree is red, which
-      in v1 is a human-owned fix (``agent_may_fix`` is reserved for small merge
+    * ``blocked`` — the gate could not run its checks: an infrastructure failure,
+      not a code decision. Two forms, both meaning "the toolchain did not run":
+
+      - ``exit_code is None`` — the gate could not be launched at all (the
+        degenerate case a hand-built evidence can still express);
+      - ``exit_code == GATE_UNRUNNABLE_EXIT`` — the gate *launched* (bash always
+        spawns) but its toolchain could not run, so it emitted the reserved code
+        deliberately (CAL-1160). Under CAL-1159 the caller always supplies a real
+        ``--gate-exit``, so this reserved code — not ``None`` — is how a real
+        production gate reaches ``blocked``.
+
+    * ``needs_ticket`` — the gate ran its checks and the tree was red: a
+      human-owned fix in v1 (``agent_may_fix`` is reserved for small merge
       *conflicts*, not gate failures — ADR 0003, conservatively narrowed).
     """
-    if not evidence.launched:
+    if not evidence.launched or evidence.exit_code == GATE_UNRUNNABLE_EXIT:
         return "blocked"
     return "needs_ticket"
