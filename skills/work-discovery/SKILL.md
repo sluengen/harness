@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.2.0 -->
+<!-- guidance:work-discovery@0.3.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -46,14 +46,18 @@ spec needs problem, approach, and acceptance criteria.
 
 - If it **is** actionable, hand it to the routine's build surface.
 - If it **cannot** be actioned yet — it needs a decision, missing detail, or an
-  unfinished dependency — do not guess. Record the deferral — a comment naming
-  what it needs plus the `decision` label — and move on to the next candidate.
+  unfinished dependency — do not guess. Record the deferral three ways and move
+  on to the next candidate: **a comment** naming what it needs; **a label** —
+  `decision` when a judgment call is needed (a direction or detail), `operator`
+  when an interactive session is needed (setup, a hands-on step, a visual check);
+  and **assignment to the operator**, the machine-readable "a human holds this"
+  signal the held-tickets skip rule reads (the label explains *why* it is held).
   Where the routine provides a **`defer` verb** (as `/harness routine build`
   does: `harness defer <TICKET> --reason <text>`), call it — it posts the
-  comment, additively applies `decision`, and records the decision in the audit
-  trail, so triage is an audited action like the lifecycle verbs rather than a
-  hand-rolled tracker write. Where there is no such verb, make the comment +
-  label through the `linear` skill directly.
+  comment, applies the label, assigns the operator, and records the decision in
+  the audit trail, so triage is an audited action like the lifecycle verbs
+  rather than a hand-rolled tracker write. Where there is no such verb, make the
+  comment + label + assignment through the `linear` skill directly.
 
 ## When a tracker write is refused
 
@@ -77,12 +81,33 @@ operator's call, and granting yourself a permission is rightly refused — surfa
 the deferral in the run's output and name the clause that is missing. The report
 reaches a human, and a human can grant it.
 
-## The `decision` label — already-deferred work
+## Held tickets — work a human holds
 
-A ticket carrying the `decision` label was judged not-yet-actionable on an
-earlier pass and is waiting on a human. **Skip it.** Re-litigating it every tick
-wastes a run and risks inventing busywork; it re-enters the queue when the human
-clears the label.
+A ticket a human holds is not the loop's to pick. **The primary signal is
+assignment: skip any ticket assigned to a human, in any state.** Agents
+authenticate with the operator's API key and have no Linear identity of their
+own, so an assignee at all means a person has taken the ticket — a first-class
+field every Linear view surfaces, and the operator's "my issues" is their
+worklist for free. A held ticket re-enters the queue when the human unassigns it.
+
+The labels say *why* it is held, not *whether* to skip: `decision` — a judgment
+call is pending; `operator` — an interactive session is needed. They are the
+operator's two filters ("to think about" vs "to do at the keyboard"), not the
+loop's skip lever.
+
+**Transitional rule.** Until the queue backfill assigns every already-deferred
+ticket, also skip any ticket carrying `decision` **or** `operator` even if it is
+not yet assigned — so tickets deferred under the old label-only rule stay safe.
+Skip on **assignment OR the `decision`/`operator` label**; the assignment is
+authoritative, the label OR is the bridge.
+
+Do not re-litigate a held ticket every tick — it wastes a run and risks
+inventing busywork.
+
+> The queue pull may filter `assignee: null` (and exclude `decision`/`operator`)
+> as an optimisation, so held tickets never reach the ranking step. That filter
+> is a convenience; **this judgment rule is authoritative** — if an assigned or
+> held-labelled ticket does reach you, skip it.
 
 ## When nothing is actionable
 
