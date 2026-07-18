@@ -17,12 +17,19 @@ What ``defer`` does, for a ticket on this repo's Build queue (``repo.project``):
    found on Linear, or found but on another project, is refused (exit 2) with a
    structured ``reason`` — no comment, no label, no event.
 2. **Post the reason as a comment** (``commentCreate``).
-3. **Additively apply the ``decision`` label** (``issueAddLabel`` — never a
-   full-set ``issueUpdate(labelIds)`` replace, so labels already on the ticket
-   are preserved; this matches the ``autoMode.allow`` clause wording "applying
-   the label").
-4. **Record a ``defer`` event** in the runs/events ledger (ticket, reason,
-   timestamp), so the triage decision is auditable like every other verb.
+3. **Additively apply the hold label** — ``decision`` (a judgment call, the
+   default) or ``operator`` (an interactive session), selected by ``--needs``
+   (``issueAddLabel`` — never a full-set ``issueUpdate(labelIds)`` replace, so
+   labels already on the ticket are preserved; this matches the
+   ``autoMode.allow`` clause wording "applying the label"). The label says *why*
+   the ticket is held.
+4. **Assign the ticket to the operator** (Linear ``viewer`` — the API key's own
+   user). Agents have no Linear identity, so an assignee at all is the
+   machine-readable "a human holds this" signal ``work-discovery`` skips on later
+   ticks; the label only explains it.
+5. **Record a ``defer`` event** in the runs/events ledger (ticket, reason, the
+   ``needs`` kind, timestamp), so the triage decision is auditable like every
+   other verb.
 
 The Linear writes run **before** the ledger event (the load-bearing external
 effect first, the audit record second — the same ordering ``reclaim`` uses): a
@@ -43,6 +50,7 @@ Exit codes (SPEC §11):
 from __future__ import annotations
 
 import asyncio
+import enum
 from pathlib import Path
 
 import typer
@@ -65,12 +73,20 @@ from harness.linear import (
 from harness.repo_config import repo_project
 from harness.state import store
 
-__all__ = ["DeferOutput", "defer_command"]
+__all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
-#: The label ``defer`` applies — the structured signal ``work-discovery`` reads
-#: to **skip** an already-deferred ticket on later ticks. Additive
-#: (``issueAddLabel``), so a ticket's other labels are preserved.
-DECISION_LABEL = "decision"
+
+class DeferNeeds(enum.StrEnum):
+    """The two hold kinds a deferral can express (ticket-protocol-hygiene).
+
+    ``decision`` — a judgment call is pending; ``operator`` — an interactive,
+    hands-on session is needed. The kind's *value* doubles as the Linear label
+    name applied, so a held ticket carries both the machine-readable assignment
+    (the skip signal) and the label saying *why* it is held.
+    """
+
+    decision = "decision"
+    operator = "operator"
 
 
 class _DeferError(VerbError):
@@ -97,7 +113,7 @@ class DeferOutput(BaseModel):
 
 
 async def _record_defer_event(
-    db_path: Path, ticket: str, reason: str, project: str
+    db_path: Path, ticket: str, reason: str, project: str, needs: str
 ) -> str:
     """Anchor a ``defer`` event in the ledger and return its run id.
 
@@ -127,6 +143,7 @@ async def _record_defer_event(
             ticket=ticket,
             reason=reason,
             project=project,
+            needs=needs,
             deferred_at=now,
         ).model_dump(),
     )
@@ -134,12 +151,12 @@ async def _record_defer_event(
 
 
 async def _run_defer(
-    db_path: Path, ticket: str, reason: str, *, repo_root: Path
+    db_path: Path, ticket: str, reason: str, *, needs: DeferNeeds, repo_root: Path
 ) -> DeferOutput:
     """Defer ``ticket``; raise :class:`_DeferError` on refusal/error.
 
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
-    tracker to comment on or label, so the honest outcome is "skipped".
+    tracker to comment on, label, or assign, so the honest outcome is "skipped".
     """
     if not linear_enabled(repo_root):
         return DeferOutput(
@@ -184,13 +201,16 @@ async def _run_defer(
             reason="not_on_build_queue",
         )
 
-    # 2 + 3. The triage write (load-bearing external effect): comment first, then
-    #        the additive `decision` label — so the explanation is already on the
-    #        ticket by the time the label marks it deferred (and skipped on later
-    #        ticks by work-discovery).
+    # 2 + 3 + 4. The triage write (load-bearing external effect): comment first,
+    #        then the additive `decision`/`operator` label, then assign the ticket
+    #        to the operator — so the explanation is on the ticket, the label says
+    #        *why* it is held, and the assignment is the machine-readable "a human
+    #        holds this" signal work-discovery skips on later ticks. The label's
+    #        name is the `needs` kind's value.
     try:
         await client.post_comment(ticket, reason)
-        await client.apply_label(ticket, DECISION_LABEL)
+        await client.apply_label(ticket, needs.value)
+        await client.assign_to_viewer(ticket)
     except LinearNotFound as exc:
         raise _DeferError(
             f"ticket {ticket!r} not found on Linear: {exc}",
@@ -208,8 +228,8 @@ async def _run_defer(
             f"unexpected error deferring ticket {ticket!r}: {exc}", 1
         ) from exc
 
-    # 4. Record the defer in the ledger (audit trail) — after the Linear write.
-    run_id = await _record_defer_event(db_path, ticket, reason, project)
+    # 5. Record the defer in the ledger (audit trail) — after the Linear write.
+    run_id = await _record_defer_event(db_path, ticket, reason, project, needs.value)
     return DeferOutput(
         ticket=ticket, outcome="deferred", project=project, run_id=run_id
     )
@@ -246,6 +266,12 @@ def defer_command(
         "--reason-file",
         help="Read the triage rationale from a file (for long bodies).",
     ),
+    needs: DeferNeeds = typer.Option(
+        DeferNeeds.decision,
+        "--needs",
+        help="The hold kind: `decision` (a judgment call, the default) or "
+        "`operator` (an interactive session). Selects the label applied.",
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -253,8 +279,8 @@ def defer_command(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Defer a not-yet-actionable ticket — comment + the ``decision`` label + a
-    ledger event."""
+    """Defer a not-yet-actionable ticket — comment + the ``decision``/``operator``
+    label + assign the operator + a ledger event."""
     db_path = _resolve_db_path(db)
     # Anchored on the CWD, like ``reclaim``: the routine invokes verbs with CWD =
     # the target repo root, so the layer + ``repo.project`` are read from that
@@ -263,7 +289,9 @@ def defer_command(
 
     def _do() -> DeferOutput:
         body = _resolve_reason(reason, reason_file)
-        return asyncio.run(_run_defer(db_path, ticket, body, repo_root=repo_root))
+        return asyncio.run(
+            _run_defer(db_path, ticket, body, needs=needs, repo_root=repo_root)
+        )
 
     result = run_verb(_do, json_output=json_output)
 
@@ -275,5 +303,6 @@ def defer_command(
         typer.echo(f"defer {ticket}: no tracker configured (no-op)")
     else:
         typer.echo(
-            f"Deferred {ticket} on {result.project} — commented + `decision` label"
+            f"Deferred {ticket} on {result.project} — commented + "
+            f"`{needs.value}` label + assigned to operator"
         )

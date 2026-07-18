@@ -39,8 +39,8 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 #### Scenario: a deferred ticket (triage, not a build run)
 
 - GIVEN the unattended Build routine picks a Todo ticket the `work-discovery` skill judges **not** wholly actionable
-- WHEN `harness defer <ticket> --reason <text>` runs
-- THEN it posts the reason as a comment on the ticket, **additively** applies the `decision` label (`issueAddLabel`, never a full-set replace), and records a `defer` event — anchored on its own terminal `runs` row (`workflow_name='defer'`, `status='closed'`, no worktree) because a defer has no build run and the `events` FK needs one. The `'closed'` status keeps the row clear of `idx_runs_ticket_open`, so a later `harness start` on the same ticket is never blocked (CAL-1143). A ticket not on the Build queue (`repo.project`) is refused with a structured `reason` before any write; a tracker-less repo is a clean no-op.
+- WHEN `harness defer <ticket> --reason <text> [--needs decision|operator]` runs
+- THEN it posts the reason as a comment on the ticket, **additively** applies the hold label (`--needs` selects it: `decision` — the default — or `operator`; `issueAddLabel`, never a full-set replace), **assigns the ticket to the operator** (Linear `viewer`, the machine-readable "a human holds this" signal `work-discovery` skips), and records a `defer` event carrying the `needs` kind — anchored on its own terminal `runs` row (`workflow_name='defer'`, `status='closed'`, no worktree) because a defer has no build run and the `events` FK needs one. The `'closed'` status keeps the row clear of `idx_runs_ticket_open`, so a later `harness start` on the same ticket is never blocked (CAL-1143, CAL-1167). A ticket not on the Build queue (`repo.project`) is refused with a structured `reason` before any write; a tracker-less repo is a clean no-op.
 
 The partial unique index `idx_runs_ticket_open ON runs(ticket) WHERE status = 'open'` keeps at most one `open` run per ticket, so a concurrent `harness start` cannot insert a second open row (CAL-570).
 

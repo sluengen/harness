@@ -85,6 +85,7 @@ def _make_stub(
         mock.fetch_issue_project = AsyncMock(return_value=ticket_project)
     mock.post_comment = AsyncMock(return_value=None)
     mock.apply_label = AsyncMock(return_value=None)
+    mock.assign_to_viewer = AsyncMock(return_value=None)
     return mock
 
 
@@ -189,6 +190,111 @@ def test_defer_applies_label_additively(tmp_path: Path, monkeypatch: Any) -> Non
 
 
 # ===========================================================================
+# AC-1: --needs selects the label; default remains `decision`
+# ===========================================================================
+
+
+def test_defer_needs_operator_applies_operator_label(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``--needs operator`` applies the ``operator`` label (a hands-on hold), not
+    ``decision`` — the two triage kinds of the ticket protocol (CAL-1167)."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "needs an interactive relink",
+         "--needs", "operator", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    stub.apply_label.assert_awaited_once()
+    _, label_arg = stub.apply_label.await_args.args
+    assert label_arg == "operator"
+
+
+def test_defer_rejects_unknown_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
+    """``--needs`` accepts only ``decision`` / ``operator``; anything else is an
+    invocation error (exit 2), with no write."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "x", "--needs", "bogus", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2, result.output
+    stub.post_comment.assert_not_awaited()
+    stub.apply_label.assert_not_awaited()
+
+
+# ===========================================================================
+# AC-2: the verb assigns the ticket to the runtime-resolved viewer (operator)
+# ===========================================================================
+
+
+def test_defer_assigns_ticket_to_viewer(tmp_path: Path, monkeypatch: Any) -> None:
+    """``defer`` assigns the ticket to the operator (Linear ``viewer``) — the
+    machine-readable "a human holds this" signal the held-tickets skip rule reads."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "needs a call", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    stub.assign_to_viewer.assert_awaited_once()
+    (ticket_arg,) = stub.assign_to_viewer.await_args.args
+    assert ticket_arg == "CAL-999"
+
+
+# ===========================================================================
+# AC-3: the ledger event carries the needs kind
+# ===========================================================================
+
+
+def test_defer_event_records_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
+    """The ``defer`` ledger event records which hold kind (``decision`` /
+    ``operator``) the deferral applied."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "x", "--needs", "operator", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    events = _fetch_defer_events(db)
+    assert len(events) == 1
+    assert events[0]["needs"] == "operator"
+
+
+def test_defer_default_needs_records_decision(tmp_path: Path, monkeypatch: Any) -> None:
+    """With no ``--needs`` the event records the backward-compatible ``decision`` kind."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "x", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    events = _fetch_defer_events(db)
+    assert events[0]["needs"] == "decision"
+
+
+# ===========================================================================
 # AC: refuse when the ticket is not on the Build queue
 # ===========================================================================
 
@@ -209,6 +315,7 @@ def test_defer_refuses_ticket_not_found(tmp_path: Path, monkeypatch: Any) -> Non
     assert payload["reason"] == "ticket_not_found"
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
+    stub.assign_to_viewer.assert_not_awaited()
     assert _fetch_defer_events(db) == []
 
 
@@ -228,6 +335,7 @@ def test_defer_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: An
     assert payload["reason"] == "not_on_build_queue"
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
+    stub.assign_to_viewer.assert_not_awaited()
     assert _fetch_defer_events(db) == []
 
 
@@ -252,6 +360,7 @@ def test_defer_tracker_less_is_a_clean_noop(tmp_path: Path, monkeypatch: Any) ->
     stub.fetch_issue_project.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
+    stub.assign_to_viewer.assert_not_awaited()
     assert _fetch_defer_events(db) == []
 
 

@@ -432,6 +432,74 @@ async def test_post_comment_raises_not_found_for_null_issue(
         await client.post_comment("CAL-999", "body")
 
 
+async def test_assign_to_viewer_sets_assignee(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer resolves the viewer + issue ids then fires issueUpdate
+    with the viewer as assigneeId — agents authenticate with the operator's key,
+    so `viewer` IS the operator (the machine-readable "a human holds this" signal)."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        calls.append({"query": query, "variables": variables})
+        if "issueUpdate" in query:
+            return {"data": {"issueUpdate": {"success": True}}}
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    await client.assign_to_viewer("CAL-1167")
+
+    update_calls = [c for c in calls if "issueUpdate" in c["query"]]
+    assert len(update_calls) == 1
+    assert update_calls[0]["variables"]["id"] == "issue-uuid"
+    assert update_calls[0]["variables"]["assigneeId"] == "viewer-uuid"
+
+
+async def test_assign_to_viewer_raises_when_unsuccessful(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearRequestError when issueUpdate does not report success."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        if "issueUpdate" in query:
+            return {"data": {"issueUpdate": {"success": False}}}
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearRequestError, match="did not report success"):
+        await client.assign_to_viewer("CAL-1167")
+
+
+async def test_assign_to_viewer_raises_not_found_for_null_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearNotFound when the issue does not exist."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.assign_to_viewer("CAL-999")
+
+
+async def test_assign_to_viewer_raises_when_viewer_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearRequestError when the API key resolves no viewer."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"viewer": None, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearRequestError, match="viewer"):
+        await client.assign_to_viewer("CAL-1167")
+
+
 # ---------------------------------------------------------------------------
 # fetch_reclaimable_issues — enumerate the sweep candidates (CAL-736 / CAL-1103)
 # ---------------------------------------------------------------------------
