@@ -1,10 +1,10 @@
 # harness
 
-An **audit and process layer for agent-driven development**: a small set of
-deterministic, audited verbs an agent calls to drive a ticket end-to-end — not a
-pipeline that drives agents.
+An **evidence layer for agent-driven development**: a small set of deterministic,
+audited verbs an agent calls while it drives a ticket end-to-end. The agent owns
+the judgement work; the harness owns the invariants that keep that work honest.
 
-> The harness is a tool the agent uses, not an engine that uses the agent.
+> Let the agent orchestrate the messy work; make the harness own the evidence.
 
 An AI agent does the judgement work — the code, the fixes, the decisions. The
 harness owns only what an audit trail depends on:

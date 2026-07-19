@@ -1,7 +1,7 @@
 [project]
 name = "harness"
 version = "0.2.1"
-description = "Deterministic workflow execution harness for bounded LLM tasks"
+description = "Evidence layer that keeps agent-driven development honest"
 readme = "README.md"
 requires-python = ">=3.11"
 # The engine is copyleft; the guidance the installer copies into other repos is
