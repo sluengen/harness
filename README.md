@@ -43,7 +43,7 @@ builder/recorder split — are the portable part; the plumbing around them is no
 A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: three verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; Codex's full reasoning stays inside the verb.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
 The agent does what only an agent can do (judgement, code, deciding how to fix a finding). Everything the audit trail depends on — opening the run, binding a review to a SHA, gating the merge — is deterministic verb code.
@@ -134,7 +134,7 @@ The ledger, worktrees, and event log land under `/workspace/.harness/` and `/wor
 
 ## Authentication
 
-harness dispatches review via Codex and (where used) `claude_agent_sdk`, which wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+harness dispatches review through the Claude CLI by default (`--engine codex` is a host-only cross-model option). **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
 
 | Path | Pricing | When |
 |---|---|---|
@@ -153,7 +153,7 @@ By hand, the same loop is:
 ```bash
 harness start CAL-42                      # opens the run; prints run_id + worktree_path
 cd <worktree_path>                        # implement: write code + tests, test-first
-harness review --run-id <run_id>          # Codex verdict bound to HEAD; fix + re-run until pass
+harness review --run-id <run_id>          # review verdict bound to HEAD; fix + re-run until pass
 harness close CAL-42 --run-id <run_id>    # gate → commit / merge / push → ticket Done
 ```
 
