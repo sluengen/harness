@@ -21,6 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR = REPO_ROOT / "specs" / "decisions" / "0002-in-container-review-engine.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
+README = REPO_ROOT / "README.md"
 HARNESS_CMD = REPO_ROOT / "commands" / "harness.md"
 REVIEWER = REPO_ROOT / "agents" / "reviewer.md"
 VERB_MODEL = REPO_ROOT / "specs" / "features" / "verb-model.md"
@@ -120,4 +121,47 @@ def test_context_index_names_adr_0002() -> None:
     text = _read(CONTEXT)
     assert "0002" in text and "specs/decisions/" in text, (
         "CONTEXT.md decisions index must name ADR 0002"
+    )
+
+
+# --- The verb DESCRIPTIONS in README/CONTEXT name the real default (CAL-1193) --
+# CAL-1189's review found README.md and CONTEXT.md described `review` as
+# "run Codex" — but the default engine is Claude (`--engine codex` is host-only,
+# above). These guard the verb-description prose against re-drifting to a
+# Codex-default framing that misleads a public reader about how their review runs.
+
+
+def _review_verb_bullet(text: str) -> str:
+    """The `- **``review``**` verb-definition bullet, or '' if absent."""
+    for line in text.splitlines():
+        if "**`review`**" in line:
+            return line
+    return ""
+
+
+def test_readme_review_verb_names_claude_default() -> None:
+    """README's `review` verb bullet names Claude as the default engine, not Codex."""
+    bullet = _review_verb_bullet(_read(README))
+    assert bullet, "README.md must describe the `review` verb in a bold bullet"
+    low = bullet.lower()
+    assert "run codex" not in low, (
+        "README `review` bullet says 'run Codex' — the default engine is Claude "
+        "(`--engine codex` is host-only, ADR 0002)"
+    )
+    assert "claude" in low and "default" in low, (
+        "README `review` bullet must name Claude as the default review engine"
+    )
+
+
+def test_context_review_verb_names_claude_default() -> None:
+    """CONTEXT's `review` verb bullet names Claude as the default engine, not Codex."""
+    bullet = _review_verb_bullet(_read(CONTEXT))
+    assert bullet, "CONTEXT.md must describe the `review` verb in a bold bullet"
+    low = bullet.lower()
+    assert "run codex" not in low, (
+        "CONTEXT `review` bullet says 'run Codex' — the default engine is Claude "
+        "(`--engine codex` is host-only, ADR 0002)"
+    )
+    assert "claude" in low and "default" in low, (
+        "CONTEXT `review` bullet must name Claude as the default review engine"
     )

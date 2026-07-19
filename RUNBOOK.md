@@ -356,3 +356,23 @@ Triage any future finding: a **real** secret returns the history-rewrite decisio
 to the operator (do not rewrite history unattended); a **false positive** goes in
 a committed `.gitleaks.toml` allowlist. Re-run before the visibility flip and
 whenever history gains sensitive-looking content.
+
+### Non-secret pre-scrub surfaces in history — accepted (CAL-1193)
+
+Separate from secrets, and decided separately. The **current tree** is scrubbed of
+two private surfaces — the Linear **workspace URL** and the operator **home path** —
+and a gate guard (`tests/unit/test_no_private_surfaces.py`) keeps it that way. That
+guard covers the **tracked tree, not history**: pre-scrub commits (before the
+CAL-1027 scrub) still contain the current and legacy workspace-URL slugs and the
+home path.
+
+**Decision — accept and keep; do not rewrite history for these.** They are **not
+secrets** (the gitleaks audit above is clean): the workspace URLs 404 for anyone
+outside the private Linear org, and the home-path username is already implied by
+commit-author identity. Against that low impact, a `git filter-repo` rewrite would
+change **every commit SHA** and so falsify the SHA citations the repo deliberately
+keeps across `CHANGELOG*`, `specs/`, and `assessments/LOG.md` — a worse outcome than
+the surface it would hide. This is the disclosure review's recommendation (CAL-1189,
+`assessments/2026-07-19-pre-publication-readiness.md`, should-do 4). The secret rule
+above is unchanged: a **real secret** ever found in history still returns the
+history-rewrite decision to the operator; a non-secret surface does not.

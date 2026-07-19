@@ -60,11 +60,11 @@ A set of **deterministic, audited verbs an agent calls** to drive a Linear ticke
 
 ## Architecture
 
-The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch.
+The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and review-engine dispatch (Claude by default; `--engine codex` host-only).
 
 Three verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not Codex's full reasoning.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only option, ADR 0002) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not the engine's full reasoning.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 - **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state.
 - **State store** — SQLite via `aiosqlite`; the `runs` / `events` ledger is the whole audit trail.
