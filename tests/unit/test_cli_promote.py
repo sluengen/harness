@@ -19,12 +19,27 @@ ledger + read-path JSON contract (``status`` / ``pr``) in
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
 
 cli_runner = CliRunner()
+
+
+def _help_text(*argv: str) -> str:
+    """Return ``--help`` output with ANSI colour codes and rich box borders
+    stripped and whitespace collapsed, so a flag can be matched regardless of how
+    the renderer wrapped *or coloured* it across lines.
+
+    CI renders help with colour at 80 cols (``FORCE_COLOR``); the ANSI SGR codes
+    then interleave the help text, so a contiguous-substring check passes locally
+    (no colour) but fails on CI unless they are stripped first (CAL-751)."""
+    out = cli_runner.invoke(app, [*argv, "--help"]).output
+    out = re.sub(r"\x1b\[[0-9;]*m", "", out)  # strip ANSI SGR colour codes
+    return re.sub(r"\s+", " ", re.sub(r"[│|]", " ", out))
 
 #: The v1 subcommands and the flags each documents / exposes. Kept in step with
 #: the SPEC §11 / cli-surface.md surface blocks, which the surface-lock tests
@@ -36,8 +51,9 @@ def test_promote_group_help_lists_the_v1_subcommands() -> None:
     """``harness promote --help`` names the five v1 subcommands (surface exists)."""
     result = cli_runner.invoke(app, ["promote", "--help"])
     assert result.exit_code == 0, result.output
+    help_text = _help_text("promote")
     for sub in _SUBCOMMANDS:
-        assert sub in result.output, f"promote --help omits `{sub}`: {result.output}"
+        assert sub in help_text, f"promote --help omits `{sub}`: {help_text}"
 
 
 @pytest.mark.parametrize("sub", _SUBCOMMANDS)
@@ -55,8 +71,9 @@ def test_promote_start_exposes_from_and_to_flags() -> None:
     """
     result = cli_runner.invoke(app, ["promote", "start", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--from" in result.output
-    assert "--to" in result.output
+    help_text = _help_text("promote", "start")
+    assert "--from" in help_text
+    assert "--to" in help_text
 
 
 def test_promote_start_defaults_are_dev_to_staging() -> None:
@@ -65,5 +82,6 @@ def test_promote_start_defaults_are_dev_to_staging() -> None:
     real git work, so its full behaviour is covered in ``test_cli_promote_start.py``."""
     result = cli_runner.invoke(app, ["promote", "start", "--help"])
     assert result.exit_code == 0, result.output
-    assert "dev" in result.output
-    assert "staging" in result.output
+    help_text = _help_text("promote", "start")
+    assert "dev" in help_text
+    assert "staging" in help_text
