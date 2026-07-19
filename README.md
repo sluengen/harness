@@ -1,10 +1,10 @@
 # harness
 
-An **audit and process layer for agent-driven development**: a small set of
-deterministic, audited verbs an agent calls to drive a ticket end-to-end — not a
-pipeline that drives agents.
+An **evidence layer for agent-driven development**: a small set of deterministic,
+audited verbs an agent calls while it drives a ticket end-to-end. The agent owns
+the judgement work; the harness owns the invariants that keep that work honest.
 
-> The harness is a tool the agent uses, not an engine that uses the agent.
+> Let the agent orchestrate the messy work; make the harness own the evidence.
 
 An AI agent does the judgement work — the code, the fixes, the decisions. The
 harness owns only what an audit trail depends on:
@@ -43,7 +43,7 @@ builder/recorder split — are the portable part; the plumbing around them is no
 A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: three verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; Codex's full reasoning stays inside the verb.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
 The agent does what only an agent can do (judgement, code, deciding how to fix a finding). Everything the audit trail depends on — opening the run, binding a review to a SHA, gating the merge — is deterministic verb code.
@@ -134,7 +134,7 @@ The ledger, worktrees, and event log land under `/workspace/.harness/` and `/wor
 
 ## Authentication
 
-harness dispatches review via Codex and (where used) `claude_agent_sdk`, which wraps Claude Code. **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+harness dispatches review through the Claude CLI by default (`--engine codex` is a host-only cross-model option). **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
 
 | Path | Pricing | When |
 |---|---|---|
@@ -153,7 +153,7 @@ By hand, the same loop is:
 ```bash
 harness start CAL-42                      # opens the run; prints run_id + worktree_path
 cd <worktree_path>                        # implement: write code + tests, test-first
-harness review --run-id <run_id>          # Codex verdict bound to HEAD; fix + re-run until pass
+harness review --run-id <run_id>          # review verdict bound to HEAD; fix + re-run until pass
 harness close CAL-42 --run-id <run_id>    # gate → commit / merge / push → ticket Done
 ```
 
@@ -227,6 +227,11 @@ The boundary is not hand-maintained prose: the `files:` block of
 defines what is MIT, and a test holds the two in correspondence.
 
 ## Changelog
+
+### 2026-07 — relicensed, and the unattended-run posture reaches consumers
+
+- **Relicensed to a two-licence split** (CAL-1078, CAL-1080). The engine — the `harness` CLI and its tooling — is now **AGPL-3.0-only**; the guidance the installer copies into your repo (skills, agents, commands, templates, hooks, process doc, settings) is **MIT**, so it can be installed into a closed-source repo and encumber nothing. The boundary is the `files:` block of [`registry.yaml`](./registry.yaml), held in correspondence by a test; the inbound contribution grant covers patents and right-to-submit. See [`## License`](#license).
+- **The unattended-run posture ships to consumers instead of only running here** (CAL-1081, CAL-1087, CAL-1108). The autonomous Build loop may make the tracker writes its own guidance instructs — deferring a not-yet-actionable ticket, reverting a run stranded by a dead orchestrator, running its own worktree housekeeping — each governed by a natural-language `autoMode.allow` allowlist clause that names the write and states the bound that makes it safe. The rule that *an instructed write which is refused is a configuration gap, not a bug in the skill* now travels in the distributed surface rather than living only in this repo's operator lore.
 
 ### 2026-06 — execution model inverted (verb model)
 

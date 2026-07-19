@@ -4,9 +4,10 @@ The run-reclamation fail-safe (proposal ``stale-run-reclamation``) needs three
 ``LinearClient`` capabilities the client did not have: revert a stranded ticket
 to its Todo (``unstarted``) state, mark it with a label, and annotate it with a
 comment (CAL-734).  The ``--stale`` sweep (CAL-736) adds a fourth: enumerate the
-In-Progress tickets in a project so the sweep can filter them by age.  These
-tests pin that surface, mocking the GraphQL boundary (``LinearClient._request``)
-exactly as the existing client tests do.
+active (In Progress / In Review — CAL-1103) tickets in a project so the sweep can
+filter them by age.  ``review`` also parks the ticket In Review (CAL-1103), the
+fifth transition.  These tests pin that surface, mocking the GraphQL boundary
+(``LinearClient._request``) exactly as the existing client tests do.
 """
 
 from __future__ import annotations
@@ -123,6 +124,77 @@ async def test_transition_to_unstarted_raises_when_no_unstarted_state(
     client = LinearClient(api_key="fake-key")
     with pytest.raises(LinearRequestError, match="no 'unstarted' workflow state"):
         await client.transition_to_unstarted("CAL-734")
+
+
+# ---------------------------------------------------------------------------
+# transition_to_in_review — the review verb parks the ticket here (CAL-1103)
+# ---------------------------------------------------------------------------
+
+
+async def test_transition_to_in_review_targets_in_review_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """transition_to_in_review picks the **In Review** state, not the other
+    ``started`` state (In Progress)."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        calls.append({"query": query, "variables": variables})
+        if "states" in query:
+            return {
+                "data": {
+                    "issue": {
+                        "id": "issue-id",
+                        "team": {
+                            "states": {
+                                "nodes": [
+                                    {"id": "s-todo", "name": "Todo", "type": "unstarted"},
+                                    {"id": "s-ip", "name": "In Progress", "type": "started"},
+                                    {"id": "s-ir", "name": "In Review", "type": "started"},
+                                    {"id": "s-done", "name": "Done", "type": "completed"},
+                                ]
+                            }
+                        },
+                    }
+                }
+            }
+        return {"data": {"issueUpdate": {"success": True}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    await client.transition_to_in_review("CAL-1103")
+
+    mutation_calls = [c for c in calls if "issueUpdate" in c["query"]]
+    assert len(mutation_calls) == 1
+    # In Review is chosen, not the sibling started state In Progress.
+    assert mutation_calls[0]["variables"]["stateId"] == "s-ir"
+
+
+async def test_transition_to_in_review_raises_when_no_started_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No ``started`` state configured → LinearRequestError (not a silent no-op)."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {
+            "data": {
+                "issue": {
+                    "id": "issue-id",
+                    "team": {
+                        "states": {
+                            "nodes": [
+                                {"id": "s-todo", "name": "Todo", "type": "unstarted"},
+                            ]
+                        }
+                    },
+                }
+            }
+        }
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearRequestError, match="no 'started' workflow state"):
+        await client.transition_to_in_review("CAL-1103")
 
 
 # ---------------------------------------------------------------------------
@@ -360,16 +432,85 @@ async def test_post_comment_raises_not_found_for_null_issue(
         await client.post_comment("CAL-999", "body")
 
 
-# ---------------------------------------------------------------------------
-# fetch_in_progress_issues — enumerate the sweep candidates (CAL-736)
-# ---------------------------------------------------------------------------
-
-
-async def test_fetch_in_progress_issues_returns_identifier_and_updated_at(
+async def test_assign_to_viewer_sets_assignee(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Returns one ``{identifier, updated_at}`` per In-Progress issue, scoped to the
-    project name and the **In Progress** state (so In Review is never swept)."""
+    """assign_to_viewer resolves the viewer + issue ids then fires issueUpdate
+    with the viewer as assigneeId — agents authenticate with the operator's key,
+    so `viewer` IS the operator (the machine-readable "a human holds this" signal)."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        calls.append({"query": query, "variables": variables})
+        if "issueUpdate" in query:
+            return {"data": {"issueUpdate": {"success": True}}}
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    await client.assign_to_viewer("CAL-1167")
+
+    update_calls = [c for c in calls if "issueUpdate" in c["query"]]
+    assert len(update_calls) == 1
+    assert update_calls[0]["variables"]["id"] == "issue-uuid"
+    assert update_calls[0]["variables"]["assigneeId"] == "viewer-uuid"
+
+
+async def test_assign_to_viewer_raises_when_unsuccessful(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearRequestError when issueUpdate does not report success."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        if "issueUpdate" in query:
+            return {"data": {"issueUpdate": {"success": False}}}
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearRequestError, match="did not report success"):
+        await client.assign_to_viewer("CAL-1167")
+
+
+async def test_assign_to_viewer_raises_not_found_for_null_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearNotFound when the issue does not exist."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"viewer": {"id": "viewer-uuid"}, "issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.assign_to_viewer("CAL-999")
+
+
+async def test_assign_to_viewer_raises_when_viewer_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """assign_to_viewer raises LinearRequestError when the API key resolves no viewer."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"viewer": None, "issue": {"id": "issue-uuid"}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearRequestError, match="viewer"):
+        await client.assign_to_viewer("CAL-1167")
+
+
+# ---------------------------------------------------------------------------
+# fetch_reclaimable_issues — enumerate the sweep candidates (CAL-736 / CAL-1103)
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_reclaimable_issues_returns_identifier_and_updated_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Returns one ``{identifier, updated_at}`` per reclaimable issue, scoped to the
+    project name and BOTH transient started states — In Progress **and** In Review
+    (CAL-1103 parks reviewed tickets In Review, so the sweep must reach them)."""
     captured: dict[str, Any] = {}
 
     async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
@@ -388,30 +529,31 @@ async def test_fetch_in_progress_issues_returns_identifier_and_updated_at(
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
-    issues = await client.fetch_in_progress_issues(project="Harness v3")
+    issues = await client.fetch_reclaimable_issues(project="Harness v3")
 
     assert issues == [
         {"identifier": "CAL-700", "updated_at": "2026-06-15T10:00:00.000Z"},
         {"identifier": "CAL-701", "updated_at": "2026-06-16T09:30:00.000Z"},
     ]
-    # Scoped to the project name passed in, and to the In Progress state by name —
-    # the other ``started`` state (In Review, a legitimate handoff) is excluded.
+    # Scoped to the project name passed in, and to BOTH transient started states
+    # by name — a dead orchestrator can strand a ticket in either (CAL-1103).
     assert captured["variables"]["project"] == "Harness v3"
     assert "In Progress" in captured["query"]
+    assert "In Review" in captured["query"]
     assert "project" in captured["query"]
 
 
-async def test_fetch_in_progress_issues_empty_when_none(
+async def test_fetch_reclaimable_issues_empty_when_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No In-Progress issues → an empty list (a clean no-op for the sweep)."""
+    """No reclaimable issues → an empty list (a clean no-op for the sweep)."""
 
     async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
         return {"data": {"issues": {"nodes": []}}}
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
-    assert await client.fetch_in_progress_issues(project="Harness v3") == []
+    assert await client.fetch_reclaimable_issues(project="Harness v3") == []
 
 
 # ---------------------------------------------------------------------------

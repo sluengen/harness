@@ -10,10 +10,10 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix — Calibrate-coffee (CAL)
+  linear: CAL   # team prefix — the tracker address, read only when tracker: linear
   project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
+tracker: linear   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. Replaces the old layers.linear, whose name collided with repo.linear above (CAL-1164)
 layers:
-  linear: true
   design_system: false
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
 stack:
@@ -29,7 +29,8 @@ commands:
   run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
-  release: main         # PRs from dev → main for releases
+  staging: staging      # first-class nightly stabilized release candidate; DERIVED — promotion gates a dev→staging candidate and, on green, advances staging directly (no PR; ADR 0003 as amended CAL-1158)
+  release: main         # DECIDED — promotion only ever opens a PR staging → main; never a direct push (topology: dev → staging → main; ADR 0003)
 loop:                   # ledger-backed spend breakers for the autonomous loop (CAL-906; read by harness/loop_budget.py)
   max_review_cycles: 6           # hard ceiling — the run stops + escalates on REACHING the 6th review→fix cycle (cycles 1–3 unconditional; 4–5 assess convergence). One coherent stop rule with agents/reviewer.md.
   wall_clock_budget_minutes: 90  # per-run wall-clock budget; deliberately mirrors the stale-run reclamation staleness threshold — if one moves, move both.
@@ -46,7 +47,8 @@ paths:
   decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
 architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
   files:
-    - harness/cli/review.py   # verb orchestration + prompt + SUBMIT parser + per-engine builders + failure detectors + fallback (CAL-1014)
+    - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107 (CAL-1014)
+    - harness/cli/close.py   # mixes three separable concerns — the close gate (_evaluate_gate, _has_gate_evidence), ledger finalization (_mark_run_closed), and git integrate/merge/push (_status_porcelain, _merge_and_push); tied for the most churn in the package and over the 500-line limit (CAL-1139)
 env:
   file: .env
   linear_token: LINEAR_API_KEY
@@ -58,11 +60,11 @@ A set of **deterministic, audited verbs an agent calls** to drive a Linear ticke
 
 ## Architecture
 
-The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and Codex review dispatch.
+The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and review-engine dispatch (Claude by default; `--engine codex` host-only).
 
 Three verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`review`** — run Codex against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not Codex's full reasoning.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only option, ADR 0002) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not the engine's full reasoning.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 - **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state.
 - **State store** — SQLite via `aiosqlite`; the `runs` / `events` ledger is the whole audit trail.
@@ -83,6 +85,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 
 - **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
 - **[0002 — The in-container review engine is Claude; `--engine codex` is a host-only option](specs/decisions/0002-in-container-review-engine.md)** (CAL-925). Codex's `bwrap` sandbox cannot open a user namespace in the unprivileged `harness:dev` container (CAL-866), so `--engine codex` degrades in-container. Rather than loosen container privileges — it reviews untrusted diffs — the in-container engine is **Claude**, and `--engine codex` is a **host-only** cross-model option. No image privilege change.
+- **[0003 — Promotion is an audited harness lifecycle over a universal `dev → staging → main` topology](specs/decisions/0003-promotion-lifecycle.md)** (CAL-1112). `staging` becomes a first-class stabilized release candidate; promotion follows the verb model (an external orchestrator triggers, the harness owns every state transition). The harness pushes only the promotion branch and creates the PR — no direct target pushes, no auto-merge — with one bounded, escalation-first repair attempt. Policy/docs record only; the mechanics land in CAL-1113–1118.
 
 ## Where deeper truth lives
 
@@ -91,9 +94,10 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
 - **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
 - **In-container review engine (Claude in-container; `--engine codex` host-only)** → `specs/decisions/0002-in-container-review-engine.md`
+- **Promotion lifecycle + branch policy (`dev → staging → main`; harness-owned, agent-agnostic)** → `specs/decisions/0003-promotion-lifecycle.md`
 - **User-facing feature surface** → `README.md`
 - **Ideas not yet confirmed** → `specs/proposals/`
-- **Linear (issues / in-flight work)** → linear.app (team: CAL / Calibrate-coffee, project "Harness v3")
+- **Linear (issues / in-flight work)** → linear.app (team: CAL, project "Harness v3")
 
 ## Gotchas
 

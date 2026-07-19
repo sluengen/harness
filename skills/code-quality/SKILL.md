@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.8.0 -->
+<!-- guidance:code-quality@0.12.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -39,6 +39,10 @@ The build-time application of `engineering-principles`' *smallest change that sa
 ### A removal sweeps for its dependents
 
 A deletion looks finished the moment the code is gone — but it is only half-done if its dependents still point at the removed name. **A removal is not complete until you grep for the removed name — constraint names in exception handlers, feature names in config / testpaths / docs — and delete or update every dependent. The diff of a removal should include its dependents.** What survives otherwise is dead contract: a handler guarding a constraint that no longer exists, a config key for a deleted feature, a doc describing a path that is gone. Grep the name; the diff is the proof the sweep happened.
+
+### An extraction sweeps for its copies
+
+The mirror image of a removal. An extraction is not complete until you grep the whole tree for the extracted pattern — not just the locations the ticket or finding named. A finding's location list is a starting point, not the boundary; it is only ever as wide as the grep that produced it. **Diff every copy you find against the body you are making canonical before you delete it: a copy whose body *differs* is the finding, not the leftover.** A surviving copy with a divergent body is strictly worse than the duplication you set out to remove, because the extraction's green diff now certifies a unification that did not happen.
 
 ### Carry-forward, not silent cleanup
 
@@ -126,8 +130,16 @@ A passing test proves nothing when it feeds the code inputs or events no product
 
 A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
 
+Marker *presence* and marker *substance* are checked differently, and only presence is mechanizable. **Presence** — that an over-limit file carries a `size:` marker or a ticket at all — should be checked by a repo test that walks the source tree, counts lines, and fails any over-limit file carrying neither, so the rule is enforced at the gate at commit time rather than waiting for a reviewer to remember it or the steward's next pass (the walker's config — limit, globs, the higher declarative-file ceiling from Part B — is set as constants the adopting repo edits in its copy, defaulting to the numbers here; a reference implementation ships in `templates/size-guard.md`). **Substance** — whether the `size:` reason names a real cohesion argument or is a rubber stamp — no test can score; that stays reviewer judgment, audited by the steward on assessment passes. Presence is mechanized; substance is judged. The tripwire's value is that the decision gets recorded, not that the file stays small — cohesion itself is reviewer judgment plus the architecture watchlist.
+
 ### Re-deriving what another layer owns is an auditable choice, not a default
 
 When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (Part B — Boundaries; `CONTEXT.md` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
 
 This is the duplication that review is least equipped to catch, because nothing is wrong yet when it lands. A re-derivation is correct in isolation and its change looks complete: the numbers agree on the day it ships. It turns into a defect only once a sibling surface renders the owning layer's number for the same quantity beside it — and then the two contradict each other while neither change is wrong on its face. The contradiction lives in the accumulation, so neither reviewer was positioned to see it, and it surfaces in an assessment pass long after both shipped. Spec time is the one point where a single person is looking at both layers, which is why the justification is owed there and not at review.
+
+### Narrowing a nullable is a whole-call-graph change, not a grep-and-replace
+
+When a change narrows a nullable at a boundary — coercing an absent or null value to a concrete one, or asserting it non-null — the worklist is every *transitive consumer* of that field, enumerated by following the type to its readers, not the callsites a grep for the coercion operator returns. A coercion and the reader it feeds are frequently in different files: grepping the operator finds where the value is narrowed; it does not find a downstream reader, one or more files away, that still assumes the old nullable contract and does arithmetic or a comparison on the coerced value.
+
+The type system enumerates the readers for free — widen or retype the field and follow what breaks to each consumer. A grep for the coercion is a starting point for that enumeration, never its boundary: the callsite that reads the narrowed value without knowing it was narrowed is exactly the one the operator search cannot see, and it is where the defect lands.

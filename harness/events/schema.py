@@ -33,6 +33,11 @@ EventType = Literal[
     # WIP survives the container dying; the ledger signal ``reclaim`` reads to
     # report a *durable* (resumable) branch rather than a never-pushed local one.
     "checkpoint",
+    # Defer verb (CAL-1143) — the unattended Build routine's triage write: a
+    # picked ticket judged not-yet-actionable gets a comment + the ``decision``
+    # label, and this event records that decision (ticket, reason, timestamp) in
+    # the audit trail so triage is auditable like every other verb.
+    "defer",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

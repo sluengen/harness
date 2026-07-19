@@ -21,6 +21,16 @@ starts implementing:
    effect; local state is rolled back if it fails).
 8. Prints the run context as JSON.
 
+**Tracker-less repos (CAL-1104).** Steps 1–3 and 7 are the tracker's half of the
+flow; a repo whose CONTEXT.md sets ``layers.linear: false`` has no tracker, so
+they are skipped entirely — no key is required, nothing is fetched, and no
+transition is made. The ``<TICKET>`` argument is then an **opaque run
+identifier**: it keys the open-run index verbatim (so step 4's duplicate guard
+still holds) and appears in the output with every tracker-supplied field
+(``title`` / ``description`` / ``url`` / ``id``) left ``None``. ``--resume``
+degrades to a clean start, both of its sources being tracker comments. The layer
+defaults **on**, so a repo that has not opted out behaves exactly as before.
+
 The whole flow runs inside a single ``asyncio.run`` event loop so all I/O —
 Linear HTTP, SQLite, worktree git — is awaited rather than spread across
 repeated ``asyncio.run`` calls.
@@ -50,6 +60,7 @@ from pydantic import BaseModel
 
 from harness.cli._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
+    resolve_base_branch,
     run_git,
     teardown_worktree,
 )
@@ -57,6 +68,7 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
+from harness.layers import linear_enabled, tracker_config_error
 from harness.linear import (
     LinearClient,
     LinearConfigError,
@@ -120,10 +132,12 @@ class _StartError(VerbError):
 
 def start_command(
     ticket: str = typer.Argument(..., help="Linear ticket identifier (e.g. CAL-570)."),
-    base: str = typer.Option(
-        "dev",
+    base: str | None = typer.Option(
+        None,
         "--base",
-        help="Base branch for the worktree (the merge target). Defaults to ``dev``.",
+        help="Base branch for the worktree (the merge target). Defaults to the "
+        "repo's CONTEXT.md ``branches.integration``, then its origin default "
+        "branch, then ``dev`` (CAL-1106).",
     ),
     resume: bool = typer.Option(  # noqa: B008
         False,
@@ -150,12 +164,16 @@ def start_command(
     """Open a run: validate ticket, transition to In Progress, create worktree, record ledger."""
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
+    # Resolve the base branch: an explicit --base wins, else the repo's configured
+    # integration branch, else its origin default, else "dev" (CAL-1106). Done here
+    # (sync, with repo_root in hand) so the async flow receives a concrete branch.
+    resolved_base = resolve_base_branch(repo_root, base)
 
     output = run_verb(
         lambda: asyncio.run(
             _run_start(
                 ticket=ticket,
-                base=base,
+                base=resolved_base,
                 resume=resume,
                 repo_root=repo_root,
                 db_path=db_path,
@@ -184,28 +202,49 @@ async def _run_start(
     db_path: Path,
 ) -> StartOutput:
     """Drive the full start flow; raise :class:`_StartError` on any failure."""
-    # 1. Validate Linear API key is present.
-    try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
-        raise _StartError(str(exc), 2) from exc
+    # 0. Read the tracker switch (CAL-1104, CAL-1164). ``tracker: none`` (or the
+    # ``layers.linear: false`` back-compat) means the repo has no tracker, so
+    # steps 1–3 have nothing to talk to: the argument is an opaque run identifier
+    # rather than a ticket to fetch. The switch defaults on, so a repo that has
+    # not opted out is unaffected. First reject an incoherent switch/address pair
+    # up front, before any key check or side effect — a run must not start on a
+    # config that contradicts itself.
+    config_error = tracker_config_error(repo_root)
+    if config_error is not None:
+        raise _StartError(config_error, 2)
+    tracker = linear_enabled(repo_root)
 
-    client = LinearClient(api_key=api_key)
+    client: LinearClient | None = None
+    if tracker:
+        # 1. Validate Linear API key is present.
+        try:
+            api_key = linear_api_key()
+        except LinearConfigError as exc:
+            raise _StartError(str(exc), 2) from exc
 
-    # 2. Fetch ticket from Linear.
-    try:
-        ticket_data = await client.fetch_issue(ticket)
-    except LinearNotFound as exc:
-        raise _StartError(str(exc), 2) from exc
-    except LinearRequestError as exc:
-        raise _StartError(f"Linear API error: {exc}", 2) from exc
+        client = LinearClient(api_key=api_key)
 
-    # 3. Resolve the canonical identifier from the Linear payload.  Using the
-    # caller-supplied string would let "cal-570" and "CAL-570" open two runs
-    # for the same issue; the Linear identifier is the single source of truth.
-    canonical = ticket_data.get("identifier") or ""
-    if not canonical:
-        raise _StartError(f"Linear returned no identifier for {ticket!r}", 2)
+        # 2. Fetch ticket from Linear.
+        try:
+            ticket_data = await client.fetch_issue(ticket)
+        except LinearNotFound as exc:
+            raise _StartError(str(exc), 2) from exc
+        except LinearRequestError as exc:
+            raise _StartError(f"Linear API error: {exc}", 2) from exc
+
+        # 3. Resolve the canonical identifier from the Linear payload.  Using the
+        # caller-supplied string would let "cal-570" and "CAL-570" open two runs
+        # for the same issue; the Linear identifier is the single source of truth.
+        canonical = ticket_data.get("identifier") or ""
+        if not canonical:
+            raise _StartError(f"Linear returned no identifier for {ticket!r}", 2)
+    else:
+        # Tracker-less: with no payload to canonicalise against, the argument
+        # *is* the identifier — taken verbatim so it still keys the open-run
+        # index (the duplicate-start guard holds), and carried into the output
+        # with every tracker-supplied field left unset rather than invented.
+        ticket_data = {"identifier": ticket}
+        canonical = ticket
 
     # 4. Check for an existing open run for this ticket (keyed on canonical).
     existing = await _find_open_run(db_path, canonical, ticket_data)
@@ -218,8 +257,11 @@ async def _run_start(
     # (not reclaimed, no durable WIP, a branch that no longer fetches, or a
     # Linear probe error) falls back to a clean start off ``base`` rather than
     # blocking the queue. ``base`` (the merge target) is unchanged either way.
+    # Tracker-less, both resume sources are tracker comments, so there is
+    # nothing to read: resume degrades to the clean start it already falls back
+    # to for a ticket with no durable WIP.
     start_point: str | None = None
-    if resume:
+    if resume and client is not None:
         start_point = await _resolve_resume_start_point(client, canonical, repo_root)
 
     # 5. Create worktree (local side effect — rolled back on any later failure).
@@ -266,15 +308,18 @@ async def _run_start(
     # 7. Transition ticket to In Progress (remote side effect — last, as it is
     # the only non-local operation).  Roll back ALL local state on any failure,
     # including unexpected transport errors, so no dangling open run is left.
-    try:
-        await client.transition_to_in_progress(canonical)
-    except Exception as exc:
-        await _delete_run_row(db_path, run_id)
-        await asyncio.to_thread(_cleanup_worktree_sync, repo_root, worktree_path)
-        # Linear boundary errors are an invocation problem (exit 2); anything
-        # else is unexpected (exit 1).  Either way local state is rolled back.
-        code = 2 if isinstance(exc, LinearNotFound | LinearRequestError) else 1
-        raise _StartError(f"failed to transition ticket: {exc}", code) from exc
+    # Tracker-less there is no remote side effect at all: the run is complete
+    # once the worktree and ledger row exist.
+    if client is not None:
+        try:
+            await client.transition_to_in_progress(canonical)
+        except Exception as exc:
+            await _delete_run_row(db_path, run_id)
+            await asyncio.to_thread(_cleanup_worktree_sync, repo_root, worktree_path)
+            # Linear boundary errors are an invocation problem (exit 2); anything
+            # else is unexpected (exit 1).  Either way local state is rolled back.
+            code = 2 if isinstance(exc, LinearNotFound | LinearRequestError) else 1
+            raise _StartError(f"failed to transition ticket: {exc}", code) from exc
 
     # 8. Build compact output context — only the fields the agent needs.
     return StartOutput(

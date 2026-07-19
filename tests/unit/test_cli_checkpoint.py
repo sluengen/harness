@@ -241,6 +241,105 @@ def test_checkpoint_is_repeatable(repo: Path, db_path: Path, remote: Path) -> No
 
 
 # ===========================================================================
+# CAL-1162: a rebased run branch re-checkpoints (force-with-lease), and the
+# lease still refuses when origin carries a commit the run has not seen.
+# ===========================================================================
+
+
+def test_checkpoint_re_pushes_a_rebased_run_branch(
+    repo: Path, db_path: Path, remote: Path
+) -> None:
+    """A checkpoint after the run branch is *rebased* still lands the rewritten
+    tip on ``origin``.
+
+    Rebase-before-close is the standing move when ``dev`` advances mid-run, and
+    it **rewrites** the run branch — so a plain push is rejected non-fast-forward
+    and durability silently reverts to the pre-rebase commit. The force-with-lease
+    push makes checkpoint match its own contract across the rebase: the run branch
+    is the run's private, rewritable WIP ref (CAL-1162)."""
+    _seed_open_run(db_path, repo)
+    # First checkpoint pushes the pre-rebase tip.
+    r1 = cli_runner.invoke(
+        app, ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path)]
+    )
+    assert r1.exit_code == 0, r1.output
+
+    # dev advances and the run branch is rebased onto it — its tip is rewritten.
+    _git(repo, "checkout", "dev")
+    (repo / "dev.txt").write_text("dev moved\n")
+    _git(repo, "add", "dev.txt")
+    _git(repo, "commit", "-m", "dev moved")
+    _git(repo, "checkout", BRANCH)
+    _git(repo, "rebase", "dev")
+    rebased_head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    # The re-checkpoint must succeed and advance origin to the rebased tip.
+    r2 = cli_runner.invoke(
+        app, ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path)]
+    )
+    assert r2.exit_code == 0, r2.output
+    remote_sha = subprocess.run(
+        ["git", "ls-remote", "--heads", str(remote), BRANCH],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()[0]
+    assert remote_sha == rebased_head
+    events = _checkpoint_events(db_path, RUN_ID)
+    assert events[-1]["pushed_sha"] == rebased_head
+
+
+def test_checkpoint_lease_refuses_when_origin_has_unseen_commit(
+    repo: Path, db_path: Path, remote: Path, tmp_path: Path
+) -> None:
+    """The lease still does its job: when ``origin``'s run branch carries a commit
+    this run has not seen, the checkpoint is refused with a **named,
+    machine-readable outcome** (``reason='stale_remote'``, not a raw git blob) and
+    ``origin`` is left untouched (CAL-1162, AC-3)."""
+    _seed_open_run(db_path, repo)
+    # First checkpoint: origin/BRANCH == our tip; our remote-tracking ref records it.
+    cli_runner.invoke(
+        app, ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path)]
+    )
+
+    # A *different* clone advances origin/BRANCH — a commit this run never fetches.
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", str(remote), str(other)],
+        check=True, capture_output=True, text=True,
+    )
+    _git(other, "config", "user.email", "other@example.com")
+    _git(other, "config", "user.name", "Other")
+    _git(other, "checkout", BRANCH)
+    (other / "unseen.txt").write_text("unseen by the run\n")
+    _git(other, "add", "unseen.txt")
+    _git(other, "commit", "-m", "unseen")
+    _git(other, "push", "origin", BRANCH)
+    unseen_sha = _git(other, "rev-parse", "HEAD").stdout.strip()
+
+    # The run rewrites its own tip (a rebase) and tries to re-checkpoint.
+    _git(repo, "commit", "--amend", "--no-edit", "-m", "wip rebased")
+    result = cli_runner.invoke(
+        app,
+        ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path),
+         "--json"],
+    )
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "stale_remote"
+    # A human sentence, not the raw git rejection blob.
+    assert "not seen" in payload["error"]
+    assert "[rejected]" not in payload["error"]
+
+    # The lease did its job: origin still carries the unseen commit, un-clobbered.
+    remote_sha = subprocess.run(
+        ["git", "ls-remote", "--heads", str(remote), BRANCH],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()[0]
+    assert remote_sha == unseen_sha
+    # No fabricated durability: no second checkpoint event was recorded.
+    assert len(_checkpoint_events(db_path, RUN_ID)) == 1
+
+
+# ===========================================================================
 # Refusals
 # ===========================================================================
 

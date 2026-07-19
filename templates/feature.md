@@ -1,4 +1,4 @@
-<!-- guidance:template-feature@0.1.1 -->
+<!-- guidance:template-feature@0.2.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
@@ -32,7 +32,7 @@ Tables, fields, relationships, invariants. Omit if the feature has no persistent
 
 ## Interface surface
 
-Endpoints, commands, or component contracts: shapes, auth rules, error cases. Brief; point to the generated contract (OpenAPI, types) for full detail. Omit if not applicable.
+Endpoints, commands, or component contracts: shapes, auth rules, error cases. **Name the production call site for each exported entry — a test is not a consumer. An entry with no production caller is recorded under Known limitations as "no consumer yet: adopt or retire by {ticket}", never listed as delivered API.** Brief; point to the generated contract (OpenAPI, types) for full detail. Omit if not applicable.
 
 ## Known limitations
 

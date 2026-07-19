@@ -9,13 +9,17 @@ assessment cycle.
 The accepted fix (CAL-666 decision, 2026-06-14) adds to the ``code-quality``
 verification gate: a file over the hard limit must carry a one-line
 ``# size: <reason>`` justification or a tracking ticket, else the reviewer
-rejects it. This converts silent drift into an auditable choice.
+rejects it.
 
-This guard binds that rule into the skill so a future re-edit cannot silently
-drop it. It is a text-parse content guard in the style of
+This guard binds that rule into the skill text so a future re-edit cannot
+silently drop it: it is a text-parse content guard in the style of
 ``test_review_discipline_port_orphan`` (CAL-665),
 ``test_distributed_skill_cites`` (CAL-654) and ``test_retired_spec_cites``
-(CAL-633): it reads the as-built guidance and asserts the rule is present.
+(CAL-633) — it reads the as-built guidance and asserts the rule is present. It
+does not itself measure any file's length; converting silent drift into an
+auditable choice on the source tree is the job of the walker test
+(``test_source_file_size_justification.py``), which enforces the ``# size:``
+marker across ``harness/**``.
 
 Acceptance criteria (this ticket):
 

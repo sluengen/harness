@@ -45,6 +45,7 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent.parent
 SPEC = REPO_ROOT / "SPEC.md"
 HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
+CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 
 
 # --- Registered surface -------------------------------------------------------
@@ -63,10 +64,22 @@ EXPECTED_SURFACE = {
     "runs",  # read / inspection
     "cancel",
     "reclaim",
+    "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
     "doctor",
     "version",
     "worktrees",
+    "promote",  # the promotion lifecycle group (CAL-1113, ADR 0003)
 }
+
+#: The v1 ``harness promote`` subcommand set (ADR 0003). These are the real
+#: orchestrator pause points — ``start`` opens the promotion, ``continue``
+#: resumes after one bounded repair, ``status`` reads state, ``pr`` is the
+#: success finalizer, ``escalate`` the non-success terminal path. There is
+#: deliberately **no** ``verify`` command: gate execution lives *inside*
+#: ``start`` / ``continue`` (a promotion cannot reach ``pr_ready`` without fresh
+#: gate evidence), so a standalone ``verify`` would name a step that is never an
+#: independent pause/resume point (CAL-1113 AC-3).
+EXPECTED_PROMOTE_SUBCOMMANDS = {"start", "continue", "status", "pr", "escalate"}
 
 #: Retired engine-era commands. None may be registered or documented as live.
 RETIRED_COMMANDS = {"run", "validate", "decisions", "decision"}
@@ -89,6 +102,56 @@ def test_registered_surface_is_the_as_built_verb_set() -> None:
 def test_no_retired_engine_command_registered() -> None:
     """The retired engine commands are not registered."""
     assert RETIRED_COMMANDS.isdisjoint(_registered_surface())
+
+
+def _promote_subcommands() -> set[str]:
+    """Every subcommand the ``promote`` group registers, via the live app."""
+    import typer.main
+
+    from harness.cli import app
+
+    cli = typer.main.get_command(app)
+    promote = cli.commands["promote"]
+    return set(getattr(promote, "commands", {}))
+
+
+def test_promote_subcommand_surface_is_locked() -> None:
+    """The ``promote`` group registers exactly the v1 subcommand set (AC-2).
+
+    A drift — a renamed subcommand, a sixth command, or a re-introduced
+    ``verify`` — fails here, so the promotion surface cannot change silently as
+    its mechanics land across CAL-1114+.
+    """
+    assert _promote_subcommands() == EXPECTED_PROMOTE_SUBCOMMANDS
+
+
+def test_promote_has_no_verify_subcommand() -> None:
+    """There is no ``harness promote verify`` in v1 (ADR 0003 — gate execution
+    lives inside ``start`` / ``continue``, so ``verify`` names no pause point)."""
+    assert "verify" not in _promote_subcommands()
+
+
+def test_cli_surface_spec_explains_no_verify_command() -> None:
+    """The CLI-surface feature spec explains why v1 has no ``verify`` command (AC-3).
+
+    A reader of the promotion surface must find the rationale in the as-built
+    record, not only in the ADR: gate execution lives inside ``start`` /
+    ``continue``, so a standalone ``verify`` would name no real pause point.
+    """
+    text = CLI_SURFACE_SPEC.read_text()
+    assert "verify" in text and "promote" in text, (
+        "cli-surface.md must discuss the promote surface and the verify question"
+    )
+    low = text.lower()
+    # The rationale must tie the absence of `verify` to gate execution living
+    # inside start/continue — the substance, not just the word "verify".
+    assert "no separate `verify`" in text or "no `verify`" in text, (
+        "cli-surface.md must state there is no separate `verify` command in v1"
+    )
+    assert "inside" in low and "start" in low and "continue" in low, (
+        "cli-surface.md must explain that gate execution lives inside "
+        "start/continue, which is why no standalone verify command exists (AC-3)"
+    )
 
 
 # --- CLI identity prose lock --------------------------------------------------

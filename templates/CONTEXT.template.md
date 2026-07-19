@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.9 -->
+<!-- guidance:template-context@0.1.11 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -12,14 +12,14 @@ profile: harness               # the single registry profile (one surface); repo
 visibility: committed          # committed (all guidance in git; enables cloud execution; default private) | local (only this file in git; internals bootstrapped locally; default public)
 repo:
   name: {repo name}
-  linear: {Linear workspace/team — or 'none' for the rare repo not on Linear}
+  linear: {Linear workspace/team — or 'none' for the rare repo not on Linear (then set tracker: none below). The tracker address; read only when tracker: linear}
   project: {Linear project the /harness routine loops pull from — only needed if this repo self-hosts the harness tool; omit otherwise}
+tracker: linear                # single source of truth for the tracker: linear | github | none. The switch the harness engine reads: none → the verbs run tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and `start <id>` takes an opaque run identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected. (github backend is not yet implemented.)
 # Layers carry repo-type variation — what the retired standard/harness profiles'
 # `default_layers` used to encode is now per-repo config here. A product repo:
 # feature_specs: true (+ design_system: true if it has one). An infra / pipeline
 # repo: both false (design-doc / SPEC.md is the as-built record).
 layers:                        # which optional guidance layers this repo uses
-  linear: true                 # the standard; set false only if this repo is not on Linear
   design_system: false         # on → frontend uses the design system; engages the design-system skill (ux-design applies to any user-facing surface regardless)
   feature_specs: true          # on → as-built record is specs/features/ via templates/feature.md; off → design doc / SPEC.md
 stack:
@@ -61,7 +61,7 @@ architecture_watchlist:               # optional — omit entirely if this repo 
     - {e.g. src/orchestrator/*.py}
 env:
   file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
-  linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if linear: false
+  linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if tracker: none
 ```
 
 ## What this repo is

@@ -32,7 +32,7 @@ The pure deterministic-engine docs (`workflow-schema`, `engine-executor`, `engin
 | [`specs/proposals/harness-as-tool.md`](specs/proposals/harness-as-tool.md) | The accepted model: invert the orchestration boundary; verbs + ledger + gate. **Read first.** |
 | [`specs/architecture-principles.md`](specs/architecture-principles.md) | Architecture principles + the orchestration-inversion decision (cross-cutting decision record) |
 
-The SQLite schema reference (full DDL, migrations, `BaseState`) now lives in [`run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the worktree helper reference is the feature spec [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) (the engine-era `WorktreeNode` detail is the retired doc below).
+The SQLite schema reference (full DDL, migrations) now lives in [`run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the worktree helper reference is the feature spec [`worktree-lifecycle.md`](specs/features/worktree-lifecycle.md) (the engine-era `WorktreeNode` detail is the retired doc below).
 
 **Superseded (retired deterministic engine — historical):**
 
@@ -276,9 +276,20 @@ harness worktrees cleanup                 [--age <duration>] [--merged]
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
 harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket; record a defer event (CAL-1143)
 harness doctor                                # system health checks
 harness version                           [--json]
+
+# Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
+harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
+harness promote continue  [--promotion-id <id>] [--repo <p>] [--json]   # resume an agent_may_fix promotion after one bounded repair
+harness promote status    [--promotion-id <id>] [--repo <p>] [--json]   # read a promotion by id: typed ledger view
+harness promote pr        [--promotion-id <id>] [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR (gated)
+harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
 ```
+
+There is no `harness promote verify` in v1: the gate runs inside `start` /
+`continue`, never as a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).
 
 #### Harness-as-tool verbs
 

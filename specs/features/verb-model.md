@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-07-02
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925]
+last_updated: 2026-07-16
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104]
 ---
 
 # Verb model — start / review / close
@@ -44,7 +44,7 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
-- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at }` (and optional `commit_message` / `deferred_brief`)
+- THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), enforces the verify-gate evidence (below), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, created_at, gate_ran }` (and optional `gate_command` / `gate_exit_code` / `gate_reason` / `gate_output_tail` / `commit_message` / `deferred_brief`)
 - AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is recorded as `verdict='fail'` with the sentinel issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a bad reviewer, it records the failure.
@@ -54,6 +54,23 @@ The agent acts on the verdict:
 - `fail` → fix the root cause in the worktree, commit, and **re-run `review`** (the `(fix → review)*` loop). Each review binds to the new HEAD. The loop is **bounded** by the spend breakers below.
 - `defer` → the implementation is shippable, but the review surfaced a genuinely out-of-scope finding; file a follow-up for it. Note the close gate opens **only** on a `verdict=pass` (`harness/cli/close.py` queries `verdict='pass'`; a run with only a `defer` is refused `no_passing_review`), so to close you still need a passing review bound to HEAD — obtain one before closing.
 - `pass` → proceed to close.
+
+#### Scenario: the verify gate's evidence is required before any engine
+
+`review` requires **evidence** that the repo's verify gate (`CONTEXT.md` → `verify:`) ran green before it invokes an engine, and records that evidence on the `review` event. This is what makes a recorded `pass` mean *the gate ran and was green* rather than *a reviewer read the diff* — until CAL-1082 the two were byte-identical in the ledger, and the only instruction to run the gate was prose addressed to a model. The verbs own "the durable record **and the gate**"; this is the second half.
+
+**The orchestrator runs the gate; the verb enforces and records it.** The harness is a scaffold, not a toolchain host. Its image cannot carry every target repo's toolchain: `harness:dev` is built `--no-dev`, so not even this repo's own `ruff` is present, a Node target needs Node, and an Xcode target can never run in a Linux container. A verb that *executed* the gate would therefore either grow toward every ecosystem or hand a diff-only `pass` to the repos it could not run — and could never close its own tickets. So the gate runs where the toolchain already lives (the orchestrating session, host-side) and its result is handed to the verb (`--gate-exit <code>`, `--gate-log <path>`). `harness/gate.py` reads `verify:` for the record and bounds the log tail; it holds no execution path.
+
+- GIVEN an open run whose repo configures `verify: "bash scripts/verify.sh"`, and an agent that ran it green
+- WHEN the agent runs `harness review --gate-exit 0 --gate-log <path>`
+- THEN the engine is invoked, and the `review` event carries `gate_ran=true`, `gate_exit_code=0`, the resolved `gate_command`, and the bounded `gate_output_tail` — all bound to `reviewed_sha`
+- AND GIVEN instead **no** `--gate-exit` is supplied, THEN the verb refuses **before invoking any engine**, records **no** event, and exits `5` with `reason=no_gate_evidence` — silence is not a pass
+- AND GIVEN instead `--gate-exit` is non-zero, THEN the verb refuses the same way and exits `5` with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }` — the harness does not review a red tree, and spends no tokens doing it. The bounded (≤ 2 KB) tail is a deliberate exception to context economy: it is the *reason for the refusal*, so the agent can fix what broke without re-reading the whole log.
+- AND GIVEN instead the repo configures no `verify:` at all, THEN the engine runs and the event records `gate_ran=false, gate_reason="not_configured"` — the harness cannot gate what a repo does not define, so the ledger states the absence plainly instead of implying a gate ran, and `close` allows that pass.
+
+The evidence is checked **after** the spend breakers below: a run already bounded out is refused on that, not on its gate.
+
+**The evidence is self-reported, deliberately.** It moves no trust boundary: any process that can write the workspace can already forge a ledger event, so a fabricated `--gate-exit 0` is the same class of act as a fabricated event, and the ledger's filesystem trust boundary is unchanged. The authoritative control over what actually merges is server-side branch protection (CAL-1029), not this record. What the record buys is that a `pass` now *states* whether a gate ran, so a reader — and `close` — can tell a verified tree from an unverified one. Cryptographic attestation was weighed and left out of scope. This design also removes the pressure to loosen the review container toward foreign toolchains, which ADR 0002 rejected for good reason.
 
 #### Scenario: the spend breakers bound the fix loop
 
@@ -87,9 +104,40 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), or `stale_review` (a pass exists but HEAD moved after it)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran), or `dirty_base_checkout` (the base checkout is not merge-safe)
+
+#### Scenario: the base checkout is not merge-safe
+
+- GIVEN an open run whose gate is satisfied, but whose **base checkout** carries uncommitted tracked changes or a merge already in progress
+- WHEN the agent runs `harness close`
+- THEN the verb exits 2 with `reason=dirty_base_checkout`, having mutated nothing
+
+`close` merges in the base checkout — shared state that, unlike the run worktree, no gate conjunct covers. Git cannot reliably reconstruct uncommitted changes present when a merge began, so a conflict over a dirty base checkout cannot be cleanly undone; the guarantee that a refusal leaves the repository as it found it only holds from a clean start, which is why the check precedes every mutation (CAL-1151). It counts **tracked** changes only — an untracked scratch file cannot affect a merge, and counting it would wedge every close.
+
+A merge this verb *does* start is always restored: a conflict aborts before returning, and if that restore fails, the residue is reported **alongside** the original conflict reason rather than swallowed — a silent cleanup failure is what stranded the checkout in the field, and left close's own prescribed recovery (rebase → re-review → close) failing with git's unrelated `you need to resolve your current index first`.
+
+`no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
 `close` does **not** auto-commit. A dirty worktree is refused outright, because uncommitted edits are not in HEAD and so were never reviewed (`stale_review` catches a commit *after* review; only the clean-tree check catches an edit *without* committing — CAL-586, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`). A gate refusal is the gate doing its job and is never worked around — the verb never bypasses its own gate.
+
+### The tracker switch — `tracker:`
+
+Every tracker touchpoint above is conditional on the target repo's `CONTEXT.md` → `tracker:` (CAL-1104, CAL-1164). `tracker: linear | github | none` is the **single source of truth** for whether a tracker is wired and which backend — one top-level field, so no second boolean can contradict it. It replaces the CAL-1104 `layers.linear` switch, whose name collided with the `repo.linear` address and whose on/off state was derivable from — yet unenforced against — that address. The switch is read by `harness/layers.py` (`tracker()` / `linear_enabled()`), the same read-config-from-CONTEXT-by-regex shape as `harness/loop_budget.py` (breaker thresholds) and `harness/gate.py`. It defaults **on** (`linear`), so everything above describes the ordinary case. (`github` names a backend that is not yet implemented — CAL-1105.)
+
+#### Scenario: a repo with no tracker
+
+- GIVEN a repo whose `CONTEXT.md` sets `tracker: none`, and **no** `LINEAR_API_KEY`
+- WHEN the agent drives `start → review → close`
+- THEN no verb validates a key, fetches an issue, or transitions anything, and the run completes green
+- AND `start`'s `<ticket>` argument is an **opaque run identifier** — carried verbatim (so `idx_runs_ticket_open` still refuses a duplicate open run) and emitted with `title` / `description` / `url` / `id` left `null` rather than invented
+- AND `close` reports `ticket_done: false` — the honest record of a transition that did not happen, not a failure
+- AND `reclaim` keeps its local half (reconcile the ledger, preserve the branch) and skips the revert; `reclaim --stale` is a clean no-op, because staleness keys entirely on the tracker's `updatedAt` and there is nothing to enumerate
+
+The gate is **unchanged** by the switch: `close` evaluates the reviewed-SHA gate *before* the tracker step, so a tracker-less close with no passing review still refuses `no_passing_review`. Tracker-less does not mean gate-less — pinned by `test_tracker_less_layer.py`.
+
+The default is deliberately conservative: a missing `CONTEXT.md`, a missing `tracker:` key (with no `layers.linear`), or an unrecognised value all read as **on** (`linear`). A repo that has not opted out keeps today's behaviour — including failing fast on a missing `LINEAR_API_KEY` — rather than degrading into a tracker-less run because a file could not be parsed. **Back-compat:** a repo not yet migrated has no `tracker:` key, so the reader falls back to `layers.linear` (`false` → `none`, otherwise → `linear`); that fallback still resolves the `layers:` block before matching, because `linear:` appears twice in an un-migrated `CONTEXT.md` (`repo.linear`, the team prefix; `layers.linear`, the old switch) and an unscoped match reads the prefix first. An **incoherent** switch/address pair — `tracker: linear` with no `repo.linear`, `tracker: none` with a dangling address, or a lingering `layers.linear` that disagrees with an explicit `tracker:` — is rejected up front by `start` (`tracker_config_error`, pinned by `test_tracker.py` and `test_cli_start.py`), before any key check or side effect.
+
+`review` has no tracker touchpoint to gate: it records a verdict to the ledger and never calls the tracker. Should it gain one (CAL-1103 would move the ticket to In Review), that transition takes the same layer check.
 
 ### Routing discipline
 
@@ -109,7 +157,7 @@ Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb
 
 - The orchestration *between* verbs is deliberately not reproducible: it varies with the agent, which buys full context retention and graceful degradation to manual driving on a verb failure (decision D1). Reproducibility applies to the verbs, not the end-to-end run.
 - A run can be abandoned without merging via `harness cancel` (close-without-merge); see [cli-surface.md](cli-surface.md).
-- A run whose orchestrator died mid-flight is recovered via `harness reclaim` — it reverts the stranded Linear ticket to Todo (so dependents unblock) and reuses `cancel`'s ledger transaction to clear the `open` row, while preserving the worktree/branch. See [run-ledger.md](run-ledger.md) and the accepted proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md).
+- A run whose orchestrator died mid-flight is recovered via `harness reclaim` — it reverts the stranded Linear ticket to Todo (so dependents unblock) and reuses `cancel`'s ledger transaction to clear the `open` row, while preserving the worktree/branch. See [run-ledger.md](run-ledger.md) and the accepted proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md). Tracker-less (`tracker: none`) only the local half runs, and the time-keyed `--stale` sweep has no tracker state to read — so recovering a dead run there is a manual `reclaim <run-id>`, not an automatic sweep.
 
 ## Decisions
 

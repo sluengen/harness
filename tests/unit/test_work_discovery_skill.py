@@ -276,6 +276,69 @@ def test_work_discovery_names_the_posture_lever() -> None:
     )
 
 
+# --- CAL-1166: skip rule keyed on assignment; deferral assigns the operator ---
+
+
+def test_held_tickets_section_keys_on_assignment() -> None:
+    """CAL-1166 AC-1: the skip rule names a ticket **assigned to a human** as the
+    *primary* held signal (any state), with the transitional ``decision`` /
+    ``operator`` label OR that keeps existing deferred tickets safe until the
+    queue backfill assigns them. This replaces the label-only "The ``decision``
+    label" skip section — assignment is the machine-readable human-hold signal,
+    the label is the human-readable explanation of *why*."""
+    text = SKILL.read_text()
+    section = _section(text, "Held")
+    assert section, (
+        "the skill must carry a 'Held tickets' section naming what the loop "
+        "skips — it replaces the label-only skip section (CAL-1166 AC-1)."
+    )
+    low = section.lower()
+    assert "assign" in low, (
+        "the held section must name a ticket assigned to a human as the skip "
+        "signal (CAL-1166 AC-1)."
+    )
+    assert "primary" in low, (
+        "the held section must name assignment as the *primary* signal, the "
+        "label OR as transitional (CAL-1166 AC-1)."
+    )
+    assert "`operator`" in section and "`decision`" in section, (
+        "the held section must name the transitional `decision`/`operator` label "
+        "OR — the fallback until the queue backfill assigns held tickets "
+        "(CAL-1166 AC-1)."
+    )
+
+
+def test_deferral_instruction_assigns_the_operator() -> None:
+    """CAL-1166 AC-2: the deferral step assigns the ticket to the operator — in
+    addition to the comment and label — because assignment is the signal the
+    held-tickets skip rule now reads. (The `defer` *verb* performing the
+    assignment write, and its `autoMode.allow` clause, are CAL-1167's scope; this
+    skill instructs it, and the transitional OR covers the gap in between.)"""
+    body = _section(SKILL.read_text(), "Actionability")
+    low = body.lower()
+    assert "assign" in low, (
+        "the deferral step must assign the held ticket to the operator "
+        "(CAL-1166 AC-2)."
+    )
+    assert "operator" in low, (
+        "the deferral must name the operator as the assignee — the human who "
+        "then holds the ticket (CAL-1166 AC-2)."
+    )
+
+
+def test_work_discovery_version_is_0_3_0() -> None:
+    """CAL-1166 AC-3: the skill is stamped 0.3.0 and the registry row agrees (the
+    surface-header parity guard enforces the pairing; this pins the target)."""
+    text = SKILL.read_text()
+    assert "guidance:work-discovery@0.3.0" in text, (
+        "the skill stamp must be work-discovery@0.3.0 (CAL-1166 AC-3)."
+    )
+    reg = REGISTRY.read_text()
+    assert re.search(
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.3\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.3.0 (CAL-1166 AC-3)."
+
+
 def test_runbook_documents_trigger_resync() -> None:
     """AC-2: ``RUNBOOK.md`` documents re-syncing the two user-local scheduled
     tasks into thin callers of the versioned routine, and names the drift it

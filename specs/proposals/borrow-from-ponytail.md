@@ -12,10 +12,10 @@ related: [CAL-710, CAL-711]
 
 ## Problem / motivation
 
-[ponytail](https://github.com/DietrichGebert/ponytail) is a popular Claude Code plugin (a "lazy senior dev" YAGNI persona). We evaluated it for adoption across harness-enabled repos. The conclusion was **do not install it**, for reasons that are themselves about fit, not quality:
+[ponytail](https://github.com/DietrichGebert/ponytail) is a popular Claude Code plugin (a "lazy senior dev" YAGNI persona). We evaluated it for adoption across harness-enabled repos. The conclusion was **not to adopt it**, for reasons that are about fit, not quality:
 
 - Its philosophy overlaps almost entirely with what `engineering-principles` and `code-quality` already enforce (simplicity over cleverness, smallest change, no premature abstraction, minimal dependencies) — so the marginal value of the persona is low.
-- Its delivery model fights our process. It injects an always-on persona via a `SessionStart` hook on every session, mutates global `~/.claude` state, and — most consequentially — its rules pull *against our two iron laws*: it says "trivial one-liners need no test, YAGNI applies to tests too" (vs. our test-first law) and tells the agent to "challenge the rest of the requirement in the same breath" (vs. our spec-compliance / no-self-descoping rule). An always-on instruction that erodes test-first and invites unilateral descoping is net-negative in a harness repo.
+- Its delivery model fights our process. It injects an always-on persona via a `SessionStart` hook on every session, mutates global `~/.claude` state, and — most consequentially — its rules pull *against our two iron laws*: it says "trivial one-liners need no test, YAGNI applies to tests too" (vs. our test-first law) and tells the agent to "challenge the rest of the requirement in the same breath" (vs. our spec-compliance / no-self-descoping rule). An always-on instruction that erodes test-first and invites unilateral descoping is a poor fit for a harness repo.
 - It would be an **un-versioned, un-stewarded parallel guidance system** — exactly what `/assess system` (guidance-coherence: MECE, lean, the universal/repo boundary) exists to prevent.
 
 But two ideas in it are genuinely additive *beyond* what we already have, and both are small:

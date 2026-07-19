@@ -24,6 +24,17 @@ issues are prioritized over speculative ones.
 Only the tip of the default branch is supported; fixes are not back-ported to
 older tags.
 
+## What the ledger does and does not guarantee
+
+The harness records every run in a local SQLite **ledger**, and the `close` verb
+refuses to finish without a passing review bound to the current commit. That is a
+workflow aid, **not** a cryptographic attestation: the ledger is an ordinary file,
+so anything with write access to the workspace — including the agent under review
+— can append, alter, or delete an event, and the gate it feeds can be bypassed by
+editing the record it reads. Treat the audit trail as an account of what a
+cooperating agent did, not as tamper-evident proof against a hostile one. Do not
+build a security control on top of it.
+
 ## No bug bounty
 
 There is **no bug bounty** program and no monetary reward for reports.

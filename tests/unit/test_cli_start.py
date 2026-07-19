@@ -217,6 +217,90 @@ def test_start_emits_no_event_open_run_is_the_runs_row(
 
 
 # ---------------------------------------------------------------------------
+# CAL-1106: --base resolves from CONTEXT.md branches.integration, not a literal
+# ---------------------------------------------------------------------------
+
+
+def _repo_on(tmp_path: Path, branch: str, integration: str | None) -> Path:
+    """A one-commit git repo on ``branch``, optionally with a ``branches:`` block."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _git(repo_root, "init", "-b", branch)
+    _git(repo_root, "config", "user.email", "test@example.com")
+    _git(repo_root, "config", "user.name", "Test")
+    if integration is not None:
+        (repo_root / "CONTEXT.md").write_text(
+            f"branches:\n  integration: {integration}\n"
+        )
+    (repo_root / "README.md").write_text("hello\n")
+    _git(repo_root, "add", "-A")
+    _git(repo_root, "commit", "-m", "initial")
+    return repo_root
+
+
+@pytest.mark.slow
+def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
+    """AC-1: a repo whose CONTEXT.md says ``integration: main`` opens the worktree
+    off ``main`` when ``start`` is called with no ``--base``."""
+    repo_root = _repo_on(tmp_path, "main", integration="main")
+    db = repo_root / ".harness" / "harness.db"
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app, ["start", "CAL-570", "--repo", str(repo_root), "--db", str(db)]
+        )
+
+    assert result.exit_code == 0, result.output
+    rows = fetch_runs(db)
+    assert len(rows) == 1
+    assert rows[0]["base_branch"] == "main"
+
+
+@pytest.mark.slow
+def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
+    """AC-3: a repo configured ``integration: dev`` still opens off ``dev`` — the
+    existing behaviour is preserved for the common case."""
+    repo_root = _repo_on(tmp_path, "dev", integration="dev")
+    db = repo_root / ".harness" / "harness.db"
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app, ["start", "CAL-570", "--repo", str(repo_root), "--db", str(db)]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db)[0]["base_branch"] == "dev"
+
+
+@pytest.mark.slow
+def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
+    """An explicit ``--base`` overrides the configured integration branch."""
+    repo_root = _repo_on(tmp_path, "main", integration="main")
+    # A second branch the explicit flag can target.
+    _git(repo_root, "branch", "release")
+    db = repo_root / ".harness" / "harness.db"
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo_root), "--db", str(db),
+             "--base", "release"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db)[0]["base_branch"] == "release"
+
+
+# ---------------------------------------------------------------------------
 # AC-2: ticket transitions to In Progress
 # ---------------------------------------------------------------------------
 
@@ -299,6 +383,39 @@ def test_ac4_invalid_ticket_nonzero_exit_no_side_effects(
     assert rows == []
 
     # No worktree directory created.
+    wt_root = repo / ".worktrees" / "harness"
+    assert not wt_root.exists() or not list(wt_root.iterdir())
+
+
+# ---------------------------------------------------------------------------
+# CAL-1164: an incoherent tracker/address config is rejected before any work
+# ---------------------------------------------------------------------------
+
+
+def test_incoherent_tracker_config_rejected_before_side_effects(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``tracker: linear`` with no ``repo.linear`` address → start refuses up front.
+
+    The coherence guard fires at step 0, before the key check or any fetch, so it
+    is the *config* error the caller sees (naming ``repo.linear``), not a
+    downstream missing-key error, and nothing is created.
+    """
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    (repo / "CONTEXT.md").write_text(
+        "repo:\n  name: acme\n  linear: none\ntracker: linear\n"
+    )
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-m", "incoherent tracker config")
+
+    result = cli_runner.invoke(
+        app,
+        ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+    )
+
+    assert result.exit_code != 0
+    assert "repo.linear" in result.output
+    assert fetch_runs(db_path) == []
     wt_root = repo / ".worktrees" / "harness"
     assert not wt_root.exists() or not list(wt_root.iterdir())
 

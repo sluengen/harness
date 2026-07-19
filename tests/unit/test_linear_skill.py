@@ -240,3 +240,83 @@ def test_skill_warns_pr_id_auto_transition_on_merge() -> None:
         "the linear skill must name the PR surfaces that link an id to a PR — at "
         f"least three of branch / title / body / commit; found {present} (CAL-910)."
     )
+
+
+# --- CAL-1165: codify the ticket protocol (placement, project, assignment) ----
+# Source: accepted proposal `specs/proposals/ticket-protocol-hygiene.md` (2026-07-18,
+# decision 1A + 2A + 3A). The `linear` skill defined only the pull side of
+# Todo/Backlog; these guards pin the filing side, the assignment skip signal, the
+# mandatory project on create, and the `operator` label.
+
+
+def test_skill_documents_todo_backlog_filing_semantics() -> None:
+    """Todo = confirmed work, Backlog = existence-uncertain; blocked-on-detail stays Todo (AC-1)."""
+    text = LINEAR_SKILL.read_text()
+    low = text.lower()
+    assert "confirmed work" in low, (
+        "the skill must state Todo receives confirmed work (review follow-ups and "
+        "findings file straight there) (CAL-1165 AC-1)."
+    )
+    assert "existence" in low and "uncertain" in low, (
+        "the skill must state Backlog holds existence-uncertain work (CAL-1165 AC-1)."
+    )
+    assert "stays in todo" in low or "stay in todo" in low, (
+        "the skill must replace 'blocked → Backlog' with: a ticket blocked on a "
+        "detail of confirmed work stays in Todo, assigned + labelled (CAL-1165 AC-1)."
+    )
+    assert "**Blocked → Backlog with the question.**" not in text, (
+        "the old 'Blocked → Backlog with the question' sync rule must be replaced "
+        "by the stay-in-Todo-assigned+labelled rule (CAL-1165 AC-1)."
+    )
+
+
+def test_issue_create_recipe_carries_project_and_assignee() -> None:
+    """`issueCreate` sets `projectId`/`assigneeId`; project is mandatory on create (AC-2)."""
+    text = LINEAR_SKILL.read_text()
+    low = text.lower()
+    assert "issueCreate" in text and "projectId" in text, (
+        "the `issueCreate` recipe must carry `projectId` — a project-less issue is "
+        "invisible to the Build queue (CAL-1165 AC-2)."
+    )
+    assert "assigneeId" in text, (
+        "the `issueCreate` recipe must carry `assigneeId` (assignment is the human-hold "
+        "signal) (CAL-1165 AC-2)."
+    )
+    assert "mandatory" in low and "project" in low, (
+        "the skill must state a project is mandatory on every create (CAL-1165 AC-2)."
+    )
+
+
+def test_skill_documents_assignment_protocol() -> None:
+    """Assignment is the skip signal; In Review assigned/unassigned disambiguated (AC-3)."""
+    low = LINEAR_SKILL.read_text().lower()
+    assert "assigned to a human" in low, (
+        "the skill must state a ticket assigned to a human is held by that human "
+        "(the unattended loop's skip signal) (CAL-1165 AC-3)."
+    )
+    assert "never pick" in low, (
+        "the skill must state the unattended loop never picks a human-assigned "
+        "ticket, in any state (CAL-1165 AC-3)."
+    )
+    assert "in review" in low and "unassigned" in low, (
+        "the skill must disambiguate In Review: assigned = human/visual review of a "
+        "closed run; unassigned = agent review inside a live run (CAL-1165 AC-3)."
+    )
+
+
+def test_label_table_includes_operator_label() -> None:
+    """The label table adds `operator` with the decision/operator distinction (AC-4)."""
+    text = LINEAR_SKILL.read_text()
+    low = text.lower()
+    assert "`operator`" in text, (
+        "the label table must include the `operator` label beside `decision` "
+        "(CAL-1165 AC-4)."
+    )
+    assert "interactive" in low, (
+        "the skill must define `operator` as needing an interactive/hands-on "
+        "session (CAL-1165 AC-4)."
+    )
+    assert "decision" in low and ("judgment" in low or "judgement" in low), (
+        "the skill must define `decision` as needing a judgment call, distinct "
+        "from `operator` (CAL-1165 AC-4)."
+    )

@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.1.7 -->
+<!-- guidance:harness@0.2.0 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -19,7 +19,7 @@ This is **not** a wrapper that hands the ticket to a black-box workflow. *You* �
 
 ### Prerequisites
 
-`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, see `docker/README.md` — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
+`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, set it up per the harness app's Docker-wrapper instructions — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
 
 `LINEAR_API_KEY` must be in a `.env` file at the target repo root (gitignored). The wrapper reads it automatically — no `source .env` needed.
 
@@ -49,7 +49,7 @@ It validates the ticket, transitions it to In Progress, creates the worktree, an
 
 Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`). `cd` into `worktree_path`. Read `ticket.title` and `ticket.description` — that is your spec for this run. (Default base is `dev`; pass `--base` only to override.) If the ticket carries the `reclaimed` label, add `--resume` so the run continues from the dead run's preserved WIP branch when one exists (it falls back to a clean start otherwise) — see the Build routine's resume step.
 
-**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate locally as you go.
+**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
 
 **Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
 
@@ -66,6 +66,22 @@ harness review --run-id <run_id>                  # [--repo .] — engine defaul
 harness review --run-id <run_id> --engine codex   # cross-model review — host-only (see below)
 ```
 
+**You run the gate; the verb enforces and records the evidence.** Run `CONTEXT.md` → `verify:` in the worktree, capture its output to a file, and hand the result to `review`:
+
+```bash
+bash <your verify gate> > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
+harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log
+```
+
+The verb does **not** run the gate itself — the toolchain lives on your side, not in the verb's container, and no image can carry every target repo's toolchain (an Xcode target never runs in a Linux container). What the verb does is refuse to certify what it cannot show was verified:
+
+- **No `--gate-exit` while `verify:` is configured** → exit `5`, `reason=no_gate_evidence`. Silence is not a pass.
+- **`--gate-exit` non-zero** → exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`. **No engine, no verdict recorded.** Fix what the tail reports and re-run.
+- **Green** → the engine runs, and the `review` event records `gate_ran`, `gate_command`, `gate_exit_code`, and the log tail, bound to the reviewed SHA — so a recorded `pass` means *the gate ran green*, not *a reviewer read the diff*.
+- **No `verify:` configured** → recorded honestly (`gate_ran=false, gate_reason="not_configured"`) and review proceeds; the harness cannot gate what a repo does not define.
+
+Do not route around a refusal: `close` refuses a pass carrying no gate evidence (`no_gate_evidence`). Reporting a green exit code for a gate you did not run is falsifying the record the whole loop rests on.
+
 The selected engine (`--engine claude|codex`, **default `claude`**) reviews the diff against HEAD and records a verdict bound to that SHA. Both engines are **read-only CLI subprocesses** emitting the same `SUBMIT:` contract — never the Agent SDK; the engine's full reasoning stays inside the verb. You see only the bounded result (`ReviewOutput`), which records the `engine` that produced the verdict:
 
 ```json
@@ -74,7 +90,7 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 
 `claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude: `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
 
-**In-container, the review engine is Claude; `--engine codex` is host-only** (ADR [`0002`](../specs/decisions/0002-in-container-review-engine.md)). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
+**In-container, the review engine is Claude; `--engine codex` is host-only** (the harness's in-container-review-engine decision, ADR 0002). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
 
 Act on `verdict`:
 
@@ -102,6 +118,8 @@ If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The 
 - **`dirty_worktree`** — the worktree has uncommitted changes; what would merge was never reviewed. Commit (or discard) the edits, **re-run `harness review`** to bind a fresh `pass` to the new HEAD, then close again.
 - **`no_passing_review`** — no `verdict=pass` is on record. You have not run `review`, or its last verdict was `fail`/`defer`. Run `harness review` and reach `pass`.
 - **`stale_review`** — there is a passing review, but HEAD moved after it (you committed more work). The passing verdict no longer covers what would merge. **Re-run `harness review`** on the current HEAD to re-establish a fresh `pass`, then close again.
+- **`no_gate_evidence`** — a `pass` covers HEAD, but it carries no evidence that the repo's verify gate ran (it was recorded by a harness predating the gate). **Re-run `harness review`** to record a pass backed by a green gate, then close again.
+- **`dirty_base_checkout`** — the **base checkout** (the main repo `close` merges into, not the run worktree) is not merge-safe: it has uncommitted tracked changes, or a merge already in progress that a racing or dead close left behind. Nothing was touched — `close` refuses before merging, because git cannot reliably undo a merge begun over uncommitted changes. Clean the base checkout up (commit/stash the edits; `git merge --abort` a stranded merge), then close again. This is the one refusal whose fix is a raw git command: you are restoring a checkout to the clean state the verb requires, not hand-rolling the lifecycle.
 
 A gate refusal is the gate doing its job. **Do not work around it** — do not hand-roll the merge/push/transition to "finish" the run. If the refusal is something you cannot resolve by re-running a verb (e.g. an unexpected error, or a verb that itself fails), **surface it to the human / Hermes** with the `reason` and the `run_id`; do not improvise a bypass.
 
@@ -130,7 +148,7 @@ When a build is **alive but nearing its context limit** mid-ticket, hand off gra
 | Comment marker | `Context-rollover handoff by \`harness checkpoint\`` | `Reclaimed by \`harness reclaim\`` |
 | Resume reader | `fetch_handoff_branch` (marker-gated, no label) | `fetch_resume_branch` (`reclaimed`-label-gated) |
 
-Because the two use **distinct marker strings** and occupy **distinct Linear states**, `start --resume` resolves the right branch for each — a handoff comment is never read as a reclaim comment, and vice versa (pinned in `tests/unit/test_reclaim_marker.py`). `start --resume` tries the reclaim source first, then falls through to the handoff source, so one flag serves both.
+Because the two use **distinct marker strings** and occupy **distinct Linear states**, `start --resume` resolves the right branch for each — a handoff comment is never read as a reclaim comment, and vice versa (pinned by the harness's reclaim-marker tests). `start --resume` tries the reclaim source first, then falls through to the handoff source, so one flag serves both.
 
 ---
 
@@ -142,7 +160,7 @@ Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle
 
 > **The Linear project is resolved from `CONTEXT.md`, not hardcoded.** Both loops operate on one Linear project — the Build queue. Resolve it at runtime from `CONTEXT.md` → `repo.project` (the same way `/harness ingest` resolves the team from `repo.linear`), so this distributed command needs no per-repo hand-edit. Below, `<repo.project>` stands for that value; in the harness repo it is `Harness v3`.
 
-> **Default: always-on local. Cloud is optional.** A routine normally runs on the always-on device via a **local trigger**: it shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy (the macOS scheduled task driving `/harness routine build` — see `RUNBOOK.md`). This is local-trigger because a cloud runner cannot reach `~/bin/harness` or the local checkout — and it is the default because it already works and costs nothing per run. An **off-machine** path is *possible* — the harness's own loop runs against the native `harness` entry point (`uv tool install .`, no Docker) with credentials as secrets and the **Claude** review engine — but if ever needed it is a **Claude cloud routine**, **not** GitHub Actions (rejected: a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). The decision, the optional cloud path, and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are recorded in `specs/decisions/0001-cloud-runnable-harness-loop.md`. Cloud-enabling self-hosting *target* repos remains out of scope.
+> **Default: always-on local. Cloud is optional.** A routine normally runs on the always-on device via a **local trigger**: it shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy (an always-on scheduled task driving `/harness routine build`). This is local-trigger because a cloud runner cannot reach `~/bin/harness` or the local checkout — and it is the default because it already works and costs nothing per run. The trigger itself is configured in the app and is **not** part of this command; whatever fires it must be a **thin caller** that invokes `/harness routine build` and nothing more (*version the logic, not the schedule*). An **off-machine** path is *possible* — the harness's own loop runs against the native `harness` entry point (`uv tool install .`, no Docker) with credentials as secrets and the **Claude** review engine — but if ever needed it is a **Claude cloud routine**, **not** GitHub Actions (rejected: a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). The optional cloud path and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are the harness's own recorded design decisions. Cloud-enabling self-hosting *target* repos remains out of scope.
 
 ### /harness routine build
 
@@ -170,7 +188,7 @@ The loop:
 
 1. **Pick the next ticket** — invoke the **`work-discovery` skill**. It owns the discovery logic: which Todo tickets in project `<repo.project>` (resolved from `CONTEXT.md` → `repo.project`) to consider, how to rank them, and which already-deferred ones to skip. The pick criteria are single-homed in that skill, not restated here — this command owns only the control flow around the invocation.
 2. **Check it is wholly actionable** — apply the `work-discovery` skill's actionability test.
-   - If the skill judges it **not** actionable (it needs a human decision or missing detail), add a comment to the ticket naming what it needs and label it `decision`. Then re-pick (step 1) or, if nothing remains, go to step 5.
+   - If the skill judges it **not** actionable (it needs a human decision or missing detail), **defer it with the verb**: `harness defer <TICKET> --reason <text> [--needs decision|operator]` (use `--reason-file <path>` for a long body). The verb posts the reason as a comment, additively applies the hold label (`--needs` selects it: `decision` for a judgment call — the default — or `operator` for an interactive session), **assigns the ticket to the operator** (the machine-readable hold signal `work-discovery` skips on later ticks), and records a `defer` event carrying the `needs` kind in the runs/events ledger — so triage is an audited action bound to its `autoMode.allow` clause, not a hand-rolled tracker write. Then re-pick (step 1) or, if nothing remains, go to step 5.
    - If it **can** be actioned, implement it: `/harness run <TICKET>` (primary), or `/build <TICKET>` (fallback) where the harness tool is unavailable.
 3. **Resume a reclaimed ticket from its preserved WIP branch.** If the picked ticket carries the `reclaimed` label, it was reverted from a run whose orchestrator died (the pre-flight, step 0) and may have a **checkpoint-pushed WIP branch**. Start it with `harness start <TICKET> --resume` so the new run continues from that branch (fetch + continue) instead of a clean branch off `dev`, recovering the dead run's work rather than redoing it. When no durable WIP exists — the reclaim preserved no branch, or the branch no longer fetches — `--resume` **falls back** to a normal clean start automatically; it is best-effort and never blocks the queue. Either path is safe from double-merge: the resumed run still merges into `dev`, and `close`'s HEAD-bound gate (a `pass` whose reviewed SHA == HEAD) holds. The resumed worktree already carries the prior WIP, so re-orient via `git log` before continuing (proposal `stale-run-reclamation` D4). A non-`reclaimed` ticket starts normally (no `--resume`).
 4. **Branch off `dev`.** Take your branch off of `dev`. Linear access is via the GraphQL API; the key is in the `.env` file in the repo.
@@ -268,5 +286,5 @@ Next: /harness run <ISSUE-ID>
 ### Related
 
 - `/harness run` — orchestrates the `start → review → close` verb loop for a given ticket
-- `harness/cli/start.py`, `harness/cli/review.py`, `harness/cli/close.py` — the three verbs `/harness run` drives
-- `specs/proposals/harness-as-tool.md` — the proposal behind the verb-loop model
+- The three verbs `/harness run` drives — `start`, `review`, and `close` (implemented in the harness app)
+- The proposal behind the verb-loop model (the harness's "harness-as-tool" design)

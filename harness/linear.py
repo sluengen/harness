@@ -28,6 +28,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 from harness.reclaim_marker import (
@@ -129,29 +130,65 @@ query FetchIssue($id: String!) {
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
         return {k: raw.get(k) for k in _TICKET_FIELDS}
 
-    async def fetch_in_progress_issues(
+    async def fetch_issue_project(self, identifier: str) -> str | None:
+        """Return the name of the project issue ``identifier`` belongs to, or ``None``.
+
+        The Build-queue membership check ``harness defer`` binds to (CAL-1143):
+        the verb only defers a ticket on this repo's ``repo.project``, so it reads
+        the ticket's project name and compares. ``None`` means the issue is on no
+        project — the caller treats that as "not on the Build queue".
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        query = """
+query IssueProject($id: String!) {
+  issue(id: $id) {
+    id
+    project {
+      name
+    }
+  }
+}
+"""
+        data = await self._request(query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        project = issue.get("project") or {}
+        name = project.get("name")
+        return str(name) if name else None
+
+    async def fetch_reclaimable_issues(
         self, *, project: str
     ) -> list[dict[str, str]]:
-        """List the In-Progress issues in ``project`` as ``[{identifier, updated_at}]``.
+        """List the reclaimable issues in ``project`` as ``[{identifier, updated_at}]``.
 
         The enumeration the ``harness reclaim --stale`` sweep (CAL-736) filters by
-        age.  Scoped to the named project and the **In Progress** state by name, so
-        the other ``started`` state — In Review, a legitimate handoff — is never
-        swept up.  ``updated_at`` carries Linear's ``updatedAt`` (ISO-8601 UTC):
-        the staleness signal the sweep compares against its threshold (proposal
-        D2).  Requests up to 100 issues unpaged — a single project never holds more
-        simultaneously-In-Progress tickets than that.
+        age.  Scoped to the named project and **both** transient ``started`` states
+        — **In Progress** *and* **In Review** — by name.  Before CAL-1103 In Review
+        was only ever a human handoff, so the sweep deliberately skipped it; now
+        ``review`` parks a reviewed ticket In Review as a normal step of the
+        autonomous verb loop, so a dead orchestrator between ``review`` and
+        ``close`` can strand a ticket there — exactly the wedged-queue failure the
+        sweep exists to unblock.  Staleness (the ``updatedAt`` threshold, proposal
+        D2) remains the only abandonment signal: a live review→close never idles
+        that long, so a stale ticket in either state is a dead run.  ``updated_at``
+        carries Linear's ``updatedAt`` (ISO-8601 UTC): the staleness signal the
+        sweep compares against its threshold.  Requests up to 100 issues unpaged —
+        a single project never holds more simultaneously-active tickets than that.
 
         Raises:
             LinearRequestError: the API returned an error or an unexpected response.
         """
         query = """
-query InProgressIssues($project: String!) {
+query ReclaimableIssues($project: String!) {
   issues(
     first: 100
     filter: {
       project: { name: { eq: $project } }
-      state: { name: { eq: "In Progress" } }
+      state: { name: { in: ["In Progress", "In Review"] } }
     }
   ) {
     nodes {
@@ -190,41 +227,71 @@ query InProgressIssues($project: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
-        # ``last: 20`` — Linear's default connection order is oldest-first, so
-        # ``first`` would return the *oldest* comments and drop the freshest
-        # reclaim marker (posted just before the re-pick) off the page on a
-        # ticket with >20 comments. Window newest-first so the latest marker is
-        # always present (CAL-1005).
-        query = """
-query ResumeBranch($id: String!) {
-  issue(id: $id) {
-    labels { nodes { name } }
-    comments(last: 20) { nodes { body createdAt } }
-  }
-}
+        return await self._latest_marked_branch(
+            identifier,
+            marker=RECLAIM_MARKER,
+            parser=parse_preserved_branch,
+            require_label=RECLAIM_LABEL,
+        )
+
+    async def _latest_marked_branch(
+        self,
+        identifier: str,
+        *,
+        marker: str,
+        parser: Callable[[str], str | None],
+        require_label: str | None = None,
+    ) -> str | None:
+        """The branch named by the latest comment carrying ``marker``, or ``None``.
+
+        The shared read path behind :meth:`fetch_resume_branch` (death-keyed
+        reclaim) and :meth:`fetch_handoff_branch` (proactive context-rollover),
+        which differ only in three parameters: the comment ``marker`` they scan
+        for, the ``parser`` that pulls the ref out of a matching body, and — for
+        reclaim only — a ``require_label`` gate. The **latest** matching comment
+        wins (a ticket marked more than once resumes from its freshest branch),
+        and every non-match (no ``require_label``, no marked comment, a marker
+        that preserved no branch) returns ``None`` so the caller restarts clean.
+
+        ``last: 20`` — Linear's default connection order is oldest-first, so
+        ``first`` would return the *oldest* comments and drop the freshest marker
+        (posted just before the re-pick) off the page on a ticket with >20
+        comments. Window newest-first so the latest marker is always present
+        (CAL-1005). Labels are queried only when a ``require_label`` gate applies.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        labels_block = "labels { nodes { name } }\n    " if require_label else ""
+        query = f"""
+query MarkedBranch($id: String!) {{
+  issue(id: $id) {{
+    {labels_block}comments(last: 20) {{ nodes {{ body createdAt }} }}
+  }}
+}}
 """
         data = await self._request(query, {"id": identifier})
         issue = (data.get("data") or {}).get("issue")
         if issue is None:
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
 
-        label_names = {
-            (n.get("name") or "").lower()
-            for n in (issue.get("labels") or {}).get("nodes", [])
-        }
-        if RECLAIM_LABEL not in label_names:
-            return None
+        if require_label is not None:
+            label_names = {
+                (n.get("name") or "").lower()
+                for n in (issue.get("labels") or {}).get("nodes", [])
+            }
+            if require_label not in label_names:
+                return None
 
         comment_nodes: list[dict[str, Any]] = (
             (issue.get("comments") or {}).get("nodes", [])
         )
-        reclaim_comments = [
-            c for c in comment_nodes if RECLAIM_MARKER in (c.get("body") or "")
-        ]
-        if not reclaim_comments:
+        marked = [c for c in comment_nodes if marker in (c.get("body") or "")]
+        if not marked:
             return None
-        latest = max(reclaim_comments, key=lambda c: c.get("createdAt") or "")
-        return parse_preserved_branch(latest.get("body") or "")
+        latest = max(marked, key=lambda c: c.get("createdAt") or "")
+        return parser(latest.get("body") or "")
 
     async def fetch_handoff_branch(self, identifier: str) -> str | None:
         """The preserved WIP branch a **proactively handed-off** ticket continues from.
@@ -250,31 +317,11 @@ query ResumeBranch($id: String!) {
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
-        # ``last: 20`` — window newest-first so the freshest handoff marker is
-        # in the page even when the ticket has >20 comments (CAL-1005; see the
-        # matching note in ``fetch_resume_branch``).
-        query = """
-query HandoffBranch($id: String!) {
-  issue(id: $id) {
-    comments(last: 20) { nodes { body createdAt } }
-  }
-}
-"""
-        data = await self._request(query, {"id": identifier})
-        issue = (data.get("data") or {}).get("issue")
-        if issue is None:
-            raise LinearNotFound(f"Linear issue {identifier!r} not found")
-
-        comment_nodes: list[dict[str, Any]] = (
-            (issue.get("comments") or {}).get("nodes", [])
+        return await self._latest_marked_branch(
+            identifier,
+            marker=HANDOFF_MARKER,
+            parser=parse_handoff_branch,
         )
-        handoff_comments = [
-            c for c in comment_nodes if HANDOFF_MARKER in (c.get("body") or "")
-        ]
-        if not handoff_comments:
-            return None
-        latest = max(handoff_comments, key=lambda c: c.get("createdAt") or "")
-        return parse_handoff_branch(latest.get("body") or "")
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Transition issue ``identifier`` to the first In Progress state.
@@ -328,6 +375,25 @@ query HandoffBranch($id: String!) {
         """
         await self._transition(
             identifier, state_type="unstarted", preferred_name="todo"
+        )
+
+    async def transition_to_in_review(self, identifier: str) -> None:
+        """Transition issue ``identifier`` to its In Review state.
+
+        The transition ``review`` owns (CAL-1103): a ticket parked here is being
+        reviewed, distinct from In Progress (being built).  In Review shares the
+        ``started`` type with In Progress, so this disambiguates by **name** —
+        :meth:`_transition` prefers a state literally named "In Review", falling
+        back to the first ``started`` state only if none is named that.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, no ``started``
+                workflow state is configured on the issue's team, or the
+                ``issueUpdate`` mutation did not report ``success: true``.
+        """
+        await self._transition(
+            identifier, state_type="started", preferred_name="in review"
         )
 
     async def apply_label(self, identifier: str, name: str) -> None:
@@ -462,6 +528,180 @@ mutation AddComment($issueId: String!, $body: String!) {
                 f"Linear commentCreate did not report success for {identifier!r}; "
                 f"response: {result!r}"
             )
+
+    async def assign_to_viewer(self, identifier: str) -> None:
+        """Assign issue ``identifier`` to the authenticated user — the operator.
+
+        Agents authenticate with the operator's own API key and have no Linear
+        identity of their own, so the API's ``viewer`` **is** the operator; an
+        assignee at all is the machine-readable "a human holds this" signal the
+        ``work-discovery`` held-tickets skip rule reads. Resolves the viewer id
+        and the issue's UUID in one query, then fires ``issueUpdate(assigneeId)``.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, the key resolved no
+                viewer, or ``issueUpdate`` did not report ``success: true``.
+        """
+        resolve_query = """
+query IssueAndViewer($id: String!) {
+  viewer {
+    id
+  }
+  issue(id: $id) {
+    id
+  }
+}
+"""
+        data = await self._request(resolve_query, {"id": identifier})
+        payload = data.get("data") or {}
+        issue = payload.get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        viewer_id = (payload.get("viewer") or {}).get("id")
+        if not viewer_id:
+            raise LinearRequestError(
+                "Linear resolved no viewer for the API key; cannot assign "
+                f"{identifier!r} to the operator"
+            )
+        issue_id: str = issue["id"]
+
+        mutation = """
+mutation AssignIssue($id: String!, $assigneeId: String!) {
+  issueUpdate(id: $id, input: {assigneeId: $assigneeId}) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"id": issue_id, "assigneeId": viewer_id}
+        )
+        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueUpdate did not report success assigning {identifier!r}; "
+                f"response: {result!r}"
+            )
+
+    async def create_issue(
+        self,
+        *,
+        team_key: str,
+        project_name: str | None,
+        title: str,
+        description: str,
+    ) -> dict[str, str]:
+        """Create a Todo issue on team ``team_key`` and return ``{identifier, url}``.
+
+        The primitive behind ``harness promote escalate`` (CAL-1118): file a fresh
+        escalation ticket carrying the promotion evidence. Resolves the team id
+        from its key, the Todo (``unstarted``) workflow state, and — when
+        ``project_name`` is given — the project id by name, all at runtime (never a
+        hard-coded UUID, the same discipline as :meth:`apply_label`), then fires
+        ``issueCreate`` into that team/project/state.
+
+        Raises:
+            LinearNotFound: no team with ``team_key`` exists.
+            LinearRequestError: the API errored, ``project_name`` names no project
+                on the team, the team has no ``unstarted`` (Todo) state, or
+                ``issueCreate`` did not return an issue.
+        """
+        team_query = """
+query TeamForIssue($key: String!) {
+  teams(filter: { key: { eq: $key } }, first: 1) {
+    nodes {
+      id
+      states { nodes { id name type } }
+      projects { nodes { id name } }
+    }
+  }
+}
+"""
+        data = await self._request(team_query, {"key": team_key})
+        team_nodes = ((data.get("data") or {}).get("teams") or {}).get("nodes") or []
+        if not team_nodes:
+            raise LinearNotFound(f"Linear team {team_key!r} not found")
+        team = team_nodes[0]
+        team_id: str = team["id"]
+
+        state_id = self._select_todo_state(team, team_key)
+        project_id = self._resolve_project_id(team, project_name, team_key)
+
+        mutation = """
+mutation CreateIssue(
+  $teamId: String!
+  $title: String!
+  $description: String!
+  $stateId: String
+  $projectId: String
+) {
+  issueCreate(
+    input: {
+      teamId: $teamId
+      title: $title
+      description: $description
+      stateId: $stateId
+      projectId: $projectId
+    }
+  ) {
+    success
+    issue {
+      identifier
+      url
+    }
+  }
+}
+"""
+        result = await self._request(
+            mutation,
+            {
+                "teamId": team_id,
+                "title": title,
+                "description": description,
+                "stateId": state_id,
+                "projectId": project_id,
+            },
+        )
+        payload = (result.get("data") or {}).get("issueCreate") or {}
+        issue = payload.get("issue")
+        if not payload.get("success") or not issue:
+            raise LinearRequestError(
+                f"Linear issueCreate did not return an issue for team {team_key!r}; "
+                f"response: {result!r}"
+            )
+        return {"identifier": str(issue["identifier"]), "url": str(issue["url"])}
+
+    @staticmethod
+    def _select_todo_state(team: dict[str, Any], team_key: str) -> str:
+        """The team's Todo state id — a state named "Todo", else the first
+        ``unstarted`` state (the same name-then-type resolution as
+        :meth:`transition_to_unstarted`)."""
+        nodes: list[dict[str, Any]] = (team.get("states") or {}).get("nodes", [])
+        candidates = [n for n in nodes if n.get("type") == "unstarted"]
+        if not candidates:
+            raise LinearRequestError(
+                f"Linear team {team_key!r} has no 'unstarted' (Todo) workflow state"
+            )
+        named = [n for n in candidates if (n.get("name") or "").lower() == "todo"]
+        return str((named[0] if named else candidates[0])["id"])
+
+    @staticmethod
+    def _resolve_project_id(
+        team: dict[str, Any], project_name: str | None, team_key: str
+    ) -> str | None:
+        """The id of the team's project named ``project_name``, or ``None`` when no
+        project was requested. Raises when a named project is not found."""
+        if project_name is None:
+            return None
+        nodes: list[dict[str, Any]] = (team.get("projects") or {}).get("nodes", [])
+        project = next(
+            (p for p in nodes if (p.get("name") or "") == project_name), None
+        )
+        if project is None:
+            raise LinearRequestError(
+                f"Linear team {team_key!r} has no project named {project_name!r}"
+            )
+        return str(project["id"])
 
     async def _transition(
         self, identifier: str, *, state_type: str, preferred_name: str

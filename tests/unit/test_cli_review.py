@@ -173,6 +173,24 @@ def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
     return _runner
 
 
+def _make_linear_stub(*, in_review_error: Exception | None = None) -> Any:
+    """A LinearClient stub whose transition methods are AsyncMocks (CAL-1103).
+
+    ``in_review_error`` makes the In-Review transition *raise*, to exercise the
+    warn-but-record path (AC-4). Tests that pass this stub to ``_invoke`` also
+    patch ``linear_api_key`` so the verb builds the stub instead of degrading to
+    the tracker-less no-op the hermetic ``LINEAR_API_KEY``-less env otherwise
+    forces.
+    """
+    stub = mock.MagicMock()
+    if in_review_error is not None:
+        stub.transition_to_in_review = mock.AsyncMock(side_effect=in_review_error)
+    else:
+        stub.transition_to_in_review = mock.AsyncMock(return_value=None)
+    stub.transition_to_in_progress = mock.AsyncMock(return_value=None)
+    return stub
+
+
 def _invoke(
     repo: Path,
     db_path: Path,
@@ -180,6 +198,7 @@ def _invoke(
     runner: Any,
     *,
     engine: str | None = None,
+    linear_stub: Any | None = None,
 ) -> Any:
     # Patch the module-level default runner so the command uses the fake.
     argv = [
@@ -195,7 +214,15 @@ def _invoke(
     if engine is not None:
         argv += ["--engine", engine]
     with mock.patch.object(review_mod, "_default_runner", runner):
-        return cli_runner.invoke(app, argv)
+        if linear_stub is None:
+            # No Linear patch: the hermetic env has no LINEAR_API_KEY, so the verb
+            # takes the tracker-less no-op path and never touches the network.
+            return cli_runner.invoke(app, argv)
+        with (
+            mock.patch.object(review_mod, "LinearClient", return_value=linear_stub),
+            mock.patch.object(review_mod, "linear_api_key", return_value="test-key"),
+        ):
+            return cli_runner.invoke(app, argv)
 
 
 def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
@@ -1034,3 +1061,142 @@ def test_cal924_genuine_codex_defer_still_recorded(repo: Path, db_path: Path) ->
     events = fetch_review_events(db_path)
     assert len(events) == 1
     assert events[0]["data"]["verdict"] == "defer"
+
+
+# ===========================================================================
+# CAL-1103: review parks the ticket In Review; a fail hands it back In Progress
+# ===========================================================================
+#
+# The seeded run's ticket is "CAL-571" (see ``_seed_open_run``); the transitions
+# assert against it. All Linear I/O is a stub — no network.
+
+
+def test_cal1103_ac1_green_review_moves_ticket_to_in_review(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-1: a green-path review moves the ticket In Progress → In Review."""
+    run_id = _seed_open_run(db_path, repo)
+    stub = _make_linear_stub()
+    runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
+
+    result = _invoke(repo, db_path, run_id, runner, linear_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    stub.transition_to_in_review.assert_awaited_once_with("CAL-571")
+    # A pass leaves it In Review — no hand-back to In Progress.
+    stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_cal1103_ac1_in_review_happens_before_the_engine_runs(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-1: the In-Review transition is awaited *before* the engine subprocess."""
+    run_id = _seed_open_run(db_path, repo)
+    stub = _make_linear_stub()
+    observed: dict[str, int] = {}
+
+    async def _runner(
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
+    ) -> review_mod.RunResult:
+        # Capture how many times In-Review was awaited by the time the engine runs.
+        observed["in_review_awaits_at_engine_time"] = (
+            stub.transition_to_in_review.await_count
+        )
+        return review_mod.RunResult(
+            stdout='SUBMIT: {"verdict": "pass", "issues": []}\n', stderr="", returncode=0
+        )
+
+    result = _invoke(repo, db_path, run_id, _runner, linear_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert observed["in_review_awaits_at_engine_time"] == 1
+
+
+@pytest.mark.parametrize(
+    "verdict,hands_back",
+    [("pass", False), ("defer", False), ("fail", True)],
+)
+def test_cal1103_ac2_fail_hands_back_to_in_progress(
+    repo: Path, db_path: Path, verdict: str, hands_back: bool
+) -> None:
+    """AC-2: a ``fail`` returns the ticket to In Progress; ``pass``/``defer`` leave
+    it In Review."""
+    run_id = _seed_open_run(db_path, repo)
+    stub = _make_linear_stub()
+    issues = [] if verdict == "pass" else ["blocking finding"]
+    runner = _make_runner(
+        f'SUBMIT: {{"verdict": "{verdict}", "issues": {json.dumps(issues)}}}\n'
+    )
+
+    result = _invoke(repo, db_path, run_id, runner, linear_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    stub.transition_to_in_review.assert_awaited_once_with("CAL-571")
+    if hands_back:
+        stub.transition_to_in_progress.assert_awaited_once_with("CAL-571")
+    else:
+        stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_cal1103_ac3_gate_refusal_leaves_ticket_state_untouched(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-3: a gate-evidence refusal (exit 5) transitions nothing — the check is
+    before the In-Review move."""
+    run_id = _seed_open_run(db_path, repo)
+    # A configured verify gate + no --gate-exit → exit 5 before any engine/transition.
+    (repo / "CONTEXT.md").write_text(
+        '```yaml\nrepo:\n  name: t\nverify: "bash scripts/verify.sh"\n```\n'
+    )
+    stub = _make_linear_stub()
+    runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
+
+    result = _invoke(repo, db_path, run_id, runner, linear_stub=stub)
+    assert result.exit_code == review_mod.EXIT_GATE_FAILED
+    assert json.loads(result.output)["reason"] == review_mod.NO_GATE_EVIDENCE_REASON
+    stub.transition_to_in_review.assert_not_awaited()
+    stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_cal1103_ac4_transition_failure_warns_but_records_the_verdict(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-4: a Linear transition failure must not lose the review — the verdict is
+    recorded, the verb exits 0, and a warning is emitted."""
+    run_id = _seed_open_run(db_path, repo)
+    stub = _make_linear_stub(
+        in_review_error=review_mod.LinearRequestError("Linear API HTTP 500")
+    )
+    runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
+
+    result = _invoke(repo, db_path, run_id, runner, linear_stub=stub)
+    # The transition blew up, but the review is still a success and recorded.
+    assert result.exit_code == 0, result.output
+    events = fetch_review_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["verdict"] == "pass"
+    # The failure was surfaced (warned), not swallowed silently.
+    assert "warning" in result.output.lower()
+
+
+def test_cal1103_tracker_less_review_records_verdict_without_transition(
+    repo: Path, db_path: Path
+) -> None:
+    """A tracker-less repo (layers.linear off) records the verdict and makes no
+    Linear call — the transition is a silent no-op."""
+    run_id = _seed_open_run(db_path, repo)
+    (repo / "CONTEXT.md").write_text(
+        "```yaml\nrepo:\n  name: t\nlayers:\n  linear: false\n```\n"
+    )
+    stub = _make_linear_stub()
+    runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
+
+    result = _invoke(repo, db_path, run_id, runner, linear_stub=stub)
+    assert result.exit_code == 0, result.output
+    stub.transition_to_in_review.assert_not_awaited()
+    stub.transition_to_in_progress.assert_not_awaited()
+    assert len(fetch_review_events(db_path)) == 1

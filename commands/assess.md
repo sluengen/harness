@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.6.0 -->
+<!-- guidance:assess@0.7.0 -->
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code`, `architecture`, or `system`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
@@ -7,7 +7,7 @@ Runs the `steward` over the codebase (or the guidance itself), produces a dated 
 
 ## One steward, scope selects the standards
 
-There is **one** `steward` agent — the *process*. The scope you pass names the *what*, and the *domain standards* are skills the steward pulls just-in-time (`specs/architecture-principles.md`, "Assessment layering"). The command does not pick an agent per domain; it parameterises the one steward.
+There is **one** `steward` agent — the *process*. The scope you pass names the *what*, and the *domain standards* are skills the steward pulls just-in-time (the "Assessment layering" decision). The command does not pick an agent per domain; it parameterises the one steward.
 
 | Scope | Domain skills (pulled JIT) | Audits |
 |---|---|---|
@@ -33,7 +33,7 @@ Structure and tests stay *lenses inside* `code` — folding them keeps the surfa
 Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following `assessment-craft`: a summary, findings (each with the four parts and a severity), and up to three systemic insights. Zero findings is a valid result.
 
 ### 2. File the findings
-For every finding and every insight, create a Linear issue (`linear`), labelled by source (`review-finding` / `review-insight`) and severity-mapped to priority. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time. **If this repo has no tracker** (`CONTEXT.md` `layers.linear: false`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
+For every finding and every insight, create a Linear issue (`linear`) **in the Todo state**, with the repo's Build project attached (a project is mandatory when filing) and severity-mapped priority, labelled by source (`review-finding` / `review-insight`). Filing to Todo — not Backlog — is deliberate: a finding and an insight are confirmed work, so a later unattended Build tick may pick one up without a human in between; the guards on that self-feeding loop are the assessment's severity bar at filing time and the merge-time review gate before anything ships. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in Linear, not at report time. **If this repo has no tracker** (`CONTEXT.md` `layers.linear: false`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
 
 **The `architecture` scope files only actionable risks.** An architecture report's value is largely narrative — the verdict, what is working, the trade-offs to preserve (`templates/assessment.md`, the architecture report shape). File **only** the actionable architecture risks and recommendations; do **not** file positive observations or stable trade-offs as tickets — they live in the report, not the backlog. A useful architecture pass may file **zero** tickets while still recording a verdict and a watchlist; that is a valid outcome, not a failed run.
 

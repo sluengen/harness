@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-07-06
-linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002]
+last_updated: 2026-07-17
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -36,6 +36,12 @@ A run is `open` from `harness start`; it then reaches one of two **live** termin
 - WHEN `harness reclaim <run-id>` (or `--ticket <ID>`) runs
 - THEN it first reverts the Linear ticket to **Todo** (+ a `reclaimed` label and comment), then reuses the `cancel` ledger transaction to set `status='cancelled'` + stamp `completed_at` + emit a `workflow_failed` event with `reason='reclaimed'` — clearing the `open` row so a fresh `harness start` is not blocked. The worktree/branch are **preserved**, not pruned (proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md) D4). `cancel` and `reclaim` share one ledger-abandon transaction (`harness/cli/_abandon.py`); they differ only in the recorded `reason`.
 
+#### Scenario: a deferred ticket (triage, not a build run)
+
+- GIVEN the unattended Build routine picks a Todo ticket the `work-discovery` skill judges **not** wholly actionable
+- WHEN `harness defer <ticket> --reason <text> [--needs decision|operator]` runs
+- THEN it posts the reason as a comment on the ticket, **additively** applies the hold label (`--needs` selects it: `decision` — the default — or `operator`; `issueAddLabel`, never a full-set replace), **assigns the ticket to the operator** (Linear `viewer`, the machine-readable "a human holds this" signal `work-discovery` skips), and records a `defer` event carrying the `needs` kind — anchored on its own terminal `runs` row (`workflow_name='defer'`, `status='closed'`, no worktree) because a defer has no build run and the `events` FK needs one. The `'closed'` status keeps the row clear of `idx_runs_ticket_open`, so a later `harness start` on the same ticket is never blocked (CAL-1143, CAL-1167). A ticket not on the Build queue (`repo.project`) is refused with a structured `reason` before any write; a tracker-less repo is a clean no-op.
+
 The partial unique index `idx_runs_ticket_open ON runs(ticket) WHERE status = 'open'` keeps at most one `open` run per ticket, so a concurrent `harness start` cannot insert a second open row (CAL-570).
 
 The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalled` / `paused`) belong to the **retired** deterministic engine (CAL-574) and survive only so historical rows validate. `RUN_STATUSES` / the `RunStatus` `Literal` in `harness/state/schema.py` enumerates both the verb-model statuses and the retired-engine ones, so a status read out of any `runs` row validates against one type-safe seam (CAL-583); the column itself is plain `TEXT` (no `CHECK`).
@@ -44,7 +50,7 @@ The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalle
 
 The gate's load-bearing datum — the SHA a passing review was bound to — is **not** a `runs` column. `harness review` appends a `review` event whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, engine, created_at }` (and optional `commit_message` / `deferred_brief`). `engine` records which review engine produced the verdict (`claude` | `codex`, CAL-701). When an explicit `--engine codex` run hits an exhausted tier, the verb falls back once to Claude (CAL-702): `engine` then reads `claude` and an optional `fallback_from: "codex"` records the substitution, so the gate stays *available* without the fallback ever being silent.
 
-Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`. The emitting verb builds the model (field names checked statically); a reader that `json_extract`s a key imports the field-derived path/key constant from that one module (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review`.
+Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`, `DeferEventData`. The emitting verb builds the model (field names checked statically); a reader that `json_extract`s a key imports the field-derived path/key constant from that one module (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review`.
 
 #### Scenario: the close gate query
 
@@ -61,6 +67,10 @@ WHERE run_id = ? AND event_type = 'review'
 
 Storing the reviewed SHA on the append-only event (rather than mutating a `runs` column) keeps the full review history auditable and is why decision D2 needed no schema migration — the `events` table already holds arbitrary JSON. `start` emits **no** event (the open run *is* the `runs` row); so the audit trail is the `runs` row **plus** its events, not the events alone.
 
+### The promotion ledger — a sibling table (CAL-1114)
+
+The [promotion lifecycle](cli-surface.md#the-promotion-lifecycle-group) ([ADR 0003](../decisions/0003-promotion-lifecycle.md)) records its state in a **sibling `promotions` table** in the same per-project `.harness/harness.db`, owned by `harness/state/promotions.py`. It is deliberately separate from `runs`/`events`: `close` gates a ticket's integration into `dev`, promotion gates branch movement toward release, and the two lifecycles must not weaken each other — so a promotion is not a `runs` row. Each promotion is a `Promotion` (Pydantic, `extra="forbid"`) stored as a JSON blob keyed by `promotion_id`, with a denormalized `status` column for querying; it reads back by promotion id so an outer orchestrator can pause after the harness classifies a merge+gate attempt and resume by re-reading the state it left. The `Promotion` model carries the branch endpoints and promotion branch, the lifecycle `status` (`opened` / `pr_ready` / `agent_may_fix` / `needs_ticket` / `blocked` / `promoted` / `pr_opened` / `escalated` / `cancelled`), the `gated_sha` the PR gate reads, the bounded repair `attempts` count, the terminal `pr_url` / `escalation_ticket`, and a bounded `evidence` reference. The two hops have **distinct** terminal successes (CAL-1158): the staging hop lands the candidate on the target and is done (`promoted`), while the release hop's success is an open PR a human still merges (`pr_opened`) — collapsing them would record "a PR was opened" for a promotion that opened none, which is the kind of rounding-off an audit trail cannot do. The **PR gate** (`pr_gate_satisfied`) passes only for a `pr_ready` promotion carrying a gated SHA — the same evidence discipline this run ledger's review→close gate enforces, applied to release movement. The table is created lazily on first write; a read that predates any write returns `None`. The subcommands that surface it are in [cli-surface.md](cli-surface.md#the-promotion-lifecycle-group).
+
 ## Data model
 
 Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NOT EXISTS`). Every connection opened via the helper sets WAL journal mode and `PRAGMA foreign_keys = ON`.
@@ -72,7 +82,7 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 
 The canonical `event_type` set (`harness/events/schema.py`) is the four live-emitter types — `workflow_failed` (`harness cancel`), `review`, `close`, and `checkpoint` (`harness checkpoint` — the run-branch push that makes WIP durable, CAL-738). CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
 
-New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613). The full DDL, the migration table, and the `BaseState` model are the **schema reference** below.
+New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613; the `BaseState` model that once described `state_json` was deleted in CAL-1107). The full DDL and the migration table are the **schema reference** below.
 
 ## Interface surface
 
@@ -80,7 +90,7 @@ New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrati
 
 ## Schema reference
 
-The full SQLite schema, migrations, status values, and the `BaseState` model — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
+The full SQLite schema, migrations, and status values — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
 
 > The engine-era per-node state machinery (`read_state` / `update_state` / `restore_state`) and the never-shipped v2-resume snapshot layer (`write_snapshot` / `read_latest_snapshot` + the `run_snapshots` table) were removed in CAL-613: they had no production caller after the deterministic engine was retired (CAL-574). Under the verb model the agent session — not a rehydrated state row — holds run context. The `runs.state_json` column survives (written as `"{}"` by `harness start`, surfaced as `state` in `harness status --json`) but is no longer merged or snapshotted.
 
@@ -154,25 +164,11 @@ Under the **verb model** (proposal [`harness-as-tool`](../proposals/harness-as-t
 
 The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the live verb-model statuses (`open` / `closed` / `cancelled`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`/`close`/`cancel` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
 
-### `BaseState`
+### `BaseState` (removed)
 
-Framework-defined fields prepended to every derived state class (largely vestigial under the verb model — no per-workflow state is derived; the agent session holds context):
+`harness/state/schema.py` once carried `BaseState`, the engine-era pydantic model of the run-state shape (`run_id`, `workflow_name`, `base_branch`, `worktree_path` / `worktree_branch`, `artifacts_dir`, `started_at`, `notes`). CAL-574 retired the workflow engine that derived per-workflow state on top of it, leaving the model with **no production importer** — nothing validated `state_json` against it — so CAL-1107 deleted it. The persisted run shape is now the `runs` table schema above; `state_json` survives as an always-`"{}"` blob no model validates. `harness/state/schema.py` now owns only the `RunStatus` / `RUN_STATUSES` vocabulary.
 
-```python
-class BaseState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    workflow_name: str
-    base_branch: str
-    worktree_path: Path | None = None
-    worktree_branch: str | None = None
-    artifacts_dir: Path
-    started_at: datetime
-    notes: list[str] = Field(default_factory=list)
-```
-
-`extra="forbid"` means an agent that hallucinates an unknown field is rejected at validation time. Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the live verb-model statuses (`open` / `closed` / `cancelled`) interleaved with the retired-engine statuses (see the status table above).
+Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "running", "completed", "failed", "cancelled", "stalled", "paused"]` — the live verb-model statuses (`open` / `closed` / `cancelled`) interleaved with the retired-engine statuses (see the status table above).
 
 ## Known limitations
 

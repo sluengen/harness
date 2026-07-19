@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from harness import promotion as promotion_mod
+from harness import promotion_pr as promotion_pr_mod
 from harness.cli import _git as git_mod
 from harness.cli import checkpoint as checkpoint_mod
 from harness.cli import close as close_mod
@@ -81,7 +83,9 @@ def test_checkpoint_push_passes_network_timeout(
 
     checkpoint_mod._push_branch(worktree_path=Path("/wt"), branch="harness/x")
 
-    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    # The push carries the force-with-lease flag (CAL-1162), so it is no longer
+    # positionally ("push", "origin") — match on the leading verb instead.
+    push = [t for a, t in calls if a and a[0] == "push"]
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
 
 
@@ -103,11 +107,60 @@ def test_start_fetch_passes_network_timeout(monkeypatch: pytest.MonkeyPatch) -> 
     assert rev == [None]
 
 
+def test_promote_fetch_origin_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion.fetch_origin`` is a network site (CAL-1004): its
+    ``git fetch origin`` carries the network timeout."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_mod, "run_git", _recorder(calls))
+
+    promotion_mod.fetch_origin(Path("/repo"))
+
+    fetch = [t for a, t in calls if a[0] == "fetch"]
+    assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
+def test_promote_pr_push_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion_pr.push_promotion_branch`` is a network site (CAL-1004):
+    its ``git push origin <branch>:<branch>`` carries the network timeout."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _recorder(calls))
+
+    promotion_pr_mod.push_promotion_branch(Path("/repo"), "promote/x")
+
+    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
+def test_promote_target_push_passes_network_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``harness.promotion_pr.push_target_branch`` is a network site (CAL-1004): the
+    staging hop's ``git push origin <sha>:refs/heads/staging`` carries the network
+    timeout too (CAL-1158)."""
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _recorder(calls))
+
+    promotion_pr_mod.push_target_branch(Path("/repo"), target="staging", gated_sha="abc")
+
+    push = [t for a, t in calls if a[:2] == ("push", "origin")]
+    assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
+
+
 def test_close_fetch_and_push_pass_network_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[tuple[str, ...], float | None]] = []
-    monkeypatch.setattr(close_mod, "run_git", _recorder(calls))
+    # ``rev-parse --verify --quiet MERGE_HEAD`` exits non-zero when no merge is in
+    # progress — i.e. a clean base checkout, which is the happy path this pins. The
+    # recorder's default zero-exit would otherwise read as "a merge is in progress"
+    # and trip close's base-checkout precondition (CAL-1151).
+    monkeypatch.setattr(
+        close_mod, "run_git", _recorder(calls, on={"rev-parse": _ok(returncode=1)})
+    )
 
     close_mod._merge_and_push(
         repo_root=Path("/repo"), base_branch="dev", worktree_branch="harness/x"
@@ -117,8 +170,9 @@ def test_close_fetch_and_push_pass_network_timeout(
     push = [t for a, t in calls if a[:2] == ("push", "origin")]
     assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
-    # Local git in the same flow (checkout, the two merges) carries no timeout.
-    local = [t for a, t in calls if a[0] in {"checkout", "merge"}]
+    # Local git in the same flow — checkout, the two merges, and the base-checkout
+    # precondition's rev-parse/status probes — carries no timeout.
+    local = [t for a, t in calls if a[0] in {"checkout", "merge", "rev-parse", "status"}]
     assert local and all(t is None for t in local)
 
 
@@ -173,6 +227,42 @@ def test_start_fetch_timeout_returns_none(monkeypatch: pytest.MonkeyPatch) -> No
     """A fetch that times out is a clean restart signal, not a raised error."""
     monkeypatch.setattr(start_mod, "run_git", _raise_timeout_on("fetch"))
     assert start_mod._fetch_origin_branch(Path("/repo"), "harness/x") is None
+
+
+def test_promote_fetch_origin_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fetch that times out is surfaced as a ``PromotionMechanicsError`` — the
+    promotion cannot proceed on unreachable refs (not a silent restart)."""
+    monkeypatch.setattr(promotion_mod, "run_git", _raise_timeout_on("fetch"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_mod.fetch_origin(Path("/repo"))
+    assert exc_info.value.reason == "fetch_failed"
+
+
+def test_promote_pr_push_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A push that times out is surfaced as a ``PromotionMechanicsError``
+    (``push_failed``) — never a raw ``TimeoutExpired`` traceback."""
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _raise_timeout_on("push"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_pr_mod.push_promotion_branch(Path("/repo"), "promote/x")
+    assert exc_info.value.reason == "push_failed"
+
+
+def test_promote_target_push_timeout_raises_mechanics_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A staging-hop target push that times out is surfaced as ``push_failed`` —
+    never a raw ``TimeoutExpired``, so a half-published promotion escalates
+    (CAL-1158)."""
+    monkeypatch.setattr(promotion_pr_mod, "run_git", _raise_timeout_on("push"))
+    with pytest.raises(promotion_mod.PromotionMechanicsError) as exc_info:
+        promotion_pr_mod.push_target_branch(
+            Path("/repo"), target="staging", gated_sha="abc"
+        )
+    assert exc_info.value.reason == "push_failed"
 
 
 def test_close_fetch_timeout_raises_close_error(

@@ -48,14 +48,13 @@ LABEL org.opencontainers.image.source=https://github.com/sluengen/harness
 #   curl             — Linear / API calls
 #   ca-certificates  — HTTPS to Anthropic / Linear
 #   jq               — JSON wrangling in the verbs and helper scripts
-#   postgresql-client — psql for per-run DATABASE_URL provisioning
 #   nodejs/npm       — required to install the Claude Code CLI
 #   openssh-client   — `ssh` binary for `git push` over SSH on the close verb
 #                      (without it `git push` fails: "cannot run ssh: No such file or directory")
 #   libcurl4/libexpat1/zlib1g — shared libs the source-built git links against at
 #                      runtime (their -dev headers live only in the builder stage)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates jq postgresql-client nodejs npm openssh-client \
+        curl ca-certificates jq nodejs npm openssh-client \
         libcurl4 libexpat1 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 

@@ -11,6 +11,7 @@ are split across modules for readability:
 * :mod:`harness.cli.start`    — ``harness start <ticket>``
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
+* :mod:`harness.cli.promote`  — ``harness promote start / continue / status / pr / escalate``
 
 Exit codes:
 - 0   command succeeded
@@ -26,7 +27,9 @@ import typer
 from harness.cli.cancel import cancel_command
 from harness.cli.checkpoint import checkpoint_command
 from harness.cli.close import close_command
+from harness.cli.defer import defer_command
 from harness.cli.doctor import doctor_command
+from harness.cli.promote import promote_app
 from harness.cli.query import (
     events_command,
     logs_command,
@@ -69,6 +72,9 @@ app.command(name="cancel", help="Abandon an in-flight run (close without merge).
 app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to Todo and reconcile the ledger.")(  # noqa: E501
     reclaim_command
 )
+app.command(name="defer", help="Defer a not-yet-actionable ticket: comment + additive `decision` label + a ledger event.")(  # noqa: E501
+    defer_command
+)
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
@@ -86,6 +92,9 @@ app.command(name="checkpoint", help="Push the run branch to origin so committed 
 
 # Nested worktrees app.
 app.add_typer(worktrees_app, name="worktrees", help="Inspect or clean up run worktrees.")
+
+# Nested promote app — the promotion lifecycle (ADR 0003); v1 surface (CAL-1113).
+app.add_typer(promote_app, name="promote", help="Drive the promotion lifecycle (dev -> staging -> main).")  # noqa: E501
 
 
 __all__ = ["app"]

@@ -31,7 +31,10 @@ Exit codes (SPEC §11):
 * 0 — the branch was pushed and the checkpoint recorded.
 * 2 — no open run resolved for the worktree / ``--run-id``.
 * 1 — unexpected error (the ``git push`` failed, or a DB/HEAD read failed); the
-       WIP-durability failure is surfaced, not silently dropped.
+       WIP-durability failure is surfaced, not silently dropped. The one push
+       failure that carries a named ``reason`` is ``stale_remote`` — the
+       force-with-lease lease refused because ``origin`` moved past what this run
+       last saw (CAL-1162); durability lapsed but the run is otherwise unaffected.
 """
 
 from __future__ import annotations
@@ -71,8 +74,10 @@ class CheckpointOutput(BaseModel):
 class _CheckpointError(VerbError):
     """``checkpoint``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    The ``(message, code)`` carrier is inherited from the base; ``checkpoint``
-    never sets a ``reason``.
+    The ``(message, code)`` carrier is inherited from the base. It sets a
+    machine-readable ``reason`` only for the force-with-lease refusal
+    (``stale_remote``, CAL-1162); every other failure raises without one, keeping
+    the historical ``{"error": ...}`` JSON byte-for-byte.
     """
 
 
@@ -177,22 +182,43 @@ async def _run_checkpoint(
     )
 
 
-def _push_branch(*, worktree_path: Path, branch: str) -> str:
-    """``git push origin <branch>`` from the run's worktree (sync — run in a thread).
+# git's rejection reason when ``--force-with-lease`` refuses a push because the
+# remote ref moved past the value the run last saw. Stable git text; matched
+# case-insensitively so the divergence maps to a named outcome, not a raw blob.
+_STALE_LEASE_MARKER = "stale info"
 
-    A plain branch push: it creates the branch on ``origin`` on the first
-    checkpoint and fast-forwards it on later ones (the branch only this run
-    advances). Pushes nothing but the run's feature branch — never the base, never
-    a merge — so the ``close`` gate is untouched. Returns the git output for
-    logging; that output is deliberately *not* propagated into the printed JSON
-    (context-economy). Raises :class:`_CheckpointError` on a non-zero push.
+
+def _push_branch(*, worktree_path: Path, branch: str) -> str:
+    """``git push --force-with-lease origin <branch>`` from the run's worktree.
+
+    A **force-with-lease** push (sync — run in a thread). The run branch is the
+    run's own private, rewritable WIP ref, not a shared branch — so when
+    rebase-before-close rewrites it (the standing move when ``dev`` advances
+    mid-run), the checkpoint must still be able to re-push the rewritten tip;
+    a plain push is rejected non-fast-forward and durability silently reverts to
+    the pre-rebase commit (CAL-1162). The lease keeps the push safe: it still
+    **refuses** if ``origin`` carries a commit this run has not seen — that
+    refusal is surfaced as the named ``reason='stale_remote'`` outcome rather than
+    a raw git error blob, so a run knows its durability lapsed instead of learning
+    it silently at resume time.
+
+    Pushes nothing but the run's feature branch — never the base, never a merge —
+    so the ``close`` gate is untouched. First checkpoint creates the branch on
+    ``origin``; later ones update it (a fast-forward, or a lease-checked force
+    after a rebase). Returns the git output for logging; that output is
+    deliberately *not* propagated into the printed JSON (context-economy).
     """
     # A network op — bound it (CAL-1004). A fired timeout becomes the same
     # _CheckpointError a non-zero push already raises; the checkpoint is
     # best-effort, so the caller notes it and keeps working either way.
     try:
         result = run_git(
-            worktree_path, "push", "origin", branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS
+            worktree_path,
+            "push",
+            "--force-with-lease",
+            "origin",
+            branch,
+            timeout=NETWORK_GIT_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise _CheckpointError(
@@ -201,9 +227,22 @@ def _push_branch(*, worktree_path: Path, branch: str) -> str:
             1,
         ) from exc
     if result.returncode != 0:
+        stderr = result.stderr.strip()
+        if _STALE_LEASE_MARKER in stderr.lower():
+            # The lease refused: origin advanced past what this run last pushed.
+            # A named, machine-readable outcome (not a raw git blob) so the run
+            # knows its WIP durability lapsed — a resume would fetch the stale
+            # pre-rebase tip.
+            raise _CheckpointError(
+                f"checkpoint refused for {branch}: origin carries a commit this "
+                f"run has not seen, so the force-with-lease push was rejected — "
+                f"the branch's WIP durability has lapsed (a resume would fetch "
+                f"the stale pre-rebase tip)",
+                1,
+                reason="stale_remote",
+            )
         raise _CheckpointError(
-            f"git push origin {branch} failed in {worktree_path}: "
-            f"{result.stderr.strip()}",
+            f"git push origin {branch} failed in {worktree_path}: {stderr}",
             1,
         )
     return result.stdout + result.stderr
