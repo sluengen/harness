@@ -86,7 +86,7 @@ Each of `review`'s dedicated codes exists so an orchestrating agent can tell the
 
 - GIVEN `harness close` whose gate is not satisfied
 - WHEN it runs
-- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence` / `dirty_base_checkout`)
+- THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
 
 #### Scenario: missing or red gate evidence exits 5
 

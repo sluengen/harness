@@ -19,11 +19,13 @@ linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
 
 The `base` is **resolved from the repo's branch model** rather than hardcoded (CAL-1106): an explicit `--base` wins, else `branches.integration` from the repo's CONTEXT.md, else the repo's origin default branch (`git symbolic-ref refs/remotes/origin/HEAD`), else `dev` as the back-compat fallback (`harness.cli._git.resolve_base_branch`). A repo configured `integration: dev` — like the harness itself — is unchanged; a `main`/`trunk` repo no longer has to pass `--base` on every call.
 
+The worktree is **started from `origin/<base>`**, not the local `<base>` branch (CAL-1154, Option 1). Since `close` merges in a throwaway worktree and pushes `origin/<base>` without advancing the local branch (see *Merge back* below), the local branch lags the merged work; basing a new run off it would start every run on a stale tree. `start` resolves the clean-start commit-ish with `harness.cli._git.preferred_base_ref`: `origin/<base>` when it resolves, else the local `<base>` (offline / no-origin repos, or `origin` present but that branch never pushed) — so no-origin repos and much of the test suite behave exactly as before. The **recorded** `base_branch` (the merge target) is always the local name, unaffected.
+
 #### Scenario: `harness start` creates the worktree
 
 - GIVEN `harness start <ticket>` whose base branch `<base>` is resolved as above (default `dev`)
 - WHEN the helper's `create` runs
-- THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git -c worktree.useRelativePaths=true worktree add -b harness/<run_id> <path> <base>`
+- THEN it computes the canonical path `<repo_root>/.worktrees/harness/<run_id>/` and branch `harness/<run_id>`, creates the parent directory chain if needed, and runs `git -c worktree.useRelativePaths=true worktree add -b harness/<run_id> <path> <start_point>`, where `<start_point>` is `origin/<base>` when it resolves else the local `<base>`
 - AND if the path already exists it raises rather than silently reuse; on a `git` failure it best-effort cleans up any half-baked directory before raising
 
 #### Relative pointers — the worktree is usable from both the host and the container, with no flip
@@ -44,7 +46,7 @@ The `base` is **resolved from the repo's branch model** rather than hardcoded (C
 - WHEN `harness start <ticket> --resume` runs
 - THEN it reads `<wip>` from Linear (`LinearClient.fetch_resume_branch`), `git fetch origin <wip>`, and calls `create(..., base=<base>, start_point=<fetched SHA>)` — so the worktree's `harness/<run_id>` branch continues from the recovered WIP tip while `base_branch` stays `<base>`
 - AND `close` therefore merges into `<base>` and its HEAD-bound gate keeps the resumed run safe from double-merge
-- AND when no durable WIP exists — the reclaim preserved no branch, or `<wip>` no longer fetches — `start_point` is `None` and it falls back to a clean start off `<base>` (best-effort; resume never blocks the queue)
+- AND when no durable WIP exists — the reclaim preserved no branch, or `<wip>` no longer fetches — the resume `start_point` is `None` and it falls back to the ordinary clean start (off `origin/<base>`, else local `<base>`, per *Create* above) — best-effort; resume never blocks the queue
 
 **What `--resume` fetches after a rebase.** `--resume` fetches whatever tip the dead run last *checkpointed to `origin`* — so the freshness of the resume point is exactly the freshness of the last successful checkpoint. Because [`checkpoint`](run-ledger.md) force-with-lease-pushes (CAL-1162), a rebase-before-close that rewrote `<wip>` **re-checkpoints cleanly**, and `--resume` fetches the rebased tip — not the stale pre-rebase one. The tip can be stale only when the final checkpoint after that rebase did **not** land: either it was never attempted (the run died between the rebase and the next checkpoint), or the force-with-lease lease *refused* it because `origin` carried a commit the run had not seen (`reason='stale_remote'`) — and that refusal is a **named outcome the run sees**, not a silent lapse. In that lapsed case `--resume` fetches the pre-rebase tip and the resumed run re-encounters the conflict the rebase had resolved; the durability guarantee is best-effort, and a stale resume degrades to redoing the rebase, never a wrong merge (the HEAD-bound `close` gate still holds).
 
@@ -57,9 +59,11 @@ The `base` is **resolved from the repo's branch model** rather than hardcoded (C
 - GIVEN `start` has created the worktree but a later step fails (the partial unique index rejects a duplicate open run, or the ledger insert fails)
 - THEN `start` removes the worktree directly via `_cleanup_worktree_sync`, which delegates to `teardown_worktree` (`git worktree remove --force`, `git worktree prune`, `git branch -D harness/<run_id>`; no remote delete — the branch was never pushed) — best-effort, so a failed rollback never masks the original error
 
-### Merge back — `close` advances the base, then reclaims the worktree
+### Merge back — `close` merges in a throwaway worktree, then reclaims the run worktree
 
-From the main checkout `harness close` runs `git checkout <base>`, integrates the current `origin/<base>` (`git fetch origin <base>` then a `--ff-only` fast-forward of the local base to it, so a base that advanced during the run does not reject the push non-fast-forward — CAL-777), `git merge --no-ff <worktree_branch>`, and `git push origin <base>` (`harness/cli/close.py`). Once the merge has landed — and the ticket is Done and the ledger row closed — it calls `teardown_worktree(..., delete_remote=True)` to remove the worktree directory and delete the branch both locally and on `origin` (a checkpoint may have pushed it). The teardown is **best-effort and runs last**: the close has already succeeded, so a teardown failure never fails it or undoes the merge — the housekeeping sweep reclaims anything left behind.
+`harness close` merges the run branch into `origin/<base>` **in a throwaway worktree, never the main checkout** (`harness/close_merge.py`, mirroring `harness/promotion.py` — CAL-1154). It fetches `origin/<base>` (so a base that advanced during the run is integrated — CAL-777), creates a **detached** worktree at `.worktrees/harness/<run_id>-close` based on that current tip, runs `git merge --no-ff <worktree_branch>` in it, pushes the merge commit with `git push origin HEAD:<base>`, and tears the throwaway worktree down wholesale. The main checkout's working tree is not mutated on any path (success, conflict, or a rejected push), so the merge cannot strand it and two concurrent closes cannot collide in a shared tree — each has its own throwaway worktree, and a loser's non-fast-forward push is rejected and retries. The push advances the local `refs/remotes/origin/<base>` tracking ref on the same machine with no fetch, which is what the `start` / `worktrees cleanup` readers base off (the local `<base>` branch is **not** advanced by a close).
+
+Once the merge has landed — and the ticket is Done and the ledger row closed — `close` calls `teardown_worktree(..., delete_remote=True)` to remove the **run** worktree directory and delete the branch both locally and on `origin` (a checkpoint may have pushed it). This teardown is **best-effort and runs last**: the close has already succeeded, so a teardown failure never fails it or undoes the merge — the housekeeping sweep reclaims anything left behind.
 
 #### Scenario: a successful `close` reclaims its worktree and branch
 
@@ -77,7 +81,7 @@ From the main checkout `harness close` runs `git checkout <base>`, integrates th
 
 - GIVEN a worktree whose branch is merged into the repo's configured integration base (`branches.integration`, else the origin default, else `dev` — the same `resolve_base_branch` resolution `start` uses, CAL-1106), its branch pushed to `origin`
 - WHEN `harness worktrees cleanup --merged` runs
-- THEN it removes the directory and deletes the branch locally and on `origin`
+- THEN it checks ancestry against `origin/<base>` when it resolves — else the local base (`preferred_base_ref`, CAL-1154) — so a run merged into `origin/<base>` by a throwaway-worktree close (which never advances the local branch) is still recognised as merged; it removes the directory and deletes the branch locally and on `origin`
 - AND an orphaned directory (no live worktree registration) older than `--age` is still removed via the `rmtree` fallback
 
 ## Data model
