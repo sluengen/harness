@@ -72,15 +72,14 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
-from harness.layers import linear_enabled, tracker_config_error
+from harness.layers import tracker_config_error
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.state import store
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
 # size: one cohesive verb — the start orchestration plus the Linear/resume
@@ -216,19 +215,21 @@ async def _run_start(
     config_error = tracker_config_error(repo_root)
     if config_error is not None:
         raise _StartError(config_error, 2)
-    tracker = linear_enabled(repo_root)
 
-    client: LinearClient | None = None
-    if tracker:
-        # 1. Validate Linear API key is present.
-        try:
-            api_key = linear_api_key()
-        except LinearConfigError as exc:
-            raise _StartError(str(exc), 2) from exc
+    # 1. Resolve the tracker through the seam — a LinearClient for tracker:
+    #    linear, None for tracker: none (the verb then runs tracker-less). A
+    #    missing key (LinearConfigError) or an unimplemented backend
+    #    (UnsupportedTrackerError, e.g. tracker: github) is an invocation error
+    #    (exit 2), reported through the uniform verb-error contract — never a
+    #    raw traceback.
+    client: Tracker | None = None
+    try:
+        client = tracker_client(repo_root)
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
+        raise _StartError(str(exc), 2) from exc
 
-        client = LinearClient(api_key=api_key)
-
-        # 2. Fetch ticket from Linear.
+    if client is not None:
+        # 2. Fetch ticket from the tracker.
         try:
             ticket_data = await client.fetch_issue(ticket)
         except LinearNotFound as exc:
@@ -375,7 +376,7 @@ def _compact_ticket(ticket_data: dict[str, Any]) -> TicketContext:
 
 
 async def _resolve_resume_start_point(
-    client: LinearClient, ticket: str, repo_root: Path
+    client: Tracker, ticket: str, repo_root: Path
 ) -> str | None:
     """The git commit a resumed run starts from, or ``None`` for a clean start.
 

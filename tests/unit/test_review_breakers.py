@@ -150,8 +150,8 @@ def _invoke(repo: Path, db_path: Path, runner: Any, *, linear_stub: Any | None =
         if linear_stub is None:
             return cli_runner.invoke(app, argv)
         with (
-            mock.patch.object(review_mod, "LinearClient", return_value=linear_stub),
-            mock.patch.object(review_mod, "linear_api_key", return_value="test-key"),
+            mock.patch("harness.tracker.LinearClient", return_value=linear_stub),
+            mock.patch("harness.tracker.linear_api_key", return_value="test-key"),
         ):
             return cli_runner.invoke(app, argv)
 

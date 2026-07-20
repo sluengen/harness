@@ -167,8 +167,8 @@ def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     """AC-1: one ``runs`` row with status=open and all required fields."""
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -203,8 +203,8 @@ def test_start_emits_no_event_open_run_is_the_runs_row(
     """
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -246,8 +246,8 @@ def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
     db = repo_root / ".harness" / "harness.db"
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app, ["start", "CAL-570", "--repo", str(repo_root), "--db", str(db)]
@@ -267,8 +267,8 @@ def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
     db = repo_root / ".harness" / "harness.db"
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app, ["start", "CAL-570", "--repo", str(repo_root), "--db", str(db)]
@@ -287,8 +287,8 @@ def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
     db = repo_root / ".harness" / "harness.db"
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -310,8 +310,8 @@ def test_ac2_transitions_ticket_to_in_progress(repo: Path, db_path: Path) -> Non
     """AC-2: Linear mutation called with the canonical ticket identifier."""
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -332,8 +332,8 @@ def test_ac3_worktree_created_at_expected_path(repo: Path, db_path: Path) -> Non
     """AC-3: worktree dir exists and is on the expected harness/<run_id> branch."""
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -368,8 +368,8 @@ def test_ac4_invalid_ticket_nonzero_exit_no_side_effects(
 
     stub = _make_linear_stub(raise_on_fetch=LinearNotFound("CAL-999 not found"))
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -432,8 +432,8 @@ def test_ac5_json_output_schema_new_run(repo: Path, db_path: Path) -> None:
 
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -471,8 +471,8 @@ def test_ac5_json_output_schema_existing_run(repo: Path, db_path: Path) -> None:
         "start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"
     ]
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result1 = cli_runner.invoke(app, invoke_args)
         result2 = cli_runner.invoke(app, invoke_args)
@@ -513,8 +513,8 @@ def test_context_economy_compact_blob(repo: Path, db_path: Path) -> None:
     }
     stub = _make_linear_stub(ticket=fat_ticket)
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -545,8 +545,8 @@ def test_duplicate_ticket_refused(repo: Path, db_path: Path) -> None:
         "start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"
     ]
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result1 = cli_runner.invoke(app, invoke_args)
         result2 = cli_runner.invoke(app, invoke_args)
@@ -579,8 +579,8 @@ def test_canonical_identifier_dedupes_mixed_case(repo: Path, db_path: Path) -> N
     """
     stub = _make_linear_stub()  # always returns identifier "CAL-570"
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result1 = cli_runner.invoke(
             app,
@@ -624,8 +624,8 @@ def test_description_truncated_at_max_chars(repo: Path, db_path: Path) -> None:
     }
     stub = _make_linear_stub(ticket=fat_ticket)
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -950,8 +950,8 @@ def test_worktree_failure_leaves_no_db_row_and_no_transition(
 
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
         patch(
             "harness.cli.start.WorktreeNode.create",
             side_effect=WorktreeNodeError("git failed"),
@@ -984,8 +984,8 @@ def test_db_failure_removes_worktree_and_no_transition(
     """If DB insert fails, the worktree is cleaned up and no transition is attempted."""
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
         patch(
             "harness.cli.start._insert_open_run",
             side_effect=Exception("DB write failed"),
@@ -1024,8 +1024,8 @@ def test_transition_failure_rolls_back_worktree_and_db_row(
         raise_on_transition=LinearRequestError("permission denied")
     )
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1058,8 +1058,8 @@ def test_timeout_during_transition_rolls_back(repo: Path, db_path: Path) -> None
         raise_on_transition=LinearRequestError("Linear API request failed: timed out")
     )
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1086,8 +1086,8 @@ def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> Non
     """Without --db, the DB file is created inside --repo, not the caller's CWD."""
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1123,8 +1123,8 @@ def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
     """
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1254,8 +1254,8 @@ def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> No
     wip_branch, wip_sha = _setup_origin_with_wip(repo)
     stub = _make_resume_stub(wip_branch)
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1285,8 +1285,8 @@ def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None
     wip_branch, wip_sha = _setup_origin_with_wip(repo)
     stub = _make_resume_stub(None, handoff_branch=wip_branch)
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1311,8 +1311,8 @@ def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) ->
     dev_sha = _git(repo, "rev-parse", "dev").stdout.strip()
     stub = _make_resume_stub(None)
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1341,8 +1341,8 @@ def test_resume_falls_back_clean_when_branch_does_not_fetch(
 
     stub = _make_resume_stub("harness/ghost-never-pushed")
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1363,8 +1363,8 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
     is unchanged (an ordinary interactive run pays no resume cost)."""
     stub = _make_resume_stub("harness/should-not-be-used")
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1410,8 +1410,8 @@ def test_clean_start_bases_worktree_off_origin_base(repo: Path, db_path: Path) -
 
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,
@@ -1440,8 +1440,8 @@ def test_clean_start_falls_back_to_local_base_without_origin(
     local_dev = _git(repo, "rev-parse", "dev").stdout.strip()
     stub = _make_linear_stub()
     with (
-        patch("harness.cli.start.LinearClient", return_value=stub),
-        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         result = cli_runner.invoke(
             app,

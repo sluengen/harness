@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-07-16
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104]
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197]
 ---
 
 # Verb model — start / review / close
@@ -136,6 +136,16 @@ The gate is **unchanged** by the switch: `close` evaluates the reviewed-SHA gate
 The default is deliberately conservative: a missing `CONTEXT.md`, a missing `tracker:` key (with no `layers.linear`), or an unrecognised value all read as **on** (`linear`). A repo that has not opted out keeps today's behaviour — including failing fast on a missing `LINEAR_API_KEY` — rather than degrading into a tracker-less run because a file could not be parsed. **Back-compat:** a repo not yet migrated has no `tracker:` key, so the reader falls back to `layers.linear` (`false` → `none`, otherwise → `linear`); that fallback still resolves the `layers:` block before matching, because `linear:` appears twice in an un-migrated `CONTEXT.md` (`repo.linear`, the team prefix; `layers.linear`, the old switch) and an unscoped match reads the prefix first. An **incoherent** switch/address pair — `tracker: linear` with no `repo.linear`, `tracker: none` with a dangling address, or a lingering `layers.linear` that disagrees with an explicit `tracker:` — is rejected up front by `start` (`tracker_config_error`, pinned by `test_tracker.py` and `test_cli_start.py`), before any key check or side effect.
 
 `review` has no tracker touchpoint to gate: it records a verdict to the ledger and never calls the tracker. Should it gain one (CAL-1103 would move the ticket to In Review), that transition takes the same layer check.
+
+#### The tracker seam — one factory, backend-agnostic verbs
+
+The switch above resolves *which* backend; the **seam** is *how* the verbs consume it. No verb constructs a tracker client directly — each obtains one from a single factory, `harness.tracker.tracker_client(repo_root)`, and calls the `Tracker` protocol (`harness/tracker.py`, CAL-1197). `LinearClient` is *one* structural implementation of that protocol; the factory reads the switch (`harness.layers.tracker`) and returns the matching one:
+
+- `tracker: linear` → a `LinearClient` (a missing `LINEAR_API_KEY` raises `LinearConfigError`, which each verb maps to its own exit code, exactly as before the seam);
+- `tracker: none` → `None`, and the verb runs tracker-less (the scenario above) — the factory returns *without* reaching for a credential;
+- `tracker: github` → `UnsupportedTrackerError`. Raising is deliberate: a `tracker: github` repo is *misconfigured today*, not tracker-less, so it fails loudly rather than silently degrading to a no-op tracker (the wiring point the GitHub backend fills in — CAL-1105).
+
+Because backend selection lives in that one factory, a second backend slots in **without touching a verb**: `start`, `close`, `defer`, `reclaim`, and `review`'s post-verdict transition all depend only on the `Tracker` protocol. `test_tracker_seam.py` pins the contract — `LinearClient` satisfies the protocol structurally (`@runtime_checkable`), the factory returns a Linear client for `linear` and `None` for `none`, and `github` raises. This is the seam CAL-1105's GitHub Issues backend plugs into.
 
 ### Routing discipline
 

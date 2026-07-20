@@ -98,15 +98,13 @@ from harness.events.payloads import (
 )
 from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
-from harness.layers import linear_enabled
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.state import store
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -262,13 +260,14 @@ async def _run_close(
     #    (``layers.linear: false``, CAL-1104) there is nothing to configure and
     #    nothing to transition — the gate above is unchanged, so the merge is
     #    protected exactly as it is with a tracker.
-    client: LinearClient | None = None
-    if linear_enabled(repo_root):
-        try:
-            api_key = linear_api_key()
-        except LinearConfigError as exc:
-            raise _CloseError(str(exc), 2) from exc
-        client = LinearClient(api_key=api_key)
+    client: Tracker | None = None
+    try:
+        client = tracker_client(repo_root)
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
+        # A missing key or an unimplemented backend (tracker: github) is an
+        # invocation error (exit 2) — evaluated *after* the reviewed-SHA gate, so
+        # the merge gate is unchanged by the tracker switch.
+        raise _CloseError(str(exc), 2) from exc
 
     # 6. Merge + push in a throwaway worktree (sync git, offloaded to a thread) —
     #    the git half lives in ``harness.close_merge`` (CAL-1154). The main
