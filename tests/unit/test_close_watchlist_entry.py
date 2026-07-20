@@ -6,16 +6,21 @@ had grown into a gravity well by the same criteria and was not armed, so the nex
 change there did not trip the ``Watchlist trigger``:
 
 * **Churn** — 19 commits, tied with ``review.py`` for the most in the package.
-* **Size** — 588 lines, over the 500 hard limit, grown from 520 (it carries an
+* **Size** — 588 lines, over the 500 hard limit, grown from 520 (it carried an
   honest ``# size:`` justification).
 * **Concern mix** — the close *gate* (``_evaluate_gate``, ``_has_gate_evidence``),
   *ledger* finalization (``_mark_run_closed``), and *git* integrate/merge/push
-  (``_status_porcelain``, ``_merge_and_push``) all accrete in one module.
+  all accreted in one module.
 
-CAL-1139 takes the same *minimal arm* CAL-1014 took: name the gravity well in
-``CONTEXT.md`` so the shipped mechanism fires on the next change touching it.
-Splitting ``close.py`` is explicitly out of scope — the watchlist arms the next
-change; the split, if any, is its own decision.
+CAL-1139 took the same *minimal arm* CAL-1014 took: name the gravity well in
+``CONTEXT.md`` so the shipped mechanism fires on the next change touching it. That
+change was **CAL-1154**, which tripped the trigger and cut the seam — the git
+integrate/merge/push concern moved to :mod:`harness.close_merge` (the
+throwaway-worktree merge), dropping ``close.py`` back under the 500-line limit and
+retiring its ``# size:`` justification. ``close.py`` stays on the watchlist (its
+churn and the remaining gate/ledger cohabitation keep it a gravity well), and its
+entry note now records the split — mirroring how ``review.py``'s entry records the
+``review_protocol.py`` extraction (CAL-1107).
 
 This guard pins the entry so the tripwire cannot be silently dropped, and pins the
 deliberate ``linear.py`` *exclusion* so a later well-meaning pass does not arm a

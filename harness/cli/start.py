@@ -11,11 +11,14 @@ starts implementing:
 4. Checks for an already-open run for the same ticket (refuses to open a
    second rather than silently create a duplicate).
 5. Generates a ULID run_id and creates a git worktree at
-   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``. With
+   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``. A clean start
+   bases the worktree off ``origin/<base>`` when it resolves — the tip ``close``
+   pushes, since it no longer advances the local base (CAL-1154, Option 1) —
+   falling back to the local ``base`` for offline / no-origin repos. With
    ``--resume``, a reclaimed ticket carrying a checkpoint-pushed WIP branch is
-   continued from that branch (fetch + base the worktree on it) instead of off
-   ``base``; the recorded ``base_branch`` (the merge target) stays ``base`` so
-   ``close``'s HEAD-bound gate keeps the resumed run safe (CAL-739).
+   continued from that branch (fetch + base the worktree on it) instead; the
+   recorded ``base_branch`` (the merge target) stays ``base`` either way so
+   ``close``'s HEAD-bound gate keeps the run safe (CAL-739).
 6. Inserts an ``open`` row into ``runs`` (``status='open'``).
 7. Transitions the ticket to In Progress (last — the only non-local side
    effect; local state is rolled back if it fails).
@@ -60,6 +63,7 @@ from pydantic import BaseModel
 
 from harness.cli._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
+    preferred_base_ref,
     resolve_base_branch,
     run_git,
     teardown_worktree,
@@ -263,6 +267,16 @@ async def _run_start(
     start_point: str | None = None
     if resume and client is not None:
         start_point = await _resolve_resume_start_point(client, canonical, repo_root)
+
+    # 4c. Clean start (no resume WIP): base the worktree off ``origin/<base>`` when
+    # it resolves, so the run starts from the tip ``close`` pushed there. Since
+    # CAL-1154 ``close`` merges in a throwaway worktree and no longer advances the
+    # local ``<base>`` branch, basing off the local branch would start every run on
+    # a tree that lags the merged work (Option 1). ``preferred_base_ref`` falls back
+    # to the local ``<base>`` for offline / no-origin repos, so those are unchanged.
+    # The recorded ``base_branch`` (the merge target) stays ``base`` either way.
+    if start_point is None:
+        start_point = await asyncio.to_thread(preferred_base_ref, repo_root, base)
 
     # 5. Create worktree (local side effect — rolled back on any later failure).
     run_id = generate_run_id()

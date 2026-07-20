@@ -1376,6 +1376,85 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
 
 
 # ---------------------------------------------------------------------------
+# CAL-1154: a clean start bases the run worktree off origin/<base>, with a
+# local-<base> fallback, since close no longer advances the local base branch.
+# ---------------------------------------------------------------------------
+
+
+def test_clean_start_bases_worktree_off_origin_base(repo: Path, db_path: Path) -> None:
+    """A clean start bases the worktree off ``origin/dev`` when it is ahead of local.
+
+    Since CAL-1154 ``close`` pushes ``origin/<base>`` without advancing local
+    ``dev``, basing a new run off local ``dev`` would start it on a tree that lags
+    the merged work. Here ``origin/dev`` carries a commit local ``dev`` does not;
+    a clean ``start`` must produce a worktree at the ``origin/dev`` tip (so the file
+    only on ``origin/dev`` is present), while recording ``base_branch`` = ``dev``.
+    """
+    origin = repo.parent / "origin.git"
+    _git(repo, "init", "--bare", str(origin))
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "origin", "dev")
+    # Land a commit on origin/dev via a feeder branch pushed from THIS repo — the
+    # push advances the local origin/dev tracking ref (exactly what a close push
+    # does), while local dev is left behind.
+    _git(repo, "checkout", "-b", "feeder")
+    (repo / "on_origin.txt").write_text("only on origin/dev\n")
+    _git(repo, "add", "on_origin.txt")
+    _git(repo, "commit", "-m", "advance origin/dev")
+    _git(repo, "push", "origin", "feeder:dev")
+    _git(repo, "checkout", "dev")
+    _git(repo, "branch", "-D", "feeder")
+    origin_dev = _git(repo, "rev-parse", "origin/dev").stdout.strip()
+    local_dev = _git(repo, "rev-parse", "dev").stdout.strip()
+    assert origin_dev != local_dev  # precondition: local dev lags origin/dev
+
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    wt = Path(payload["worktree_path"])
+    # The worktree starts at the origin/dev tip — the file only on origin/dev is
+    # present, and its HEAD equals origin/dev, not the lagging local dev.
+    assert (wt / "on_origin.txt").exists()
+    assert _worktree_head(wt) == origin_dev
+    # The recorded merge target is still the local base name.
+    assert payload["base_branch"] == "dev"
+
+
+def test_clean_start_falls_back_to_local_base_without_origin(
+    repo: Path, db_path: Path
+) -> None:
+    """No ``origin`` remote → a clean start bases off local ``dev`` (unchanged).
+
+    The fallback that keeps offline / no-origin repos — and much of the test suite
+    — behaving exactly as before CAL-1154.
+    """
+    local_dev = _git(repo, "rev-parse", "dev").stdout.strip()
+    stub = _make_linear_stub()
+    with (
+        patch("harness.cli.start.LinearClient", return_value=stub),
+        patch("harness.cli.start.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert _worktree_head(Path(payload["worktree_path"])) == local_dev
+    assert payload["base_branch"] == "dev"
+
+
+# ---------------------------------------------------------------------------
 # CAL-1007: the two silent error paths are un-swallowed.
 #
 # 1. `_find_open_run` must not read a locked/corrupt DB as "no existing run":

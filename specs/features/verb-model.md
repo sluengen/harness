@@ -91,30 +91,28 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb fetches and fast-forwards the local base to `origin/<base>`, merges (`git merge --no-ff`) the run branch into the base, pushes the base, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`)
+- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
 
 #### Scenario: the base advanced during the run
 
 - GIVEN an open run that passed review, and `origin/<base>` has advanced since `start` with non-conflicting work (a concurrent run landed a ticket)
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb fetches and fast-forwards the local base to `origin/<base>` **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
-- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb aborts the merge and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
+- THEN the verb fetches `origin/<base>` and bases the throwaway merge worktree on that current tip **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
+- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb tears the throwaway worktree down wholesale and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
 
 #### Scenario: a gate refusal
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran), or `dirty_base_checkout` (the base checkout is not merge-safe)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
 
-#### Scenario: the base checkout is not merge-safe
+#### Scenario: the merge never touches the main checkout
 
-- GIVEN an open run whose gate is satisfied, but whose **base checkout** carries uncommitted tracked changes or a merge already in progress
+- GIVEN an open run whose gate is satisfied, and a main checkout in **any** state — clean, carrying uncommitted edits, or even mid-merge
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with `reason=dirty_base_checkout`, having mutated nothing
+- THEN the merge runs in a detached throwaway worktree at `.worktrees/harness/<run_id>-close` based on `origin/<base>`; the main checkout is byte-identical before and after, on both the success and the conflict path (CAL-1154)
 
-`close` merges in the base checkout — shared state that, unlike the run worktree, no gate conjunct covers. Git cannot reliably reconstruct uncommitted changes present when a merge began, so a conflict over a dirty base checkout cannot be cleanly undone; the guarantee that a refusal leaves the repository as it found it only holds from a clean start, which is why the check precedes every mutation (CAL-1151). It counts **tracked** changes only — an untracked scratch file cannot affect a merge, and counting it would wedge every close.
-
-A merge this verb *does* start is always restored: a conflict aborts before returning, and if that restore fails, the residue is reported **alongside** the original conflict reason rather than swallowed — a silent cleanup failure is what stranded the checkout in the field, and left close's own prescribed recovery (rebase → re-review → close) failing with git's unrelated `you need to resolve your current index first`.
+`close` merges off the main checkout entirely (`harness.close_merge`, mirroring `harness.promotion`): it fetches `origin/<base>`, merges the run branch in a throwaway worktree, pushes the merge commit to `origin/<base>`, and removes the worktree. The guarantee is **structural, not defended** — there is no shared tree to strand, so no base-checkout precondition to check and no restore that can fail. This retired the CAL-1151 `dirty_base_checkout` refusal (its precondition is now unreachable) and, with it, that reason from the locked refusal-reason contract. A conflict tears the whole worktree down (no `git merge --abort` on any shared tree) and exits 1 with the same clear message as before; a push rejected non-fast-forward — two concurrent closes racing the same base — also exits 1, and the loser retries (its next fetch sees the winner's tip). Because the local `<base>` branch is no longer advanced by a close, the `start` and `worktrees cleanup` readers base off `origin/<base>` (see [`worktree-lifecycle.md`](worktree-lifecycle.md)).
 
 `no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
