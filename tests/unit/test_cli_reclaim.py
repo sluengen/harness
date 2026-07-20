@@ -220,8 +220,8 @@ def _make_sweep_stub(active: list[dict[str, str]]) -> MagicMock:
 
 def _invoke(args: list[str], stub: MagicMock) -> Any:
     with (
-        patch("harness.cli.reclaim.LinearClient", return_value=stub),
-        patch("harness.cli.reclaim.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         return cli_runner.invoke(app, args)
 

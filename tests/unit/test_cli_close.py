@@ -258,9 +258,9 @@ def _invoke(
     """Invoke ``harness close`` with the Linear client and git side effects faked."""
     merge = merge_push if merge_push is not None else MagicMock(return_value=None)
     with (
-        patch("harness.cli.close.LinearClient", return_value=linear_stub),
-        patch("harness.cli.close.linear_api_key", return_value="test-key"),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.tracker.LinearClient", return_value=linear_stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,
@@ -356,7 +356,7 @@ def test_ac2_stale_review_when_head_advanced(repo: Path, db_path: Path) -> None:
 def test_dirty_worktree_refused_when_uncommitted_edits(repo: Path, db_path: Path) -> None:
     """A pass for HEAD does NOT cover uncommitted edits — close must refuse.
 
-    CAL-586 / CODE-1: the gate binds to HEAD, but ``_merge_and_push`` used to
+    CAL-586 / CODE-1: the gate binds to HEAD, but an earlier close used to
     auto-commit a dirty worktree, merging content that no review ever saw.
     ``stale_review`` catches commit-after-review; it does NOT catch
     edit-without-committing because HEAD is unchanged. The dirty tree must be
@@ -540,12 +540,12 @@ def test_close_exits_2_when_linear_unconfigured(repo: Path, db_path: Path) -> No
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", return_value=stub),
+        patch("harness.tracker.LinearClient", return_value=stub),
         patch(
-            "harness.cli.close.linear_api_key",
+            "harness.tracker.linear_api_key",
             side_effect=LinearConfigError("LINEAR_API_KEY is not set"),
         ),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,

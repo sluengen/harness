@@ -76,17 +76,16 @@ from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
-from harness.layers import linear_enabled
+from harness.layers import tracker as tracker_backend
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
+from harness.tracker import UnsupportedTrackerError, tracker_client
 
 # size: one cohesive verb — the single-target reclaim (revert → reconcile →
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
@@ -227,11 +226,14 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
     """Revert ``ticket`` to Todo + ``reclaimed`` label + a comment (the load-bearing
     side effect — done before the local reconcile)."""
     try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
+        client = tracker_client(Path.cwd())
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
-    client = LinearClient(api_key=api_key)
+    # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
+    # is true for linear *and* github). ``github`` raised in the seam just above;
+    # so a real client is resolved here (linear, never ``None``).
+    assert client is not None
     try:
         await client.transition_to_unstarted(ticket)
         await client.apply_label(ticket, RECLAIM_LABEL)
@@ -259,10 +261,13 @@ async def _run_reclaim(
 ) -> ReclaimOutput:
     """Reclaim the resolved target; raise :class:`_ReclaimError` on refusal/error.
 
-    ``tracker`` is the repo's ``layers.linear`` (CAL-1104). With it off there is
-    no ticket to revert, so step 1 is skipped and reclaim reduces to its local
-    half — reconcile the ledger, preserve the branch — which is the half that
-    unblocks a fresh ``start`` on the same identifier.
+    ``tracker`` is ``True`` when a tracker is configured — ``tracker: linear`` or
+    ``github`` (CAL-1104, CAL-1197); only ``tracker: none`` sets it ``False``. With
+    it off there is no ticket to revert, so step 1 is skipped and reclaim reduces
+    to its local half — reconcile the ledger, preserve the branch — which is the
+    half that unblocks a fresh ``start`` on the same identifier. (For ``github``
+    the tracker step is attempted and then fails loudly at the seam, since the
+    backend is not implemented yet.)
     """
     run_id, status, ticket, branch = await _resolve_target(
         db_path, run_id_arg, ticket_arg
@@ -354,7 +359,7 @@ async def _run_stale_sweep(
     state the ticket was stranded in. A ticket inside the threshold is left
     untouched.
 
-    Tracker-less (``layers.linear: false``, CAL-1104) the sweep is a **clean
+    Tracker-less (``tracker: none``, CAL-1104/CAL-1197) the sweep is a **clean
     no-op**: staleness keys entirely on the tracker's ``updatedAt`` (proposal
     D2), so with no tracker there is no active ticket state to enumerate and
     the honest result is "scanned nothing". It reports empty rather than failing
@@ -371,11 +376,14 @@ async def _run_stale_sweep(
         )
 
     try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
+        client = tracker_client(Path.cwd())
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
-    client = LinearClient(api_key=api_key)
+    # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
+    # is true for linear *and* github). ``github`` raised in the seam just above;
+    # so a real client is resolved here (linear, never ``None``).
+    assert client is not None
     try:
         issues = await client.fetch_reclaimable_issues(project=project)
     except LinearRequestError as exc:
@@ -464,7 +472,10 @@ def reclaim_command(
     # ``reclaim`` has no ``--repo`` flag: like its read-side siblings it is
     # anchored on the CWD (the same place ``_resolve_db_path`` defaults the
     # ledger to), so the layer is read from the CWD's CONTEXT.md (CAL-1104).
-    tracker = linear_enabled(Path.cwd())
+    # A tracker is present for linear *and* github (only ``none`` is tracker-less);
+    # github then fails loudly when the seam resolves the client, rather than
+    # silently taking the tracker-less no-op path.
+    tracker = tracker_backend(Path.cwd()) != "none"
 
     def _do() -> SweepOutput | ReclaimOutput:
         if stale:

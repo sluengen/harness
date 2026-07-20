@@ -24,16 +24,20 @@ On pass, the verb performs the side effects in order (each kept *inside* the
 verb so its output never enters the printed JSON — the context-economy
 guarantee):
 
-1. Integrate the current ``origin/<base_branch>`` (``git fetch`` then a
-   ``--ff-only`` fast-forward of the local base), so a base branch that advanced
-   during the run does not reject the push non-fast-forward (CAL-777), then
-   ``git merge --no-ff`` the run branch into ``base_branch``.
-2. ``git push`` the base branch.
-3. Transition the Linear ticket to Done.
-4. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
+1. Merge the run branch into ``origin/<base_branch>`` in a **throwaway worktree**
+   and push it — the git half lives in :mod:`harness.close_merge`. The main
+   checkout is never touched: a close fetches ``origin/<base>``, merges the run
+   branch in a detached ``.worktrees/harness/<run_id>-close`` worktree, pushes
+   the merge commit to ``origin/<base>``, and removes the worktree. So the merge
+   cannot strand the main checkout, and two concurrent closes cannot corrupt a
+   shared tree — the loser's push is rejected non-fast-forward and it retries
+   (CAL-1154). The push advances ``refs/remotes/origin/<base>`` locally, which is
+   what ``start`` / ``worktrees cleanup`` base off (Option 1).
+2. Transition the Linear ticket to Done.
+3. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
    one transaction (CAL-1002), so a failed ledger write never strands a terminal
    run with no close event.
-5. Reclaim the run's worktree and branch (``teardown_worktree``): the merge has
+4. Reclaim the run's worktree and branch (``teardown_worktree``): the merge has
    landed, so the worktree directory and the branch — local, and on ``origin``
    if a checkpoint pushed it — are removed. This step is **best-effort**: a
    failure never fails the close (the merge/Done/ledger already succeeded), and
@@ -45,16 +49,15 @@ On a gate failure the verb exits non-zero with a structured refusal carrying a
 ``reason`` of exactly one of:
 
 * ``no_run`` — no open run for the ticket/worktree.
-* ``dirty_worktree`` — the worktree has uncommitted changes; commit and
+* ``dirty_worktree`` — the run worktree has uncommitted changes; commit and
   re-review before close.
 * ``no_passing_review`` — no ``review`` event with ``verdict='pass'`` at all.
 * ``stale_review`` — a pass exists but for a different SHA (HEAD advanced).
-* ``dirty_base_checkout`` — the *base* checkout (as opposed to the run
-  worktree) is not merge-safe: it carries uncommitted tracked changes, or a
-  merge left in progress by a racing or dead close. Refused before the merge
-  touches it, because git cannot reliably undo a merge begun over uncommitted
-  changes — so "leave the checkout as we found it" is only guaranteeable from a
-  clean start (CAL-1151).
+
+There is no ``dirty_base_checkout`` refusal: the merge never mutates the main
+checkout, so there is no base checkout to validate (CAL-1154 retired the
+CAL-1151 precondition and its restore). A merge conflict or a rejected push is
+an exit-1 error (retryable), not a gate refusal.
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
@@ -70,20 +73,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
 import typer
 from pydantic import BaseModel
 
+# ``from harness import close_merge`` (the module, not its names) breaks the
+# close ↔ close_merge ↔ harness.cli import cycle, mirroring promote.py's
+# ``from harness import promotion``: the mechanics module is referenced at call
+# time (``close_merge.merge_run_branch``), never bound by name at import time.
+from harness import close_merge
 from harness._time import iso_z
-from harness.cli._git import (
-    NETWORK_GIT_TIMEOUT_SECONDS,
-    rev_parse_head,
-    run_git,
-    teardown_worktree,
-)
+from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
@@ -96,26 +98,13 @@ from harness.events.payloads import (
 )
 from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
-from harness.layers import linear_enabled
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.state import store
-
-# size: one cohesive verb — the close gate plus the integrate → merge → push →
-# teardown lifecycle it guards, which splitting would only scatter across files.
-# CAL-1004 added the network-timeout guards (fetch/push) inline, per run_git's
-# caller-owns-error-policy contract, pushing it just over the 500-line limit.
-# CAL-1151 added the base-checkout safety (precondition + verified restore) to
-# the git concern this module already carries. That concern is now the clear seam
-# — the watchlist entry (CAL-1139) names the gate/ledger/git mix — but extracting
-# it is deferred to CAL-1154, which redesigns where the merge happens at all: a
-# refactor landing in the same diff as a behaviour fix to the merge path would
-# make both harder to review, and the seam is better cut with that change in hand.
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -126,7 +115,6 @@ RefusalReason = Literal[
     "no_passing_review",
     "stale_review",
     "no_gate_evidence",
-    "dirty_base_checkout",
 ]
 
 #: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
@@ -249,10 +237,8 @@ async def _run_close(
     #    self-enforce a clean tree rather than auto-commit unreviewed content
     #    (CAL-586 / CODE-1; CODE-INSIGHT-2: a guardrail self-enforces).
     try:
-        dirty = await asyncio.to_thread(_status_porcelain, Path(worktree_path))
-    except _CloseError:
-        raise
-    except Exception as exc:  # noqa: BLE001
+        dirty = await asyncio.to_thread(close_merge.worktree_porcelain, Path(worktree_path))
+    except close_merge.CloseMergeError as exc:
         raise _CloseError(
             f"failed to read git status for worktree {worktree_path}: {exc}", 1
         ) from exc
@@ -274,25 +260,29 @@ async def _run_close(
     #    (``layers.linear: false``, CAL-1104) there is nothing to configure and
     #    nothing to transition — the gate above is unchanged, so the merge is
     #    protected exactly as it is with a tracker.
-    client: LinearClient | None = None
-    if linear_enabled(repo_root):
-        try:
-            api_key = linear_api_key()
-        except LinearConfigError as exc:
-            raise _CloseError(str(exc), 2) from exc
-        client = LinearClient(api_key=api_key)
+    client: Tracker | None = None
+    try:
+        client = tracker_client(repo_root)
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
+        # A missing key or an unimplemented backend (tracker: github) is an
+        # invocation error (exit 2) — evaluated *after* the reviewed-SHA gate, so
+        # the merge gate is unchanged by the tracker switch.
+        raise _CloseError(str(exc), 2) from exc
 
-    # 6. Merge + push (sync git, offloaded to a thread).  Output is captured and
-    #    discarded inside the verb — it never enters the printed JSON.
+    # 6. Merge + push in a throwaway worktree (sync git, offloaded to a thread) —
+    #    the git half lives in ``harness.close_merge`` (CAL-1154). The main
+    #    checkout is never touched. A conflict or a rejected push is an exit-1
+    #    error (retryable); output is captured inside the verb, never printed.
     try:
         await asyncio.to_thread(
-            _merge_and_push,
+            close_merge.merge_run_branch,
             repo_root=repo_root,
+            run_id=resolved_run_id,
             base_branch=base_branch,
             worktree_branch=worktree_branch,
         )
-    except _CloseError:
-        raise
+    except close_merge.CloseMergeError as exc:
+        raise _CloseError(str(exc), 1) from exc
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
 
@@ -480,206 +470,3 @@ async def _mark_run_closed(
             raise
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _status_porcelain(worktree_path: Path) -> str:
-    """Return ``git status --porcelain`` output for ``worktree_path`` (stripped).
-
-    A non-empty result means the worktree has uncommitted changes (staged,
-    unstaged, or untracked). Sync — run in a thread. Raises :class:`_CloseError`
-    on a git failure so the caller reports an exit-1 error, not a false-clean.
-    """
-    result = run_git(worktree_path, "status", "--porcelain")
-    if result.returncode != 0:
-        raise _CloseError(
-            f"git status failed for {worktree_path}: {result.stderr.strip()}",
-            1,
-        )
-    return result.stdout.strip()
-
-
-def _merge_in_progress(repo_root: Path) -> bool:
-    """Whether ``repo_root`` has a merge in progress (``MERGE_HEAD`` present)."""
-    result = run_git(repo_root, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")
-    return result.returncode == 0
-
-
-def _base_checkout_residue(repo_root: Path) -> str:
-    """Tracked-file residue in the base checkout — ``''`` when it is merge-safe.
-
-    ``--untracked-files=no`` is deliberate: an untracked file does not affect
-    whether a merge can be undone, so counting it would wedge every close behind
-    a stray scratch file in the working copy. Raises :class:`_CloseError` on a
-    git failure rather than reporting a false-clean.
-    """
-    result = run_git(repo_root, "status", "--porcelain", "--untracked-files=no")
-    if result.returncode != 0:
-        raise _CloseError(f"git status failed for {repo_root}: {result.stderr.strip()}", 1)
-    return result.stdout.strip()
-
-
-def _restore_base_checkout(repo_root: Path) -> str:
-    """Undo a merge this verb started; return residue it could **not** restore.
-
-    Returns ``''`` once the checkout is clean again. The abort's exit code is
-    deliberately not the verdict — what matters is whether the checkout actually
-    came back clean, which is what the caller reports. Any residue is returned
-    rather than swallowed: a cleanup that silently failed is how a conflict
-    refusal stranded the checkout in the first place (CAL-1151).
-    """
-    if _merge_in_progress(repo_root):
-        run_git(repo_root, "merge", "--abort")
-    result = run_git(repo_root, "status", "--porcelain", "--untracked-files=no")
-    if result.returncode != 0:
-        return f"git status failed: {result.stderr.strip()}"
-    return result.stdout.strip()
-
-
-def _merge_and_push(
-    *,
-    repo_root: Path,
-    base_branch: str,
-    worktree_branch: str,
-) -> str:
-    """Integrate the current ``origin/<base>``, merge the run branch, and push.
-
-    The worktree is guaranteed clean by the time this runs — ``_run_close``
-    refuses a dirty tree (``dirty_worktree``) before any side effect, so there
-    is nothing to commit here. Runs entirely inside the verb (sync git,
-    offloaded via ``asyncio.to_thread``). Returns the concatenated git output so
-    the caller may log it, but that output is deliberately *not* propagated into
-    the printed JSON (context-economy). Raises :class:`_CloseError` on any git
-    failure.
-
-    ``origin/<base>`` can advance *during* the run — a concurrent
-    ``/harness routine build`` or another session landing a ticket. The base SHA
-    captured at ``start`` is then stale, and a plain ``push`` is rejected
-    non-fast-forward, failing the close with the reviewed work stranded
-    (CAL-777). So before merging we ``fetch`` the current ``origin/<base>`` and
-    **fast-forward** the local base to it; merging the run branch on top then
-    pushes cleanly. The HEAD-bound gate is untouched: the run branch tip is the
-    reviewed SHA and becomes the merge's second parent, so only the reviewed
-    commit's content rides in — the integration only adds work already on
-    ``origin/<base>`` (each merged through its own gate).
-    """
-    output: list[str] = []
-
-    def _run(cwd: Path, *args: str, timeout: float | None = None) -> None:
-        # A fired network timeout (fetch/push) raises TimeoutExpired rather than
-        # returning a non-zero result — convert it to the same _CloseError shape
-        # so close fails cleanly instead of leaking a raw traceback (CAL-1004).
-        try:
-            result = run_git(cwd, *args, timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
-            raise _CloseError(
-                f"git {' '.join(args)} exceeded the {timeout:.0f}s network "
-                f"timeout in {cwd}; the remote may be unreachable — retry close "
-                "once it is back",
-                1,
-            ) from exc
-        output.append(result.stdout)
-        output.append(result.stderr)
-        if result.returncode != 0:
-            raise _CloseError(
-                f"git {' '.join(args)} failed in {cwd}: {result.stderr.strip()}",
-                1,
-            )
-
-    # The base checkout is shared state — and, unlike the run worktree (which
-    # ``_run_close`` refuses when dirty), nothing has validated it. Refuse to
-    # start a merge that could not be cleanly undone, rather than discover it on
-    # the conflict path: git cannot reliably reconstruct uncommitted changes that
-    # were present when a merge began ("hard to back out of in the case of a
-    # conflict"), so leaving the checkout as we found it is only guaranteeable
-    # from a clean start. Both checks precede every mutation below (CAL-1151).
-    if _merge_in_progress(repo_root):
-        raise _CloseError(
-            f"the {base_branch} checkout at {repo_root} has a merge already in "
-            f"progress: another close, or a manual merge, left it mid-merge. "
-            f"Resolve it (or `git merge --abort` in {repo_root}), then close again",
-            2,
-            reason="dirty_base_checkout",
-        )
-    residue = _base_checkout_residue(repo_root)
-    if residue:
-        raise _CloseError(
-            f"the {base_branch} checkout at {repo_root} has uncommitted tracked "
-            f"changes, so a merge into it could not be safely undone on a conflict; "
-            f"commit or stash them, then close again:\n{residue}",
-            2,
-            reason="dirty_base_checkout",
-        )
-
-    # Operate from the main repo checkout so the base branch's working tree is
-    # what advances.
-    _run(repo_root, "checkout", base_branch)
-
-    # Integrate the current origin/<base> BEFORE merging, so a base that advanced
-    # during the run does not reject the push as non-fast-forward (CAL-777). Fetch
-    # the remote tip into FETCH_HEAD and fast-forward the local base to it.
-    _run(repo_root, "fetch", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
-    ff = run_git(repo_root, "merge", "--ff-only", "FETCH_HEAD")
-    output.append(ff.stdout)
-    output.append(ff.stderr)
-    if ff.returncode != 0:
-        # The harness never commits to the local base directly, so a fast-forward
-        # to origin always applies. A failure here means the local base and
-        # origin/<base> have genuinely diverged — an unexpected state we refuse
-        # cleanly rather than force, leaving the base checkout untouched.
-        raise _CloseError(
-            f"cannot integrate origin/{base_branch}: local {base_branch} has "
-            f"diverged from origin and cannot be fast-forwarded; reconcile "
-            f"{base_branch} with origin and re-review before closing",
-            1,
-        )
-
-    # Merge the reviewed run branch into the now-current base.
-    merge = run_git(
-        repo_root, "merge", "--no-ff", worktree_branch, "-m", f"Merge {worktree_branch}"
-    )
-    output.append(merge.stdout)
-    output.append(merge.stderr)
-    if merge.returncode != 0:
-        # Two different non-zero shapes hide behind one exit code: git either
-        # started the merge and hit a conflict (MERGE_HEAD is present), or
-        # refused to start it at all. Reporting the second as a conflict sends
-        # the caller off to rebase work that would in fact merge cleanly, so
-        # decide which happened *before* restoring — the abort erases the
-        # evidence (CAL-1151).
-        conflicted = _merge_in_progress(repo_root)
-        leftover = _restore_base_checkout(repo_root)
-        if conflicted:
-            # A genuine conflict between the reviewed run branch and the changes
-            # that landed on origin/<base> during the run. The merge is aborted
-            # above, so the run stays resumable — worktree and passing review
-            # untouched — and the message is a clear one, not the raw git
-            # conflict dump. Recovery: rebase the run branch on the updated base,
-            # re-review (a fresh HEAD → a fresh pass), and close again.
-            message = (
-                f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
-                f"with changes that landed on origin/{base_branch} during the run; "
-                f"rebase the run branch on the updated {base_branch}, re-review, and "
-                f"close again"
-            )
-        else:
-            message = (
-                f"cannot merge {worktree_branch} into {base_branch}: git refused to "
-                f"start the merge in {repo_root}: {merge.stderr.strip()}"
-            )
-        if leftover:
-            # The restore itself failed. Say so alongside the real reason rather
-            # than returning the reason alone and leaving the caller to discover
-            # a stranded checkout by tripping over it on the next close.
-            message += (
-                f". The {base_branch} checkout could not be restored and still holds "
-                f"merge residue — run `git merge --abort` in {repo_root} before "
-                f"retrying:\n{leftover}"
-            )
-        raise _CloseError(message, 1)
-
-    _run(repo_root, "push", "origin", base_branch, timeout=NETWORK_GIT_TIMEOUT_SECONDS)
-
-    return "".join(output)

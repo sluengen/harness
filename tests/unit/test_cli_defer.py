@@ -92,8 +92,8 @@ def _make_stub(
 def _invoke(args: list[str], repo_root: Path, stub: MagicMock, monkeypatch: Any) -> Any:
     monkeypatch.chdir(repo_root)
     with (
-        patch("harness.cli.defer.LinearClient", return_value=stub),
-        patch("harness.cli.defer.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         return cli_runner.invoke(app, args)
 

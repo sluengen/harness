@@ -36,7 +36,12 @@ import typer
 
 from harness._time import iso_z, parse_iso_z
 from harness.cli._duration import _parse_duration
-from harness.cli._git import resolve_base_branch, run_git, teardown_worktree
+from harness.cli._git import (
+    preferred_base_ref,
+    resolve_base_branch,
+    run_git,
+    teardown_worktree,
+)
 from harness.identity import WORKTREES_SUBDIR
 
 worktrees_app = typer.Typer(
@@ -149,13 +154,19 @@ def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     The base is resolved from the repo's branch model (CAL-1106) —
     ``branches.integration`` in CONTEXT.md, else the origin default branch, else
     ``dev`` — rather than a hardcoded ``dev``/``main``/``master`` set that never
-    reclaimed a ``trunk``/``develop`` repo's worktrees.
+    reclaimed a ``trunk``/``develop`` repo's worktrees. Ancestry is checked against
+    ``origin/<base>`` when it resolves (CAL-1154, Option 1): since ``close`` merges
+    in a throwaway worktree and pushes ``origin/<base>`` without advancing the local
+    branch, a just-closed run is merged into ``origin/<base>`` but *not* local
+    ``<base>`` — checking the local branch would leave it forever unreclaimed.
+    Falls back to the local base for offline / no-origin repos
+    (:func:`~harness.cli._git.preferred_base_ref`).
 
     ``--merged`` is conservative: an absent branch ref (or an unreadable base)
     counts as not-merged so we never remove a worktree whose ref state we can't
     read.
     """
-    base = resolve_base_branch(repo_root)
+    base = preferred_base_ref(repo_root, resolve_base_branch(repo_root))
     proc = run_git(repo_root, "merge-base", "--is-ancestor", branch, base)
     return proc.returncode == 0
 

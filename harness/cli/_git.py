@@ -129,6 +129,30 @@ def resolve_base_branch(repo_root: Path, explicit: str | None = None) -> str:
     )
 
 
+def preferred_base_ref(repo_root: Path, base: str) -> str:
+    """The most-current ref for ``base`` a reader should read: ``origin/<base>``
+    when it resolves, else the local ``base`` branch (CAL-1154, Option 1).
+
+    Since CAL-1154 ``close`` no longer advances the local ``<base>`` branch — it
+    merges in a throwaway worktree and pushes ``origin/<base>``, which updates the
+    local ``refs/remotes/origin/<base>`` tracking ref on the same machine with no
+    fetch. So a reader that must see merged work — ``start`` basing a run worktree,
+    ``worktrees cleanup --merged`` checking ancestry — reads ``origin/<base>``, not
+    the local branch the merge no longer touches.
+
+    Falls back to the local ``base`` when ``origin/<base>`` does not resolve — a
+    repo with no ``origin`` remote, an offline clone, a fresh ``git init``, or the
+    ``origin`` present but that branch never pushed — mirroring
+    :func:`resolve_base_branch`'s fallback chain so those repos behave exactly as
+    before. A local call, no timeout: it reads the already-fetched tracking ref
+    (close's push keeps it current), never the network.
+    """
+    result = run_git(repo_root, "rev-parse", "--verify", "--quiet", f"origin/{base}")
+    if result.returncode == 0:
+        return f"origin/{base}"
+    return base
+
+
 def _is_safe_branch_arg(branch: str) -> bool:
     """True iff ``branch`` is safe to pass as a git branch-name positional.
 

@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.0 -->
+<!-- guidance:harness@0.2.1 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -119,7 +119,8 @@ If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The 
 - **`no_passing_review`** — no `verdict=pass` is on record. You have not run `review`, or its last verdict was `fail`/`defer`. Run `harness review` and reach `pass`.
 - **`stale_review`** — there is a passing review, but HEAD moved after it (you committed more work). The passing verdict no longer covers what would merge. **Re-run `harness review`** on the current HEAD to re-establish a fresh `pass`, then close again.
 - **`no_gate_evidence`** — a `pass` covers HEAD, but it carries no evidence that the repo's verify gate ran (it was recorded by a harness predating the gate). **Re-run `harness review`** to record a pass backed by a green gate, then close again.
-- **`dirty_base_checkout`** — the **base checkout** (the main repo `close` merges into, not the run worktree) is not merge-safe: it has uncommitted tracked changes, or a merge already in progress that a racing or dead close left behind. Nothing was touched — `close` refuses before merging, because git cannot reliably undo a merge begun over uncommitted changes. Clean the base checkout up (commit/stash the edits; `git merge --abort` a stranded merge), then close again. This is the one refusal whose fix is a raw git command: you are restoring a checkout to the clean state the verb requires, not hand-rolling the lifecycle.
+
+There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal, so no `reason` key). Both are retryable: for a conflict, rebase the run branch on the updated base, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
 
 A gate refusal is the gate doing its job. **Do not work around it** — do not hand-roll the merge/push/transition to "finish" the run. If the refusal is something you cannot resolve by re-running a verb (e.g. an unexpected error, or a verb that itself fails), **surface it to the human / Hermes** with the `reason` and the `run_id`; do not improvise a bypass.
 
