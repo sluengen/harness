@@ -177,13 +177,11 @@ EXPECTED_REFUSAL_REASONS = {
     # CAL-1082 — the verify-gate backstop: a pass that cannot show the repo's
     # gate ran is refused rather than trusted. A deliberate contract addition.
     "no_gate_evidence",
-    # CAL-1151 — the base checkout is not merge-safe (uncommitted tracked
-    # changes, or a merge already in progress left by a racing/dead close).
-    # Refused before the merge mutates it, because git cannot reliably undo a
-    # merge begun over uncommitted changes. A deliberate contract addition: the
-    # recovery differs from dirty_worktree's (that one means the *run* worktree —
-    # commit and re-review; this one means the *base* checkout — clean it up).
-    "dirty_base_checkout",
+    # CAL-1154 REMOVED ``dirty_base_checkout`` (added by CAL-1151): close now
+    # merges in a throwaway worktree and never mutates the main checkout, so the
+    # base-checkout precondition is unreachable and was removed deliberately, with
+    # this locked snapshot updated in the same change. A refusal-reason *removal*
+    # is a major-level interface event exactly as an addition is.
 }
 
 

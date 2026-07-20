@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 
+from harness import close_merge as close_merge_mod
 from harness import promotion as promotion_mod
 from harness import promotion_pr as promotion_pr_mod
 from harness.cli import _git as git_mod
 from harness.cli import checkpoint as checkpoint_mod
-from harness.cli import close as close_mod
 from harness.cli import start as start_mod
 from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, teardown_worktree
 
@@ -151,28 +151,32 @@ def test_promote_target_push_passes_network_timeout(
 
 
 def test_close_fetch_and_push_pass_network_timeout(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: list[tuple[tuple[str, ...], float | None]] = []
-    # ``rev-parse --verify --quiet MERGE_HEAD`` exits non-zero when no merge is in
-    # progress — i.e. a clean base checkout, which is the happy path this pins. The
-    # recorder's default zero-exit would otherwise read as "a merge is in progress"
-    # and trip close's base-checkout precondition (CAL-1151).
-    monkeypatch.setattr(
-        close_mod, "run_git", _recorder(calls, on={"rev-parse": _ok(returncode=1)})
-    )
+    # The throwaway-worktree merge (CAL-1154): fetch origin/<base> → rev-parse
+    # FETCH_HEAD → worktree add --detach → merge --no-ff → push HEAD:<base>. Only
+    # fetch and push reach the network. The recorder's default zero-exit runs the
+    # clean-merge happy path; teardown is stubbed so the fake worktree path is not
+    # actually reclaimed (this pins the timeout flags, not the git plumbing).
+    # ``tmp_path`` as repo_root so the throwaway-worktree parent mkdir is writable.
+    monkeypatch.setattr(close_merge_mod, "run_git", _recorder(calls))
+    monkeypatch.setattr(close_merge_mod, "teardown_worktree", lambda *a, **k: None)
 
-    close_mod._merge_and_push(
-        repo_root=Path("/repo"), base_branch="dev", worktree_branch="harness/x"
+    close_merge_mod.merge_run_branch(
+        repo_root=tmp_path,
+        run_id="x",
+        base_branch="dev",
+        worktree_branch="harness/x",
     )
 
     fetch = [t for a, t in calls if a[0] == "fetch"]
     push = [t for a, t in calls if a[:2] == ("push", "origin")]
     assert fetch == [NETWORK_GIT_TIMEOUT_SECONDS]
     assert push == [NETWORK_GIT_TIMEOUT_SECONDS]
-    # Local git in the same flow — checkout, the two merges, and the base-checkout
-    # precondition's rev-parse/status probes — carries no timeout.
-    local = [t for a, t in calls if a[0] in {"checkout", "merge", "rev-parse", "status"}]
+    # Local git in the same flow — the FETCH_HEAD rev-parse, the worktree add, and
+    # the merge — carries no timeout.
+    local = [t for a, t in calls if a[0] in {"rev-parse", "worktree", "merge"}]
     assert local and all(t is None for t in local)
 
 
@@ -265,14 +269,20 @@ def test_promote_target_push_timeout_raises_mechanics_error(
     assert exc_info.value.reason == "push_failed"
 
 
-def test_close_fetch_timeout_raises_close_error(
+def test_close_fetch_timeout_raises_close_merge_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(close_mod, "run_git", _raise_timeout_on("fetch"))
-    with pytest.raises(close_mod._CloseError):
-        close_mod._merge_and_push(
-            repo_root=Path("/repo"), base_branch="dev", worktree_branch="harness/x"
+    # A fired fetch timeout surfaces as CloseMergeError (reason=network_timeout),
+    # which the close verb maps to a clean _CloseError — never a raw TimeoutExpired.
+    monkeypatch.setattr(close_merge_mod, "run_git", _raise_timeout_on("fetch"))
+    with pytest.raises(close_merge_mod.CloseMergeError) as exc_info:
+        close_merge_mod.merge_run_branch(
+            repo_root=Path("/repo"),
+            run_id="x",
+            base_branch="dev",
+            worktree_branch="harness/x",
         )
+    assert exc_info.value.reason == "network_timeout"
 
 
 def test_teardown_push_delete_timeout_does_not_raise(

@@ -320,7 +320,7 @@ def test_ac1_close_merges_without_a_tracker(repo: Path, db_path: Path) -> None:
 
     with (
         patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,
@@ -359,7 +359,7 @@ def test_ac1_close_reports_ticket_done_false_tracker_less(
 
     with (
         patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", MagicMock(return_value=None)),
+        patch("harness.close_merge.merge_run_branch", MagicMock(return_value=None)),
     ):
         result = cli_runner.invoke(
             app,
@@ -393,7 +393,7 @@ def test_ac1_close_still_enforces_the_review_gate_tracker_less(
 
     with (
         patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,
@@ -530,7 +530,7 @@ def test_ac3_close_still_fails_fast_when_layer_on_and_key_missing(
     _emit_green_review(db_path, run_id, _head_sha(tracked_repo))
     merge = MagicMock(return_value=None)
 
-    with patch.object(close_mod, "_merge_and_push", merge):
+    with patch("harness.close_merge.merge_run_branch", merge):
         result = cli_runner.invoke(
             app,
             [
