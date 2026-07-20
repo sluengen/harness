@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>The Four Loops — our operating model</title>
+<title>The harness — operating model, verbs, and guidance</title>
 <style>
   :root{
     --ink:#0e1430; --ink-2:#3c4467; --muted:#6b7396;
@@ -174,11 +174,49 @@
   footer{margin-top:34px; color:var(--muted); font-size:12.5px; text-align:center}
   footer code{font-family:ui-monospace,Menlo,monospace}
 
+  /* ---------- THE HARNESS (verbs + invariants) ---------- */
+  .verbs{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:18px}
+  .verb{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:var(--build)}
+  .verb::before{content:""; position:absolute; left:0; top:0; right:0; height:4px; background:var(--accent)}
+  .verb--review{--accent:var(--product)} .verb--close{--accent:var(--strategy)}
+  .verb h4{margin:0 0 3px; font:800 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent-ink,var(--ink)); letter-spacing:-.01em}
+  .verb--start h4{color:var(--build-ink)} .verb--review h4{color:var(--product-ink)} .verb--close h4{color:var(--strategy-ink)}
+  .verb .role{margin:0 0 10px; font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.05em}
+  .verb p{margin:0 0 10px; font-size:13.5px; color:var(--ink-2)}
+  .verb .out{display:inline-block; font:600 11.5px/1 ui-monospace,Menlo,monospace; color:var(--ink-2);
+    background:#f4f5fa; border:1px solid var(--line); border-radius:6px; padding:5px 8px}
+  .aux{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px}
+  .aux code{font:600 12px/1 ui-monospace,Menlo,monospace; color:var(--ink-2); background:#f4f5fa;
+    border:1px solid var(--line); border-radius:7px; padding:6px 9px}
+  .invariants{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px}
+  .inv{border:1px solid var(--line); border-left:4px solid var(--build); border-radius:0 12px 12px 0;
+    background:var(--build-soft); padding:14px 16px}
+  .inv h5{margin:0 0 5px; font-size:13.5px; color:var(--build-ink)}
+  .inv p{margin:0; font-size:13px; color:var(--ink-2)}
+  .inv code{font-size:11.5px; background:#d4efe4; color:var(--build-ink); padding:2px 5px; border-radius:5px}
+  .drive{border:1px solid var(--line); background:#fbfcff; border-radius:13px; padding:16px 18px; font-size:14px; color:var(--ink-2)}
+  .drive b{color:var(--ink)} .drive code{font-size:12.5px; background:#eef1fb; color:#23348f; padding:2px 6px; border-radius:5px}
+
+  /* ---------- THE GUIDANCE (catalog) ---------- */
+  .catalog{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .cat-group{background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow);
+    padding:18px 18px 8px; overflow:hidden; position:relative; --accent:var(--product)}
+  .cat-group::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent)}
+  .cat--agents{--accent:var(--quality)} .cat--commands{--accent:var(--build)}
+  .cat-group h4{margin:0 0 2px; font-size:16px; letter-spacing:-.01em}
+  .cat-group .cat-sub{margin:0 0 12px; font-size:12px; color:var(--muted)}
+  .cat-item{display:block; padding:9px 0; border-top:1px solid var(--line)}
+  .cat-item .cat-name{font:700 12.5px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink);
+    background:none; border:0; padding:0}
+  .cat-item .cat-line{display:block; margin-top:2px; font-size:12.5px; color:var(--ink-2)}
+
   @media (max-width:780px){
     .wrap{padding:24px 16px 48px}
     .hero{padding:26px 20px 18px}
     .hero h1{font-size:30px}
     .loops,.tgrid{grid-template-columns:1fr}
+    .verbs,.invariants,.catalog,.spec-grid{grid-template-columns:1fr}
     .cadence{order:3}
   }
 </style>
@@ -187,7 +225,7 @@
 <div class="wrap">
 
   <!-- ===================== HERO ===================== -->
-  <section class="hero">
+  <section class="hero" data-section="loops">
     <p class="eyebrow">How we build · operating model</p>
     <h1>The <span class="accent">Four Loops</span></h1>
     <p class="thesis">
@@ -285,7 +323,7 @@
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code>/build</code><code>/start</code><code>harness</code></div>
+          <div class="cmds"><code data-guidance="harness">/harness&nbsp;run</code><code data-guidance="build">/build</code><code data-guidance="start">/start</code></div>
           <span class="status"><i class="pip pip--auto"></i> Automated · the harness app is the tool inside this loop</span>
         </div>
       </article>
@@ -309,8 +347,8 @@
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code>/propose</code></div>
-          <span class="status"><i class="pip pip--part"></i> As-built review still closed by hand (find the old chat)</span>
+          <div class="cmds"><code data-guidance="propose">/propose</code></div>
+          <span class="status"><i class="pip pip--auto"></i> As-built spec recorded by the reviewer on PASS, via <code style="background:none;padding:0;color:inherit">close</code></span>
         </div>
       </article>
 
@@ -333,8 +371,8 @@
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code>/assess code</code><code>/assess system</code></div>
-          <span class="status"><i class="pip pip--plan"></i> Planned: coverage, architecture drift &amp; tech-debt variants</span>
+          <div class="cmds"><code data-guidance="assess">/assess code</code><code data-guidance="assess">/assess system</code></div>
+          <span class="status"><i class="pip pip--auto"></i> Weekly <code style="background:none;padding:0;color:inherit">--deep</code> adds coverage, design-system &amp; doc-coherence lenses</span>
         </div>
       </article>
 
@@ -356,7 +394,7 @@
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code>research</code><code>(human-led)</code></div>
+          <div class="cmds"><code data-guidance="researcher">researcher</code><code>(human-led)</code></div>
           <span class="status"><i class="pip pip--human"></i> Human-driven — the rudder for everything inside</span>
         </div>
       </article>
@@ -407,7 +445,8 @@
     <p class="section-intro">
       Specs come in two families. <b>Lifecycle specs</b> flow with a task — an idea becomes confirmed work becomes the
       permanent record. <b>Reference specs</b> document standing parts of the system. And <b>decisions</b> are recorded
-      inside whichever spec governs them — there is no separate <code>decisions/</code> folder.
+      where they carry weight: a consequential cross-cutting one becomes a numbered <b>ADR</b> in <code>specs/decisions/</code>
+      (<code>0001</code>+), while a local one lives inside the spec it governs.
     </p>
 
     <div class="spec-flow">
@@ -479,17 +518,131 @@
         <p class="spec-note">Now instantiated for the harness — repo, GitHub Actions CI, the Docker wrapper, Linear, and where each credential lives. Updated when infra changes, not per task.</p>
       </div>
       <div class="spec-card spec--decision">
-        <h4>Decisions <span class="spec-tag">embedded · not a folder</span></h4>
-        <p>No standalone ADRs. A consequential decision is recorded <b>inside the spec it governs</b> — a local one in its design spec, a cross-cutting one in architecture-principles.</p>
+        <h4>Decisions <span class="spec-tag">ADRs + inline</span></h4>
+        <p>A consequential cross-cutting decision is a numbered <b>ADR</b> in <code>specs/decisions/</code> (<code>0001</code>+); a local one is recorded <b>inside the spec it governs</b>.</p>
         <code>Context · Decision · Alternatives · Consequences</code>
-        <p class="spec-note">Superseding updates it in place with a dated note — the spec carries its history inline.</p>
+        <p class="spec-note">Superseding updates it in place with a dated note — the record carries its history inline.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== THE HARNESS ===================== -->
+  <section class="section" data-section="harness">
+    <h2>The harness — the audited build loop</h2>
+    <p class="section-intro">
+      Inside the Build loop sits the <b>harness</b>: three deterministic verbs the agent orchestrates. The agent writes
+      the code and the tests; the verbs own <b>every git and tracker mutation</b>, each one appended to a single
+      SQLite ledger. That division is what makes the record trustworthy — a promise and its delivery are recorded by
+      different hands.
+    </p>
+
+    <div class="verbs">
+      <article class="verb verb--start">
+        <h4>start</h4>
+        <p class="role">open the run</p>
+        <p>Validates the ticket, moves it <b>In&nbsp;Progress</b>, cuts a fresh worktree off <code>dev</code>, and opens a row in the runs ledger.</p>
+        <span class="out">→ run_id · worktree · branch</span>
+      </article>
+      <article class="verb verb--review">
+        <h4>review</h4>
+        <p class="role">record a verdict</p>
+        <p>Runs the review engine (<b>Claude</b> by default) against the worktree HEAD and records <code>pass</code>&nbsp;/&nbsp;<code>fail</code>&nbsp;/&nbsp;<code>defer</code> <b>bound to that SHA</b> — refusing without fresh gate evidence.</p>
+        <span class="out">→ verdict · issues · reviewed_sha</span>
+      </article>
+      <article class="verb verb--close">
+        <h4>close</h4>
+        <p class="role">finalize through the gate</p>
+        <p>Enforces the gate — a passing review whose SHA equals HEAD — then merges in a throwaway worktree, pushes, and transitions the ticket <b>Done</b>. The main checkout is never touched.</p>
+        <span class="out">→ merged · ticket_done</span>
+      </article>
+    </div>
+
+    <div class="aux">
+      <code>status</code><code>checkpoint</code><code>reclaim</code><code>defer</code><code>worktrees&nbsp;cleanup</code><code>promote</code><code>doctor</code>
+    </div>
+
+    <div class="invariants">
+      <div class="inv">
+        <h5>SHA-bound verdicts</h5>
+        <p>A verdict is pinned to the exact commit it read. Move HEAD and <code>close</code> refuses (<code>stale_review</code>) — so what merges is exactly what was reviewed.</p>
+      </div>
+      <div class="inv">
+        <h5>Append-only ledger</h5>
+        <p>Every verb appends to one SQLite <code>runs</code> / <code>events</code> ledger. That ledger <b>is</b> the audit trail — never hand-rolled, never rewritten.</p>
+      </div>
+      <div class="inv">
+        <h5>Builder ≠ recorder</h5>
+        <p>The session that implements and promises is not the one that records delivery — the <b>reviewer</b> writes the as-built spec on&nbsp;PASS.</p>
+      </div>
+    </div>
+
+    <div class="drive">
+      <b>How an agent drives it.</b> One session runs the loop —
+      <code data-guidance="harness">/harness&nbsp;run&nbsp;&lt;TICKET&gt;</code> orchestrates
+      <code>start</code> → implement → <code>review</code> → (fix → review)* → <code>close</code>. It writes the code
+      inline; it never hand-rolls a merge, push, or tracker write — every state change routes through a verb. Each verb
+      runs as a one-shot container via the <code>~/bin/harness</code> Docker wrapper.
+    </div>
+  </section>
+
+  <!-- ===================== THE GUIDANCE ===================== -->
+  <section class="section" data-section="guidance">
+    <h2>The guidance it distributes</h2>
+    <p class="section-intro">
+      The harness is also the <b>source of guidance</b> that other repos self-host. This is the catalog it distributes —
+      every entry below is a real unit in <code>registry.yaml</code>, the single source of truth for the surface.
+    </p>
+
+    <div class="catalog">
+      <div class="cat-group cat--skills">
+        <h4>Skills</h4>
+        <p class="cat-sub">the durable rules</p>
+        <span class="cat-item"><code class="cat-name" data-guidance="spec-driven-development">spec-driven-development</code><span class="cat-line">The idea → shipped → recorded lifecycle the other skills hang off.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="spec-authoring">spec-authoring</code><span class="cat-line">The craft of writing any spec — proposal, change, or as-built.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="engineering-principles">engineering-principles</code><span class="cat-line">What every design and change is measured against.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="architecture">architecture</code><span class="cat-line">Cross-cutting design decisions, recorded in the spec they govern.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="test-driven-development">test-driven-development</code><span class="cat-line">The test-first iron law — the failing test before the code.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="code-quality">code-quality</code><span class="cat-line">Scope discipline, structure, and the verification gate.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="review-discipline">review-discipline</code><span class="cat-line">Spec-compliance then quality; the self-check before handoff.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="systematic-debugging">systematic-debugging</code><span class="cat-line">Reproduce, isolate the root cause, fix minimally, prove it.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="worktree-isolation">worktree-isolation</code><span class="cat-line">Every multi-commit task on its own branch in its own worktree.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="writing-quality">writing-quality</code><span class="cat-line">Plain prose; kill the predictable AI-writing patterns.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="linear">linear</code><span class="cat-line">The single home for reading and updating the Linear queue.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="work-discovery">work-discovery</code><span class="cat-line">How an unattended routine picks its own next ticket.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="assessment-craft">assessment-craft</code><span class="cat-line">The methodology for a periodic <code>/assess</code> health pass.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="guidance-coherence">guidance-coherence</code><span class="cat-line">Standards for assessing the guidance system itself.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="ux-design">ux-design</code><span class="cat-line">Designing a user-facing surface — flow, states, architecture.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="design-system">design-system</code><span class="cat-line">Building UI with the repo's tokens and primitives (layer-gated).</span></span>
+      </div>
+
+      <div class="cat-group cat--agents">
+        <h4>Agents</h4>
+        <p class="cat-sub">who does the work</p>
+        <span class="cat-item"><code class="cat-name" data-guidance="dev">dev</code><span class="cat-line">Implementation — test-first, in scope.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="reviewer">reviewer</code><span class="cat-line">The final gate; records what shipped on PASS.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="architect">architect</code><span class="cat-line">Data models, contracts, decisions — designs, not code.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="steward">steward</code><span class="cat-line">Periodic health assessment via <code>/assess</code>.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="researcher">researcher</code><span class="cat-line">Focused research to inform a design or decision.</span></span>
+      </div>
+
+      <div class="cat-group cat--commands">
+        <h4>Commands</h4>
+        <p class="cat-sub">the entry points</p>
+        <span class="cat-item"><code class="cat-name" data-guidance="propose">/propose</code><span class="cat-line">Work an unconfirmed or large idea into a decided proposal.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="start">/start</code><span class="cat-line">Set up the workspace and build through to review-ready.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="review">/review</code><span class="cat-line">Run the final gate on the current branch.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="ship">/ship</code><span class="cat-line">Integrate and close, per the repo's branch model.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="build">/build</code><span class="cat-line">Autonomous agent-led driver: implement → verify → review → ship.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="harness">/harness&nbsp;run</code><span class="cat-line">Drive a ticket through the audited <code>start → review → close</code> verb loop.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="assess">/assess</code><span class="cat-line">Run the steward over the codebase or the guidance.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="update-guidance">/update-guidance</code><span class="cat-line">Pull upstream guidance changes into this repo.</span></span>
       </div>
     </div>
   </section>
 
   <footer>
-    Internal working model · drafted 2026-06-13 · loops 1 &amp; 3 run as local scheduled routines on this machine; loops 2 &amp; 4 are human-initiated.<br>
-    Scheduling reflects current Claude Code capabilities — local scheduled tasks, <code>/loop</code>, and cloud <code>/schedule</code> routines.
+    The harness · a spec-driven agent build loop. This page is the visual companion to the <code>README</code> — the canonical reference lives in the repo.<br>
+    Every skill, agent, and command named above resolves in <code>registry.yaml</code>, the single source of truth for the distributed surface.
   </footer>
 
 </div>
