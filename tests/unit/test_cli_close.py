@@ -258,8 +258,8 @@ def _invoke(
     """Invoke ``harness close`` with the Linear client and git side effects faked."""
     merge = merge_push if merge_push is not None else MagicMock(return_value=None)
     with (
-        patch("harness.cli.close.LinearClient", return_value=linear_stub),
-        patch("harness.cli.close.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=linear_stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
         patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
@@ -540,9 +540,9 @@ def test_close_exits_2_when_linear_unconfigured(repo: Path, db_path: Path) -> No
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", return_value=stub),
+        patch("harness.tracker.LinearClient", return_value=stub),
         patch(
-            "harness.cli.close.linear_api_key",
+            "harness.tracker.linear_api_key",
             side_effect=LinearConfigError("LINEAR_API_KEY is not set"),
         ),
         patch("harness.close_merge.merge_run_branch", merge),

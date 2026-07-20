@@ -64,14 +64,13 @@ from harness.events.payloads import DeferEventData
 from harness.identity import generate_run_id
 from harness.layers import linear_enabled
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.repo_config import repo_project
 from harness.state import store
+from harness.tracker import tracker_client
 
 __all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
@@ -173,11 +172,13 @@ async def _run_defer(
         )
 
     try:
-        api_key = linear_api_key()
+        client = tracker_client(repo_root)
     except LinearConfigError as exc:
         raise _DeferError(str(exc), 2, reason="linear_config") from exc
 
-    client = LinearClient(api_key=api_key)
+    # The ``linear_enabled`` guard above already returned for a tracker-less
+    # repo, so the seam resolves a real client here (never ``None``).
+    assert client is not None
 
     # 1. Verify the ticket is on this repo's Build queue before any write.
     try:

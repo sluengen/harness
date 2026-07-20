@@ -216,7 +216,7 @@ def _emit_green_review(db_path: Path, run_id: str, sha: str) -> None:
 
 def test_ac1_start_opens_a_run_without_a_tracker(repo: Path, db_path: Path) -> None:
     """``start`` opens the run with no key, no fetch, no transition."""
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -238,7 +238,7 @@ def test_ac1_start_degrades_ticket_context_to_the_identifier(
     The argument is an opaque run identifier: it round-trips verbatim, and every
     field that only a tracker could supply is ``None`` rather than invented.
     """
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             [
@@ -269,7 +269,7 @@ def test_ac1_start_creates_the_worktree_tracker_less(
     repo: Path, db_path: Path
 ) -> None:
     """The local half of ``start`` is unchanged — the worktree really exists."""
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -290,7 +290,7 @@ def test_ac1_duplicate_start_still_refused_tracker_less(
     Without a tracker there is no canonical identifier to resolve against, so the
     argument itself is the key — the duplicate-run guard must still hold.
     """
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         first = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -318,7 +318,7 @@ def test_ac1_close_merges_without_a_tracker(repo: Path, db_path: Path) -> None:
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
+        patch("harness.tracker.LinearClient", _exploding_client()),
         patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
@@ -357,7 +357,7 @@ def test_ac1_close_reports_ticket_done_false_tracker_less(
     _emit_green_review(db_path, run_id, _head_sha(repo))
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
+        patch("harness.tracker.LinearClient", _exploding_client()),
         patch("harness.close_merge.merge_run_branch", MagicMock(return_value=None)),
     ):
         result = cli_runner.invoke(
@@ -391,7 +391,7 @@ def test_ac1_close_still_enforces_the_review_gate_tracker_less(
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
+        patch("harness.tracker.LinearClient", _exploding_client()),
         patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
@@ -430,7 +430,7 @@ def test_ac2_reclaim_clears_the_ledger_without_a_tracker(
     run_id = _seed_open_run(db_path, repo)
     monkeypatch.chdir(repo)
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["reclaim", run_id, "--db", str(db_path), "--json"],
@@ -461,7 +461,7 @@ def test_ac2_reclaim_preserves_the_branch_tracker_less(
 
     _sync(_emit_checkpoint())
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app, ["reclaim", run_id, "--db", str(db_path), "--json"]
         )
@@ -482,7 +482,7 @@ def test_ac2_stale_sweep_is_a_clean_noop_tracker_less(
     """
     monkeypatch.chdir(repo)
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             [

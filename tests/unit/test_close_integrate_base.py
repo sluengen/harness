@@ -241,8 +241,8 @@ def _make_linear_stub() -> MagicMock:
 def _invoke_close(main: Path, db_path: Path, run_id: str, stub: MagicMock) -> Any:
     """Invoke ``harness close`` with the REAL throwaway-worktree merge (only Linear faked)."""
     with (
-        patch("harness.cli.close.LinearClient", return_value=stub),
-        patch("harness.cli.close.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         return cli_runner.invoke(
             app,

@@ -102,13 +102,10 @@ from harness.cli.review_protocol import (
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
-from harness.layers import linear_enabled
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.loop_budget import (
     convergence_check_required,
@@ -116,6 +113,7 @@ from harness.loop_budget import (
     load_loop_budget,
 )
 from harness.state import store
+from harness.tracker import tracker_client
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
@@ -736,15 +734,17 @@ async def _park_ticket(
       → a stderr warning, and the review proceeds — a tracker hiccup must never
       lose a recorded verdict (AC-4).
     """
-    if ticket is None or not linear_enabled(repo_root):
+    if ticket is None:
         return
     try:
-        api_key = linear_api_key()
+        client = tracker_client(repo_root)
     except LinearConfigError:
         # No tracker configured in this environment — behave tracker-less rather
         # than refuse: the transition is bookkeeping, not the review record.
         return
-    client = LinearClient(api_key=api_key)
+    if client is None:
+        # tracker: none — nothing to transition, the same tracker-less no-op.
+        return
     try:
         if to == "in_review":
             await client.transition_to_in_review(ticket)

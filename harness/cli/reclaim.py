@@ -78,15 +78,14 @@ from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.layers import linear_enabled
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
+from harness.tracker import tracker_client
 
 # size: one cohesive verb — the single-target reclaim (revert → reconcile →
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
@@ -227,11 +226,13 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
     """Revert ``ticket`` to Todo + ``reclaimed`` label + a comment (the load-bearing
     side effect — done before the local reconcile)."""
     try:
-        api_key = linear_api_key()
+        client = tracker_client(Path.cwd())
     except LinearConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
-    client = LinearClient(api_key=api_key)
+    # Reached only in the linear-enabled path (the ``if tracker:`` gate above),
+    # so the seam resolves a real client here (never ``None``).
+    assert client is not None
     try:
         await client.transition_to_unstarted(ticket)
         await client.apply_label(ticket, RECLAIM_LABEL)
@@ -371,11 +372,13 @@ async def _run_stale_sweep(
         )
 
     try:
-        api_key = linear_api_key()
+        client = tracker_client(Path.cwd())
     except LinearConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
-    client = LinearClient(api_key=api_key)
+    # Reached only in the linear-enabled path (the ``if tracker:`` gate above),
+    # so the seam resolves a real client here (never ``None``).
+    assert client is not None
     try:
         issues = await client.fetch_reclaimable_issues(project=project)
     except LinearRequestError as exc:
