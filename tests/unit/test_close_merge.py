@@ -28,7 +28,6 @@ import pytest
 
 from harness.close_merge import CloseMergeError, merge_run_branch
 
-
 # ---------------------------------------------------------------------------
 # git / repo helpers (mirrors test_close_integrate_base.py)
 # ---------------------------------------------------------------------------

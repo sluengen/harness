@@ -34,7 +34,6 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
-from harness.cli import close as close_mod
 from harness.events.emitter import EventEmitter
 from harness.state import store
 
