@@ -1,15 +1,3 @@
-harness -- licensing scope
-==========================
-
-Copyright (C) 2026 Scott Luengen
-SPDX-License-Identifier: AGPL-3.0-only
-
-This licence governs the harness engine. The guidance files the installer copies
-into other repositories -- enumerated by the `files:` block of `registry.yaml` --
-are MIT licensed instead; see LICENSE-GUIDANCE. README.md explains the split.
-
---------------------------------------------------------------------------
-
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
