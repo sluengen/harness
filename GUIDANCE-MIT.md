@@ -1,19 +1,15 @@
-harness -- guidance licence (MIT)
-=================================
+# Guidance licence (MIT)
 
 Copyright (c) 2026 Scott Luengen
 
 The harness engine is licensed under the GNU Affero General Public License v3.0
-(see LICENSE). This file is the exception to that: the guidance files the
-harness installs into other repositories are licensed under the MIT License
-reproduced below, and the MIT terms alone govern them.
-
-The reason for the exception is the install model. The installer physically
-copies these files into your repository and commits them there, so a copyleft
-licence on them would reach into a codebase that merely adopted the
-methodology. It does not: you may install this guidance into any repository,
-including a proprietary one, modify it freely, and are under no obligation to
-publish anything as a result.
+(see [`LICENSE`](./LICENSE)). This file is the exception: the guidance files the
+installer copies into other repositories are **MIT**-licensed, and the MIT terms
+alone govern them. This file is named off any `licen[sc]e`/`copying` stem on
+purpose — GitHub's licence detector resolves a repo to a single licence, so a
+second root file named `LICENSE-*` would make it report "Other" for the whole
+repo. Why the split exists, and what it means for you, is in
+[`README.md`](./README.md) and [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 SPDX-License-Identifier: MIT
 
@@ -28,12 +24,12 @@ Scope -- "the Software" below means every file under these paths:
     templates/
 
 The authoritative boundary is the `files:` block of `registry.yaml`, which by
-construction enumerates exactly what the installer copies into a consuming
-repo. The paths above are the directories that block spans; `registry.yaml`
-governs if the two ever disagree, and a test holds them in correspondence
-(tests/unit/test_license_boundary.py). Everything outside these paths -- the
-CLI in `harness/`, its tests, and its build and container tooling -- is the
-engine, and is AGPL-3.0-only.
+construction enumerates exactly what the installer copies into a consuming repo.
+The paths above are the directories that block spans; `registry.yaml` governs if
+the two ever disagree, and a test holds them in correspondence
+(tests/unit/test_license_boundary.py). Everything outside these paths -- the CLI
+in `harness/`, its tests, and its build and container tooling -- is the engine,
+and is AGPL-3.0-only.
 
 --------------------------------------------------------------------------
 
