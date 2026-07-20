@@ -1,30 +1,26 @@
-"""Tests for ``harness close`` integrating ``origin/<base>`` before push — CAL-777.
+"""End-to-end ``harness close`` against a real advanced ``origin`` — CAL-777, CAL-1154.
 
-``_merge_and_push`` used to ``checkout base → merge --no-ff run-branch → push``
-with **no fetch first**. When ``origin/<base>`` advanced after ``start`` — a
-concurrent ``/harness routine build`` or another session landing a ticket — the
-push was rejected **non-fast-forward** and close exited 1, leaving the run open.
-Observed 2026-06-18: CAL-767 landed on ``dev`` mid-CAL-764-run, so CAL-764's
-close failed and had to be merged via a server-side PR.
+``close`` integrates ``origin/<base>`` before it lands the run branch. When
+``origin/<base>`` advanced after ``start`` — a concurrent ``/harness routine
+build`` or another session landing a ticket — a naive ``push`` was rejected
+non-fast-forward and close exited 1 (observed 2026-06-18: CAL-767 landed on
+``dev`` mid-CAL-764-run). The mechanics fetch ``origin/<base>`` and merge the run
+branch onto that current tip; the HEAD-bound gate is preserved — only the reviewed
+SHA's commit rides in (it is the merge's second parent).
 
-The fix: ``close`` fetches ``origin/<base>`` and fast-forwards the local base to
-it before merging the run branch, so a base that advanced with non-conflicting
-changes pushes cleanly. The HEAD-bound gate is preserved — only the reviewed
-SHA's commit is merged (it is the run branch tip and becomes the merge's second
-parent). A genuine conflict between the run branch and the advanced base fails
-cleanly with a clear message (not a raw git error), aborts the merge, and leaves
-the run resumable.
+**CAL-1154** moved that merge off the main checkout entirely: it now runs in a
+throwaway worktree (:mod:`harness.close_merge`), so a close never mutates the main
+checkout on any path. The mechanics themselves are unit-tested in
+``test_close_merge.py``; these tests drive the **close verb** end-to-end against a
+real bare ``origin`` (only Linear faked), which ``test_cli_close.py`` (mocked
+merge) does not.
 
-These tests exercise the **real** ``_merge_and_push`` against a real bare
-``origin`` (the existing ``test_cli_close.py`` mocks the merge entirely), and the
-close verb end-to-end with only Linear faked.
-
-AC-1/AC-4: origin/base advances non-conflicting after start → close completes
-           (merge + push + ticket Done + run closed); origin gets the merge.
-AC-2/AC-5: a conflicting advance → close refuses cleanly with a clear message,
-           the run stays open, the checkout is left clean (resumable).
-AC-3:      only the reviewed SHA's commit is merged (merge second parent ==
-           run branch tip); no unreviewed content rides in.
+AC-4: origin/base advances non-conflicting after start → close completes fully
+      (merge + push + ticket Done + run closed); origin gets the merge.
+AC-5: a conflicting advance → close fails cleanly, the run stays open and
+      resumable, and the recovery (rebase → re-review → close) lands.
+AC-1: a close leaves the main checkout byte-identical even when it is dirty —
+      the merge cannot touch it.
 """
 
 from __future__ import annotations
@@ -40,8 +36,6 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
-from harness.cli import close as close_module
-from harness.cli.close import _CloseError, _merge_and_push
 from harness.events.emitter import EventEmitter
 from harness.state import store
 
@@ -161,199 +155,7 @@ def _merge_in_progress(repo: Path) -> bool:
     ).returncode == 0
 
 
-def _strand_mid_merge(main: Path, branch: str) -> None:
-    """Leave ``main`` stranded mid-merge, as a dead or racing close would.
-
-    Models the CAL-1151 starting state: a merge was begun in the base checkout
-    and never aborted, so ``MERGE_HEAD`` and unmerged paths are still present.
-    """
-    _git(main, "fetch", "origin", "dev")
-    _git(main, "merge", "--ff-only", "FETCH_HEAD")
-    subprocess.run(
-        ["git", "merge", "--no-ff", branch, "-m", "stranded"],
-        cwd=main,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Unit: _merge_and_push against a real advanced origin
-# ---------------------------------------------------------------------------
-
-
 RUN_ID = "01JRUNINTEGRATEBASE0000001"
-
-
-def test_merge_and_push_integrates_advanced_origin(tmp_path: Path) -> None:
-    """Origin advanced non-conflicting after start → merge/push succeeds (AC-1)."""
-    origin, main = _setup_origin_and_main(tmp_path)
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run work\n")
-    reviewed_sha = _head(main, branch)
-
-    # A concurrent session lands a non-conflicting change on origin/dev.
-    advanced = _advance_origin(tmp_path, origin, filename="other.txt", content="other work\n")
-    assert _head(main, "dev") != advanced  # local dev is now behind origin/dev
-
-    # The real merge+push must integrate origin/dev first, so the push lands.
-    _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    # origin/dev now carries BOTH the concurrent change and the run's work.
-    verify = tmp_path / "verify"
-    subprocess.run(
-        ["git", "clone", str(origin), str(verify)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert (verify / "other.txt").exists()
-    assert (verify / "feature.txt").exists()
-
-    # AC-3: only the reviewed SHA's commit was merged — it is the merge's second
-    # parent, and the advanced origin commit is reachable as the first parent.
-    assert _head(main, "HEAD^2") == reviewed_sha
-    assert advanced == _head(main, "HEAD^1")
-
-
-def test_merge_and_push_conflict_refuses_cleanly(tmp_path: Path) -> None:
-    """A genuine conflict with the advanced base → clean refusal, repo left clean (AC-2)."""
-    origin, main = _setup_origin_and_main(tmp_path)
-    # Run branch rewrites README's first line.
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")
-    # Concurrent landing rewrites the SAME line differently → guaranteed conflict.
-    _advance_origin(tmp_path, origin, filename="README.md", content="other line\n")
-
-    with pytest.raises(_CloseError) as excinfo:
-        _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    err = excinfo.value
-    assert err.code == 1
-    # A clear message, not a raw git conflict dump.
-    assert "conflict" in str(err).lower()
-    assert "CONFLICT (content)" not in str(err)
-    assert "<<<<<<<" not in str(err)
-
-    # The merge was aborted: the checkout is clean and no merge is in progress.
-    assert _git(main, "status", "--porcelain").stdout.strip() == ""
-    assert not _merge_in_progress(main)
-
-
-# ---------------------------------------------------------------------------
-# Base-checkout safety — CAL-1151
-#
-# ``close`` validates the *run worktree* is clean, then mutates the *base
-# checkout* (checkout → fetch → ff → merge) having validated nothing about it.
-# These pin the three gaps that opened up: a base checkout that is not
-# merge-safe is refused BEFORE it is touched, and a merge this verb starts is
-# always restored — or its residue reported, never swallowed.
-# ---------------------------------------------------------------------------
-
-
-def test_merge_and_push_refuses_dirty_base_checkout(tmp_path: Path) -> None:
-    """Uncommitted tracked changes in the base checkout → refuse before mutating.
-
-    ``git merge`` with uncommitted changes is exactly the state git documents as
-    "hard to back out of in the case of a conflict" — ``merge --abort`` cannot
-    reliably reconstruct it. The only way to guarantee the checkout is left as
-    found is to refuse to start.
-    """
-    origin, main = _setup_origin_and_main(tmp_path)
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run work\n")
-    _advance_origin(tmp_path, origin, filename="other.txt", content="other work\n")
-
-    # A human edit / a racing process left the base checkout dirty.
-    (main / "README.md").write_text("local uncommitted edit\n")
-    dev_before = _head(main, "dev")
-
-    with pytest.raises(_CloseError) as excinfo:
-        _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    err = excinfo.value
-    assert err.reason == "dirty_base_checkout"
-    assert err.code == 2
-    # Refused BEFORE any mutation: the edit survives and local dev never moved.
-    assert (main / "README.md").read_text() == "local uncommitted edit\n"
-    assert _head(main, "dev") == dev_before
-    assert not _merge_in_progress(main)
-
-
-def test_merge_and_push_refuses_base_checkout_already_mid_merge(tmp_path: Path) -> None:
-    """A base checkout stranded mid-merge → a refusal that names the real cause.
-
-    The CAL-1151 field symptom: close's first command (``git checkout dev``)
-    failed with git's ``you need to resolve your current index first``, which
-    points nowhere near the cause. Refuse up front and say what is actually
-    wrong instead.
-    """
-    origin, main = _setup_origin_and_main(tmp_path)
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")
-    _advance_origin(tmp_path, origin, filename="README.md", content="other line\n")
-    _strand_mid_merge(main, branch)
-    assert _merge_in_progress(main)  # precondition: genuinely stranded
-
-    with pytest.raises(_CloseError) as excinfo:
-        _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    err = excinfo.value
-    assert err.reason == "dirty_base_checkout"
-    assert err.code == 2
-    message = str(err).lower()
-    assert "merge" in message and "progress" in message
-    # Not git's misleading index error.
-    assert "resolve your current index first" not in message
-
-
-def test_merge_and_push_allows_untracked_files_in_base_checkout(tmp_path: Path) -> None:
-    """Untracked files do not affect merge safety → they must not wedge a close.
-
-    Guards the base-checkout refusal against being over-strict: a stray scratch
-    file in the working copy would otherwise block every close, hourly.
-    """
-    origin, main = _setup_origin_and_main(tmp_path)
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run work\n")
-    _advance_origin(tmp_path, origin, filename="other.txt", content="other work\n")
-    (main / "scratch.txt").write_text("untracked scratch\n")
-
-    _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    assert (main / "scratch.txt").exists()  # untouched, and the close still landed
-
-
-def test_merge_and_push_reports_residue_when_the_abort_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failed ``merge --abort`` is surfaced, never swallowed.
-
-    The abort's exit code was ignored, so a conflict refusal whose cleanup
-    failed reported only the conflict — leaving the caller to discover a
-    stranded checkout by hitting it. The original reason must still surface
-    (AC-2) *alongside* the residue.
-    """
-    origin, main = _setup_origin_and_main(tmp_path)
-    _path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")
-    _advance_origin(tmp_path, origin, filename="README.md", content="other line\n")
-
-    real_run_git = close_module.run_git
-
-    def _abort_fails(cwd: Path, *args: str, timeout: float | None = None) -> Any:
-        if args[:2] == ("merge", "--abort"):
-            return subprocess.CompletedProcess(
-                args=list(args), returncode=1, stdout="", stderr="fatal: cannot abort"
-            )
-        return real_run_git(cwd, *args, timeout=timeout)
-
-    monkeypatch.setattr(close_module, "run_git", _abort_fails)
-
-    with pytest.raises(_CloseError) as excinfo:
-        _merge_and_push(repo_root=main, base_branch="dev", worktree_branch=branch)
-
-    message = str(excinfo.value)
-    # AC-2: the real reason is still what the caller sees ...
-    assert "conflicts with changes that landed on origin/dev" in message
-    # ... and the un-restored residue is named rather than hidden.
-    assert "could not be restored" in message.lower()
-    assert "merge --abort" in message
 
 
 # ---------------------------------------------------------------------------
@@ -437,10 +239,10 @@ def _make_linear_stub() -> MagicMock:
 
 
 def _invoke_close(main: Path, db_path: Path, run_id: str, stub: MagicMock) -> Any:
-    """Invoke ``harness close`` with the REAL ``_merge_and_push`` (only Linear faked)."""
+    """Invoke ``harness close`` with the REAL throwaway-worktree merge (only Linear faked)."""
     with (
-        patch("harness.cli.close.LinearClient", return_value=stub),
-        patch("harness.cli.close.linear_api_key", return_value="test-key"),
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
     ):
         return cli_runner.invoke(
             app,
@@ -526,25 +328,70 @@ def test_close_refuses_on_conflict_and_leaves_run_open(
     stub.transition_to_done.assert_not_called()
     assert _run_status(db_path, RUN_ID) == "open"
 
-    # CAL-1151 AC-4: the base checkout is left pristine — no merge in progress,
-    # no unmerged paths, no staged residue from the run branch. Driven through
-    # the close verb, not just _merge_and_push, because the field failure was in
-    # what the *verb* left behind.
+    # CAL-1154: the main checkout is untouched by construction — the conflict
+    # happened in a throwaway worktree that was torn down wholesale, so there is
+    # no merge in progress, no unmerged paths, no staged residue in the main tree.
     assert _git(main, "status", "--porcelain").stdout.strip() == ""
     assert not _merge_in_progress(main)
     assert _git(main, "diff", "--cached", "--name-only").stdout.strip() == ""
 
 
+def test_close_leaves_a_dirty_main_checkout_untouched(
+    tmp_path: Path, _allow_tmp_workspace: None
+) -> None:
+    """AC-1: a close never mutates the main checkout — even a dirty one lands cleanly.
+
+    The whole point of the throwaway-worktree merge (CAL-1154): the state of the
+    main checkout is irrelevant to a close. Where the CAL-1151 design *refused* a
+    dirty base checkout (``dirty_base_checkout``), the merge now happens off the
+    main tree entirely, so a close succeeds and the main checkout — its HEAD, its
+    uncommitted edits, its untracked files — is byte-identical before and after.
+    """
+    origin, main = _setup_origin_and_main(tmp_path)
+    path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run\n")
+    reviewed = _head(main, branch)
+    db_path = main / ".harness" / "harness.db"
+    _seed_open_run(db_path, path, branch)
+    _emit_pass(db_path, RUN_ID, reviewed)
+
+    # A human edit and a stray scratch file leave the main checkout dirty — the
+    # exact state CAL-1151 refused. It must no longer matter.
+    (main / "README.md").write_text("local uncommitted edit\n")
+    (main / "scratch.txt").write_text("untracked scratch\n")
+    head_before = _head(main)
+    status_before = _git(main, "status", "--porcelain").stdout
+
+    result = _invoke_close(main, db_path, RUN_ID, _make_linear_stub())
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["merged"] is True
+    assert _run_status(db_path, RUN_ID) == "closed"
+
+    # The main checkout is byte-identical: same HEAD, same dirt, edit preserved.
+    assert _head(main) == head_before
+    assert _git(main, "status", "--porcelain").stdout == status_before
+    assert (main / "README.md").read_text() == "local uncommitted edit\n"
+    assert not _merge_in_progress(main)
+
+    # And origin still received the run's work.
+    verify = tmp_path / "verify"
+    subprocess.run(
+        ["git", "clone", str(origin), str(verify)],
+        check=True, capture_output=True, text=True,
+    )
+    assert (verify / "feature.txt").exists()
+
+
 def test_close_recovery_after_conflict_refusal_succeeds(
     tmp_path: Path, _allow_tmp_workspace: None
 ) -> None:
-    """CAL-1151 AC-3: close's own prescribed recovery works with no manual git.
+    """CAL-1151 AC-3 / CAL-1154: close's own prescribed recovery works with no manual git.
 
-    The field failure was not the refusal — that was correct — but that
-    following the refusal's instructions (rebase the run branch on the updated
-    base, re-review, close again) hit a *different*, misleading error, because
-    the abandoned merge was still sitting in the base checkout. This drives the
-    whole documented recovery end to end.
+    A conflict refusal's instructions — rebase the run branch on the updated base,
+    re-review, close again — must land cleanly. Under CAL-1151 this used to hit a
+    *different*, misleading error because an abandoned merge sat in the base
+    checkout; the throwaway-worktree merge removes that failure mode structurally
+    (nothing is ever left in the main tree). This drives the whole recovery.
     """
     origin, main = _setup_origin_and_main(tmp_path)
     path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")

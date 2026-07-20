@@ -645,6 +645,64 @@ def test_worktrees_cleanup_merged_deletes_remote_branch(tmp_path: Path) -> None:
     assert "harness/R-pushed" not in remote_refs
 
 
+def test_worktrees_cleanup_merged_checks_origin_base_not_local(tmp_path: Path) -> None:
+    """CAL-1154: ``--merged`` checks ancestry against ``origin/<base>``, not local.
+
+    Since ``close`` merges in a throwaway worktree and pushes ``origin/<base>``
+    without advancing the local branch, a just-closed run is an ancestor of
+    ``origin/dev`` but **not** of local ``dev`` (which still lags). Checking the
+    local branch would leave every closed run's worktree forever unreclaimed. This
+    sets up exactly that state — a branch landed on ``origin/dev`` while local
+    ``dev`` stays behind — and asserts ``--merged`` reclaims it.
+    """
+    repo_root = tmp_path / "repo"
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(repo_root), "push", "-q", "origin", "dev"], check=True)
+
+    # A run branch off dev with a commit, whose work lands on origin/dev — exactly
+    # what a throwaway-worktree close does: it pushes origin/dev but never advances
+    # local dev, which is deliberately left behind here.
+    wt = repo_root / ".worktrees" / "harness" / "R-origin-merged"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add", "-b",
+         "harness/R-origin-merged", str(wt)], check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "--allow-empty", "-q", "-m", "run work"],
+        check=True,
+    )
+    # Land the run branch on origin/dev (the close push), leaving local dev behind.
+    subprocess.run(
+        ["git", "-C", str(repo_root), "push", "-q", "origin",
+         "harness/R-origin-merged:dev"], check=True,
+    )
+    local_dev = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "dev"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    origin_dev = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "origin/dev"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert local_dev != origin_dev  # precondition: local dev lags origin/dev
+
+    result = runner.invoke(
+        app, ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"]
+    )
+    assert result.exit_code == 0, result.stdout
+    # Reclaimed because it is an ancestor of origin/dev, though not of local dev.
+    assert not wt.exists()
+    assert "R-origin-merged" in result.stdout
+
+
 def test_worktrees_cleanup_merged_uses_configured_base(tmp_path: Path) -> None:
     """CAL-1106: ``--merged`` reclaims a branch merged into the repo's *configured*
     integration branch, not just the literal ``dev``/``main``/``master`` set.

@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-07-16
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104]
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197]
 ---
 
 # Verb model — start / review / close
@@ -91,30 +91,28 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb fetches and fast-forwards the local base to `origin/<base>`, merges (`git merge --no-ff`) the run branch into the base, pushes the base, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`)
+- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
 
 #### Scenario: the base advanced during the run
 
 - GIVEN an open run that passed review, and `origin/<base>` has advanced since `start` with non-conflicting work (a concurrent run landed a ticket)
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb fetches and fast-forwards the local base to `origin/<base>` **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
-- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb aborts the merge and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
+- THEN the verb fetches `origin/<base>` and bases the throwaway merge worktree on that current tip **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
+- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb tears the throwaway worktree down wholesale and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
 
 #### Scenario: a gate refusal
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran), or `dirty_base_checkout` (the base checkout is not merge-safe)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
 
-#### Scenario: the base checkout is not merge-safe
+#### Scenario: the merge never touches the main checkout
 
-- GIVEN an open run whose gate is satisfied, but whose **base checkout** carries uncommitted tracked changes or a merge already in progress
+- GIVEN an open run whose gate is satisfied, and a main checkout in **any** state — clean, carrying uncommitted edits, or even mid-merge
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with `reason=dirty_base_checkout`, having mutated nothing
+- THEN the merge runs in a detached throwaway worktree at `.worktrees/harness/<run_id>-close` based on `origin/<base>`; the main checkout is byte-identical before and after, on both the success and the conflict path (CAL-1154)
 
-`close` merges in the base checkout — shared state that, unlike the run worktree, no gate conjunct covers. Git cannot reliably reconstruct uncommitted changes present when a merge began, so a conflict over a dirty base checkout cannot be cleanly undone; the guarantee that a refusal leaves the repository as it found it only holds from a clean start, which is why the check precedes every mutation (CAL-1151). It counts **tracked** changes only — an untracked scratch file cannot affect a merge, and counting it would wedge every close.
-
-A merge this verb *does* start is always restored: a conflict aborts before returning, and if that restore fails, the residue is reported **alongside** the original conflict reason rather than swallowed — a silent cleanup failure is what stranded the checkout in the field, and left close's own prescribed recovery (rebase → re-review → close) failing with git's unrelated `you need to resolve your current index first`.
+`close` merges off the main checkout entirely (`harness.close_merge`, mirroring `harness.promotion`): it fetches `origin/<base>`, merges the run branch in a throwaway worktree, pushes the merge commit to `origin/<base>`, and removes the worktree. The guarantee is **structural, not defended** — there is no shared tree to strand, so no base-checkout precondition to check and no restore that can fail. This retired the CAL-1151 `dirty_base_checkout` refusal (its precondition is now unreachable) and, with it, that reason from the locked refusal-reason contract. A conflict tears the whole worktree down (no `git merge --abort` on any shared tree) and exits 1 with the same clear message as before; a push rejected non-fast-forward — two concurrent closes racing the same base — also exits 1, and the loser retries (its next fetch sees the winner's tip). Because the local `<base>` branch is no longer advanced by a close, the `start` and `worktrees cleanup` readers base off `origin/<base>` (see [`worktree-lifecycle.md`](worktree-lifecycle.md)).
 
 `no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
@@ -138,6 +136,16 @@ The gate is **unchanged** by the switch: `close` evaluates the reviewed-SHA gate
 The default is deliberately conservative: a missing `CONTEXT.md`, a missing `tracker:` key (with no `layers.linear`), or an unrecognised value all read as **on** (`linear`). A repo that has not opted out keeps today's behaviour — including failing fast on a missing `LINEAR_API_KEY` — rather than degrading into a tracker-less run because a file could not be parsed. **Back-compat:** a repo not yet migrated has no `tracker:` key, so the reader falls back to `layers.linear` (`false` → `none`, otherwise → `linear`); that fallback still resolves the `layers:` block before matching, because `linear:` appears twice in an un-migrated `CONTEXT.md` (`repo.linear`, the team prefix; `layers.linear`, the old switch) and an unscoped match reads the prefix first. An **incoherent** switch/address pair — `tracker: linear` with no `repo.linear`, `tracker: none` with a dangling address, or a lingering `layers.linear` that disagrees with an explicit `tracker:` — is rejected up front by `start` (`tracker_config_error`, pinned by `test_tracker.py` and `test_cli_start.py`), before any key check or side effect.
 
 `review` has no tracker touchpoint to gate: it records a verdict to the ledger and never calls the tracker. Should it gain one (CAL-1103 would move the ticket to In Review), that transition takes the same layer check.
+
+#### The tracker seam — one factory, backend-agnostic verbs
+
+The switch above resolves *which* backend; the **seam** is *how* the verbs consume it. No verb constructs a tracker client directly — each obtains one from a single factory, `harness.tracker.tracker_client(repo_root)`, and calls the `Tracker` protocol (`harness/tracker.py`, CAL-1197). `LinearClient` is *one* structural implementation of that protocol; the factory reads the switch (`harness.layers.tracker`) and returns the matching one:
+
+- `tracker: linear` → a `LinearClient` (a missing `LINEAR_API_KEY` raises `LinearConfigError`, which each verb maps to its own exit code, exactly as before the seam);
+- `tracker: none` → `None`, and the verb runs tracker-less (the scenario above) — the factory returns *without* reaching for a credential;
+- `tracker: github` → `UnsupportedTrackerError`. Raising is deliberate: a `tracker: github` repo is *misconfigured today*, not tracker-less, so it fails loudly rather than silently degrading to a no-op tracker (the wiring point the GitHub backend fills in — CAL-1105).
+
+Because backend selection lives in that one factory, a second backend slots in **without touching a verb**: `start`, `close`, `defer`, `reclaim`, and `review`'s post-verdict transition all depend only on the `Tracker` protocol. `test_tracker_seam.py` pins the contract — `LinearClient` satisfies the protocol structurally (`@runtime_checkable`), the factory returns a Linear client for `linear` and `None` for `none`, and `github` raises. This is the seam CAL-1105's GitHub Issues backend plugs into.
 
 ### Routing discipline
 

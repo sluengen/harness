@@ -11,11 +11,14 @@ starts implementing:
 4. Checks for an already-open run for the same ticket (refuses to open a
    second rather than silently create a duplicate).
 5. Generates a ULID run_id and creates a git worktree at
-   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``. With
+   ``.worktrees/harness/<run_id>/`` on branch ``harness/<run_id>``. A clean start
+   bases the worktree off ``origin/<base>`` when it resolves — the tip ``close``
+   pushes, since it no longer advances the local base (CAL-1154, Option 1) —
+   falling back to the local ``base`` for offline / no-origin repos. With
    ``--resume``, a reclaimed ticket carrying a checkpoint-pushed WIP branch is
-   continued from that branch (fetch + base the worktree on it) instead of off
-   ``base``; the recorded ``base_branch`` (the merge target) stays ``base`` so
-   ``close``'s HEAD-bound gate keeps the resumed run safe (CAL-739).
+   continued from that branch (fetch + base the worktree on it) instead; the
+   recorded ``base_branch`` (the merge target) stays ``base`` either way so
+   ``close``'s HEAD-bound gate keeps the run safe (CAL-739).
 6. Inserts an ``open`` row into ``runs`` (``status='open'``).
 7. Transitions the ticket to In Progress (last — the only non-local side
    effect; local state is rolled back if it fails).
@@ -60,6 +63,7 @@ from pydantic import BaseModel
 
 from harness.cli._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
+    preferred_base_ref,
     resolve_base_branch,
     run_git,
     teardown_worktree,
@@ -68,15 +72,14 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
-from harness.layers import linear_enabled, tracker_config_error
+from harness.layers import tracker_config_error
 from harness.linear import (
-    LinearClient,
     LinearConfigError,
     LinearNotFound,
     LinearRequestError,
-    linear_api_key,
 )
 from harness.state import store
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
 # size: one cohesive verb — the start orchestration plus the Linear/resume
@@ -212,19 +215,21 @@ async def _run_start(
     config_error = tracker_config_error(repo_root)
     if config_error is not None:
         raise _StartError(config_error, 2)
-    tracker = linear_enabled(repo_root)
 
-    client: LinearClient | None = None
-    if tracker:
-        # 1. Validate Linear API key is present.
-        try:
-            api_key = linear_api_key()
-        except LinearConfigError as exc:
-            raise _StartError(str(exc), 2) from exc
+    # 1. Resolve the tracker through the seam — a LinearClient for tracker:
+    #    linear, None for tracker: none (the verb then runs tracker-less). A
+    #    missing key (LinearConfigError) or an unimplemented backend
+    #    (UnsupportedTrackerError, e.g. tracker: github) is an invocation error
+    #    (exit 2), reported through the uniform verb-error contract — never a
+    #    raw traceback.
+    client: Tracker | None = None
+    try:
+        client = tracker_client(repo_root)
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
+        raise _StartError(str(exc), 2) from exc
 
-        client = LinearClient(api_key=api_key)
-
-        # 2. Fetch ticket from Linear.
+    if client is not None:
+        # 2. Fetch ticket from the tracker.
         try:
             ticket_data = await client.fetch_issue(ticket)
         except LinearNotFound as exc:
@@ -263,6 +268,16 @@ async def _run_start(
     start_point: str | None = None
     if resume and client is not None:
         start_point = await _resolve_resume_start_point(client, canonical, repo_root)
+
+    # 4c. Clean start (no resume WIP): base the worktree off ``origin/<base>`` when
+    # it resolves, so the run starts from the tip ``close`` pushed there. Since
+    # CAL-1154 ``close`` merges in a throwaway worktree and no longer advances the
+    # local ``<base>`` branch, basing off the local branch would start every run on
+    # a tree that lags the merged work (Option 1). ``preferred_base_ref`` falls back
+    # to the local ``<base>`` for offline / no-origin repos, so those are unchanged.
+    # The recorded ``base_branch`` (the merge target) stays ``base`` either way.
+    if start_point is None:
+        start_point = await asyncio.to_thread(preferred_base_ref, repo_root, base)
 
     # 5. Create worktree (local side effect — rolled back on any later failure).
     run_id = generate_run_id()
@@ -361,7 +376,7 @@ def _compact_ticket(ticket_data: dict[str, Any]) -> TicketContext:
 
 
 async def _resolve_resume_start_point(
-    client: LinearClient, ticket: str, repo_root: Path
+    client: Tracker, ticket: str, repo_root: Path
 ) -> str | None:
     """The git commit a resumed run starts from, or ``None`` for a clean start.
 

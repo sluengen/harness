@@ -34,7 +34,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
-from harness.cli import close as close_mod
+from harness.cli.review import _park_ticket
 from harness.events.emitter import EventEmitter
 from harness.state import store
 
@@ -217,7 +217,7 @@ def _emit_green_review(db_path: Path, run_id: str, sha: str) -> None:
 
 def test_ac1_start_opens_a_run_without_a_tracker(repo: Path, db_path: Path) -> None:
     """``start`` opens the run with no key, no fetch, no transition."""
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -239,7 +239,7 @@ def test_ac1_start_degrades_ticket_context_to_the_identifier(
     The argument is an opaque run identifier: it round-trips verbatim, and every
     field that only a tracker could supply is ``None`` rather than invented.
     """
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             [
@@ -270,7 +270,7 @@ def test_ac1_start_creates_the_worktree_tracker_less(
     repo: Path, db_path: Path
 ) -> None:
     """The local half of ``start`` is unchanged — the worktree really exists."""
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -291,7 +291,7 @@ def test_ac1_duplicate_start_still_refused_tracker_less(
     Without a tracker there is no canonical identifier to resolve against, so the
     argument itself is the key — the duplicate-run guard must still hold.
     """
-    with patch("harness.cli.start.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         first = cli_runner.invoke(
             app,
             ["start", "RUN-1", "--repo", str(repo), "--db", str(db_path), "--json"],
@@ -319,8 +319,8 @@ def test_ac1_close_merges_without_a_tracker(repo: Path, db_path: Path) -> None:
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.tracker.LinearClient", _exploding_client()),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,
@@ -358,8 +358,8 @@ def test_ac1_close_reports_ticket_done_false_tracker_less(
     _emit_green_review(db_path, run_id, _head_sha(repo))
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", MagicMock(return_value=None)),
+        patch("harness.tracker.LinearClient", _exploding_client()),
+        patch("harness.close_merge.merge_run_branch", MagicMock(return_value=None)),
     ):
         result = cli_runner.invoke(
             app,
@@ -392,8 +392,8 @@ def test_ac1_close_still_enforces_the_review_gate_tracker_less(
     merge = MagicMock(return_value=None)
 
     with (
-        patch("harness.cli.close.LinearClient", _exploding_client()),
-        patch.object(close_mod, "_merge_and_push", merge),
+        patch("harness.tracker.LinearClient", _exploding_client()),
+        patch("harness.close_merge.merge_run_branch", merge),
     ):
         result = cli_runner.invoke(
             app,
@@ -431,7 +431,7 @@ def test_ac2_reclaim_clears_the_ledger_without_a_tracker(
     run_id = _seed_open_run(db_path, repo)
     monkeypatch.chdir(repo)
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             ["reclaim", run_id, "--db", str(db_path), "--json"],
@@ -462,7 +462,7 @@ def test_ac2_reclaim_preserves_the_branch_tracker_less(
 
     _sync(_emit_checkpoint())
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app, ["reclaim", run_id, "--db", str(db_path), "--json"]
         )
@@ -483,7 +483,7 @@ def test_ac2_stale_sweep_is_a_clean_noop_tracker_less(
     """
     monkeypatch.chdir(repo)
 
-    with patch("harness.cli.reclaim.LinearClient", _exploding_client()):
+    with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
             app,
             [
@@ -530,7 +530,7 @@ def test_ac3_close_still_fails_fast_when_layer_on_and_key_missing(
     _emit_green_review(db_path, run_id, _head_sha(tracked_repo))
     merge = MagicMock(return_value=None)
 
-    with patch.object(close_mod, "_merge_and_push", merge):
+    with patch("harness.close_merge.merge_run_branch", merge):
         result = cli_runner.invoke(
             app,
             [
@@ -576,3 +576,106 @@ def test_ac3_a_repo_with_no_context_file_still_requires_a_tracker(
 
     assert result.exit_code == 2, result.output
     assert "LINEAR_API_KEY" in result.output
+
+
+# ---------------------------------------------------------------------------
+# tracker: github — the unimplemented backend fails LOUD, never silently no-ops
+# ---------------------------------------------------------------------------
+# The counterpart to the tracker-less (``none``) case above (CAL-1197): ``none``
+# is a clean no-op, but ``github`` is a *misconfiguration today*, so every verb
+# that needs the tracker rejects it through the uniform verb-error contract
+# (exit 2) — never a raw traceback, and never the tracker-less no-op path that
+# ``linear_enabled`` used to conflate ``github`` into. ``review`` is the one
+# deliberate exception: its transition is non-essential bookkeeping.
+
+
+@pytest.fixture
+def repo_github(repo: Path) -> Path:
+    """The same git repo, but CONTEXT selects the not-yet-implemented backend."""
+    (repo / "CONTEXT.md").write_text(
+        "repo:\n  name: gh-repo\n  project: Build\ntracker: github\n"
+    )
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-m", "tracker: github")
+    return repo
+
+
+def test_start_github_tracker_fails_loud_no_side_effects(
+    repo_github: Path, db_path: Path
+) -> None:
+    """``start`` rejects ``tracker: github`` with exit 2 and leaves no run row."""
+    result = cli_runner.invoke(
+        app,
+        ["start", "GH-1", "--repo", str(repo_github), "--db", str(db_path), "--json"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    assert _fetch_runs(db_path) == []
+
+
+def test_close_github_tracker_fails_loud_before_merge(
+    repo_github: Path, db_path: Path
+) -> None:
+    """A passing-gate ``close`` still refuses ``tracker: github`` (exit 2) — and
+    the misconfig stops it *before* the merge, so nothing is pushed."""
+    run_id = _seed_open_run(db_path, repo_github)
+    _emit_green_review(db_path, run_id, _head_sha(repo_github))
+    merge = MagicMock(return_value=None)
+    with patch("harness.close_merge.merge_run_branch", merge):
+        result = cli_runner.invoke(
+            app,
+            [
+                "close",
+                "RUN-1",
+                "--repo",
+                str(repo_github),
+                "--db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--json",
+            ],
+        )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    merge.assert_not_called()
+
+
+def test_defer_github_tracker_fails_loud(
+    repo_github: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``defer`` no longer mistakes ``github`` for tracker-less (the old
+    ``linear_enabled`` gate did) — it fails loudly (exit 2), not a silent skip."""
+    monkeypatch.chdir(repo_github)
+    result = cli_runner.invoke(
+        app, ["defer", "GH-1", "--reason", "x", "--db", str(db_path), "--json"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    assert "skipped_no_tracker" not in result.output
+    # A distinct machine-readable reason — not the missing-key "linear_config".
+    assert json.loads(result.output)["reason"] == "unsupported_tracker"
+
+
+def test_reclaim_stale_github_tracker_fails_loud(
+    repo_github: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``reclaim --stale`` fails loudly for ``github`` rather than sweeping
+    nothing — the tracker-less no-op is reserved for ``tracker: none``."""
+    monkeypatch.chdir(repo_github)
+    result = cli_runner.invoke(
+        app,
+        ["reclaim", "--stale", "--project", "Build", "--db", str(db_path), "--json"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+
+
+def test_review_transition_tolerates_github_tracker(repo_github: Path) -> None:
+    """``review``'s transition is the one deliberate exception: an unimplemented
+    backend is swallowed (a verdict must never be lost to a tracker problem), so
+    ``_park_ticket`` is a silent no-op — it returns without raising and never
+    constructs a client."""
+    with patch("harness.tracker.LinearClient", _exploding_client()):
+        result = _sync(_park_ticket(repo_github, "GH-1", to="in_review"))
+    assert result is None
