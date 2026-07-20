@@ -34,6 +34,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from harness.cli.review import _park_ticket
 from harness.events.emitter import EventEmitter
 from harness.state import store
 
@@ -575,3 +576,104 @@ def test_ac3_a_repo_with_no_context_file_still_requires_a_tracker(
 
     assert result.exit_code == 2, result.output
     assert "LINEAR_API_KEY" in result.output
+
+
+# ---------------------------------------------------------------------------
+# tracker: github — the unimplemented backend fails LOUD, never silently no-ops
+# ---------------------------------------------------------------------------
+# The counterpart to the tracker-less (``none``) case above (CAL-1197): ``none``
+# is a clean no-op, but ``github`` is a *misconfiguration today*, so every verb
+# that needs the tracker rejects it through the uniform verb-error contract
+# (exit 2) — never a raw traceback, and never the tracker-less no-op path that
+# ``linear_enabled`` used to conflate ``github`` into. ``review`` is the one
+# deliberate exception: its transition is non-essential bookkeeping.
+
+
+@pytest.fixture
+def repo_github(repo: Path) -> Path:
+    """The same git repo, but CONTEXT selects the not-yet-implemented backend."""
+    (repo / "CONTEXT.md").write_text(
+        "repo:\n  name: gh-repo\n  project: Build\ntracker: github\n"
+    )
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-m", "tracker: github")
+    return repo
+
+
+def test_start_github_tracker_fails_loud_no_side_effects(
+    repo_github: Path, db_path: Path
+) -> None:
+    """``start`` rejects ``tracker: github`` with exit 2 and leaves no run row."""
+    result = cli_runner.invoke(
+        app,
+        ["start", "GH-1", "--repo", str(repo_github), "--db", str(db_path), "--json"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    assert _fetch_runs(db_path) == []
+
+
+def test_close_github_tracker_fails_loud_before_merge(
+    repo_github: Path, db_path: Path
+) -> None:
+    """A passing-gate ``close`` still refuses ``tracker: github`` (exit 2) — and
+    the misconfig stops it *before* the merge, so nothing is pushed."""
+    run_id = _seed_open_run(db_path, repo_github)
+    _emit_green_review(db_path, run_id, _head_sha(repo_github))
+    merge = MagicMock(return_value=None)
+    with patch("harness.close_merge.merge_run_branch", merge):
+        result = cli_runner.invoke(
+            app,
+            [
+                "close",
+                "RUN-1",
+                "--repo",
+                str(repo_github),
+                "--db",
+                str(db_path),
+                "--run-id",
+                run_id,
+                "--json",
+            ],
+        )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    merge.assert_not_called()
+
+
+def test_defer_github_tracker_fails_loud(
+    repo_github: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``defer`` no longer mistakes ``github`` for tracker-less (the old
+    ``linear_enabled`` gate did) — it fails loudly (exit 2), not a silent skip."""
+    monkeypatch.chdir(repo_github)
+    result = cli_runner.invoke(
+        app, ["defer", "GH-1", "--reason", "x", "--db", str(db_path), "--json"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+    assert "skipped_no_tracker" not in result.output
+
+
+def test_reclaim_stale_github_tracker_fails_loud(
+    repo_github: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``reclaim --stale`` fails loudly for ``github`` rather than sweeping
+    nothing — the tracker-less no-op is reserved for ``tracker: none``."""
+    monkeypatch.chdir(repo_github)
+    result = cli_runner.invoke(
+        app,
+        ["reclaim", "--stale", "--project", "Build", "--db", str(db_path), "--json"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "github" in result.output.lower()
+
+
+def test_review_transition_tolerates_github_tracker(repo_github: Path) -> None:
+    """``review``'s transition is the one deliberate exception: an unimplemented
+    backend is swallowed (a verdict must never be lost to a tracker problem), so
+    ``_park_ticket`` is a silent no-op — it returns without raising and never
+    constructs a client."""
+    with patch("harness.tracker.LinearClient", _exploding_client()):
+        result = _sync(_park_ticket(repo_github, "GH-1", to="in_review"))
+    assert result is None

@@ -79,7 +79,7 @@ from harness.linear import (
     LinearRequestError,
 )
 from harness.state import store
-from harness.tracker import Tracker, tracker_client
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
 # size: one cohesive verb — the start orchestration plus the Linear/resume
@@ -217,12 +217,15 @@ async def _run_start(
         raise _StartError(config_error, 2)
 
     # 1. Resolve the tracker through the seam — a LinearClient for tracker:
-    #    linear, None for tracker: none (the verb then runs tracker-less), or a
-    #    raised UnsupportedTrackerError for an unimplemented backend.
+    #    linear, None for tracker: none (the verb then runs tracker-less). A
+    #    missing key (LinearConfigError) or an unimplemented backend
+    #    (UnsupportedTrackerError, e.g. tracker: github) is an invocation error
+    #    (exit 2), reported through the uniform verb-error contract — never a
+    #    raw traceback.
     client: Tracker | None = None
     try:
         client = tracker_client(repo_root)
-    except LinearConfigError as exc:
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
         raise _StartError(str(exc), 2) from exc
 
     if client is not None:

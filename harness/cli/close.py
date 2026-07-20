@@ -104,7 +104,7 @@ from harness.linear import (
     LinearRequestError,
 )
 from harness.state import store
-from harness.tracker import Tracker, tracker_client
+from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -263,7 +263,10 @@ async def _run_close(
     client: Tracker | None = None
     try:
         client = tracker_client(repo_root)
-    except LinearConfigError as exc:
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
+        # A missing key or an unimplemented backend (tracker: github) is an
+        # invocation error (exit 2) — evaluated *after* the reviewed-SHA gate, so
+        # the merge gate is unchanged by the tracker switch.
         raise _CloseError(str(exc), 2) from exc
 
     # 6. Merge + push in a throwaway worktree (sync git, offloaded to a thread) —

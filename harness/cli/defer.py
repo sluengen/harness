@@ -62,7 +62,7 @@ from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import DeferEventData
 from harness.identity import generate_run_id
-from harness.layers import linear_enabled
+from harness.layers import tracker as tracker_backend
 from harness.linear import (
     LinearConfigError,
     LinearNotFound,
@@ -70,7 +70,7 @@ from harness.linear import (
 )
 from harness.repo_config import repo_project
 from harness.state import store
-from harness.tracker import tracker_client
+from harness.tracker import UnsupportedTrackerError, tracker_client
 
 __all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
@@ -157,7 +157,10 @@ async def _run_defer(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to comment on, label, or assign, so the honest outcome is "skipped".
     """
-    if not linear_enabled(repo_root):
+    # Only ``tracker: none`` is a clean tracker-less skip. ``github`` is *not*
+    # tracker-less — it is a misconfig that must fail loudly (below, when the
+    # seam raises), never silently no-op here.
+    if tracker_backend(repo_root) == "none":
         return DeferOutput(
             ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
         )
@@ -173,11 +176,11 @@ async def _run_defer(
 
     try:
         client = tracker_client(repo_root)
-    except LinearConfigError as exc:
+    except (LinearConfigError, UnsupportedTrackerError) as exc:
         raise _DeferError(str(exc), 2, reason="linear_config") from exc
 
-    # The ``linear_enabled`` guard above already returned for a tracker-less
-    # repo, so the seam resolves a real client here (never ``None``).
+    # The ``tracker: none`` guard above already returned, and ``github`` raised
+    # in the seam, so a real client is resolved here (linear, never ``None``).
     assert client is not None
 
     # 1. Verify the ticket is on this repo's Build queue before any write.
