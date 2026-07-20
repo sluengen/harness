@@ -29,7 +29,7 @@ If you do open a PR:
 
 This repo is split: the engine is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)) and
 the guidance the installer copies into other repos is **MIT**
-([`LICENSE-GUIDANCE`](./LICENSE-GUIDANCE)). A contribution is licensed under
+([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md)). A contribution is licensed under
 whichever of the two already covers the file it touches.
 
 Beyond that, **by opening a pull request you grant the maintainer a perpetual,

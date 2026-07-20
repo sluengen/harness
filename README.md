@@ -219,7 +219,7 @@ Two licences, split along what gets installed where:
   freedoms. It cannot be taken proprietary.
 - **The guidance** — the skills, agents, commands, templates, hooks, process doc
   and settings the installer copies into *your* repo — is **MIT**
-  ([`LICENSE-GUIDANCE`](./LICENSE-GUIDANCE)). Install it into any repository,
+  ([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md)). Install it into any repository,
   including a closed-source one, and it encumbers nothing.
 
 The boundary is not hand-maintained prose: the `files:` block of

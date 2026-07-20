@@ -5,7 +5,7 @@ description = "Evidence layer that keeps agent-driven development honest"
 readme = "README.md"
 requires-python = ">=3.11"
 # The engine is copyleft; the guidance the installer copies into other repos is
-# MIT (LICENSE-GUIDANCE). This declares the engine's licence — the package built
+# MIT (GUIDANCE-MIT.md). This declares the engine's licence — the package built
 # from `packages = ["harness"]` is engine only, so the carve-out does not apply
 # to the distributed wheel.
 license = "AGPL-3.0-only"
