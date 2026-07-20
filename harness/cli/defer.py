@@ -176,8 +176,12 @@ async def _run_defer(
 
     try:
         client = tracker_client(repo_root)
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except LinearConfigError as exc:
         raise _DeferError(str(exc), 2, reason="linear_config") from exc
+    except UnsupportedTrackerError as exc:
+        # A distinct machine-readable reason: an unsupported backend is not a
+        # missing-credential config gap, so the routine can branch on it.
+        raise _DeferError(str(exc), 2, reason="unsupported_tracker") from exc
 
     # The ``tracker: none`` guard above already returned, and ``github`` raised
     # in the seam, so a real client is resolved here (linear, never ``None``).

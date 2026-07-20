@@ -653,6 +653,8 @@ def test_defer_github_tracker_fails_loud(
     assert result.exit_code == 2, result.output
     assert "github" in result.output.lower()
     assert "skipped_no_tracker" not in result.output
+    # A distinct machine-readable reason — not the missing-key "linear_config".
+    assert json.loads(result.output)["reason"] == "unsupported_tracker"
 
 
 def test_reclaim_stale_github_tracker_fails_loud(
