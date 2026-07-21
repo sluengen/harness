@@ -38,9 +38,16 @@ with ``tracker:``. ``start`` runs it as a fail-fast guard (pinned in
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["linear_enabled", "tracker", "tracker_config_error"]
+__all__ = [
+    "GitHubSettings",
+    "github_settings",
+    "linear_enabled",
+    "tracker",
+    "tracker_config_error",
+]
 
 #: Recognised backends. An unrecognised value reads as ``linear`` (conservative
 #: on), the same way an unrecognised ``layers.linear`` value did.
@@ -57,6 +64,23 @@ _REPO_HEADER = re.compile(r"^repo:\s*(?:#.*)?$")
 #: resolved block. The indent requirement is what keeps a top-level ``linear:``
 #: out of the match.
 _LINEAR_KEY = re.compile(r"^\s+linear:\s*(\S+)", re.MULTILINE)
+
+#: The ``github:`` config block header (column 0) — the GitHub backend's
+#: backend-specific config, read only when ``tracker: github`` (CAL-1105), the
+#: same way ``repo.linear`` is Linear-only config.
+_GITHUB_HEADER = re.compile(r"^github:\s*(?:#.*)?$")
+
+#: Indented scalar keys inside the ``github:`` block. ``repo`` and ``project``
+#: are bare tokens (``owner/name`` and ``owner/number``); ``status_field`` may
+#: contain spaces (e.g. ``Harness Status``) so it captures the rest of the line
+#: and is stripped of surrounding quotes by :func:`github_settings`.
+_GH_REPO_KEY = re.compile(r"^\s+repo:\s*(\S+)", re.MULTILINE)
+_GH_PROJECT_KEY = re.compile(r"^\s+project:\s*(\S+)", re.MULTILINE)
+_GH_STATUS_FIELD_KEY = re.compile(r"^\s+status_field:\s*(.+?)\s*$", re.MULTILINE)
+
+#: The default single-select field the harness drives when ``status_field`` is
+#: not configured — GitHub's built-in Projects v2 status field name.
+_DEFAULT_STATUS_FIELD = "Status"
 
 
 def _block(text: str, header: re.Pattern[str]) -> str | None:
@@ -107,6 +131,61 @@ def _repo_linear(text: str) -> str | None:
         return None
     match = _LINEAR_KEY.search(block)
     return match.group(1) if match else None
+
+
+@dataclass(frozen=True)
+class GitHubSettings:
+    """The GitHub backend's config, read from the ``github:`` block (CAL-1105).
+
+    ``repo`` is the issues repository (``owner/name``); ``project`` is the
+    Projects v2 board (``owner/number``) whose single-select ``status_field``
+    the harness workflow states map onto. Backend-specific — read only when
+    ``tracker: github``.
+    """
+
+    repo: str
+    project: str
+    status_field: str
+
+
+def _github_settings_from_text(text: str) -> GitHubSettings | None:
+    """Resolve :class:`GitHubSettings` from raw CONTEXT.md text, or ``None``.
+
+    ``None`` when there is no ``github:`` block, or the block omits ``repo`` or
+    ``project`` — an incomplete block is not a usable config. ``status_field``
+    defaults to :data:`_DEFAULT_STATUS_FIELD`.
+    """
+    block = _block(text, _GITHUB_HEADER)
+    if block is None:
+        return None
+    repo_match = _GH_REPO_KEY.search(block)
+    project_match = _GH_PROJECT_KEY.search(block)
+    if repo_match is None or project_match is None:
+        return None
+    field_match = _GH_STATUS_FIELD_KEY.search(block)
+    status_field = (
+        field_match.group(1).strip().strip("'\"")
+        if field_match
+        else _DEFAULT_STATUS_FIELD
+    )
+    return GitHubSettings(
+        repo=repo_match.group(1),
+        project=project_match.group(1),
+        status_field=status_field or _DEFAULT_STATUS_FIELD,
+    )
+
+
+def github_settings(repo_root: Path) -> GitHubSettings | None:
+    """Resolve ``repo_root``'s GitHub backend config, or ``None`` if unconfigured.
+
+    Reads the ``github:`` block from CONTEXT.md. Returns ``None`` when the block
+    is absent or incomplete (missing ``repo`` or ``project``) — the factory
+    turns that into a fail-fast config error, never a silent tracker-less run.
+    """
+    text = _read_context(repo_root)
+    if text is None:
+        return None
+    return _github_settings_from_text(text)
 
 
 def _tracker_from_text(text: str) -> str:
@@ -161,8 +240,11 @@ def tracker_config_error(repo_root: Path) -> str | None:
     * a lingering ``layers.linear`` that disagrees with an explicit ``tracker:`` —
       the exact second-source-of-truth this ticket removes.
 
-    ``github`` is not checked here: its backend and config are out of scope
-    (CAL-1105). A missing CONTEXT.md — or a CONTEXT.md that declares *no* tracker
+    ``tracker: github`` (CAL-1105) is held to its own config: it requires a
+    ``github:`` block carrying ``repo`` (``owner/name``) and ``project``
+    (``owner/number``); an absent or incomplete block is rejected here so a
+    misconfigured GitHub repo fails fast at ``start`` rather than mid-transition.
+    A missing CONTEXT.md — or a CONTEXT.md that declares *no* tracker
     switch at all — is not an inconsistency: the backend reads as the conservative
     ``linear`` default and there is no explicit statement to contradict, so an
     unconfigured repo is left to fail later at the key check, exactly as today.
@@ -180,6 +262,11 @@ def tracker_config_error(repo_root: Path) -> str | None:
     address = _repo_linear(text)
     has_address = address is not None and address.lower() != "none"
 
+    if backend == "github" and _github_settings_from_text(text) is None:
+        return (
+            "tracker: github requires a github: block with repo (owner/name) and "
+            "project (owner/number) — add it, or set a different tracker"
+        )
     if explicit and backend == "linear" and not has_address:
         return (
             "tracker: linear requires a repo.linear address, but repo.linear is "

@@ -45,3 +45,12 @@ def test_wrapper_no_longer_claims_it_always_fetches_fresh() -> None:
     text = _readme()
     assert "fetches\na fresh token on every invocation" not in text
     assert "fetches a fresh token on every invocation" not in text
+
+
+def test_wrapper_forwards_github_token() -> None:
+    """The wrapper pulls GITHUB_TOKEN from .env and forwards it into the container,
+    so a ``tracker: github`` repo authenticates just like a ``tracker: linear`` one
+    does with LINEAR_API_KEY (CAL-1105)."""
+    text = _readme()
+    assert "GITHUB_TOKEN=" in text  # the .env pull
+    assert "-e GITHUB_TOKEN" in text  # forwarded into the container

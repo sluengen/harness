@@ -102,18 +102,18 @@ from harness.cli.review_protocol import (
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
     load_loop_budget,
 )
 from harness.state import store
-from harness.tracker import UnsupportedTrackerError, tracker_client
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
@@ -727,12 +727,13 @@ async def _park_ticket(
     back to In Progress on a ``fail``. The move is **bookkeeping**; the verdict is
     the record — so this never refuses the review:
 
-    * no ticket, tracker-less (``tracker: none``), no ``LINEAR_API_KEY`` in the
-      environment, or an unimplemented backend (``tracker: github``) → a silent
-      no-op (there is no tracker to move a ticket in — the same posture ``close``
-      takes for a tracker-less run; and a ``github`` repo is already rejected
-      loudly at ``start``, so a real run never reaches review with it);
-    * an actual transition-call failure (``LinearNotFound`` / ``LinearRequestError``)
+    * no ticket, tracker-less (``tracker: none``), or a misconfigured tracker (no
+      credential / an incomplete config block — a ``TrackerConfigError``) → a
+      silent no-op (there is no tracker to move a ticket in — the same posture
+      ``close`` takes for a tracker-less run; and a misconfigured tracker is
+      already rejected loudly at ``start``, so a real run never reaches review
+      with it);
+    * an actual transition-call failure (``TrackerNotFound`` / ``TrackerRequestError``)
       → a stderr warning, and the review proceeds — a tracker hiccup must never
       lose a recorded verdict (AC-4).
     """
@@ -740,13 +741,13 @@ async def _park_ticket(
         return
     try:
         client = tracker_client(repo_root)
-    except (LinearConfigError, UnsupportedTrackerError):
-        # A tracker that cannot be resolved — no key in this environment
-        # (LinearConfigError) or an unimplemented backend (UnsupportedTrackerError,
-        # tracker: github) — is swallowed here, uniquely among the verbs: this
+    except TrackerConfigError:
+        # A tracker that cannot be resolved — no credential in this environment,
+        # or a missing/incomplete config block (a LinearConfigError or a
+        # GitHubConfigError) — is swallowed here, uniquely among the verbs: this
         # transition is non-essential bookkeeping, and review's contract is that a
-        # tracker problem must never cost a recorded verdict (AC-4). A tracker:
-        # github repo is already rejected loudly at ``start``, so a real run never
+        # tracker problem must never cost a recorded verdict (AC-4). A misconfigured
+        # tracker is already rejected loudly at ``start``, so a real run never
         # reaches review with it; this is the belt-and-braces no-op, not a bypass.
         return
     if client is None:
@@ -757,7 +758,7 @@ async def _park_ticket(
             await client.transition_to_in_review(ticket)
         else:
             await client.transition_to_in_progress(ticket)
-    except (LinearNotFound, LinearRequestError) as exc:
+    except (TrackerNotFound, TrackerRequestError) as exc:
         typer.echo(
             f"warning: failed to move {ticket} to {to.replace('_', ' ')}: {exc}; "
             f"the review verdict is recorded regardless (the transition is "
