@@ -72,7 +72,9 @@ def test_page_declares_open_graph_tags() -> None:
 def test_page_declares_twitter_card() -> None:
     head = _head(_page())
     card = _meta_content(head, "name", "twitter:card")
-    assert card == "summary_large_image", f"twitter:card should be summary_large_image, got {card!r}"
+    assert card == "summary_large_image", (
+        f"twitter:card should be summary_large_image, got {card!r}"
+    )
     for name in ("twitter:title", "twitter:description", "twitter:image"):
         assert _meta_content(head, "name", name), f"missing Twitter-card tag: {name}"
 
@@ -99,7 +101,9 @@ def test_page_declares_favicon() -> None:
     href = m.group(1)
     assert not href.startswith(("http://", "https://")), "favicon must be a local asset, not a URL"
     asset = (DOCS / href).resolve()
-    assert asset.is_file() and asset.stat().st_size > 0, f"favicon asset {href!r} must exist under docs/"
+    assert asset.is_file() and asset.stat().st_size > 0, (
+        f"favicon asset {href!r} must exist under docs/"
+    )
 
 
 def test_raster_share_assets_are_pngs() -> None:
@@ -142,7 +146,9 @@ def test_readme_links_hosted_guide_near_top() -> None:
 def test_infrastructure_records_hosting_decision() -> None:
     text = INFRA.read_text(encoding="utf-8")
     assert PAGES_URL in text, "infrastructure.md must record the Pages URL"
-    assert "GitHub Pages" in text, "infrastructure.md must name GitHub Pages as the hosting platform"
+    assert "GitHub Pages" in text, (
+        "infrastructure.md must name GitHub Pages as the hosting platform"
+    )
 
 
 def test_infrastructure_records_exposure_and_cadence() -> None:
