@@ -73,13 +73,13 @@ from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
 from harness.layers import tracker_config_error
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.state import store
-from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
+from harness.tracker import Tracker, tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
 # size: one cohesive verb — the start orchestration plus the Linear/resume
@@ -217,32 +217,32 @@ async def _run_start(
         raise _StartError(config_error, 2)
 
     # 1. Resolve the tracker through the seam — a LinearClient for tracker:
-    #    linear, None for tracker: none (the verb then runs tracker-less). A
-    #    missing key (LinearConfigError) or an unimplemented backend
-    #    (UnsupportedTrackerError, e.g. tracker: github) is an invocation error
-    #    (exit 2), reported through the uniform verb-error contract — never a
-    #    raw traceback.
+    #    linear, a GitHubClient for tracker: github, None for tracker: none (the
+    #    verb then runs tracker-less). A missing credential or config block
+    #    (TrackerConfigError — LinearConfigError or GitHubConfigError) is an
+    #    invocation error (exit 2), reported through the uniform verb-error
+    #    contract — never a raw traceback.
     client: Tracker | None = None
     try:
         client = tracker_client(repo_root)
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except TrackerConfigError as exc:
         raise _StartError(str(exc), 2) from exc
 
     if client is not None:
         # 2. Fetch ticket from the tracker.
         try:
             ticket_data = await client.fetch_issue(ticket)
-        except LinearNotFound as exc:
+        except TrackerNotFound as exc:
             raise _StartError(str(exc), 2) from exc
-        except LinearRequestError as exc:
-            raise _StartError(f"Linear API error: {exc}", 2) from exc
+        except TrackerRequestError as exc:
+            raise _StartError(f"tracker API error: {exc}", 2) from exc
 
-        # 3. Resolve the canonical identifier from the Linear payload.  Using the
+        # 3. Resolve the canonical identifier from the tracker payload.  Using the
         # caller-supplied string would let "cal-570" and "CAL-570" open two runs
-        # for the same issue; the Linear identifier is the single source of truth.
+        # for the same issue; the tracker's identifier is the single source of truth.
         canonical = ticket_data.get("identifier") or ""
         if not canonical:
-            raise _StartError(f"Linear returned no identifier for {ticket!r}", 2)
+            raise _StartError(f"tracker returned no identifier for {ticket!r}", 2)
     else:
         # Tracker-less: with no payload to canonicalise against, the argument
         # *is* the identifier — taken verbatim so it still keys the open-run
@@ -333,7 +333,7 @@ async def _run_start(
             await asyncio.to_thread(_cleanup_worktree_sync, repo_root, worktree_path)
             # Linear boundary errors are an invocation problem (exit 2); anything
             # else is unexpected (exit 1).  Either way local state is rolled back.
-            code = 2 if isinstance(exc, LinearNotFound | LinearRequestError) else 1
+            code = 2 if isinstance(exc, TrackerNotFound | TrackerRequestError) else 1
             raise _StartError(f"failed to transition ticket: {exc}", code) from exc
 
     # 8. Build compact output context — only the fields the agent needs.
@@ -403,7 +403,7 @@ async def _resolve_resume_start_point(
         branch = await client.fetch_resume_branch(ticket)
         if not branch:
             branch = await client.fetch_handoff_branch(ticket)
-    except (LinearNotFound, LinearRequestError):
+    except (TrackerNotFound, TrackerRequestError):
         return None
     if not branch:
         return None

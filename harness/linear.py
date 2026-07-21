@@ -38,6 +38,11 @@ from harness.reclaim_marker import (
     parse_handoff_branch,
     parse_preserved_branch,
 )
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 # size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
 # requires every Linear GraphQL operation to live in this client (never in
@@ -58,15 +63,15 @@ _LINEAR_API_URL = "https://api.linear.app/graphql"
 _TICKET_FIELDS = ("id", "identifier", "title", "description", "url")
 
 
-class LinearConfigError(RuntimeError):
+class LinearConfigError(TrackerConfigError):
     """Raised when required Linear configuration (e.g. API key) is missing."""
 
 
-class LinearNotFound(RuntimeError):  # noqa: N818 — SPEC vocab, not PEP 8 Error suffix
+class LinearNotFound(TrackerNotFound):  # noqa: N818 — SPEC vocab, not PEP 8 Error suffix
     """Raised when the requested issue does not exist or is inaccessible."""
 
 
-class LinearRequestError(RuntimeError):
+class LinearRequestError(TrackerRequestError):
     """Raised when the Linear API returns an error or an unexpected response."""
 
 

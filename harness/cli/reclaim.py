@@ -77,15 +77,15 @@ from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.layers import tracker as tracker_backend
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
-from harness.tracker import UnsupportedTrackerError, tracker_client
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 # size: one cohesive verb — the single-target reclaim (revert → reconcile →
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
@@ -227,12 +227,12 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
     side effect — done before the local reconcile)."""
     try:
         client = tracker_client(Path.cwd())
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
     # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
-    # is true for linear *and* github). ``github`` raised in the seam just above;
-    # so a real client is resolved here (linear, never ``None``).
+    # is true for linear *and* github), so a real client is resolved here (a
+    # configured linear or github backend, never ``None``).
     assert client is not None
     try:
         await client.transition_to_unstarted(ticket)
@@ -240,11 +240,11 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
         await client.post_comment(
             ticket, format_reclaim_comment(run_id, branch, when=iso_z())
         )
-    except LinearNotFound as exc:
-        raise _ReclaimError(f"ticket {ticket!r} not found on Linear: {exc}", 2) from exc
-    except LinearRequestError as exc:
+    except TrackerNotFound as exc:
+        raise _ReclaimError(f"ticket {ticket!r} not found on the tracker: {exc}", 2) from exc
+    except TrackerRequestError as exc:
         raise _ReclaimError(
-            f"failed to revert ticket {ticket!r} on Linear: {exc}", 2
+            f"failed to revert ticket {ticket!r} on the tracker: {exc}", 2
         ) from exc
     except Exception as exc:  # noqa: BLE001
         raise _ReclaimError(
@@ -377,16 +377,16 @@ async def _run_stale_sweep(
 
     try:
         client = tracker_client(Path.cwd())
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
     # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
-    # is true for linear *and* github). ``github`` raised in the seam just above;
-    # so a real client is resolved here (linear, never ``None``).
+    # is true for linear *and* github), so a real client is resolved here (a
+    # configured linear or github backend, never ``None``).
     assert client is not None
     try:
         issues = await client.fetch_reclaimable_issues(project=project)
-    except LinearRequestError as exc:
+    except TrackerRequestError as exc:
         raise _ReclaimError(
             f"failed to list active issues for project {project!r}: {exc}", 2
         ) from exc

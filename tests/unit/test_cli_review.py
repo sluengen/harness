@@ -1169,7 +1169,7 @@ def test_cal1103_ac4_transition_failure_warns_but_records_the_verdict(
     recorded, the verb exits 0, and a warning is emitted."""
     run_id = _seed_open_run(db_path, repo)
     stub = _make_linear_stub(
-        in_review_error=review_mod.LinearRequestError("Linear API HTTP 500")
+        in_review_error=review_mod.TrackerRequestError("tracker API HTTP 500")
     )
     runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
 

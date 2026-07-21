@@ -1,12 +1,12 @@
 """The tracker seam — the interface the verbs use, and the factory behind it.
 
 The verbs (``start``, ``review``, ``close``, ``defer``, ``reclaim``) do not talk
-to Linear directly: they obtain a :class:`Tracker` from :func:`tracker_client`
-and call the seam. ``linear.py``'s :class:`~harness.linear.LinearClient` is *one*
-structural implementation; a second backend (GitHub Issues, CAL-1105) slots in
-here — behind the factory — **without touching a single verb**. That is the whole
-point of the seam: backend selection lives in one place, the verbs stay
-backend-agnostic.
+to a tracker directly: they obtain a :class:`Tracker` from :func:`tracker_client`
+and call the seam. ``linear.py``'s :class:`~harness.linear.LinearClient` and
+``github.py``'s :class:`~harness.github.GitHubClient` are two structural
+implementations; selecting between them lives in one place — this factory — so
+the verbs stay backend-agnostic. That is the whole point of the seam: a backend
+slots in behind the factory **without touching a single verb**.
 
 **Which backend** is resolved from ``CONTEXT.md`` → ``tracker:`` by
 :func:`harness.layers.tracker` (the single source of truth, CAL-1164). This
@@ -14,17 +14,21 @@ module does not re-parse CONTEXT.md; it reads through that resolver:
 
 * ``linear`` → a :class:`~harness.linear.LinearClient` (needs ``LINEAR_API_KEY``;
   a missing key raises :class:`~harness.linear.LinearConfigError`, which each verb
-  maps to its own exit code, exactly as before the seam).
+  maps to its own exit code).
+* ``github`` → a :class:`~harness.github.GitHubClient` (CAL-1105) built from the
+  ``github:`` config block and ``GITHUB_TOKEN``; a missing config block or token
+  raises :class:`~harness.github.GitHubConfigError`, handled by the verbs exactly
+  like the Linear config error.
 * ``none`` → ``None`` — the repo runs tracker-less, and the factory returns
   *without* reaching for any credential.
-* ``github`` → :class:`UnsupportedTrackerError` — the backend is not implemented
-  yet (CAL-1105). Raising is deliberate: a ``tracker: github`` repo is
-  *misconfigured today*, not tracker-less, so it must fail loudly rather than
-  silently degrade to a no-op tracker.
+
+Both backends' boundary exceptions subclass the tracker-agnostic bases in
+:mod:`harness.tracker_errors`, so the verbs catch failures without naming a
+backend.
 
 The ``Tracker`` protocol is ``@runtime_checkable`` so a conformance test can pin
-``LinearClient`` to it structurally — a renamed or dropped seam method breaks the
-pin, catching interface drift between the verbs' dependency and its Linear impl.
+both clients to it structurally — a renamed or dropped seam method breaks the
+pin, catching interface drift between the verbs' dependency and either impl.
 """
 
 from __future__ import annotations
@@ -33,19 +37,10 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from harness import layers
+from harness.github import GitHubClient, GitHubConfigError, github_token
 from harness.linear import LinearClient, linear_api_key
 
-__all__ = ["Tracker", "UnsupportedTrackerError", "tracker_client"]
-
-
-class UnsupportedTrackerError(RuntimeError):  # noqa: N818 — SPEC vocab, not an *Error* the code catches
-    """A configured tracker backend has no implementation yet.
-
-    Raised by :func:`tracker_client` for ``tracker: github`` until the GitHub
-    backend lands (CAL-1105). It is *not* a tolerable condition like a missing
-    credential — the repo asked for a backend the engine cannot provide — so no
-    verb swallows it.
-    """
+__all__ = ["Tracker", "tracker_client"]
 
 
 @runtime_checkable
@@ -53,7 +48,7 @@ class Tracker(Protocol):
     """The tracker surface the verbs depend on — the seam.
 
     Exactly the methods the verbs call on a tracker client, no more. Any backend
-    (Linear today, GitHub next) implements these; the verbs know only this
+    (Linear and GitHub today) implements these; the verbs know only this
     protocol. The signatures mirror
     :class:`~harness.linear.LinearClient` so it satisfies the seam unchanged.
     """
@@ -103,23 +98,26 @@ def tracker_client(repo_root: Path) -> Tracker | None:
     backend-agnostic.
 
     Returns:
-        A :class:`~harness.linear.LinearClient` for ``tracker: linear``; ``None``
+        A :class:`~harness.linear.LinearClient` for ``tracker: linear``; a
+        :class:`~harness.github.GitHubClient` for ``tracker: github``; ``None``
         for ``tracker: none`` (the repo runs tracker-less, no credential fetched).
 
     Raises:
         harness.linear.LinearConfigError: ``tracker: linear`` but ``LINEAR_API_KEY``
             is unset — propagated so each verb maps it to its own exit code.
-        UnsupportedTrackerError: ``tracker: github`` — the backend is not yet
-            implemented (CAL-1105).
+        harness.github.GitHubConfigError: ``tracker: github`` but the ``github:``
+            config block is absent/incomplete, or ``GITHUB_TOKEN`` is unset.
     """
     backend = layers.tracker(repo_root)
     if backend == "none":
         return None
     if backend == "github":
-        raise UnsupportedTrackerError(
-            "tracker: github is configured, but the GitHub backend is not "
-            "implemented yet (tracked in CAL-1105) — set tracker: linear or "
-            "tracker: none"
-        )
+        settings = layers.github_settings(repo_root)
+        if settings is None:
+            raise GitHubConfigError(
+                "tracker: github requires a github: block in CONTEXT.md with "
+                "repo (owner/name) and project (owner/number)"
+            )
+        return GitHubClient(token=github_token(), settings=settings)
     # Default / ``linear``: LinearClient is the seam's Linear implementation.
     return LinearClient(api_key=linear_api_key())

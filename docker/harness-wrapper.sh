@@ -131,6 +131,14 @@ if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
   export LINEAR_API_KEY
 fi
 
+# Pull GITHUB_TOKEN (the GitHub tracker backend's credential, CAL-1105) the same
+# way — shell first, else a local .env — so a `tracker: github` repo authenticates
+# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY.
+if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
+  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r')
+  export GITHUB_TOKEN
+fi
+
 # Workspace allowlist (CAL-584): the verbs reject any --repo outside
 # HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
 # mounts CWD as /workspace, so /workspace is the only valid root *inside the
@@ -211,6 +219,7 @@ exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -v "$HOME/.codex":/home/harness/.codex:ro \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
+  -e GITHUB_TOKEN \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
   -e CLAUDE_CODE_OAUTH_TOKEN \
