@@ -106,11 +106,11 @@ def test_missing_everything_defaults_to_linear(tmp_path: Path) -> None:
     assert linear_enabled(tmp_path) is True
 
 
-def test_the_harness_own_context_is_the_linear_backend() -> None:
-    """The repo under test migrated to ``tracker: linear``; the reader agrees."""
+def test_the_harness_own_context_is_the_github_backend() -> None:
+    """The repo under test dogfoods ``tracker: github`` (CAL-1204); the reader agrees."""
     root = Path(__file__).resolve().parents[2]
-    assert tracker(root) == "linear"
-    assert linear_enabled(root) is True
+    assert tracker(root) == "github"
+    assert linear_enabled(root) is False
 
 
 # --- tracker_config_error() — the coherence check ---------------------------
@@ -224,3 +224,16 @@ def test_github_settings_reads_a_custom_status_field(tmp_path: Path) -> None:
 def test_github_settings_none_without_a_block(tmp_path: Path) -> None:
     root = _write(tmp_path, "tracker: github\n")
     assert github_settings(root) is None
+
+
+def test_github_settings_strips_an_inline_comment_on_status_field(tmp_path: Path) -> None:
+    """A trailing ``# comment`` on ``status_field`` is not swallowed into the value
+    (regression: `` .+? `` captured the comment; a real CONTEXT.md annotates the line)."""
+    root = _write(
+        tmp_path,
+        "tracker: github\ngithub:\n  repo: acme/widgets\n  project: acme/7\n"
+        "  status_field: Harness Status  # the single-select field\n",
+    )
+    settings = github_settings(root)
+    assert settings is not None
+    assert settings.status_field == "Harness Status"
