@@ -219,9 +219,14 @@ def _make_sweep_stub(active: list[dict[str, str]]) -> MagicMock:
 
 
 def _invoke(args: list[str], stub: MagicMock) -> Any:
+    # ``reclaim`` resolves its tracker from ``Path.cwd()`` (it has no ``--repo``),
+    # so these tests would otherwise pick up the *harness repo's own* CONTEXT.md —
+    # now ``tracker: github`` (CAL-1204). Patch the factory + backend directly so
+    # the reclaim logic is exercised against the stub regardless of ambient config
+    # (the factory→backend wiring is covered by ``test_tracker_seam.py``).
     with (
-        patch("harness.tracker.LinearClient", return_value=stub),
-        patch("harness.tracker.linear_api_key", return_value="test-key"),
+        patch("harness.cli.reclaim.tracker_client", return_value=stub),
+        patch("harness.cli.reclaim.tracker_backend", return_value="linear"),
     ):
         return cli_runner.invoke(app, args)
 

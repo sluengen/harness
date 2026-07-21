@@ -71,12 +71,16 @@ _LINEAR_KEY = re.compile(r"^\s+linear:\s*(\S+)", re.MULTILINE)
 _GITHUB_HEADER = re.compile(r"^github:\s*(?:#.*)?$")
 
 #: Indented scalar keys inside the ``github:`` block. ``repo`` and ``project``
-#: are bare tokens (``owner/name`` and ``owner/number``); ``status_field`` may
-#: contain spaces (e.g. ``Harness Status``) so it captures the rest of the line
-#: and is stripped of surrounding quotes by :func:`github_settings`.
+#: are bare tokens (``owner/name`` and ``owner/number``), so ``\S+`` stops before
+#: any trailing ``# comment``. ``status_field`` may contain spaces (e.g. ``Harness
+#: Status``), so it captures up to an optional inline ``#`` comment — matching
+#: ``[^#]`` rather than ``.`` so a comment is not swallowed into the value — and is
+#: stripped of surrounding whitespace/quotes by :func:`github_settings`.
 _GH_REPO_KEY = re.compile(r"^\s+repo:\s*(\S+)", re.MULTILINE)
 _GH_PROJECT_KEY = re.compile(r"^\s+project:\s*(\S+)", re.MULTILINE)
-_GH_STATUS_FIELD_KEY = re.compile(r"^\s+status_field:\s*(.+?)\s*$", re.MULTILINE)
+_GH_STATUS_FIELD_KEY = re.compile(
+    r"^\s+status_field:\s*([^#\n]+?)\s*(?:#.*)?$", re.MULTILINE
+)
 
 #: The default single-select field the harness drives when ``status_field`` is
 #: not configured — GitHub's built-in Projects v2 status field name.

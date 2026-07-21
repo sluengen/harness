@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.layers import linear_enabled
+from harness.layers import linear_enabled, tracker
 
 # The shape of a real CONTEXT.md: ``repo.linear`` (team prefix) sits *above*
 # ``layers.linear`` (the switch), so an unscoped ``linear:`` search hits the
@@ -109,6 +109,9 @@ def test_only_an_explicit_false_turns_the_layer_off(tmp_path: Path) -> None:
     assert linear_enabled(root) is True
 
 
-def test_the_harness_own_context_reports_the_layer_on() -> None:
-    """The repo under test is on Linear; the reader agrees with its CONTEXT.md."""
-    assert linear_enabled(Path(__file__).resolve().parents[2]) is True
+def test_the_harness_own_context_selects_github() -> None:
+    """The repo under test dogfoods the GitHub tracker (CAL-1204): its CONTEXT.md
+    sets ``tracker: github``, so the reader reports github and the Linear layer off."""
+    root = Path(__file__).resolve().parents[2]
+    assert tracker(root) == "github"
+    assert linear_enabled(root) is False

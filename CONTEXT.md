@@ -10,9 +10,13 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix — the tracker address, read only when tracker: linear
-  project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
-tracker: linear   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. Replaces the old layers.linear, whose name collided with repo.linear above (CAL-1164)
+  linear: CAL   # legacy Linear team prefix — read only when tracker: linear (this repo is now on github, below); kept for reference/rollback
+  project: Harness   # the Build queue the /harness routine loops pull from (resolved at runtime): the "Harness" Projects v2 board title for github; was the "Harness v3" Linear project pre-CAL-1204
+tracker: github   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. This repo dogfoods the GitHub backend (CAL-1204).
+github:   # the GitHub tracker backend config, read only when tracker: github (CAL-1105)
+  repo: sluengen/harness        # the issues repo
+  project: sluengen/2           # the "Harness" Projects v2 board (owner/number)
+  status_field: Harness Status  # single-select field carrying Todo / In Progress / In Review / Done
 layers:
   design_system: false
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
