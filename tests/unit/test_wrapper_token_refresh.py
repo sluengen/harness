@@ -54,3 +54,16 @@ def test_wrapper_forwards_github_token() -> None:
     text = _readme()
     assert "GITHUB_TOKEN=" in text  # the .env pull
     assert "-e GITHUB_TOKEN" in text  # forwarded into the container
+
+
+def test_wrapper_fetches_github_token_fresh_from_gh() -> None:
+    """When GITHUB_TOKEN is unset from env and .env, the wrapper fetches it fresh
+    from ``gh auth token`` (issue #170).
+
+    A ``gh`` OAuth token rotates (~8h, auto-refreshed from the keyring), so a static
+    ``.env`` snapshot goes stale and would break the *unattended* Build loop — no
+    human to refresh it. Fetching fresh each invocation mirrors the Claude Keychain
+    token block above. Precedence stays env → .env → gh, so a consuming repo's
+    long-lived PAT in ``.env`` still wins."""
+    text = _readme()
+    assert "gh auth token" in text
