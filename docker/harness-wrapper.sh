@@ -139,6 +139,18 @@ if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
   export GITHUB_TOKEN
 fi
 
+# Fresh-token fallback (issue #170). A `gh` OAuth token rotates (~8h) and `gh`
+# auto-refreshes it from the keyring, so a *static* GITHUB_TOKEN (a `.env` snapshot
+# or a stale exported value) goes stale — which silently breaks the UNATTENDED
+# Build loop, where no human is present to refresh it. When the token is still
+# unset and `gh` is logged in on the host, fetch a fresh one each invocation, the
+# same way the Claude OAuth token is pulled from the Keychain above. Precedence is
+# env → .env → gh, so a consuming repo's long-lived PAT in `.env` still wins.
+if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+  GITHUB_TOKEN=$(gh auth token 2>/dev/null || true)
+  export GITHUB_TOKEN
+fi
+
 # Workspace allowlist (CAL-584): the verbs reject any --repo outside
 # HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
 # mounts CWD as /workspace, so /workspace is the only valid root *inside the
