@@ -11,6 +11,8 @@ the refresh contract so it cannot regress to the static-token form unnoticed.
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -54,6 +56,34 @@ def test_wrapper_forwards_github_token() -> None:
     text = _readme()
     assert "GITHUB_TOKEN=" in text  # the .env pull
     assert "-e GITHUB_TOKEN" in text  # forwarded into the container
+
+
+def test_env_credential_grep_is_guarded_against_a_missing_key() -> None:
+    """The `.env` credential greps must not abort the wrapper under `set -euo
+    pipefail` when the key is absent (issue #171).
+
+    Both credential lines carry a trailing ``|| true`` — without it a no-match
+    ``grep`` (exit 1) fails the pipeline and ``set -e`` kills the whole wrapper
+    before the ``gh auth token`` fallback, so a repo whose ``.env`` omits the key
+    could run no verb. This executes the guarded pattern the wrapper uses against a
+    key-less env file (survives, empty value) alongside its unguarded counterpart
+    (aborts) — proving the guard is what prevents the abort, not just that it is
+    present."""
+    text = _readme()
+    assert text.count(r"tr -d '\r' || true") >= 2  # both LINEAR_API_KEY + GITHUB_TOKEN
+
+    guarded = (
+        "set -euo pipefail\n"
+        r"V=$(grep -E '^GITHUB_TOKEN=' missing.env | head -1 | cut -d= -f2- | tr -d '\r' || true)"
+        '\necho "ok:[$V]"'
+    )
+    unguarded = guarded.replace(" || true", "")
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "missing.env").write_text("OTHER_KEY=x\n")
+        g = subprocess.run(["bash", "-c", guarded], cwd=d, capture_output=True, text=True)
+        u = subprocess.run(["bash", "-c", unguarded], cwd=d, capture_output=True, text=True)
+    assert g.returncode == 0 and "ok:[]" in g.stdout  # guarded: survives with empty value
+    assert u.returncode != 0  # unguarded: aborts under set -e before echo
 
 
 def test_wrapper_fetches_github_token_fresh_from_gh() -> None:
