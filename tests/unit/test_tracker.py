@@ -111,6 +111,11 @@ def test_the_harness_own_context_is_the_github_backend() -> None:
     root = Path(__file__).resolve().parents[2]
     assert tracker(root) == "github"
     assert linear_enabled(root) is False
+    # Drives the built-in ``Status`` field (the default), not a custom one — so its
+    # transitions show on the board's default view (issue #172).
+    settings = github_settings(root)
+    assert settings is not None
+    assert settings.status_field == "Status"
 
 
 # --- tracker_config_error() — the coherence check ---------------------------
