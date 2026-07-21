@@ -16,7 +16,8 @@ tracker: github   # single source of truth: linear | github | none. The switch t
 github:   # the GitHub tracker backend config, read only when tracker: github (CAL-1105)
   repo: sluengen/harness        # the issues repo
   project: sluengen/2           # the "Harness" Projects v2 board (owner/number)
-  status_field: Harness Status  # single-select field carrying Todo / In Progress / In Review / Done
+  # status_field omitted → defaults to the built-in "Status" field (Todo / In Progress /
+  # In Review / Done), so transitions show on the board's default view (issue #172).
 layers:
   design_system: false
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
