@@ -125,17 +125,25 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   fi
 fi
 
-# Pull LINEAR_API_KEY from the shell or a local .env file.
+# Pull LINEAR_API_KEY from the shell or a local .env file. The trailing `|| true`
+# is load-bearing under `set -euo pipefail` (issue #171): when .env exists but has
+# no matching line, `grep` exits 1 and the pipeline would abort the whole wrapper
+# — so a repo whose .env omits this key (e.g. a github-only repo) could not run any
+# verb. Guarded, a no-match yields an empty value and the container's own error (if
+# the credential is genuinely required) reports it cleanly instead.
 if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
-  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r')
+  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
   export LINEAR_API_KEY
 fi
 
 # Pull GITHUB_TOKEN (the GitHub tracker backend's credential, CAL-1105) the same
 # way — shell first, else a local .env — so a `tracker: github` repo authenticates
-# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY.
+# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY. The
+# `|| true` is essential here (issue #171): removing the static token from .env
+# (the intended #170 state) leaves .env with no GITHUB_TOKEN line, so an unguarded
+# grep would abort the wrapper before the `gh auth token` fallback below runs.
 if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
-  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r')
+  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
   export GITHUB_TOKEN
 fi
 
