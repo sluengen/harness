@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.11 -->
+<!-- guidance:template-context@0.1.12 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -13,8 +13,14 @@ visibility: committed          # committed (all guidance in git; enables cloud e
 repo:
   name: {repo name}
   linear: {Linear workspace/team — or 'none' for the rare repo not on Linear (then set tracker: none below). The tracker address; read only when tracker: linear}
-  project: {Linear project the /harness routine loops pull from — only needed if this repo self-hosts the harness tool; omit otherwise}
-tracker: linear                # single source of truth for the tracker: linear | github | none. The switch the harness engine reads: none → the verbs run tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and `start <id>` takes an opaque run identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected. (github backend is not yet implemented.)
+  project: {optional — the project the /harness routine loops scope to; omit to run the whole tracker queue}
+  # repo.project is OPTIONAL (proposal optional-project-scope, D3 — absence is the
+  # signal; there is no `all` sentinel). Set → the /harness routine loops scope to
+  # that one project; omit → they work the whole tracker queue. What "unscoped"
+  # means per backend: tracker: linear → the team named in repo.linear; tracker:
+  # github → the board (already the full queue, so omitting it is a no-op there).
+  # Only relevant if this repo self-hosts the harness routine loops.
+tracker: linear                # single source of truth for the tracker: linear | github | none. The switch the harness engine reads: none → the verbs run tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and `start <id>` takes an opaque run identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected.
 # Layers carry repo-type variation — what the retired standard/harness profiles'
 # `default_layers` used to encode is now per-repo config here. A product repo:
 # feature_specs: true (+ design_system: true if it has one). An infra / pipeline
