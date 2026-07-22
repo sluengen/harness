@@ -97,6 +97,7 @@ from harness.cli.review_protocol import (
     is_codex_usage_limit,
     is_sandbox_blocked_defer,
     is_sandbox_init_failure,
+    resolve_model_tier,
     scan_submit_line,
 )
 from harness.events.emitter import EventEmitter
@@ -114,6 +115,11 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+
+# The dimension resolve_model_tier reads for this verb (#177) — the review-tier
+# label family (``review:<tier>``), independent of the build-tier family the
+# ticket also carries as recorded judgement, which no verb consumes.
+_REVIEW_TIER_DIMENSION = "review"
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
@@ -302,7 +308,7 @@ ENGINE_TIMEOUT_REASON = "engine_timeout"
 
 
 async def _invoke_engine(
-    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None
+    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None, model: str | None = None
 ) -> RunResult:
     """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``.
 
@@ -310,10 +316,12 @@ async def _invoke_engine(
     (CAL-1004). A ``_ReviewError`` the runner already raised — the timeout
     infra-failure carries its own exit code and ``reason`` — passes through
     unchanged; only *other* exceptions are wrapped as the generic exit-1 error.
+    ``model`` (#177) is forwarded to ``_build_cmd``, which appends it as
+    ``--model`` on the claude engine only; codex ignores it.
     """
     try:
         return await runner(
-            cmd=_build_cmd(engine),
+            cmd=_build_cmd(engine, model=model),
             stdin=_REVIEW_PROMPT,
             env=dict(os.environ),
             cwd=cwd,
@@ -323,6 +331,37 @@ async def _invoke_engine(
         raise
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
+
+
+async def _resolve_review_model(
+    repo_root: Path, ticket: str | None, explicit_model: str | None
+) -> str:
+    """Resolve the claude-engine ``--model`` alias for this review (#177).
+
+    An explicit ``--model`` wins outright. Otherwise, resolve the ticket's
+    ``review:<tier>`` label via :func:`resolve_model_tier` (default
+    ``sonnet``). Best-effort: a tracker-less run, an unresolvable tracker
+    config, or a fetch failure all degrade to the default rather than blocking
+    the review — the tier is an optimization the review can run without, not
+    part of the recorded verdict (mirroring ``_park_ticket``'s tolerance for
+    tracker hiccups).
+    """
+    if explicit_model is not None:
+        return explicit_model
+    if ticket is None:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    try:
+        client = tracker_client(repo_root)
+    except TrackerConfigError:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    if client is None:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    try:
+        issue = await client.fetch_issue(ticket)
+    except (TrackerNotFound, TrackerRequestError):
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    labels = issue.get("labels") or []
+    return resolve_model_tier(labels, _REVIEW_TIER_DIMENSION)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +389,15 @@ def review_command(
         DEFAULT_ENGINE,
         "--engine",
         help="Review engine: claude (default) or codex. Both run read-only.",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help=(
+            "Explicit model alias for the claude engine (host/testing). Takes "
+            "precedence over the ticket's resolved review:<tier> label "
+            "(#177); ignored on the codex engine."
+        ),
     ),
     gate_exit: int | None = typer.Option(
         None,
@@ -391,6 +439,7 @@ def review_command(
                 run_id=run_id,
                 db_path=db_path,
                 engine=engine,
+                model=model,
                 gate_exit=gate_exit,
                 gate_log=gate_log,
                 runner=_default_runner,
@@ -416,6 +465,7 @@ async def _run_review(
     run_id: str | None,
     db_path: Path,
     engine: Engine,
+    model: str | None = None,
     gate_exit: int | None = None,
     gate_log: Path | None = None,
     runner: Runner,
@@ -509,6 +559,11 @@ async def _run_review(
     ticket = await _read_ticket(db_path, resolved_run_id)
     await _park_ticket(repo_root, ticket, to="in_review")
 
+    # 2c. Resolve the claude-engine model tier (#177): an explicit --model
+    #     wins, else the ticket's review:<tier> label, default sonnet. Codex
+    #     ignores it — see _invoke_engine / _build_cmd.
+    resolved_model = await _resolve_review_model(repo_root, ticket, model)
+
     # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
     #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted
     #    Codex tier degrades the gate to a false ``fail`` exactly when relied
@@ -520,7 +575,9 @@ async def _run_review(
     # The configured per-subprocess ceiling (CAL-1004): a hung engine is killed
     # and surfaced as infra rather than hanging this verb until an external kill.
     engine_timeout = budget.engine_timeout_seconds
-    result = await _invoke_engine(runner, engine, Path(worktree_path), timeout=engine_timeout)
+    result = await _invoke_engine(
+        runner, engine, Path(worktree_path), timeout=engine_timeout, model=resolved_model
+    )
 
     # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
     # namespace in a non-privileged container) is INFRA, not a verdict — the
@@ -545,7 +602,11 @@ async def _run_review(
         fallback_from = "codex"
         engine_used = "claude"
         result = await _invoke_engine(
-            runner, "claude", Path(worktree_path), timeout=engine_timeout
+            runner,
+            "claude",
+            Path(worktree_path),
+            timeout=engine_timeout,
+            model=resolved_model,
         )
 
     # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's

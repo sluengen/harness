@@ -18,7 +18,7 @@ The Typer app (`harness/cli/__init__.py`) is the public contract. The surface is
 ```
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json/--no-json]   # --resume: continue a reclaimed ticket from its checkpoint-pushed WIP branch when one exists; else a clean start
-harness review            [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--engine <e>] [--repo <p>] [--db <p>] [--json/--no-json]   # --gate-exit/--gate-log: evidence that YOU ran CONTEXT.md → verify: — required when the repo configures one; the verb never runs the gate itself. --engine: claude (default) | codex
+harness review            [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--engine <e>] [--model <alias>] [--repo <p>] [--db <p>] [--json/--no-json]   # --gate-exit/--gate-log: evidence that YOU ran CONTEXT.md → verify: — required when the repo configures one; the verb never runs the gate itself. --engine: claude (default) | codex. --model: claude-engine-only override (#177) — beats the ticket's resolved review:<tier> label (default sonnet)
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]   # push the run branch to origin mid-flight so committed WIP survives the container dying — pushes only the feature branch, never merges
 

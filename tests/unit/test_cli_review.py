@@ -180,13 +180,31 @@ def _make_linear_stub(*, in_review_error: Exception | None = None) -> Any:
     warn-but-record path (AC-4). Tests that pass this stub to ``_invoke`` also
     patch ``linear_api_key`` so the verb builds the stub instead of degrading to
     the tracker-less no-op the hermetic ``LINEAR_API_KEY``-less env otherwise
-    forces.
+    forces. ``fetch_issue`` is stubbed with no labels so the #177 model-tier
+    resolution (which every review now performs) has an awaitable to call.
     """
     stub = mock.MagicMock()
     if in_review_error is not None:
         stub.transition_to_in_review = mock.AsyncMock(side_effect=in_review_error)
     else:
         stub.transition_to_in_review = mock.AsyncMock(return_value=None)
+    stub.transition_to_in_progress = mock.AsyncMock(return_value=None)
+    stub.fetch_issue = mock.AsyncMock(return_value={"labels": []})
+    return stub
+
+
+def _make_tracker_stub(labels: list[str] | None = None) -> Any:
+    """A tracker-agnostic client stub carrying a ticket's ``labels`` (#177).
+
+    Patching ``review_mod.tracker_client`` with this (rather than the
+    Linear-specific credential stubbing ``linear_stub`` needs) exercises the
+    review verb's model-tiering wiring without pinning to either backend —
+    ``fetch_issue`` is the same seam both ``LinearClient`` and ``GitHubClient``
+    implement.
+    """
+    stub = mock.MagicMock()
+    stub.fetch_issue = mock.AsyncMock(return_value={"labels": labels or []})
+    stub.transition_to_in_review = mock.AsyncMock(return_value=None)
     stub.transition_to_in_progress = mock.AsyncMock(return_value=None)
     return stub
 
@@ -198,7 +216,9 @@ def _invoke(
     runner: Any,
     *,
     engine: str | None = None,
+    model: str | None = None,
     linear_stub: Any | None = None,
+    tracker_stub: Any | None = None,
 ) -> Any:
     # Patch the module-level default runner so the command uses the fake.
     argv = [
@@ -213,7 +233,12 @@ def _invoke(
     ]
     if engine is not None:
         argv += ["--engine", engine]
+    if model is not None:
+        argv += ["--model", model]
     with mock.patch.object(review_mod, "_default_runner", runner):
+        if tracker_stub is not None:
+            with mock.patch.object(review_mod, "tracker_client", return_value=tracker_stub):
+                return cli_runner.invoke(app, argv)
         if linear_stub is None:
             # No Linear patch: the hermetic env has no LINEAR_API_KEY, so the verb
             # takes the tracker-less no-op path and never touches the network.
@@ -488,6 +513,27 @@ def test_ac3_claude_cmd_carries_no_write_capability() -> None:
         assert writeish not in cmd, cmd
 
 
+# --- #177 AC-2/AC-3: _build_cmd's ``model`` kwarg -----------------------------
+
+
+def test_ac2_build_cmd_claude_with_model_appends_model_flag() -> None:
+    """A ``model`` tier appends ``--model <alias>`` to the claude command."""
+    cmd = review_mod._build_cmd("claude", model="opus")
+    assert cmd[-2:] == ["--model", "opus"], cmd
+
+
+def test_ac2_build_cmd_claude_no_model_omits_the_flag() -> None:
+    """No ``model`` (the default) omits ``--model`` entirely."""
+    cmd = review_mod._build_cmd("claude")
+    assert "--model" not in cmd, cmd
+
+
+def test_ac3_build_cmd_codex_ignores_model() -> None:
+    """The review tier is a claude-only control signal: codex's command is
+    byte-identical whether or not a model tier is supplied."""
+    assert review_mod._build_cmd("codex", model="opus") == review_mod._build_cmd("codex")
+
+
 # AC-1: --engine accepted, default claude; both selections build the right cmd
 # and record the right provenance.
 
@@ -545,6 +591,61 @@ def test_ac4_output_and_event_record_engine_provenance(
     payload = json.loads(result.output)
     assert payload["engine"] == "codex"
     assert fetch_review_events(db_path)[0]["data"]["engine"] == "codex"
+
+
+# ---------------------------------------------------------------------------
+# #177 — per-ticket model tiering: the claude engine command carries --model
+# resolved from the ticket's review:<tier> label (default sonnet), a claude
+# --model override wins over the resolved tier, and the codex command is
+# unaffected by any of it.
+# ---------------------------------------------------------------------------
+
+
+def test_cal177_review_opus_label_appends_model_opus(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
+
+
+def test_cal177_no_review_label_defaults_model_sonnet(repo: Path, db_path: Path) -> None:
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=[])
+
+    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert captured["cmd"][-2:] == ["--model", "sonnet"], captured["cmd"]
+
+
+def test_cal177_codex_engine_ignores_review_tier_label(repo: Path, db_path: Path) -> None:
+    """A review:opus label never reaches the codex command (claude-only signal)."""
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex", tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert "--model" not in captured["cmd"], captured["cmd"]
+    assert captured["cmd"] == review_mod._build_cmd("codex"), captured["cmd"]
+
+
+def test_cal177_explicit_model_overrides_resolved_tier(repo: Path, db_path: Path) -> None:
+    """An explicit --model wins over the ticket's resolved review:sonnet tier."""
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:sonnet"])
+
+    result = _invoke(repo, db_path, run_id, runner, model="opus", tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
 
 
 # AC-5: SUBMIT parsing / verdict are unchanged across engines.
