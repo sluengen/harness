@@ -62,6 +62,30 @@ def test_tracker_client_returns_none_for_tracker_none(tmp_path: Path) -> None:
         assert tracker_client(tmp_path) is None
 
 
+def test_tracker_client_threads_repo_linear_team_into_the_client(
+    tmp_path: Path,
+) -> None:
+    """The factory reads ``repo.linear`` and hands it to the LinearClient, so the
+    unscoped reclaim sweep (#174) can filter by team when given no project. The seam
+    stays clean — the team is client config, not a per-call argument."""
+    _context(tmp_path, "repo:\n  linear: CAL\ntracker: linear\n")
+    with patch("harness.tracker.linear_api_key", return_value="test-key"):
+        client = tracker_client(tmp_path)
+    assert isinstance(client, LinearClient)
+    assert client._team == "CAL"
+
+
+def test_reclaimable_scope_is_nullable_across_the_seam() -> None:
+    """AC-4 (#174): the seam and both impls accept ``project: str | None`` — a
+    nullable scope pinned by signature, so a backend narrowing it back to a
+    mandatory ``str`` is caught here rather than at a consumer."""
+    import inspect
+
+    for obj in (Tracker, LinearClient, GitHubClient):
+        sig = inspect.signature(obj.fetch_reclaimable_issues)
+        assert sig.parameters["project"].annotation == "str | None", obj.__name__
+
+
 def test_tracker_client_returns_a_github_client_for_configured_github(
     tmp_path: Path,
 ) -> None:

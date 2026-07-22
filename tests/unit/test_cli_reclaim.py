@@ -684,14 +684,34 @@ def test_stale_sweep_full_reclaim_when_local_run_exists(tmp_path: Path) -> None:
 # --- --stale invocation refusals ----------------------------------------------
 
 
-def test_stale_requires_project(tmp_path: Path) -> None:
-    """``--stale`` without ``--project`` is refused (no unbounded workspace sweep)."""
+def test_stale_without_project_sweeps_the_whole_queue(tmp_path: Path) -> None:
+    """AC-1/AC-2 (#174): ``--stale`` with no ``--project`` is no longer refused — it
+    sweeps the whole tracker queue via ``fetch_reclaimable_issues(project=None)``, each
+    backend interpreting "unset" as its natural full queue (Linear: the team; GitHub:
+    the board). A stale ticket is reverted exactly as in the scoped sweep."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub(
+        [{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(120)}]
+    )
+    result = _invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
+    assert result.exit_code == 0, result.output
+    stub.fetch_reclaimable_issues.assert_awaited_once_with(project=None)
+    stub.transition_to_unstarted.assert_awaited_once_with("CAL-900")
+    payload = json.loads(result.output)
+    assert payload["project"] is None
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-900"]
+
+
+def test_stale_unscoped_human_output_names_the_whole_queue(tmp_path: Path) -> None:
+    """The non-JSON summary reads naturally when unscoped — no bare ``'None'`` where
+    a project name would be (exercises the ``project is None`` print branch)."""
     db = tmp_path / "harness.db"
     _run_sync(store.init_db(db))
     result = _invoke(["reclaim", "--stale", "--db", str(db)], _make_sweep_stub([]))
-    assert result.exit_code == 2
-    # Nothing was enumerated or reverted.
-    # (the stub's fetch is never reached when the invocation is refused)
+    assert result.exit_code == 0, result.output
+    assert "whole tracker queue" in result.output
+    assert "None" not in result.output
 
 
 def test_stale_rejects_a_run_id_selector(tmp_path: Path) -> None:
