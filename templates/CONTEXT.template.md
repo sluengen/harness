@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.12 -->
+<!-- guidance:template-context@0.1.13 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -21,6 +21,15 @@ repo:
   # github → the board (already the full queue, so omitting it is a no-op there).
   # Only relevant if this repo self-hosts the harness routine loops.
 tracker: linear                # single source of truth for the tracker: linear | github | none. The switch the harness engine reads: none → the verbs run tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and `start <id>` takes an opaque run identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected.
+# For tracker: github (the GitHub Projects v2 backend), set tracker:
+# github above, set repo.linear: none (the Linear address is unused), and add the
+# github: block below — a top-level key naming the issues repo and the board. It
+# is required when tracker: github (repo + project both) and ignored otherwise, so
+# it lives commented here. Uncomment and fill it:
+# github:
+#   repo: owner/name           # the issues repository (owner/name)
+#   project: owner/number      # the Projects v2 board (owner/number)
+#   status_field: Status       # optional — the board's single-select status field; omit → the built-in "Status"
 # Layers carry repo-type variation — what the retired standard/harness profiles'
 # `default_layers` used to encode is now per-repo config here. A product repo:
 # feature_specs: true (+ design_system: true if it has one). An infra / pipeline
@@ -68,6 +77,7 @@ architecture_watchlist:               # optional — omit entirely if this repo 
 env:
   file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
   linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if tracker: none
+  github_token: GITHUB_TOKEN   # tracker: github only — the var holding the GitHub token (repo + project scopes); read from the environment/.env, never from CONTEXT.md; omit unless tracker: github
 ```
 
 ## What this repo is
