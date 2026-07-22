@@ -437,6 +437,34 @@ def test_fetch_reclaimable_filters_to_transient_states() -> None:
     ]
 
 
+def test_fetch_reclaimable_unscoped_is_the_same_board_sweep() -> None:
+    """AC-3 (#174): the board itself *is* the queue, so ``project=None`` sweeps
+    exactly the same board as any project value — the unset path is the GitHub
+    backend's current behaviour, unchanged by the seam widening."""
+    items = {
+        "data": {
+            "user": {
+                "projectV2": {
+                    "items": {
+                        "nodes": [
+                            {
+                                "content": {"number": 1, "updatedAt": "2026-07-21T00:00:00Z"},
+                                "fieldValueByName": {"name": "In Progress"},
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    client = _client(
+        {"OwnerKind": _OWNER_USER, "ProjectMeta": _PROJECT_META, "Reclaimable": items}
+    )
+    assert _run(client.fetch_reclaimable_issues(project=None)) == [
+        {"identifier": "1", "updated_at": "2026-07-21T00:00:00Z"},
+    ]
+
+
 # ---------------------------------------------------------------------------
 # apply_label, post_comment, assign_to_viewer, create_issue
 # ---------------------------------------------------------------------------

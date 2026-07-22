@@ -242,7 +242,7 @@ query IssueProjects($owner: String!, $name: String!, $number: Int!) {
         return None
 
     async def fetch_reclaimable_issues(
-        self, *, project: str
+        self, *, project: str | None
     ) -> list[dict[str, str]]:
         """List reclaimable issues on the board as ``[{identifier, updated_at}]``.
 
@@ -252,7 +252,9 @@ query IssueProjects($owner: String!, $name: String!, $number: Int!) {
         the Linear client (CAL-1103). ``updated_at`` carries the issue's
         ``updatedAt`` (ISO-8601 UTC), the staleness signal the sweep compares
         against its threshold. The ``project`` argument is accepted for protocol
-        symmetry but the board itself *is* the queue, so it is not re-resolved.
+        symmetry — nullable since #174 — but the board itself *is* the queue, so it
+        is not re-resolved: ``None`` (the whole-queue mode) and any project value
+        sweep the same board, the unset path being this backend's current behaviour.
 
         Raises:
             GitHubRequestError: the API returned an error or an unexpected response.

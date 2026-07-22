@@ -36,7 +36,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from harness import layers
+from harness import layers, repo_config
 from harness.github import GitHubClient, GitHubConfigError, github_token
 from harness.linear import LinearClient, linear_api_key
 
@@ -58,7 +58,7 @@ class Tracker(Protocol):
     async def fetch_issue_project(self, identifier: str) -> str | None: ...
 
     async def fetch_reclaimable_issues(
-        self, *, project: str
+        self, *, project: str | None
     ) -> list[dict[str, str]]: ...
 
     async def fetch_resume_branch(self, identifier: str) -> str | None: ...
@@ -119,5 +119,10 @@ def tracker_client(repo_root: Path) -> Tracker | None:
                 "repo (owner/name) and project (owner/number)"
             )
         return GitHubClient(token=github_token(), settings=settings)
-    # Default / ``linear``: LinearClient is the seam's Linear implementation.
-    return LinearClient(api_key=linear_api_key())
+    # Default / ``linear``: LinearClient is the seam's Linear implementation. The
+    # ``repo.linear`` team is threaded in so an unscoped reclaim sweep (no project)
+    # can filter by team rather than the whole workspace (#174); it is client config,
+    # not a per-call seam argument, keeping the seam free of Linear vocabulary.
+    return LinearClient(
+        api_key=linear_api_key(), team=repo_config.repo_linear_team(repo_root)
+    )

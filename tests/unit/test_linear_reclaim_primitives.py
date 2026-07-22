@@ -556,6 +556,51 @@ async def test_fetch_reclaimable_issues_empty_when_none(
     assert await client.fetch_reclaimable_issues(project="Harness v3") == []
 
 
+async def test_fetch_reclaimable_issues_unscoped_filters_by_team(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no project (the whole-queue mode, #174) the sweep filters by the client's
+    team key — ``repo.linear`` — so a Linear team running several projects is swept
+    whole. Filtering by team (not the bare workspace) is what keeps an unscoped query
+    from sweeping every team in the workspace (the proposal's stated risk)."""
+    captured: dict[str, Any] = {}
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        captured["query"] = query
+        captured["variables"] = variables
+        return {
+            "data": {
+                "issues": {
+                    "nodes": [
+                        {"identifier": "CAL-700", "updatedAt": "2026-06-15T10:00:00.000Z"},
+                    ]
+                }
+            }
+        }
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key", team="CAL")
+    issues = await client.fetch_reclaimable_issues(project=None)
+
+    assert issues == [{"identifier": "CAL-700", "updated_at": "2026-06-15T10:00:00.000Z"}]
+    # Scoped to the team key and both transient started states — and NOT by project.
+    assert captured["variables"] == {"team": "CAL"}
+    assert "team" in captured["query"]
+    assert "project" not in captured["query"]
+    assert "In Progress" in captured["query"]
+    assert "In Review" in captured["query"]
+
+
+async def test_fetch_reclaimable_issues_unscoped_without_team_raises() -> None:
+    """No project AND no team is unscopeable — refuse rather than sweep the whole
+    workspace. In the real path ``tracker_client`` always threads ``repo.linear``;
+    this guards a direct construction that forgot it. The guard fires before any
+    request, so no transport stub is needed."""
+    client = LinearClient(api_key="fake-key")  # constructed without a team
+    with pytest.raises(LinearRequestError, match="team"):
+        await client.fetch_reclaimable_issues(project=None)
+
+
 # ---------------------------------------------------------------------------
 # fetch_resume_branch — the preserved branch a reclaimed ticket resumes from
 # (CAL-739, the read side of the reclaim-comment contract)
