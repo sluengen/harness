@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.12.0 -->
+<!-- guidance:code-quality@0.15.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -35,6 +35,10 @@ Specifically, unless the task asks for it: do not rename in untouched paths, do 
 ### Smallest working solution
 
 The build-time application of `engineering-principles`' *smallest change that satisfies the spec*. One condition is usually enough. Removing code is often the answer. New abstractions, layers, and helpers are justified by the task, not introduced speculatively. This is not licence to leave work half-done: if the spec calls for a helper or a missing primitive, build it. The rule is *don't add what wasn't asked for; do build what the task requires.*
+
+### Grep before writing a helper
+
+Before writing a helper, grep the sibling modules for the concern it handles. If a near-identical helper exists in one other place, name it in the change spec and say why the copy is justified. If it exists in two, extract it — the third copy is not a judgement call. Per-ticket review sees only its own diff, so "consider extracting" is not enough to catch a duplication that accumulates one small, individually-reasonable copy at a time — a numeric threshold, checked before the helper is written, is what makes it checkable.
 
 ### A removal sweeps for its dependents
 
@@ -122,6 +126,10 @@ Skipping a step is not efficiency. It is claiming something you have not checked
 
 When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CONTEXT.md`).
 
+### A security-contract test asserts the predicate, not the name
+
+When a test proves a security control is in place — an RLS policy, an auth guard, a CSP directive, a permission grant — asserting that the control *exists* (by name, by presence in a list) proves only that someone typed the right string. Assert what it evaluates to: the policy's `USING`/`WITH CHECK` expression, the guard's refusal, the directive's value. Pair it with a negative fixture whose control is present but *wrong*, and watch the test fail.
+
 ### A green suite is only evidence if its inputs are real
 
 A passing test proves nothing when it feeds the code inputs or events no production path emits: it exercises a branch the live system never reaches and reports false confidence. Before a green run counts as evidence, confirm each test drives on what real code actually produces, not on synthesized data (`test-driven-development`).
@@ -131,6 +139,8 @@ A passing test proves nothing when it feeds the code inputs or events no product
 A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
 
 Marker *presence* and marker *substance* are checked differently, and only presence is mechanizable. **Presence** — that an over-limit file carries a `size:` marker or a ticket at all — should be checked by a repo test that walks the source tree, counts lines, and fails any over-limit file carrying neither, so the rule is enforced at the gate at commit time rather than waiting for a reviewer to remember it or the steward's next pass (the walker's config — limit, globs, the higher declarative-file ceiling from Part B — is set as constants the adopting repo edits in its copy, defaulting to the numbers here; a reference implementation ships in `templates/size-guard.md`). **Substance** — whether the `size:` reason names a real cohesion argument or is a rubber stamp — no test can score; that stays reviewer judgment, audited by the steward on assessment passes. Presence is mechanized; substance is judged. The tripwire's value is that the decision gets recorded, not that the file stays small — cohesion itself is reviewer judgment plus the architecture watchlist.
+
+Where a **linter** can enforce the limit, it should — reach for the walker only where none can. If the repo's linter already implements a file-length rule (`max-lines` in oxlint or ESLint), turn that rule on instead of writing the walker: it runs with the rest of lint on every commit, needs no repo-local code to maintain, and its escape hatch has a property the walker cannot offer. That hatch is the same auditable decision — an inline rule-`disable` carrying the `size: <reason>` justification — plus this: an **unused** disable is itself reported, so a file that shrinks back under the limit cannot silently keep its exemption. The walker is the fallback for a toolchain whose linter has no such rule, and the steward's assessment pass is the **backstop** only where neither mechanism can run. Ordering these the other way round is how a file 44% over the hard limit passes both a review and a green gate while the repo holds not one `size:` marker: an advisory pass that runs weekly is not enforcement.
 
 ### Re-deriving what another layer owns is an auditable choice, not a default
 

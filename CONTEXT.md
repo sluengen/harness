@@ -10,9 +10,14 @@ profile: harness
 visibility: committed
 repo:
   name: harness
-  linear: CAL   # team prefix — the tracker address, read only when tracker: linear
-  project: Harness v3   # Linear project the /harness routine loops pull from (resolved at runtime, not hardcoded in the command)
-tracker: linear   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. Replaces the old layers.linear, whose name collided with repo.linear above (CAL-1164)
+  linear: CAL   # legacy Linear team prefix — read only when tracker: linear (this repo is now on github, below); kept for reference/rollback
+  project: Harness   # the Build queue the /harness routine loops pull from (resolved at runtime): the "Harness" Projects v2 board title for github; was the "Harness v3" Linear project pre-CAL-1204
+tracker: github   # single source of truth: linear | github | none. The switch the engine reads (harness/layers.py); none → verbs run tracker-less. This repo dogfoods the GitHub backend (CAL-1204).
+github:   # the GitHub tracker backend config, read only when tracker: github (CAL-1105)
+  repo: sluengen/harness        # the issues repo
+  project: sluengen/2           # the "Harness" Projects v2 board (owner/number)
+  # status_field omitted → defaults to the built-in "Status" field (Todo / In Progress /
+  # In Review / Done), so transitions show on the board's default view (issue #172).
 layers:
   design_system: false
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
@@ -25,7 +30,7 @@ commands:
   typecheck: "uv run --extra dev mypy harness"
   test:    "uv run --extra dev pytest"
   test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
-  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke. Run before merge/tag.
+  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke → landing-page drift guard. Run before merge/tag.
   run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
@@ -86,6 +91,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 - **[0001 — The harness's own loop runs always-on local by default; cloud is optional and per-target-repo](specs/decisions/0001-cloud-runnable-harness-loop.md)** (CAL-908, corrected by CAL-930). The Build/Quality loop runs **always-on local** by default — the `harness-work-pull` trigger driving `/harness routine build`, at zero marginal cost. A cloud substrate is optional and deferred: if ever needed it is a **Claude cloud routine** (billed as Claude usage), **not** GitHub Actions (rejected — a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). Off-machine viability is set by the *target repo's* gate, so a self-hosting Xcode/macOS target stays local or on a macOS runner.
 - **[0002 — The in-container review engine is Claude; `--engine codex` is a host-only option](specs/decisions/0002-in-container-review-engine.md)** (CAL-925). Codex's `bwrap` sandbox cannot open a user namespace in the unprivileged `harness:dev` container (CAL-866), so `--engine codex` degrades in-container. Rather than loosen container privileges — it reviews untrusted diffs — the in-container engine is **Claude**, and `--engine codex` is a **host-only** cross-model option. No image privilege change.
 - **[0003 — Promotion is an audited harness lifecycle over a universal `dev → staging → main` topology](specs/decisions/0003-promotion-lifecycle.md)** (CAL-1112). `staging` becomes a first-class stabilized release candidate; promotion follows the verb model (an external orchestrator triggers, the harness owns every state transition). The harness pushes only the promotion branch and creates the PR — no direct target pushes, no auto-merge — with one bounded, escalation-first repair attempt. Policy/docs record only; the mechanics land in CAL-1113–1118.
+- **[0005 — Per-ticket model tiering: two independent, label-carried dimensions](specs/decisions/0005-per-ticket-model-tiering.md)** (#177). `build:<tier>` / `review:<tier>` GitHub labels (default `sonnet`) replace indiscriminate top-tier spend on every automated tick. `review` is a deterministic seam — `harness review` resolves the `review` tier and appends `--model <alias>` to the claude engine command; `build` is a recorded judgement only, since the orchestrating session is the builder and has no deterministic per-ticket model seam.
 
 ## Where deeper truth lives
 

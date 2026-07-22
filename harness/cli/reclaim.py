@@ -36,13 +36,16 @@ Targeting:
   When there is **no** local open run (the cloud regime, where a fresh container
   never had the dead run's DB) it still reverts the ticket on Linear — the
   contract the ``--stale`` sweep builds on.
-* ``harness reclaim --stale --project <name> [--older-than 90m]`` — the **sweep**
-  (CAL-736, breakdown item 3). Enumerate the project's active tickets — both
+* ``harness reclaim --stale [--project <name>] [--older-than 90m]`` — the **sweep**
+  (CAL-736, breakdown item 3). Enumerate the active tickets in scope — both
   transient ``started`` states, In Progress **and** In Review (CAL-1103: ``review``
   parks a reviewed ticket In Review, so a dead orchestrator can strand it there) —
-  and reclaim each whose Linear ``updatedAt`` is older than the threshold,
+  and reclaim each whose tracker ``updatedAt`` is older than the threshold,
   *reusing* the single-target ``--ticket`` path per ticket (no second reclaim
-  implementation). Liveness of a dead run cannot be observed (ephemeral
+  implementation). ``--project`` is optional (#174): supplied → scope to one
+  project; omitted → the backend's natural full queue (the ``repo.linear`` team
+  for Linear; the board for GitHub). Liveness of a dead run cannot be observed
+  (ephemeral
   container, no shared DB); the only signal is time — a ticket idle longer than
   any legitimate run takes is presumed abandoned (proposal D2). The bulk arm the
   hourly Build routine's pre-flight will call (CAL-737).
@@ -77,15 +80,15 @@ from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.layers import tracker as tracker_backend
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
-from harness.tracker import UnsupportedTrackerError, tracker_client
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 # size: one cohesive verb — the single-target reclaim (revert → reconcile →
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
@@ -143,7 +146,7 @@ class SweepOutput(BaseModel):
     """``--stale`` sweep result over a project's active (In Progress / In Review) tickets."""
 
     mode: Literal["stale-sweep"] = "stale-sweep"
-    project: str
+    project: str | None
     older_than: str
     scanned: int
     reclaimed: list[ReclaimedEntry]
@@ -227,12 +230,12 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
     side effect — done before the local reconcile)."""
     try:
         client = tracker_client(Path.cwd())
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
     # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
-    # is true for linear *and* github). ``github`` raised in the seam just above;
-    # so a real client is resolved here (linear, never ``None``).
+    # is true for linear *and* github), so a real client is resolved here (a
+    # configured linear or github backend, never ``None``).
     assert client is not None
     try:
         await client.transition_to_unstarted(ticket)
@@ -240,11 +243,11 @@ async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) ->
         await client.post_comment(
             ticket, format_reclaim_comment(run_id, branch, when=iso_z())
         )
-    except LinearNotFound as exc:
-        raise _ReclaimError(f"ticket {ticket!r} not found on Linear: {exc}", 2) from exc
-    except LinearRequestError as exc:
+    except TrackerNotFound as exc:
+        raise _ReclaimError(f"ticket {ticket!r} not found on the tracker: {exc}", 2) from exc
+    except TrackerRequestError as exc:
         raise _ReclaimError(
-            f"failed to revert ticket {ticket!r} on Linear: {exc}", 2
+            f"failed to revert ticket {ticket!r} on the tracker: {exc}", 2
         ) from exc
     except Exception as exc:  # noqa: BLE001
         raise _ReclaimError(
@@ -339,13 +342,18 @@ async def _run_reclaim(
 async def _run_stale_sweep(
     db_path: Path,
     *,
-    project: str,
+    project: str | None,
     older_than: str,
     threshold: timedelta,
     tracker: bool = True,
 ) -> SweepOutput:
-    """Enumerate the project's active tickets and reclaim each idle past
-    ``threshold``; raise :class:`_ReclaimError` on a Linear/config failure.
+    """Enumerate the active tickets in scope and reclaim each idle past
+    ``threshold``; raise :class:`_ReclaimError` on a tracker/config failure.
+
+    The scope is nullable (#174): ``project`` set → that one project; ``project``
+    ``None`` → the backend's natural full queue (Linear: the ``repo.linear`` team;
+    GitHub: the board, which already *is* the queue). The seam handles the
+    per-backend meaning; this layer just passes the scope through.
 
     "Active" is both transient ``started`` states — **In Progress** and **In
     Review** (CAL-1103): ``review`` now parks a reviewed ticket In Review, so a
@@ -377,18 +385,19 @@ async def _run_stale_sweep(
 
     try:
         client = tracker_client(Path.cwd())
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
+    except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
     # Reached only in the has-tracker path (the ``if tracker:`` gate above, which
-    # is true for linear *and* github). ``github`` raised in the seam just above;
-    # so a real client is resolved here (linear, never ``None``).
+    # is true for linear *and* github), so a real client is resolved here (a
+    # configured linear or github backend, never ``None``).
     assert client is not None
+    scope = f"project {project!r}" if project is not None else "the whole tracker queue"
     try:
         issues = await client.fetch_reclaimable_issues(project=project)
-    except LinearRequestError as exc:
+    except TrackerRequestError as exc:
         raise _ReclaimError(
-            f"failed to list active issues for project {project!r}: {exc}", 2
+            f"failed to list active issues for {scope}: {exc}", 2
         ) from exc
 
     # Staleness keys on time only (proposal D2): a ticket idle longer than the
@@ -424,8 +433,9 @@ async def _run_stale_sweep(
 
 def _print_sweep(result: SweepOutput) -> None:
     """Human-readable summary of a ``--stale`` sweep (``--json`` emits ``result``)."""
+    scope = repr(result.project) if result.project is not None else "the whole tracker queue"
     typer.echo(
-        f"Swept {result.scanned} active ticket(s) in {result.project!r} "
+        f"Swept {result.scanned} active ticket(s) in {scope} "
         f"(threshold {result.older_than}): {len(result.reclaimed)} reclaimed, "
         f"{len(result.skipped)} left in-flight."
     )
@@ -454,12 +464,13 @@ def reclaim_command(
         False,
         "--stale",
         help="Sweep mode: reclaim every active (In Progress / In Review) ticket "
-        "in --project idle past --older-than. Mutually exclusive with <run-id>/--ticket.",
+        "in scope idle past --older-than. Mutually exclusive with <run-id>/--ticket.",
     ),
     project: str | None = typer.Option(
         None,
         "--project",
-        help="Project name to scope the --stale sweep (required with --stale).",
+        help="Scope the --stale sweep to one project; omit to sweep the whole "
+        "tracker queue (the repo.linear team for Linear; the board for GitHub).",
     ),
     older_than: str = typer.Option(
         "90m",
@@ -479,17 +490,17 @@ def reclaim_command(
 
     def _do() -> SweepOutput | ReclaimOutput:
         if stale:
-            # Sweep mode owns the project; a single-target selector is ambiguous.
+            # Sweep mode owns the scope; a single-target selector is ambiguous.
             if run_id is not None or ticket is not None:
                 raise _ReclaimError(
-                    "--stale sweeps the project; do not combine it with "
+                    "--stale sweeps the queue; do not combine it with "
                     "<run-id> or --ticket",
                     2,
                 )
-            if not project:
-                raise _ReclaimError(
-                    "--stale requires --project <name> to scope the sweep", 2
-                )
+            # ``--project`` is optional (#174): supplied → scope to that project;
+            # omitted → the backend's natural full queue (the seam decides what
+            # "unset" means per backend). The old required-project validation is
+            # gone — an unscoped sweep is now a first-class mode.
             # Parse the duration outside the event loop so a bad value exits 2
             # via typer.BadParameter, exactly like ``worktrees cleanup --age``.
             # ``run_verb`` only catches ``VerbError``, so BadParameter propagates

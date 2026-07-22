@@ -1,5 +1,7 @@
 # harness
 
+📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model, the verbs, and the guidance at a glance. (This README stays the canonical text; the page is its visual companion.)
+
 An **evidence layer for agent-driven development**: a small set of deterministic,
 audited verbs an agent calls while it drives a ticket end-to-end. The agent owns
 the judgement work; the harness owns the invariants that keep that work honest.
