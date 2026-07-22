@@ -46,7 +46,7 @@ files:
   skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.9.0, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.4.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.13.0, profiles: [harness] }
-  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.6.1, profiles: [harness] }
+  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.6.2, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.6.0, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
@@ -72,14 +72,14 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.0, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.6, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.7, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.2.0, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.2.1, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.1.1, profiles: [harness] }
   commands/start.md:                  { id: start,                    version: 0.3.0, profiles: [harness] }
-  commands/review.md:                 { id: review,                   version: 0.1.3, profiles: [harness] }
+  commands/review.md:                 { id: review,                   version: 0.1.4, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.6.0, profiles: [harness] }
