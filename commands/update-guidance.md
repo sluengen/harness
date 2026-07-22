@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@0.5.3 -->
+<!-- guidance:update-guidance@0.6.0 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -27,6 +27,13 @@ For each file in the lock, compute its current on-disk hash and compare three th
 | **LOCAL** | versions equal, hash differs from lock | the repo edited it — leave it; suggest pushing the change upstream |
 | **CONFLICT** | source version > lock version AND hash differs | show a 3-way diff (base = source at the file's *locked* version); let the user choose |
 
+Also classify a file the source registry lists for this profile that exists on disk but is **not** in the lock at all — a **registry-listed / on-disk / lock-untracked** file. This is distinct from a **new** file below (source-added, absent on disk): here the file already exists, most often because it graduated from repo-owned/hand-copied to a registry-tracked distributable after this repo installed (a command a repo once kept as its own eventually becomes one the registry tracks like any other), or because it was copied in by hand and never recorded. Compare its on-disk hash to the source's current version:
+
+- **hash matches** — the on-disk copy is already correct: **adopt** it into the lock silently (record its version and hash) — no confirmation needed.
+- **hash differs** — treat it as a **CONFLICT-shaped reconcile**: show a diff and ask before overwriting (2-way — on-disk vs. source — since there is no locked version to serve as a 3-way base).
+
+Never leave a registry-listed / on-disk file lock-untracked and ignored — one of the two paths above must resolve it.
+
 Also report **new** files the source added to this profile (offer to install) and **removed** files (offer to delete).
 
 ### 3. Apply
@@ -35,7 +42,7 @@ Pull the clean PULLs automatically. For CONFLICTs, present the diff and ask. Nev
 **Re-derive the derived artifacts — mandatory, not optional.** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are three byte-identical copies of the profile's process doc, and `.claude/settings.json` derives from `settings/<profile>.json`. They are **not** registry or lock entries — and that does **not** put them out of scope. Derived artifacts are *regenerated*, not tracked: whenever the process doc pulled an update, rewrite **all three** entry files from it. `CLAUDE.md` and `GEMINI.md` are no longer redirect shims — treating either as "just a pointer to `AGENTS.md`, so it's already fine" is the pre-triplication model and is wrong; a repo bootstrapped before triplication still has shims there, and this pass must replace them with the full content (the harness injects `CLAUDE.md` verbatim, so a stale one ships old guidance). For `.claude/settings.json`, regenerate it when the settings source updated — but if the repo merged local content into it (e.g. extra permissions), surface the change for a manual re-merge rather than clobbering it.
 
 ### 4. Rewrite the lock
-Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled, and write the full `source: { repo, branch, ref }` — carrying the `repo`/`branch` you used (including values filled by a step-1 legacy migration). Each file's lock entry is **self-contained**: its recorded version *is* its 3-way base for the next run (the source content at that version), so a partial pull — advancing some files while others stay LOCAL/CONFLICT — corrupts no base. `source.ref` is only an informational marker of the last fully-clean source tip: advance it to the fetched SHA when every file resolved cleanly, and leave it untouched while any CONFLICT/LOCAL remains. Leave LOCAL/CONFLICT entries as they are until resolved.
+Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled — including a file **adopted** out of step 2's registry-listed/on-disk/lock-untracked case, which gets a fresh lock entry the same as a first-time PULL — and write the full `source: { repo, branch, ref }` — carrying the `repo`/`branch` you used (including values filled by a step-1 legacy migration). Each file's lock entry is **self-contained**: its recorded version *is* its 3-way base for the next run (the source content at that version), so a partial pull — advancing some files while others stay LOCAL/CONFLICT — corrupts no base. `source.ref` is only an informational marker of the last fully-clean source tip: advance it to the fetched SHA when every file resolved cleanly, and leave it untouched while any CONFLICT/LOCAL remains. Leave LOCAL/CONFLICT entries as they are until resolved.
 
 ### 5. Verify
 **Verify the derived artifacts first:** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` must be byte-identical to each other (`diff` them). If any differs, the step-3 re-derivation was skipped — regenerate it now; do not proceed with the three out of sync.
@@ -45,7 +52,7 @@ A guidance pull is maintenance, not feature work: it carries no ticket, spec, or
 
 Commit only what resolved cleanly. Leave any unresolved CONFLICT/LOCAL files out of the commit and name them for the user to handle — do not block the clean pulls on them. If nothing was pulled (everything already current), there is nothing to commit: say so and stop.
 
-Then print the counts: pulled, left local, conflicts awaiting decision, already current. Name each non-current file, confirm the three entry files match, and report the integration target and merge/push result.
+Then print the counts: pulled, adopted (previously lock-untracked), left local, conflicts awaiting decision, already current. Name each non-current file, confirm the three entry files match, and report the integration target and merge/push result.
 
 ## Note
 If you find a bug in an installed guidance file, do not just patch it locally (that creates a LOCAL divergence forever). Fix it in the source, bump its version there, then `/update-guidance` here — so every repo benefits.

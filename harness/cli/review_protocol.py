@@ -36,11 +36,13 @@ from pydantic import BaseModel
 __all__ = [
     "DEFAULT_ENGINE",
     "Engine",
+    "ModelTier",
     "RunResult",
     "Runner",
     "Verdict",
     "NO_SUBMIT_SENTINEL",
     "scan_submit_line",
+    "resolve_model_tier",
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
     "is_sandbox_blocked_defer",
@@ -62,6 +64,11 @@ Verdict = Literal["pass", "fail", "defer"]
 # cross-model second opinion.
 Engine = Literal["claude", "codex"]
 DEFAULT_ENGINE: Engine = "claude"
+
+# The two per-ticket model tiers (#177, ADR 0005): a GitHub label of the shape
+# ``<dimension>:<tier>`` — e.g. ``review:opus`` — records the tier for the
+# ``build`` or ``review`` dimension. Absence defaults to ``sonnet``.
+ModelTier = Literal["sonnet", "opus"]
 
 
 class RunResult(NamedTuple):
@@ -165,11 +172,37 @@ def scan_submit_line(stdout: str) -> _Parsed:
 
 
 # ---------------------------------------------------------------------------
+# Per-ticket model tiering (#177, ADR 0005)
+# ---------------------------------------------------------------------------
+
+
+def resolve_model_tier(labels: list[str], dimension: str) -> ModelTier:
+    """Resolve the ``dimension`` model tier off ``labels``, default ``sonnet``.
+
+    Scans for a label of the shape ``<dimension>:<tier>`` (case-insensitive,
+    e.g. ``review:opus``). The first match whose tier is a recognized
+    :data:`ModelTier` wins; an absent family, or a label carrying an
+    unrecognized tier value, both fall through to the ``sonnet`` default — the
+    top tier is opt-in, never inferred.  Pure and dimension-agnostic: the
+    ``build`` and ``review`` families never cross-contaminate because each
+    reads only its own ``<dimension>:`` prefix.
+    """
+    prefix = f"{dimension}:"
+    for label in labels:
+        if not label.lower().startswith(prefix):
+            continue
+        tier = label[len(prefix) :].strip().lower()
+        if tier in ("sonnet", "opus"):
+            return tier  # type: ignore[return-value]
+    return "sonnet"
+
+
+# ---------------------------------------------------------------------------
 # Engine command builder — the per-engine read-only CLI invocation.
 # ---------------------------------------------------------------------------
 
 
-def _build_cmd(engine: Engine) -> list[str]:
+def _build_cmd(engine: Engine, *, model: str | None = None) -> list[str]:
     """Build the review invocation for ``engine`` — a CLI subprocess (CAL-701).
 
     Both engines are headless CLIs fed the review prompt on **stdin** and scanned
@@ -179,14 +212,21 @@ def _build_cmd(engine: Engine) -> list[str]:
 
     * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
       it may read files / run read-only git, but carries no edit/write/bypass
-      capability).
+      capability). ``model``, when given, is appended as ``--model <alias>``
+      (#177): the review-tier control signal, resolved from the ticket's
+      ``review:<tier>`` label or an explicit override.
     * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
       (matching the published ``commands/build.md`` Codex-engine guidance), reading
       the prompt from ``-`` (stdin).  This replaces the earlier
       ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
+      ``model`` is ignored here — the review tier is a claude-only control
+      signal (ADR 0005); the codex command is unaffected by it.
     """
     if engine == "claude":
-        return ["claude", "-p", "--permission-mode", "plan"]
+        cmd = ["claude", "-p", "--permission-mode", "plan"]
+        if model is not None:
+            cmd += ["--model", model]
+        return cmd
     return [
         "codex",
         "exec",

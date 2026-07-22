@@ -744,6 +744,36 @@ async def test_linear_client_fetch_issue_returns_compact_ticket(
     assert captured[0]["variables"] == {"id": "CAL-1"}
 
 
+async def test_linear_client_fetch_issue_includes_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#177: fetch_issue surfaces label names for the review verb's model-tier
+    resolution."""
+    from harness.linear import LinearClient
+
+    response_data = {
+        "data": {
+            "issue": {
+                "id": "abc-uuid",
+                "identifier": "CAL-1",
+                "title": "Test ticket",
+                "description": "A description.",
+                "url": "https://linear.app/x",
+                "labels": {"nodes": [{"name": "bug"}, {"name": "review:opus"}]},
+            }
+        }
+    }
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return response_data
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    ticket = await client.fetch_issue("CAL-1")
+
+    assert ticket["labels"] == ["bug", "review:opus"]
+
+
 async def test_linear_client_raises_not_found_for_null_issue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

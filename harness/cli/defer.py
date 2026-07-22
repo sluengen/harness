@@ -63,14 +63,14 @@ from harness.events.emitter import EventEmitter
 from harness.events.payloads import DeferEventData
 from harness.identity import generate_run_id
 from harness.layers import tracker as tracker_backend
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.repo_config import repo_project
 from harness.state import store
-from harness.tracker import UnsupportedTrackerError, tracker_client
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 __all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
@@ -157,9 +157,9 @@ async def _run_defer(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to comment on, label, or assign, so the honest outcome is "skipped".
     """
-    # Only ``tracker: none`` is a clean tracker-less skip. ``github`` is *not*
-    # tracker-less — it is a misconfig that must fail loudly (below, when the
-    # seam raises), never silently no-op here.
+    # Only ``tracker: none`` is a clean tracker-less skip. A configured backend
+    # (linear or github) resolves a real client below; a *misconfigured* one
+    # (missing credential/config) fails loudly there, never silently no-ops here.
     if tracker_backend(repo_root) == "none":
         return DeferOutput(
             ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
@@ -176,29 +176,27 @@ async def _run_defer(
 
     try:
         client = tracker_client(repo_root)
-    except LinearConfigError as exc:
-        raise _DeferError(str(exc), 2, reason="linear_config") from exc
-    except UnsupportedTrackerError as exc:
-        # A distinct machine-readable reason: an unsupported backend is not a
-        # missing-credential config gap, so the routine can branch on it.
-        raise _DeferError(str(exc), 2, reason="unsupported_tracker") from exc
+    except TrackerConfigError as exc:
+        # A missing credential or config block (LinearConfigError /
+        # GitHubConfigError) is a config gap the routine can branch on.
+        raise _DeferError(str(exc), 2, reason="tracker_config") from exc
 
-    # The ``tracker: none`` guard above already returned, and ``github`` raised
-    # in the seam, so a real client is resolved here (linear, never ``None``).
+    # The ``tracker: none`` guard above already returned, so a real client is
+    # resolved here (linear or github, never ``None``).
     assert client is not None
 
     # 1. Verify the ticket is on this repo's Build queue before any write.
     try:
         ticket_project = await client.fetch_issue_project(ticket)
-    except LinearNotFound as exc:
+    except TrackerNotFound as exc:
         raise _DeferError(
-            f"ticket {ticket!r} not found on Linear", 2, reason="ticket_not_found"
+            f"ticket {ticket!r} not found on the tracker", 2, reason="ticket_not_found"
         ) from exc
-    except LinearRequestError as exc:
+    except TrackerRequestError as exc:
         raise _DeferError(
-            f"failed to look up ticket {ticket!r} on Linear: {exc}",
+            f"failed to look up ticket {ticket!r} on the tracker: {exc}",
             2,
-            reason="linear_error",
+            reason="tracker_error",
         ) from exc
 
     if ticket_project != project:
@@ -219,17 +217,17 @@ async def _run_defer(
         await client.post_comment(ticket, reason)
         await client.apply_label(ticket, needs.value)
         await client.assign_to_viewer(ticket)
-    except LinearNotFound as exc:
+    except TrackerNotFound as exc:
         raise _DeferError(
-            f"ticket {ticket!r} not found on Linear: {exc}",
+            f"ticket {ticket!r} not found on the tracker: {exc}",
             2,
             reason="ticket_not_found",
         ) from exc
-    except LinearRequestError as exc:
+    except TrackerRequestError as exc:
         raise _DeferError(
-            f"failed to defer ticket {ticket!r} on Linear: {exc}",
+            f"failed to defer ticket {ticket!r} on the tracker: {exc}",
             2,
-            reason="linear_error",
+            reason="tracker_error",
         ) from exc
     except Exception as exc:  # noqa: BLE001 — map any transport surprise to a verb error
         raise _DeferError(

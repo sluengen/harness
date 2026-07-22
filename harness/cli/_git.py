@@ -77,6 +77,35 @@ def run_git(
     )
 
 
+def git_common_dir(repo_root: Path) -> Path | None:
+    """The resolved absolute ``.git`` common directory for ``repo_root``, or
+    ``None`` when ``repo_root`` is not inside a git working tree.
+
+    For the main checkout this is ``repo_root/.git``; for a linked worktree
+    (``git worktree add``) it is the **main checkout's** ``.git`` — the shared
+    state git itself resolves a worktree's ledger/refs/objects against. Callers
+    that need the main checkout root read this dir's parent
+    (:func:`resolve_ledger_root` in ``harness.cli._repo``).
+
+    ``git rev-parse --git-common-dir`` prints an already-absolute path when the
+    common dir lies outside ``repo_root`` (the worktree case) and a
+    ``repo_root``-relative one otherwise (the main-checkout case, ``.git``) — so
+    a relative result is joined onto ``repo_root`` before resolving. Returns
+    ``None`` on any non-zero exit (not a git repo, ``repo_root`` does not exist)
+    so a non-git caller falls back to its pre-existing behaviour.
+    """
+    result = run_git(repo_root, "rev-parse", "--git-common-dir")
+    if result.returncode != 0:
+        return None
+    raw = result.stdout.strip()
+    if not raw:
+        return None
+    common_dir = Path(raw)
+    if not common_dir.is_absolute():
+        common_dir = repo_root / common_dir
+    return common_dir.resolve()
+
+
 def rev_parse_head(worktree_path: Path) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 
