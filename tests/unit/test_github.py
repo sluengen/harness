@@ -154,6 +154,7 @@ def test_fetch_issue_returns_compact_dict() -> None:
                             "title": "Fix the thing",
                             "body": "Do it",
                             "url": "https://github.com/acme/widgets/issues/42",
+                            "labels": {"nodes": []},
                         }
                     }
                 }
@@ -167,7 +168,33 @@ def test_fetch_issue_returns_compact_dict() -> None:
         "title": "Fix the thing",
         "description": "Do it",
         "url": "https://github.com/acme/widgets/issues/42",
+        "labels": [],
     }
+
+
+def test_fetch_issue_includes_labels() -> None:
+    """#177: fetch_issue surfaces label names so the review verb can resolve a
+    ticket's model tier off them."""
+    client = _client(
+        {
+            "FetchIssue": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_42",
+                            "number": 42,
+                            "title": "Fix the thing",
+                            "body": "Do it",
+                            "url": "https://github.com/acme/widgets/issues/42",
+                            "labels": {"nodes": [{"name": "bug"}, {"name": "review:opus"}]},
+                        }
+                    }
+                }
+            }
+        }
+    )
+    out = _run(client.fetch_issue("#42"))
+    assert out["labels"] == ["bug", "review:opus"]
 
 
 def test_fetch_issue_missing_repo_raises_not_found() -> None:

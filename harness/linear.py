@@ -116,7 +116,8 @@ class LinearClient:
         """Fetch issue ``identifier`` and return a compact ticket dict.
 
         Returns a dict with keys: ``id``, ``identifier``, ``title``,
-        ``description``, ``url``.
+        ``description``, ``url``, and ``labels`` (the issue's label names,
+        e.g. for #177's model-tier resolution).
 
         Raises:
             LinearNotFound: the issue does not exist.
@@ -130,6 +131,7 @@ query FetchIssue($id: String!) {
     title
     description
     url
+    labels { nodes { name } }
   }
 }
 """
@@ -137,7 +139,11 @@ query FetchIssue($id: String!) {
         raw = (data.get("data") or {}).get("issue")
         if raw is None:
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
-        return {k: raw.get(k) for k in _TICKET_FIELDS}
+        result: dict[str, Any] = {k: raw.get(k) for k in _TICKET_FIELDS}
+        result["labels"] = [
+            n.get("name") for n in (raw.get("labels") or {}).get("nodes", []) if n.get("name")
+        ]
+        return result
 
     async def fetch_issue_project(self, identifier: str) -> str | None:
         """Return the name of the project issue ``identifier`` belongs to, or ``None``.

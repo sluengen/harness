@@ -185,8 +185,9 @@ class GitHubClient:
         """Fetch issue ``identifier`` and return a compact ticket dict.
 
         Returns a dict with keys ``id``, ``identifier``, ``title``,
-        ``description`` (the issue body), and ``url`` — the same shape the Linear
-        client returns, so the verbs stay tracker-agnostic.
+        ``description`` (the issue body), ``url``, and ``labels`` (the issue's
+        label names, e.g. for #177's model-tier resolution) — the same shape
+        the Linear client returns, so the verbs stay tracker-agnostic.
 
         Raises:
             GitHubNotFound: the issue does not exist.
@@ -196,7 +197,7 @@ class GitHubClient:
         query = """
 query FetchIssue($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
-    issue(number: $number) { id number title body url }
+    issue(number: $number) { id number title body url labels(first: 50) { nodes { name } } }
   }
 }
 """
@@ -207,6 +208,11 @@ query FetchIssue($owner: String!, $name: String!, $number: Int!) {
             "title": issue.get("title"),
             "description": issue.get("body"),
             "url": issue.get("url"),
+            "labels": [
+                n.get("name")
+                for n in (issue.get("labels") or {}).get("nodes", [])
+                if n.get("name")
+            ],
         }
 
     async def fetch_issue_project(self, identifier: str) -> str | None:
