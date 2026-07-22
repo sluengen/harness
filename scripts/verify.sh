@@ -34,5 +34,11 @@ echo "=== CLI smoke ==="
 uv run --extra dev python -m harness.cli version
 uv run --extra dev python -m harness.cli --help >/dev/null
 
+echo "=== landing-page drift guard ==="
+# Fail the gate if docs/index.html names a command/skill/agent the registry no
+# longer has (a renamed or removed piece of guidance the page still references).
+# Lean guard, not a generator — ADR 0004 (CAL-1202). Stdlib only.
+uv run --extra dev python scripts/check_landing_page_guidance.py
+
 echo ""
 echo "All checks passed."
