@@ -90,3 +90,25 @@ Option C wins: promotion becomes an audited lifecycle the harness owns, with a n
 - **Constrains** the outer orchestrator to a narrow, escalation-first repair authority — a deliberate limit that keeps release safety enforceable and the ledger the single source of promotion truth.
 - **Forecloses** an interim `dev → main` promotion path: the topology is three-tier from the start, so no compatibility shim is built and later removed.
 - **Distinct from the build-run `close` gate:** `close` gates a ticket's integration into `dev`; promotion gates branch movement toward release. The two lifecycles must not be conflated — one must not weaken the other.
+
+### Amended 2026-07-23 — the caller is a versioned command, and the topology is named by role
+
+*Source: `specs/proposals/promote-and-decision-commands.md`.*
+
+As accepted, this ADR fixed the **verb** surface and left the **caller** to prose
+in `RUNBOOK.md` — unversioned, repo-local, and uninstalled anywhere else. The
+caller is now `commands/promote.md`, a version-stamped universal command, and
+`RUNBOOK.md` §promotion reduces to a pointer. Two clarifications follow from it:
+
+- **Hops are named by role, not by branch.** `/promote dev to staging` resolves
+  each word against `CONTEXT.md` `branches:` (`integration` / `staging` /
+  `release`) first, falling back to a literal ref. The three-tier topology is
+  the decided shape; the branch *names* are per-repo, so a repo on
+  `develop` → `staging` → `production` drives the same lifecycle unchanged.
+- **A repo without the harness app gets a deliberately reduced path.** The
+  command falls back to an agent-orchestrated merge → gate → PR: no bounded
+  repair, no state machine, no ledger. This does **not** relax the boundary
+  above — where the harness is present, every promotion state transition still
+  goes through a verb. The fallback is what a repo does when there is no ledger
+  to leave the audit trail in, and it is reduced precisely so it cannot drift
+  into a second, unaudited implementation of the lifecycle.
