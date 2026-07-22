@@ -90,7 +90,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.2, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.2.3, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
