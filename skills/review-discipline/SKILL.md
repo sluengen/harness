@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.6.0 -->
+<!-- guidance:review-discipline@0.6.1 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -33,6 +33,7 @@ Only after Stage 1 passes.
 
 **For code:**
 - **Correctness** — logic errors, edge cases, off-by-one, null handling, error messages.
+- **Type predicate coverage** — for every user-defined type predicate (`value is T`), enumerate `T`'s required fields and confirm the guard checks each one. A predicate that validates a subset is a false assurance at the boundary it was added to protect — flag it as a defect, not a nit.
 - **Security** — input validated at the boundary, no injection-prone string building, no dangerous eval/exec on input, no secrets in code, paths sanitised.
 - **Principles** — does the change violate a named `engineering-principles` tenet? Cite the principle, not a preference.
 - **Structure** — size, layer boundaries, rule-of-three duplication, composition. Apply the `code-quality` Part B thresholds. Pre-existing violations in untouched files are not findings; only flag if this change makes them worse.
