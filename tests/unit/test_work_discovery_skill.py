@@ -326,17 +326,18 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_3_0() -> None:
-    """CAL-1166 AC-3: the skill is stamped 0.3.0 and the registry row agrees (the
-    surface-header parity guard enforces the pairing; this pins the target)."""
+def test_work_discovery_version_is_0_4_0() -> None:
+    """CAL-1166 AC-3, bumped by #175: the skill is stamped 0.4.0 (the optional
+    project-scope wording) and the registry row agrees (the surface-header parity
+    guard enforces the pairing; this pins the target)."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.3.0" in text, (
-        "the skill stamp must be work-discovery@0.3.0 (CAL-1166 AC-3)."
+    assert "guidance:work-discovery@0.4.0" in text, (
+        "the skill stamp must be work-discovery@0.4.0 (#175 — conditional scoping)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.3\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.3.0 (CAL-1166 AC-3)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.4\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.4.0 (#175)."
 
 
 def test_runbook_documents_trigger_resync() -> None:

@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.3.0 -->
+<!-- guidance:work-discovery@0.4.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -17,10 +17,19 @@ versioned.
 
 ## The queue
 
-Work off one Linear project — the Build queue named in `CONTEXT.md` →
-`repo.project`. Resolve it at runtime; never hardcode it. Consider only tickets
-marked **Todo**: an **In Progress** ticket is either live or already handled by
-the routine's reclaim pre-flight, and **In Review** is somebody's open handoff.
+Work off the Build queue defined in `CONTEXT.md`. Its scope is set by the
+**optional** `repo.project` — resolve it at runtime, never hardcode it:
+
+- **`repo.project` set** — scope to that one project: the named Build queue.
+- **`repo.project` unset** — the whole tracker queue. What "the whole queue"
+  means is the backend's own natural full scope: for a `tracker: linear` repo,
+  the team named in `repo.linear`; for a `tracker: github` repo, the board
+  itself (which already *is* the full queue).
+
+Consider only tickets marked **Todo**: an **In Progress** ticket is either live
+or already handled by the routine's reclaim pre-flight, and **In Review** is
+somebody's open handoff. Scope only bounds *which* tickets are in view — the
+ranking and actionability below are the same either way.
 
 ## Ranking — pick the next most logical ticket
 

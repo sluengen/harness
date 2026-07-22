@@ -67,7 +67,7 @@ files:
   # proposal harden-loop-layer WS2/B2). Justified as a distributed skill because the
   # harness is guidance other repos self-host: every self-hosting repo's routine is a
   # second consumer, so it is reuse, not premature abstraction.
-  skills/work-discovery/SKILL.md: { id: work-discovery,          version: 0.3.0, profiles: [harness] }
+  skills/work-discovery/SKILL.md: { id: work-discovery,          version: 0.4.0, profiles: [harness] }
 
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
@@ -90,7 +90,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.1, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.2.2, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
