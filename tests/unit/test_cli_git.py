@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.cli._git import GitError, rev_parse_head, run_git
+from harness.cli._git import GitError, git_common_dir, rev_parse_head, run_git
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -99,6 +99,34 @@ def test_run_git_does_not_raise_on_failure(tmp_path: Path) -> None:
     result = run_git(not_a_repo, "rev-parse", "HEAD")
     assert result.returncode != 0
     assert isinstance(result.stderr, str)
+
+
+# ---------------------------------------------------------------------------
+# git_common_dir — the worktree → main-checkout resolution primitive (#179)
+# ---------------------------------------------------------------------------
+
+
+def test_git_common_dir_of_the_main_checkout_is_its_own_dot_git(repo: Path) -> None:
+    """For the main checkout, the common dir is ``repo/.git``."""
+    assert git_common_dir(repo) == (repo / ".git").resolve()
+
+
+def test_git_common_dir_of_a_worktree_is_the_main_checkouts_dot_git(
+    repo: Path,
+) -> None:
+    """For a linked worktree, the common dir is the *main checkout's* ``.git`` —
+    the shared state a worktree has no copy of."""
+    worktree = repo.parent / "wt"
+    _git(repo, "worktree", "add", "-q", str(worktree), "-b", "feature")
+
+    assert git_common_dir(worktree) == (repo / ".git").resolve()
+
+
+def test_git_common_dir_returns_none_for_a_non_git_path(tmp_path: Path) -> None:
+    """A path outside any git working tree resolves to ``None``."""
+    not_a_repo = tmp_path / "empty"
+    not_a_repo.mkdir()
+    assert git_common_dir(not_a_repo) is None
 
 
 def test_run_git_returns_text_output(repo: Path) -> None:
