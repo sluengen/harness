@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.1 -->
+<!-- guidance:harness@0.2.2 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -159,20 +159,23 @@ The **unattended loops** that drive the harness between human sessions, versione
 
 Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle/weekly assessment). Each names a **harness-tooled primary** and an **agent-orchestrated fallback**, selected by tool availability — the same `/harness run` vs `/build` duality the rest of this surface uses.
 
-> **The Linear project is resolved from `CONTEXT.md`, not hardcoded.** Both loops operate on one Linear project — the Build queue. Resolve it at runtime from `CONTEXT.md` → `repo.project` (the same way `/harness ingest` resolves the team from `repo.linear`), so this distributed command needs no per-repo hand-edit. Below, `<repo.project>` stands for that value; in the harness repo it is `Harness v3`.
+> **Scope is resolved from `CONTEXT.md`, not hardcoded.** Both loops operate on the Build queue, whose scope is set by the **optional** `repo.project`. Resolve it at runtime (the same way `/harness ingest` resolves the team from `repo.linear`), so this distributed command needs no per-repo hand-edit. When `repo.project` is **set**, scope to that one project; when it is **unset**, work the whole tracker queue — for a `tracker: linear` repo the team named in `repo.linear`, for a `tracker: github` repo the board (already the full queue). Below, `<repo.project>` stands for that value when it is set; in the harness repo it is `Harness`.
 
 > **Default: always-on local. Cloud is optional.** A routine normally runs on the always-on device via a **local trigger**: it shells out to the `~/bin/harness` Docker wrapper and reads `.env` from the working copy (an always-on scheduled task driving `/harness routine build`). This is local-trigger because a cloud runner cannot reach `~/bin/harness` or the local checkout — and it is the default because it already works and costs nothing per run. The trigger itself is configured in the app and is **not** part of this command; whatever fires it must be a **thin caller** that invokes `/harness routine build` and nothing more (*version the logic, not the schedule*). An **off-machine** path is *possible* — the harness's own loop runs against the native `harness` entry point (`uv tool install .`, no Docker) with credentials as secrets and the **Claude** review engine — but if ever needed it is a **Claude cloud routine**, **not** GitHub Actions (rejected: a private repo meters Actions minutes and the loop is a long agent run, not a cheap CI gate). The optional cloud path and the **per-target-repo gate rule** (a target whose gate needs Xcode/macOS stays local or on a macOS runner) are the harness's own recorded design decisions. Cloud-enabling self-hosting *target* repos remains out of scope.
 
 ### /harness routine build
 
-The hourly work-pull: take the next logical ticket off the Linear Todo queue and drive it to Done, or — when the queue holds nothing actionable — fall through to the quality loop.
+The hourly work-pull: take the next logical ticket off the tracker's Todo queue and drive it to Done, or — when the queue holds nothing actionable — fall through to the quality loop.
 
 **Primary surface:** `/harness run <TICKET>` (the audited verb loop). **Fallback:** `/build <TICKET>` (agent-orchestrated) when the harness tool is unavailable. In the harness repo itself, the primary is always `/harness run` (per `CLAUDE.md`, the harness drives its own tickets through the verb loop, not `/build`); the fallback is for a consuming repo that lacks the harness app.
+
+**Scope (resolve from `CONTEXT.md` at runtime).** Read `repo.project`. When it is **set**, every step below is scoped to that one project — the reclaim pre-flight passes `--project "<repo.project>"` and the pick considers only that project's Todo queue. When it is **unset**, the loop works the **whole** tracker queue — the reclaim pre-flight runs `harness reclaim --stale` with **no** `--project`, and the pick ranks across the whole queue (a `tracker: linear` team, or a `tracker: github` board). The steps below show the scoped (`repo.project` set) path; for the unscoped path, drop `--project` and read `<repo.project>` as "the whole queue".
 
 **Step 0 — reclaim stranded runs (pre-flight).** Before picking any work, sweep the queue for tickets stranded **In Progress** by a run that died mid-flight. A session that hits a usage/session limit just *stops*, leaving its ticket In Progress; a fresh run can observe nothing about the dead predecessor, so liveness is unobservable and a **time heuristic** is the only fix that survives a hard kill (proposal `stale-run-reclamation`, D2/D3). Run the sweep first:
 
 ```bash
-harness reclaim --stale --project "<repo.project>"   # <repo.project> = CONTEXT.md → repo.project ("Harness v3" here); default staleness threshold 90m
+harness reclaim --stale --project "<repo.project>"   # repo.project SET: scope the sweep to that project ("Harness" here); default staleness threshold 90m
+harness reclaim --stale                              # repo.project UNSET: no --project → sweep the whole tracker queue (a linear team / a github board)
 ```
 
 This **runs first, before the pick step**, so the routine **unblocks the backlog** before it chooses work: a ticket left In Progress by a dead predecessor would otherwise wedge the queue until a human intervened. The sweep reverts each idle ticket (Linear `updatedAt` older than the threshold) back to **Todo**, so this same run can then pick it up. It is **idempotent and safe to run every tick**: a ticket already reverted is Todo (not In Progress), so a later sweep does not re-enumerate it, and a sweep that finds nothing stale is a clean no-op. The sweep keys entirely on **Linear** (not the local ledger), so it works in both the local and cloud regimes; it touches only **In Progress** tickets and never **In Review**. *Fallback (`/build`, harness tool unavailable):* run the **equivalent** Linear-keyed pre-flight by hand through the `linear` skill — revert every `<repo.project>` ticket left In Progress past the staleness threshold back to Todo (never touch In Review) — before picking work.
@@ -187,7 +190,7 @@ This is **best-effort and idempotent**: `--merged` removes each worktree whose b
 
 The loop:
 
-1. **Pick the next ticket** — invoke the **`work-discovery` skill**. It owns the discovery logic: which Todo tickets in project `<repo.project>` (resolved from `CONTEXT.md` → `repo.project`) to consider, how to rank them, and which already-deferred ones to skip. The pick criteria are single-homed in that skill, not restated here — this command owns only the control flow around the invocation.
+1. **Pick the next ticket** — invoke the **`work-discovery` skill**. It owns the discovery logic: which Todo tickets to consider — scoped to `<repo.project>` when it is set, or the whole tracker queue when it is unset (resolved from `CONTEXT.md`) — how to rank them, and which already-deferred ones to skip. The pick criteria are single-homed in that skill, not restated here — this command owns only the control flow around the invocation.
 2. **Check it is wholly actionable** — apply the `work-discovery` skill's actionability test.
    - If the skill judges it **not** actionable (it needs a human decision or missing detail), **defer it with the verb**: `harness defer <TICKET> --reason <text> [--needs decision|operator]` (use `--reason-file <path>` for a long body). The verb posts the reason as a comment, additively applies the hold label (`--needs` selects it: `decision` for a judgment call — the default — or `operator` for an interactive session), **assigns the ticket to the operator** (the machine-readable hold signal `work-discovery` skips on later ticks), and records a `defer` event carrying the `needs` kind in the runs/events ledger — so triage is an audited action bound to its `autoMode.allow` clause, not a hand-rolled tracker write. Then re-pick (step 1) or, if nothing remains, go to step 5.
    - If it **can** be actioned, implement it: `/harness run <TICKET>` (primary), or `/build <TICKET>` (fallback) where the harness tool is unavailable.
@@ -201,7 +204,7 @@ The assessment loop that catches what accumulates across many changes — what n
 
 **Primary surface:** `/assess code` (the steward, agent-orchestrated). There is no harness-tooled variant — assessment is advisory, not a gated verb run — so this routine is agent-led on every repo.
 
-- **Idle arm** (the Build queue is empty): run `/assess code`. Action the highest-priority finding it surfaces; record any further findings as Linear tasks back into the Build queue (`<repo.project>`, from `CONTEXT.md` → `repo.project`) for other runs to handle.
+- **Idle arm** (the Build queue is empty): run `/assess code`. Action the highest-priority finding it surfaces; record any further findings as tickets back into the Build queue for other runs to handle — into `<repo.project>` when it is set, or the tracker's default backlog (no project) when it is unset.
 - **Weekly arm:** run `/assess code --deep` — the broad pass that adds the test-coverage, design-system-adherence (layer-gated), and spec/doc-coherence lenses on top of the `code` lenses. File its findings the same way.
 
 A `/assess` run commits its dated report directly to the integration branch (no branch, no PR — it carries nothing reviewable); the findings live in the tracker. See `commands/assess.md`.
