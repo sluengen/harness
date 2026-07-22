@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.1.6 -->
+<!-- guidance:reviewer@0.1.7 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -29,7 +29,7 @@ You are the last automated gate before code merges. Read `CONTEXT.md` for the st
 
 Update the **as-built record** — `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md` — to reflect what the diff actually does, as the last commit on the branch before merge. You write this from observation of the code, not from the developer's description. This is the structural check against "promised X, shipped Y".
 
-This is **gated**, not merely an obligation: when the diff touches a **user-facing surface** (matched from the changed paths, as `review-discipline`'s **as-built-record gate** specifies), a behaviour change that lands with neither the matching record update nor an explicit **deferral** naming the reason is a **FAIL** — do not PASS it.
+This is **gated**, not merely an obligation: when the diff touches a **user-facing surface** (matched from the changed paths, as `review-discipline`'s **as-built-record gate** specifies), a behaviour change that lands with neither the matching record update nor an explicit **deferral** naming the reason is a **FAIL** — do not PASS it. When the surface has no as-built record yet, the ticket you are reviewing is the one that creates it — a surface may not accumulate a second shipped ticket without one.
 
 ## Findings discipline
 

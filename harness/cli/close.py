@@ -98,13 +98,13 @@ from harness.events.payloads import (
 )
 from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.state import store
-from harness.tracker import Tracker, UnsupportedTrackerError, tracker_client
+from harness.tracker import Tracker, tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -263,10 +263,10 @@ async def _run_close(
     client: Tracker | None = None
     try:
         client = tracker_client(repo_root)
-    except (LinearConfigError, UnsupportedTrackerError) as exc:
-        # A missing key or an unimplemented backend (tracker: github) is an
-        # invocation error (exit 2) — evaluated *after* the reviewed-SHA gate, so
-        # the merge gate is unchanged by the tracker switch.
+    except TrackerConfigError as exc:
+        # A missing credential or config block (LinearConfigError / GitHubConfigError)
+        # is an invocation error (exit 2) — evaluated *after* the reviewed-SHA gate,
+        # so the merge gate is unchanged by the tracker switch.
         raise _CloseError(str(exc), 2) from exc
 
     # 6. Merge + push in a throwaway worktree (sync git, offloaded to a thread) —
@@ -292,7 +292,7 @@ async def _run_close(
     if client is not None:
         try:
             await client.transition_to_done(ticket)
-        except (LinearNotFound, LinearRequestError) as exc:
+        except (TrackerNotFound, TrackerRequestError) as exc:
             raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
         ticket_done = True
 

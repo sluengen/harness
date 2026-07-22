@@ -124,7 +124,8 @@ Pass via `-e VAR` or `--env-file`.
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `LINEAR_API_KEY` | yes (`start` / `close` fetch and transition the ticket) | Personal API key. |
+| `LINEAR_API_KEY` | yes for `tracker: linear` (`start` / `close` fetch and transition the ticket) | Personal API key. The wrapper reads it from `.env` in the target repo. |
+| `GITHUB_TOKEN` | yes for `tracker: github` (the Projects v2 tracker backend, CAL-1105) | A token with the `repo` and `project` scopes. The wrapper resolves it **env → `.env` → `gh auth token`** and forwards it into the container. The `gh auth token` fallback (issue #170) fetches a fresh token each invocation — a `gh` OAuth token rotates (~8h, auto-refreshed from the keyring), so a static `.env` snapshot would go stale and break the unattended loop; a consuming repo's long-lived PAT in `.env` still takes precedence. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes (agent mode, and any Claude use) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
 | `HARNESS_WORKSPACE_ROOTS` | yes (verbs fail closed if unset) | Colon-separated allowlist of host roots a `--repo` may resolve under (CAL-584). The wrapper sets it to `/workspace` (the mounted CWD) automatically. |
 
@@ -146,6 +147,7 @@ docker run --rm -it \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.claude":/home/harness/.claude:ro \
   -e LINEAR_API_KEY \
+  -e GITHUB_TOKEN \
   harness:dev \
   start CAL-123
 ```

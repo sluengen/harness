@@ -97,23 +97,29 @@ from harness.cli.review_protocol import (
     is_codex_usage_limit,
     is_sandbox_blocked_defer,
     is_sandbox_init_failure,
+    resolve_model_tier,
     scan_submit_line,
 )
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
-from harness.linear import (
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-)
 from harness.loop_budget import (
     convergence_check_required,
     evaluate_breakers,
     load_loop_budget,
 )
 from harness.state import store
-from harness.tracker import UnsupportedTrackerError, tracker_client
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
+
+# The dimension resolve_model_tier reads for this verb (#177) — the review-tier
+# label family (``review:<tier>``), independent of the build-tier family the
+# ticket also carries as recorded judgement, which no verb consumes.
+_REVIEW_TIER_DIMENSION = "review"
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
@@ -302,7 +308,7 @@ ENGINE_TIMEOUT_REASON = "engine_timeout"
 
 
 async def _invoke_engine(
-    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None
+    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None, model: str | None = None
 ) -> RunResult:
     """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``.
 
@@ -310,10 +316,12 @@ async def _invoke_engine(
     (CAL-1004). A ``_ReviewError`` the runner already raised — the timeout
     infra-failure carries its own exit code and ``reason`` — passes through
     unchanged; only *other* exceptions are wrapped as the generic exit-1 error.
+    ``model`` (#177) is forwarded to ``_build_cmd``, which appends it as
+    ``--model`` on the claude engine only; codex ignores it.
     """
     try:
         return await runner(
-            cmd=_build_cmd(engine),
+            cmd=_build_cmd(engine, model=model),
             stdin=_REVIEW_PROMPT,
             env=dict(os.environ),
             cwd=cwd,
@@ -323,6 +331,37 @@ async def _invoke_engine(
         raise
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
+
+
+async def _resolve_review_model(
+    repo_root: Path, ticket: str | None, explicit_model: str | None
+) -> str:
+    """Resolve the claude-engine ``--model`` alias for this review (#177).
+
+    An explicit ``--model`` wins outright. Otherwise, resolve the ticket's
+    ``review:<tier>`` label via :func:`resolve_model_tier` (default
+    ``sonnet``). Best-effort: a tracker-less run, an unresolvable tracker
+    config, or a fetch failure all degrade to the default rather than blocking
+    the review — the tier is an optimization the review can run without, not
+    part of the recorded verdict (mirroring ``_park_ticket``'s tolerance for
+    tracker hiccups).
+    """
+    if explicit_model is not None:
+        return explicit_model
+    if ticket is None:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    try:
+        client = tracker_client(repo_root)
+    except TrackerConfigError:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    if client is None:
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    try:
+        issue = await client.fetch_issue(ticket)
+    except (TrackerNotFound, TrackerRequestError):
+        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
+    labels = issue.get("labels") or []
+    return resolve_model_tier(labels, _REVIEW_TIER_DIMENSION)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +389,15 @@ def review_command(
         DEFAULT_ENGINE,
         "--engine",
         help="Review engine: claude (default) or codex. Both run read-only.",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help=(
+            "Explicit model alias for the claude engine (host/testing). Takes "
+            "precedence over the ticket's resolved review:<tier> label "
+            "(#177); ignored on the codex engine."
+        ),
     ),
     gate_exit: int | None = typer.Option(
         None,
@@ -391,6 +439,7 @@ def review_command(
                 run_id=run_id,
                 db_path=db_path,
                 engine=engine,
+                model=model,
                 gate_exit=gate_exit,
                 gate_log=gate_log,
                 runner=_default_runner,
@@ -416,6 +465,7 @@ async def _run_review(
     run_id: str | None,
     db_path: Path,
     engine: Engine,
+    model: str | None = None,
     gate_exit: int | None = None,
     gate_log: Path | None = None,
     runner: Runner,
@@ -509,6 +559,11 @@ async def _run_review(
     ticket = await _read_ticket(db_path, resolved_run_id)
     await _park_ticket(repo_root, ticket, to="in_review")
 
+    # 2c. Resolve the claude-engine model tier (#177): an explicit --model
+    #     wins, else the ticket's review:<tier> label, default sonnet. Codex
+    #     ignores it — see _invoke_engine / _build_cmd.
+    resolved_model = await _resolve_review_model(repo_root, ticket, model)
+
     # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
     #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted
     #    Codex tier degrades the gate to a false ``fail`` exactly when relied
@@ -520,7 +575,9 @@ async def _run_review(
     # The configured per-subprocess ceiling (CAL-1004): a hung engine is killed
     # and surfaced as infra rather than hanging this verb until an external kill.
     engine_timeout = budget.engine_timeout_seconds
-    result = await _invoke_engine(runner, engine, Path(worktree_path), timeout=engine_timeout)
+    result = await _invoke_engine(
+        runner, engine, Path(worktree_path), timeout=engine_timeout, model=resolved_model
+    )
 
     # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
     # namespace in a non-privileged container) is INFRA, not a verdict — the
@@ -545,7 +602,11 @@ async def _run_review(
         fallback_from = "codex"
         engine_used = "claude"
         result = await _invoke_engine(
-            runner, "claude", Path(worktree_path), timeout=engine_timeout
+            runner,
+            "claude",
+            Path(worktree_path),
+            timeout=engine_timeout,
+            model=resolved_model,
         )
 
     # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
@@ -727,12 +788,13 @@ async def _park_ticket(
     back to In Progress on a ``fail``. The move is **bookkeeping**; the verdict is
     the record — so this never refuses the review:
 
-    * no ticket, tracker-less (``tracker: none``), no ``LINEAR_API_KEY`` in the
-      environment, or an unimplemented backend (``tracker: github``) → a silent
-      no-op (there is no tracker to move a ticket in — the same posture ``close``
-      takes for a tracker-less run; and a ``github`` repo is already rejected
-      loudly at ``start``, so a real run never reaches review with it);
-    * an actual transition-call failure (``LinearNotFound`` / ``LinearRequestError``)
+    * no ticket, tracker-less (``tracker: none``), or a misconfigured tracker (no
+      credential / an incomplete config block — a ``TrackerConfigError``) → a
+      silent no-op (there is no tracker to move a ticket in — the same posture
+      ``close`` takes for a tracker-less run; and a misconfigured tracker is
+      already rejected loudly at ``start``, so a real run never reaches review
+      with it);
+    * an actual transition-call failure (``TrackerNotFound`` / ``TrackerRequestError``)
       → a stderr warning, and the review proceeds — a tracker hiccup must never
       lose a recorded verdict (AC-4).
     """
@@ -740,13 +802,13 @@ async def _park_ticket(
         return
     try:
         client = tracker_client(repo_root)
-    except (LinearConfigError, UnsupportedTrackerError):
-        # A tracker that cannot be resolved — no key in this environment
-        # (LinearConfigError) or an unimplemented backend (UnsupportedTrackerError,
-        # tracker: github) — is swallowed here, uniquely among the verbs: this
+    except TrackerConfigError:
+        # A tracker that cannot be resolved — no credential in this environment,
+        # or a missing/incomplete config block (a LinearConfigError or a
+        # GitHubConfigError) — is swallowed here, uniquely among the verbs: this
         # transition is non-essential bookkeeping, and review's contract is that a
-        # tracker problem must never cost a recorded verdict (AC-4). A tracker:
-        # github repo is already rejected loudly at ``start``, so a real run never
+        # tracker problem must never cost a recorded verdict (AC-4). A misconfigured
+        # tracker is already rejected loudly at ``start``, so a real run never
         # reaches review with it; this is the belt-and-braces no-op, not a bypass.
         return
     if client is None:
@@ -757,7 +819,7 @@ async def _park_ticket(
             await client.transition_to_in_review(ticket)
         else:
             await client.transition_to_in_progress(ticket)
-    except (LinearNotFound, LinearRequestError) as exc:
+    except (TrackerNotFound, TrackerRequestError) as exc:
         typer.echo(
             f"warning: failed to move {ticket} to {to.replace('_', ' ')}: {exc}; "
             f"the review verdict is recorded regardless (the transition is "

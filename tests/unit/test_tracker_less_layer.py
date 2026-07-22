@@ -579,19 +579,21 @@ def test_ac3_a_repo_with_no_context_file_still_requires_a_tracker(
 
 
 # ---------------------------------------------------------------------------
-# tracker: github — the unimplemented backend fails LOUD, never silently no-ops
+# tracker: github with NO github: block — a misconfiguration that fails LOUD
 # ---------------------------------------------------------------------------
-# The counterpart to the tracker-less (``none``) case above (CAL-1197): ``none``
-# is a clean no-op, but ``github`` is a *misconfiguration today*, so every verb
-# that needs the tracker rejects it through the uniform verb-error contract
-# (exit 2) — never a raw traceback, and never the tracker-less no-op path that
-# ``linear_enabled`` used to conflate ``github`` into. ``review`` is the one
-# deliberate exception: its transition is non-essential bookkeeping.
+# The counterpart to the tracker-less (``none``) case above (CAL-1197/CAL-1105):
+# ``none`` is a clean no-op, but a ``tracker: github`` that omits its ``github:``
+# config block is a *misconfiguration*, so every verb that needs the tracker
+# rejects it through the uniform verb-error contract (exit 2) — never a raw
+# traceback, and never the tracker-less no-op path that ``linear_enabled`` used to
+# conflate ``github`` into. (A *complete* github config resolves a working
+# GitHubClient — see ``test_github.py``.) ``review`` is the one deliberate
+# exception: its transition is non-essential bookkeeping.
 
 
 @pytest.fixture
 def repo_github(repo: Path) -> Path:
-    """The same git repo, but CONTEXT selects the not-yet-implemented backend."""
+    """The same git repo, but CONTEXT selects github *without* its config block."""
     (repo / "CONTEXT.md").write_text(
         "repo:\n  name: gh-repo\n  project: Build\ntracker: github\n"
     )
@@ -653,8 +655,8 @@ def test_defer_github_tracker_fails_loud(
     assert result.exit_code == 2, result.output
     assert "github" in result.output.lower()
     assert "skipped_no_tracker" not in result.output
-    # A distinct machine-readable reason — not the missing-key "linear_config".
-    assert json.loads(result.output)["reason"] == "unsupported_tracker"
+    # A config gap surfaces as the machine-readable tracker_config reason.
+    assert json.loads(result.output)["reason"] == "tracker_config"
 
 
 def test_reclaim_stale_github_tracker_fails_loud(
@@ -672,10 +674,10 @@ def test_reclaim_stale_github_tracker_fails_loud(
 
 
 def test_review_transition_tolerates_github_tracker(repo_github: Path) -> None:
-    """``review``'s transition is the one deliberate exception: an unimplemented
-    backend is swallowed (a verdict must never be lost to a tracker problem), so
-    ``_park_ticket`` is a silent no-op — it returns without raising and never
-    constructs a client."""
+    """``review``'s transition is the one deliberate exception: a misconfigured
+    tracker (here github with no config block) is swallowed (a verdict must never
+    be lost to a tracker problem), so ``_park_ticket`` is a silent no-op — it
+    returns without raising and never constructs a client."""
     with patch("harness.tracker.LinearClient", _exploding_client()):
         result = _sync(_park_ticket(repo_github, "GH-1", to="in_review"))
     assert result is None

@@ -38,6 +38,11 @@ from harness.reclaim_marker import (
     parse_handoff_branch,
     parse_preserved_branch,
 )
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 # size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
 # requires every Linear GraphQL operation to live in this client (never in
@@ -58,15 +63,15 @@ _LINEAR_API_URL = "https://api.linear.app/graphql"
 _TICKET_FIELDS = ("id", "identifier", "title", "description", "url")
 
 
-class LinearConfigError(RuntimeError):
+class LinearConfigError(TrackerConfigError):
     """Raised when required Linear configuration (e.g. API key) is missing."""
 
 
-class LinearNotFound(RuntimeError):  # noqa: N818 — SPEC vocab, not PEP 8 Error suffix
+class LinearNotFound(TrackerNotFound):  # noqa: N818 — SPEC vocab, not PEP 8 Error suffix
     """Raised when the requested issue does not exist or is inaccessible."""
 
 
-class LinearRequestError(RuntimeError):
+class LinearRequestError(TrackerRequestError):
     """Raised when the Linear API returns an error or an unexpected response."""
 
 
@@ -96,8 +101,12 @@ class LinearClient:
             read it from the environment.
     """
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, *, team: str | None = None) -> None:
         self._api_key = api_key
+        # The ``repo.linear`` team key, threaded in by :func:`harness.tracker.tracker_client`.
+        # Used only to scope an unscoped reclaim sweep (``fetch_reclaimable_issues``
+        # with no project) to this team rather than the whole workspace (#174).
+        self._team = team
 
     # ------------------------------------------------------------------
     # Public interface
@@ -107,7 +116,8 @@ class LinearClient:
         """Fetch issue ``identifier`` and return a compact ticket dict.
 
         Returns a dict with keys: ``id``, ``identifier``, ``title``,
-        ``description``, ``url``.
+        ``description``, ``url``, and ``labels`` (the issue's label names,
+        e.g. for #177's model-tier resolution).
 
         Raises:
             LinearNotFound: the issue does not exist.
@@ -121,6 +131,7 @@ query FetchIssue($id: String!) {
     title
     description
     url
+    labels { nodes { name } }
   }
 }
 """
@@ -128,7 +139,11 @@ query FetchIssue($id: String!) {
         raw = (data.get("data") or {}).get("issue")
         if raw is None:
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
-        return {k: raw.get(k) for k in _TICKET_FIELDS}
+        result: dict[str, Any] = {k: raw.get(k) for k in _TICKET_FIELDS}
+        result["labels"] = [
+            n.get("name") for n in (raw.get("labels") or {}).get("nodes", []) if n.get("name")
+        ]
+        return result
 
     async def fetch_issue_project(self, identifier: str) -> str | None:
         """Return the name of the project issue ``identifier`` belongs to, or ``None``.
@@ -161,28 +176,37 @@ query IssueProject($id: String!) {
         return str(name) if name else None
 
     async def fetch_reclaimable_issues(
-        self, *, project: str
+        self, *, project: str | None
     ) -> list[dict[str, str]]:
-        """List the reclaimable issues in ``project`` as ``[{identifier, updated_at}]``.
+        """List the reclaimable issues as ``[{identifier, updated_at}]``.
 
         The enumeration the ``harness reclaim --stale`` sweep (CAL-736) filters by
-        age.  Scoped to the named project and **both** transient ``started`` states
-        — **In Progress** *and* **In Review** — by name.  Before CAL-1103 In Review
-        was only ever a human handoff, so the sweep deliberately skipped it; now
-        ``review`` parks a reviewed ticket In Review as a normal step of the
-        autonomous verb loop, so a dead orchestrator between ``review`` and
-        ``close`` can strand a ticket there — exactly the wedged-queue failure the
-        sweep exists to unblock.  Staleness (the ``updatedAt`` threshold, proposal
-        D2) remains the only abandonment signal: a live review→close never idles
-        that long, so a stale ticket in either state is a dead run.  ``updated_at``
-        carries Linear's ``updatedAt`` (ISO-8601 UTC): the staleness signal the
-        sweep compares against its threshold.  Requests up to 100 issues unpaged —
-        a single project never holds more simultaneously-active tickets than that.
+        age.  Scoped to **both** transient ``started`` states — **In Progress**
+        *and* **In Review** — by name.  Before CAL-1103 In Review was only ever a
+        human handoff, so the sweep deliberately skipped it; now ``review`` parks a
+        reviewed ticket In Review as a normal step of the autonomous verb loop, so a
+        dead orchestrator between ``review`` and ``close`` can strand a ticket there
+        — exactly the wedged-queue failure the sweep exists to unblock.  Staleness
+        (the ``updatedAt`` threshold, proposal D2) remains the only abandonment
+        signal: a live review→close never idles that long, so a stale ticket in
+        either state is a dead run.  ``updated_at`` carries Linear's ``updatedAt``
+        (ISO-8601 UTC): the staleness signal the sweep compares against its
+        threshold.  Requests up to 100 issues unpaged.
+
+        The *scope* is nullable (#174).  ``project`` set → the named project.
+        ``project`` ``None`` (the whole-queue mode) → the client's ``repo.linear``
+        team, so a Linear team running several projects is swept whole.  It filters
+        by **team**, never the bare workspace: an unscoped ``issues`` query would
+        otherwise sweep every team the token can see (the proposal's stated risk), so
+        with no project *and* no team there is nothing safe to scope to and the call
+        is refused rather than run unbounded.
 
         Raises:
-            LinearRequestError: the API returned an error or an unexpected response.
+            LinearRequestError: the API returned an error or an unexpected response,
+                or ``project`` is ``None`` and no ``repo.linear`` team scopes the sweep.
         """
-        query = """
+        if project is not None:
+            query = """
 query ReclaimableIssues($project: String!) {
   issues(
     first: 100
@@ -198,7 +222,31 @@ query ReclaimableIssues($project: String!) {
   }
 }
 """
-        data = await self._request(query, {"project": project})
+            variables: dict[str, str] = {"project": project}
+        elif self._team is not None:
+            query = """
+query ReclaimableIssues($team: String!) {
+  issues(
+    first: 100
+    filter: {
+      team: { key: { eq: $team } }
+      state: { name: { in: ["In Progress", "In Review"] } }
+    }
+  ) {
+    nodes {
+      identifier
+      updatedAt
+    }
+  }
+}
+"""
+            variables = {"team": self._team}
+        else:
+            raise LinearRequestError(
+                "an unscoped reclaim sweep needs a repo.linear team to scope to; "
+                "none is configured, and sweeping the whole workspace is refused"
+            )
+        data = await self._request(query, variables)
         nodes = ((data.get("data") or {}).get("issues") or {}).get("nodes") or []
         return [
             {"identifier": n["identifier"], "updated_at": n["updatedAt"]}

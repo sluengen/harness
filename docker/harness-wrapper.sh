@@ -125,10 +125,38 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   fi
 fi
 
-# Pull LINEAR_API_KEY from the shell or a local .env file.
+# Pull LINEAR_API_KEY from the shell or a local .env file. The trailing `|| true`
+# is load-bearing under `set -euo pipefail` (issue #171): when .env exists but has
+# no matching line, `grep` exits 1 and the pipeline would abort the whole wrapper
+# — so a repo whose .env omits this key (e.g. a github-only repo) could not run any
+# verb. Guarded, a no-match yields an empty value and the container's own error (if
+# the credential is genuinely required) reports it cleanly instead.
 if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
-  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r')
+  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
   export LINEAR_API_KEY
+fi
+
+# Pull GITHUB_TOKEN (the GitHub tracker backend's credential, CAL-1105) the same
+# way — shell first, else a local .env — so a `tracker: github` repo authenticates
+# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY. The
+# `|| true` is essential here (issue #171): removing the static token from .env
+# (the intended #170 state) leaves .env with no GITHUB_TOKEN line, so an unguarded
+# grep would abort the wrapper before the `gh auth token` fallback below runs.
+if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
+  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
+  export GITHUB_TOKEN
+fi
+
+# Fresh-token fallback (issue #170). A `gh` OAuth token rotates (~8h) and `gh`
+# auto-refreshes it from the keyring, so a *static* GITHUB_TOKEN (a `.env` snapshot
+# or a stale exported value) goes stale — which silently breaks the UNATTENDED
+# Build loop, where no human is present to refresh it. When the token is still
+# unset and `gh` is logged in on the host, fetch a fresh one each invocation, the
+# same way the Claude OAuth token is pulled from the Keychain above. Precedence is
+# env → .env → gh, so a consuming repo's long-lived PAT in `.env` still wins.
+if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+  GITHUB_TOKEN=$(gh auth token 2>/dev/null || true)
+  export GITHUB_TOKEN
 fi
 
 # Workspace allowlist (CAL-584): the verbs reject any --repo outside
@@ -211,6 +239,7 @@ exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -v "$HOME/.codex":/home/harness/.codex:ro \
   ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
   -e LINEAR_API_KEY \
+  -e GITHUB_TOKEN \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
   -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
   -e CLAUDE_CODE_OAUTH_TOKEN \
