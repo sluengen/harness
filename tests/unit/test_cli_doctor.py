@@ -387,6 +387,41 @@ def test_check_reviewer_fails_when_claude_present_but_cannot_run() -> None:
     assert "cannot" in msg.lower() or "could not" in msg.lower()
 
 
+# ---------------------------------------------------------------------------
+# check_gh reports the `gh` binary's availability (#187) — `promote pr`'s
+# publication step needs it in-container; every other verb runs without it, so
+# absence is a WARN, not a FAIL.
+# ---------------------------------------------------------------------------
+
+
+def test_check_gh_passes_when_on_path_and_runnable() -> None:
+    from harness.cli.doctor import EngineProbe, check_gh
+
+    status, msg = check_gh(gh_probe=EngineProbe("ok", "/usr/local/bin/gh"))
+    assert status == "PASS"
+    assert "gh" in msg.lower()
+
+
+def test_check_gh_warns_when_absent() -> None:
+    from harness.cli.doctor import EngineProbe, check_gh
+
+    # `gh` is only load-bearing for `promote pr`'s release-hop publication step
+    # (#187) — every other verb runs fine without it, so absence is advisory.
+    status, msg = check_gh(gh_probe=EngineProbe("absent", None))
+    assert status == "WARN"
+    assert "gh" in msg.lower()
+    assert "promote pr" in msg.lower()
+
+
+def test_check_gh_warns_when_present_but_cannot_run() -> None:
+    from harness.cli.doctor import EngineProbe, check_gh
+
+    status, msg = check_gh(gh_probe=EngineProbe("cannot_run", "/usr/local/bin/gh"))
+    assert status == "WARN"
+    assert "gh" in msg.lower()
+    assert "cannot" in msg.lower() or "could not" in msg.lower()
+
+
 def test_check_reviewer_warns_when_codex_absent() -> None:
     from harness.cli.doctor import EngineProbe, check_reviewer
 
@@ -642,6 +677,9 @@ def test_doctor_command_output_contains_check_labels(
     assert "verify" in out
     # The wrapper-drift check (CAL-1149) must be wired in, not just defined.
     assert "wrapper" in out
+    # The gh-availability check (#187) must be wired into the aggregated
+    # command, not merely defined as a function.
+    assert "gh" in out
 
 
 def test_doctor_command_fails_when_engine_installed_but_cannot_run(

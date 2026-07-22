@@ -58,6 +58,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libcurl4 libexpat1 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
+# gh CLI — `harness promote pr`'s release-hop publication step shells out to
+# `gh pr create` (harness/promotion_pr.py, #187); nothing else in the image
+# needs it. Installed from GitHub's own apt repository (the officially
+# documented path, cli.github.com/packages) rather than a pinned binary
+# tarball, so `dpkg --print-architecture` resolves the right package on both
+# amd64 and arm64 without an arch-conditional COPY. `gh` reads GITHUB_TOKEN
+# from the environment automatically — the wrapper already forwards it
+# (docker/harness-wrapper.sh) — so no `gh auth login` step is needed here.
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # git >= 2.48 compiled from source in the git-build stage (Debian trixie ships
 # only 2.47.3, which cannot write or even open relative-path worktrees). Copied
 # under an isolated prefix and put first on PATH so `git` resolves to it.
