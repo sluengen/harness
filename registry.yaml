@@ -99,7 +99,7 @@ files:
   templates/decision.md:              { id: template-decision,        version: 0.1.0, profiles: [harness] }
   templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
   templates/architecture.md:          { id: template-architecture,    version: 0.1.0, profiles: [harness] }
-  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.11, profiles: [harness] }
+  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.12, profiles: [harness] }
   # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
   # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
   templates/feature.md:               { id: template-feature,         version: 0.2.0, profiles: [harness] }
