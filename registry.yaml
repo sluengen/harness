@@ -1,4 +1,4 @@
-# guidance:registry@0.5.59
+# guidance:registry@0.5.60
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -82,7 +82,7 @@ files:
   commands/review.md:                 { id: review,                   version: 0.1.3, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
-  commands/update-guidance.md:        { id: update-guidance,          version: 0.5.3, profiles: [harness] }
+  commands/update-guidance.md:        { id: update-guidance,          version: 0.6.0, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.4.0, profiles: [harness] }
   # The harness's own pipeline command — a distributed surface unit since CAL-764
   # (approach A): tracked by the registry and copied by the installer like any
@@ -125,4 +125,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.1 }
-  registry.yaml:                      { id: registry,                 version: 0.5.59 }
+  registry.yaml:                      { id: registry,                 version: 0.5.60 }
