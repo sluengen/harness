@@ -1,29 +1,44 @@
-"""CAL-1119 — the outer-agent promotion routine is documented, and tied to source.
+"""CAL-1119 / #189 — the outer-agent promotion routine is documented, and tied
+to source.
 
 The promotion lifecycle (ADR 0003) is an audited harness surface that an
 external orchestrator — Hermes, OpenClaw, Claude, Codex, or a human — drives on a
 schedule. The surface (``harness promote start / continue / status / pr /
-escalate``) and its structured states shipped in CAL-1113–1118; this ticket
-documents the *routine* around them: how any outer agent moves work
-``dev → staging → main`` on a schedule, what states it branches on, what it must
-never do, and how bounded repair and escalation behave.
+escalate``) and its structured states shipped in CAL-1113–1118; CAL-1119
+documented the *routine* around them directly in ``RUNBOOK.md`` (how any outer
+agent moves work ``dev → staging → main``, what states it branches on, what it
+must never do, how bounded repair and escalation behave) because no versioned
+command yet existed to carry it.
 
-The routine guidance lives in the operational runbook (``RUNBOOK.md``, the home
-of the harness's own loops). These tests are the executable form of the
-acceptance criteria and — more importantly — the **drift guard** that keeps the
-prose tied to the real surface: the documented subcommands are derived from the
-live ``promote`` Typer app and the documented states from
+**#189 moved that content into `commands/promote.md`** — the versioned,
+universal command every repo on this guidance installs, with role-based
+argument resolution (`/promote <src> to <dst>` against `CONTEXT.md`
+`branches:`) so the same invocation shape works whether a repo's roles are
+named `dev`/`staging`/`main` or `develop`/`staging`/`production`. `RUNBOOK.md`
+§"The promotion routine" now carries only this repo's own operational facts —
+which trigger fires it, on what cadence — and points at the command for the
+loop mechanics, so the orchestration logic lives in exactly one place.
+
+These tests are the executable form of the acceptance criteria and — more
+importantly — the **drift guard** that keeps the prose tied to the real
+surface: the documented subcommands are derived from the live ``promote``
+Typer app and the documented states from
 :data:`~harness.state.promotions.PROMOTION_STATUSES`, so a renamed subcommand or
-a new lifecycle state fails this gate until the routine doc is updated too.
+a new lifecycle state fails this gate until the command doc is updated too.
 
-* **AC-1 — the promotion flow is shown** for both the nightly ``dev → staging``
-  candidate and the deliberate ``staging → main`` release.
-* **AC-2 — the exact commands and structured states** the orchestrator branches
+* **AC-1 — the command exists, is version-stamped, and is listed** in the
+  `CLAUDE.md` command table.
+* **AC-2 — role resolution is specified**: a repo whose `branches:` are
+  `develop` / `staging` / `production` drives `/promote develop to staging`
+  unchanged.
+* **AC-3 — the exact commands and structured states** the orchestrator branches
   on are named — every ``promote`` subcommand and every ``PromotionStatus``.
-* **AC-3 — the forbidden outer-agent actions** are stated: no direct
+* **AC-4 — the forbidden outer-agent actions** are stated: no direct
   target-branch push, no PR creation outside the harness, no Linear promotion
   mutation outside the harness.
-* **AC-4 — the bounded repair policy and escalation** behaviour are documented.
+* **AC-5 — the bounded repair policy and escalation** behaviour are documented.
+* **AC-6 — `RUNBOOK.md` no longer carries the loop** — the section is a short
+  pointer, not a second copy of the orchestration logic.
 * **The contract stays agent-agnostic** (Design): Hermes is named as the likely
   local cron driver, but the surface is deterministic and model-free — local
   inference powers only the outer agent.
@@ -38,7 +53,13 @@ from harness.cli.promote import promote_app
 from harness.state.promotions import PROMOTION_STATUSES
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_COMMAND = _REPO_ROOT / "commands" / "promote.md"
 _RUNBOOK = _REPO_ROOT / "RUNBOOK.md"
+_CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
+
+
+def _command_doc() -> str:
+    return _COMMAND.read_text(encoding="utf-8")
 
 
 def _runbook() -> str:
@@ -46,7 +67,8 @@ def _runbook() -> str:
 
 
 def _promotion_section() -> str:
-    """The ``RUNBOOK.md`` section documenting the promotion routine.
+    """The ``RUNBOOK.md`` section documenting the promotion routine — now a
+    pointer to the command, not a second copy of the loop.
 
     Located by the first ``## `` heading whose text mentions "promotion"
     (case-insensitive, so the exact wording can be tuned without breaking the
@@ -60,92 +82,134 @@ def _promotion_section() -> str:
             end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
             return text[start:end]
     raise AssertionError(
-        "RUNBOOK.md has no '## …promotion…' section documenting the promotion routine"
+        "RUNBOOK.md has no '## …promotion…' section pointing at /promote"
     )
 
 
-def test_promotion_section_exists() -> None:
-    """The routine has a home: a top-level promotion section in the runbook."""
-    section = _promotion_section()
-    assert len(section.splitlines()) > 10, (
-        "the promotion section is a stub — it must document the full routine"
+def test_command_exists_and_versioned() -> None:
+    """AC-1: ``commands/promote.md`` exists and carries a guidance version stamp."""
+    assert _COMMAND.exists(), "commands/promote.md does not exist"
+    first_line = _command_doc().splitlines()[0]
+    assert re.match(r"<!--\s*guidance:promote@\d+\.\d+\.\d+\s*-->", first_line), (
+        f"commands/promote.md's first line is not a guidance version stamp: {first_line!r}"
     )
 
 
-def test_ac1_shows_both_promotion_flows() -> None:
-    """AC-1 — nightly ``dev → staging`` and deliberate ``staging → main`` are shown."""
-    section = _promotion_section()
-    # Tolerate either arrow style (``->`` or ``→``) and surrounding whitespace.
-    dev_to_staging = re.search(r"dev\s*(?:->|→)\s*staging", section)
-    staging_to_main = re.search(r"staging\s*(?:->|→)\s*main", section)
-    assert dev_to_staging, "AC-1: the nightly 'dev → staging' flow is not shown"
-    assert staging_to_main, "AC-1: the deliberate 'staging → main' flow is not shown"
-    assert "nightly" in section.lower(), (
-        "AC-1: the section does not describe the nightly schedule for dev → staging"
+def test_command_listed_in_claude_md_table() -> None:
+    """AC-1: `/promote` is listed in the `CLAUDE.md` command table."""
+    claude_md = _CLAUDE_MD.read_text(encoding="utf-8")
+    assert "/promote" in claude_md, (
+        "CLAUDE.md does not list /promote in its command table"
     )
 
 
-def test_ac2_names_every_promote_subcommand() -> None:
-    """AC-2 — every live ``promote`` subcommand is named (derived from the Typer app)."""
-    section = _promotion_section()
+def test_ac2_role_resolution_example_documented() -> None:
+    """AC-2: a repo whose `branches:` are `develop`/`staging`/`production` drives
+    `/promote develop to staging` unchanged — same invocation shape as this
+    repo's own `dev`/`staging`/`main` roles."""
+    doc = _command_doc()
+    assert re.search(r"develop\s*(?:->|→|\bto\b)\s*staging", doc, re.IGNORECASE), (
+        "AC-2: the generic 'develop to staging' role-resolution example is not shown"
+    )
+    assert "production" in doc.lower(), (
+        "AC-2: the generic repo's 'production' release-role branch is not named"
+    )
+
+
+def test_ac2_shows_this_repos_own_flows() -> None:
+    """The command also demonstrates the concrete `dev`/`staging`/`main` hop this
+    repo actually drives — the nightly-stabilization and release examples."""
+    doc = _command_doc()
+    dev_to_staging = re.search(r"dev\s*(?:->|→|\bto\b)\s*staging", doc)
+    staging_to_main = re.search(r"staging\s*(?:->|→|\bto\b)\s*main", doc)
+    assert dev_to_staging, "the 'dev to staging' example is not shown"
+    assert staging_to_main, "the 'staging to main' example is not shown"
+
+
+def test_ac3_names_every_promote_subcommand() -> None:
+    """AC-3: every live ``promote`` subcommand is named (derived from the Typer app)."""
+    doc = _command_doc()
     names = sorted(c.name for c in promote_app.registered_commands if c.name)
     assert names, "the promote app registered no subcommands — introspection is broken"
-    missing = [name for name in names if f"promote {name}" not in section]
+    missing = [name for name in names if f"promote {name}" not in doc]
     assert not missing, (
-        f"AC-2: the promotion routine does not name these promote subcommands: "
+        f"AC-3: commands/promote.md does not name these promote subcommands: "
         f"{missing} (found in the live surface: {names})"
     )
 
 
-def test_ac2_names_every_lifecycle_state() -> None:
-    """AC-2 — every ``PromotionStatus`` the orchestrator can branch on is documented.
+def test_ac3_names_every_lifecycle_state() -> None:
+    """AC-3: every ``PromotionStatus`` the orchestrator can branch on is documented.
 
     Derived from :data:`PROMOTION_STATUSES`, so a new or renamed state fails this
-    gate until the routine doc names it. Each state is matched as a backtick-quoted
+    gate until the command doc names it. Each state is matched as a backtick-quoted
     token (``\\`pr_opened\\```) so ``opened`` is not spuriously satisfied by
     ``pr_opened``.
     """
-    section = _promotion_section()
-    missing = sorted(s for s in PROMOTION_STATUSES if f"`{s}`" not in section)
+    doc = _command_doc()
+    missing = sorted(s for s in PROMOTION_STATUSES if f"`{s}`" not in doc)
     assert not missing, (
-        f"AC-2: the promotion routine does not document these lifecycle states "
+        f"AC-3: commands/promote.md does not document these lifecycle states "
         f"(as `state` tokens): {missing}"
     )
 
 
 def _normalized_prose() -> str:
-    """The promotion section, lowercased with runs of whitespace collapsed to one
+    """The command doc, lowercased with runs of whitespace collapsed to one
     space — so a phrase check is insensitive to markdown's non-semantic soft
     line-wraps (``must\\nnot`` reads as ``must not``)."""
-    return re.sub(r"\s+", " ", _promotion_section().lower())
+    return re.sub(r"\s+", " ", _command_doc().lower())
 
 
-def test_ac3_states_forbidden_outer_agent_actions() -> None:
-    """AC-3 — the three forbidden outer-agent actions are stated as prohibitions."""
-    section = _normalized_prose()
-    assert "must not" in section, (
-        "AC-3: the section states no prohibition ('must not') on the outer agent"
+def test_ac4_states_forbidden_outer_agent_actions() -> None:
+    """AC-4: the three forbidden outer-agent actions are stated as prohibitions."""
+    doc = _normalized_prose()
+    assert "must not" in doc, (
+        "AC-4: commands/promote.md states no prohibition ('must not') on the outer agent"
     )
     # The three forbidden actions: direct target-branch push, PR creation outside
     # the harness, and Linear promotion mutation outside the harness.
-    assert "push" in section, "AC-3: direct target-branch push is not forbidden"
-    assert "linear" in section, "AC-3: out-of-band Linear mutation is not forbidden"
-    assert re.search(r"\bpr\b|pull request", section), (
-        "AC-3: out-of-band PR creation is not forbidden"
+    assert "push" in doc, "AC-4: direct target-branch push is not forbidden"
+    assert "linear" in doc, "AC-4: out-of-band Linear mutation is not forbidden"
+    assert re.search(r"\bpr\b|pull request", doc), (
+        "AC-4: out-of-band PR creation is not forbidden"
     )
-    assert "outside" in section, (
-        "AC-3: the prohibition does not frame the PR/Linear actions as 'outside the harness'"
+    assert "outside" in doc, (
+        "AC-4: the prohibition does not frame the PR/Linear actions as 'outside the harness'"
     )
 
 
-def test_ac4_documents_bounded_repair_and_escalation() -> None:
-    """AC-4 — one bounded repair attempt and the escalation path are documented."""
-    section = _normalized_prose()
-    assert "bounded" in section, "AC-4: the bounded repair policy is not documented"
-    assert re.search(r"\bonce\b|one .*attempt|single .*attempt", section), (
-        "AC-4: the doc does not state repair is a single bounded attempt"
+def test_ac5_documents_bounded_repair_and_escalation() -> None:
+    """AC-5: one bounded repair attempt and the escalation path are documented."""
+    doc = _normalized_prose()
+    assert "bounded" in doc, "AC-5: the bounded repair policy is not documented"
+    assert re.search(r"\bonce\b|one .*attempt|single .*attempt", doc), (
+        "AC-5: the doc does not state repair is a single bounded attempt"
     )
-    assert "escalat" in section, "AC-4: escalation behaviour is not documented"
+    assert "escalat" in doc, "AC-5: escalation behaviour is not documented"
+
+
+def test_ac6_runbook_promotion_section_is_a_pointer() -> None:
+    """AC-6: `RUNBOOK.md` §"The promotion routine" no longer carries the loop —
+    it is a short pointer at `/promote`, not a second copy of the state machine.
+    """
+    section = _promotion_section()
+    assert "/promote" in section, (
+        "AC-6: RUNBOOK.md's promotion section does not point at the /promote command"
+    )
+    # The old section (the full loop, state table, forbidden-actions list, and
+    # bounded-repair policy inline) ran ~185 lines. A pointer section is much
+    # shorter; this is the drift guard against orchestration logic creeping back
+    # into both places.
+    assert len(section.splitlines()) < 40, (
+        "AC-6: RUNBOOK.md's promotion section reads as long as the old inline "
+        "loop — the orchestration logic must live only in commands/promote.md"
+    )
+    lower = section.lower()
+    assert "agent_may_fix" not in lower and "needs_ticket" not in lower, (
+        "AC-6: RUNBOOK.md's promotion section still enumerates lifecycle states "
+        "inline — that table now belongs only to commands/promote.md"
+    )
 
 
 def test_design_contract_is_agent_agnostic() -> None:
@@ -157,11 +221,12 @@ def test_design_contract_is_agent_agnostic() -> None:
     """
     lower = _normalized_prose()
     assert "hermes" in lower, (
-        "Design: the doc does not name Hermes as the likely local cron driver"
+        "Design: commands/promote.md does not name Hermes as the likely local cron driver"
     )
     assert "agent-agnostic" in lower, (
-        "Design: the doc does not state the surface is agent-agnostic"
+        "Design: commands/promote.md does not state the surface is agent-agnostic"
     )
     assert "deterministic" in lower, (
-        "Design: the doc does not state the harness surface is deterministic/model-free"
+        "Design: commands/promote.md does not state the harness surface is "
+        "deterministic/model-free"
     )
