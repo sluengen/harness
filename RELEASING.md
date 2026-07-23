@@ -2,22 +2,16 @@
 
 Follow this checklist before tagging any release. All items must be ticked before pushing a version tag.
 
-## Release notes + `dev → main` PR
+## Release notes + the `staging → main` promotion
 
-Cutting a release starts by summarising what shipped since the last one and opening the promotion PR. (This folds the retired `agents/tasks/release.md` agent task — the deterministic `release.yaml` workflow it replaced was removed in CAL-574, and a "task file" is not a durable artifact; see `specs/architecture-principles.md`, "A task is command + role + skill + template".)
+Cutting a release starts by summarising what shipped since the last one and driving the promotion through to `main`. (This folds the retired `agents/tasks/release.md` agent task — the deterministic `release.yaml` workflow it replaced was removed in CAL-574, and a "task file" is not a durable artifact; see `specs/architecture-principles.md`, "A task is command + role + skill + template".)
 
-1. **Gather the completed tickets.** Query Linear for issues completed in the release window (default: since the last release) via the `linear` skill (`skills/linear/SKILL.md`) — it owns the GraphQL; `LINEAR_API_KEY` comes from the repo `.env`, never hard-coded. Derive each ticket's kind from its labels (`bug` / `feature` / `improvement` / `chore`).
-2. **Write the release notes.** Group the tickets by kind under **Features**, **Bug fixes**, and **Improvements**; write concise, human-readable notes. The same content seeds the `README.md` CHANGELOG section (below) and the GitHub Release body.
-3. **Rotate `CHANGELOG.md`.** The root changelog keeps only the current `[Unreleased]` window; the release moves its shipped entries into the per-year archive so the root stays bounded (CAL-1011). Move every entry under `## [Unreleased]` in `CHANGELOG.md` to the top of `CHANGELOG-archive/<year>.md` (newest first, under that file's `## Released` heading — create the file with an archive header if the year has none yet), then leave `## [Unreleased]` empty for the next cycle. The archive is historical record; the freshness hook still points authors at the root `CHANGELOG.md` for new entries, and `tests/unit/test_changelog_rotation.py` enforces the root's byte/line ceiling. Include this rotation in the promotion PR below.
-4. **Open the promotion PR** from `dev` to `main`:
+1. **Gather the completed issues.** List issues closed in the release window (default: since the last release) on the GitHub tracker — `gh issue list --repo sluengen/harness --state closed --search "closed:>=<last-release-date>"`, or browse the "Harness" board (`CONTEXT.md` `github.project`). Derive each issue's kind from its labels (`bug` / `feature` / `improvement` / `chore`).
+2. **Write the release notes.** Group the issues by kind under **Features**, **Bug fixes**, and **Improvements**; write concise, human-readable notes. The same content seeds the `README.md` CHANGELOG section (below) and the GitHub Release body.
+3. **Rotate `CHANGELOG.md`.** The root changelog keeps only the current `[Unreleased]` window; the release moves its shipped entries into the per-year archive so the root stays bounded (CAL-1011). Move every entry under `## [Unreleased]` in `CHANGELOG.md` to the top of `CHANGELOG-archive/<year>.md` (newest first, under that file's `## Released` heading — create the file with an archive header if the year has none yet), then leave `## [Unreleased]` empty for the next cycle. The archive is historical record; the freshness hook still points authors at the root `CHANGELOG.md` for new entries, and `tests/unit/test_changelog_rotation.py` enforces the root's byte/line ceiling. Include this rotation in the promotion below.
+4. **Drive the promotion to `main`** via `/promote staging to main` (or `harness promote start/continue/pr --from staging --to main` directly) — the audited promotion lifecycle (ADR 0003), which gates the merge and opens the release PR rather than a hand-rolled `gh pr create`.
 
-   ```bash
-   gh pr create --base main --head dev \
-     --title "Release — $(date +%Y-%m-%d)" \
-     --body-file <release-notes.md>
-   ```
-
-   The `dev → main` promotion *is* the release (`specs/architecture-principles.md`, D7). Merge it before working the checklist below.
+   The `staging → main` promotion *is* the release (`specs/architecture-principles.md`, D7; ADR 0003 amendment, #189/#190). Merge the opened PR before working the checklist below.
 
 ## Between-release CHANGELOG fold
 
@@ -65,7 +59,7 @@ Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds `docke
 
 - [ ] GitHub Release created from the tag with the changelog section pasted in
 - [ ] Consuming repos updated to the new tag — see `ONBOARDING.md §Updating` for the per-install-method steps (git checkout + Docker rebuild, or pip upgrade)
-- [ ] Linear milestone closed or next milestone opened
+- [ ] The GitHub Projects "Harness" board (`sluengen/2`) shows no open items left in this release's window
 
 ### First GHCR publish only (one-time, manual)
 
