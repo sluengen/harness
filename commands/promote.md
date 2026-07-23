@@ -1,4 +1,4 @@
-<!-- guidance:promote@0.1.0 -->
+<!-- guidance:promote@0.2.0 -->
 # /promote — drive a promotion through the harness lifecycle
 
 Usage: `/promote <src> to <dst>`
@@ -199,3 +199,52 @@ orchestrator had to open it by hand from those facts. That gap is closed: `gh`
 is installed in the runtime image and `doctor` checks for it (WARN on
 absence). If a target repo's own runtime image predates that, the same manual
 fallback applies until it rebuilds.
+
+## Fallback: no harness app
+
+Everything above assumes `harness` is on `$PATH` as the Docker wrapper
+(`~/bin/harness`) — the same presence check `/harness run` depends on. A repo
+without the harness app still has a `dev → staging → main` topology in its
+`CONTEXT.md` and still needs a promotion driven, so `/promote` drives it
+through a **deliberately reduced**, agent-orchestrated path instead: the
+`/build`-is-available-everywhere pattern (`CLAUDE.md`), applied to release
+movement.
+
+**Detect first.** Check whether `harness` resolves on `$PATH` before doing
+anything else. If it does, drive the verb loop above — never this path. If it
+does not, drive the loop below. Do not infer presence from `CONTEXT.md` or
+anything else; the `$PATH` check is the one test.
+
+**The loop, reduced:**
+
+1. Create a worktree off the **target** branch (`<dst>`, resolved the same way
+   as the verb-backed path above).
+2. Merge the **source** (`<src>`) into it. On conflict: **stop and report** —
+   the conflicting files and a diff summary. No repair attempt, bounded or
+   otherwise; unlike `agent_may_fix` above, this path has no repair authority
+   at all.
+3. Run the repo's `CONTEXT.md` `commands.verify` gate in that worktree — read
+   it fresh from `CONTEXT.md` every run; never hardcode a gate command here,
+   since this path keeps no ledger to remember one in. On red: **stop and
+   report** the captured gate output. No retry.
+4. On green, the hop asymmetry from the verb-backed path holds:
+   - `--to` an **intermediate** branch (e.g. `staging`): push the merged tree
+     directly to the target ref. No PR — the gate already made the call.
+   - `--to` the **release** branch (e.g. `main`): push only the promotion
+     branch (never the target directly), and open a PR into the target
+     carrying the commit range and gate evidence. A human merges it.
+
+**What you lose without the ledger.** This path has no promotion id, no
+ledger row, and no resumable state — a conflict or a red gate stops the whole
+hop cold rather than being recorded for a later `harness promote continue`.
+There is no audit trail beyond ordinary git history and the PR itself. A repo
+that needs any of that should install the harness app, not grow this path
+toward it.
+
+**Reduced by decision, not by omission.** ADR 0003's 2026-07-23 amendment
+names this path explicitly reduced: no bounded repair, no five-state machine,
+no ledger. Do not "complete" it into a mirror of the verb-backed loop above —
+that would put two implementations of the promotion lifecycle in one file, and
+they would drift from each other. If this path starts needing conflict
+classification or a repair budget, that need belongs in the harness app, not
+here.

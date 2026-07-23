@@ -161,6 +161,33 @@ def _normalized_prose() -> str:
     return re.sub(r"\s+", " ", _command_doc().lower())
 
 
+def _fallback_section() -> str:
+    """The ``commands/promote.md`` section documenting the no-harness,
+    agent-orchestrated fallback (#190) — located by the first ``## `` heading
+    whose text mentions "fallback" (case-insensitive), sliced up to the next
+    ``## `` heading or end of file.
+
+    Scoping to this section (rather than the whole doc) matters: the
+    harness-backed path above already uses phrases like "opens no PR" and
+    "pushes only the promotion branch" for its own staging/release hops, so an
+    unscoped search would pass even if the fallback said nothing at all.
+    """
+    text = _command_doc()
+    headings = list(re.finditer(r"^## .*$", text, re.MULTILINE))
+    for i, h in enumerate(headings):
+        if "fallback" in h.group(0).lower():
+            start = h.start()
+            end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
+            return text[start:end]
+    raise AssertionError(
+        "commands/promote.md has no '## …fallback…' section for the no-harness path"
+    )
+
+
+def _normalized_fallback() -> str:
+    return re.sub(r"\s+", " ", _fallback_section().lower())
+
+
 def test_ac4_states_forbidden_outer_agent_actions() -> None:
     """AC-4: the three forbidden outer-agent actions are stated as prohibitions."""
     doc = _normalized_prose()
@@ -229,4 +256,103 @@ def test_design_contract_is_agent_agnostic() -> None:
     assert "deterministic" in lower, (
         "Design: commands/promote.md does not state the harness surface is "
         "deterministic/model-free"
+    )
+
+
+# --- #190: the agent-orchestrated fallback for repos without the harness app ---
+#
+# ADR 0003's 2026-07-23 amendment names this path explicitly reduced: no
+# bounded repair, no five-state machine, no ledger. These tests are the
+# fallback's acceptance criteria, and — like the AC-1..6 tests above — the
+# drift guard against it drifting into a second, unaudited implementation of
+# the promotion lifecycle.
+
+
+def test_fallback_section_specifies_harness_detection() -> None:
+    """AC: the fallback section exists, and detection of harness presence/absence
+    is specified rather than assumed — the reader must be told exactly how to
+    tell the two paths apart, not left to guess."""
+    doc = _normalized_fallback()
+    assert "$path" in doc or "on path" in doc, (
+        "the fallback does not specify how to detect the harness app's "
+        "presence/absence (expected a $PATH check, mirroring /harness run's own)"
+    )
+
+
+def test_fallback_stops_on_conflict_no_repair() -> None:
+    """AC: the fallback stops and reports on a merge conflict — no repair
+    attempt of any kind, bounded or otherwise (unlike the verb-backed path)."""
+    doc = _normalized_fallback()
+    assert re.search(r"conflict.{0,200}stop and report", doc, re.DOTALL) or re.search(
+        r"stop and report.{0,200}conflict", doc, re.DOTALL
+    ), "the fallback does not state it stops and reports on a merge conflict"
+    assert "no repair" in doc or "no repair attempt" in doc, (
+        "the fallback does not state it makes no repair attempt on conflict"
+    )
+
+
+def test_fallback_stops_on_red_gate_no_repair() -> None:
+    """AC: the fallback stops and reports on a red gate, capturing the gate
+    output — it never attempts a repair or a retry."""
+    doc = _normalized_fallback()
+    assert re.search(r"red.{0,120}stop and report", doc, re.DOTALL), (
+        "the fallback does not state it stops and reports on a red gate"
+    )
+
+
+def test_fallback_reads_gate_from_context_verify_never_hardcoded() -> None:
+    """AC: the fallback reads the gate command from CONTEXT.md `commands.verify`
+    — it must never hardcode a gate command of its own."""
+    section = _fallback_section()
+    assert "commands.verify" in section, (
+        "the fallback does not read the gate command from CONTEXT.md commands.verify"
+    )
+    assert "never hardcod" in section.lower() or "not hardcod" in section.lower(), (
+        "the fallback does not state the gate command is never hardcoded"
+    )
+
+
+def test_fallback_preserves_hop_asymmetry() -> None:
+    """AC: the hop asymmetry from the verb-backed path holds on the fallback
+    too — an intermediate branch is advanced directly (no PR); the release
+    branch only ever gets a pushed promotion branch + an opened PR."""
+    doc = _normalized_fallback()
+    assert "no pr" in doc, (
+        "the fallback does not state the intermediate hop opens no PR"
+    )
+    assert re.search(r"push(?:es)? only the promotion branch", doc), (
+        "the fallback does not state the release hop pushes only the promotion "
+        "branch (never the target directly)"
+    )
+
+
+def test_fallback_states_what_is_lost_without_the_ledger() -> None:
+    """AC: a stated 'what you lose without the ledger' paragraph — no promotion
+    id, no audit trail, no resumable state."""
+    doc = _normalized_fallback()
+    assert "without the ledger" in doc or "no ledger" in doc, (
+        "the fallback does not name what is lost by having no ledger"
+    )
+    assert "audit trail" in doc, (
+        "the fallback does not state there is no audit trail without the ledger"
+    )
+    assert "resumable" in doc, (
+        "the fallback does not state there is no resumable state without the ledger"
+    )
+
+
+def test_fallback_is_explicitly_reduced_by_decision() -> None:
+    """AC: the section states plainly that it is reduced by decision (citing
+    ADR 0003's 2026-07-23 amendment), so a later reader does not 'complete' it
+    into a mirror of the verb-backed path."""
+    doc = _normalized_fallback()
+    assert "2026-07-23" in doc, (
+        "the fallback does not cite ADR 0003's 2026-07-23 amendment date"
+    )
+    assert "reduced" in doc, (
+        "the fallback does not state plainly that it is reduced by decision"
+    )
+    assert "mirror" in doc or "drift" in doc, (
+        "the fallback does not warn against completing it into a mirror of the "
+        "verb-backed path"
     )
