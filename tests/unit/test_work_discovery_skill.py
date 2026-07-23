@@ -326,18 +326,18 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_5_0() -> None:
-    """ADR 0006, bumped by #191: the skill is stamped 0.5.0 (the third hold kind,
-    `input`) and the registry row agrees (the surface-header parity guard
-    enforces the pairing; this pins the target)."""
+def test_work_discovery_version_is_0_6_0() -> None:
+    """Bumped by #192: the skill is stamped 0.6.0 (the return-path section) and
+    the registry row agrees (the surface-header parity guard enforces the
+    pairing; this pins the target)."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.5.0" in text, (
-        "the skill stamp must be work-discovery@0.5.0 (#191 — the `input` hold kind)."
+    assert "guidance:work-discovery@0.6.0" in text, (
+        "the skill stamp must be work-discovery@0.6.0 (#192 — the return-path section)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.5\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.5.0 (#191)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.6\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.6.0 (#192)."
 
 
 # --- ADR 0006 / #191: the third hold kind, `input` --------------------------
@@ -387,4 +387,64 @@ def test_runbook_documents_trigger_resync() -> None:
     assert re.search(r"version the logic", text, re.IGNORECASE), (
         "RUNBOOK.md must state the principle it enforces — version the logic, "
         "not the schedule (CAL-907 AC-2)."
+    )
+
+
+# --- #192: the return path — when a held ticket is clearable + released ------
+
+
+def test_return_path_section_present() -> None:
+    """#192: the skill states the return-path test — the inverse of the
+    deferral test — so `/decision` (#193) delegates the judgment here instead
+    of restating it."""
+    section = _section(SKILL.read_text(), "Return path")
+    assert section, (
+        "the skill must carry a return-path section naming when a held ticket "
+        "is clearable and what releasing it means (#192)."
+    )
+
+
+def test_return_path_defines_clearable() -> None:
+    """#192: a held ticket is clearable when the only thing missing is input
+    the operator has now supplied — for a `decision` hold, an answer that
+    makes the acceptance criteria checkable."""
+    section = _section(SKILL.read_text(), "Return path")
+    low = section.lower()
+    assert "clearable" in low, "the section must define 'clearable' (#192)."
+    assert "acceptance criteria" in low, (
+        "clearable must be tied to the acceptance criteria becoming checkable "
+        "(#192)."
+    )
+
+
+def test_return_path_defines_released_three_steps() -> None:
+    """#192: released means all three of: the resolution written into the
+    change spec, the hold label removed, and the operator unassigned — with
+    the unassignment called out as load-bearing."""
+    section = _section(SKILL.read_text(), "Return path")
+    low = section.lower()
+    assert "released" in low, "the section must define 'released' (#192)."
+    assert "change spec" in low, (
+        "released must require the resolution written into the change spec, "
+        "not left only in a comment thread (#192)."
+    )
+    assert "label removed" in low, (
+        "released must require the hold label removed (#192)."
+    )
+    assert "unassign" in low, "released must require the operator unassigned (#192)."
+    assert "load-bearing" in low, (
+        "the unassignment must be called out as load-bearing — a sweep that "
+        "records an answer without unassigning leaves the ticket held forever "
+        "(#192)."
+    )
+
+
+def test_return_path_covers_re_defer_case() -> None:
+    """#192: a ticket released but still not wholly actionable is re-deferred,
+    not left half-cleared."""
+    section = _section(SKILL.read_text(), "Return path")
+    assert re.search(r"re-?defer", section, re.IGNORECASE), (
+        "the section must cover the re-defer case — a ticket released but "
+        "still not actionable goes back through deferral, not left "
+        "half-cleared (#192)."
     )
