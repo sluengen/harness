@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-07-17
-linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116]
+last_updated: 2026-07-23
+linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -33,6 +33,7 @@ harness worktrees list                    [--repo-root <p>] [--json]
 harness cancel    <run-id>                [--db <p>] [--json]      # abandon an in-flight run: marks the ledger row cancelled
 harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--older-than <dur>]] [--db <p>] [--json]   # reclaim a stranded run (single ticket), or --stale sweeps active tickets idle past the threshold — the whole tracker queue, or one --project when given
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket; record a defer event carrying the needs kind (CAL-1143, CAL-1167, ADR 0006)
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket; record a release event carrying the needs kind (#193, the `defer` shape in reverse)
 harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]

@@ -512,6 +512,156 @@ mutation AssignIssue($assignableId: ID!, $assigneeIds: [ID!]!) {
                 f"response: {result!r}"
             )
 
+    async def remove_label(self, identifier: str, name: str) -> None:
+        """Remove the label ``name`` from the issue if present (``removeLabelsFromLabelable``).
+
+        The release-side mirror of :meth:`apply_label` (#193, the ``defer``
+        shape in reverse): resolves the label id from the issue's **own**
+        labels, matched case-insensitively. A ticket that no longer carries the
+        label is a clean no-op, so a release can run twice without erroring.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error or the mutation
+                returned no result.
+        """
+        number = _issue_number(identifier)
+        query = """
+query IssueLabels($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) { id labels(first: 50) { nodes { id name } } }
+  }
+}
+"""
+        data = await self._request(
+            query, {"owner": self._owner, "name": self._name, "number": number}
+        )
+        repo = (data.get("data") or {}).get("repository")
+        if repo is None:
+            raise GitHubNotFound(
+                f"GitHub repository {self._owner}/{self._name} not found"
+            )
+        issue = repo.get("issue")
+        if issue is None:
+            raise GitHubNotFound(f"GitHub issue {identifier!r} not found")
+        label_nodes: list[dict[str, Any]] = (issue.get("labels") or {}).get("nodes", [])
+        target = next(
+            (n for n in label_nodes if (n.get("name") or "").lower() == name.lower()),
+            None,
+        )
+        if target is None:
+            return  # already absent — idempotent release
+
+        mutation = """
+mutation RemoveLabel($labelableId: ID!, $labelIds: [ID!]!) {
+  removeLabelsFromLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) {
+    labelable { ... on Issue { id } }
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"labelableId": issue["id"], "labelIds": [target["id"]]}
+        )
+        labelable = (
+            (result.get("data") or {})
+            .get("removeLabelsFromLabelable", {})
+            .get("labelable")
+        )
+        if not labelable:
+            raise GitHubRequestError(
+                f"GitHub removeLabelsFromLabelable returned no result for "
+                f"{identifier!r}; response: {result!r}"
+            )
+
+    async def unassign_viewer(self, identifier: str) -> None:
+        """Clear the assignee on the issue (``removeAssigneesFromAssignable``).
+
+        The release-side mirror of :meth:`assign_to_viewer` (#193): resolves the
+        token's ``viewer`` id and the issue node id, then removes that assignee
+        unconditionally — ``defer`` only ever assigns the operator, so whoever
+        holds the ticket *is* the assignee this clears. This is the load-bearing
+        release step: assignment is the authoritative "a human holds this"
+        signal ``work-discovery`` reads, so clearing it is what actually returns
+        the ticket to the queue.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error, no viewer resolved,
+                or the mutation returned no result.
+        """
+        number = _issue_number(identifier)
+        query = """
+query ViewerAndIssue($owner: String!, $name: String!, $number: Int!) {
+  viewer { id }
+  repository(owner: $owner, name: $name) { issue(number: $number) { id } }
+}
+"""
+        data = await self._request(
+            query, {"owner": self._owner, "name": self._name, "number": number}
+        )
+        payload = data.get("data") or {}
+        issue = (payload.get("repository") or {}).get("issue")
+        if issue is None:
+            raise GitHubNotFound(f"GitHub issue {identifier!r} not found")
+        viewer_id = (payload.get("viewer") or {}).get("id")
+        if not viewer_id:
+            raise GitHubRequestError(
+                "GitHub resolved no viewer for the token; cannot unassign "
+                f"{identifier!r} from the operator"
+            )
+
+        mutation = """
+mutation UnassignIssue($assignableId: ID!, $assigneeIds: [ID!]!) {
+  removeAssigneesFromAssignable(
+    input: {assignableId: $assignableId, assigneeIds: $assigneeIds}
+  ) {
+    assignable { ... on Issue { id } }
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"assignableId": issue["id"], "assigneeIds": [viewer_id]}
+        )
+        assignable = (
+            (result.get("data") or {})
+            .get("removeAssigneesFromAssignable", {})
+            .get("assignable")
+        )
+        if not assignable:
+            raise GitHubRequestError(
+                f"GitHub removeAssigneesFromAssignable returned no result for "
+                f"{identifier!r}; response: {result!r}"
+            )
+
+    async def update_issue_body(self, identifier: str, body: str) -> None:
+        """Overwrite the issue's body with ``body`` (``updateIssue``).
+
+        The release step that writes a decision's resolution into the ticket's
+        change spec (#193) — into the body an agent reads cold, not only a
+        comment thread. The caller composes the full new body (existing spec +
+        appended resolution section); this primitive just sets it.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error or the mutation
+                returned no result.
+        """
+        node_id = await self._issue_node_id(identifier)
+        mutation = """
+mutation UpdateIssueBody($id: ID!, $body: String!) {
+  updateIssue(input: {id: $id, body: $body}) {
+    issue { id }
+  }
+}
+"""
+        result = await self._request(mutation, {"id": node_id, "body": body})
+        issue = ((result.get("data") or {}).get("updateIssue") or {}).get("issue")
+        if not issue:
+            raise GitHubRequestError(
+                f"GitHub updateIssue returned no issue for {identifier!r}; "
+                f"response: {result!r}"
+            )
+
     async def create_issue(
         self,
         *,

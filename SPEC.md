@@ -277,6 +277,7 @@ harness worktrees cleanup                 [--age <duration>] [--merged]
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
 harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket; record a defer event (CAL-1143)
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket; record a release event (#193)
 harness doctor                                # system health checks
 harness version                           [--json]
 
@@ -288,8 +289,7 @@ harness promote pr        [--promotion-id <id>] [--repo <p>] [--json]   # succes
 harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
 ```
 
-There is no `harness promote verify` in v1: the gate runs inside `start` /
-`continue`, never as a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).
+There is no `harness promote verify` in v1: the gate runs inside `start` / `continue`, never a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).
 
 #### Harness-as-tool verbs
 
