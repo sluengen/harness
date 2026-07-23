@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.5.0 -->
+<!-- guidance:work-discovery@0.6.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -129,6 +129,35 @@ inventing busywork.
 > `operator`) as an optimisation, so held tickets never reach the ranking step.
 > That filter is a convenience; **this judgment rule is authoritative** — if an
 > assigned or held-labelled ticket does reach you, skip it.
+
+## Return path — when a held ticket is clearable
+
+The Actionability and Held-tickets sections above are the outbound half: defer
+what cannot be actioned, skip what a human holds. This is the inverse — what
+makes a held ticket ready to come back, and what "released" means once it is.
+`/decision` (the versioned sweep that drains `decision`-held tickets) delegates
+this judgment here rather than restating it; this section owns the test, that
+command owns only its control flow.
+
+A held ticket is **clearable** when the only thing missing is input the
+operator has now supplied — for a `decision` hold, an answer that makes the
+acceptance criteria checkable. (An `input` or `operator` hold clears the same
+way, once its own missing piece has been supplied.)
+
+**Released** means all three of:
+
+- the resolution **written into the ticket's change spec**, not left only in a
+  comment thread — so an agent that starts the ticket cold sees the answer in
+  the spec it builds from, not buried in a thread it has to go dig up;
+- the hold **label removed**;
+- the operator **unassigned** — this is **load-bearing**: assignment is the
+  authoritative skip signal (Held tickets, above), so a sweep that records an
+  answer without unassigning leaves the ticket held forever. That is the exact
+  failure mode of the ad-hoc prompt this replaces.
+
+A ticket released but still not wholly actionable — the answer supplied did
+not fully resolve it — is **re-deferred** through the normal Actionability
+step (a fresh comment + label + assignment), not left half-cleared.
 
 ## When nothing is actionable
 
