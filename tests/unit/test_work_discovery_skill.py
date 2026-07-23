@@ -326,18 +326,48 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_4_0() -> None:
-    """CAL-1166 AC-3, bumped by #175: the skill is stamped 0.4.0 (the optional
-    project-scope wording) and the registry row agrees (the surface-header parity
-    guard enforces the pairing; this pins the target)."""
+def test_work_discovery_version_is_0_5_0() -> None:
+    """ADR 0006, bumped by #191: the skill is stamped 0.5.0 (the third hold kind,
+    `input`) and the registry row agrees (the surface-header parity guard
+    enforces the pairing; this pins the target)."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.4.0" in text, (
-        "the skill stamp must be work-discovery@0.4.0 (#175 — conditional scoping)."
+    assert "guidance:work-discovery@0.5.0" in text, (
+        "the skill stamp must be work-discovery@0.5.0 (#191 — the `input` hold kind)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.4\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.4.0 (#175)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.5\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.5.0 (#191)."
+
+
+# --- ADR 0006 / #191: the third hold kind, `input` --------------------------
+
+
+def test_work_discovery_names_three_hold_kinds() -> None:
+    """ADR 0006 (#191): the skill names all three hold kinds — `decision`,
+    `input`, `operator` — partitioning held work by what kind of human input a
+    ticket waits on, and states that the loop skips all three (the outbound
+    hold semantics are unchanged; only the return path distinguishes them)."""
+    text = SKILL.read_text()
+    assert "`decision`" in text and "`input`" in text and "`operator`" in text, (
+        "the skill must name all three hold kinds — decision, input, operator "
+        "(ADR 0006, #191)."
+    )
+    assert re.search(r"skips? all three", text, re.IGNORECASE), (
+        "the skill must state that the loop skips all three hold kinds — the "
+        "outbound skip semantics are unchanged by adding a kind (ADR 0006, #191)."
+    )
+
+
+def test_work_discovery_states_operator_label_narrowed_meaning() -> None:
+    """ADR 0006 (#191): the skill states that `operator`'s meaning narrows to an
+    interactive session only — it no longer also covers "the operator owes this
+    ticket something" now that `input` exists for that case."""
+    text = SKILL.read_text()
+    assert re.search(r"narrow", text, re.IGNORECASE), (
+        "the skill must state that the `operator` label's meaning narrows now "
+        "that `input` exists as its own kind (ADR 0006, #191)."
+    )
 
 
 def test_runbook_documents_trigger_resync() -> None:

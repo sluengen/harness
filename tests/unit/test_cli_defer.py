@@ -89,6 +89,24 @@ def _make_stub(
     return mock
 
 
+def _make_labelled_stub(existing_labels: list[str]) -> MagicMock:
+    """A stub whose ``apply_label`` *appends* to a tracked label list, so a test
+    can assert pre-existing labels survive a new label being additively applied
+    — the CLI-level shape of "additive", not just the mutation name."""
+    mock = MagicMock()
+    mock.fetch_issue_project = AsyncMock(return_value=_BUILD_PROJECT)
+    mock.post_comment = AsyncMock(return_value=None)
+    mock.assign_to_viewer = AsyncMock(return_value=None)
+    labels = list(existing_labels)
+
+    async def _apply_label(_ticket: str, name: str) -> None:
+        labels.append(name)
+
+    mock.apply_label = AsyncMock(side_effect=_apply_label)
+    mock.labels = labels  # inspected by the test after the call
+    return mock
+
+
 def _invoke(args: list[str], repo_root: Path, stub: MagicMock, monkeypatch: Any) -> Any:
     monkeypatch.chdir(repo_root)
     with (
@@ -198,7 +216,8 @@ def test_defer_needs_operator_applies_operator_label(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     """``--needs operator`` applies the ``operator`` label (a hands-on hold), not
-    ``decision`` — the two triage kinds of the ticket protocol (CAL-1167)."""
+    ``decision`` — the three triage kinds of the ticket protocol (CAL-1167,
+    ADR 0006)."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
@@ -215,9 +234,51 @@ def test_defer_needs_operator_applies_operator_label(
     assert label_arg == "operator"
 
 
+def test_defer_needs_input_applies_input_label(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``--needs input`` applies the ``input`` label — the third hold kind (ADR
+    0006, #191): the operator must supply something the run cannot, distinct
+    from a judgment call (``decision``) and an interactive session (``operator``)."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "needs a credential provisioned",
+         "--needs", "input", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    stub.apply_label.assert_awaited_once()
+    _, label_arg = stub.apply_label.await_args.args
+    assert label_arg == "input"
+
+
+def test_defer_needs_input_preserves_existing_labels(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The ``input`` label is applied additively — a pre-existing label on the
+    ticket survives, proven at the CLI-invocation level (not just by which
+    mutation primitive is called)."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_labelled_stub(["bug"])
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "needs infra stood up",
+         "--needs", "input", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert stub.labels == ["bug", "input"]
+
+
 def test_defer_rejects_unknown_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
-    """``--needs`` accepts only ``decision`` / ``operator``; anything else is an
-    invocation error (exit 2), with no write."""
+    """``--needs`` accepts only ``decision`` / ``input`` / ``operator``; anything
+    else is an invocation error (exit 2), with no write."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
@@ -276,6 +337,25 @@ def test_defer_event_records_needs_kind(tmp_path: Path, monkeypatch: Any) -> Non
     events = _fetch_defer_events(db)
     assert len(events) == 1
     assert events[0]["needs"] == "operator"
+
+
+def test_defer_event_records_needs_input_kind(tmp_path: Path, monkeypatch: Any) -> None:
+    """The ``defer`` ledger event records the ``input`` hold kind (ADR 0006, #191)
+    — the return path (``/decision``, #193) reads this to select only ``decision``
+    holds without re-triaging every ticket."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+
+    result = _invoke(
+        ["defer", "CAL-999", "--reason", "x", "--needs", "input", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    events = _fetch_defer_events(db)
+    assert len(events) == 1
+    assert events[0]["needs"] == "input"
 
 
 def test_defer_default_needs_records_decision(tmp_path: Path, monkeypatch: Any) -> None:

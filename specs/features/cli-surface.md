@@ -32,7 +32,7 @@ harness worktrees list                    [--repo-root <p>] [--json]
 # Maintenance / ops — mutate outside the audited lifecycle
 harness cancel    <run-id>                [--db <p>] [--json]      # abandon an in-flight run: marks the ledger row cancelled
 harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--older-than <dur>]] [--db <p>] [--json]   # reclaim a stranded run (single ticket), or --stale sweeps active tickets idle past the threshold — the whole tracker queue, or one --project when given
-harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket; record a defer event carrying the needs kind (CAL-1143, CAL-1167)
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket; record a defer event carrying the needs kind (CAL-1143, CAL-1167, ADR 0006)
 harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]

@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.4.0 -->
+<!-- guidance:work-discovery@0.5.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -57,10 +57,19 @@ spec needs problem, approach, and acceptance criteria.
 - If it **cannot** be actioned yet — it needs a decision, missing detail, or an
   unfinished dependency — do not guess. Record the deferral three ways and move
   on to the next candidate: **a comment** naming what it needs; **a label** —
-  `decision` when a judgment call is needed (a direction or detail), `operator`
-  when an interactive session is needed (setup, a hands-on step, a visual check);
-  and **assignment to the operator**, the machine-readable "a human holds this"
+  one of three kinds, partitioning held work by what kind of human input the
+  ticket waits on (ADR 0006): `decision` when a judgment call is needed (a
+  direction or detail, clearable by answering from the ticket alone), `input`
+  when the operator must supply something the run cannot (a work item, a
+  credential, infrastructure stood up), or `operator` when an interactive,
+  hands-on session is needed (setup, a visual check, anything requiring a human
+  driving the tools) — **this meaning is narrower** than it once was, now that
+  `input` exists for "the operator owes this ticket something"; and
+  **assignment to the operator**, the machine-readable "a human holds this"
   signal the held-tickets skip rule reads (the label explains *why* it is held).
+  The loop **skips all three** kinds the same way — the outbound hold semantics
+  are unchanged by adding a kind; only the return path (e.g. `/decision`)
+  distinguishes between them, selecting `decision` and nothing else.
   Where the routine provides a **`defer` verb** (as `/harness routine build`
   does: `harness defer <TICKET> --reason <text>`), call it — it posts the
   comment, applies the label, assigns the operator, and records the decision in
@@ -100,23 +109,26 @@ field every Linear view surfaces, and the operator's "my issues" is their
 worklist for free. A held ticket re-enters the queue when the human unassigns it.
 
 The labels say *why* it is held, not *whether* to skip: `decision` — a judgment
-call is pending; `operator` — an interactive session is needed. They are the
-operator's two filters ("to think about" vs "to do at the keyboard"), not the
+call is pending; `input` — the operator must supply something the run cannot;
+`operator` — an interactive session is needed (this meaning is narrower than
+it once was — it no longer also covers "the operator owes this ticket
+something", which is `input`'s job now). They are the operator's three filters
+("to think about", "to go do", "to sit down at the keyboard for"), not the
 loop's skip lever.
 
 **Transitional rule.** Until the queue backfill assigns every already-deferred
-ticket, also skip any ticket carrying `decision` **or** `operator` even if it is
-not yet assigned — so tickets deferred under the old label-only rule stay safe.
-Skip on **assignment OR the `decision`/`operator` label**; the assignment is
-authoritative, the label OR is the bridge.
+ticket, also skip any ticket carrying `decision`, `input`, **or** `operator`
+even if it is not yet assigned — so tickets deferred under the old label-only
+rule stay safe. Skip on **assignment OR one of the three labels**; the
+assignment is authoritative, the label OR is the bridge.
 
 Do not re-litigate a held ticket every tick — it wastes a run and risks
 inventing busywork.
 
-> The queue pull may filter `assignee: null` (and exclude `decision`/`operator`)
-> as an optimisation, so held tickets never reach the ranking step. That filter
-> is a convenience; **this judgment rule is authoritative** — if an assigned or
-> held-labelled ticket does reach you, skip it.
+> The queue pull may filter `assignee: null` (and exclude `decision`/`input`/
+> `operator`) as an optimisation, so held tickets never reach the ranking step.
+> That filter is a convenience; **this judgment rule is authoritative** — if an
+> assigned or held-labelled ticket does reach you, skip it.
 
 ## When nothing is actionable
 
