@@ -631,6 +631,149 @@ mutation AssignIssue($id: String!, $assigneeId: String!) {
                 f"response: {result!r}"
             )
 
+    async def remove_label(self, identifier: str, name: str) -> None:
+        """Remove the label ``name`` from ``identifier`` if present (``issueRemoveLabel``).
+
+        The release-side mirror of :meth:`apply_label` (#193, the ``defer``
+        shape in reverse): resolves the label id from the issue's **own**
+        labels (not the team's full set — nothing to resolve-or-create), matched
+        case-insensitively. A ticket that no longer carries the label is a clean
+        no-op, so a release can run twice without erroring.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, or ``issueRemoveLabel``
+                did not report ``success: true``.
+        """
+        labels_query = """
+query IssueLabels($id: String!) {
+  issue(id: $id) {
+    id
+    labels {
+      nodes {
+        id
+        name
+      }
+    }
+  }
+}
+"""
+        data = await self._request(labels_query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        issue_id: str = issue["id"]
+        label_nodes: list[dict[str, Any]] = (issue.get("labels") or {}).get("nodes", [])
+        target = next(
+            (n for n in label_nodes if (n.get("name") or "").lower() == name.lower()),
+            None,
+        )
+        if target is None:
+            return  # already absent — idempotent release
+
+        mutation = """
+mutation RemoveLabel($id: String!, $labelId: String!) {
+  issueRemoveLabel(id: $id, labelId: $labelId) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"id": issue_id, "labelId": target["id"]}
+        )
+        success = (result.get("data") or {}).get("issueRemoveLabel", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueRemoveLabel did not report success for {identifier!r}; "
+                f"response: {result!r}"
+            )
+
+    async def unassign_viewer(self, identifier: str) -> None:
+        """Clear the assignee on ``identifier`` (``issueUpdate(assigneeId: null)``).
+
+        The release-side mirror of :meth:`assign_to_viewer` (#193): unconditional
+        — ``defer`` only ever assigns the operator, so whoever holds the ticket
+        *is* the assignee this clears. This is the load-bearing release step:
+        assignment is the authoritative "a human holds this" signal
+        ``work-discovery`` reads, so clearing it is what actually returns the
+        ticket to the queue.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, or ``issueUpdate``
+                did not report ``success: true``.
+        """
+        id_query = """
+query IssueId($id: String!) {
+  issue(id: $id) {
+    id
+  }
+}
+"""
+        data = await self._request(id_query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        issue_id: str = issue["id"]
+
+        mutation = """
+mutation UnassignIssue($id: String!) {
+  issueUpdate(id: $id, input: {assigneeId: null}) {
+    success
+  }
+}
+"""
+        result = await self._request(mutation, {"id": issue_id})
+        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueUpdate did not report success unassigning {identifier!r}; "
+                f"response: {result!r}"
+            )
+
+    async def update_issue_body(self, identifier: str, body: str) -> None:
+        """Overwrite the issue's description with ``body`` (``issueUpdate``).
+
+        The release step that writes a decision's resolution into the ticket's
+        change spec (#193) — into the body an agent reads cold, not only a
+        comment thread. The caller composes the full new body (existing spec +
+        appended resolution section); this primitive just sets it.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error, or ``issueUpdate``
+                did not report ``success: true``.
+        """
+        id_query = """
+query IssueId($id: String!) {
+  issue(id: $id) {
+    id
+  }
+}
+"""
+        data = await self._request(id_query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        issue_id: str = issue["id"]
+
+        mutation = """
+mutation UpdateDescription($id: String!, $description: String!) {
+  issueUpdate(id: $id, input: {description: $description}) {
+    success
+  }
+}
+"""
+        result = await self._request(
+            mutation, {"id": issue_id, "description": body}
+        )
+        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
+        if not success:
+            raise LinearRequestError(
+                f"Linear issueUpdate did not report success updating the body of "
+                f"{identifier!r}; response: {result!r}"
+            )
+
     async def create_issue(
         self,
         *,
