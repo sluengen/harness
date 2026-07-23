@@ -54,13 +54,34 @@ def test_missing_log_degrades_to_empty_evidence() -> None:
 
 
 def test_unreadable_log_degrades_to_empty_evidence(tmp_path: Path) -> None:
-    """A ``--gate-log`` path that cannot be read degrades to an empty tail; a lost
-    diagnostic must not turn a green gate into a refusal."""
+    """A ``--gate-log`` path that cannot be read degrades to an empty tail at this
+    pure-classifier layer — reporting facts, not deciding a promotion outcome, is
+    this function's whole job. ``log_unreadable`` is set so the *caller*
+    (``harness.cli.promote._classify_gate``, #188) can refuse to advance a
+    promotion on an empty tail it cannot trust, without this function itself
+    turning a reported green exit code into a false ``passed=False``."""
     evidence = evidence_from_report(
         "verify", gate_exit=0, gate_log=tmp_path / "does-not-exist.log"
     )
     assert evidence.passed
     assert evidence.evidence == ""
+    assert evidence.log_unreadable
+
+
+def test_missing_log_is_not_flagged_unreadable() -> None:
+    """No ``--gate-log`` at all is a different case from one supplied but
+    unreadable (#188) — nothing was promised, so ``log_unreadable`` stays
+    ``False``; only a *supplied* path that fails to read sets it."""
+    evidence = evidence_from_report("verify", gate_exit=0, gate_log=None)
+    assert not evidence.log_unreadable
+
+
+def test_readable_log_is_not_flagged_unreadable(tmp_path: Path) -> None:
+    """A ``--gate-log`` that reads fine is not flagged unreadable."""
+    log = tmp_path / "gate.log"
+    log.write_text("hello\n")
+    evidence = evidence_from_report("verify", gate_exit=0, gate_log=log)
+    assert not evidence.log_unreadable
 
 
 # --- the evidence bound is measured --------------------------------------------
