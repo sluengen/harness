@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.gate import GATE_UNRUNNABLE_EXIT, read_gate_log_tail
+from harness.gate import GATE_UNRUNNABLE_EXIT, gate_log_status
 
 __all__ = [
     "GateEvidence",
@@ -45,12 +45,18 @@ class GateEvidence:
     carries a real status, so ``None`` is the degenerate case a hand-built evidence
     can still express. ``evidence`` is the bounded tail of the caller's gate log,
     capped at :data:`~harness.gate.GATE_OUTPUT_TAIL_LIMIT`, so the outer
-    orchestrator never receives an unbounded log.
+    orchestrator never receives an unbounded log. ``log_unreadable`` is ``True``
+    only when a ``--gate-log`` path was *supplied* but could not be read — #188:
+    the evidence tail is the whole point of the promotion audit trail, so unlike
+    ``review`` (where the exit code alone is load-bearing), the caller here
+    (:mod:`harness.cli.promote`) refuses to advance a promotion past a green exit
+    code whose tail it cannot trust, rather than recording a false empty pass.
     """
 
     command: str
     exit_code: int | None
     evidence: str
+    log_unreadable: bool = False
 
     @property
     def launched(self) -> bool:
@@ -70,15 +76,18 @@ def evidence_from_report(
 
     ``gate_exit`` is the exit status the orchestrator's host-side gate run
     returned (the load-bearing half of the evidence); ``gate_log`` is the optional
-    path to its captured output, read tail-bounded and best-effort — an absent or
-    unreadable log degrades to an empty tail rather than failing, mirroring
-    ``review``'s :func:`~harness.gate.read_gate_log_tail`. ``command`` is the
-    repo's ``verify:`` string, carried only for the record.
+    path to its captured output, read tail-bounded via
+    :func:`~harness.gate.gate_log_status`, which also reports whether a *supplied*
+    path failed to read (``log_unreadable``) — the caller decides whether that is
+    fatal (:mod:`harness.cli.promote` does, #188). ``command`` is the repo's
+    ``verify:`` string, carried only for the record.
     """
+    tail, read_ok = gate_log_status(gate_log)
     return GateEvidence(
         command=command,
         exit_code=gate_exit,
-        evidence=read_gate_log_tail(gate_log),
+        evidence=tail,
+        log_unreadable=not read_ok,
     )
 
 

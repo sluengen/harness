@@ -157,6 +157,19 @@ For one promotion (either flow), the outer agent runs:
      • needs_ticket   → go to step 5 (escalate)
      • blocked        → go to step 5 (escalate)
      • opened         → ungated (no verify: configured); treat per repo policy
+```
+
+`--gate-log <path>` must name a file readable **from inside the harness
+container**, exactly as `harness review`'s own `--gate-log` does — the wrapper
+only mounts the repo root as `/workspace` (nothing else, `/tmp` included), so a
+host-side absolute path (e.g. `/Users/you/repo/.harness/gate-<id>.log`) reads as
+missing there. Prefer a path under the promotion worktree or `<repo>/.harness/`,
+given either as a relative path or its `/workspace`-rooted equivalent. `promote`
+fails **closed** on this: an unreadable `--gate-log` alongside a green
+`--gate-exit 0` rests at `gate_pending` (`reason: gate_log_unreadable`, #188)
+rather than silently recording an empty evidence tail as a pass.
+
+```text
 3. (inspect any time) harness promote status --promotion-id <id> --json
 4. harness promote pr --promotion-id <id>     ← the success finalizer; the hop
                                                 selects the mechanism
@@ -193,7 +206,7 @@ lifecycle states the orchestrator branches on:
 | State | Meaning — what the outer agent does |
 |---|---|
 | `opened` | The row/worktree/branch exist and the merge was attempted, but the repo configures **no** `verify:` gate (ungated). Treat per repo policy. |
-| `gate_pending` | Clean merge, the repo **does** define a `verify:` gate, and no evidence is supplied yet. Run the gate in the worktree host-side, then `promote continue --gate-exit <c> --gate-log <p>`. The verb never runs the gate itself. |
+| `gate_pending` | Clean merge, the repo **does** define a `verify:` gate, and no evidence is supplied yet (`reason: no_gate_evidence`) — **or** a green `--gate-exit 0` was supplied but `--gate-log` could not be read (`reason: gate_log_unreadable`, #188). Either way: run/re-run the gate in the worktree host-side, then `promote continue --gate-exit <c> --gate-log <p>`. The verb never runs the gate itself. |
 | `pr_ready` | Clean merge **and** a green gate (reported via `--gate-exit 0`), with a recorded `gated_sha`. Publish it (`promote pr`) — landing staging, or opening the release PR. |
 | `agent_may_fix` | A small, in-policy conflict or gate failure. Make **one** bounded repair, then `promote continue`. |
 | `needs_ticket` | A real block beyond local repair authority. Escalate (`promote escalate`) — do not repair. |

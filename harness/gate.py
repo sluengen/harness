@@ -54,6 +54,7 @@ __all__ = [
     "GATE_NOT_CONFIGURED_REASON",
     "GATE_OUTPUT_TAIL_LIMIT",
     "GATE_UNRUNNABLE_EXIT",
+    "gate_log_status",
     "load_gate_command",
     "read_gate_log_tail",
 ]
@@ -140,10 +141,26 @@ def read_gate_log_tail(log_path: Path | None) -> str:
     flag; the tail is a diagnostic convenience, and losing it must not turn a
     green gate into a refusal.
     """
+    return gate_log_status(log_path)[0]
+
+
+def gate_log_status(log_path: Path | None) -> tuple[str, bool]:
+    """The bounded tail of ``log_path``, and whether a *supplied* path was read.
+
+    Splits out the one bit :func:`read_gate_log_tail` discards: whether an empty
+    tail means "no log was requested at all" (``log_path is None``) or "a path
+    was supplied but could not be read". Both degrade the tail identically here —
+    this module stays evidence, not judgment (module docstring) — but a caller
+    with a stricter policy (``harness.promotion_gate``, #188) needs to tell the
+    two apart to refuse the second case rather than record it as a trustworthy
+    empty tail. Returns ``(tail, read_ok)``; ``read_ok`` is ``True`` when nothing
+    was requested or the file was read, ``False`` only when a supplied path could
+    not be read.
+    """
     if log_path is None:
-        return ""
+        return "", True
     try:
         text = log_path.read_text(errors="replace")
     except OSError:
-        return ""
-    return text[-GATE_OUTPUT_TAIL_LIMIT:]
+        return "", False
+    return text[-GATE_OUTPUT_TAIL_LIMIT:], True

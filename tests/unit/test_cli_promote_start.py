@@ -170,6 +170,40 @@ def test_clean_merge_green_gate_is_pr_ready(work: Path, tmp_path: Path) -> None:
     assert payload["gated_sha"] == payload["merged_sha"]
     assert payload["gated_sha"]
     assert "gate-ok" in payload["evidence"]
+    # #188 AC-2: a green promotion that DOES advance must carry real evidence.
+    assert payload["evidence"]
+
+
+def test_clean_merge_green_gate_unreadable_log_stays_gate_pending(
+    work: Path, tmp_path: Path
+) -> None:
+    """#188: a green ``--gate-exit 0`` whose ``--gate-log`` path cannot be read (the
+    observed failure — a host-side path handed to the container-side verb) must
+    fail closed, not silently advance to ``pr_ready`` with an empty evidence tail.
+    It rests at ``gate_pending`` with the machine-readable ``gate_log_unreadable``
+    reason — the same resumable shape as ``no_gate_evidence`` — so the caller can
+    resupply a readable log rather than the promotion recording a false pass."""
+    _configure_gate(work, "bash scripts/verify.sh")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    unreadable_log = str(tmp_path / "does-not-exist.log")
+
+    result = _start(
+        work,
+        "--from",
+        "dev",
+        "--to",
+        "staging",
+        "--gate-exit",
+        "0",
+        "--gate-log",
+        unreadable_log,
+    )
+    payload = json.loads(result.output)
+    assert payload["status"] == "gate_pending"
+    assert payload["reason"] == "gate_log_unreadable"
+    assert payload["gated_sha"] is None
+    assert payload["merged_sha"]  # the merge still happened
+    assert Path(payload["worktree_path"]).is_dir()
 
 
 def test_clean_merge_red_gate_needs_ticket(work: Path, tmp_path: Path) -> None:
@@ -546,6 +580,43 @@ def test_continue_gate_pending_from_start_reaches_pr_ready(
     assert resumed["gated_sha"] == resumed["merged_sha"]
     assert resumed["gated_sha"] == started["merged_sha"]
     assert "gate-ok" in resumed["evidence"]
+
+
+def test_continue_green_gate_unreadable_log_stays_gate_pending_then_resumes(
+    work: Path, tmp_path: Path
+) -> None:
+    """#188's exact repro shape: a ``gate_pending`` merge resumed with a green
+    ``--gate-exit 0`` but an unreadable ``--gate-log`` must not advance to
+    ``pr_ready`` with empty evidence — it stays ``gate_pending`` (``reason:
+    gate_log_unreadable``), still resumable, and a follow-up ``continue`` with a
+    readable log reaches ``pr_ready`` with real evidence — no attempt spent either
+    time, since gating a ``gate_pending`` merge is not a bounded repair."""
+    _configure_gate(work, "bash scripts/verify.sh")
+    _advance(work, "dev", "feature.txt", "shipped\n", "add feature on dev")
+    started = json.loads(_start(work, "--from", "dev", "--to", "staging").output)
+    assert started["status"] == "gate_pending"
+
+    unreadable_log = str(tmp_path / "does-not-exist.log")
+    resumed = _continue(
+        work,
+        str(started["promotion_id"]),
+        "--gate-exit",
+        "0",
+        "--gate-log",
+        unreadable_log,
+    )
+    assert resumed["status"] == "gate_pending"
+    assert resumed["reason"] == "gate_log_unreadable"
+    assert resumed["gated_sha"] is None
+    assert resumed["attempts"] == 0
+
+    log = _gate_log(tmp_path, "gate-ok all green\n")
+    final = _continue(
+        work, str(started["promotion_id"]), "--gate-exit", "0", "--gate-log", log
+    )
+    assert final["status"] == "pr_ready"
+    assert final["gated_sha"] == final["merged_sha"]
+    assert "gate-ok" in final["evidence"]
 
 
 def _pr(work: Path, promotion_id: str) -> object:
