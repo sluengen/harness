@@ -219,11 +219,11 @@ async def _run_defer(
         )
 
     # 2 + 3 + 4. The triage write (load-bearing external effect): comment first,
-    #        then the additive `decision`/`operator` label, then assign the ticket
-    #        to the operator — so the explanation is on the ticket, the label says
-    #        *why* it is held, and the assignment is the machine-readable "a human
-    #        holds this" signal work-discovery skips on later ticks. The label's
-    #        name is the `needs` kind's value.
+    #        then the additive `decision`/`input`/`operator` label, then assign
+    #        the ticket to the operator — so the explanation is on the ticket, the
+    #        label says *why* it is held, and the assignment is the
+    #        machine-readable "a human holds this" signal work-discovery skips on
+    #        later ticks. The label's name is the `needs` kind's value.
     try:
         await client.post_comment(ticket, reason)
         await client.apply_label(ticket, needs.value)
@@ -297,8 +297,8 @@ def defer_command(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Defer a not-yet-actionable ticket — comment + the ``decision``/``operator``
-    label + assign the operator + a ledger event."""
+    """Defer a not-yet-actionable ticket — comment + the ``decision``/``input``/
+    ``operator`` label + assign the operator + a ledger event."""
     db_path = _resolve_db_path(db)
     # Anchored on the CWD, like ``reclaim``: the routine invokes verbs with CWD =
     # the target repo root, so the layer + ``repo.project`` are read from that

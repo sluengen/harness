@@ -277,8 +277,8 @@ def test_defer_needs_input_preserves_existing_labels(
 
 
 def test_defer_rejects_unknown_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
-    """``--needs`` accepts only ``decision`` / ``operator``; anything else is an
-    invocation error (exit 2), with no write."""
+    """``--needs`` accepts only ``decision`` / ``input`` / ``operator``; anything
+    else is an invocation error (exit 2), with no write."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
