@@ -49,3 +49,4 @@ findings referenced across the folded reports were confirmed completed/canceled.
 - 2026-07-17 · code · tree healthy; 07-15 backlog fully drained (CODE-1/2/INSIGHT-2 fixed at root), gate green at `d484116` · findings: none new
 - 2026-07-18 · code · tree clean; CAL-1151 (unsafe-base-checkout refusal) + CAL-1158 (staging direct-push) landed sound, gate green at `1b4a12f` (1955 tests) · findings: none new
 - 2026-07-19 · code-am · earlier 2026-07-19 pass (tick #58), superseded same day by the kept `2026-07-19-code.md` (tick #60); recorded here to keep the earlier zero-finding pass on the log without colliding with the kept report's `code` stem · findings: none new
+- 2026-07-19 · code · tree healthy after CAL-1149 (doctor wrapper-drift check); one finding, CHANGELOG.md at 536 B headroom against its 60,000-byte gate · findings: CAL-1182, resolved (fold landed the next day, commit `208118e`)
