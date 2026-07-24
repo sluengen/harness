@@ -1,4 +1,4 @@
-# guidance:registry@0.5.81
+# guidance:registry@0.5.82
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -82,7 +82,7 @@ files:
   commands/review.md:                 { id: review,                   version: 0.1.4, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
-  commands/update-guidance.md:        { id: update-guidance,          version: 0.6.0, profiles: [harness] }
+  commands/update-guidance.md:        { id: update-guidance,          version: 0.6.1, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.4.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
@@ -138,7 +138,7 @@ files:
   hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.3.6, profiles: [harness] }
 
   # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---
-  process/harness.md:                 { id: process-harness,          version: 0.4.8, profiles: [harness] }
+  process/harness.md:                 { id: process-harness,          version: 0.4.9, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
   settings/harness.json:              { id: settings-harness,         version: 0.6.0, profiles: [harness] }
@@ -147,4 +147,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.1 }
-  registry.yaml:                      { id: registry,                 version: 0.5.81 }
+  registry.yaml:                      { id: registry,                 version: 0.5.82 }
