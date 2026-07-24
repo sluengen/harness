@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.7 -->
+<!-- guidance:process-harness@0.4.8 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -86,6 +86,8 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | Command | Does |
 |---|---|
 | `/propose <idea>` | Work an unconfirmed or large idea into a decided proposal, then spawn change specs. |
+| `/bug <description>` | Capture a bug noticed in actual use straight to Todo — no escape hatch; the fix direction is already "make it match." |
+| `/tweak <description>` | Capture a small upgrade straight to Todo, with an escape hatch to `/propose` when it turns out to carry a real decision or spawn more than one change. |
 | `/start <TICKET>` | Set up the workspace and build through to review-ready. |
 | `/review` | Run the final gate on the current branch. |
 | `/ship` | Integrate and close, per the repo's branch model. |
@@ -94,6 +96,8 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/decision` | Interactive sweep that drains tickets held for a judgment call — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
+
+Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` (or `/harness run`) **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.
 
 ## Command namespacing
 
