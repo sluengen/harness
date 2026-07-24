@@ -1,4 +1,4 @@
-# guidance:registry@0.5.76
+# guidance:registry@0.5.77
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -100,6 +100,11 @@ files:
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
   commands/harness.md:                { id: harness,                  version: 0.2.4, profiles: [harness] }
+  # /bug — thin capture command over templates/adjustment.md (#199/#200):
+  # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
+  # GitHub filing path explicitly sets Status=Todo after `gh project
+  # item-add`, closing the item-add-no-status trap (tick #90).
+  commands/bug.md:                    { id: bug,                      version: 0.1.0, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
