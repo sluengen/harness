@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.16.0 -->
+<!-- guidance:code-quality@0.16.1 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -79,7 +79,7 @@ Maintain the layer separation the repo declares (a common shape: transport → s
 
 If a load-bearing pattern (a parse routine, a permission check, a fetch-plus-loading-plus-error shape) appears three times, extract it. Twice is a coincidence; three times is duplication. Put pure logic in a lib/util, behaviour in a hook/service, shared UI in a component. Do not extract earlier (`engineering-principles`: no premature abstraction).
 
-A comment that says a helper **mirrors**, **duplicates**, or must be **kept in sync with** a sibling is the third strike on its own. That comment is an explicit admission of duplication — you have already named the original — so the count no longer matters: extract the helper to its shared home **now**, regardless of how small each copy is. The admission is the trigger, not the size; the rule-of-three threshold cannot see a duplication that each copy keeps individually tiny, but the comment names it outright.
+A comment that says a helper, component, or module **mirrors**, **duplicates**, or must be **kept in sync with** a sibling is the third strike on its own. That comment is an explicit admission of duplication — you have already named the original — so the count no longer matters: extract it to its shared home **now**, regardless of how small each copy is. The admission is the trigger, not the size; the rule-of-three threshold cannot see a duplication that each copy keeps individually tiny, but the comment names it outright. The trigger applies to a duplicated rendering/structural shell exactly as it applies to a duplicated function — a component or screen carrying the admission is caught the same as a helper.
 
 ### Compose, don't inline
 
