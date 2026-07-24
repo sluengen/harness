@@ -1,4 +1,4 @@
-# guidance:registry@0.5.75
+# guidance:registry@0.5.76
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -105,6 +105,10 @@ files:
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
   templates/assessment.md:            { id: template-assessment,      version: 0.3.0, profiles: [harness] }
   templates/change.md:                { id: template-change,          version: 0.2.0, profiles: [harness] }
+  # Capture-optimized change spec for /bug and /tweak (#199): kind/area
+  # frontmatter, As-built/Desired/From-actual-use/Acceptance-criteria sections.
+  # An on-ramp to templates/change.md, not a competitor — /start extends it.
+  templates/adjustment.md:            { id: template-adjustment,      version: 0.1.0, profiles: [harness] }
   templates/decision.md:              { id: template-decision,        version: 0.1.0, profiles: [harness] }
   templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
   templates/architecture.md:          { id: template-architecture,    version: 0.1.0, profiles: [harness] }
@@ -134,4 +138,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.1 }
-  registry.yaml:                      { id: registry,                 version: 0.5.75 }
+  registry.yaml:                      { id: registry,                 version: 0.5.76 }
