@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.8 -->
+<!-- guidance:process-harness@0.4.9 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -112,3 +112,5 @@ Open the ticket first — it is the front door. Then read `CONTEXT.md`, then the
 ## Updating the guidance
 
 These files are version-stamped. To pull upstream changes, run `/update-guidance`. Do not hand-edit installed guidance files to fix a bug in them; fix it at the source so every repo benefits, then update. (This repo *is* the guidance source — fixes land here directly.)
+
+When you notice a guidance defect, real process friction, or a feature idea while following this process, route it upstream: search existing issues first, then draft a GitHub issue (title + body) against the repo recorded as your guidance `source.repo` — resolved from `.guidance-lock.yaml`, never hardcoded — keeping the body scoped to the guidance itself, never the consumer's proprietary code, and surface the draft to the operator to review and send (never send it unattended). If you are in the source repo and can fix the defect at source, do that too — the issue stays the public record; fix-at-source is the resolution, not a substitute for filing. If there is no `.guidance-lock.yaml`, or its `source.repo` does not resolve, surface the feedback to the operator directly instead of guessing a URL.
