@@ -18,11 +18,14 @@ What ``defer`` does, for a ticket on this repo's Build queue (``repo.project``):
    structured ``reason`` — no comment, no label, no event.
 2. **Post the reason as a comment** (``commentCreate``).
 3. **Additively apply the hold label** — ``decision`` (a judgment call, the
-   default) or ``operator`` (an interactive session), selected by ``--needs``
+   default), ``input`` (the operator must supply something the run cannot), or
+   ``operator`` (an interactive session), selected by ``--needs``
    (``issueAddLabel`` — never a full-set ``issueUpdate(labelIds)`` replace, so
    labels already on the ticket are preserved; this matches the
    ``autoMode.allow`` clause wording "applying the label"). The label says *why*
-   the ticket is held.
+   the ticket is held. (ADR 0006 — the three kinds partition held work by what
+   kind of human input the ticket waits on; ``operator``'s meaning narrows to
+   *interactive session only*, no longer "a human owes this something".)
 4. **Assign the ticket to the operator** (Linear ``viewer`` — the API key's own
    user). Agents have no Linear identity, so an assignee at all is the
    machine-readable "a human holds this" signal ``work-discovery`` skips on later
@@ -76,15 +79,23 @@ __all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
 
 class DeferNeeds(enum.StrEnum):
-    """The two hold kinds a deferral can express (ticket-protocol-hygiene).
+    """The three hold kinds a deferral can express (ADR 0006, #191).
 
-    ``decision`` — a judgment call is pending; ``operator`` — an interactive,
-    hands-on session is needed. The kind's *value* doubles as the Linear label
-    name applied, so a held ticket carries both the machine-readable assignment
-    (the skip signal) and the label saying *why* it is held.
+    ``decision`` — a judgment call is pending; clearable by answering, from the
+    ticket alone. ``input`` — the operator must supply something the run
+    cannot (a work item, a credential, infrastructure stood up); not
+    answerable in a turn. ``operator`` — an interactive, hands-on session is
+    needed; this meaning is **narrower** than it once was — it no longer covers
+    "a human owes this ticket something" (that is ``input`` now).
+
+    The kind's *value* doubles as the tracker label name applied, so a held
+    ticket carries both the machine-readable assignment (the skip signal) and
+    the label saying *why* it is held. ``work-discovery`` skips all three; only
+    the return path (``/decision``, #193) distinguishes between them.
     """
 
     decision = "decision"
+    input = "input"
     operator = "operator"
 
 
@@ -208,11 +219,11 @@ async def _run_defer(
         )
 
     # 2 + 3 + 4. The triage write (load-bearing external effect): comment first,
-    #        then the additive `decision`/`operator` label, then assign the ticket
-    #        to the operator — so the explanation is on the ticket, the label says
-    #        *why* it is held, and the assignment is the machine-readable "a human
-    #        holds this" signal work-discovery skips on later ticks. The label's
-    #        name is the `needs` kind's value.
+    #        then the additive `decision`/`input`/`operator` label, then assign
+    #        the ticket to the operator — so the explanation is on the ticket, the
+    #        label says *why* it is held, and the assignment is the
+    #        machine-readable "a human holds this" signal work-discovery skips on
+    #        later ticks. The label's name is the `needs` kind's value.
     try:
         await client.post_comment(ticket, reason)
         await client.apply_label(ticket, needs.value)
@@ -275,7 +286,8 @@ def defer_command(
     needs: DeferNeeds = typer.Option(
         DeferNeeds.decision,
         "--needs",
-        help="The hold kind: `decision` (a judgment call, the default) or "
+        help="The hold kind: `decision` (a judgment call, the default), "
+        "`input` (the operator must supply something the run cannot), or "
         "`operator` (an interactive session). Selects the label applied.",
     ),
     db: Path | None = typer.Option(
@@ -285,8 +297,8 @@ def defer_command(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
-    """Defer a not-yet-actionable ticket — comment + the ``decision``/``operator``
-    label + assign the operator + a ledger event."""
+    """Defer a not-yet-actionable ticket — comment + the ``decision``/``input``/
+    ``operator`` label + assign the operator + a ledger event."""
     db_path = _resolve_db_path(db)
     # Anchored on the CWD, like ``reclaim``: the routine invokes verbs with CWD =
     # the target repo root, so the layer + ``repo.project`` are read from that

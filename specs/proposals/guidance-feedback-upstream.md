@@ -1,9 +1,9 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: guidance-feedback-upstream
-status: accepted            # draft | under-decision | accepted | shipped | rejected | split
+status: shipped             # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-20
-related: [CAL-1105]      # GitHub Issues tracker backend — same theme, no hard dependency
+related: [CAL-1105, "#205"]      # GitHub Issues tracker backend (no hard dependency); #205 shipped the sole breakdown item
 ---
 
 # Proposal: Route guidance feedback upstream as GitHub issues
@@ -56,7 +56,7 @@ This fits `engineering-principles` (smallest change that closes the gap; no new 
 
 ## Breakdown
 
-1. **Route guidance feedback upstream (process doc)** — CAL-1199 — Edit `process/harness.md` "Updating the guidance" section to add the rule: on a guidance defect / friction / idea, **draft a GitHub issue** against the repo recorded as your guidance `source.repo` (resolve the Issues URL from `.guidance-lock.yaml`; never hardcode an owner/repo) and **surface it to the operator** to send — search existing issues first, keep the body about the *guidance* not the consumer's proprietary code, and if you are in the source repo and can fix the defect at source, do that too. Bump the process doc's `guidance:` header and its `registry.yaml` version (and the registry's own version). Add a one-line cross-reference in `commands/update-guidance.md` next to its existing LOCAL-edit "suggest pushing upstream" branch. Single shippable, version-stamped change; no `autoMode.allow` clause needed (draft-and-surface is not an unattended write).
+1. **[#205](https://github.com/sluengen/harness/issues/205) — Route guidance feedback upstream (process doc)** — Shipped. (Originally tracked as CAL-1199, Linear-era; that ticket got diverted into an unrelated fix and the doc edit never landed — re-filed and shipped as #205.) Edit `process/harness.md` "Updating the guidance" section to add the rule: on a guidance defect / friction / idea, **draft a GitHub issue** against the repo recorded as your guidance `source.repo` (resolve the Issues URL from `.guidance-lock.yaml`; never hardcode an owner/repo) and **surface it to the operator** to send — search existing issues first, keep the body about the *guidance* not the consumer's proprietary code, and if you are in the source repo and can fix the defect at source, do that too. Bump the process doc's `guidance:` header and its `registry.yaml` version (and the registry's own version). Add a one-line cross-reference in `commands/update-guidance.md` next to its existing LOCAL-edit "suggest pushing upstream" branch. Single shippable, version-stamped change; no `autoMode.allow` clause needed (draft-and-surface is not an unattended write).
 
 ## Risks / unknowns
 

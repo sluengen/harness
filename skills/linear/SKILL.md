@@ -2,7 +2,7 @@
 name: linear
 description: Use when reading or updating Linear — opening a ticket, pulling the queue, setting status, commenting, or resolving team/state/label IDs. Load for any issue-tracker operation; Linear is the queue of in-flight work. This is the single home for Linear operations — a command references this skill, it does not re-encode the API.
 ---
-<!-- guidance:linear@0.5.0 -->
+<!-- guidance:linear@0.6.0 -->
 # Linear
 
 The protocol *and* the commands for keeping Linear and the in-flight work in step. Linear is the standard issue tracker across these repos: **there is no separate `manifest.yaml`** — Linear is the queue of in-flight work, and the change spec for a task lives in its Linear issue. This skill is the **one home** for Linear operations: a command or agent that touches Linear references this skill rather than re-encoding `api.linear.app` calls — a guard fails if raw Linear GraphQL appears in a command.
@@ -39,7 +39,7 @@ Keep the taxonomy flat and small. The shape (the actual IDs are in `CONTEXT.md`)
 | Type | `Feature`, `Bug`, `Improvement` | One per issue. Feature = new capability; bug = broken; improvement = tweak or internal work. |
 | Stack | repo-defined (e.g. `frontend`, `backend`) | One or more. Routes to the matching builder; both = fullstack. |
 | Source | `review-finding`, `review-insight` | Applied when a steward files an issue (`assess`). |
-| Hold | `decision`, `operator` | Why a human holds a ticket. `decision` = a judgment call is needed (a direction or a detail). `operator` = an interactive session is needed (setup, a relink, a visual check). Both imply the ticket is **assigned** to that human (see [Filing and placement](#filing-and-placement)); the label is the *explanation*, the assignee is the machine-readable skip signal. |
+| Hold | `decision`, `input`, `operator` | Why a human holds a ticket (ADR 0006). `decision` = a judgment call is needed (a direction or a detail), clearable by answering. `input` = the operator must supply something the run cannot (a work item, a credential, infrastructure stood up). `operator` = an interactive session is needed (setup, a relink, a visual check) — narrower than it once was, no longer also covering "the operator owes this ticket something". All three imply the ticket is **assigned** to that human (see [Filing and placement](#filing-and-placement)); the label is the *explanation*, the assignee is the machine-readable skip signal. |
 
 > **Case matters — match by group, not a hardcoded case.** The type labels are **workspace-level and capitalized** in the live workspace (`Feature` / `Bug` / `Improvement`); the source, stack, and hold labels are **team-scoped**. A lowercase `feature` lookup silently misses the capitalized workspace label — resolve a label by its group (and case-insensitively) rather than assuming a fixed spelling.
 
@@ -51,6 +51,7 @@ Status maps a pipeline event to a state (above); this maps a *new or held* ticke
 |---|---|---|
 | **Assignee = a human** | that human holds the ticket; the unattended loop **never picks it, in any state** | the loop's single skip rule |
 | **`decision` label** | held for a judgment call (a direction or a detail) | the operator's "to think about" filter |
+| **`input` label** | held because the operator must supply something the run cannot (a work item, a credential, infrastructure) | the operator's "to go do" filter |
 | **`operator` label** | held for an interactive session (setup, hands-on, a visual check) | the operator's "to do at the keyboard" filter |
 | **Todo** | confirmed work — a review follow-up or a filed finding lands here | the pull queue |
 | **Backlog** | existence uncertain, or a proposal/direction trigger | triage |
@@ -62,14 +63,14 @@ Status maps a pipeline event to a state (above); this maps a *new or held* ticke
 
 **Project is mandatory on create.** Every issue gets a project. `work-discovery` pulls only from `CONTEXT.md` → `repo.project`, so an issue created without one is a silent orphan the loop cannot see — not a triaged deferral. Set `projectId` on every `issueCreate` ([recipe below](#accessing-linear-graphql-via-curl)).
 
-**Deferring held work.** To park a ticket for a human: comment the specific reason, apply the matching hold label (`decision` for a judgment call, `operator` for a hands-on one), and **assign it to the operator**. The assignee is what the loop skips on; the label explains why. (Where a routine provides a `defer` verb, it does all three as one audited action.)
+**Deferring held work.** To park a ticket for a human: comment the specific reason, apply the matching hold label (`decision` for a judgment call, `input` when the operator must supply something the run cannot, `operator` for a hands-on one), and **assign it to the operator**. The assignee is what the loop skips on; the label explains why. (Where a routine provides a `defer` verb, it does all three as one audited action.)
 
 ## Sync rules
 
 1. **The Linear issue is the front door.** Open it before starting. If work was described in chat, create the issue first.
 2. **Never delete an issue.** Cancel it (move to Canceled); do not delete.
 3. **Comment, don't clutter.** Post PR links and blocker notes as comments. Do not rewrite the description after intake (beyond adding the change spec).
-4. **Blocked confirmed work stays in Todo — held, not parked.** A ticket blocked on a *detail* decision of confirmed work stays in Todo, assigned to the operator + labelled (`decision`/`operator`), with the specific question stated in a comment. Only *existence-uncertain* work goes to Backlog (see [Filing and placement](#filing-and-placement)).
+4. **Blocked confirmed work stays in Todo — held, not parked.** A ticket blocked on a *detail* decision of confirmed work stays in Todo, assigned to the operator + labelled (`decision`/`input`/`operator`), with the specific question stated in a comment. Only *existence-uncertain* work goes to Backlog (see [Filing and placement](#filing-and-placement)).
 5. **Don't probe the CLI for usage.** The first positional arg to a create command is usually the title — `create --help` can file an issue titled "--help". Read the invocation in `CONTEXT.md`; do not guess at the tool.
 6. **A merged PR auto-transitions every ticket it names — link deliberately.** Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. So put a ticket id in those surfaces only when the PR actually *completes* that ticket. A PR that merely **spawns** or references tickets it is not finishing — a proposal-acceptance PR listing its breakdown, a doc PR mentioning related work — must keep those ids out of the branch / title / body / commit (name them in prose without the bare id, or omit them), or merging it falsely closes the tickets it just created. This is integration behaviour, not a harness verb: the audited verbs transition state on purpose; the integration does it on sight of an id.
 

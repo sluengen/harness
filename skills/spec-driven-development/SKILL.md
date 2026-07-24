@@ -2,7 +2,7 @@
 name: spec-driven-development
 description: Use at the start of a tracked task to follow the spec-driven flow from idea to shipped-and-recorded with minimal ceremony — when each spec (proposal, change, feature) is produced and what handoff means. The spine the other skills hang off.
 ---
-<!-- guidance:spec-driven-development@0.5.0 -->
+<!-- guidance:spec-driven-development@0.5.1 -->
 # Spec-Driven Development
 
 How a task flows from "idea" to "shipped and recorded" with the least ceremony that still guarantees quality. This is the spine the other skills hang off. How to *write* each spec is in `spec-authoring`; this is *when* each one is produced.
@@ -26,7 +26,7 @@ The builder does **not** edit `specs/features/`. If a builder touches the featur
 ## The flow
 
 0. **Propose first if it is unconfirmed or large.** If the work needs a decision, carries real unknowns, or is too big to be one change, write a proposal spec (`/propose`, `spec-authoring`) and get it decided before opening Linear issues. Skip this for small, clear work.
-1. **The Linear issue is the front door.** Open it first. If the work was described in chat, create the issue before starting (see `linear`). Set it **In Progress**.
+1. **The Linear issue is the front door.** Open it first. If the work was described in chat, create the issue before starting (see `linear`). Set it **In Progress**. **Capture on-ramp:** a bug or small tweak noticed in actual use can skip straight here — `/bug` / `/tweak` file a pre-framed change spec (`templates/adjustment.md`) directly to Todo, and `/start` extends it with Grounding and Design (steps 2–3 below) at build time. It is the inverse of a proposal: a proposal decides, then files; capture files the already-decided.
 2. **Ground the spec in current reality.** Before writing the change spec, verify the facts it will rest on that name a **file / function / flag / version / decision** against the *current* code — recalled facts (memory, system-reminders) reflect what was true when written, and a spec built on a stale one reverts to blocked mid-build. Where a sub-agent host is available, the agent-led `/start` flow dispatches a read-only `researcher` agent that investigates in its own context and returns a distilled **grounding brief**; where none is available, the executor self-grounds inline (the fallback). Either way, record the result as the change spec's `Grounding` section (`spec-authoring`). Grounding always happens; the sub-agent is the richer delivery where available.
 3. **Write the change spec into the Linear issue.** Problem, approach, **design** (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope (`spec-authoring` → change spec). A one-line bug fix needs one line.
 4. **Branch and isolate.** Work on a feature branch in a worktree (see `worktree-isolation`). Never build on the default branch.

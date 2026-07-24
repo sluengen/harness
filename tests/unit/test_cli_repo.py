@@ -42,6 +42,8 @@ def test_resolve_verb_db_path_walks_up_from_a_worktree_to_the_main_checkout(
     main = tmp_path / "main"
     main.mkdir()
     _git(main, "init", "-q", "-b", "dev")
+    _git(main, "config", "user.email", "test@example.com")
+    _git(main, "config", "user.name", "Test")
     _git(main, "commit", "-q", "--allow-empty", "-m", "init")
     worktree = tmp_path / "wt"
     _git(main, "worktree", "add", "-q", str(worktree), "-b", "feature")

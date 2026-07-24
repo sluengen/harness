@@ -38,6 +38,11 @@ EventType = Literal[
     # label, and this event records that decision (ticket, reason, timestamp) in
     # the audit trail so triage is auditable like every other verb.
     "defer",
+    # Release verb (#193) — the ``/decision`` return path: a held ticket's
+    # resolution is written into its change spec, the hold label removed, and
+    # the operator unassigned. This event records the release (ticket, kind,
+    # timestamp) in the audit trail — the ``defer`` shape, in reverse.
+    "release",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))
