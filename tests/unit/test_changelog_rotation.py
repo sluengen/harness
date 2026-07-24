@@ -42,6 +42,15 @@ _ARCHIVE = _REPO_ROOT / _ARCHIVE_DIR / "2026.md"
 _ROOT_BYTE_BOUND = 60_000
 _ROOT_LINE_BOUND = 250
 
+#: A soft-warning threshold below the hard byte gate (80% of it) — CAL-1182 hit
+#: 9 bytes of headroom against the hard bound, then regrew to a second
+#: near-miss within four days (#195) because nothing failed the gate until it
+#: was already nearly wedged. This threshold turns a routine Build tick's
+#: check into an actionable, self-explaining failure well before that point,
+#: naming the fold recipe (``RELEASING.md`` "Between-release CHANGELOG fold")
+#: so the fix is a pointer away rather than an emergency edit.
+_ROOT_SOFT_WARNING_BOUND = 48_000
+
 #: Distinctive strings from *released* entries — they must live in the archive
 #: and be gone from the root. These sentinels pin the **rotation boundary**, so
 #: they move at each release: an entry graduates from ``_UNRELEASED_SENTINELS``
@@ -94,6 +103,17 @@ def test_root_changelog_is_line_bounded() -> None:
     assert lines <= _ROOT_LINE_BOUND, (
         f"CHANGELOG.md is {lines} lines — over the {_ROOT_LINE_BOUND}-line "
         f"ceiling. Rotate released entries to {_ARCHIVE_DIR}/<year>.md."
+    )
+
+
+def test_root_changelog_soft_warning_threshold() -> None:
+    """Fail well before the hard gate, naming the fold recipe by section."""
+    size = len(_CHANGELOG.read_bytes())
+    assert size <= _ROOT_SOFT_WARNING_BOUND, (
+        f"CHANGELOG.md is {size:,} bytes — over the {_ROOT_SOFT_WARNING_BOUND:,}-byte "
+        f"soft-warning threshold (80% of the {_ROOT_BYTE_BOUND:,}-byte hard gate). "
+        "Fold older [Unreleased] entries to a rolling summary now — see "
+        "RELEASING.md 'Between-release CHANGELOG fold'."
     )
 
 

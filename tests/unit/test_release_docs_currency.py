@@ -162,3 +162,46 @@ def test_releasing_checklist_references_exist() -> None:
         f"{missing}. A checklist item must point at something a releaser can "
         "actually verify (AC-3)."
     )
+
+
+# ---------------------------------------------------------------------------
+# #196 — RELEASING.md follows the current tracker + promotion topology, not
+# the retired Linear tracker or a hand-rolled dev -> main PR.
+# ---------------------------------------------------------------------------
+
+
+def test_releasing_does_not_reference_linear() -> None:
+    """The tracker cutover (``CONTEXT.md`` ``tracker: github``, tick #69) means
+    ``RELEASING.md``'s "gather completed tickets" step must query the GitHub
+    tracker, not Linear.
+    """
+    text = _RELEASING.read_text(encoding="utf-8")
+    assert "Linear" not in text and "linear" not in text, (
+        "RELEASING.md still references Linear — this repo's tracker is "
+        "github (CONTEXT.md). Point the release-notes step at the GitHub "
+        "board / issues instead."
+    )
+
+
+def test_releasing_does_not_hand_roll_the_promotion_pr() -> None:
+    """The ``dev -> staging -> main`` promotion topology (ADR 0003 amendment,
+    #189/#190) means a release is cut through ``harness promote`` /
+    ``/promote``, never a hand-rolled ``gh pr create --base main --head dev``
+    that skips ``staging``'s stabilization step and the promotion ledger.
+    """
+    text = _RELEASING.read_text(encoding="utf-8")
+    assert "--base main --head dev" not in text, (
+        "RELEASING.md still hand-rolls a dev -> main PR via gh pr create — "
+        "replace it with a pointer to /promote <src> to <dst> (harness "
+        "promote start/continue/pr), the audited promotion lifecycle."
+    )
+
+
+def test_releasing_points_at_the_promotion_lifecycle() -> None:
+    """The promotion step must point at the audited lifecycle, not a bare PR."""
+    text = _RELEASING.read_text(encoding="utf-8")
+    assert "/promote" in text or "harness promote" in text, (
+        "RELEASING.md's release step should point at /promote <src> to "
+        "<dst> or harness promote start/continue/pr — the audited "
+        "promotion lifecycle (ADR 0003)."
+    )

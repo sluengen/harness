@@ -611,6 +611,143 @@ def test_create_issue_missing_repo_raises_not_found() -> None:
 
 
 # ---------------------------------------------------------------------------
+# remove_label, unassign_viewer, update_issue_body — the release primitives
+# (#193, the ``defer`` shape in reverse: apply_label/assign_to_viewer/
+# post_comment's mirror image)
+# ---------------------------------------------------------------------------
+
+
+def test_remove_label_removes_a_present_label() -> None:
+    client = _client(
+        {
+            "IssueLabels": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_1",
+                            "labels": {"nodes": [{"id": "L_dec", "name": "decision"}]},
+                        }
+                    }
+                }
+            },
+            "RemoveLabel": {
+                "data": {"removeLabelsFromLabelable": {"labelable": {"id": "I_1"}}}
+            },
+        }
+    )
+    _run(client.remove_label("1", "decision"))
+    remove = next(v for op, v in client.calls if op == "RemoveLabel")  # type: ignore[attr-defined]
+    assert remove == {"labelableId": "I_1", "labelIds": ["L_dec"]}
+
+
+def test_remove_label_matches_name_case_insensitively() -> None:
+    client = _client(
+        {
+            "IssueLabels": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_1",
+                            "labels": {"nodes": [{"id": "L_dec", "name": "Decision"}]},
+                        }
+                    }
+                }
+            },
+            "RemoveLabel": {
+                "data": {"removeLabelsFromLabelable": {"labelable": {"id": "I_1"}}}
+            },
+        }
+    )
+    _run(client.remove_label("1", "decision"))
+    remove = next(v for op, v in client.calls if op == "RemoveLabel")  # type: ignore[attr-defined]
+    assert remove["labelIds"] == ["L_dec"]
+
+
+def test_remove_label_is_a_noop_when_absent() -> None:
+    """A ticket already missing the label is a clean no-op — idempotent release."""
+    client = _client(
+        {
+            "IssueLabels": {
+                "data": {"repository": {"issue": {"id": "I_1", "labels": {"nodes": []}}}}
+            },
+            "RemoveLabel": AssertionError("must not fire for an absent label"),
+        }
+    )
+    _run(client.remove_label("1", "decision"))  # no raise
+    ops = [op for op, _ in client.calls]  # type: ignore[attr-defined]
+    assert "RemoveLabel" not in ops
+
+
+def test_remove_label_missing_issue_raises_not_found() -> None:
+    client = _client(
+        {"IssueLabels": {"data": {"repository": {"issue": None}}}}
+    )
+    with pytest.raises(GitHubNotFound):
+        _run(client.remove_label("1", "decision"))
+
+
+def test_unassign_viewer_clears_the_assignee() -> None:
+    client = _client(
+        {
+            "ViewerAndIssue": {
+                "data": {"viewer": {"id": "U_me"}, "repository": {"issue": {"id": "I_1"}}}
+            },
+            "UnassignIssue": {
+                "data": {"removeAssigneesFromAssignable": {"assignable": {"id": "I_1"}}}
+            },
+        }
+    )
+    _run(client.unassign_viewer("1"))
+    unassign = next(v for op, v in client.calls if op == "UnassignIssue")  # type: ignore[attr-defined]
+    assert unassign == {"assignableId": "I_1", "assigneeIds": ["U_me"]}
+
+
+def test_unassign_viewer_no_viewer_raises() -> None:
+    client = _client(
+        {"ViewerAndIssue": {"data": {"viewer": None, "repository": {"issue": {"id": "I_1"}}}}}
+    )
+    with pytest.raises(GitHubRequestError, match="viewer"):
+        _run(client.unassign_viewer("1"))
+
+
+def test_unassign_viewer_missing_issue_raises_not_found() -> None:
+    client = _client(
+        {"ViewerAndIssue": {"data": {"viewer": {"id": "U_me"}, "repository": {"issue": None}}}}
+    )
+    with pytest.raises(GitHubNotFound):
+        _run(client.unassign_viewer("1"))
+
+
+def test_update_issue_body_sets_the_body() -> None:
+    client = _client(
+        {
+            "IssueNode": {"data": {"repository": {"issue": {"id": "I_1"}}}},
+            "UpdateIssueBody": {"data": {"updateIssue": {"issue": {"id": "I_1"}}}},
+        }
+    )
+    _run(client.update_issue_body("1", "## Resolution\n\nGo with option A."))
+    update = next(v for op, v in client.calls if op == "UpdateIssueBody")  # type: ignore[attr-defined]
+    assert update == {"id": "I_1", "body": "## Resolution\n\nGo with option A."}
+
+
+def test_update_issue_body_raises_when_no_result() -> None:
+    client = _client(
+        {
+            "IssueNode": {"data": {"repository": {"issue": {"id": "I_1"}}}},
+            "UpdateIssueBody": {"data": {"updateIssue": None}},
+        }
+    )
+    with pytest.raises(GitHubRequestError):
+        _run(client.update_issue_body("1", "body"))
+
+
+def test_update_issue_body_missing_issue_raises_not_found() -> None:
+    client = _client({"IssueNode": {"data": {"repository": {"issue": None}}}})
+    with pytest.raises(GitHubNotFound):
+        _run(client.update_issue_body("1", "body"))
+
+
+# ---------------------------------------------------------------------------
 # resume / handoff markers (AC-3) — issue comments
 # ---------------------------------------------------------------------------
 

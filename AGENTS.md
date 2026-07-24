@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.5 -->
+<!-- guidance:process-harness@0.4.9 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -86,16 +86,22 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | Command | Does |
 |---|---|
 | `/propose <idea>` | Work an unconfirmed or large idea into a decided proposal, then spawn change specs. |
+| `/bug <description>` | Capture a bug noticed in actual use straight to Todo — no escape hatch; the fix direction is already "make it match." |
+| `/tweak <description>` | Capture a small upgrade straight to Todo, with an escape hatch to `/propose` when it turns out to carry a real decision or spawn more than one change. |
 | `/start <TICKET>` | Set up the workspace and build through to review-ready. |
 | `/review` | Run the final gate on the current branch. |
 | `/ship` | Integrate and close, per the repo's branch model. |
 | `/build <TICKET>` | Autonomous agent-led driver: implement, verify, review, and ship a ticket end-to-end (`--engine codex` runs the review through Codex). The unattended form of the `/start → /review → /ship` lifecycle. |
+| `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) through the audited `harness promote` verb loop, resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
+| `/decision` | Interactive sweep that drains tickets held for a judgment call — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
+Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` (or `/harness run`) **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.
+
 ## Command namespacing
 
-The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
+The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/promote`, `/decision`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
 
 For example, in the harness repo the harness's own commands are namespaced under **`/harness`** (`/harness run`, `/harness ingest`, and the unattended-loop commands `/harness routine build` / `/harness routine quality`): its "start" means *run the harness pipeline*, not *begin the agent-led process*, so it cannot take the bare `/start` name. (The installer copies the guidance's `/start` to `commands/start.md`, so the repo's own command must move out of that path first — see `BOOTSTRAP.md` step 2.) Other repos apply the same rule to their own commands, if any. The `/harness routine` commands version the logic of the unattended loops (Build hourly, Quality idle/weekly) so it lives in the repo, not only in a scheduled-task config — *version the logic, not the schedule*; they are local-trigger only.
 
@@ -106,3 +112,5 @@ Open the ticket first — it is the front door. Then read `CONTEXT.md`, then the
 ## Updating the guidance
 
 These files are version-stamped. To pull upstream changes, run `/update-guidance`. Do not hand-edit installed guidance files to fix a bug in them; fix it at the source so every repo benefits, then update. (This repo *is* the guidance source — fixes land here directly.)
+
+When you notice a guidance defect, real process friction, or a feature idea while following this process, route it upstream: search existing issues first, then draft a GitHub issue (title + body) against the repo recorded as your guidance `source.repo` — resolved from `.guidance-lock.yaml`, never hardcoded — keeping the body scoped to the guidance itself, never the consumer's proprietary code, and surface the draft to the operator to review and send (never send it unattended). If you are in the source repo and can fix the defect at source, do that too — the issue stays the public record; fix-at-source is the resolution, not a substitute for filing. If there is no `.guidance-lock.yaml`, or its `source.repo` does not resolve, surface the feedback to the operator directly instead of guessing a URL.

@@ -37,6 +37,7 @@ from harness.cli.query import (
     status_command,
 )
 from harness.cli.reclaim import reclaim_command
+from harness.cli.release import release_command
 from harness.cli.review import review_command
 from harness.cli.start import start_command
 from harness.cli.version import version_command
@@ -74,6 +75,9 @@ app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to T
 )
 app.command(name="defer", help="Defer a not-yet-actionable ticket: comment + additive `decision` label + a ledger event.")(  # noqa: E501
     defer_command
+)
+app.command(name="release", help="Release a held ticket: write the resolution into the change spec + remove the hold label + unassign + a ledger event.")(  # noqa: E501
+    release_command
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
