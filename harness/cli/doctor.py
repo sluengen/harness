@@ -14,6 +14,13 @@ import typer
 
 from harness.state import store
 
+# size: one cohesive health-check module — each `check_*` function is a small,
+# independent, injectable probe (auth, git, engines, gh, ...) plus the single
+# `doctor_command` that aggregates and labels them. Splitting the checks into a
+# sibling module would separate them from the `checks` list / label pairing
+# their own tests pin (test_doctor_command_output_contains_check_labels),
+# scattering one cohesive surface across files for no cohesion gain.
+
 # Minimum host git that understands the ``relativeWorktrees`` extension. Creating
 # the first relative worktree stamps ``extensions.relativeWorktrees=true`` +
 # ``repositoryformatversion=1`` into the repo-global ``.git/config`` — a permanent,
@@ -316,6 +323,41 @@ def check_reviewer(
     )
 
 
+def check_gh(gh_probe: EngineProbe | None = None) -> tuple[str, str]:
+    """Report whether the ``gh`` binary can actually *run*, not just resolve on PATH.
+
+    ``harness promote pr``'s release-hop publication step shells out to ``gh pr
+    create`` (:mod:`harness.promotion_pr`, #187) — it is the only seam that needs
+    it. Every other verb runs without ``gh``, so unlike :func:`check_reviewer`'s
+    treatment of the default ``claude`` engine, absence here is never fatal:
+    *absent* and *on PATH but unable to run* are both WARN, naming the wall so a
+    ``promote pr`` failure is diagnosable ahead of time rather than as a bare
+    ``pr_create_failed`` refusal.
+
+    Pass an :class:`EngineProbe` to force a branch in tests; ``None`` runs the
+    real probe.
+    """
+    if gh_probe is None:
+        gh_probe = _probe_engine("gh")
+
+    if gh_probe.outcome == "absent":
+        return (
+            "WARN",
+            "gh not found on PATH — `harness promote pr`'s release-hop "
+            "publication step will fail until it is installed (every other "
+            "verb runs without it)",
+        )
+    if gh_probe.outcome == "cannot_run":
+        return (
+            "WARN",
+            f"gh at {gh_probe.path} is on PATH but its liveness probe "
+            "(`gh --version`) could not run here — installed but cannot "
+            "execute; `harness promote pr`'s release-hop publication step "
+            "will fail",
+        )
+    return ("PASS", f"gh runs ({gh_probe.path})")
+
+
 def check_verify_config(repo_root: Path | None = None) -> tuple[str, str]:
     """WARN when the repo's ``CONTEXT.md`` configures no ``verify:`` gate command.
 
@@ -468,6 +510,7 @@ def doctor_command(
         ("git-version", check_git_version()),
         ("db", check_db(db_path)),
         ("reviewer", check_reviewer()),
+        ("gh", check_gh()),
         ("verify", check_verify_config()),
         ("cli", check_cli()),
         ("wrapper", check_wrapper()),

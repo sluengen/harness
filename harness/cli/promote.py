@@ -206,54 +206,60 @@ def _emit_promotion(
     typer.echo(json.dumps(payload))
 
 
+#: The ``reason`` an otherwise-``gate_pending`` classification carries, so an
+#: orchestrator can tell "nothing supplied yet" from "supplied, but untrustworthy"
+#: apart — both leave the promotion resumable via ``continue --gate-exit``, but
+#: only the second means a gate genuinely ran and its evidence was lost (#188).
+_NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
+_GATE_LOG_UNREADABLE_REASON = "gate_log_unreadable"
+
+
 def _classify_gate(
     worktree: Path,
     *,
     merged_sha: str | None,
     gate_exit: int | None,
     gate_log: Path | None,
-) -> tuple[PromotionStatus, str | None, str | None]:
+) -> tuple[PromotionStatus, str | None, str | None, str | None]:
     """Map a cleanly-merged promotion's *reported* gate result to lifecycle state.
 
     The gate runs **host-side, in the caller's session** — the verb never executes
     it (CAL-1159, the ``review`` boundary). This reads whether the merged tree
     *defines* a gate (from the worktree's ``CONTEXT.md``) and classifies the
     evidence the caller supplied via ``--gate-exit``/``--gate-log``. Returns
-    ``(status, gated_sha, evidence)`` for a clean merge whose HEAD is
+    ``(status, gated_sha, evidence, reason)`` for a clean merge whose HEAD is
     ``merged_sha``:
 
     * no ``verify:`` configured → ``opened`` (ungated; cannot advance to
       ``pr_ready`` without evidence — the review/close ``not_configured`` posture);
     * a gate is defined but no evidence supplied (``gate_exit is None``) →
-      ``gate_pending``: the merge is done and the worktree waits to be gated
-      host-side (AC-1). Silence is not a pass;
-    * green (``--gate-exit 0``) → ``pr_ready`` with ``gated_sha = merged_sha`` and
+      ``gate_pending`` / :data:`_NO_GATE_EVIDENCE_REASON`: the merge is done and
+      the worktree waits to be gated host-side (AC-1). Silence is not a pass;
+    * green (``--gate-exit 0``) but the supplied ``--gate-log`` could not be read
+      → ``gate_pending`` / :data:`_GATE_LOG_UNREADABLE_REASON` (#188): the
+      evidence tail is the whole point of the promotion audit trail — recording a
+      green exit code with no trustworthy tail would fail *open*, so this fails
+      *closed* instead, resumable exactly like ``no_gate_evidence``;
+    * green with a readable log → ``pr_ready`` with ``gated_sha = merged_sha`` and
       bounded evidence drawn from the supplied log (AC-2);
     * red (non-zero ``--gate-exit``) →
       :func:`~harness.promotion_gate.classify_gate_failure` (``needs_ticket``)
-      with bounded evidence and no gated SHA (AC-3).
+      with bounded evidence and no gated SHA (AC-3). An unreadable log alongside a
+      red exit changes nothing here — the promotion is already halted for a human,
+      not advancing on unearned trust.
     """
     command = load_gate_command(worktree)
     if command is None:
-        return "opened", None, None
+        return "opened", None, None, None
     if gate_exit is None:
-        return "gate_pending", None, None
+        return "gate_pending", None, None, _NO_GATE_EVIDENCE_REASON
     evidence = evidence_from_report(command, gate_exit=gate_exit, gate_log=gate_log)
+    if evidence.passed and evidence.log_unreadable:
+        return "gate_pending", None, None, _GATE_LOG_UNREADABLE_REASON
     if evidence.passed:
-        return "pr_ready", merged_sha, evidence.evidence
-    return classify_gate_failure(evidence), None, evidence.evidence  # type: ignore[return-value]
-
-
-def _gate_pending_marker(status: PromotionStatus) -> dict[str, object]:
-    """The ``no_gate_evidence`` marker to emit when a merge rests at ``gate_pending``.
-
-    ``gate_pending`` is a legitimate pause point (like ``agent_may_fix``), not a
-    refusal — the merge succeeded and the worktree is preserved to be gated. The
-    machine-readable ``reason`` tells the orchestrator *why* it did not advance to
-    ``pr_ready``: no gate evidence was supplied, so run the gate and resume via
-    ``continue --gate-exit``. Any other status emits no marker.
-    """
-    return {"reason": "no_gate_evidence"} if status == "gate_pending" else {}
+        return "pr_ready", merged_sha, evidence.evidence, None
+    status = classify_gate_failure(evidence)
+    return cast(PromotionStatus, status), None, evidence.evidence, None
 
 
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
@@ -328,15 +334,16 @@ def start_command(
     #    configured); a conflict carries its merge classification.
     now = iso_z()
     status: PromotionStatus
+    reason: str | None
     if outcome.clean:
-        status, gated_sha, evidence = _classify_gate(
+        status, gated_sha, evidence, reason = _classify_gate(
             worktree, merged_sha=outcome.merged_sha, gate_exit=gate_exit, gate_log=gate_log
         )
     else:
         # A conflict's classification is always a PromotionStatus (agent_may_fix /
         # needs_ticket); typed str|None on MergeOutcome, narrowed here.
         status = cast(PromotionStatus, outcome.classification)
-        gated_sha, evidence = None, None
+        gated_sha, evidence, reason = None, None, None
     promotion = Promotion(
         promotion_id=promotion_id,
         repo=str(repo_root),
@@ -353,7 +360,7 @@ def start_command(
         attempts=0,
     )
     asyncio.run(promotions.insert_promotion(promotion, db_path=db_path))
-    _emit_promotion(promotion, outcome, **_gate_pending_marker(status))
+    _emit_promotion(promotion, outcome, **({"reason": reason} if reason else {}))
 
 
 #: The promotion states ``continue`` can resume. ``agent_may_fix`` — a merge
@@ -460,9 +467,9 @@ def continue_command(
         attempts = promotion.attempts
 
     # Classify against the gate the caller ran host-side. Green → `pr_ready` (gated
-    # SHA == merged HEAD); red → `needs_ticket`; no evidence yet → `gate_pending`
-    # (run the gate and resume); no gate configured → `opened` (ungated).
-    status, gated_sha, evidence = _classify_gate(
+    # SHA == merged HEAD); red → `needs_ticket`; no evidence yet, or an unreadable
+    # `--gate-log` (#188), → `gate_pending`; no gate configured → `opened` (ungated).
+    status, gated_sha, evidence, reason = _classify_gate(
         worktree, merged_sha=merged_sha, gate_exit=gate_exit, gate_log=gate_log
     )
     updated = promotion.model_copy(
@@ -476,7 +483,7 @@ def continue_command(
         }
     )
     asyncio.run(promotions.update_promotion(updated, db_path=db_path))
-    _emit_promotion(updated, outcome, **_gate_pending_marker(status))
+    _emit_promotion(updated, outcome, **({"reason": reason} if reason else {}))
 
 
 @promote_app.command("status", help="Report a promotion's lifecycle state (read-only).")

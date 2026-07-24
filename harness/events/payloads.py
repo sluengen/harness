@@ -115,6 +115,21 @@ class DeferEventData(BaseModel):
     deferred_at: str
 
 
+class ReleaseEventData(BaseModel):
+    """Payload of a ``release`` event — the audited record of a decision-sweep
+    release (#193): the held ticket, the hold kind it was released from, and
+    the Build queue it was bound to. The ``defer`` event's mirror image.
+
+    No reader ``json_extract``-s these fields back out; the payload exists so
+    the release is inspectable in the audit trail like every other event."""
+
+    run_id: str
+    ticket: str
+    project: str
+    needs: str
+    released_at: str
+
+
 def _field_name(model: type[BaseModel], field: str) -> str:
     """The model's field name, verified to exist.
 

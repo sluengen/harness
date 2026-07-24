@@ -65,6 +65,7 @@ EXPECTED_SURFACE = {
     "cancel",
     "reclaim",
     "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
+    "release",  # decision-sweep return write: body + label removal + unassign + ledger event (#193)
     "doctor",
     "version",
     "worktrees",

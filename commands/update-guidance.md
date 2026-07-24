@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@0.6.0 -->
+<!-- guidance:update-guidance@0.6.1 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -26,6 +26,8 @@ For each file in the lock, compute its current on-disk hash and compare three th
 | **PULL** | source version > lock version, hash matches lock | copy the new version in, update the lock |
 | **LOCAL** | versions equal, hash differs from lock | the repo edited it — leave it; suggest pushing the change upstream |
 | **CONFLICT** | source version > lock version AND hash differs | show a 3-way diff (base = source at the file's *locked* version); let the user choose |
+
+> A LOCAL edit that fixes a genuine guidance defect (not just a repo-specific customization) is the case `process/harness.md`'s "Updating the guidance" section routes upstream — draft a GitHub issue against the source repo instead of leaving it a permanent local divergence.
 
 Also classify a file the source registry lists for this profile that exists on disk but is **not** in the lock at all — a **registry-listed / on-disk / lock-untracked** file. This is distinct from a **new** file below (source-added, absent on disk): here the file already exists, most often because it graduated from repo-owned/hand-copied to a registry-tracked distributable after this repo installed (a command a repo once kept as its own eventually becomes one the registry tracks like any other), or because it was copied in by hand and never recorded. Compare its on-disk hash to the source's current version:
 
