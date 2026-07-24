@@ -1,4 +1,4 @@
-# guidance:registry@0.5.77
+# guidance:registry@0.5.78
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -105,6 +105,10 @@ files:
   # GitHub filing path explicitly sets Status=Todo after `gh project
   # item-add`, closing the item-add-no-status trap (tick #90).
   commands/bug.md:                    { id: bug,                      version: 0.1.0, profiles: [harness] }
+  # /tweak — as /bug, `kind: tweak` (#199/#201), plus the one axis a bug
+  # lacks: a named escape hatch that stops and points at /propose when the
+  # tweak carries a real decision or would spawn more than one change.
+  commands/tweak.md:                  { id: tweak,                    version: 0.1.0, profiles: [harness] }
 
   # --- templates ---
   templates/proposal.md:              { id: template-proposal,        version: 0.1.2, profiles: [harness] }
@@ -143,4 +147,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.1 }
-  registry.yaml:                      { id: registry,                 version: 0.5.77 }
+  registry.yaml:                      { id: registry,                 version: 0.5.78 }
