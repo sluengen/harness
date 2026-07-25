@@ -47,7 +47,11 @@ the ``review`` verdict pattern, on an append-only ledger.
 Exit codes (mirroring ``harness review``):
 
 * 0 — a design was produced, commented, and recorded.
-* 1 — unexpected error (git failure, DB error).
+* 1 — the design was produced but its ticket comment could not be posted: an
+      expected failure that deliberately records **no** design event, so the
+      run's next ``review`` refuses with ``no_design`` until ``harness design``
+      is re-run against a reachable tracker; or an unexpected error (git
+      failure, DB error).
 * 2 — invocation error: no open run resolved for the worktree.
 * 3 — no design was produced; the failed attempt is recorded and the carried
       ``reason`` names which failure it was (:data:`EXIT_DESIGN_FAILED`).

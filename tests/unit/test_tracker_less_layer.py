@@ -13,6 +13,15 @@ AC-2: ``reclaim`` works tracker-less — ledger cleared, branch preserved, no tr
 AC-3: layer **on** + missing key still fails fast exactly as today.
 AC-4: covered by ``tests/unit/test_context_template_tracker_fields.py`` (the template).
 
+**#218 extends the walk to the fourth verb.** ADR 0007 put ``design`` between
+``start`` and implement, and #212 made ``review`` refuse any run carrying no
+recorded design — so the tracker-less lifecycle gained a stage that reads the
+ticket as its whole spec, and a gate that could wedge a repo which cannot read
+one. The two ``design`` tests below close that: the verb degrades to a recorded
+``failed`` attempt, and the following ``review`` accepts the run on the strength
+of that attempt alone. The verbs this module walks are therefore ``start``,
+``design``, ``review``, ``close``, ``reclaim``, and the stale sweep.
+
 **How "no tracker calls" is proved.** Each tracker-less test removes
 ``LINEAR_API_KEY`` from the environment entirely — so the real
 :func:`harness.linear.linear_api_key` would raise — *and* replaces
@@ -26,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -34,6 +44,8 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from harness.cli import design as design_mod
+from harness.cli import review as review_mod
 from harness.cli.review import _park_ticket
 from harness.events.emitter import EventEmitter
 from harness.state import store
@@ -157,7 +169,23 @@ def _fetch_runs(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_q())
 
 
-def _seed_open_run(db_path: Path, repo: Path, ticket: str = "RUN-1") -> str:
+def _seed_open_run(
+    db_path: Path,
+    repo: Path,
+    ticket: str = "RUN-1",
+    *,
+    started_at: str = "2026-07-16T00:00:00Z",
+) -> str:
+    """Insert an ``open`` runs row whose worktree_path == repo; return run_id.
+
+    ``started_at`` defaults to the frozen literal every existing caller was
+    written against. A caller that drives ``review`` must override it with a
+    fresh timestamp: ``evaluate_breakers`` measures the run's wall clock from
+    this column against a 90-minute budget, so the frozen date trips
+    ``wall_clock_budget`` before the design gate is ever consulted — and the
+    test would pass or fail having proved nothing about what it names.
+    """
+
     async def _insert() -> None:
         await store.init_db(db_path)
         async with store.connect(db_path) as conn:
@@ -178,7 +206,7 @@ def _seed_open_run(db_path: Path, repo: Path, ticket: str = "RUN-1") -> str:
                     str(repo),
                     f"harness/{RUN_ID}",
                     ticket,
-                    "2026-07-16T00:00:00Z",
+                    started_at,
                     1234,
                 ),
             )
@@ -186,6 +214,25 @@ def _seed_open_run(db_path: Path, repo: Path, ticket: str = "RUN-1") -> str:
 
     _sync(_insert())
     return RUN_ID
+
+
+def _events_of_type(db_path: Path, event_type: str) -> list[dict[str, Any]]:
+    """Every event of one type on the ledger, oldest first — the recorded truth."""
+
+    async def _q() -> list[dict[str, Any]]:
+        if not db_path.exists():
+            return []
+        async with (
+            store.connect(db_path) as conn,
+            conn.execute(
+                "SELECT data_json FROM events WHERE event_type = ? ORDER BY id",
+                (event_type,),
+            ) as cur,
+        ):
+            rows = await cur.fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    return _sync(_q())
 
 
 def _emit_green_review(db_path: Path, run_id: str, sha: str) -> None:
@@ -413,6 +460,116 @@ def test_ac1_close_still_enforces_the_review_gate_tracker_less(
     assert result.exit_code == 2, result.output
     assert json.loads(result.output)["reason"] == "no_passing_review"
     merge.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# #218 — design runs tracker-less, and review still accepts the run
+# ---------------------------------------------------------------------------
+
+
+def test_design_degrades_and_records_without_a_tracker(
+    repo: Path, db_path: Path
+) -> None:
+    """No tracker, no spec, no design — recorded as a failed attempt (ADR 0007 D4).
+
+    The ticket is the entire spec ``design`` answers to and ``start`` persists
+    neither title nor body, so a tracker-less repo leaves nothing to design
+    against. Designing anyway would post a confidently ungrounded design, so the
+    verb degrades: exit 3, one ``failed`` event, no comment.
+    """
+    ran = {"called": False}
+
+    async def _runner(**_: Any) -> Any:
+        ran["called"] = True
+        raise AssertionError("unreachable")
+
+    _seed_open_run(db_path, repo)
+
+    with (
+        patch("harness.tracker.LinearClient", _exploding_client()),
+        patch.object(design_mod, "_default_runner", _runner),
+    ):
+        result = cli_runner.invoke(
+            app,
+            [
+                "design",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--run-id",
+                RUN_ID,
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED, result.output
+    # A recording flag, not a raising runner: ``_produce_design``'s broad
+    # ``except Exception`` would catch a raise and record an ``engine_error``
+    # event, so the verb would still exit 3 and a naive assertion would pass for
+    # the wrong reason.
+    assert ran["called"] is False
+    events = _events_of_type(db_path, "design")
+    assert len(events) == 1
+    assert events[0]["status"] == "failed"
+    assert events[0]["reason"] == "no_ticket_spec"
+    assert "tracker-less" in events[0]["detail"]
+    # An ``ok`` event carries a design_hash (exclude_none=True). Its absence is
+    # the standing proof that nothing was published to a tracker that is not there.
+    assert "design_hash" not in events[0]
+
+
+def test_review_after_a_tracker_less_design_is_not_refused(
+    repo: Path, db_path: Path
+) -> None:
+    """The failed attempt satisfies ``no_design`` — a tracker-less build ships.
+
+    #212 made ``review`` refuse **every** run carrying no recorded design, which
+    would wedge a tracker-less repo permanently if a degraded attempt did not
+    count. It does: the gate keys on the presence of a ``design`` event, not its
+    status. The precondition here is the *real* event the verb above wrote — not
+    a seeded one, which would only re-prove ``test_review_design_linkage.py``.
+    """
+    _seed_open_run(db_path, repo, started_at=datetime.now(UTC).isoformat())
+
+    async def _design_runner(**_: Any) -> Any:
+        raise AssertionError("unreachable")
+
+    prompts: list[str] = []
+
+    async def _review_runner(*, stdin: str, **_: Any) -> Any:
+        prompts.append(stdin)
+        return review_mod.RunResult(
+            stdout='SUBMIT: {"verdict": "pass", "issues": []}', stderr="", returncode=0
+        )
+
+    with patch("harness.tracker.LinearClient", _exploding_client()):
+        with patch.object(design_mod, "_default_runner", _design_runner):
+            design_result = cli_runner.invoke(
+                app,
+                ["design", "--repo", str(repo), "--db", str(db_path),
+                 "--run-id", RUN_ID, "--json"],
+            )
+        assert design_result.exit_code == design_mod.EXIT_DESIGN_FAILED
+
+        with patch.object(review_mod, "_default_runner", _review_runner):
+            result = cli_runner.invoke(
+                app,
+                ["review", "--repo", str(repo), "--db", str(db_path),
+                 "--run-id", RUN_ID, "--json"],
+            )
+
+    # Not refused: no exit 5 / reason=no_design. The fixture CONTEXT.md
+    # configures no ``verify:``, so the gate-evidence check records
+    # ``gate_not_configured`` and proceeds without --gate-exit.
+    assert result.exit_code == 0, result.output
+    assert len(prompts) == 1, "the engine ran, so nothing refused before it"
+    events = _events_of_type(db_path, "review")
+    assert len(events) == 1
+    assert events[0]["verdict"] == "pass"
+    # The design existed only as a failed attempt, so no design text reached the
+    # prompt — the run shipped without a design, exactly as D4 intends.
+    assert events[0]["design_context"] is False
 
 
 # ---------------------------------------------------------------------------
