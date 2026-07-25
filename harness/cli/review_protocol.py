@@ -34,6 +34,7 @@ from pydantic import BaseModel
 
 from harness.cli._engine import Runner, RunResult
 from harness.cli.design_protocol import design_content_hash
+from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 
 __all__ = [
     "DEFAULT_ENGINE",
@@ -231,11 +232,11 @@ def resolve_design_gate(
                 "satisfies this check, so an engine flake never wedges the run."
             ),
         )
-    if event.get("status") != "ok":
+    if event.get(DESIGN_STATUS_KEY) != "ok":
         return DesignGate()
     if supplied_design is None:
         return DesignGate()
-    recorded_hash = event.get("design_hash")
+    recorded_hash = event.get(DESIGN_HASH_KEY)
     if not recorded_hash or design_content_hash(supplied_design) != recorded_hash:
         return DesignGate(
             warning=(
