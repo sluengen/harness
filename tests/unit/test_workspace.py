@@ -9,17 +9,38 @@ allowlist. The CLI wiring (exit code 2) is covered separately in
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from harness.workspace import (
     WORKSPACE_ROOTS_ENV,
+    NotAGitTopLevel,
     WorkspaceNotAllowed,
     allowed_roots,
     resolve_repo_root,
     resolve_within_allowlist,
 )
+
+
+def _make_repo(path: Path) -> Path:
+    """``git init`` a real repository at ``path`` and return it.
+
+    A real ``git init`` rather than a hand-made ``.git`` directory, so the
+    "this is a repo root" fixture stays true to the contract instead of to one
+    implementation of it. ``init`` needs no user identity (only ``commit``
+    does), so this stays a cheap, hermetic call.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return path
 
 # ---------------------------------------------------------------------------
 # resolve_within_allowlist — the path-boundary check
@@ -129,15 +150,13 @@ def test_allowed_roots_realpath_normalizes_each(tmp_path: Path) -> None:
 
 def test_resolve_repo_root_accepts_under_configured_root(tmp_path: Path) -> None:
     root = tmp_path / "work"
-    repo = root / "repo"
-    repo.mkdir(parents=True)
+    repo = _make_repo(root / "repo")
     env = {WORKSPACE_ROOTS_ENV: str(root)}
     assert resolve_repo_root(repo, env) == repo.resolve()
 
 
 def test_resolve_repo_root_fails_closed_when_unset(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
+    repo = _make_repo(tmp_path / "repo")
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(repo, {})
 
@@ -145,8 +164,121 @@ def test_resolve_repo_root_fails_closed_when_unset(tmp_path: Path) -> None:
 def test_resolve_repo_root_rejects_outside_configured_root(tmp_path: Path) -> None:
     root = tmp_path / "work"
     root.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
+    outside = _make_repo(tmp_path / "outside")
     env = {WORKSPACE_ROOTS_ENV: str(root)}
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(outside, env)
+
+
+# ---------------------------------------------------------------------------
+# resolve_repo_root — the git-top-level check (#214)
+#
+# The allowlist alone accepted *any* resolvable path, so a verb invoked one
+# directory too deep (``<repo>/harness/`` — this repo's package dir shares the
+# repo's name) silently planted its worktree, branch, and ledger rows under the
+# wrong root instead of refusing. These pin the narrowing: inside the allowlist
+# is necessary but no longer sufficient — the candidate must be a repo root.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_repo_root_rejects_a_subdirectory_of_a_real_repo(
+    tmp_path: Path,
+) -> None:
+    """The reported bug: ``--repo <repo>/harness`` must refuse, not silently pass.
+
+    The subdirectory resolves, and it is squarely *inside* the allowlist — the
+    allowlist check cannot catch it. Only the top-level check can.
+    """
+    repo = _make_repo(tmp_path / "repo")
+    package_dir = repo / "harness"
+    package_dir.mkdir()
+    env = {WORKSPACE_ROOTS_ENV: str(tmp_path)}
+
+    with pytest.raises(NotAGitTopLevel) as excinfo:
+        resolve_repo_root(package_dir, env)
+
+    # The refusal names the rejected path, so the operator can see which
+    # directory they were standing in.
+    assert str(package_dir.resolve()) in str(excinfo.value)
+
+
+def test_resolve_repo_root_rejects_a_directory_that_is_not_a_repo(
+    tmp_path: Path,
+) -> None:
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    env = {WORKSPACE_ROOTS_ENV: str(tmp_path)}
+    with pytest.raises(NotAGitTopLevel):
+        resolve_repo_root(plain, env)
+
+
+def test_resolve_repo_root_accepts_a_linked_worktree_whose_git_is_a_file(
+    tmp_path: Path,
+) -> None:
+    """A ``git worktree add`` root carries ``.git`` as a *file*, and must pass.
+
+    Load-bearing, not academic: ``checkpoint`` / ``review`` / ``close`` are
+    routinely invoked with ``--repo`` pointing at a run's worktree (#179), and
+    ``commands/harness.md`` Step 1 tells the orchestrator to ``cd`` into it. A
+    check written as ``.is_dir()`` would refuse every in-flight run.
+    """
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
+    env = {WORKSPACE_ROOTS_ENV: str(tmp_path)}
+
+    assert resolve_repo_root(worktree, env) == worktree.resolve()
+
+
+def test_resolve_repo_root_reports_the_allowlist_refusal_first(
+    tmp_path: Path,
+) -> None:
+    """Allowlist precedence: the security boundary is checked before validity.
+
+    A path that is *both* outside the roots and not a repo keeps reporting the
+    allowlist refusal it reported before this change — the git check only ever
+    narrows what the allowlist already admitted.
+    """
+    root = tmp_path / "work"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    env = {WORKSPACE_ROOTS_ENV: str(root)}
+
+    with pytest.raises(WorkspaceNotAllowed):
+        resolve_repo_root(outside, env)
+
+
+def test_not_a_git_top_level_is_not_a_workspace_not_allowed(tmp_path: Path) -> None:
+    """The two refusals stay distinct types, so neither prints the other's story.
+
+    ``WorkspaceNotAllowed`` means *outside the security boundary*;
+    ``NotAGitTopLevel`` means *inside it, but not a repo root*. Collapsing them
+    would have a verb tell an operator standing in ``<repo>/harness`` that their
+    path is "outside the allowed workspace roots", which it is not.
+    """
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    env = {WORKSPACE_ROOTS_ENV: str(tmp_path)}
+
+    with pytest.raises(NotAGitTopLevel) as excinfo:
+        resolve_repo_root(plain, env)
+
+    assert not isinstance(excinfo.value, WorkspaceNotAllowed)
+    # ...and the message does not borrow the allowlist's vocabulary.
+    assert "outside the allowed workspace roots" not in str(excinfo.value)
+
+
+def test_resolve_within_allowlist_does_not_apply_the_git_check(
+    tmp_path: Path,
+) -> None:
+    """The pure boundary primitive keeps its single concern.
+
+    ``resolve_within_allowlist`` answers *is this path inside the roots* and
+    nothing else; the git check belongs to ``resolve_repo_root``, the verbs'
+    entry point. Pinned so a later edit cannot quietly fold git into the
+    boundary check and break callers that legitimately pass non-repo paths.
+    """
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    assert resolve_within_allowlist(plain, [tmp_path.resolve()]) == plain.resolve()

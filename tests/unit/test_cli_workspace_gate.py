@@ -8,6 +8,7 @@ any Linear, git, or DB side effect runs.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -58,3 +59,32 @@ def test_verb_fails_closed_when_roots_unset(
 
     assert result.exit_code == 2
     assert str(repo.resolve()) in result.stderr
+
+
+@pytest.mark.parametrize("verb", ["start", "review", "close"])
+def test_verb_rejects_a_subdirectory_of_a_real_repo(
+    verb: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verb run one directory too deep refuses at the same gate (#214).
+
+    The subdirectory is inside the allowlist, so only the git-top-level check
+    catches it. Same contract as every other invocation refusal: **exit 2**,
+    the path named on stderr, before any tracker, git, or DB side effect.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-q"], cwd=repo, check=True, capture_output=True, text=True
+    )
+    package_dir = repo / "harness"
+    package_dir.mkdir()
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+    result = runner.invoke(app, _argv(verb, package_dir))
+
+    assert result.exit_code == 2
+    assert str(package_dir.resolve()) in result.stderr
+    # Exit 2 alone does not prove *this* refusal fired — an unconfigured
+    # tracker key refuses with the same code further down the verb. Pin that we
+    # stopped at the path-acceptance point, before any tracker work.
+    assert "LINEAR_API_KEY" not in result.stdout
