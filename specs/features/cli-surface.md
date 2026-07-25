@@ -19,7 +19,7 @@ The Typer app (`harness/cli/__init__.py`) is the public contract. The surface is
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json/--no-json]   # --resume: continue a reclaimed ticket from its checkpoint-pushed WIP branch when one exists; else a clean start
 harness design            [--run-id <id>] [--model <alias>] [--repo <p>] [--db <p>] [--json/--no-json]   # the design stage between `start` and implement (ADR 0007): a read-only Opus engine produces the change spec's Design section from the ticket + worktree, recorded as a marked ticket comment and a `design` ledger event. Every failure to produce one degrades and records (a `status='failed'` event, exit 3) so the stage never wedges a run. --model overrides the unconditional Opus default (host/testing)
-harness review            [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--engine <e>] [--model <alias>] [--repo <p>] [--db <p>] [--json/--no-json]   # --gate-exit/--gate-log: evidence that YOU ran CONTEXT.md → verify: — required when the repo configures one; the verb never runs the gate itself. --engine: claude (default) | codex. --model: claude-engine-only override (#177) — beats the ticket's resolved review:<tier> label (default sonnet)
+harness review            [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--design-file <p>] [--engine <e>] [--model <alias>] [--repo <p>] [--db <p>] [--json/--no-json]   # --gate-exit/--gate-log: evidence that YOU ran CONTEXT.md → verify: — required when the repo configures one; the verb never runs the gate itself. --design-file: this run's recorded design (the `design_markdown` `harness design` printed), verified against the design event's hash and given to the engine as context (#212). --engine: claude (default) | codex. --model: claude-engine-only override (#177) — beats the ticket's resolved review:<tier> label (default sonnet)
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]   # push the run branch to origin mid-flight so committed WIP survives the container dying — pushes only the feature branch, never merges
 
@@ -90,12 +90,13 @@ Each of `review`'s dedicated codes exists so an orchestrating agent can tell the
 - WHEN it runs
 - THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
 
-#### Scenario: missing or red gate evidence exits 5
+#### Scenario: a run that cannot be certified as reviewable exits 5
 
 - GIVEN `harness review` in a repo that configures a `CONTEXT.md` `verify:` command
 - WHEN it runs with no `--gate-exit`
 - THEN it exits 5 with `reason=no_gate_evidence`, having invoked no engine and recorded no `review` event (CAL-1082)
 - AND WHEN it runs with a non-zero `--gate-exit`, THEN it exits 5 with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }`, the same way
+- AND WHEN the run has no `design` event on record, THEN it exits 5 with `reason=no_design`, the same way, and *before* the gate checks above (#212, ADR 0007 D3) — one exit code for the pre-engine refusals, because the response is the same shape in each case (supply the missing evidence and review again); the `reason` names which
 
 ### JSON output is part of the public contract
 
