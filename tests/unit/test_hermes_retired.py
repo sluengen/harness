@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._cliutil import registered_command_surface
 from tests._gitutil import tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -88,10 +89,14 @@ def test_launcher_subsystem_files_removed(relpath: str) -> None:
 
 
 def test_serve_command_not_registered() -> None:
-    """The ``serve`` command (the launcher control socket) is unregistered."""
+    """The ``serve`` command (the launcher control socket) is unregistered.
+
+    Reads the full surface, not the ``registered_commands`` half it used to: a
+    ``serve`` re-introduced as a sub-app group would otherwise pass this guard.
+    """
     from harness.cli import app
 
-    names = {c.name for c in app.registered_commands if c.name is not None}
+    names = registered_command_surface(app)
     assert "serve" not in names, (
         "harness serve runs the retired launcher control socket — unregister it (CAL-712)."
     )

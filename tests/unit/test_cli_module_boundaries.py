@@ -39,6 +39,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._cliutil import registered_command_surface
+
 CLI_DIR = Path(__file__).resolve().parents[2] / "harness" / "cli"
 CLI_INIT = CLI_DIR / "__init__.py"
 
@@ -230,8 +232,7 @@ def test_derivation_covers_every_registered_command() -> None:
     """
     from harness.cli import app
 
-    registered = {c.name for c in app.registered_commands if c.name is not None}
-    registered |= {g.name for g in app.registered_groups if g.name is not None}
+    registered = registered_command_surface(app)
 
     assert set(_COMMAND_MODULES_BY_NAME) == registered
 
