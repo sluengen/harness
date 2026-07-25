@@ -1,20 +1,21 @@
-"""CLI-level tests for the ``HARNESS_WORKSPACE_ROOTS`` allowlist gate (CAL-584).
+"""CLI-level tests for the verbs' ``--repo`` invocation gate (CAL-584, #214).
 
 Every verb that accepts ``--repo`` (``start`` / ``review`` / ``close``) inherits
-the check at its path-acceptance point. A repo outside the configured roots is
-rejected with **exit code 2** and a stderr message naming the path — *before*
-any Linear, git, or DB side effect runs.
+both checks at its path-acceptance point: the ``HARNESS_WORKSPACE_ROOTS``
+allowlist (CAL-584) and, on what the allowlist admits, the git-top-level check
+(#214). Either rejection is reported the same way — **exit code 2** and a stderr
+message naming the path — *before* any Linear, git, or DB side effect runs.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from tests._gitutil import init_repo
 
 runner = CliRunner()
 
@@ -71,11 +72,7 @@ def test_verb_rejects_a_subdirectory_of_a_real_repo(
     catches it. Same contract as every other invocation refusal: **exit 2**,
     the path named on stderr, before any tracker, git, or DB side effect.
     """
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(
-        ["git", "init", "-q"], cwd=repo, check=True, capture_output=True, text=True
-    )
+    repo = init_repo(tmp_path / "repo")
     package_dir = repo / "harness"
     package_dir.mkdir()
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))

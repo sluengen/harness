@@ -9,7 +9,6 @@ allowlist. The CLI wiring (exit code 2) is covered separately in
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -22,25 +21,7 @@ from harness.workspace import (
     resolve_repo_root,
     resolve_within_allowlist,
 )
-
-
-def _make_repo(path: Path) -> Path:
-    """``git init`` a real repository at ``path`` and return it.
-
-    A real ``git init`` rather than a hand-made ``.git`` directory, so the
-    "this is a repo root" fixture stays true to the contract instead of to one
-    implementation of it. ``init`` needs no user identity (only ``commit``
-    does), so this stays a cheap, hermetic call.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "init", "-q"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return path
+from tests._gitutil import init_repo
 
 # ---------------------------------------------------------------------------
 # resolve_within_allowlist — the path-boundary check
@@ -150,13 +131,13 @@ def test_allowed_roots_realpath_normalizes_each(tmp_path: Path) -> None:
 
 def test_resolve_repo_root_accepts_under_configured_root(tmp_path: Path) -> None:
     root = tmp_path / "work"
-    repo = _make_repo(root / "repo")
+    repo = init_repo(root / "repo")
     env = {WORKSPACE_ROOTS_ENV: str(root)}
     assert resolve_repo_root(repo, env) == repo.resolve()
 
 
 def test_resolve_repo_root_fails_closed_when_unset(tmp_path: Path) -> None:
-    repo = _make_repo(tmp_path / "repo")
+    repo = init_repo(tmp_path / "repo")
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(repo, {})
 
@@ -164,7 +145,7 @@ def test_resolve_repo_root_fails_closed_when_unset(tmp_path: Path) -> None:
 def test_resolve_repo_root_rejects_outside_configured_root(tmp_path: Path) -> None:
     root = tmp_path / "work"
     root.mkdir()
-    outside = _make_repo(tmp_path / "outside")
+    outside = init_repo(tmp_path / "outside")
     env = {WORKSPACE_ROOTS_ENV: str(root)}
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(outside, env)
@@ -189,7 +170,7 @@ def test_resolve_repo_root_rejects_a_subdirectory_of_a_real_repo(
     The subdirectory resolves, and it is squarely *inside* the allowlist — the
     allowlist check cannot catch it. Only the top-level check can.
     """
-    repo = _make_repo(tmp_path / "repo")
+    repo = init_repo(tmp_path / "repo")
     package_dir = repo / "harness"
     package_dir.mkdir()
     env = {WORKSPACE_ROOTS_ENV: str(tmp_path)}

@@ -218,10 +218,10 @@ ULID) and propagates it across the verbs.
 
 ### 4.9 `harness.workspace`
 
-`harness.workspace` enforces the `--repo` allowlist (`HARNESS_WORKSPACE_ROOTS`,
-CAL-584): every verb resolves `--repo` through one shared adapter, which fails
-closed when the allowlist is unset so a verb cannot operate outside the mounted
-workspace.
+`harness.workspace` gates every verb's `--repo` through one shared adapter: the
+`HARNESS_WORKSPACE_ROOTS` allowlist (CAL-584), which fails closed when unset,
+then a git-top-level check (#214, distinct `NotAGitTopLevel`) so a verb invoked
+below the root refuses instead of planting state under the wrong one. Both exit 2.
 
 (The narrow host launcher control socket and the autonomous-dispatch *trigger*
 stand-in that once shared this section were the deferred Hermes scaffolding,
