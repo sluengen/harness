@@ -13,8 +13,9 @@ tests pin the two guarantees the ticket's acceptance criteria state:
   derived from the model fields via :func:`_field_path` / :func:`_field_name`,
   which raise at import if the field is gone (so a rename cannot silently drift).
 * **No raw payload key strings duplicated across writer/reader modules** — the
-  reader modules (``close.py``, ``query_status.py``) hold no raw json-extract key
-  literal; they import the constants from the one payload module.
+  reader modules (``close.py``, ``query_status.py``, ``review_protocol.py``) hold
+  no raw payload key literal; they import the constants from the one payload
+  module.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import pytest
 
 from harness.cli import close as close_mod
 from harness.cli import query_status as query_status_mod
+from harness.cli import review_protocol as review_protocol_mod
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
     REVIEW_REVIEWED_SHA_PATH,
@@ -302,4 +304,20 @@ def test_query_status_source_holds_no_raw_reason_extraction() -> None:
     """query_status.py must read ``reason`` via the shared key constant (AC-1)."""
     src = Path(query_status_mod.__file__).read_text()
     assert '.get("reason")' not in src
+    assert "from harness.events.payloads import" in src
+
+
+def test_design_gate_source_holds_no_raw_design_key_literals() -> None:
+    """review_protocol.py must reach the ``design`` payload only through the
+    shared key constants — no raw ``status`` / ``design_hash`` read of its own
+    (AC-1, extended to the third reader module by #217).
+
+    The forbidden set is those two keys specifically, not the ``.get`` idiom:
+    :func:`~harness.cli.review_protocol.scan_submit_line` legitimately reads the
+    engine's SUBMIT JSON (``payload.get("verdict")`` and friends), a different
+    contract with no payload model behind it.
+    """
+    src = Path(review_protocol_mod.__file__).read_text()
+    assert '.get("status")' not in src
+    assert '.get("design_hash")' not in src
     assert "from harness.events.payloads import" in src

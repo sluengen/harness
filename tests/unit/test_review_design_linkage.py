@@ -53,7 +53,7 @@ from harness.cli import app
 from harness.cli import review as review_mod
 from harness.cli.design_protocol import design_content_hash
 from harness.cli.review_protocol import build_review_prompt, resolve_design_gate
-from harness.events.payloads import DESIGN_STATUS_PATH, DesignEventData
+from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY, DesignEventData
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
 from tests._ledger import seed_design_event
@@ -615,6 +615,23 @@ def test_resolve_design_gate_distrusts_an_ok_event_with_no_recorded_hash() -> No
 # ---------------------------------------------------------------------------
 
 
-def test_design_status_path_is_derived_from_the_model() -> None:
-    assert DESIGN_STATUS_PATH == "$.status"
-    assert "status" in DesignEventData.model_fields
+def test_the_design_gate_reads_the_keys_the_model_writes() -> None:
+    """Writer → reader, end to end: the payload the emitter dumps is readable by
+    the gate through the shared key constants.
+
+    Asserts the *consumer* rather than a constant's spelling — the property the
+    constants exist for is that one module names the field for both ends, which
+    a ``== "$.status"`` assertion never touched (#217).
+    """
+    payload = DesignEventData(
+        run_id="R1",
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-26T00:00:00Z",
+        design_hash=design_content_hash(_DESIGN),
+    ).model_dump(exclude_none=True)
+
+    assert DESIGN_STATUS_KEY in payload
+    assert DESIGN_HASH_KEY in payload
+    assert resolve_design_gate(payload, _DESIGN).design_markdown == _DESIGN

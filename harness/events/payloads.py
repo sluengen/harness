@@ -15,9 +15,13 @@ These models are the single source of each payload's shape:
 * An **emitter** builds the model and dumps it (``model_dump``) instead of a bare
   literal, so a field rename breaks the writer's keyword arguments statically
   (mypy), not at runtime.
-* A **reader** that ``json_extract``-s a key imports the field's path/key
-  constant from here (:data:`REVIEW_REVIEWED_SHA_PATH`, :data:`REVIEW_VERDICT_PATH`,
-  :data:`WORKFLOW_FAILED_REASON_KEY`). Each constant is derived from the model via
+* A **reader** that ``json_extract``-s a key, **or reads an already-parsed
+  payload dict**, imports the field's path/key constant from here
+  (:data:`REVIEW_REVIEWED_SHA_PATH`, :data:`REVIEW_VERDICT_PATH`,
+  :data:`WORKFLOW_FAILED_REASON_KEY`, :data:`DESIGN_STATUS_KEY`). A ``*_PATH``
+  constant is the ``$.<field>`` form for a SQL reader; a ``*_KEY`` constant is
+  the bare field name for a reader that indexes the parsed ``dict``. Each is
+  derived from the model via
   :func:`_field_path` / :func:`_field_name`, which raise at import if the field is
   gone — so the raw key string lives in exactly one place, tied to the model, and
   a rename can no longer let writer and reader drift.
@@ -147,8 +151,8 @@ class DesignEventData(BaseModel):
 
     The review verb's ``no_design`` enforcement (#212) keys on the event's
     *presence*, which is why a ``failed`` attempt satisfies it; it then reads
-    ``status`` and ``design_hash`` back out (:data:`DESIGN_STATUS_PATH`,
-    :data:`DESIGN_HASH_PATH`) to decide whether a design exists to review
+    ``status`` and ``design_hash`` back out (:data:`DESIGN_STATUS_KEY`,
+    :data:`DESIGN_HASH_KEY`) to decide whether a design exists to review
     against, and to authenticate the text supplied for it.
     """
 
@@ -206,13 +210,15 @@ REVIEW_VERDICT_PATH = _field_path(ReviewEventData, "verdict")
 REVIEW_GATE_RAN_PATH = _field_path(ReviewEventData, "gate_ran")
 REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
 
-#: The payload keys ``review``'s design linkage reads from a ``design`` payload
-#: (#212): ``status`` discriminates the two shapes (a ``failed`` attempt still
-#: satisfies the ``no_design`` check, ADR 0007 D4), and ``design_hash``
-#: authenticates the design text the orchestrator hands back before it reaches
-#: the review engine's prompt.
-DESIGN_STATUS_PATH = _field_path(DesignEventData, "status")
-DESIGN_HASH_PATH = _field_path(DesignEventData, "design_hash")
-
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
+
+#: The payload keys ``review``'s design linkage reads from an already-parsed
+#: ``design`` payload (#212): ``status`` discriminates the two shapes (a
+#: ``failed`` attempt still satisfies the ``no_design`` check, ADR 0007 D4), and
+#: ``design_hash`` authenticates the design text the orchestrator hands back
+#: before it reaches the review engine's prompt. Bare field names, not
+#: ``json_extract`` paths — the gate indexes a ``dict``, and no SQL reader of
+#: this payload exists (#217).
+DESIGN_STATUS_KEY = _field_name(DesignEventData, "status")
+DESIGN_HASH_KEY = _field_name(DesignEventData, "design_hash")
