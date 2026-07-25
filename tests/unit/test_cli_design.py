@@ -31,6 +31,7 @@ from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
 from harness.design_marker import DESIGN_MARKER
 from harness.state import store
+from harness.tracker_errors import TrackerNotFound, TrackerRequestError
 
 cli_runner = CliRunner()
 
@@ -570,3 +571,160 @@ def test_both_verbs_translate_the_one_neutral_timeout_error() -> None:
     assert design_mod.EngineTimeoutError is _engine.EngineTimeoutError
     assert review_mod.EngineTimeoutError is _engine.EngineTimeoutError
     assert design_mod.RunResult is _engine.RunResult
+
+
+# ---------------------------------------------------------------------------
+# #218 — the tracker boundary: each degrade branch, and the one expected exit 1
+# ---------------------------------------------------------------------------
+
+
+def test_docstring_exit_codes_document_the_comment_post_failure() -> None:
+    """The exit-1 entry must name the comment-post failure and its empty ledger.
+
+    ``design`` has exactly one *expected* exit-1 path: the engine produced a
+    design but :func:`post_design_comment` could not publish it, so the verb
+    raises before ``_record_design_event`` and the run is left with **no**
+    ``design`` event. That asymmetry is what an orchestrator branches on — every
+    exit-3 degrade records an attempt that satisfies ``review``'s ``no_design``
+    check, while this one does not, and the next ``review`` refuses until
+    ``design`` is re-run. Documenting exit 1 as only "unexpected error" hides the
+    one exit-1 case a caller can actually plan for; pinned against
+    ``test_a_failed_comment_post_exits_1_and_records_nothing``.
+
+    Asserts on the load-bearing substrings rather than the sentence, so rewording
+    that keeps the facts does not break the test.
+    """
+    doc = design_mod.__doc__ or ""
+    block = doc[doc.index("Exit codes") :]
+    one_entry = block[block.index("* 1") : block.index("* 2")]
+
+    assert "comment" in one_entry, (
+        "exit 1 covers a design that could not be posted to its ticket, not just "
+        "unexpected errors; name it in the exit-1 entry"
+    )
+    assert "event" in one_entry, (
+        "the comment-post failure deliberately records no design event — the "
+        "fact that distinguishes it from every exit-3 degrade; say so"
+    )
+    assert "unexpected error" in one_entry, (
+        "the pre-existing exit-1 causes (git failure, DB error) must survive "
+        "the addition, not be replaced by it"
+    )
+
+
+def _recording_runner(ran: dict[str, bool], stdout: str = "") -> Any:
+    """A runner that records having been called, rather than raising.
+
+    A runner that raises would prove nothing: ``_produce_design``'s broad
+    ``except Exception`` catches it and records a ``failed`` / ``engine_error``
+    event, so the verb still exits 3 and a naive assertion still passes — for
+    the wrong reason. The flag is the only honest proof the engine was skipped.
+    """
+
+    async def _runner(**_: Any) -> design_mod.RunResult:
+        ran["called"] = True
+        return design_mod.RunResult(
+            stdout=stdout or _submit(), stderr="", returncode=0
+        )
+
+    return _runner
+
+
+def test_a_run_without_a_ticket_degrades_before_the_tracker(
+    repo: Path, db_path: Path
+) -> None:
+    """A NULL ``runs.ticket`` degrades even though the tracker *is* resolvable.
+
+    ``runs.ticket`` is nullable, so a run carrying none is a legitimate state,
+    not a corrupt row. Supplying a working tracker stub is what makes this
+    branch distinguishable from the config-error branch the suite already
+    covers: the client resolved fine and was still never consulted, so the
+    degrade can only have come from the missing ticket.
+    """
+    _seed_open_run(db_path, repo, ticket=None)
+    stub = _tracker_stub()
+    ran = {"called": False}
+
+    result = _invoke(repo, db_path, _recording_runner(ran), tracker_stub=stub)
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED, result.output
+    assert ran["called"] is False
+    events = design_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["status"] == "failed"
+    assert events[0]["data"]["reason"] == "no_ticket_spec"
+    # Four branches collapse onto one ``reason``; ``detail`` is the only
+    # discriminator, so assert which of them ran.
+    assert "no ticket" in events[0]["data"]["detail"]
+    stub.fetch_issue.assert_not_awaited()
+    stub.post_comment.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        TrackerNotFound("issue 211 does not exist"),
+        TrackerRequestError("tracker returned HTTP 503"),
+    ],
+    ids=["not_found", "request_error"],
+)
+def test_a_failed_ticket_fetch_degrades_and_records(
+    repo: Path, db_path: Path, exc: Exception
+) -> None:
+    """Both arms of the fetch ``except`` map to the same recorded degrade.
+
+    ``fetch_ticket_spec`` catches ``TrackerNotFound`` and ``TrackerRequestError``
+    in one clause; asserting only one leaves the other's mapping unproven at the
+    cost of a single parametrize line.
+    """
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+    stub.fetch_issue = mock.AsyncMock(side_effect=exc)
+    ran = {"called": False}
+
+    result = _invoke(repo, db_path, _recording_runner(ran), tracker_stub=stub)
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED, result.output
+    assert ran["called"] is False
+    events = design_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["status"] == "failed"
+    assert events[0]["data"]["reason"] == "no_ticket_spec"
+    detail = events[0]["data"]["detail"]
+    assert "211" in detail, "the recorded detail names which ticket was unreadable"
+    assert str(exc) in detail, "and carries the tracker's own message"
+    stub.post_comment.assert_not_awaited()
+
+
+def test_a_failed_comment_post_exits_1_and_records_nothing(
+    repo: Path, db_path: Path
+) -> None:
+    """The one *expected* exit 1 — and the one failure that records no event.
+
+    The comment is the artifact ADR 0007 specifies. Recording a ``design`` event
+    for a design nobody can read would leave the ledger claiming an artifact
+    that does not exist, so the verb raises before ``_record_design_event``. The
+    empty ledger is the recovery mechanism, not an oversight: the run's next
+    ``review`` refuses with ``no_design`` until ``design`` is re-run, which is
+    why the error text names the re-run.
+    """
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+    stub.post_comment = mock.AsyncMock(
+        side_effect=TrackerRequestError("tracker returned HTTP 502")
+    )
+
+    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=stub)
+
+    # Explicitly *not* EXIT_DESIGN_FAILED: a design was produced, so this is a
+    # publish failure, not a failure to design.
+    assert result.exit_code == 1, result.output
+    assert result.exit_code != design_mod.EXIT_DESIGN_FAILED
+    assert design_events(db_path) == []
+    stub.post_comment.assert_awaited_once()
+    payload = json.loads(result.output)
+    assert "error" in payload
+    # Unlike every exit-3 degrade, this carries no ``reason`` — the asymmetry an
+    # orchestrator branches on.
+    assert "reason" not in payload
+    assert "re-run" in payload["error"]
