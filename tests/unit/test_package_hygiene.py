@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from tests._gitutil import tracked_files_under
+from tests._gitutil import tracked_files_under, tracked_py_sources
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,7 +73,7 @@ def test_package_tree_has_no_placeholder_modules() -> None:
     real module — a package whose sole content is an empty ``__init__.py`` is itself
     vestigial and is flagged.
     """
-    tracked_py = {path for path in tracked_files_under("harness") if path.suffix == ".py"}
+    tracked_py = set(tracked_py_sources("harness"))
     placeholders = []
     for path in tracked_py:
         if not _is_placeholder_module(path):

@@ -22,6 +22,7 @@ from harness.reclaim_marker import (
     parse_handoff_branch,
     parse_preserved_branch,
 )
+from tests._gitutil import tracked_py_sources
 
 _RUN_ID = "01KYCK0P27AQR6XH74GFDFBQPK"
 _DESIGN = "### Data model\n\nNo change.\n\n### Interface / contract\n\nOne verb.\n"
@@ -87,7 +88,7 @@ def test_marker_literal_is_single_sourced() -> None:
     package = Path(__file__).resolve().parents[2] / "harness"
     owners = sorted(
         path.relative_to(package).as_posix()
-        for path in package.rglob("*.py")
+        for path in tracked_py_sources("harness")
         if DESIGN_MARKER in path.read_text(encoding="utf-8")
     )
     assert owners == ["design_marker.py"], (
