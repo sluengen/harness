@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._gitutil import tracked_files_under
+from tests._gitutil import tracked_files_under, tracked_py_sources
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -227,9 +227,7 @@ def test_no_live_harness_source_cites_a_retired_build_yaml() -> None:
     ``test_retired_spec_cites.py`` did for retired SPEC sections.
     """
     violations: list[str] = []
-    for path in sorted(tracked_files_under("harness")):
-        if path.suffix != ".py":
-            continue
+    for path in tracked_py_sources("harness"):
         for line_no, line in enumerate(path.read_text().splitlines(), start=1):
             if _RETIRED_BUILD_YAML_CITE.search(line):
                 violations.append(f"{path.name}:{line_no}: {line.strip()}")
@@ -534,12 +532,7 @@ def _living_source_relpaths() -> list[str]:
     spell the retired names (``INTAKE_MODULES``, the pattern literals), so
     scanning them would self-trip.
     """
-    pkg = _REPO_ROOT / "harness"
-    return [
-        str(p.relative_to(_REPO_ROOT))
-        for p in sorted(pkg.rglob("*.py"))
-        if "__pycache__" not in p.parts
-    ]
+    return [str(p.relative_to(_REPO_ROOT)) for p in tracked_py_sources("harness")]
 
 
 @pytest.mark.parametrize("relpath", _living_source_relpaths())

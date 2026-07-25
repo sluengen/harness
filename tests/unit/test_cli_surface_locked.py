@@ -42,7 +42,12 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests._gitutil import tracked_py_sources
+
+#: Resolved, matching ``tracked_py_sources``' resolved output — the allowlist
+#: below and the ``relative_to(REPO_ROOT)`` parametrize IDs both compare against
+#: it, and under a symlinked checkout an unresolved prefix would not match.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC = REPO_ROOT / "SPEC.md"
 HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
@@ -648,9 +653,7 @@ _RETIRED_CLI_DOCSTRING_ALLOWLIST = {
 def _py_sources() -> list[Path]:
     """Python files under ``harness/`` and ``tests/`` whose *module docstring*
     is held to the retired-CLI-name rule (the allowlist removed)."""
-    files: list[Path] = []
-    for base in ("harness", "tests"):
-        files += sorted((REPO_ROOT / base).rglob("*.py"))
+    files = tracked_py_sources("harness", "tests")
     return [p for p in files if p not in _RETIRED_CLI_DOCSTRING_ALLOWLIST]
 
 

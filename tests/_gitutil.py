@@ -1,6 +1,6 @@
 """Shared test git helpers.
 
-Two of them, both about not hand-rolling git in test modules.
+Three of them, all about not hand-rolling git in test modules.
 
 :func:`init_repo` makes a throw-away directory a real repository. Since #214 the
 verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
@@ -21,6 +21,15 @@ the CODE-3 ``intake/__pycache__`` papercut and the PR #72 ``.DS_Store`` papercut
 ``git ls-files`` is the authoritative tracked set. This helper wraps it so every
 guard derives its file set from the same source instead of hand-rolling
 dotfile / ``__pycache__`` skips.
+
+:func:`tracked_py_sources` is that set projected onto Python sources.
+
+Four tree-walking guards enumerated their own ``*.py`` set with ``rglob`` and no
+exclusion for a nested git worktree, so two abandoned worktrees left inside
+``harness/`` made old copies of guarded sources read as living code and failed
+seven tests with no regression behind them (#215). The projection lives here,
+next to the tracked set it is built from, so the answer to "which files are
+living sources" has one home rather than four.
 """
 
 from __future__ import annotations
@@ -83,3 +92,27 @@ def tracked_files_under(
         for rel in completed.stdout.split("\0")
         if rel
     }
+
+
+def tracked_py_sources(
+    *bases: str,
+    repo_root: Path = _DEFAULT_REPO_ROOT,
+) -> list[Path]:
+    """Return the git-tracked ``*.py`` files under each of ``bases``, sorted.
+
+    The enumeration basis for guards that scan living Python source. Anything
+    absent from the index — a nested worktree, ``__pycache__`` bytecode, a
+    ``.venv`` — is excluded by construction rather than by an enumerated skip
+    list, so a stray tree at an unanticipated path cannot be read as source
+    (#215). A dot-prefix filter would have missed exactly that: a worktree
+    parked at ``harness/tmp-promote/`` has no dot segment.
+
+    The result is sorted, deduplicated, and absolute: two callers feed it to
+    ``pytest.mark.parametrize``, where a duplicate collects a case twice and an
+    unstable order makes collection IDs vary between runs. Overlapping bases are
+    therefore safe.
+    """
+    found: set[Path] = set()
+    for base in bases:
+        found |= tracked_files_under(base, repo_root=repo_root)
+    return sorted(path for path in found if path.suffix == ".py")

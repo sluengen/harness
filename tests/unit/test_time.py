@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from harness._time import iso_z, parse_iso_z
+from tests._gitutil import tracked_py_sources
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -63,7 +64,7 @@ def test_z_substitution_lives_only_in_the_time_helper() -> None:
     forward = 'replace("+00:00", "Z")'
     inverse = 'replace("Z", "+00:00")'
     offenders: list[str] = []
-    for path in sorted((_REPO_ROOT / "harness").rglob("*.py")):
+    for path in tracked_py_sources("harness"):
         if path.name == "_time.py":
             continue
         text = path.read_text()
