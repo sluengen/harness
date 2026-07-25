@@ -28,6 +28,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.cli import design as design_mod
+from harness.cli import design_tracker as design_tracker_mod
 from harness.design_marker import DESIGN_MARKER
 from harness.state import store
 
@@ -217,7 +218,9 @@ def _invoke(
             # Hermetic env: no LINEAR_API_KEY, so the tracker cannot be resolved
             # and the verb takes its no-ticket-spec degrade path.
             return cli_runner.invoke(app, argv)
-        with mock.patch.object(design_mod, "tracker_client", return_value=tracker_stub):
+        with mock.patch.object(
+            design_tracker_mod, "tracker_client", return_value=tracker_stub
+        ):
             return cli_runner.invoke(app, argv)
 
 

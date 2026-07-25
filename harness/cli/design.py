@@ -77,17 +77,16 @@ from harness.cli.design_protocol import (
     build_design_prompt,
     parse_design_submit,
 )
-from harness.design_marker import format_design_comment
+from harness.cli.design_tracker import (
+    TicketCommentFailedError,
+    TicketSpecUnavailableError,
+    fetch_ticket_spec,
+    post_design_comment,
+    read_run_ticket,
+)
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import DesignEventData
 from harness.loop_budget import load_loop_budget
-from harness.state import store
-from harness.tracker import tracker_client
-from harness.tracker_errors import (
-    TrackerConfigError,
-    TrackerNotFound,
-    TrackerRequestError,
-)
 
 __all__ = [
     "DESIGN_ENGINE",
@@ -334,8 +333,11 @@ async def _produce_design(
     """
     # 2. The ticket is the spec the design answers to. ``start`` persists no
     #    title/description on the run row, so they are fetched here.
-    ticket = await _read_ticket(db_path, run_id)
-    title, description = await _fetch_ticket_spec(repo_root, ticket)
+    ticket = await read_run_ticket(db_path, run_id)
+    try:
+        title, description = await fetch_ticket_spec(repo_root, ticket)
+    except TicketSpecUnavailableError as exc:
+        raise _DesignNotProducedError(NO_TICKET_SPEC_REASON, exc.detail) from exc
 
     # 3. Capture the tree the engine designs against, so the recorded design can
     #    later be told apart from one grounded in a different HEAD.
@@ -381,14 +383,17 @@ async def _produce_design(
     # 5. Post the artifact, then record the event — the external effect first and
     #    the audit record second, the ordering ``defer`` and ``reclaim`` use, so a
     #    ledger failure surfaces rather than silently dropping a posted design.
-    await _post_design_comment(
-        repo_root,
-        ticket,
-        run_id=run_id,
-        design_markdown=design_markdown,
-        design_hash=design_hash,
-        grounded_sha=grounded_sha,
-    )
+    try:
+        await post_design_comment(
+            repo_root,
+            ticket,
+            run_id=run_id,
+            design_markdown=design_markdown,
+            design_hash=design_hash,
+            grounded_sha=grounded_sha,
+        )
+    except TicketCommentFailedError as exc:
+        raise _DesignError(exc.detail, 1) from exc
     await _record_design_event(
         db_path,
         DesignEventData(
@@ -413,107 +418,8 @@ async def _produce_design(
 
 
 # ---------------------------------------------------------------------------
-# The ticket spec — what the design answers to
+# The ledger recording (the ticket comment lives in design_tracker)
 # ---------------------------------------------------------------------------
-
-
-async def _read_ticket(db_path: Path, run_id: str) -> str | None:
-    """The ticket identifier recorded on the run row, or ``None``."""
-    if not db_path.exists():
-        return None
-    async with (
-        store.connect(db_path) as conn,
-        conn.execute("SELECT ticket FROM runs WHERE run_id = ?", (run_id,)) as cur,
-    ):
-        row = await cur.fetchone()
-    if row is None or row[0] is None:
-        return None
-    return str(row[0])
-
-
-async def _fetch_ticket_spec(repo_root: Path, ticket: str | None) -> tuple[str, str]:
-    """The ticket's ``(title, description)``, or raise :class:`_DesignNotProducedError`.
-
-    Unlike ``review``'s tracker calls — bookkeeping a verdict must survive — this
-    fetch is **load-bearing**: the ticket is the entire spec the design answers
-    to, and ``start`` persists neither field on the run row. A tracker-less repo,
-    an unresolvable tracker config, a missing ticket, or a fetch failure therefore
-    all leave nothing to design against.
-
-    Designing anyway would produce a confidently ungrounded design and post it to
-    a ticket as though it answered one, so this degrades the same way an engine
-    failure does: a recorded ``failed`` attempt (``reason=no_ticket_spec``) and no
-    comment. Item 3's ``no_design`` check is satisfied by that attempt, so a
-    tracker-less repo's build is never wedged — it just builds without a design.
-    """
-    if ticket is None:
-        raise _DesignNotProducedError(
-            NO_TICKET_SPEC_REASON,
-            "the run carries no ticket, so there is no spec to design against",
-        )
-    try:
-        client = tracker_client(repo_root)
-    except TrackerConfigError as exc:
-        raise _DesignNotProducedError(
-            NO_TICKET_SPEC_REASON,
-            f"the tracker could not be resolved, so ticket {ticket}'s spec is "
-            f"unreadable: {exc}",
-        ) from exc
-    if client is None:
-        raise _DesignNotProducedError(
-            NO_TICKET_SPEC_REASON,
-            f"this repo is tracker-less, so ticket {ticket}'s spec is unreadable",
-        )
-    try:
-        issue = await client.fetch_issue(ticket)
-    except (TrackerNotFound, TrackerRequestError) as exc:
-        raise _DesignNotProducedError(
-            NO_TICKET_SPEC_REASON, f"failed to fetch ticket {ticket}: {exc}"
-        ) from exc
-    return str(issue.get("title") or ""), str(issue.get("description") or "")
-
-
-# ---------------------------------------------------------------------------
-# The two recordings — the ticket comment and the ledger event
-# ---------------------------------------------------------------------------
-
-
-async def _post_design_comment(
-    repo_root: Path,
-    ticket: str | None,
-    *,
-    run_id: str,
-    design_markdown: str,
-    design_hash: str,
-    grounded_sha: str,
-) -> None:
-    """Post the design to the ticket as a marked comment.
-
-    Reached only on the success path, where ``_fetch_ticket_spec`` has already
-    proved the ticket and a client resolve — so the resolution cannot fail here.
-    A *transport* failure on the post itself is surfaced, not swallowed: the
-    comment is the artifact ADR 0007 specifies, so losing it silently would leave
-    a run whose ledger claims a design nobody can read.
-    """
-    assert ticket is not None  # _fetch_ticket_spec refuses a run without one
-    client = tracker_client(repo_root)
-    assert client is not None  # likewise: a tracker-less run never gets here
-    body = format_design_comment(
-        run_id,
-        design_markdown,
-        design_hash=design_hash,
-        grounded_sha=grounded_sha,
-        when=iso_z(),
-    )
-    try:
-        await client.post_comment(ticket, body)
-    except (TrackerNotFound, TrackerRequestError) as exc:
-        raise _DesignError(
-            f"the design was produced but could not be posted to ticket {ticket}: "
-            f"{exc}. Nothing was recorded; re-run `harness design` once the "
-            f"tracker is reachable.",
-            1,
-        ) from exc
 
 
 async def _record_design_event(db_path: Path, data: DesignEventData) -> None:
