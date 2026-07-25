@@ -62,6 +62,8 @@ def test_review_event_data_required_keys() -> None:
     ``gate_ran`` is among them (CAL-1082): it is a non-optional bool, so a new
     event always states its verify-gate evidence — there is no shape in which a
     fresh ``review`` event stays silent about whether the gate ran.
+    ``design_context`` (#212) is the same, for whether the review saw the run's
+    recorded design.
     """
     dumped = ReviewEventData(
         run_id="R1",
@@ -83,6 +85,7 @@ def test_review_event_data_required_keys() -> None:
         "convergence_check_required": False,
         "created_at": "2026-06-10T00:00:00Z",
         "gate_ran": False,
+        "design_context": False,
     }
 
 

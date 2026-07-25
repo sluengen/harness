@@ -70,7 +70,22 @@ The agent acts on the verdict:
 - AND GIVEN instead `--gate-exit` is non-zero, THEN the verb refuses the same way and exits `5` with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }` — the harness does not review a red tree, and spends no tokens doing it. The bounded (≤ 2 KB) tail is a deliberate exception to context economy: it is the *reason for the refusal*, so the agent can fix what broke without re-reading the whole log.
 - AND GIVEN instead the repo configures no `verify:` at all, THEN the engine runs and the event records `gate_ran=false, gate_reason="not_configured"` — the harness cannot gate what a repo does not define, so the ledger states the absence plainly instead of implying a gate ran, and `close` allows that pass.
 
-The evidence is checked **after** the spend breakers below: a run already bounded out is refused on that, not on its gate.
+The evidence is checked **after** the spend breakers below (a run already bounded out is refused on that, not on its gate) and **after** the design check that follows.
+
+#### Scenario: the design stage is required before any engine
+
+ADR [`0007`](../decisions/0007-design-verb.md) makes `design` a stage of every run, and `review` is where that is enforced (decision **D3**). Without enforcement the stage is advisory and compliance decays on exactly the unattended runs it exists for; without linkage the engine never sees the design, so the `(fix → review)*` loop re-derives intent each cycle instead of converging on conformance.
+
+- GIVEN an open run with **no** `design` event on record
+- WHEN the agent runs `harness review`
+- THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `5` with `reason=no_design` — the `no_gate_evidence` philosophy: silence is not a pass
+- AND GIVEN instead the run's latest `design` event carries `status="failed"`, THEN it is **not** refused: D4 degrades and records, so the check is that a design was *attempted and recorded*, never that it succeeded, and an engine flake costs a run its design but never its ability to ship
+- AND GIVEN an `ok` design event and `--design-file <path>` whose content hashes to the event's `design_hash`, THEN that design is given to the review engine as context, so the diff is reviewed against the ticket **and** the design; the `review` event records `design_context=true`
+- AND GIVEN an `ok` design event but no `--design-file` (or one that cannot be read or matched), THEN the review proceeds with no design context and records `design_context=false` — a mismatch also warns on stderr
+
+The design check runs **before** the gate-evidence check above: a run that never recorded a design is malformed regardless of its gate colour, so refusing on the gate first would report a transient tree state while masking a missing lifecycle stage. It runs **after** the spend breakers, which stop a bounded-out run before any further work, and before the tracker park, so a refused run leaves its ticket where it stopped.
+
+**Enforcement refuses; context degrades.** The two halves have deliberately different postures. Enforcement keys on the ledger alone — `--design-file` can neither satisfy nor bypass it — so it refuses. The design *body* is not in the ledger (the event carries `design_hash`; the body lives on the ticket as a marked comment), so the orchestrator that ran `harness design` hands its `design_markdown` back and the recorded hash authenticates it. Context is enrichment: the safe outcome — never reviewing against a wrong or unverified design — is fully achieved by dropping it, so refusing there would only add a wedge. `close` is unchanged: its gate already requires a passing review, which now transitively requires a recorded design attempt.
 
 **The evidence is self-reported, deliberately.** It moves no trust boundary: any process that can write the workspace can already forge a ledger event, so a fabricated `--gate-exit 0` is the same class of act as a fabricated event, and the ledger's filesystem trust boundary is unchanged. The authoritative control over what actually merges is server-side branch protection (CAL-1029), not this record. What the record buys is that a `pass` now *states* whether a gate ran, so a reader — and `close` — can tell a verified tree from an unverified one. Cryptographic attestation was weighed and left out of scope. This design also removes the pressure to loosen the review container toward foreign toolchains, which ADR 0002 rejected for good reason.
 

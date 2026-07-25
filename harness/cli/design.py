@@ -56,7 +56,6 @@ Exit codes (mirroring ``harness review``):
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 from pathlib import Path
 
@@ -75,6 +74,7 @@ from harness.cli.design_protocol import (
     NO_SUBMIT_SENTINEL,
     build_design_cmd,
     build_design_prompt,
+    design_content_hash,
     parse_design_submit,
 )
 from harness.cli.design_tracker import (
@@ -378,7 +378,7 @@ async def _produce_design(
             _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON), sentinel
         )
     design_markdown = parsed.design_markdown
-    design_hash = hashlib.sha256(design_markdown.encode("utf-8")).hexdigest()
+    design_hash = design_content_hash(design_markdown)
 
     # 5. Post the artifact, then record the event — the external effect first and
     #    the audit record second, the ordering ``defer`` and ``reclaim`` use, so a

@@ -52,6 +52,14 @@ class ReviewEventData(BaseModel):
     event the key is simply absent, ``json_extract`` returns ``NULL``, and the
     close backstop reads that as "no evidence" and refuses. Fail-safe, no
     migration.
+
+    ``design_context`` (#212) is the same shape for the design linkage: a
+    non-optional bool recording whether this review actually saw the run's
+    design. A review can legitimately run without it (the design stage failed,
+    or the caller supplied no ``--design-file``), so it is *recorded* rather
+    than warned about — which makes "did the linkage stop working?" a ledger
+    question instead of a console-noise one. Nothing gates on it: it is audit,
+    where the enforcement lives on the ``design`` event's presence.
     """
 
     run_id: str
@@ -62,6 +70,7 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    design_context: bool = False
     gate_command: str | None = None
     gate_exit_code: int | None = None
     gate_reason: str | None = None
@@ -136,9 +145,11 @@ class DesignEventData(BaseModel):
     so the fields the other shape does not use stay absent from the JSON rather
     than reading as an explicit ``null``.
 
-    No reader ``json_extract``-s these fields back out today: the review verb's
-    ``no_design`` enforcement (#212) keys on the event's *presence*, which is why
-    a ``failed`` attempt satisfies it.
+    The review verb's ``no_design`` enforcement (#212) keys on the event's
+    *presence*, which is why a ``failed`` attempt satisfies it; it then reads
+    ``status`` and ``design_hash`` back out (:data:`DESIGN_STATUS_PATH`,
+    :data:`DESIGN_HASH_PATH`) to decide whether a design exists to review
+    against, and to authenticate the text supplied for it.
     """
 
     run_id: str
@@ -194,6 +205,14 @@ REVIEW_VERDICT_PATH = _field_path(ReviewEventData, "verdict")
 #: ``gate_reason`` is not the honest "no gate configured" — is refused.
 REVIEW_GATE_RAN_PATH = _field_path(ReviewEventData, "gate_ran")
 REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
+
+#: The payload keys ``review``'s design linkage reads from a ``design`` payload
+#: (#212): ``status`` discriminates the two shapes (a ``failed`` attempt still
+#: satisfies the ``no_design`` check, ADR 0007 D4), and ``design_hash``
+#: authenticates the design text the orchestrator hands back before it reaches
+#: the review engine's prompt.
+DESIGN_STATUS_PATH = _field_path(DesignEventData, "status")
+DESIGN_HASH_PATH = _field_path(DesignEventData, "design_hash")
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
