@@ -56,6 +56,7 @@ from harness.cli.review_protocol import build_review_prompt, resolve_design_gate
 from harness.events.payloads import DESIGN_STATUS_PATH, DesignEventData
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
 
@@ -132,36 +133,9 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
     return _RUN_ID
 
 
-def _seed_design(
-    db_path: Path,
-    *,
-    status: str = "ok",
-    design_hash: str | None = None,
-    timestamp: str = "2026-07-26T00:00:00Z",
-) -> None:
-    """Append one ``design`` event of the given shape."""
-    data = DesignEventData(
-        run_id=_RUN_ID,
-        status=status,
-        engine="claude",
-        model="opus",
-        designed_at=timestamp,
-        design_hash=design_hash if status == "ok" else None,
-        grounded_sha="basesha" if status == "ok" else None,
-        reason=None if status == "ok" else "engine_timeout",
-        detail=None if status == "ok" else "the engine was killed",
-    )
-
-    async def _insert() -> None:
-        async with store.connect(db_path) as conn:
-            await conn.execute(
-                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
-                "VALUES (?, 'design', ?, ?)",
-                (_RUN_ID, timestamp, data.model_dump_json(exclude_none=True)),
-            )
-            await conn.commit()
-
-    _sync(_insert())
+def _seed_design(db_path: Path, **kwargs: Any) -> None:
+    """Append one ``design`` event for this module's run, via the shared seeder."""
+    seed_design_event(db_path, _RUN_ID, **kwargs)
 
 
 def _seed_reviews(db_path: Path, count: int) -> None:
@@ -368,10 +342,10 @@ def test_supplied_design_whose_hash_does_not_match_is_dropped_with_a_warning(
     assert len(_review_events(db_path)) == 1
 
 
-def test_ok_design_without_a_design_file_proceeds_and_warns(
+def test_ok_design_without_a_design_file_proceeds_and_is_recorded(
     repo: Path, db_path: Path
 ) -> None:
-    """The linkage degrades loudly, never silently — the review still happens."""
+    """Not supplying one is a normal state — recorded on the event, not warned."""
     _seed_run(db_path, repo)
     _seed_design(db_path, design_hash=design_content_hash(_DESIGN))
     prompts: list[str] = []
@@ -381,7 +355,40 @@ def test_ok_design_without_a_design_file_proceeds_and_warns(
     assert result.exit_code == 0, result.stdout
     assert len(prompts) == 1
     assert _DESIGN not in prompts[0]
-    assert "--design-file" in result.stderr
+    assert result.stderr == "", "the common case must not put noise on every review"
+    (event,) = _review_events(db_path)
+    assert event["design_context"] is False
+
+
+def test_a_design_backed_review_records_that_it_saw_the_design(
+    repo: Path, db_path: Path
+) -> None:
+    """Whether the linkage worked is a ledger question, not a console one."""
+    _seed_run(db_path, repo)
+    _seed_design(db_path, design_hash=design_content_hash(_DESIGN))
+
+    result = _invoke(
+        repo,
+        db_path,
+        _capturing_runner(_PASS_LINE, []),
+        "--design-file",
+        str(_write_design_file(repo, _DESIGN)),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    (event,) = _review_events(db_path)
+    assert event["design_context"] is True
+
+
+def test_a_failed_design_records_no_design_context(repo: Path, db_path: Path) -> None:
+    _seed_run(db_path, repo)
+    _seed_design(db_path, status="failed")
+
+    result = _invoke(repo, db_path, _capturing_runner(_PASS_LINE, []))
+
+    assert result.exit_code == 0, result.stdout
+    (event,) = _review_events(db_path)
+    assert event["design_context"] is False
 
 
 def test_an_unreadable_design_file_degrades_loudly(repo: Path, db_path: Path) -> None:
@@ -401,7 +408,7 @@ def test_an_unreadable_design_file_degrades_loudly(repo: Path, db_path: Path) ->
     assert result.exit_code == 0, result.stdout
     assert len(prompts) == 1
     assert _DESIGN not in prompts[0]
-    assert "--design-file" in result.stderr
+    assert "does not match" in result.stderr, "a path that was passed but failed is wrong"
 
 
 def test_the_latest_design_event_is_authoritative(repo: Path, db_path: Path) -> None:
@@ -587,12 +594,13 @@ def test_no_design_is_the_only_refusal_the_design_gate_produces() -> None:
         assert resolve_design_gate(event, supplied).refusal_reason is None
 
 
-def test_resolve_design_gate_warns_when_an_ok_design_was_not_supplied() -> None:
+def test_resolve_design_gate_is_quiet_when_no_design_was_supplied() -> None:
+    """Not supplying one is normal; only a supplied-but-unusable design warns."""
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
     gate = resolve_design_gate(event, None)
     assert gate.refusal_reason is None
     assert gate.design_markdown is None
-    assert gate.warning is not None and "--design-file" in gate.warning
+    assert gate.warning is None
 
 
 def test_resolve_design_gate_distrusts_an_ok_event_with_no_recorded_hash() -> None:

@@ -52,6 +52,14 @@ class ReviewEventData(BaseModel):
     event the key is simply absent, ``json_extract`` returns ``NULL``, and the
     close backstop reads that as "no evidence" and refuses. Fail-safe, no
     migration.
+
+    ``design_context`` (#212) is the same shape for the design linkage: a
+    non-optional bool recording whether this review actually saw the run's
+    design. A review can legitimately run without it (the design stage failed,
+    or the caller supplied no ``--design-file``), so it is *recorded* rather
+    than warned about — which makes "did the linkage stop working?" a ledger
+    question instead of a console-noise one. Nothing gates on it: it is audit,
+    where the enforcement lives on the ``design`` event's presence.
     """
 
     run_id: str
@@ -62,6 +70,7 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    design_context: bool = False
     gate_command: str | None = None
     gate_exit_code: int | None = None
     gate_reason: str | None = None

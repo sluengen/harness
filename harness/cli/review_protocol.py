@@ -182,8 +182,10 @@ def resolve_design_gate(
     """Decide the design gate from the run's latest ``design`` event.
 
     ``event`` is that event's payload (``None`` when the run has none), and
-    ``supplied_design`` the text read from ``--design-file`` (``None`` when the
-    orchestrator passed none, and when the file could not be read).
+    ``supplied_design`` the text read from ``--design-file`` — ``None`` only
+    when no path was given, and the empty string when one was given but could
+    not be read, so an unreadable file is reported rather than passed over as
+    though nothing was supplied.
 
     Four outcomes:
 
@@ -195,9 +197,9 @@ def resolve_design_gate(
       recorded hash could authenticate it.
     * **an ``ok`` event + text whose hash matches** → that design becomes the
       context the engine reviews against.
-    * **an ``ok`` event + text that does not match (or is missing, unreadable,
-      or has no recorded hash to check against)** → proceed with **no** context,
-      carrying a ``warning``.
+    * **an ``ok`` event + no text, or text that does not match (or is
+      unreadable, or has no recorded hash to check against)** → proceed with
+      **no** context.
 
     **Enforcement refuses; context degrades.** The two halves of ADR 0007's
     review linkage have deliberately different postures. Enforcement keys on the
@@ -206,10 +208,16 @@ def resolve_design_gate(
     design to the engine, is fully achieved by *dropping* it, so refusing there
     would add a wedge (a stale file left on disk failing an otherwise shippable
     run) and buy nothing. That is the degrade-and-record posture the rest of the
-    verb takes for non-load-bearing steps. The degradation is never silent: each
-    case carries a ``warning``, so a linkage that stops working is visible rather
-    than quietly reverting to design-blind reviews on the unattended runs it
-    exists for.
+    verb takes for non-load-bearing steps.
+
+    **What is warned about, and what is merely recorded.** A ``warning`` is set
+    only when something is *wrong* — text was supplied and could not be matched
+    to the record. Simply not supplying a design is a normal state (an
+    orchestrator that has not adopted the flag), and warning on it would put a
+    line on every review until every caller does, which trains readers to ignore
+    the warning that matters. That case is instead recorded on the ``review``
+    event (``design_context``), so whether a review actually saw the design is
+    auditable from the ledger rather than from console noise.
     """
     if event is None:
         return DesignGate(
@@ -226,22 +234,17 @@ def resolve_design_gate(
     if event.get("status") != "ok":
         return DesignGate()
     if supplied_design is None:
-        return DesignGate(
-            warning=(
-                "this run recorded a design, but none was supplied to review "
-                "against (--design-file <path>, holding the `design_markdown` "
-                "`harness design` printed). Reviewing against the ticket alone."
-            )
-        )
+        return DesignGate()
     recorded_hash = event.get("design_hash")
     if not recorded_hash or design_content_hash(supplied_design) != recorded_hash:
         return DesignGate(
             warning=(
                 "the design supplied with --design-file is not the one this run "
-                "recorded (its content hash does not match the design event's "
-                "design_hash). Reviewing against the ticket alone rather than "
-                "against an unverified design — pass the `design_markdown` from "
-                "this run's `harness design` output, or re-run `harness design`."
+                "recorded: it could not be read, or its content hash does not "
+                "match the design event's design_hash. Reviewing against the "
+                "ticket alone rather than against an unverified design — pass "
+                "the `design_markdown` from this run's `harness design` output, "
+                "or re-run `harness design`."
             )
         )
     return DesignGate(design_markdown=supplied_design)

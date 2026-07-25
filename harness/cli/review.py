@@ -715,6 +715,7 @@ async def _run_review(
         convergence_check_required=needs_convergence_check,
         created_at=created_at,
         gate_ran=gate_ran,
+        design_context=design_gate.design_markdown is not None,
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,
@@ -814,19 +815,23 @@ async def _read_latest_design_event(db_path: Path, run_id: str) -> dict[str, Any
 
 
 def _read_design_file(design_file: Path | None) -> str | None:
-    """The design text supplied by the orchestrator, or ``None``.
+    """The design text supplied by the orchestrator, or ``None`` if none was.
 
-    Unreadable is treated as unsupplied: the gate's response to text it cannot
-    authenticate is the same either way — review against the ticket alone, with
-    a warning — so an OS error here is data, not an exception that would cost a
-    run its review over a stale path.
+    ``None`` means *no path was given* — a normal state the gate passes over
+    quietly. A path that was given but could not be read comes back as the empty
+    string instead, so the gate sees a supplied design and fails to match it,
+    warning as it does for any other unusable one. The distinction matters: an
+    OS error is a caller mistake worth surfacing, whereas silently mapping it to
+    "none supplied" would hide a broken orchestration behind a normal-looking
+    review. The empty string can never match a recorded design — the design
+    protocol rejects whitespace-only output — so this cannot pass by accident.
     """
     if design_file is None:
         return None
     try:
         return design_file.read_text(encoding="utf-8")
     except OSError:
-        return None
+        return ""
 
 
 async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:

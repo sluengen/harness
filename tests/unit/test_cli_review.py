@@ -32,6 +32,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli import review as review_mod
 from harness.state import store
+from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
 
@@ -85,7 +86,13 @@ def _head_sha(repo: Path) -> str:
 
 
 def _seed_open_run(db_path: Path, repo: Path, run_id: str = "01JRUNREVIEWXXXXXXXXXXXX01") -> str:
-    """Insert an ``open`` runs row whose worktree_path == repo, return run_id."""
+    """Insert an ``open`` runs row whose worktree_path == repo, return run_id.
+
+    Also seeds the ``design`` event ``review`` has required since #212 — these
+    tests exercise the review flow, not the design gate (that is
+    ``test_review_design_linkage.py``), so the stage is satisfied and stays out
+    of their way.
+    """
 
     async def _insert() -> None:
         await store.init_db(db_path)
@@ -118,6 +125,7 @@ def _seed_open_run(db_path: Path, repo: Path, run_id: str = "01JRUNREVIEWXXXXXXX
             await conn.commit()
 
     _sync(_insert())
+    seed_design_event(db_path, run_id)
     return run_id
 
 

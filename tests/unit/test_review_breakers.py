@@ -31,6 +31,7 @@ from harness.loop_budget import (
     WALL_CLOCK_BUDGET_REASON,
 )
 from harness.state import store
+from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
 
@@ -124,6 +125,10 @@ def _seed_run(
             await conn.commit()
 
     _sync(_insert())
+    # #212: review requires a recorded design attempt. These tests are about the
+    # spend breakers, which refuse *before* that check — seeding it keeps the
+    # non-tripping cases reaching the engine as they always did.
+    seed_design_event(db_path, _RUN_ID)
     return _RUN_ID
 
 
