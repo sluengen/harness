@@ -153,6 +153,49 @@ class SweepOutput(BaseModel):
     skipped: list[str]
 
 
+async def _ledger_last_activity(db_path: Path, ticket: str) -> datetime | None:
+    """Newest sign of life for ``ticket``'s open run — or ``None`` if unreachable.
+
+    The staleness sweep's second signal (#216). ``updatedAt`` on the tracker is
+    **not** a heartbeat on the ``github`` backend: ``start`` transitions a ticket
+    by writing the Projects-v2 *Status* field, an item-level mutation that leaves
+    the underlying issue's ``updatedAt`` alone, and ``checkpoint`` / ``design`` /
+    ``review`` / ``close`` never touch the issue at all. So a perfectly live run
+    can look arbitrarily stale — the observed case reclaimed a 60-minute-old run
+    against a 90-minute threshold because its issue had not been edited in 5h.
+
+    The ledger already records what the tracker does not, so it is read as an
+    *additive* override: ``max(runs.started_at, MAX(events.timestamp))`` over the
+    ticket's open run. ``started_at`` is load-bearing rather than a belt-and-braces
+    extra — ``start`` emits no event, so it is the **only** liveness signal a run
+    has before its first ``design``/``checkpoint``.
+
+    ``None`` means the ledger has no opinion — no DB (the cloud regime, proposal
+    D3: a fresh container never had the dead run's database) or no open run for
+    this ticket. The caller then keys on the tracker timestamp alone, which is
+    exactly today's behaviour, so this can only ever *spare* a live run and never
+    condemn one the tracker-only path would have kept.
+    """
+    if not db_path.exists():
+        return None
+    async with store.connect(db_path) as conn:
+        cur = await conn.execute(
+            "SELECT r.started_at, MAX(e.timestamp) FROM runs r "
+            "LEFT JOIN events e ON e.run_id = r.run_id "
+            "WHERE r.ticket = ? AND r.status = 'open'",
+            (ticket,),
+        )
+        row = await cur.fetchone()
+    # The bare aggregate always yields one row; an all-NULL one means no open run
+    # matched, which is the ledger having no opinion rather than a zero timestamp.
+    if row is None or row[0] is None:
+        return None
+    stamps = [parse_iso_z(str(row[0]))]
+    if row[1] is not None:
+        stamps.append(parse_iso_z(str(row[1])))
+    return max(stamps)
+
+
 async def _resumable_branch(
     conn: aiosqlite.Connection, run_id: str, branch: str | None
 ) -> str | None:
@@ -410,17 +453,25 @@ async def _run_stale_sweep(
     for issue in issues:
         identifier = str(issue["identifier"])
         updated = parse_iso_z(str(issue["updated_at"]))
-        if updated < cutoff:
-            result = await _run_reclaim(db_path, None, identifier)
-            reclaimed.append(
-                ReclaimedEntry(
-                    ticket=identifier,
-                    outcome=result.outcome,
-                    branch_preserved=result.branch_preserved,
-                )
-            )
-        else:
+        if updated >= cutoff:
+            # The tracker itself says the ticket is active — no second opinion
+            # needed, and no ledger round-trip spent on it.
             skipped.append(identifier)
+            continue
+        # Tracker-stale is only a *candidate* (#216). The tracker timestamp is not
+        # a heartbeat on the github backend, so consult the ledger before reverting.
+        ledger_activity = await _ledger_last_activity(db_path, identifier)
+        if ledger_activity is not None and ledger_activity >= cutoff:
+            skipped.append(identifier)
+            continue
+        result = await _run_reclaim(db_path, None, identifier)
+        reclaimed.append(
+            ReclaimedEntry(
+                ticket=identifier,
+                outcome=result.outcome,
+                branch_preserved=result.branch_preserved,
+            )
+        )
 
     return SweepOutput(
         project=project,
