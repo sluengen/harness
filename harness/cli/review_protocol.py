@@ -28,20 +28,25 @@ so an engine quirk is a change *here*, not in the verb.
 from __future__ import annotations
 
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from harness.cli._engine import Runner, RunResult
+from harness.cli.design_protocol import design_content_hash
 
 __all__ = [
     "DEFAULT_ENGINE",
+    "DesignGate",
     "Engine",
     "ModelTier",
+    "NO_DESIGN_REASON",
     "RunResult",
     "Runner",
     "Verdict",
     "NO_SUBMIT_SENTINEL",
+    "build_review_prompt",
+    "resolve_design_gate",
     "scan_submit_line",
     "resolve_model_tier",
     "is_codex_usage_limit",
@@ -83,11 +88,31 @@ ModelTier = Literal["sonnet", "opus"]
 # Review prompt
 # ---------------------------------------------------------------------------
 
-_REVIEW_PROMPT = """\
+_REVIEW_INTRO = """\
 You are the reviewer. Review the implementation at the current git HEAD of this
 worktree against the ticket's acceptance criteria and the repository's
 engineering standards.
+"""
 
+# The design context block (#212, ADR 0007). Sits between the framing and the
+# SUBMIT contract so the contract stays the *last* thing the engine reads, and
+# states what the design is FOR: a second criterion the diff answers to, not a
+# spec that outranks the ticket. A design that contradicts the ticket is itself
+# a finding — the proposal's stated mitigation for "a bad design misleads worse
+# than no design".
+_DESIGN_CONTEXT_TEMPLATE = """
+This run has a recorded technical design, produced by `harness design` before
+the implementation was written. Review the diff against it as well as the
+ticket: conformance to the design is a criterion, and an unexplained departure
+from it is a finding. The design does not outrank the ticket — where the two
+conflict, say so.
+
+--- BEGIN DESIGN ---
+{design_markdown}
+--- END DESIGN ---
+"""
+
+_SUBMIT_CONTRACT = """
 When you have finished, you MUST signal your verdict by emitting a single line
 of the exact form:
 
@@ -104,6 +129,122 @@ Emit exactly one SUBMIT line. Example:
 
 SUBMIT: {"verdict": "pass", "issues": []}
 """
+
+#: The prompt with no design context — the shape every review had before #212,
+#: kept as a name because the verb and its tests import it.
+_REVIEW_PROMPT = _REVIEW_INTRO + _SUBMIT_CONTRACT
+
+
+def build_review_prompt(design_markdown: str | None = None) -> str:
+    """The review prompt, with the run's design as context when there is one.
+
+    Without a design this is byte-identical to the pre-#212 prompt, so a run
+    whose design stage failed (ADR 0007 D4 degrades and records) reviews exactly
+    as it always did. With one, the design is embedded **verbatim** between the
+    framing and the ``SUBMIT`` contract — never summarised, since the point is
+    that the engine reviews conformance to what was actually designed.
+    """
+    if design_markdown is None:
+        return _REVIEW_PROMPT
+    design_block = _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
+    return _REVIEW_INTRO + design_block + _SUBMIT_CONTRACT
+
+
+# ---------------------------------------------------------------------------
+# The design gate (#212, ADR 0007 D3/D4) — pure decision, no ledger, no I/O
+# ---------------------------------------------------------------------------
+
+#: The run recorded no design attempt at all. Mirrors ``no_gate_evidence``:
+#: silence is not a pass, and the refusal names the verb that satisfies it.
+#: This is the *only* refusal the design stage produces — see
+#: :func:`resolve_design_gate` for why a failure to supply the design itself is
+#: a degradation rather than a second refusal.
+NO_DESIGN_REASON = "no_design"
+
+
+class DesignGate(BaseModel):
+    """What the design stage's record says this review may do.
+
+    One refusal (:data:`NO_DESIGN_REASON`), or a ``design_markdown`` to review
+    against, or neither — proceed with no design context, which is what a
+    recorded *failed* attempt earns. A ``warning`` may accompany the last case.
+    """
+
+    refusal_reason: str | None = None
+    refusal_message: str | None = None
+    design_markdown: str | None = None
+    warning: str | None = None
+
+
+def resolve_design_gate(
+    event: dict[str, Any] | None, supplied_design: str | None
+) -> DesignGate:
+    """Decide the design gate from the run's latest ``design`` event.
+
+    ``event`` is that event's payload (``None`` when the run has none), and
+    ``supplied_design`` the text read from ``--design-file`` (``None`` when the
+    orchestrator passed none, and when the file could not be read).
+
+    Four outcomes:
+
+    * **no event** → refuse :data:`NO_DESIGN_REASON`. The design stage runs on
+      every run (ADR 0007 D1), so its absence means it was skipped.
+    * **a ``failed`` event** → proceed with no context. D4 is explicit that the
+      check is *attempted and recorded*, not *succeeded*; there is no design to
+      review against, and any text supplied for one is ignored, since no
+      recorded hash could authenticate it.
+    * **an ``ok`` event + text whose hash matches** → that design becomes the
+      context the engine reviews against.
+    * **an ``ok`` event + text that does not match (or is missing, unreadable,
+      or has no recorded hash to check against)** → proceed with **no** context,
+      carrying a ``warning``.
+
+    **Enforcement refuses; context degrades.** The two halves of ADR 0007's
+    review linkage have deliberately different postures. Enforcement keys on the
+    ledger alone — the flag can neither satisfy nor bypass it — so it refuses.
+    Context is enrichment: the safe outcome, never feeding a wrong or unverified
+    design to the engine, is fully achieved by *dropping* it, so refusing there
+    would add a wedge (a stale file left on disk failing an otherwise shippable
+    run) and buy nothing. That is the degrade-and-record posture the rest of the
+    verb takes for non-load-bearing steps. The degradation is never silent: each
+    case carries a ``warning``, so a linkage that stops working is visible rather
+    than quietly reverting to design-blind reviews on the unattended runs it
+    exists for.
+    """
+    if event is None:
+        return DesignGate(
+            refusal_reason=NO_DESIGN_REASON,
+            refusal_message=(
+                "this run has no recorded design attempt. ADR 0007 makes the "
+                "design stage part of every run (start → design → implement → "
+                "review → close); run `harness design --run-id <id>` and review "
+                "again. No engine was invoked and no verdict was recorded — "
+                "silence is not a pass. A design attempt that *failed* also "
+                "satisfies this check, so an engine flake never wedges the run."
+            ),
+        )
+    if event.get("status") != "ok":
+        return DesignGate()
+    if supplied_design is None:
+        return DesignGate(
+            warning=(
+                "this run recorded a design, but none was supplied to review "
+                "against (--design-file <path>, holding the `design_markdown` "
+                "`harness design` printed). Reviewing against the ticket alone."
+            )
+        )
+    recorded_hash = event.get("design_hash")
+    if not recorded_hash or design_content_hash(supplied_design) != recorded_hash:
+        return DesignGate(
+            warning=(
+                "the design supplied with --design-file is not the one this run "
+                "recorded (its content hash does not match the design event's "
+                "design_hash). Reviewing against the ticket alone rather than "
+                "against an unverified design — pass the `design_markdown` from "
+                "this run's `harness design` output, or re-run `harness design`."
+            )
+        )
+    return DesignGate(design_markdown=supplied_design)
 
 
 # ---------------------------------------------------------------------------

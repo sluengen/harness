@@ -37,6 +37,7 @@ couple two contracts that are free to move apart.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from pydantic import BaseModel, ValidationError
@@ -49,6 +50,7 @@ __all__ = [
     "NO_SUBMIT_SENTINEL",
     "build_design_cmd",
     "build_design_prompt",
+    "design_content_hash",
     "parse_design_submit",
 ]
 
@@ -244,6 +246,25 @@ def parse_design_submit(stdout: str) -> DesignResult:
 
     error = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
     return DesignResult(error=error)
+
+
+# ---------------------------------------------------------------------------
+# Content hash — the design's identity, shared by its writer and its verifier
+# ---------------------------------------------------------------------------
+
+
+def design_content_hash(design_markdown: str) -> str:
+    """The design's content hash — sha256 of its UTF-8 bytes, hex-encoded.
+
+    Two verbs depend on this being the *same* rule. ``design`` records it on the
+    ledger event (the body itself stays off the ledger, ADR 0007), and ``review``
+    recomputes it over the design the orchestrator hands back to authenticate
+    that text against the recorded attempt (#212). A second inlined ``hashlib``
+    call in either verb would let the writer and the verifier drift into
+    permanently mismatching hashes, so the rule lives here — in the design
+    stage's protocol layer, beside the rest of its contract — and both call it.
+    """
+    return hashlib.sha256(design_markdown.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
