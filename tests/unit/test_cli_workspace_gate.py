@@ -1,9 +1,10 @@
-"""CLI-level tests for the ``HARNESS_WORKSPACE_ROOTS`` allowlist gate (CAL-584).
+"""CLI-level tests for the verbs' ``--repo`` invocation gate (CAL-584, #214).
 
 Every verb that accepts ``--repo`` (``start`` / ``review`` / ``close``) inherits
-the check at its path-acceptance point. A repo outside the configured roots is
-rejected with **exit code 2** and a stderr message naming the path — *before*
-any Linear, git, or DB side effect runs.
+both checks at its path-acceptance point: the ``HARNESS_WORKSPACE_ROOTS``
+allowlist (CAL-584) and, on what the allowlist admits, the git-top-level check
+(#214). Either rejection is reported the same way — **exit code 2** and a stderr
+message naming the path — *before* any Linear, git, or DB side effect runs.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from tests._gitutil import init_repo
 
 runner = CliRunner()
 
@@ -58,3 +60,28 @@ def test_verb_fails_closed_when_roots_unset(
 
     assert result.exit_code == 2
     assert str(repo.resolve()) in result.stderr
+
+
+@pytest.mark.parametrize("verb", ["start", "review", "close"])
+def test_verb_rejects_a_subdirectory_of_a_real_repo(
+    verb: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verb run one directory too deep refuses at the same gate (#214).
+
+    The subdirectory is inside the allowlist, so only the git-top-level check
+    catches it. Same contract as every other invocation refusal: **exit 2**,
+    the path named on stderr, before any tracker, git, or DB side effect.
+    """
+    repo = init_repo(tmp_path / "repo")
+    package_dir = repo / "harness"
+    package_dir.mkdir()
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+    result = runner.invoke(app, _argv(verb, package_dir))
+
+    assert result.exit_code == 2
+    assert str(package_dir.resolve()) in result.stderr
+    # Exit 2 alone does not prove *this* refusal fired — an unconfigured
+    # tracker key refuses with the same code further down the verb. Pin that we
+    # stopped at the path-acceptance point, before any tracker work.
+    assert "LINEAR_API_KEY" not in result.stdout

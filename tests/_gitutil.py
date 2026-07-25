@@ -1,4 +1,14 @@
-"""Shared test helper: enumerate the files git *tracks* under a path.
+"""Shared test git helpers.
+
+Two of them, both about not hand-rolling git in test modules.
+
+:func:`init_repo` makes a throw-away directory a real repository. Since #214 the
+verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
+bare ``tmp_path`` to a verb has to initialize it first — a need that landed in
+five test modules at once, which is why the two-line call lives here instead of
+being pasted into each.
+
+:func:`tracked_files_under` enumerates the files git *tracks* under a path.
 
 Retirement / hygiene guards must judge the **committed** tree, not the working
 tree. A guard whose contract is "this module is gone from the repo" must pass on
@@ -20,6 +30,29 @@ from pathlib import Path
 
 # ``tests/_gitutil.py`` → ``parents[1]`` is the repo (or worktree) root.
 _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def init_repo(path: Path) -> Path:
+    """``git init`` a real repository at ``path`` (creating it) and return it.
+
+    For fixtures that hand a throw-away directory to a verb's ``--repo``: since
+    #214 the verbs refuse a path that is not a git top-level, so a bare
+    ``tmp_path`` no longer resolves.
+
+    A real ``git init`` rather than a hand-made ``.git`` directory, so the
+    fixture stays true to the *contract* ("this is a repository root") rather
+    than to one implementation of the check. ``init`` needs no user identity —
+    only ``commit`` does — so this stays cheap and hermetic.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return path
 
 
 def tracked_files_under(

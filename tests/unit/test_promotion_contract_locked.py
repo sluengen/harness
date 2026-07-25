@@ -33,6 +33,7 @@ from harness.cli import app
 from harness.cli.promote import PromotionRefusalReason
 from harness.state import promotions
 from harness.state.promotions import Promotion
+from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
 
@@ -91,6 +92,7 @@ def _seed(tmp_path: Path, promo: Promotion) -> Path:
 def _invoke(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str], db: Path
 ) -> object:
+    init_repo(tmp_path)  # the verbs refuse a --repo that is not a git top-level (#214)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
     return cli_runner.invoke(app, [*argv, "--repo", str(tmp_path), "--db", str(db)])
 
