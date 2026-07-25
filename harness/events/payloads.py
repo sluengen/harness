@@ -115,6 +115,43 @@ class DeferEventData(BaseModel):
     deferred_at: str
 
 
+class DesignEventData(BaseModel):
+    """Payload of a ``design`` event — the design stage's recorded attempt (#211).
+
+    ADR 0007 enforces that a design was *attempted and recorded*, not that it
+    succeeded, so this payload has two shapes discriminated by ``status``:
+
+    * ``status='ok'`` — ``design_hash`` (the design text's content hash) and
+      ``grounded_sha`` (the worktree HEAD the engine studied) are set, ``reason``
+      and ``detail`` absent. Together they say *which* design was produced and
+      *which tree* it was grounded in.
+    * ``status='failed'`` — ``reason`` (a stable machine-readable tag) and
+      ``detail`` (the human specifics) are set, the two success fields absent.
+      The split mirrors :class:`~harness.cli._verb.VerbError`'s own ``reason`` vs
+      ``message``: one to branch on, one to diagnose from. Recording both matters
+      because the *only* evidence of which failure happened is what lands here.
+
+    ``engine`` and ``model`` are recorded on **both** shapes — a failed attempt
+    should still say what was attempted. Dump with ``model_dump(exclude_none=True)``
+    so the fields the other shape does not use stay absent from the JSON rather
+    than reading as an explicit ``null``.
+
+    No reader ``json_extract``-s these fields back out today: the review verb's
+    ``no_design`` enforcement (#212) keys on the event's *presence*, which is why
+    a ``failed`` attempt satisfies it.
+    """
+
+    run_id: str
+    status: str
+    engine: str
+    model: str
+    designed_at: str
+    design_hash: str | None = None
+    grounded_sha: str | None = None
+    reason: str | None = None
+    detail: str | None = None
+
+
 class ReleaseEventData(BaseModel):
     """Payload of a ``release`` event — the audited record of a decision-sweep
     release (#193): the held ticket, the hold kind it was released from, and

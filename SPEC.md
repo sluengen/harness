@@ -261,6 +261,7 @@ the autonomous dispatcher itself is deferred until the Build loop is built.)
 ```
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json]   # --resume: a reclaimed ticket with a checkpoint-pushed WIP branch continues from it (fetch + base the worktree on it); falls back to a clean start (CAL-739)
+harness design            [--run-id <id>] [--model <alias>] [--repo <p>] [--db <p>] [--json]   # the design stage between start and implement (ADR 0007): a read-only Opus engine produces the change spec's Design section, recorded as a marked ticket comment + a `design` ledger event. --model overrides the unconditional Opus default (host/testing)
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
@@ -293,9 +294,8 @@ There is no `harness promote verify` in v1: the gate runs inside `start` / `cont
 
 #### Harness-as-tool verbs
 
-`start` / `review` / `close` are the audited, one-shot verbs an
-orchestrating agent calls — see `specs/proposals/harness-as-tool.md`. They
-operate over the SQLite ledger, not the workflow engine.
+`start` / `design` / `review` / `close` are the audited, one-shot verbs an
+orchestrating agent calls over the SQLite ledger — see `specs/proposals/harness-as-tool.md` and ADR 0007 for the design stage.
 
 **`harness review`** runs the configured reviewer (codex) against the worktree's
 current HEAD and records a `review` event bound to the exact SHA reviewed — the

@@ -9,6 +9,7 @@ are split across modules for readability:
 * :mod:`harness.cli.query`    — ``harness status / logs / events / runs``
 * :mod:`harness.cli.worktrees` — ``harness worktrees list / cleanup``
 * :mod:`harness.cli.start`    — ``harness start <ticket>``
+* :mod:`harness.cli.design`   — ``harness design --run-id <id>``
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
 * :mod:`harness.cli.promote`  — ``harness promote start / continue / status / pr / escalate``
@@ -28,6 +29,7 @@ from harness.cli.cancel import cancel_command
 from harness.cli.checkpoint import checkpoint_command
 from harness.cli.close import close_command
 from harness.cli.defer import defer_command
+from harness.cli.design import design_command
 from harness.cli.doctor import doctor_command
 from harness.cli.promote import promote_app
 from harness.cli.query import (
@@ -83,6 +85,9 @@ app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
     start_command
+)
+app.command(name="design", help="Produce the run's Design section with a read-only Opus engine; record it on the ticket and the ledger.")(  # noqa: E501
+    design_command
 )
 app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501
     review_command

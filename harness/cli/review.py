@@ -82,6 +82,7 @@ import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
+from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
@@ -129,6 +130,9 @@ _REVIEW_TIER_DIMENSION = "review"
 # engine-protocol layer — the prompt, the SUBMIT scanner, the per-engine command
 # builder, and the three engine-failure detectors — was split out to
 # harness.cli.review_protocol (CAL-1107); this verb imports and re-exports it.
+# The bounded engine *subprocess driver* was split out to harness.cli._engine
+# (#211), shared with the ``design`` verb; ``_default_runner`` is now only the
+# review-specific translation of a timeout into this verb's infra failure.
 # What remains is verb glue with a single caller (`_run_review`): the breaker
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
@@ -211,50 +215,31 @@ async def _default_runner(
     cwd: Path | None,
     timeout: float | None = None,
 ) -> RunResult:
-    """Run ``cmd`` as a subprocess, feed ``stdin``, capture stdout/stderr/exit.
+    """Run the review engine on the shared driver; translate a timeout to infra.
 
-    stderr and the exit code are captured (no longer discarded) so the Codex
-    usage-limit fallback (CAL-702) can detect an exhausted tier: the limit
-    signal lands on stderr with a non-zero exit, never on stdout.
+    The subprocess mechanics — spawn, feed ``stdin``, capture stdout/stderr/exit,
+    kill and reap on expiry — live in :func:`~harness.cli._engine.run_engine_subprocess`,
+    shared with the ``design`` verb (#211). stderr and the exit code come back
+    captured so the Codex usage-limit fallback (CAL-702) can detect an exhausted
+    tier: the limit signal lands on stderr with a non-zero exit, never on stdout.
 
-    ``timeout`` (seconds) caps the engine subprocess (CAL-1004). On expiry the
-    process is killed and reaped and the run is failed as infra — a hung engine
-    never reviewed the diff, so it is not a verdict — via ``_ReviewError``
-    (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`). ``None`` keeps the
-    old unbounded behaviour for any direct caller that opts out.
+    This wrapper adds the one review-specific part: a killed engine is failed as
+    **infra** — a hung engine never reviewed the diff, so it is not a verdict —
+    via ``_ReviewError`` (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`).
     """
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-        cwd=cwd,
-        limit=8 * 1024 * 1024,  # engines can emit large lines (file reads, diffs)
-    )
     try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            process.communicate(stdin.encode()), timeout=timeout
+        return await run_engine_subprocess(
+            cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout
         )
-    except TimeoutError:
-        # asyncio.wait_for raises the builtin TimeoutError (3.11+) after
-        # cancelling communicate(); the child is still alive. Kill and reap it so
-        # no zombie/orphan survives, then surface the infra failure.
-        process.kill()
-        await process.wait()
+    except EngineTimeoutError as exc:
         raise _ReviewError(
-            f"review engine exceeded its {timeout:.0f}s timeout and was killed; "
+            f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
             "this is an environment/infra failure (a hung engine never reviewed "
             "the diff), not a code-review verdict. Raise engine_timeout_seconds "
             "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
             EXIT_INFRA_FAILURE,
             reason=ENGINE_TIMEOUT_REASON,
         ) from None
-    return RunResult(
-        stdout=stdout_bytes.decode(errors="replace"),
-        stderr=stderr_bytes.decode(errors="replace"),
-        returncode=process.returncode if process.returncode is not None else -1,
-    )
 
 
 # ---------------------------------------------------------------------------
