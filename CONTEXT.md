@@ -31,7 +31,7 @@ commands:
   test:    "uv run --extra dev pytest"
   test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
   verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest → CLI smoke → landing-page drift guard. Run before merge/tag.
-  run:     "harness start <ISSUE-ID> → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
+  run:     "harness start <ISSUE-ID> → design → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
   staging: staging      # first-class nightly stabilized release candidate; DERIVED — promotion gates a dev→staging candidate and, on green, advances staging directly (no PR; ADR 0003 as amended CAL-1158)
@@ -67,9 +67,10 @@ A set of **deterministic, audited verbs an agent calls** to drive a Linear ticke
 
 The main package is `harness/` (Python): a `Typer` CLI exposes the verbs, backed by a SQLite ledger, git-worktree lifecycle, and review-engine dispatch (Claude by default; `--engine codex` host-only).
 
-Three verbs, one ledger, one gate:
+Four verbs, one ledger, one gate:
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only option, ADR 0002) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; the session sees only the bounded verdict, not the engine's full reasoning.
+- **`design`** — run a read-only **Opus** engine (ADR 0007) over the worktree and the ticket, in a fresh context, producing the change spec's Design section; record it as a marked ticket comment and a `design` ledger event (content hash + `grounded_sha`). Unconditional — every run. A failed attempt **degrades and records** rather than blocking: it still satisfies `review`'s `no_design` check, so an engine flake never wedges a run.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only option, ADR 0002) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**; refuse a run with no recorded design attempt (`reason=no_design`), and review *against* that design when `--design-file` supplies it; the session sees only the bounded verdict, not the engine's full reasoning.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 - **Read / ops commands** — `status` / `logs` / `events` / `runs` / `worktrees` / `doctor` / `version` inspect a run without mutating state.
 - **State store** — SQLite via `aiosqlite`; the `runs` / `events` ledger is the whole audit trail.
@@ -110,7 +111,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 ## Gotchas
 
 - **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo and call a verb — `harness start <ISSUE-ID>`, then `review` / `close`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, extracts the Claude OAuth token from the macOS Keychain, and mounts `~/.codex` for Codex subscription auth. See `docker/README.md` for the full wrapper script and installation steps.
-- **Drive the loop with `/harness run <ISSUE-ID>`.** The orchestrating Claude session calls each verb in turn (`start → implement → review → (fix → review)* → close`); the verbs own every git and ticket mutation. The contract and gate-refusal handling are in `commands/harness.md`. The agent never runs *inside* a verb container — each verb is a one-shot `docker run` spawned by the wrapper.
+- **Drive the loop with `/harness run <ISSUE-ID>`.** The orchestrating Claude session calls each verb in turn (`start → design → implement → review → (fix → review)* → close`); the verbs own every git and ticket mutation. The contract and gate-refusal handling are in `commands/harness.md`. The agent never runs *inside* a verb container — each verb is a one-shot `docker run` spawned by the wrapper.
 - **`bin/harness` is dev-time only.** It hard-codes `.venv/bin/python` relative to the harness repo root and only works inside the harness checkout. Use it when iterating on harness source itself; use `~/bin/harness` for everything else.
 - **Cross-repo execution** — `cd` to the target repo and run the verbs there. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. (`--repo` and `--base` are accepted when invoking the verbs directly outside the wrapper.)
 - **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH. Use when Docker is not available. Credentials and env vars must be set manually.
