@@ -69,9 +69,12 @@ def _cli_import_map(tree: ast.Module) -> dict[str, str]:
 def _string_keyword(call: ast.Call, keyword: str) -> str | None:
     """Return ``call``'s ``keyword=`` argument when it is a string literal."""
     for kw in call.keywords:
-        if kw.arg == keyword and isinstance(kw.value, ast.Constant):
-            if isinstance(kw.value.value, str):
-                return kw.value.value
+        if (
+            kw.arg == keyword
+            and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str)
+        ):
+            return kw.value.value
     return None
 
 
