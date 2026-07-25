@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._cliutil import registered_command_surface
 from tests._gitutil import tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -140,9 +141,7 @@ def _registered_surface() -> set[str]:
     """Every top-level command and sub-app the Typer app registers."""
     from harness.cli import app
 
-    names = {c.name for c in app.registered_commands if c.name is not None}
-    names |= {g.name for g in app.registered_groups if g.name is not None}
-    return names
+    return registered_command_surface(app)
 
 
 def _documented_surface() -> set[str]:

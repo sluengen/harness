@@ -42,6 +42,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._cliutil import registered_command_surface
 from tests._gitutil import tracked_py_sources
 
 #: Resolved, matching ``tracked_py_sources``' resolved output — the allowlist
@@ -96,9 +97,7 @@ def _registered_surface() -> set[str]:
     """Every command and sub-app the Typer app registers."""
     from harness.cli import app
 
-    names = {c.name for c in app.registered_commands if c.name is not None}
-    names |= {g.name for g in app.registered_groups if g.name is not None}
-    return names
+    return registered_command_surface(app)
 
 
 def test_registered_surface_is_the_as_built_verb_set() -> None:

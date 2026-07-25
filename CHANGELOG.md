@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Fixed — one reader for the Typer app's registered command surface (#222)
+- Filed by `/assess code` (steward, 2026-07-26 pm, **CODE-1**, Medium, report `assessments/2026-07-26-code-pm.md`). The two-line union reading Typer's registered surface stood byte-identical in three test modules — the third added by #219's own fix, which taught the boundary guard to *derive* its subject set and in the same commit duplicated the *reader* that computes one. New `tests/_cliutil.registered_command_surface` is the single definition, in its own module rather than folded into `tests/_gitutil.py` (one shared module per domain, not per line count), taking the app as a parameter so no module-level `harness.cli` import pulls the CLI into collection for every importer. Two sites the ticket's grep missed — `test_hermes_retired.py` and `test_engine_retired.py`, each reading the `registered_commands` half alone — are converted rather than allowlisted: both ask "is this name absent from the surface?", so the full union is strictly stronger (a retired name re-introduced as a sub-app group would now be caught) and neither had a reason to be partial. The adoption lock **enumerates** `tracked_py_sources("tests")` rather than listing today's adopters, so a *sixth* inline copy fails the gate; its `\b` anchor excludes the `promote_app` sub-app readers as a property of the rule, not an allowlist entry. It was landed **before** the conversions and observed naming exactly five modules — that failure output, not prose, is how the two extra sites were established. Six unit tests give the helper an oracle independent of the guards consuming it, since one silent bug there could weaken five guards at once with all of them still green; plus an anti-vacuity check on the lock's subject count and a parametrized detector test pinning the pattern's boundaries. No assertion line changes anywhere in the diff — the evidence the scanned surface is unchanged. Tests only, so no registry bump.
+
 ### Added — test-driven-development: cover a new lifecycle stage under every supported configuration (#221)
 - Filed by `/assess code` (steward, 2026-07-26, systemic insight **CODE-INSIGHT-2**, report `assessments/2026-07-26-code.md`) — a new stage ships with a thorough unit suite of its own while the suites that walk the lifecycle *end to end under a configuration* (a layer off, a tracker absent, a breaker tripped) are never extended, so a whole supported configuration goes unproven precisely when a new mandatory stage was inserted into it. The evidence was CODE-2: `design` became a stage every run must record and #212 made `review` refuse without it, yet `test_tracker_less_layer.py` gained no `design` case — that gap was repaired in #218, and this ticket writes the rule so the *next* stage does not repeat it. RED gains a fourth bullet, immediately after the guard-conditions rule whose failure shape it shares on a different axis (the stage is covered; the configuration is not): grep for the suites exercising the sibling stages under a configuration or layer (`CONTEXT.md` `layers:` / `tracker:`), add the new stage's case to each, and **name those suites in the change spec** — the half that makes the rule checkable at review time without a mechanical scanner. Four new tests in `test_tdd_configuration_coverage.py`, each content assertion scoped to the bullet's own paragraph, since "condition", "green" and "untested" all already appear elsewhere in RED. The placement test **dogfoods #220's rule**: it derives RED's bullet titles from the file and asserts an ordinal over them rather than hardcoding a neighbour pair, and asserts each anchor title exists first so an upstream rename fails for the reason it happened. Every clause of the bullet was mutation-checked; the one that survived — "every configuration", satisfied by the bullet's own title even with the reason deleted — was re-anchored on the body's phrasing, which is the scoping trap the module's own docstring warns about. A universality test bans this stack's vocabulary from prose the installer copies verbatim into third-party repos. `test-driven-development` 0.5.0 → 0.6.0 (registry 0.5.87 → 0.5.88); a minor bump, matching #220 and #203 — a rule a consuming repo has never seen, where patch is reserved for broadening an existing rule's trigger.
 
@@ -124,125 +127,48 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 ### Changed — conditional, tracker-neutral build-loop scoping (#175)
 - `work-discovery` and `/harness routine build` read `repo.project` as an optional scope lever instead of hardcoding one Linear project. **`work-discovery` 0.3.0 → 0.4.0, `harness` command 0.2.1 → 0.2.2**.
 
-### Added — a GitHub Projects v2 tracker backend behind the seam (CAL-1105)
-- `harness/github.py`'s `GitHubClient` implements `Tracker` over GitHub Issues + a Projects v2 `Status` single-select field (resolved by name), superseding the `UnsupportedTrackerError` placeholder; auth via `GITHUB_TOKEN`.
+### Earlier still — one line each
 
-### Added — host the repo-guide page on GitHub Pages + link from README (CAL-1201)
-- `docs/index.html` gains Open-Graph/Twitter meta tags, a favicon, and share assets; the README links the hosted guide. `specs/infrastructure.md` records the GitHub Pages hosting decision.
+> A further condensation of the oldest `[Unreleased]` entries, applying the `RELEASING.md` fold a second time: heading and summary collapse onto one line so the file clears its **line** ceiling as well as its byte ceiling. Full detail is in git history; each entry rotates to [`CHANGELOG-archive/2026.md`](CHANGELOG-archive/2026.md) at the next release.
 
-### Added — a self-contained repo-guide landing page at `docs/index.html` (CAL-1200)
-- `four-loops.html` grew into `docs/index.html`: the Four Loops model, a harness-verbs section, and a guidance catalogue, each `data-guidance="<id>"` resolving in `registry.yaml`.
-
-### Fixed — GitHub detects the licence as AGPL-3.0 (CAL-1198)
-- `LICENSE` restored to byte-exact AGPL-3.0 text (a prepended note had diluted it below licensee's 98% threshold); the MIT carve-out renamed to `GUIDANCE-MIT.md`, off the licence glob, so only one root licence is detected. **`bootstrap` 0.5.0 → 0.5.1**.
-
-### Changed — verbs obtain their tracker through a seam factory (CAL-1197)
-- Every verb now obtains its tracker via `tracker_client(repo_root)` (a `@runtime_checkable Tracker` protocol) instead of constructing `LinearClient` directly — the seam a second backend (github, CAL-1105) plugs into without touching a verb.
-
-### Changed — `close` merges in a throwaway worktree, not the main checkout (CAL-1154)
-- `close`'s merge/push moved into a detached `.worktrees/harness/<run_id>-close` worktree off `origin/<base>`; the main checkout stays untouched, and the `dirty_base_checkout` refusal is retired from the locked verb contract. **`commands/harness.md` 0.2.0 → 0.2.1**.
-
-### Added — `doctor` flags a drifted `~/bin/harness` wrapper (CAL-1149)
-- New `check_wrapper` compares the host-side `~/bin/harness` against the versioned `docker/harness-wrapper.sh`, surfacing symlink/copy/drifted/detached via `HARNESS_WRAPPER_STATUS`.
-
-### Changed — CI runs on `dev`, not only `main` (CAL-1030)
-- `.github/workflows/ci.yml` now triggers on `[main, dev]`, so `close`'s direct pushes to `dev` are verified at merge time instead of waiting for the release PR.
-
-### Changed — `code-quality` Part A: an extraction sweeps for its copies (CAL-1172)
-- Part A gains *An extraction sweeps for its copies*: grep the whole tree post-extraction; a divergent surviving copy is the finding, not the leftover. **`code-quality` 0.11.0 → 0.12.0**.
-
-### Changed — the feature template demands a production call site per exported entry (CAL-1171)
-- `templates/feature.md` requires a named production caller per exported interface entry; an uncalled entry routes to Known limitations instead of "delivered API". **`template-feature` 0.1.1 → 0.2.0**.
-
-### Fixed — `checkpoint` re-pushes a rebased run branch (force-with-lease) (CAL-1162)
-- `harness checkpoint` pushes with `--force-with-lease` so a rebase-before-close no longer silently reverts durability to the pre-rebase commit; a genuine remote race surfaces as `reason='stale_remote'`.
-
-### Changed — `/assess` findings file to Todo, with a widened autoMode clause (CAL-1168)
-- `/assess` step 2 now files findings/insights to **Todo** (was ad hoc) with severity-mapped priority; the filing `autoMode.allow` clause carries the operator's verbatim-approved text. **`assess` 0.6.1 → 0.7.0**.
-
-### Added — `harness defer v2`: `--needs`, assign-on-defer, approved autoMode clause (CAL-1167)
-- `harness defer` gains `--needs decision|operator` and assigns the ticket to the operator (`LinearClient.assign_to_viewer`) as the machine-readable hold signal. **`harness` command 0.1.9 → 0.2.0**.
-
-### Changed — `work-discovery` skips on assignment, defers with assignment (CAL-1166)
-- The skip rule keys on assignment to a human (any state, with a transitional label OR); deferral now assigns the operator alongside the comment + label. **`work-discovery` 0.2.0 → 0.3.0**.
-
-### Changed — ticket protocol codified in the `linear` skill (CAL-1165)
-- Todo/Backlog filing rules, assignment-as-hold-signal, and the `operator` label documented; `projectId`/`assigneeId` set on create. **`linear` 0.4.2 → 0.5.0**.
-
-### Fixed — a promotion gate whose toolchain can't run is `blocked`, not a false code ticket (CAL-1160)
-- New `GATE_UNRUNNABLE_EXIT` (97) maps to `blocked` via `classify_gate_failure`, closing the unreachable `exit_code is None` path that used to file a false `needs_ticket`.
-
-### Fixed — `promote` gates host-side, so the promotion success path is reachable (CAL-1159)
-- `promote start`/`continue` gain `--gate-exit`/`--gate-log` (mirroring `review`) and classify host-supplied evidence instead of running the gate inside the toolchain-less container; new `gate_pending` state.
-
-### Changed — the tracker switch collapses to a single `tracker:` field (CAL-1164)
-- `tracker: linear | github | none` replaces the derivable `layers.linear` boolean as the single on/off-plus-backend fact; `tracker_config_error` rejects an incoherent switch/address pair at `start`.
-
-### Added — a distributed reference for the mechanical size-marker guard (CAL-1156)
-- New `templates/size-guard.md` ships a repo-editable `# size: <reason>` walker for consuming repos, execute-verified against fixtures. **`code-quality` 0.10.0 → 0.11.0**.
-
-### Fixed — the wrapper is shellcheck-clean, and its guard no longer skips silently (CAL-1150)
-- Fixed a latent SC2046 in `docker/harness-wrapper.sh` (the `-it` flags were built with an unquoted command substitution) by assembling them in a `TTY_ARGS` array; the shellcheck guard now warns audibly when shellcheck is absent instead of skipping silently, with `bash -n` as the always-on floor.
-
-### Fixed — the image-freshness guard no longer disables itself silently on a detached copy (CAL-1153)
-- The CAL-1144 image-freshness guard silently no-op'd on a wrapper copied outside any checkout (the real `~/bin/harness` install), disabling it in exactly the deployment it protects; it now warns once on stderr naming the detached-copy cause and the symlink remedy, and three new tests exercise the real wrapper from a copy and a symlink.
-
-### Added — tests own the state they mutate (CAL-1161)
-- New `engineering-principles` principle (**0.3.0 → 0.4.0**, registry **0.5.48 → 0.5.49**): a suite provisions its own instance and disposes it at teardown, never borrowing state that outlives the run — sourced from a consumer repo whose documented test command destroyed its shared dev database, and placed in principles (not TDD) because it is about isolation, not real-vs-mock.
-
-### Changed — the staging hop direct-pushes on a green gate; the no-auto-merge rule scopes to the release hop (CAL-1158)
-- The ADR-0003 no-auto-merge rule now scopes to the *release* hop only: the nightly `dev → staging` hop direct-pushes the gated SHA (`DIRECT_PUSH_TARGET` allowlist = `staging` alone, refusing `main` before any git runs) and opens no PR, recorded as a new terminal `promoted` state; `main` stays the single PR-gated human decision point.
-
-### Fixed — drop the stale org gloss on the Linear team prefix
-- Deleted the stale `Calibrate-coffee (CAL)` gloss on `CONTEXT.md`'s `linear: CAL` team key (also in `specs/infrastructure.md` and two `tests/` fixture copies) — the key is opaque and the only thing the API uses, and correcting it to the current org name would publish a private name into generic infrastructure other repos self-host.
-
-### Fixed — the private-surface guard was blind to the workspace's former slug (CAL-1029)
-- `test_no_private_surfaces` knew only the *current* workspace slug, leaving 24 former-slug `linear.app` URLs standing across four `specs/` files; redacted to the bare `CAL-xxx` ids (the forbidden tuple now grows on a rename). Also: `SECURITY.md` states the ledger is not tamper-evident, and `ci.yml` pins `contents: read`. CAL-1029 stays open for the operator-run visibility flip.
-
-### Fixed — `close` no longer merges into a base checkout it has not checked, and never hides a failed cleanup (CAL-1151)
-- `close` was mutating the base checkout without validating it; CAL-1151 made it refuse `dirty_base_checkout` before the first mutation, stopped discarding the merge-abort exit code, and split the conflicted-vs-refused-to-start error messages. (The throwaway-worktree redesign that superseded the `dirty_base_checkout` precondition landed as CAL-1154, above.)
-
-### Fixed — the wrapper rebuilds a stale `harness:dev` instead of silently running it (CAL-1144)
-- Nothing rebuilt the `harness:dev` image after a merge, so an unattended tick could silently run an old verb; the freshness guard now lives in the wrapper and rebuilds (rather than refuses) when `harness/` has moved, with a failed rebuild exiting non-zero instead of falling through to the stale image.
-
-### Added — the advisory `/assess` report commit is sanctioned; `gh pr merge` is denied (CAL-1140)
-- `settings/harness.json` **0.5.0 → 0.6.0**: a seventh `autoMode.allow` clause sanctions the unattended `/assess` report commit to `dev` (bounded to `assessments/`), and `Bash(gh pr merge *)` is now denied so all integration routes through the `close` verb's HEAD-bound gate (discharging CAL-1142's deferred fifth deny).
-
-### Added — `harness/cli/close.py` is armed on the architecture watchlist (CAL-1139)
-- Armed `harness/cli/close.py` on the `CONTEXT.md` architecture watchlist (gate + ledger + git concerns accreting in one module); splitting it is out of scope, and `linear.py`'s exclusion (its size is guard-mandated cohesion) is pinned as a tripwire.
-
-### Added — the OpenCode + MLX local orchestrator spike (CAL-1134)
-- Recorded the OpenCode + MLX local-orchestrator stack for driving nightly promotion cheaply in `specs/local-orchestrator-stack.md` (marked a hypothesis — nothing is installed here), guarded by a drift test that derives subcommands and stop-conditions from the live `promote` surface.
-
-### Added — `harness defer` verb: the triage write as an audited verb (CAL-1143)
-- New `harness defer <TICKET> --reason <text>` verb: triage was the one lifecycle write the routine hand-rolled as raw GraphQL; it now posts the reason, additively applies the `decision` label, and records a `defer` event on its own terminal `runs` row — binding triage to its `autoMode` clause and the ledger.
-
-### Fixed — the release-facing docs describe what actually shipped (CAL-1111)
-- The README changelog was an era behind and `RELEASING.md`'s checklist named a roadmap table neither file ever had; added a `2026-07` era entry, removed the phantom item, and pinned currency with `test_release_docs_currency.py`.
-
-### Added — `harness promote start` / `continue` worktree + merge mechanics (CAL-1115)
-- Filled the `promote start` / `continue` write-path openers on a new `harness/promotion.py`: worktree + `--no-ff` merge from the target, conflict classification (`agent_may_fix` vs `needs_ticket` by file kind/count), and a resumable one-repair `continue`; `merged_sha` added to the locked `Promotion` contract.
-
-### Changed — the `~/bin/harness` wrapper is a versioned file, not a README heredoc (CAL-1123)
-- Promoted the wrapper from a README heredoc to a real versioned `docker/harness-wrapper.sh` (mode 755, `bash -n`-clean), recommended to be symlinked onto `PATH` so fixes propagate on `git pull`; the container-hardening guards now assert against the file, not prose.
-
-### Added — `code-quality` names a narrowing's worklist as the transitive consumers of the field (CAL-1100)
-- `code-quality` **0.8.0 → 0.9.0**: a narrowing at a boundary is a whole-call-graph change — the worklist is every transitive consumer of the field, not the callsites a coercion-operator grep returns (from the 2026-07-16 assessment).
-
-### Added — `spec-authoring` requires a scope-claim invariant to cite its enumeration or be recorded as a finding (CAL-1101)
-- `spec-authoring` **0.6.0 → 0.7.0**: any scope claim ("the only consumer", "exactly one home") must cite the enumeration that establishes it, or a second consumer is a finding, not an invariant. (Both this and CAL-1100 filed from `assessments/2026-07-16-code.md`; registry **0.5.45 → 0.5.46**.)
-
-### Fixed — `doctor` probes that the review engine can actually run, not just that it is on PATH (CAL-1083)
-- `doctor`'s reviewer check now runs a `--version` liveness probe per engine (`absent` / `cannot_run` / `ok`) instead of a PATH-only `which`, so an on-PATH-but-unrunnable engine FAILs (Codex's in-container `bwrap` per ADR 0002); it also WARNs when a repo defines no `verify:` gate.
-
-### Fixed — the wrapper joins group 0 so the non-root container can reach the forwarded ssh-agent socket (CAL-1122)
-- `close`/`checkpoint` SSH pushes failed because the non-root (`USER harness`) container couldn't reach Docker Desktop's root-owned forwarded ssh-agent socket; fixed with `--group-add 0` in the wrapper (the socket is group-rw), without weakening CAL-1008's credential hardening.
-
-### Added — the verbs run tracker-less under `layers.linear: false` (CAL-1104)
-- The verbs now run tracker-less under `layers.linear: false` (previously hard-required Linear despite the advertised switch): new `harness/layers.py` reads the block-scoped key, `start` treats its arg as an opaque run id, `close`/`reclaim` degrade honestly, the review gate is untouched, and the layer defaults on conservatively. `templates/CONTEXT.template.md` **0.1.9 → 0.1.10**.
-
-### Fixed — redact workspace URLs leaked into a public proposal
-- Redacted nine full `linear.app/<workspace>` URLs leaked into `specs/proposals/local-promotion-steward.md` to the bare `CAL-xxxx` ids — `test_no_private_surfaces` had been red on `dev` (CI ran only on `main` pushes then), blocking the gate for every ticket.
-
-### Added — `review` requires recorded verify-gate evidence (CAL-1082)
-- `review --gate-exit <code> [--gate-log <path>]` now records verify-gate evidence bound to `reviewed_sha` (green → the engine runs and the event carries `gate_ran`/`gate_command`/`gate_exit_code`/tail; red → refuses `gate_failed` before the engine; configured-but-absent → `no_gate_evidence`), and `close` gains a `no_gate_evidence` backstop for pre-change passes. New `harness/gate.py`; `commands/harness.md` **0.1.7 → 0.1.8**.
+- **Added — a GitHub Projects v2 tracker backend behind the seam (CAL-1105)** — `harness/github.py`'s `GitHubClient` implements `Tracker` over GitHub Issues + a Projects v2 `Status` single-select field (resolved by name), superseding the `UnsupportedTrackerError` …
+- **Added — host the repo-guide page on GitHub Pages + link from README (CAL-1201)** — `docs/index.html` gains Open-Graph/Twitter meta tags, a favicon, and share assets …
+- **Added — a self-contained repo-guide landing page at `docs/index.html` (CAL-1200)** — `four-loops.html` grew into `docs/index.html`: the Four Loops model, a harness-verbs section, and a guidance catalogue, each `data-guidance="<id>"` resolving in `registry.yaml`.
+- **Fixed — GitHub detects the licence as AGPL-3.0 (CAL-1198)** — `LICENSE` restored to byte-exact AGPL-3.0 text (a prepended note had diluted it below licensee's 98% threshold) …
+- **Changed — verbs obtain their tracker through a seam factory (CAL-1197)** — Every verb now obtains its tracker via `tracker_client(repo_root)` (a `@runtime_checkable Tracker` protocol) instead of constructing `LinearClient` directly — the seam a second backend …
+- **Changed — `close` merges in a throwaway worktree, not the main checkout (CAL-1154)** — `close`'s merge/push moved into a detached `.worktrees/harness/<run_id>-close` worktree off `origin/<base>` …
+- **Added — `doctor` flags a drifted `~/bin/harness` wrapper (CAL-1149)** — New `check_wrapper` compares the host-side `~/bin/harness` against the versioned `docker/harness-wrapper.sh`, surfacing symlink/copy/drifted/detached via `HARNESS_WRAPPER_STATUS`.
+- **Changed — CI runs on `dev`, not only `main` (CAL-1030)** — `.github/workflows/ci.yml` now triggers on `[main, dev]`, so `close`'s direct pushes to `dev` are verified at merge time instead of waiting for the release PR.
+- **Changed — `code-quality` Part A: an extraction sweeps for its copies (CAL-1172)** — Part A gains *An extraction sweeps for its copies*: grep the whole tree post-extraction …
+- **Changed — the feature template demands a production call site per exported entry (CAL-1171)** — `templates/feature.md` requires a named production caller per exported interface entry …
+- **Fixed — `checkpoint` re-pushes a rebased run branch (force-with-lease) (CAL-1162)** — `harness checkpoint` pushes with `--force-with-lease` so a rebase-before-close no longer silently reverts durability to the pre-rebase commit …
+- **Changed — `/assess` findings file to Todo, with a widened autoMode clause (CAL-1168)** — `/assess` step 2 now files findings/insights to **Todo** (was ad hoc) with severity-mapped priority …
+- **Added — `harness defer v2`: `--needs`, assign-on-defer, approved autoMode clause (CAL-1167)** — `harness defer` gains `--needs decision|operator` and assigns the ticket to the operator (`LinearClient.assign_to_viewer`) as the machine-readable hold signal.
+- **Changed — `work-discovery` skips on assignment, defers with assignment (CAL-1166)** — The skip rule keys on assignment to a human (any state, with a transitional label OR) …
+- **Changed — ticket protocol codified in the `linear` skill (CAL-1165)** — Todo/Backlog filing rules, assignment-as-hold-signal, and the `operator` label documented …
+- **Fixed — a promotion gate whose toolchain can't run is `blocked`, not a false code ticket (CAL-1160)** — New `GATE_UNRUNNABLE_EXIT` (97) maps to `blocked` via `classify_gate_failure`, closing the unreachable `exit_code is None` path that used to file a false `needs_ticket`.
+- **Fixed — `promote` gates host-side, so the promotion success path is reachable (CAL-1159)** — `promote start`/`continue` gain `--gate-exit`/`--gate-log` (mirroring `review`) and classify host-supplied evidence instead of running the gate inside the toolchain-less container …
+- **Changed — the tracker switch collapses to a single `tracker:` field (CAL-1164)** — `tracker: linear | github | none` replaces the derivable `layers.linear` boolean as the single on/off-plus-backend fact …
+- **Added — a distributed reference for the mechanical size-marker guard (CAL-1156)** — New `templates/size-guard.md` ships a repo-editable `# size: <reason>` walker for consuming repos, execute-verified against fixtures.
+- **Fixed — the wrapper is shellcheck-clean, and its guard no longer skips silently (CAL-1150)** — Fixed a latent SC2046 in `docker/harness-wrapper.sh` (the `-it` flags were built with an unquoted command substitution) by assembling them in a `TTY_ARGS` array …
+- **Fixed — the image-freshness guard no longer disables itself silently on a detached copy (CAL-1153)** — The CAL-1144 image-freshness guard silently no-op'd on a wrapper copied outside any checkout (the real `~/bin/harness` install), disabling it in exactly the deployment it protects …
+- **Added — tests own the state they mutate (CAL-1161)** — New `engineering-principles` principle (**0.3.0 → 0.4.0**, registry **0.5.48 → 0.5.49**): a suite provisions its own instance and disposes it at teardown, never borrowing state that …
+- **Changed — the staging hop direct-pushes on a green gate; the no-auto-merge rule scopes to the release hop (CAL-1158)** — The ADR-0003 no-auto-merge rule now scopes to the *release* hop only: the nightly `dev → staging` hop direct-pushes the gated SHA (`DIRECT_PUSH_TARGET` allowlist = `staging` alone, refusing …
+- **Fixed — drop the stale org gloss on the Linear team prefix** — Deleted the stale `Calibrate-coffee (CAL)` gloss on `CONTEXT.md`'s `linear: CAL` team key (also in `specs/infrastructure.md` and two `tests/` fixture copies) — the key is opaque and the …
+- **Fixed — the private-surface guard was blind to the workspace's former slug (CAL-1029)** — `test_no_private_surfaces` knew only the *current* workspace slug, leaving 24 former-slug `linear.app` URLs standing across four `specs/` files …
+- **Fixed — `close` no longer merges into a base checkout it has not checked, and never hides a failed cleanup (CAL-1151)** — `close` was mutating the base checkout without validating it …
+- **Fixed — the wrapper rebuilds a stale `harness:dev` instead of silently running it (CAL-1144)** — Nothing rebuilt the `harness:dev` image after a merge, so an unattended tick could silently run an old verb …
+- **Added — the advisory `/assess` report commit is sanctioned; `gh pr merge` is denied (CAL-1140)** — `settings/harness.json` **0.5.0 → 0.6.0**: a seventh `autoMode.allow` clause sanctions the unattended `/assess` report commit to `dev` (bounded to `assessments/`), and `Bash(gh pr merge *)` …
+- **Added — `harness/cli/close.py` is armed on the architecture watchlist (CAL-1139)** — Armed `harness/cli/close.py` on the `CONTEXT.md` architecture watchlist (gate + ledger + git concerns accreting in one module) …
+- **Added — the OpenCode + MLX local orchestrator spike (CAL-1134)** — Recorded the OpenCode + MLX local-orchestrator stack for driving nightly promotion cheaply in `specs/local-orchestrator-stack.md` (marked a hypothesis — nothing is installed here), guarded …
+- **Added — `harness defer` verb: the triage write as an audited verb (CAL-1143)** — New `harness defer <TICKET> --reason <text>` verb: triage was the one lifecycle write the routine hand-rolled as raw GraphQL …
+- **Fixed — the release-facing docs describe what actually shipped (CAL-1111)** — The README changelog was an era behind and `RELEASING.md`'s checklist named a roadmap table neither file ever had …
+- **Added — `harness promote start` / `continue` worktree + merge mechanics (CAL-1115)** — Filled the `promote start` / `continue` write-path openers on a new `harness/promotion.py`: worktree + `--no-ff` merge from the target, conflict classification (`agent_may_fix` vs …
+- **Changed — the `~/bin/harness` wrapper is a versioned file, not a README heredoc (CAL-1123)** — Promoted the wrapper from a README heredoc to a real versioned `docker/harness-wrapper.sh` (mode 755, `bash -n`-clean), recommended to be symlinked onto `PATH` so fixes propagate on `git …
+- **Added — `code-quality` names a narrowing's worklist as the transitive consumers of the field (CAL-1100)** — `code-quality` **0.8.0 → 0.9.0**: a narrowing at a boundary is a whole-call-graph change — the worklist is every transitive consumer of the field, not the callsites a coercion-operator grep …
+- **Added — `spec-authoring` requires a scope-claim invariant to cite its enumeration or be recorded as a finding (CAL-1101)** — `spec-authoring` **0.6.0 → 0.7.0**: any scope claim ("the only consumer", "exactly one home") must cite the enumeration that establishes it, or a second consumer is a finding, not an …
+- **Fixed — `doctor` probes that the review engine can actually run, not just that it is on PATH (CAL-1083)** — `doctor`'s reviewer check now runs a `--version` liveness probe per engine (`absent` / `cannot_run` / `ok`) instead of a PATH-only `which`, so an on-PATH-but-unrunnable engine FAILs …
+- **Fixed — the wrapper joins group 0 so the non-root container can reach the forwarded ssh-agent socket (CAL-1122)** — `close`/`checkpoint` SSH pushes failed because the non-root (`USER harness`) container couldn't reach Docker Desktop's root-owned forwarded ssh-agent socket …
+- **Added — the verbs run tracker-less under `layers.linear: false` (CAL-1104)** — The verbs now run tracker-less under `layers.linear: false` (previously hard-required Linear despite the advertised switch): new `harness/layers.py` reads the block-scoped key, `start` …
+- **Fixed — redact workspace URLs leaked into a public proposal** — Redacted nine full `linear.app/<workspace>` URLs leaked into `specs/proposals/local-promotion-steward.md` to the bare `CAL-xxxx` ids — `test_no_private_surfaces` had been red on `dev` (CI …
+- **Added — `review` requires recorded verify-gate evidence (CAL-1082)** — `review --gate-exit <code> [--gate-log <path>]` now records verify-gate evidence bound to `reviewed_sha` (green → the engine runs and the event carries …

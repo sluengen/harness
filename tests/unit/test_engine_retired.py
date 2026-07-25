@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._cliutil import registered_command_surface
 from tests._gitutil import tracked_files_under, tracked_py_sources
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -126,11 +127,7 @@ def test_cli_app_exposes_verbs_not_run() -> None:
     """The CLI app keeps the verb surface and drops the YAML ``run`` command."""
     from harness.cli import app
 
-    names = {
-        cmd.name
-        for cmd in app.registered_commands
-        if cmd.name is not None
-    }
+    names = registered_command_surface(app)
     # Verbs survive.
     assert {"start", "review", "close"}.issubset(names)
     # The YAML walker entry and its static validator are gone.
