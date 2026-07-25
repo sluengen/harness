@@ -10,7 +10,7 @@ longer has.
 Three locks:
 
 * **Registered surface** — the Typer app registers exactly the as-built verb set
-  (the three audited verbs plus the read/inspection and ops commands) and none of
+  (the audited lifecycle verbs plus the read/inspection and ops commands) and none of
   the retired engine commands (``run`` / ``validate`` / ``decisions`` /
   ``decision``).
 * **Documented surface == registered** — the command surface *documented* in
@@ -56,7 +56,8 @@ CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 EXPECTED_SURFACE = {
     "start",
     "review",
-    "close",  # the three audited verbs
+    "close",
+    "design",  # the four audited lifecycle verbs (design: #211, ADR 0007)
     "checkpoint",  # push the run branch mid-flight (CAL-738)
     "status",
     "logs",
@@ -245,9 +246,12 @@ def _spec_section_41() -> str:
     return text[start:end]
 
 
-#: The three audited verbs are named inline in §4.1 by design (§4.2–§4.4 detail
-#: each), so they are excluded from the ops-enumeration invariant below.
-_AUDITED_VERBS = {"start", "review", "close"}
+#: The audited lifecycle verbs are named inline in §4.1 by design (§4.2–§4.4
+#: detail each), so they are excluded from the ops-enumeration invariant below.
+#: ``design`` joined them in #211 (ADR 0007) — it is a run-bound, ledger-backed
+#: lifecycle verb, not an ops command, so a section naming the audited set is
+#: still naming the audited set and not drifting into a subset enumeration.
+_AUDITED_VERBS = {"start", "design", "review", "close"}
 
 
 def test_spec_41_does_not_partially_enumerate_the_command_surface() -> None:
@@ -290,13 +294,13 @@ def test_spec_41_does_not_partially_enumerate_the_command_surface() -> None:
 # * The ``/`` separator (not "and"/commas) is what marks a deliberate *list*, so
 #   ``the `runs` table and the `events` table`` is left alone.
 # * A real verb-surface list anchors on the audited verbs — you cannot enumerate
-#   "the verbs" and omit ``start``/``review``/``close``. Requiring an audited-verb
+#   "the verbs" and omit ``start``/``design``/``review``/``close``. Requiring an audited-verb
 #   anchor leaves alone the ledger ``\`runs\` / \`events\``` tables pair (§4),
 #   whose names merely double as commands but name no audited verb.
 #
 # So the lock fires only on a slash-list that names an audited verb *and* an ops
 # command yet is a proper subset of the registered surface — exactly the §1
-# drift. The audited trio alone (no ops command) and a complete list (not a
+# drift. The audited set alone (no ops command) and a complete list (not a
 # subset) are both left alone.
 
 #: A ``/``-joined run of two or more backtick-wrapped tokens — the verb-surface
@@ -330,8 +334,8 @@ def test_no_live_spec_section_handlists_a_command_subset() -> None:
 
     AC for CAL-810: §11 is the single guarded source of the command set; any
     other live section that slash-lists the verbs (as §1 principle 5 did) drifts
-    the moment a verb is added. The by-design audited trio
-    (``start``/``review``/``close``) names no ops command and is allowed; a
+    the moment a verb is added. The by-design audited set
+    (``start``/``design``/``review``/``close``) names no ops command and is allowed; a
     complete list and §11's fenced surface are allowed; the ledger ``runs`` /
     ``events`` tables pair names no audited verb and is allowed; a proper subset
     that presents itself as the verb surface yet pulls in an ops command is not.
@@ -357,8 +361,10 @@ def test_no_live_spec_section_handlists_a_command_subset() -> None:
         # The §1 drift — a proper subset that pulls in ops commands.
         ("`start` / `review` / `close` / `status` / `events` / `cancel`", True),
         ("`start` / `status`", True),
-        # Allowed — the by-design audited trio names no ops command.
+        # Allowed — the by-design audited set names no ops command.
         ("`start` / `review` / `close`", False),
+        # Allowed — the full four-verb audited set, ADR 0007's lifecycle (#211).
+        ("`start` / `design` / `review` / `close`", False),
         # Allowed — the ledger tables pair (§4) names no audited verb, so it is
         # not read as a verb-surface enumeration even though both names double as
         # commands.
@@ -375,7 +381,7 @@ def test_no_live_spec_section_handlists_a_command_subset() -> None:
 def test_surface_slash_list_detection(text: str, flagged: bool) -> None:
     """The slash-list detector flags a proper-subset verb enumeration that
     anchors on an audited verb and pulls in an ops command, but leaves the
-    audited trio, the ledger tables pair, non-command lists, lone references,
+    audited set, the ledger tables pair, non-command lists, lone references,
     and "and"/comma prose alone."""
     registered = _registered_surface()
     hit = any(

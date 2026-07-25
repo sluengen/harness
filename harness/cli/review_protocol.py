@@ -28,10 +28,11 @@ so an engine quirk is a change *here*, not in the verb.
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
-from typing import Literal, NamedTuple
+from typing import Literal
 
 from pydantic import BaseModel
+
+from harness.cli._engine import Runner, RunResult
 
 __all__ = [
     "DEFAULT_ENGINE",
@@ -71,25 +72,11 @@ DEFAULT_ENGINE: Engine = "claude"
 ModelTier = Literal["sonnet", "opus"]
 
 
-class RunResult(NamedTuple):
-    """The full result of one engine subprocess: stdout, stderr, exit code.
-
-    The CAL-702 usage-limit fallback needs stderr **and** the exit code to tell
-    an exhausted Codex tier from an ordinary failure — the limit signal lands on
-    stderr with a non-zero exit, never on stdout (captured empirically). The
-    runner therefore returns all three rather than streaming stdout alone.
-    """
-
-    stdout: str
-    stderr: str
-    returncode: int
-
-
-# A runner takes keyword args (cmd, stdin, env, cwd, timeout) and returns a
-# RunResult. Default = the real engine subprocess; tests inject a fake. The
-# ``timeout`` (seconds, or None) is the per-subprocess ceiling (CAL-1004); a
-# fake may accept and ignore it.
-Runner = Callable[..., Awaitable[RunResult]]
+# :class:`RunResult` and :data:`Runner` describe the *driver's* contract, not this
+# protocol's, so they live in :mod:`harness.cli._engine` alongside the one
+# subprocess driver both engine verbs share (#211). They are imported above and
+# re-exported here (``__all__``) so every existing ``review_protocol`` / ``review``
+# import of them keeps resolving unchanged.
 
 
 # ---------------------------------------------------------------------------
