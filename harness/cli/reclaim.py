@@ -40,15 +40,18 @@ Targeting:
   (CAL-736, breakdown item 3). Enumerate the active tickets in scope — both
   transient ``started`` states, In Progress **and** In Review (CAL-1103: ``review``
   parks a reviewed ticket In Review, so a dead orchestrator can strand it there) —
-  and reclaim each whose tracker ``updatedAt`` is older than the threshold,
-  *reusing* the single-target ``--ticket`` path per ticket (no second reclaim
+  and reclaim each idle past the threshold, *reusing* the single-target
+  ``--ticket`` path per ticket (no second reclaim
   implementation). ``--project`` is optional (#174): supplied → scope to one
   project; omitted → the backend's natural full queue (the ``repo.linear`` team
   for Linear; the board for GitHub). Liveness of a dead run cannot be observed
-  (ephemeral
-  container, no shared DB); the only signal is time — a ticket idle longer than
-  any legitimate run takes is presumed abandoned (proposal D2). The bulk arm the
-  hourly Build routine's pre-flight will call (CAL-737).
+  directly (ephemeral container, no shared DB); the only signal is time — a
+  ticket idle longer than any legitimate run takes is presumed abandoned
+  (proposal D2). "Idle" reads **two** clocks (#216): the tracker's ``updatedAt``
+  and, for tracker-stale candidates only, the ledger's last activity — because a
+  Projects-v2 Status write never bumps a GitHub issue's ``updatedAt``, so the
+  tracker is not a heartbeat there (see :func:`_ledger_last_activity`). The bulk
+  arm the hourly Build routine's pre-flight will call (CAL-737).
 
 Idempotent: reclaiming a run already ``cancelled`` is a safe no-op (no second
 Linear revert, no duplicate event). The sweep is idempotent the same way — once
@@ -410,9 +413,17 @@ async def _run_stale_sweep(
     state the ticket was stranded in. A ticket inside the threshold is left
     untouched.
 
+    Staleness is judged on the newest of two clocks (#216): the tracker's
+    ``updatedAt``, and — consulted **only** for a ticket the tracker already
+    considers stale — the ledger's last activity for that ticket's open run
+    (:func:`_ledger_last_activity`). Ordering the checks this way keeps the
+    ledger a pure rescue: a tracker-fresh ticket short-circuits without a DB
+    read, and the ledger can only ever spare a live run, never condemn one the
+    tracker-only path would have kept.
+
     Tracker-less (``tracker: none``, CAL-1104/CAL-1197) the sweep is a **clean
-    no-op**: staleness keys entirely on the tracker's ``updatedAt`` (proposal
-    D2), so with no tracker there is no active ticket state to enumerate and
+    no-op**: enumeration is the tracker's job (proposal D2), so with no tracker
+    there is no active ticket state to enumerate and
     the honest result is "scanned nothing". It reports empty rather than failing
     because the Build routine runs this every tick as a pre-flight — an error
     here would wedge the loop it exists to unblock.
