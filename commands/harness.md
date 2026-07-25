@@ -1,17 +1,17 @@
-<!-- guidance:harness@0.2.4 -->
+<!-- guidance:harness@0.2.5 -->
 # /harness — Harness pipeline commands
 
-Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the three harness verbs (`start`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
+Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
 
 ---
 
 ## /harness run \<ISSUE-ID\>
 
-Drive a Linear ticket end-to-end by orchestrating the three harness verbs: **start → implement → review → (fix → review)\* → close**.
+Drive a Linear ticket end-to-end by orchestrating the four harness verbs: **start → design → implement → review → (fix → review)\* → close**.
 
 This is **not** a wrapper that hands the ticket to a black-box workflow. *You* — the orchestrating Claude session — run the loop: you call each verb, you write the code and tests inline in the worktree, you read each verdict and act on it. The verbs own every git and tracker mutation; you own the implementation and the control flow between them.
 
-**Why the verbs, and nothing else, touch state (D5):** each verb appends to a single `runs` ledger — `start` opens the row, `review` records a verdict bound to the reviewed SHA, `close` enforces the gate and finalizes. That ledger is the whole audit trail. If you hand-roll a `git merge`, a `git push`, or a Linear GraphQL mutation to move state yourself, the ledger no longer reflects reality and the gate can no longer protect the merge. So: **never** run raw git state-transitions or Linear CURL for the lifecycle in this loop — route every mutation through a verb.
+**Why the verbs, and nothing else, touch state (D5):** each verb appends to a single `runs` ledger — `start` opens the row, `design` records the design attempt and the SHA it grounded against, `review` records a verdict bound to the reviewed SHA, `close` enforces the gate and finalizes. That ledger is the whole audit trail. If you hand-roll a `git merge`, a `git push`, or a Linear GraphQL mutation to move state yourself, the ledger no longer reflects reality and the gate can no longer protect the merge. So: **never** run raw git state-transitions or Linear CURL for the lifecycle in this loop — route every mutation through a verb.
 
 ### Usage
 
@@ -49,6 +49,27 @@ It validates the ticket, transitions it to In Progress, creates the worktree, an
 
 Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`). `cd` into `worktree_path`. Read `ticket.title` and `ticket.description` — that is your spec for this run. (Default base is `dev`; pass `--base` only to override.) If the ticket carries the `reclaimed` label, add `--resume` so the run continues from the dead run's preserved WIP branch when one exists (it falls back to a clean start otherwise) — see the Build routine's resume step.
 
+**Step 1.5 — `design`.** Before writing a line, produce the run's technical design:
+
+```bash
+harness design --run-id <run_id>            # [--repo .] [--model <alias>]
+```
+
+A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedicated context — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
+
+```json
+{ "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
+  "grounded_sha": "...", "model": "opus", "status": "ok" }
+```
+
+**Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design.
+
+The stage is **unconditional** — it runs for every ticket, whatever its judged difficulty; the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005 semantics are untouched).
+
+**Failure degrades and records (ADR 0007 D4).** Every way the stage can fail to produce a design — a killed engine, an engine that cannot be spawned, no `SUBMIT` line, a malformed one, an unreadable ticket spec — records a `design` event with `status="failed"` and a stable `reason`, posts no comment, and exits **3**. That is not a stop: **proceed to implement without a design**. A design attempt that *failed* still **satisfies** `review`'s enforcement, so an infra flake costs the run its design but never its ability to ship. Do not re-run `design` in a loop chasing a green one — a re-run is legitimate (the latest event is authoritative, nothing is mutated), but the run is not blocked either way.
+
+**`review` refuses a run with no recorded design attempt** — exit `5`, `reason=no_design`, before any engine is invoked and with no verdict recorded. It mirrors `no_gate_evidence`: silence is not a pass. Skipping this step does not save a step; it buys a refusal at Step 3.
+
 **Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
 
 **Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
@@ -70,11 +91,15 @@ harness review --run-id <run_id> --engine codex   # cross-model review — host-
 
 ```bash
 bash <your verify gate> > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
-harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log
+harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log \
+  --design-file /tmp/design.md                            # Step 1.5's design_markdown
 ```
+
+`--design-file` carries the `design_markdown` Step 1.5 printed, and the recorded `design_hash` authenticates it: the engine then reviews the diff **against the design**, so the fix loop converges on conformance instead of re-deriving intent each cycle. It is **enrichment, not enforcement** — an absent, unreadable, or hash-mismatched file drops the context rather than failing the run (a supplied-but-unmatched file warns on stderr), and it can neither satisfy nor bypass the `no_design` check, which keys on the ledger alone. Whether a review actually saw the design is recorded on the `review` event as `design_context`.
 
 The verb does **not** run the gate itself — the toolchain lives on your side, not in the verb's container, and no image can carry every target repo's toolchain (an Xcode target never runs in a Linux container). What the verb does is refuse to certify what it cannot show was verified:
 
+- **No recorded `design` event for the run** → exit `5`, `reason=no_design`, checked **first** (a run that never recorded a design stage is malformed whatever its gate colour — root cause before symptom). Run Step 1.5 and review again; a *failed* design attempt satisfies it.
 - **No `--gate-exit` while `verify:` is configured** → exit `5`, `reason=no_gate_evidence`. Silence is not a pass.
 - **`--gate-exit` non-zero** → exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`. **No engine, no verdict recorded.** Fix what the tail reports and re-run.
 - **Green** → the engine runs, and the `review` event records `gate_ran`, `gate_command`, `gate_exit_code`, and the log tail, bound to the reviewed SHA — so a recorded `pass` means *the gate ran green*, not *a reviewer read the diff*.
@@ -291,6 +316,6 @@ Next: /harness run <ISSUE-ID>
 
 ### Related
 
-- `/harness run` — orchestrates the `start → review → close` verb loop for a given ticket
-- The three verbs `/harness run` drives — `start`, `review`, and `close` (implemented in the harness app)
+- `/harness run` — orchestrates the `start → design → review → close` verb loop for a given ticket
+- The four verbs `/harness run` drives — `start`, `design`, `review`, and `close` (implemented in the harness app)
 - The proposal behind the verb-loop model (the harness's "harness-as-tool" design)
