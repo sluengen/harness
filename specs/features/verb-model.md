@@ -1,17 +1,17 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-07-16
+last_updated: 2026-07-26
 linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197]
 ---
 
-# Verb model — start / review / close
+# Verb model — start / design / review / close
 
-> The three audited verbs an orchestrating agent calls to drive a ticket from open to merged, with review enforced as a gate before anything lands.
+> The four audited verbs an orchestrating agent calls to drive a ticket from open to merged, with the design stage recorded and review enforced as a gate before anything lands.
 
 ## Behaviour
 
-The harness is **not** a pipeline that drives agents. A single Claude session orchestrates *and* implements a ticket, shelling out to three one-shot, ledger-backed verbs — `start`, `review`, `close` — over the [run ledger](run-ledger.md). The agent owns *what gets built and how*; the verbs own *the durable record and the gate* (decision D1, [`specs/architecture-principles.md`](../architecture-principles.md)). The lifecycle of one run is `start → implement → review → (fix → review)* → close`.
+The harness is **not** a pipeline that drives agents. A single Claude session orchestrates *and* implements a ticket, shelling out to four one-shot, ledger-backed verbs — `start`, `design`, `review`, `close` — over the [run ledger](run-ledger.md). The agent owns *what gets built and how*; the verbs own *the durable record and the gate* (decision D1, [`specs/architecture-principles.md`](../architecture-principles.md)). The lifecycle of one run is `start → design → implement → review → (fix → review)* → close` (ADR [`0007`](../decisions/0007-design-verb.md) inserted `design` as a mandatory stage; `review` refuses a run that never recorded one).
 
 ### `start` — open a run
 
@@ -33,6 +33,20 @@ The Linear transition is the only non-local side effect, and it runs **last**: i
 - THEN `start` resolves the existing open run (keyed on the canonical Linear identifier) and **returns it successfully** (exit 0) — it does not create a second worktree or row, and does not error (`harness/cli/start.py`, step 4: `if existing is not None: return existing`)
 
 The partial unique index `idx_runs_ticket_open` is the database-level backstop for the concurrent-race path: if two `start` calls both pass the existence check, the index refuses the second insert and that loser cleans up its worktree and surfaces the run that beat it (at most one `open` run per ticket).
+
+### `design` — produce the run's technical design
+
+`harness design --run-id <id> [--model <alias>]` runs a read-only **Opus** engine over the worktree and the ticket in a fresh, dedicated context — uncontaminated by the orchestrator's own state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). ADR [`0007`](../decisions/0007-design-verb.md) added it so top-tier thinking happens in a verb-owned subprocess and the session executes against its output, instead of designing by rejection across `(fix → review)*` cycles.
+
+The verb records the design in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty, and the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005's semantics are untouched).
+
+- GIVEN an open run
+- WHEN the agent runs `harness design --run-id <id>`
+- THEN the verb records a `design` event with `status="ok"`, `design_hash`, and the `grounded_sha` it studied, posts the design as a marked ticket comment, and emits `DesignOutput` on stdout
+- AND GIVEN instead the engine is killed, cannot be spawned, emits no `SUBMIT` line or a malformed one, or the ticket spec cannot be read, THEN the verb records a `design` event with `status="failed"` and a stable `reason`, posts **no** comment, and exits `3` (decision **D4**: every failure mode degrades and records)
+- AND GIVEN a `failed` design event, WHEN the agent runs `harness review`, THEN review is **not** refused — the check is that a design was *attempted and recorded*, never that it succeeded, so an infra flake costs a run its design but never its ability to ship
+
+**A failed design is not a stop.** The orchestrator proceeds to implement without one rather than re-running the verb in a loop chasing a green result; a re-run is legitimate (the latest event is authoritative and nothing is mutated), but the run is not blocked either way. How `review` consumes the design — enforcement on the ledger, context via `--design-file` — is the "design stage is required" scenario under [`review`](#review--record-a-verdict-bound-to-the-reviewed-sha) below.
 
 ### `review` — record a verdict bound to the reviewed SHA
 
@@ -70,7 +84,22 @@ The agent acts on the verdict:
 - AND GIVEN instead `--gate-exit` is non-zero, THEN the verb refuses the same way and exits `5` with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }` — the harness does not review a red tree, and spends no tokens doing it. The bounded (≤ 2 KB) tail is a deliberate exception to context economy: it is the *reason for the refusal*, so the agent can fix what broke without re-reading the whole log.
 - AND GIVEN instead the repo configures no `verify:` at all, THEN the engine runs and the event records `gate_ran=false, gate_reason="not_configured"` — the harness cannot gate what a repo does not define, so the ledger states the absence plainly instead of implying a gate ran, and `close` allows that pass.
 
-The evidence is checked **after** the spend breakers below: a run already bounded out is refused on that, not on its gate.
+The evidence is checked **after** the spend breakers below (a run already bounded out is refused on that, not on its gate) and **after** the design check that follows.
+
+#### Scenario: the design stage is required before any engine
+
+ADR [`0007`](../decisions/0007-design-verb.md) makes `design` a stage of every run, and `review` is where that is enforced (decision **D3**). Without enforcement the stage is advisory and compliance decays on exactly the unattended runs it exists for; without linkage the engine never sees the design, so the `(fix → review)*` loop re-derives intent each cycle instead of converging on conformance.
+
+- GIVEN an open run with **no** `design` event on record
+- WHEN the agent runs `harness review`
+- THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `5` with `reason=no_design` — the `no_gate_evidence` philosophy: silence is not a pass
+- AND GIVEN instead the run's latest `design` event carries `status="failed"`, THEN it is **not** refused: D4 degrades and records, so the check is that a design was *attempted and recorded*, never that it succeeded, and an engine flake costs a run its design but never its ability to ship
+- AND GIVEN an `ok` design event and `--design-file <path>` whose content hashes to the event's `design_hash`, THEN that design is given to the review engine as context, so the diff is reviewed against the ticket **and** the design; the `review` event records `design_context=true`
+- AND GIVEN an `ok` design event but no `--design-file` (or one that cannot be read or matched), THEN the review proceeds with no design context and records `design_context=false` — a mismatch also warns on stderr
+
+The design check runs **before** the gate-evidence check above: a run that never recorded a design is malformed regardless of its gate colour, so refusing on the gate first would report a transient tree state while masking a missing lifecycle stage. It runs **after** the spend breakers, which stop a bounded-out run before any further work, and before the tracker park, so a refused run leaves its ticket where it stopped.
+
+**Enforcement refuses; context degrades.** The two halves have deliberately different postures. Enforcement keys on the ledger alone — `--design-file` can neither satisfy nor bypass it — so it refuses. The design *body* is not in the ledger (the event carries `design_hash`; the body lives on the ticket as a marked comment), so the orchestrator that ran `harness design` hands its `design_markdown` back and the recorded hash authenticates it. Context is enrichment: the safe outcome — never reviewing against a wrong or unverified design — is fully achieved by dropping it, so refusing there would only add a wedge. `close` is unchanged: its gate already requires a passing review, which now transitively requires a recorded design attempt.
 
 **The evidence is self-reported, deliberately.** It moves no trust boundary: any process that can write the workspace can already forge a ledger event, so a fabricated `--gate-exit 0` is the same class of act as a fabricated event, and the ledger's filesystem trust boundary is unchanged. The authoritative control over what actually merges is server-side branch protection (CAL-1029), not this record. What the record buys is that a `pass` now *states* whether a gate ran, so a reader — and `close` — can tell a verified tree from an unverified one. Cryptographic attestation was weighed and left out of scope. This design also removes the pressure to loosen the review container toward foreign toolchains, which ADR 0002 rejected for good reason.
 
@@ -127,8 +156,8 @@ Every tracker touchpoint above is conditional on the target repo's `CONTEXT.md` 
 #### Scenario: a repo with no tracker
 
 - GIVEN a repo whose `CONTEXT.md` sets `tracker: none`, and **no** `LINEAR_API_KEY`
-- WHEN the agent drives `start → review → close`
-- THEN no verb validates a key, fetches an issue, or transitions anything, and the run completes green
+- WHEN the agent drives `start → design → review → close`
+- THEN no verb validates a key, fetches an issue, or transitions anything, and the run completes green (the `design` case was added to this path by #218)
 - AND `start`'s `<ticket>` argument is an **opaque run identifier** — carried verbatim (so `idx_runs_ticket_open` still refuses a duplicate open run) and emitted with `title` / `description` / `url` / `id` left `null` rather than invented
 - AND `close` reports `ticket_done: false` — the honest record of a transition that did not happen, not a failure
 - AND `reclaim` keeps its local half (reconcile the ledger, preserve the branch) and skips the revert; `reclaim --stale` is a clean no-op, because staleness keys entirely on the tracker's `updatedAt` and there is nothing to enumerate
@@ -167,7 +196,7 @@ One execution model, **two triggers** that produce an identical execution path: 
 
 ## Interface surface
 
-The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is [`commands/harness.md`](../../commands/harness.md). The verb implementations live in `harness/cli/start.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
+The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is [`commands/harness.md`](../../commands/harness.md). The verb implementations live in `harness/cli/start.py`, `harness/cli/design.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
 
 Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb.py`) — and translates it through one epilogue, `run_verb`, so the error-JSON shape is single-sourced rather than re-declared per verb (CAL-1013). The shape: `{"error": <message>}` on stdout under `--json`, plus a machine-readable `"reason"` **only when set** (absent, never `null`). `review` and `close` set a `reason` (the gate-refusal kinds above; an infra-wall tag for `review`); the other verbs leave it unset, keeping their bare `{"error"}` shape. The `--json` *default* stays a per-verb choice (orchestrator-consumed verbs default it on; the human-facing `reclaim` / `cancel` default it off) and is deliberately not unified. `reclaim` emits a typed `ReclaimOutput` / `SweepOutput` like every sibling verb.
 

@@ -44,6 +44,7 @@ from harness.cli.close import CloseOutput, RefusalReason
 from harness.cli.review import Engine, ReviewOutput, Verdict
 from harness.cli.start import StartOutput, TicketContext
 from harness.state import store
+from tests._gitutil import init_repo
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
@@ -128,6 +129,7 @@ def _emit_via_cli(
 ) -> dict[str, object]:
     """Drive ``verb`` through the real CLI with its orchestration mocked; return
     the JSON object the command actually echoed to stdout."""
+    init_repo(tmp_path)  # the verbs refuse a --repo that is not a git top-level (#214)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
     monkeypatch.setattr(_ORCH[verb], AsyncMock(return_value=_INSTANCES[verb]))
     db = tmp_path / "harness.db"
@@ -235,6 +237,7 @@ def test_close_emits_a_locked_refusal_reason(
     not just the ``Literal`` type. Self-contained: an empty initialized ledger
     refuses with ``no_run`` before any Linear or git side effect.
     """
+    init_repo(tmp_path)  # the verbs refuse a --repo that is not a git top-level (#214)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
     db = tmp_path / "harness.db"
     asyncio.run(store.init_db(db))

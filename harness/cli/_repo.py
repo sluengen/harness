@@ -22,14 +22,21 @@ import typer
 
 from harness.cli._git import git_common_dir
 from harness.state import store
-from harness.workspace import WorkspaceNotAllowed, resolve_repo_root
+from harness.workspace import NotAGitTopLevel, WorkspaceNotAllowed, resolve_repo_root
 
 
 def resolve_repo_root_or_exit(repo: Path) -> Path:
-    """Resolve and allowlist-check ``repo``; exit 2 with a stderr message on refusal."""
+    """Resolve, allowlist-check, and repo-root-check ``repo``.
+
+    Exits 2 with the refusal on stderr for either rejection: outside the
+    workspace allowlist (:class:`WorkspaceNotAllowed`) or inside it but not a
+    git top-level (:class:`NotAGitTopLevel`, #214). Both are invocation
+    refusals with the same contract, so they share one exit path — but they
+    stay distinct types so each keeps its own accurate message.
+    """
     try:
         return resolve_repo_root(repo)
-    except WorkspaceNotAllowed as exc:
+    except (WorkspaceNotAllowed, NotAGitTopLevel) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 

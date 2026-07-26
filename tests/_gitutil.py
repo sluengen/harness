@@ -1,4 +1,14 @@
-"""Shared test helper: enumerate the files git *tracks* under a path.
+"""Shared test git helpers.
+
+Three of them, all about not hand-rolling git in test modules.
+
+:func:`init_repo` makes a throw-away directory a real repository. Since #214 the
+verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
+bare ``tmp_path`` to a verb has to initialize it first — a need that landed in
+five test modules at once, which is why the two-line call lives here instead of
+being pasted into each.
+
+:func:`tracked_files_under` enumerates the files git *tracks* under a path.
 
 Retirement / hygiene guards must judge the **committed** tree, not the working
 tree. A guard whose contract is "this module is gone from the repo" must pass on
@@ -11,6 +21,15 @@ the CODE-3 ``intake/__pycache__`` papercut and the PR #72 ``.DS_Store`` papercut
 ``git ls-files`` is the authoritative tracked set. This helper wraps it so every
 guard derives its file set from the same source instead of hand-rolling
 dotfile / ``__pycache__`` skips.
+
+:func:`tracked_py_sources` is that set projected onto Python sources.
+
+Four tree-walking guards enumerated their own ``*.py`` set with ``rglob`` and no
+exclusion for a nested git worktree, so two abandoned worktrees left inside
+``harness/`` made old copies of guarded sources read as living code and failed
+seven tests with no regression behind them (#215). The projection lives here,
+next to the tracked set it is built from, so the answer to "which files are
+living sources" has one home rather than four.
 """
 
 from __future__ import annotations
@@ -20,6 +39,29 @@ from pathlib import Path
 
 # ``tests/_gitutil.py`` → ``parents[1]`` is the repo (or worktree) root.
 _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def init_repo(path: Path) -> Path:
+    """``git init`` a real repository at ``path`` (creating it) and return it.
+
+    For fixtures that hand a throw-away directory to a verb's ``--repo``: since
+    #214 the verbs refuse a path that is not a git top-level, so a bare
+    ``tmp_path`` no longer resolves.
+
+    A real ``git init`` rather than a hand-made ``.git`` directory, so the
+    fixture stays true to the *contract* ("this is a repository root") rather
+    than to one implementation of the check. ``init`` needs no user identity —
+    only ``commit`` does — so this stays cheap and hermetic.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return path
 
 
 def tracked_files_under(
@@ -50,3 +92,27 @@ def tracked_files_under(
         for rel in completed.stdout.split("\0")
         if rel
     }
+
+
+def tracked_py_sources(
+    *bases: str,
+    repo_root: Path = _DEFAULT_REPO_ROOT,
+) -> list[Path]:
+    """Return the git-tracked ``*.py`` files under each of ``bases``, sorted.
+
+    The enumeration basis for guards that scan living Python source. Anything
+    absent from the index — a nested worktree, ``__pycache__`` bytecode, a
+    ``.venv`` — is excluded by construction rather than by an enumerated skip
+    list, so a stray tree at an unanticipated path cannot be read as source
+    (#215). A dot-prefix filter would have missed exactly that: a worktree
+    parked at ``harness/tmp-promote/`` has no dot segment.
+
+    The result is sorted, deduplicated, and absolute: two callers feed it to
+    ``pytest.mark.parametrize``, where a duplicate collects a case twice and an
+    unstable order makes collection IDs vary between runs. Overlapping bases are
+    therefore safe.
+    """
+    found: set[Path] = set()
+    for base in bases:
+        found |= tracked_files_under(base, repo_root=repo_root)
+    return sorted(path for path in found if path.suffix == ".py")

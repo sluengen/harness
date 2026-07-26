@@ -15,9 +15,13 @@ These models are the single source of each payload's shape:
 * An **emitter** builds the model and dumps it (``model_dump``) instead of a bare
   literal, so a field rename breaks the writer's keyword arguments statically
   (mypy), not at runtime.
-* A **reader** that ``json_extract``-s a key imports the field's path/key
-  constant from here (:data:`REVIEW_REVIEWED_SHA_PATH`, :data:`REVIEW_VERDICT_PATH`,
-  :data:`WORKFLOW_FAILED_REASON_KEY`). Each constant is derived from the model via
+* A **reader** that ``json_extract``-s a key, **or reads an already-parsed
+  payload dict**, imports the field's path/key constant from here
+  (:data:`REVIEW_REVIEWED_SHA_PATH`, :data:`REVIEW_VERDICT_PATH`,
+  :data:`WORKFLOW_FAILED_REASON_KEY`, :data:`DESIGN_STATUS_KEY`). A ``*_PATH``
+  constant is the ``$.<field>`` form for a SQL reader; a ``*_KEY`` constant is
+  the bare field name for a reader that indexes the parsed ``dict``. Each is
+  derived from the model via
   :func:`_field_path` / :func:`_field_name`, which raise at import if the field is
   gone — so the raw key string lives in exactly one place, tied to the model, and
   a rename can no longer let writer and reader drift.
@@ -52,6 +56,14 @@ class ReviewEventData(BaseModel):
     event the key is simply absent, ``json_extract`` returns ``NULL``, and the
     close backstop reads that as "no evidence" and refuses. Fail-safe, no
     migration.
+
+    ``design_context`` (#212) is the same shape for the design linkage: a
+    non-optional bool recording whether this review actually saw the run's
+    design. A review can legitimately run without it (the design stage failed,
+    or the caller supplied no ``--design-file``), so it is *recorded* rather
+    than warned about — which makes "did the linkage stop working?" a ledger
+    question instead of a console-noise one. Nothing gates on it: it is audit,
+    where the enforcement lives on the ``design`` event's presence.
     """
 
     run_id: str
@@ -62,6 +74,7 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    design_context: bool = False
     gate_command: str | None = None
     gate_exit_code: int | None = None
     gate_reason: str | None = None
@@ -115,6 +128,45 @@ class DeferEventData(BaseModel):
     deferred_at: str
 
 
+class DesignEventData(BaseModel):
+    """Payload of a ``design`` event — the design stage's recorded attempt (#211).
+
+    ADR 0007 enforces that a design was *attempted and recorded*, not that it
+    succeeded, so this payload has two shapes discriminated by ``status``:
+
+    * ``status='ok'`` — ``design_hash`` (the design text's content hash) and
+      ``grounded_sha`` (the worktree HEAD the engine studied) are set, ``reason``
+      and ``detail`` absent. Together they say *which* design was produced and
+      *which tree* it was grounded in.
+    * ``status='failed'`` — ``reason`` (a stable machine-readable tag) and
+      ``detail`` (the human specifics) are set, the two success fields absent.
+      The split mirrors :class:`~harness.cli._verb.VerbError`'s own ``reason`` vs
+      ``message``: one to branch on, one to diagnose from. Recording both matters
+      because the *only* evidence of which failure happened is what lands here.
+
+    ``engine`` and ``model`` are recorded on **both** shapes — a failed attempt
+    should still say what was attempted. Dump with ``model_dump(exclude_none=True)``
+    so the fields the other shape does not use stay absent from the JSON rather
+    than reading as an explicit ``null``.
+
+    The review verb's ``no_design`` enforcement (#212) keys on the event's
+    *presence*, which is why a ``failed`` attempt satisfies it; it then reads
+    ``status`` and ``design_hash`` back out (:data:`DESIGN_STATUS_KEY`,
+    :data:`DESIGN_HASH_KEY`) to decide whether a design exists to review
+    against, and to authenticate the text supplied for it.
+    """
+
+    run_id: str
+    status: str
+    engine: str
+    model: str
+    designed_at: str
+    design_hash: str | None = None
+    grounded_sha: str | None = None
+    reason: str | None = None
+    detail: str | None = None
+
+
 class ReleaseEventData(BaseModel):
     """Payload of a ``release`` event — the audited record of a decision-sweep
     release (#193): the held ticket, the hold kind it was released from, and
@@ -160,3 +212,13 @@ REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
+
+#: The payload keys ``review``'s design linkage reads from an already-parsed
+#: ``design`` payload (#212): ``status`` discriminates the two shapes (a
+#: ``failed`` attempt still satisfies the ``no_design`` check, ADR 0007 D4), and
+#: ``design_hash`` authenticates the design text the orchestrator hands back
+#: before it reaches the review engine's prompt. Bare field names, not
+#: ``json_extract`` paths — the gate indexes a ``dict``, and no SQL reader of
+#: this payload exists (#217).
+DESIGN_STATUS_KEY = _field_name(DesignEventData, "status")
+DESIGN_HASH_KEY = _field_name(DesignEventData, "design_hash")

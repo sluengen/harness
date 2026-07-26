@@ -36,6 +36,24 @@ Acceptance criteria (this ticket):
   Architecture watchlist bullet. Proven by
   :func:`test_partial_hook_adoption_rule_is_in_stage_two` and
   :func:`test_partial_hook_adoption_rule_sits_between_mirrors_and_watchlist`.
+
+#208 — renews ERP-157 (nano-erp ``/assess code``, CODE-INSIGHT-1). The rule
+above only fires once a reviewer notices the shared hook *is* imported and
+checks its destructuring. Twice in one range (``QuoteShoppingPage.tsx``
+skipping ``useResource`` entirely, ``WorkingPanel.tsx`` skipping
+``useRefusal`` entirely) the call site never imported the hook at all and
+hand-rolled the whole contract beside it — a screen that imports nothing has
+nothing to destructure, so the existing trigger ("a call site imports the
+hook...") never fires. The rule must trigger on the **shape of the diff**
+(a data-fetching or write-then-refetch flow, or a hand-rolled
+``useState``-based load/save/refusal/pending sequence) rather than only on
+an existing import, so it also catches the no-import case.
+
+* **AC-3** — the rule states it applies whether or not the shared hook is
+  imported at all, triggered by the shape of what the diff adds (a
+  data-fetching or write-then-refetch flow) rather than only by an existing
+  import. Proven by
+  :func:`test_partial_hook_adoption_rule_covers_full_non_adoption`.
 """
 
 from __future__ import annotations
@@ -132,4 +150,26 @@ def test_partial_hook_adoption_rule_sits_between_mirrors_and_watchlist() -> None
         "the Partial-hook/utility-adoption bullet must sit immediately after "
         "the Mirrors/duplicates admission-comment bullet and before the "
         "Architecture watchlist bullet"
+    )
+
+
+def test_partial_hook_adoption_rule_covers_full_non_adoption() -> None:
+    """The rule also catches a call site that skips the hook entirely (#208 AC-3).
+
+    A screen that never imports the shared hook has nothing to destructure,
+    so a trigger scoped to "a call site imports the hook..." never fires for
+    it. The rule must instead trigger on the shape of what the diff adds —
+    a data-fetching or write-then-refetch flow — so it catches both the
+    partial-adoption case (imports, uses part) and the no-adoption case
+    (never imports, hand-rolls the whole thing beside it).
+    """
+    bullet = _partial_adoption_bullet(_skill_text()).lower()
+    assert "whether or not" in bullet and "imported" in bullet, (
+        "the rule must state it applies whether or not the shared hook is "
+        "imported at all, not only when a call site already imports it"
+    )
+    assert "data-fetching" in bullet or "write-then-refetch" in bullet, (
+        "the rule must trigger on the shape of what the diff adds (a "
+        "data-fetching or write-then-refetch flow), not only on an "
+        "existing import"
     )
