@@ -102,7 +102,12 @@ def test_root_changelog_is_line_bounded() -> None:
     lines = len(_CHANGELOG.read_text(encoding="utf-8").splitlines())
     assert lines <= _ROOT_LINE_BOUND, (
         f"CHANGELOG.md is {lines} lines — over the {_ROOT_LINE_BOUND}-line "
-        f"ceiling. Rotate released entries to {_ARCHIVE_DIR}/<year>.md."
+        "ceiling. Condensing entry bodies will not clear this: a folded entry "
+        "is still heading + bullet + blank. Collapse the oldest entries' "
+        "heading and summary onto one line — see RELEASING.md "
+        "'Between-release CHANGELOG fold', second pass. (Between releases, "
+        f"rotating to {_ARCHIVE_DIR}/<year>.md is not available: nothing in "
+        "[Unreleased] has shipped.)"
     )
 
 
