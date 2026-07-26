@@ -302,10 +302,19 @@ def test_spec_41_does_not_partially_enumerate_the_command_surface() -> None:
 #   anchor leaves alone the ledger ``\`runs\` / \`events\``` tables pair (§4),
 #   whose names merely double as commands but name no audited verb.
 #
-# So the lock fires only on a slash-list that names an audited verb *and* an ops
+# So the lock fires on a slash-list that names an audited verb *and* an ops
 # command yet is a proper subset of the registered surface — exactly the §1
-# drift. The audited set alone (no ops command) and a complete list (not a
-# subset) are both left alone.
+# drift — and a complete list (not a subset) is left alone.
+#
+# The audited set alone used to be left alone too, and that exemption was sound
+# while the set was frozen at three: a set that never changes cannot drift. ADR
+# 0007 falsified the premise — ``design`` joined the lifecycle, #211 extended
+# ``_AUDITED_VERBS`` for *anchoring* without re-deriving the exemption, and the
+# guard went green over the very class it exists to catch (SPEC §11 kept a
+# three-verb list until #226). So the audited set is now a *second* guarded set
+# under the same rule: a list claiming it must not name a proper subset of it.
+# The rule this encodes, one layer up: a guard's exemption must be re-derived
+# when its premise changes — which is why neither clause hardcodes a cardinality.
 
 #: A ``/``-joined run of two or more backtick-wrapped tokens — the verb-surface
 #: enumeration idiom (`` `a` / `b` / `c` ``). Captured whole so the member tokens
@@ -326,36 +335,72 @@ def _surface_slash_lists(text: str) -> list[set[str]]:
 
 
 def _is_subset_surface_enumeration(names: set[str], registered: set[str]) -> bool:
-    """True when *names* is a slash-list that presents itself as the verb surface
-    (names ≥1 audited verb) yet pulls in an ops command while staying a *proper*
-    subset of the registered surface — the §1 drift CAL-810 locks out."""
+    """True when a slash-list *claims* a guarded command set yet names a proper
+    subset of it. Two claims, one rule:
+
+    * **the command surface** — the list anchors on an audited verb *and* pulls
+      in an ops command (spanning both categories is how a list claims the whole
+      surface), yet ``names != registered``. The §1 drift CAL-810 locks out.
+    * **the audited set** — the list names *two or more* audited verbs, yet
+      ``names & _AUDITED_VERBS != _AUDITED_VERBS`` (#226).
+
+    Neither clause hardcodes a cardinality: both compare against the live set, so
+    a fifth audited verb re-arms the rule with no edit here. The one literal is
+    the ``>= 2`` threshold, and it states *more than one member of the audited
+    set appears in the list*: a single audited verb beside a non-audited token is
+    a **reference**, not an enumeration (``the gate runs inside `start` /
+    `continue```), which is the exemption that survives.
+
+    ``names ⊆ registered`` by construction in ``_surface_slash_lists`` and
+    ``audited ⊆ _AUDITED_VERBS`` by construction here, so both ``!=``
+    comparisons are proper-subset tests.
+    """
     ops = registered - _AUDITED_VERBS
-    return bool(names & _AUDITED_VERBS) and bool(names & ops) and names != registered
+    audited = names & _AUDITED_VERBS
+    claims_surface = bool(audited) and bool(names & ops)
+    claims_audited_set = len(audited) >= 2
+    return (claims_surface and names != registered) or (
+        claims_audited_set and audited != _AUDITED_VERBS
+    )
+
+
+def _subset_enumeration_offenders(text: str) -> list[list[str]]:
+    """Every slash-list in *text* that names a proper subset of a guarded set,
+    as sorted name lists. The live guard and its regression tests share this one
+    scan path — a regression test that re-implemented the scan could go green
+    while the guard's own path stayed narrow."""
+    registered = _registered_surface()
+    return [
+        sorted(names)
+        for names in _surface_slash_lists(text)
+        if _is_subset_surface_enumeration(names, registered)
+    ]
 
 
 def test_no_live_spec_section_handlists_a_command_subset() -> None:
-    """No live SPEC section enumerates a *proper subset* of the command surface.
+    """No live SPEC section enumerates a *proper subset* of a guarded command set.
 
     AC for CAL-810: §11 is the single guarded source of the command set; any
     other live section that slash-lists the verbs (as §1 principle 5 did) drifts
-    the moment a verb is added. The by-design audited set
-    (``start``/``design``/``review``/``close``) names no ops command and is allowed; a
-    complete list and §11's fenced surface are allowed; the ledger ``runs`` /
-    ``events`` tables pair names no audited verb and is allowed; a proper subset
-    that presents itself as the verb surface yet pulls in an ops command is not.
+    the moment a verb is added. Extended in #226 to the audited lifecycle as a
+    second guarded set, once ADR 0007 made that set mutable: the *complete*
+    audited set is allowed, a proper subset of it is not.
+
+    A complete list and §11's fenced surface are allowed; the ledger ``runs`` /
+    ``events`` tables pair names no audited verb and is allowed; a lone audited
+    verb beside a non-registered token is a reference, not an enumeration, and is
+    allowed. A proper subset of either guarded set is not.
     """
-    registered = _registered_surface()
-    offenders = [
-        sorted(names)
-        for names in _surface_slash_lists(_live_text(SPEC))
-        if _is_subset_surface_enumeration(names, registered)
-    ]
+    offenders = _subset_enumeration_offenders(_live_text(SPEC))
     assert not offenders, (
-        "A live SPEC section hand-lists a proper subset of the registered "
-        f"command surface: {offenders}. §11 is the single guarded source of the "
-        "command set (`test_spec_command_surface_equals_registered`); name the "
-        "command categories and defer the exact set to §11 instead of repeating "
-        "a slash-list that goes stale when a verb is added (CAL-810)."
+        "A live SPEC section hand-lists a proper subset of a guarded command "
+        f"set: {offenders}. The guarded sets are the registered command surface "
+        f"({sorted(_registered_surface())}) and the audited lifecycle verbs "
+        f"({sorted(_AUDITED_VERBS)}); §11 is the single guarded source of the "
+        "command set (`test_spec_command_surface_equals_registered`). Name the "
+        "command categories and defer the exact set to §11, or name the audited "
+        "lifecycle in full — do not repeat a slash-list that goes stale the next "
+        "time a verb is added (CAL-810, #226)."
     )
 
 
@@ -365,10 +410,24 @@ def test_no_live_spec_section_handlists_a_command_subset() -> None:
         # The §1 drift — a proper subset that pulls in ops commands.
         ("`start` / `review` / `close` / `status` / `events` / `cancel`", True),
         ("`start` / `status`", True),
-        # Allowed — the by-design audited set names no ops command.
-        ("`start` / `review` / `close`", False),
+        # The audited set minus a verb — the shape ADR 0007 made possible and
+        # #211 left exempt. `design` is missing, so it is a proper subset (#226).
+        ("`start` / `review` / `close`", True),
+        # A non-command member does not launder the omitted verb: `implement` is
+        # filtered out, leaving the same three-verb proper subset.
+        ("`start` / `implement` / `review` / `close`", True),
+        # The two-verb pair — documents the coarse `>= 2` threshold explicitly
+        # rather than leaving it to be discovered.
+        ("the `review` / `close` handoff", True),
         # Allowed — the full four-verb audited set, ADR 0007's lifecycle (#211).
         ("`start` / `design` / `review` / `close`", False),
+        # Allowed — the correct lifecycle string; `implement` filters out and
+        # what remains is exactly the audited set.
+        ("`start` / `design` / `implement` / `review` / `close`", False),
+        # Allowed — one audited verb beside a non-registered token (`continue`
+        # is a `promote` subcommand, not a top-level name), so this is a
+        # reference, not an enumeration. Real §11 text; the preserved exemption.
+        ("the gate runs inside `start` / `continue`", False),
         # Allowed — the ledger tables pair (§4) names no audited verb, so it is
         # not read as a verb-surface enumeration even though both names double as
         # commands.
@@ -393,6 +452,51 @@ def test_surface_slash_list_detection(text: str, flagged: bool) -> None:
         for names in _surface_slash_lists(text)
     )
     assert hit is flagged
+
+
+#: The exact sentence SPEC §11 carried before #226 — a three-verb slash-list that
+#: omits `design`. Injected into a real SPEC copy below so the regression exercises
+#: the live document and the live scan path, not a synthetic string.
+_STALE_AUDITED_LIST = "The verbs (`start` / `review` / `close`) also take `--json`.\n"
+
+
+def _inject_into_section(text: str, heading: str, line: str) -> str:
+    """*text* with *line* inserted just after the given ``## <n>. `` heading."""
+    match = re.search(rf"^{re.escape(heading)}.*$", text, re.M)
+    assert match, f"SPEC has no {heading!r} heading — the injection point moved"
+    return text[: match.end() + 1] + line + text[match.end() + 1 :]
+
+
+def test_a_stale_audited_slash_list_in_a_live_section_is_caught() -> None:
+    """A slash-list claiming the audited verbs while omitting one fails the gate.
+
+    AC for #226. The exemption at the top of this block ("the audited set alone
+    … left alone") was sound while the audited set was frozen at three: a set
+    that never changes cannot drift. ADR 0007 made it mutable, and #211 extended
+    ``_AUDITED_VERBS`` with ``design`` for anchoring without re-deriving the
+    exemption — leaving the guard green over exactly the class it exists to
+    catch. This pins the re-derivation.
+
+    Asserting *equality* with the injected offender, not merely a non-empty
+    result, is what keeps this non-vacuous: it proves the hit is the injection
+    rather than a pre-existing one, and it fails loudly if the real SPEC
+    regresses to a stale list of its own.
+    """
+    doctored = _inject_into_section(SPEC.read_text(), "## 4. ", _STALE_AUDITED_LIST)
+    assert _subset_enumeration_offenders(_spec_live_text(doctored)) == [
+        ["close", "review", "start"]
+    ]
+
+
+def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> None:
+    """The same injection into retained engine history (§3) is not scanned.
+
+    The scoping control for the test above: it proves the catch comes from the
+    predicate widening rather than from the live-section selection quietly
+    growing, which this ticket does not touch.
+    """
+    doctored = _inject_into_section(SPEC.read_text(), "## 3. ", _STALE_AUDITED_LIST)
+    assert not _subset_enumeration_offenders(_spec_live_text(doctored))
 
 
 def _real_options() -> dict[str, set[str]]:
@@ -566,11 +670,17 @@ def _spec_section_text(num: int, full: str) -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
+def _spec_live_text(text: str) -> str:
+    """The live sections of *text* read as SPEC content — a pure function of the
+    text, so a doctored copy can be scanned through the *same* live-section
+    selection the guard uses instead of a re-implementation of it (and without
+    ever writing the doctored copy to disk)."""
+    return "\n".join(_spec_section_text(n, text) for n in _SPEC_LIVE_SECTIONS)
+
+
 def _live_text(path: Path) -> str:
     text = path.read_text()
-    if path == SPEC:
-        return "\n".join(_spec_section_text(n, text) for n in _SPEC_LIVE_SECTIONS)
-    return text
+    return _spec_live_text(text) if path == SPEC else text
 
 
 @pytest.mark.parametrize(
