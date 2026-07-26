@@ -346,7 +346,7 @@ the registered command set is wired in `harness/cli/__init__.py`.
 
 `status` and `events` expose `--json` for machine consumers; `logs` is the
 human-readable timeline (use `events --json` for its machine-readable form) and
-`runs` prints a summary table. The verbs (`start` / `review` / `close`) also
+`runs` prints a summary table. The verbs (`start` / `design` / `review` / `close`) also
 take `--json`. Flag names and JSON keys are part of the public contract — no
 breaking changes without a major version bump.
 
