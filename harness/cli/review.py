@@ -73,30 +73,34 @@ Exit codes (mirroring ``harness start``):
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import typer
 from pydantic import BaseModel
 
 from harness._time import iso_z
+from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_protocol import (
-    _REVIEW_PROMPT,
     DEFAULT_ENGINE,
+    NO_DESIGN_REASON,
     Engine,
     Runner,
     RunResult,
     Verdict,
     _build_cmd,
+    build_review_prompt,
     is_codex_usage_limit,
     is_sandbox_blocked_defer,
     is_sandbox_init_failure,
+    resolve_design_gate,
     resolve_model_tier,
     scan_submit_line,
 )
@@ -129,6 +133,9 @@ _REVIEW_TIER_DIMENSION = "review"
 # engine-protocol layer — the prompt, the SUBMIT scanner, the per-engine command
 # builder, and the three engine-failure detectors — was split out to
 # harness.cli.review_protocol (CAL-1107); this verb imports and re-exports it.
+# The bounded engine *subprocess driver* was split out to harness.cli._engine
+# (#211), shared with the ``design`` verb; ``_default_runner`` is now only the
+# review-specific translation of a timeout into this verb's infra failure.
 # What remains is verb glue with a single caller (`_run_review`): the breaker
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
@@ -148,6 +155,7 @@ __all__ = [
     "SANDBOX_INIT_REASON",
     "GATE_FAILED_REASON",
     "NO_GATE_EVIDENCE_REASON",
+    "NO_DESIGN_REASON",
 ]
 
 # The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
@@ -211,50 +219,31 @@ async def _default_runner(
     cwd: Path | None,
     timeout: float | None = None,
 ) -> RunResult:
-    """Run ``cmd`` as a subprocess, feed ``stdin``, capture stdout/stderr/exit.
+    """Run the review engine on the shared driver; translate a timeout to infra.
 
-    stderr and the exit code are captured (no longer discarded) so the Codex
-    usage-limit fallback (CAL-702) can detect an exhausted tier: the limit
-    signal lands on stderr with a non-zero exit, never on stdout.
+    The subprocess mechanics — spawn, feed ``stdin``, capture stdout/stderr/exit,
+    kill and reap on expiry — live in :func:`~harness.cli._engine.run_engine_subprocess`,
+    shared with the ``design`` verb (#211). stderr and the exit code come back
+    captured so the Codex usage-limit fallback (CAL-702) can detect an exhausted
+    tier: the limit signal lands on stderr with a non-zero exit, never on stdout.
 
-    ``timeout`` (seconds) caps the engine subprocess (CAL-1004). On expiry the
-    process is killed and reaped and the run is failed as infra — a hung engine
-    never reviewed the diff, so it is not a verdict — via ``_ReviewError``
-    (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`). ``None`` keeps the
-    old unbounded behaviour for any direct caller that opts out.
+    This wrapper adds the one review-specific part: a killed engine is failed as
+    **infra** — a hung engine never reviewed the diff, so it is not a verdict —
+    via ``_ReviewError`` (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`).
     """
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-        cwd=cwd,
-        limit=8 * 1024 * 1024,  # engines can emit large lines (file reads, diffs)
-    )
     try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            process.communicate(stdin.encode()), timeout=timeout
+        return await run_engine_subprocess(
+            cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout
         )
-    except TimeoutError:
-        # asyncio.wait_for raises the builtin TimeoutError (3.11+) after
-        # cancelling communicate(); the child is still alive. Kill and reap it so
-        # no zombie/orphan survives, then surface the infra failure.
-        process.kill()
-        await process.wait()
+    except EngineTimeoutError as exc:
         raise _ReviewError(
-            f"review engine exceeded its {timeout:.0f}s timeout and was killed; "
+            f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
             "this is an environment/infra failure (a hung engine never reviewed "
             "the diff), not a code-review verdict. Raise engine_timeout_seconds "
             "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
             EXIT_INFRA_FAILURE,
             reason=ENGINE_TIMEOUT_REASON,
         ) from None
-    return RunResult(
-        stdout=stdout_bytes.decode(errors="replace"),
-        stderr=stderr_bytes.decode(errors="replace"),
-        returncode=process.returncode if process.returncode is not None else -1,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +268,15 @@ EXIT_INFRA_FAILURE = 3
 # tripped (``review_cycle_ceiling`` / ``wall_clock_budget``).
 EXIT_BREAKER_TRIPPED = 4
 
-# Exit code for a verify gate that cannot certify the tree (CAL-1082) — either
-# the orchestrator's gate went red, or it supplied no evidence that a gate ran at
-# all. Both mean there is nothing worth reviewing: the verb refuses BEFORE the
-# engine, records no review event, and spends no tokens. Distinct from every
-# other code — 2 is already the invocation error — so the orchestrator can tell
-# "your gate is red / you never ran it" from a rejected diff, an infra wall, or a
-# bounded-out loop.
+# Exit code for a run that cannot be certified as reviewable — the verify gate
+# went red or supplied no evidence (CAL-1082), or the run recorded no design
+# attempt (#212, ADR 0007 D3). All three mean there is nothing worth reviewing:
+# the verb refuses BEFORE the engine, records no review event, and spends no
+# tokens. One code, because the response is the same shape in each case (supply
+# the missing evidence and review again); the machine-readable ``reason`` names
+# which. Distinct from every other code — 2 is already the invocation error — so
+# the orchestrator can tell an uncertifiable run from a rejected diff, an infra
+# wall, or a bounded-out loop.
 EXIT_GATE_FAILED = 5
 
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
@@ -308,7 +299,13 @@ ENGINE_TIMEOUT_REASON = "engine_timeout"
 
 
 async def _invoke_engine(
-    runner: Runner, engine: Engine, cwd: Path, *, timeout: float | None, model: str | None = None
+    runner: Runner,
+    engine: Engine,
+    cwd: Path,
+    *,
+    prompt: str,
+    timeout: float | None,
+    model: str | None = None,
 ) -> RunResult:
     """Run one engine subprocess via ``runner``; wrap failures as ``_ReviewError``.
 
@@ -318,11 +315,15 @@ async def _invoke_engine(
     unchanged; only *other* exceptions are wrapped as the generic exit-1 error.
     ``model`` (#177) is forwarded to ``_build_cmd``, which appends it as
     ``--model`` on the claude engine only; codex ignores it.
+
+    ``prompt`` is built once by the caller and passed in (#212), so a
+    usage-limit fallback re-runs the *same* prompt — including its design
+    context — rather than rebuilding one that could differ from the first.
     """
     try:
         return await runner(
             cmd=_build_cmd(engine, model=model),
-            stdin=_REVIEW_PROMPT,
+            stdin=prompt,
             env=dict(os.environ),
             cwd=cwd,
             timeout=timeout,
@@ -413,6 +414,15 @@ def review_command(
         "--gate-log",
         help="File holding the gate's output; its tail is recorded as evidence.",
     ),
+    design_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--design-file",
+        help=(
+            "File holding this run's recorded design (the design_markdown "
+            "`harness design` printed). Verified against the design event's "
+            "hash, then given to the engine as review context."
+        ),
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         True,
         "--json/--no-json",
@@ -442,6 +452,7 @@ def review_command(
                 model=model,
                 gate_exit=gate_exit,
                 gate_log=gate_log,
+                design_file=design_file,
                 runner=_default_runner,
             )
         ),
@@ -468,6 +479,7 @@ async def _run_review(
     model: str | None = None,
     gate_exit: int | None = None,
     gate_log: Path | None = None,
+    design_file: Path | None = None,
     runner: Runner,
 ) -> ReviewOutput:
     """Drive the review flow; raise :class:`_ReviewError` on failure."""
@@ -501,7 +513,37 @@ async def _run_review(
         if trip is not None:
             raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
 
-    # 1b. Enforce the repo's verify-gate EVIDENCE before invoking any engine
+    # 1b. Enforce the design stage before invoking any engine (#212, ADR 0007
+    #     D3), and resolve the design the engine will review against.
+    #
+    #     Deliberately BEFORE the gate-evidence check: a run that never recorded
+    #     a design is malformed regardless of its gate colour, so refusing on the
+    #     gate first would report a transient tree state while masking a missing
+    #     lifecycle stage. Root cause first — and it is a single ledger read,
+    #     cheaper than the gate log's file read. It stays AFTER the spend
+    #     breakers, which stop a bounded-out run before any further work, and
+    #     before the tracker park, so a refused run leaves its ticket where it
+    #     stopped.
+    #
+    #     Enforcement keys on the LEDGER alone — the presence of a design event,
+    #     which a failed attempt satisfies (D4) — so ``--design-file`` can
+    #     neither satisfy nor bypass it. The flag only supplies the design text
+    #     for context, and only a hash that matches the recorded event's lets it
+    #     reach the prompt.
+    design_event = await _read_latest_design_event(db_path, resolved_run_id)
+    design_gate = resolve_design_gate(
+        design_event, await asyncio.to_thread(_read_design_file, design_file)
+    )
+    if design_gate.refusal_reason is not None:
+        raise _ReviewError(
+            design_gate.refusal_message or design_gate.refusal_reason,
+            EXIT_GATE_FAILED,
+            reason=design_gate.refusal_reason,
+        )
+    if design_gate.warning is not None:
+        typer.echo(f"warning: {design_gate.warning}", err=True)
+
+    # 1c. Enforce the repo's verify-gate EVIDENCE before invoking any engine
     #     (CAL-1082) — what makes a recorded ``pass`` mean "the gate ran green"
     #     rather than "a reviewer read the diff". The verb does not *run* the
     #     gate: the toolchain lives host-side, with the orchestrator (see
@@ -575,8 +617,16 @@ async def _run_review(
     # The configured per-subprocess ceiling (CAL-1004): a hung engine is killed
     # and surfaced as infra rather than hanging this verb until an external kill.
     engine_timeout = budget.engine_timeout_seconds
+    # Built once (#212) so the usage-limit fallback below re-runs the identical
+    # prompt, design context included.
+    prompt = build_review_prompt(design_gate.design_markdown)
     result = await _invoke_engine(
-        runner, engine, Path(worktree_path), timeout=engine_timeout, model=resolved_model
+        runner,
+        engine,
+        Path(worktree_path),
+        prompt=prompt,
+        timeout=engine_timeout,
+        model=resolved_model,
     )
 
     # A review-engine sandbox/init failure (e.g. codex/bwrap cannot create a user
@@ -605,6 +655,7 @@ async def _run_review(
             runner,
             "claude",
             Path(worktree_path),
+            prompt=prompt,
             timeout=engine_timeout,
             model=resolved_model,
         )
@@ -664,6 +715,7 @@ async def _run_review(
         convergence_check_required=needs_convergence_check,
         created_at=created_at,
         gate_ran=gate_ran,
+        design_context=design_gate.design_markdown is not None,
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,
@@ -726,6 +778,60 @@ async def _count_review_events(db_path: Path, run_id: str) -> int:
     ):
         row = await cur.fetchone()
     return int(row[0]) if row is not None else 0
+
+
+async def _read_latest_design_event(db_path: Path, run_id: str) -> dict[str, Any] | None:
+    """The payload of the run's most recent ``design`` event, or ``None``.
+
+    ``design`` is idempotent by append (#211): a re-run adds an event and mutates
+    none, so the **newest** row is authoritative in both directions — a redesign
+    that failed supersedes an earlier success exactly as a success supersedes an
+    earlier failure. Ordered by ``id`` (the append order) rather than by
+    ``timestamp``, so two events written inside the same second still order
+    deterministically.
+
+    A missing DB, no event, or an unparseable payload all yield ``None``, which
+    the gate reads as "no design attempt" and refuses on — fail-safe, the same
+    posture the close gate takes toward a payload it cannot read.
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT data_json FROM events WHERE run_id = ? AND event_type = 'design' "
+            "ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    try:
+        payload = json.loads(str(row[0]))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _read_design_file(design_file: Path | None) -> str | None:
+    """The design text supplied by the orchestrator, or ``None`` if none was.
+
+    ``None`` means *no path was given* — a normal state the gate passes over
+    quietly. A path that was given but could not be read comes back as the empty
+    string instead, so the gate sees a supplied design and fails to match it,
+    warning as it does for any other unusable one. The distinction matters: an
+    OS error is a caller mistake worth surfacing, whereas silently mapping it to
+    "none supplied" would hide a broken orchestration behind a normal-looking
+    review. The empty string can never match a recorded design — the design
+    protocol rejects whitespace-only output — so this cannot pass by accident.
+    """
+    if design_file is None:
+        return None
+    try:
+        return design_file.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:

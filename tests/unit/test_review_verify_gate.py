@@ -59,6 +59,7 @@ from harness.gate import (
 )
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
 
@@ -146,6 +147,10 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
             await conn.commit()
 
     _sync(_insert())
+    # #212: the design check now runs *before* this module's gate check, so the
+    # gate refusals under test are only reachable once a design is on record.
+    # Seeding it here is what keeps these tests testing the gate.
+    seed_design_event(db_path, _RUN_ID)
     return _RUN_ID
 
 

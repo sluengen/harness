@@ -69,6 +69,16 @@ Start the **staleness signal** simple: compare against the time the ticket last 
 - **D3 → Lazy pre-flight, Linear-keyed.** The sweep runs as step 0 of `/harness routine build`, before it picks work. No daemon; works in both the local and cloud regimes because it keys on Linear. (The cloud-vs-local fact behind this is still worth pinning down — see Risks — but the design no longer *depends* on the answer.)
 - **D4 → Preserve / resume (not discard).** Reclaim does **not** prune the dead run's branch; the work is preserved and the next pick resumes from it rather than restarting cold. **Consequence — this is only real if WIP is durable.** A worktree on a dead ephemeral container is gone, so "preserve" means *the run's branch was pushed and the ticket references it*, not *keep the local worktree*. For the cloud hard-kill case to actually resume, the run must **checkpoint-push WIP before it dies** — without that, the branch is unpushed, nothing survives, and resume degrades to a clean restart for exactly the failure we care about. So D4 pulls in a checkpoint-push requirement (breakdown items 5–6); where no durable WIP exists, reclaim falls back to clean restart, and `close`'s HEAD-bound gate keeps even a cold restart safe from double-merge.
 
+### Amended 2026-07-25 (#216)
+
+- **D2 amended → newest of (tracker `updatedAt`, ledger last-activity).** D2's tracker-only signal was sound for Linear, where a status transition *does* bump `updatedAt`, but it is not a heartbeat on the `tracker: github` backend adopted later (CAL-1204): `start` transitions a ticket by writing the Projects-v2 **Status** field, an item-level mutation that leaves the underlying issue's `updatedAt` untouched, and `checkpoint` / `design` / `review` / `close` never touch the issue at all. A live run therefore looks arbitrarily stale — observed on a 60-minute-old run reclaimed against the 90-minute threshold because its issue had not been edited in five hours. Staleness now reads the newest of the tracker timestamp and the **ledger's** last activity for the ticket's open run (`max(runs.started_at, MAX(events.timestamp))`), consulted only for tickets the tracker already considers stale.
+
+  This is what breakdown item 7 ("deferred refinement — heartbeat, build only if D2's 90-min threshold proves too blunt") was held for, and the threshold was indeed too blunt. But no heartbeat mechanism was needed: the verbs *already* write their activity to the ledger, so item 7 is satisfied by reading an existing signal rather than adding a new one — which preserves D2's "no new column, no session pinging" property.
+
+  `started_at` is part of the signal, not a redundancy: `start` emits **no** event, so it is the only liveness signal a run has before its first `design` or `checkpoint`. Keying on events alone would leave a freshly-started run reclaimable during exactly the window it is most obviously alive.
+
+- **D3 refined → still works in both regimes; the ledger is an additive override.** D3's load-bearing property was that the sweep keys on the tracker so it works in the cloud regime, where a fresh container has no local ledger. That is intact. The tracker timestamp remains the baseline every regime has; the ledger is consulted only where it is reachable and only to *spare* a run. Where there is no DB, or no open run for the ticket, liveness collapses to the tracker timestamp — today's behaviour exactly. The ledger can never cause a reclaim the tracker-only path would not have made, so the cloud regime is unaffected rather than degraded.
+
 ## Breakdown
 
 The change specs this would spawn, each shippable on its own (the decisions above are folded in):
@@ -95,7 +105,7 @@ Created in dependency order; lower ID = earlier (the Build routine picks by ID o
 | 5 — checkpoint-push durable WIP | CAL-738 |
 | 6 — resume-from-branch in pick logic | CAL-739 |
 
-Item 7 (heartbeat) is deferred — not ticketed until D2's 90-min threshold proves too blunt.
+Item 7 (heartbeat) was deferred until D2's 90-min threshold proved too blunt. It did, on the `github` backend — ticketed and shipped as **#216**, but *without* a new heartbeat mechanism: the ledger already carries the run's activity, so the fix reads an existing signal rather than adding one (see Amended 2026-07-25).
 
 ## Risks / unknowns
 

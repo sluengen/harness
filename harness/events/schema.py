@@ -38,6 +38,13 @@ EventType = Literal[
     # label, and this event records that decision (ticket, reason, timestamp) in
     # the audit trail so triage is auditable like every other verb.
     "defer",
+    # Design verb (#211, ADR 0007) — the design stage between ``start`` and
+    # implement: a read-only Opus engine produces the change spec's Design
+    # section. This event is the recorded **attempt** — ``status='ok'`` with the
+    # design's hash and the grounded SHA, or ``status='failed'`` with a reason
+    # when the engine did not deliver one (degrade-and-record, D4). Its presence
+    # is what the review verb's ``no_design`` enforcement checks.
+    "design",
     # Release verb (#193) — the ``/decision`` return path: a held ticket's
     # resolution is written into its change spec, the hold label removed, and
     # the operator unassigned. This event records the release (ticket, kind,

@@ -29,6 +29,7 @@ from harness.cli import promote as promote_cli
 from harness.linear import LinearConfigError, LinearRequestError
 from harness.state import promotions
 from harness.state.promotions import Promotion
+from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
 
@@ -107,6 +108,7 @@ def _invoke(
     db: Path,
     extra: list[str] | None = None,
 ) -> Any:
+    init_repo(tmp_path)  # the verbs refuse a --repo that is not a git top-level (#214)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
     # `extra is None` → default to explicit team/project flags; `extra == []` →
     # deliberately pass *no* target flags (so the CONTEXT.md / unresolved paths
@@ -220,6 +222,7 @@ def test_unknown_promotion_id_is_not_found(
 ) -> None:
     db = _seed(tmp_path, _promotion())
     _install_fake_linear(monkeypatch)
+    init_repo(tmp_path)  # the verbs refuse a --repo that is not a git top-level (#214)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
     result = cli_runner.invoke(
         app,

@@ -19,9 +19,16 @@ Design (see ``specs/retired/hermes-orchestration.md`` §"Target repo allowlist")
   *path-segment* descendant of one. A string-prefix match is not sufficient:
   ``/work/repo-evil`` must not pass for root ``/work/repo``.
 
-The module is framework-agnostic — it raises :class:`WorkspaceNotAllowed` on
-rejection. The CLI adapter (``harness/cli/_repo.py``) translates that into an
-exit-code-2 refusal.
+:func:`resolve_repo_root` layers a second, independent check on top of the
+allowlist (#214): the accepted path must also be an actual **git top-level**.
+The allowlist answers *may the harness touch this path*; it never answered *is
+this path a repo root*, so a verb invoked one directory too deep resolved
+happily and planted its worktree, branch, and ledger rows under the wrong root.
+See that function for why the order between the two checks is load-bearing.
+
+The module is framework-agnostic — it raises :class:`WorkspaceNotAllowed` or
+:class:`NotAGitTopLevel` on rejection. The CLI adapter
+(``harness/cli/_repo.py``) translates both into an exit-code-2 refusal.
 """
 
 from __future__ import annotations
@@ -32,8 +39,10 @@ from pathlib import Path
 
 __all__ = [
     "WORKSPACE_ROOTS_ENV",
+    "NotAGitTopLevel",
     "WorkspaceNotAllowed",
     "allowed_roots",
+    "is_git_top_level",
     "resolve_repo_root",
     "resolve_within_allowlist",
 ]
@@ -59,6 +68,27 @@ class WorkspaceNotAllowed(Exception):  # noqa: N818 — mirrors SPEC vocabulary
         super().__init__(
             f"repo path {path} is outside the allowed workspace roots "
             f"({roots_desc})"
+        )
+
+
+class NotAGitTopLevel(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
+    """A repo path is inside the allowlist but is not a git repository root.
+
+    Distinct from :class:`WorkspaceNotAllowed` on purpose: that one means *this
+    path is outside the security boundary*, this one means *inside it, but not
+    a repo root*. Folding them together would have a verb tell an operator
+    standing one directory too deep that their path is "outside the allowed
+    workspace roots", which it is not.
+
+    Carries the normalized ``path`` so the CLI can name it in its refusal.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            f"repo path {path} is not a git repository root — no .git entry "
+            f"there. Run the verb from the repository's top level (the harness "
+            f"writes worktrees, branches, and ledger rows relative to it)."
         )
 
 
@@ -99,12 +129,50 @@ def resolve_within_allowlist(path: Path | str, roots: list[Path]) -> Path:
     raise WorkspaceNotAllowed(candidate, roots)
 
 
+def is_git_top_level(path: Path) -> bool:
+    """Whether ``path`` is the root of a git working tree (#214).
+
+    True iff a ``.git`` entry exists *directly* inside ``path``. Deliberately
+    ``exists()``, not ``is_dir()``: a linked worktree (``git worktree add``)
+    carries ``.git`` as a **file** holding a ``gitdir:`` pointer, and the verbs
+    are routinely invoked with ``--repo`` pointing at a run's worktree (#179),
+    so an ``is_dir()`` check would refuse every in-flight run.
+
+    A filesystem check rather than ``git rev-parse --show-toplevel`` keeps this
+    module framework-agnostic (no subprocess, no dependency on the CLI layer's
+    git helpers) and costs a stat instead of a process on every verb
+    invocation. The two agree on the cases that matter: a subdirectory of a
+    repo and a bare repo are both rejected either way.
+    """
+    return (path / ".git").exists()
+
+
 def resolve_repo_root(repo: Path | str, env: Mapping[str, str] | None = None) -> Path:
     """Resolve ``--repo`` to an absolute path, enforced against the allowlist.
 
-    The single path-acceptance point shared by the verbs: it both normalizes the
-    candidate and enforces :data:`WORKSPACE_ROOTS_ENV`. Raises
-    :class:`WorkspaceNotAllowed` when the candidate is outside every configured
-    root (or when none are configured).
+    The single path-acceptance point shared by the verbs. It normalizes the
+    candidate, enforces :data:`WORKSPACE_ROOTS_ENV`, and then requires the
+    survivor to be an actual git top-level. Raises:
+
+    * :class:`WorkspaceNotAllowed` when the candidate is outside every
+      configured root (or when none are configured), and
+    * :class:`NotAGitTopLevel` when it is inside the allowlist but carries no
+      ``.git`` entry.
+
+    **Order is load-bearing.** The allowlist is the security boundary and is
+    checked first, so a path outside the roots keeps reporting the allowlist
+    refusal it always reported, whether or not it happens to be a repo; the git
+    check only ever narrows what the allowlist already admitted.
+
+    The git check exists because the allowlist alone accepted *any* resolvable
+    path (#214). A verb invoked one directory too deep — trivially easy here,
+    where the source package ``harness/`` shares the repo's name — silently
+    wrote its worktree, branch, and ledger rows under the wrong root, landing
+    them at ``<repo>/harness/.worktrees/harness/<id>`` where the harness's own
+    ``worktrees cleanup`` could never see them again. Failing loudly at the one
+    acceptance point is what makes that unrepeatable.
     """
-    return resolve_within_allowlist(repo, allowed_roots(env))
+    candidate = resolve_within_allowlist(repo, allowed_roots(env))
+    if not is_git_top_level(candidate):
+        raise NotAGitTopLevel(candidate)
+    return candidate
