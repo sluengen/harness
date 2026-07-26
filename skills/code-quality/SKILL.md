@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.17.0 -->
+<!-- guidance:code-quality@0.18.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -151,6 +151,8 @@ Where a **linter** can enforce the limit, it should — reach for the walker onl
 A repo test that enforces a rule across a *set* — of files, modules, or keys — must compute that set from the artifact that defines it: the registry the units register in, the constants module that declares them, `git ls-files`. Never a literal list in the test body. A hand-written list silently narrows to the surface that existed the day it was written, and the guard then reports green for everything added since — it passes because it stopped looking, not because it checked. Where the set genuinely cannot be derived, the test asserts its own completeness against the deriving source and fails when the two diverge.
 
 This is the drift with no symptom. An out-of-date list produces no failure, no warning, and no diff; it produces a green run over a shrinking fraction of the surface, and that fraction is invisible from the test's output. The shape repeats once you look for it: a command-boundary guard four modules behind across three separate additions, a payload-key guard that never saw a third reader module arrive, and tree-walking guards whose hand-rolled skip lists had to be replaced by the tracked file set. Each was green the whole time. The reviewer **rejects** a new or edited guard whose subject set is a literal, unless it carries the completeness assertion — and an assertion that a set is complete is worth only as much as the divergence it actually fails on.
+
+The same rule governs the guard's **matching predicate**. A derived subject set proves only that the guard *looked* at every unit; what counts as a hit is a second, independent place to narrow, and a hand-written predicate narrows a guard exactly as a hand-written subject list does. Every literal in the predicate — a variable name it anchors on, a separator or boundary it assumes, a shape it exempts — must be derived from the same defining artifact as the subject set, or justified in the change spec against the rule's **full** surface: name the units the literal excludes, and why the rule does not reach them. The tell is the one above, one level in — a green run over a shrinking fraction of the surface, invisible from the test's own output — except that here the guard enumerated everything and then recognised a subset. The reviewer **rejects** a guard whose predicate is narrower than the rule it claims to enforce.
 
 ### Re-deriving what another layer owns is an auditable choice, not a default
 

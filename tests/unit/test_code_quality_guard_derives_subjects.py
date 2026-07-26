@@ -33,6 +33,35 @@ Acceptance criteria (this ticket):
 * **AC-4** — The prose is universal: no one stack's vocabulary rides into a
   consuming repo. Proven by :func:`test_rule_is_universal`.
 
+The subsection later gained a third paragraph extending the same rule to the
+guard's *matching predicate*: a derived subject set proves only that the guard
+looked at every unit, and what counts as a hit is a second, independent place to
+narrow. Two guards had already drifted that way — one enumerating every tracked
+source and then failing to recognize a prefixed form of the construct it
+matched, another scanning every live section and then exempting the one shape
+that had gone stale. Both satisfied the rule above in full, because it governs
+only *which units are checked*.
+
+Acceptance criteria (the predicate half):
+
+* **AC-1** — The subsection states that the matching predicate is under the same
+  rule as the subject set. Proven by
+  :func:`test_rule_extends_to_the_matching_predicate`.
+* **AC-2** — Every literal in a predicate must be derived or justified against
+  the rule's full surface. Proven by
+  :func:`test_predicate_literals_are_derived_or_justified`.
+* **AC-3** — The reviewer rejects a predicate narrower than its rule. Proven by
+  :func:`test_predicate_rule_binds_the_reviewer`.
+* **AC-4** — The tell is named, so the failure mode is recognisable rather than
+  merely prohibited. Proven by :func:`test_predicate_rule_names_the_tell`.
+* **AC-5** — The paragraph selector is a genuine selection, not the whole
+  subsection. Proven by :func:`test_predicate_paragraph_is_a_proper_subset`.
+
+Universality (AC-7 of that ticket) is discharged by the **existing**
+:func:`test_rule_is_universal`: it is scoped to the subsection, whose span now
+contains the new paragraph, so the ban list covers it without a second copy —
+verified by mutation, not assumed.
+
 Deliberately **not** re-checked here — three existing guards already own these,
 and copying them is the duplication Part A forbids: the skill header/registry
 version parity (``test_placeholder_stub_gating``), ``registry.yaml``'s own
@@ -91,6 +120,36 @@ def _section() -> str:
     rest = part_c[start + len(_HEADING) :]
     end = rest.find("\n### ")
     return (rest if end == -1 else rest[:end]).lower()
+
+
+def _paragraphs() -> list[str]:
+    """The subsection's paragraphs, blank-line separated, in file order."""
+    return [block.strip() for block in _section().split("\n\n") if block.strip()]
+
+
+def _predicate_paragraph() -> str:
+    """The span of the subsection that states the matching-predicate half.
+
+    Selected by content rather than by index: ``_paragraphs()[-1]`` is the
+    hardcoded-position brittleness the placement test above was deliberately
+    rewritten to avoid, and a later insertion would silently redirect the span.
+
+    The selector dogfoods the rule it pins — ``"predicate" in block`` is itself a
+    hand-written predicate over a derived subject set. It is legitimate under the
+    rule's own escape hatch because it carries completeness assertions in both
+    directions: non-empty here, and proper-subset in
+    :func:`test_predicate_paragraph_is_a_proper_subset`. Move the paragraph or
+    drop the word and the guard fails loudly naming the reason, rather than
+    silently checking nothing.
+    """
+    hits = [block for block in _paragraphs() if "predicate" in block]
+    assert hits, (
+        "no paragraph of the guard subsection mentions the matching predicate — "
+        "the rule's second half is missing. A derived subject set proves only "
+        "that the guard looked at every unit; what counts as a hit is a second "
+        "place to narrow, and the subsection must say so"
+    )
+    return "\n\n".join(hits)
 
 
 def test_rule_requires_deriving_the_subject_set() -> None:
@@ -198,3 +257,99 @@ def test_rule_is_universal() -> None:
             "into third-party repos — state the rule in artifacts every repo "
             "has, not in this one's stack"
         )
+
+
+def test_rule_extends_to_the_matching_predicate() -> None:
+    """The predicate is tied to the subject set, not stated free-floating (AC-1)."""
+    paragraph = _predicate_paragraph()
+
+    assert "matching predicate" in paragraph, (
+        "the rule must name the *matching predicate* — what counts as a hit — as "
+        "the thing it governs; without that name a reviewer cannot tell which "
+        "half of a guard the obligation lands on"
+    )
+    assert "subject set" in paragraph, (
+        "the rule must tie the predicate back to the subject set it extends. "
+        "Stated on its own it reads as a second, unrelated rule; stated as the "
+        "same rule one level in, it inherits the reasoning already written above"
+    )
+
+
+def test_predicate_literals_are_derived_or_justified() -> None:
+    """Two exits for a literal in a predicate, and no third (AC-2)."""
+    paragraph = _predicate_paragraph()
+
+    assert "literal" in paragraph, (
+        "the rule must name the *literal* in the predicate as the construct "
+        "under obligation — the same construct the paragraph above bans in the "
+        "subject set, which is what makes this one rule rather than two"
+    )
+    for kind in ("variable name", "separator", "exempt"):
+        assert kind in paragraph, (
+            f"the rule must name {kind!r} among the kinds of literal a predicate "
+            "hides. Enumerating them is what makes the rule checkable: a "
+            "reviewer looking for 'a literal' finds nothing, one looking for an "
+            "exempted shape or an assumed separator finds the defect"
+        )
+    assert "derived" in paragraph and "justified" in paragraph, (
+        "the rule must give both exits — derive the literal from the same "
+        "defining artifact, or justify it — because a prohibition with no exit "
+        "is unenforceable where the predicate genuinely cannot be derived"
+    )
+    assert "full" in paragraph, (
+        "the justification must be measured against the rule's *full* surface. "
+        "Justified against the surface the author happened to look at is the "
+        "same silent narrowing the rule exists to stop"
+    )
+
+
+def test_predicate_rule_binds_the_reviewer() -> None:
+    """The rejection clause, and what the predicate is narrower *than* (AC-3)."""
+    paragraph = _predicate_paragraph()
+
+    assert "reject" in paragraph, (
+        "the rule must bind at review with an explicit rejection clause, matching "
+        "its sibling Part C subsections; without it the rule binds only on the "
+        "author's own discipline, which is exactly what already failed"
+    )
+    assert "narrower" in paragraph, (
+        "the rejection must name the test the reviewer applies — a predicate "
+        "*narrower* than the rule it claims to enforce. 'Reject a bad predicate' "
+        "is not a bar anyone can apply"
+    )
+
+
+def test_predicate_rule_names_the_tell() -> None:
+    """The failure mode is recognisable, not merely prohibited (AC-4)."""
+    paragraph = _predicate_paragraph()
+
+    for token in ("green", "fraction", "invisible", "output"):
+        assert token in paragraph, (
+            f"the rule must name {token!r} as part of the tell — a green run over "
+            "a shrinking fraction of the surface, invisible from the test's own "
+            "output. A rule that only prohibits leaves the reader unable to "
+            "recognise the defect in front of them, and this one has no symptom"
+        )
+
+
+def test_predicate_paragraph_is_a_proper_subset() -> None:
+    """The span is a genuine selection, not the whole subsection (AC-5).
+
+    Anti-vacuity for every assertion above: if the selector ever returned the
+    entire subsection, each of them would pass on the two original paragraphs,
+    which already carry ``green``, ``narrow``, ``literal`` and ``reject``. That
+    is #220's trap recursed one level, and it is the single most likely way to
+    get this guard wrong.
+    """
+    selected = [block for block in _paragraphs() if "predicate" in block]
+    total = _paragraphs()
+
+    assert selected, (
+        "the predicate paragraph must exist — see _predicate_paragraph()"
+    )
+    assert len(selected) < len(total), (
+        f"the predicate span covers all {len(total)} paragraphs of the "
+        "subsection, so every content assertion above is satisfiable by the "
+        "subject-set prose that was already there. The predicate rule must be "
+        "an addition standing beside the original, not a rewrite of it"
+    )
