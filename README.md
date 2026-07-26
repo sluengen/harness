@@ -23,7 +23,7 @@ harness owns only what an audit trail depends on:
   encode *how work happens here* are version-stamped and distributed from this repo.
 
 It is **dogfooded on its own development**: every change to the harness is built by
-running the harness on a ticket, through the same `start → review → close` verbs it
+running the harness on a ticket, through the same `start → design → review → close` verbs it
 ships.
 
 **Status:** verb model (`start` / `review` / `close`). The earlier deterministic
@@ -54,7 +54,7 @@ For the full architectural picture and the "why" of every decision, read [`SPEC.
 
 ## The model: one execution path, two triggers
 
-There is **one** execution model — a Claude session running `start → implement → review → (fix → review)* → close` — designed for **two** trigger slots, one built today and one **design-only**:
+There is **one** execution model — a Claude session running `start → design → implement → review → (fix → review)* → close` — designed for **two** trigger slots, one built today and one **design-only**:
 
 - a **human**, via the `/harness run <ISSUE-ID>` slash command in Claude Code (the built trigger), or
 - **Hermes**, the autonomous dispatcher that *would* occupy the same trigger slot — **design-only**, not built: the launcher was removed in CAL-712 and the design is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
@@ -69,7 +69,7 @@ Claude session — orchestrator + implementer
    start → [implement] → review → (fix → review)* → close
    │  shells out to verbs (one-shot `docker run`)
    ▼
-harness verbs:  start / review / close   +   SQLite ledger   +   close gate
+harness verbs:  start / design / review / close   +   SQLite ledger   +   close gate
 ```
 
 † Hermes is **design-only** — not a built trigger. Today only `/harness run` (a human) launches the session; the Hermes slot is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
@@ -174,7 +174,7 @@ Run `harness <verb> --help` for the full flag set.
 
 ## Using harness on harness (dog-fooding)
 
-harness's own follow-on work flows through harness: each Linear ticket in the *Harness v3* project is built by running `/harness run <ISSUE-ID>`, which exercises the same `start → review → close` verbs the tool ships. If the work that improves the harness ships cleanly *through* the harness, self-hosting is validated empirically.
+harness's own follow-on work flows through harness: each Linear ticket in the *Harness v3* project is built by running `/harness run <ISSUE-ID>`, which exercises the same `start → design → review → close` verbs the tool ships. If the work that improves the harness ships cleanly *through* the harness, self-hosting is validated empirically.
 
 ## Repository layout
 

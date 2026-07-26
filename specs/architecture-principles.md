@@ -14,7 +14,7 @@ How this system is built — the technical principles that govern design *here*.
 
 ### Orchestration boundary
 
-**The agent orchestrates and implements; the harness is deterministic verbs, a ledger, and a gate.** Work executes one way — a Claude session drives `start → implement → review → (fix → review)* → close`, calling the harness verbs and doing the implementation itself. The harness does not own the build loop and does not spawn its own implementing/reviewing agents. *Derived from: `engineering-principles` (do the simplest thing that works; don't reimplement the agent tool-loop) and SPEC §1's "external layer decides what to run; harness decides how it runs."*
+**The agent orchestrates and implements; the harness is deterministic verbs, a ledger, and a gate.** Work executes one way — a Claude session drives `start → design → implement → review → (fix → review)* → close`, calling the harness verbs and doing the implementation itself. The harness does not own the build loop and does not spawn its own implementing/reviewing agents. *Derived from: `engineering-principles` (do the simplest thing that works; don't reimplement the agent tool-loop) and SPEC §1's "external layer decides what to run; harness decides how it runs."*
 
 ### Determinism
 

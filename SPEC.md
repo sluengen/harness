@@ -4,7 +4,7 @@
 **Status:** Current for §1–2 (the verb model), §4 (core module design), and §11 (CLI design). §3, §5–§10, and §12–§14 described the **retired** deterministic workflow engine; they are superseded and their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers here (see the banner at §3).
 **Guiding principle:** *The harness is a set of deterministic, audited verbs an agent calls — not a pipeline that drives agents.*
 
-> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling three deterministic verbs — `start` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model; §4 (modules) and §11 (CLI) describe its as-built surface. The deterministic workflow engine (§3, §5–§10, §12–§14) was retired in CAL-574; its design is re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers in those sections.
+> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling four deterministic verbs — `start` / `design` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model; §4 (modules) and §11 (CLI) describe its as-built surface. The deterministic workflow engine (§3, §5–§10, §12–§14) was retired in CAL-574; its design is re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers in those sections.
 
 ---
 
@@ -60,11 +60,11 @@ Decouple judgement (the agent's: read the ticket, write the code, decide how to 
 
 ### Core principles
 
-1. **The agent orchestrates; the harness records and gates.** There is **one execution model** — a Claude session runs `start → implement → review → (fix → review)* → close`, calling the verbs and doing the implementation itself — with **two triggers**: a human (`/harness run <ticket>`) or Hermes. The harness does not own the build loop and does not spawn its own implementing/reviewing agents.
-2. **Determinism lives in the verbs, not the journey.** Each verb (`start`, `review`, `close`) is a one-shot, audited, reproducible operation over the ledger. The orchestration *between* verbs varies with the agent and is deliberately not reproducible — that trade buys full context retention (the agent that reads the ticket is the one that writes the code) and graceful degradation (a verb failure drops to manual driving).
+1. **The agent orchestrates; the harness records and gates.** There is **one execution model** — a Claude session runs `start → design → implement → review → (fix → review)* → close`, calling the verbs and doing the implementation itself — with **two triggers**: a human (`/harness run <ticket>`) or Hermes. The harness does not own the build loop and does not spawn its own implementing/reviewing agents.
+2. **Determinism lives in the verbs, not the journey.** Each verb (`start`, `design`, `review`, `close`) is a one-shot, audited, reproducible operation over the ledger. The orchestration *between* verbs varies with the agent and is deliberately not reproducible — that trade buys full context retention (the agent that reads the ticket is the one that writes the code) and graceful degradation (a verb failure drops to manual driving).
 3. **Enforcement is a gate inside `close`, bound to the reviewed tree.** `review` records the git SHA it reviewed; `close` refuses unless the ledger holds a `start` for the ticket **and** a `verdict=pass` whose reviewed SHA equals the worktree's current HEAD. This closes the stale-pass hole and makes unattended (Hermes-triggered) dispatch trustworthy — when no human is watching, the gate *is* the guarantee that nothing merges unreviewed.
 4. **Routing discipline — every git/ticket mutation goes through a verb.** The ledger is a complete audit trail only if nothing hand-rolls a `git merge`/`push` or a Linear mutation for the run lifecycle. The `/harness run` skill forbids it; `close` validates against the ledger as a backstop.
-5. **The verb surface is a public contract.** The harness is invoked by humans and by Hermes through the same verbs — the three audited verbs (`start` / `review` / `close`) alongside the read/inspection commands and the ops and maintenance verbs; the exact registered set is the §11 command surface, not re-listed here (so this principle cannot go stale the next time a verb is added). Stable flags, stable exit codes, stable JSON output, structured refusals. Each verb runs as a one-shot container exactly as the human's `~/bin/harness` does.
+5. **The verb surface is a public contract.** The harness is invoked by humans and by Hermes through the same verbs — the audited lifecycle verbs (`start` / `design` / `review` / `close`) alongside the read/inspection commands and the ops and maintenance verbs; the exact registered set is the §11 command surface, not re-listed here (so this principle cannot go stale the next time a verb is added). Stable flags, stable exit codes, stable JSON output, structured refusals. Each verb runs as a one-shot container exactly as the human's `~/bin/harness` does.
 6. **Reproducibility applies to the verbs, not the end-to-end run.** We deliberately give up same-inputs→same-journey reproducibility (the original §2 goal). Autonomy is not a separate deterministic engine — it is Hermes occupying the trigger slot a human would. The container still provides a consistent runtime for each verb.
 
 ---
@@ -89,7 +89,7 @@ One execution model, two triggers. A trigger launches a per-session Claude runti
                             │ shells out to verbs (one-shot `docker run`)
                             ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Harness — the tool:  start / review / close  +  ledger  +  gate    │
+│  Harness: start / design / review / close  +  ledger  +  gate       │
 │   • each verb a one-shot container over the host-mounted worktree   │
 │   • SQLite ledger (runs/events) at /workspace/.harness/             │
 │   • close gate: refuse unless a HEAD-bound passing review exists    │
@@ -135,7 +135,7 @@ layer, and the workflow loader — were deleted in CAL-574 (see §3's banner and
 ### 4.1 `harness.cli` — the verb surface
 
 The Typer app (`harness/cli/__init__.py`) is the public contract. It registers
-the three audited verbs (`start` / `review` / `close`) — detailed in §4.2–§4.4 —
+the audited lifecycle verbs (`start` / `design` / `review` / `close`) — detailed in §4.2–§4.4 —
 alongside the read/inspection commands, the mutating ops and maintenance verbs,
 and the worktree housekeeping group. The exact registered set, with flags and
 exit codes, is the §11 command surface — the single source of truth, locked

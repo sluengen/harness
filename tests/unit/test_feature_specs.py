@@ -166,6 +166,61 @@ def test_cli_surface_spec_matches_registered_commands() -> None:
     assert _documented_surface() == _registered_surface()
 
 
+def _verb_model_sections() -> set[str]:
+    """The verb names ``verb-model.md`` gives a ``### `<verb>`` section to.
+
+    A verb's section heading opens ``### `<name>` — …``; the tracker-switch and
+    routing headings under the same H2 carry no backticked leading token and
+    are excluded by the pattern rather than by an exclusion list.
+    """
+    text = (_FEATURES_DIR / "verb-model.md").read_text(encoding="utf-8")
+    return set(re.findall(r"^### `(\w+)`", text, re.MULTILINE))
+
+
+def test_verb_model_spec_documents_every_audited_verb() -> None:
+    """The as-built record carries a section for every audited lifecycle verb.
+
+    ``cli-surface.md`` is current because
+    :func:`test_cli_surface_spec_matches_registered_commands` locks it against
+    the registered surface. ``verb-model.md`` had no equivalent guard, and so
+    ADR 0007's ``design`` verb shipped (#210–#213) into a canonical record that
+    gave it no section at all while ``start``, ``review`` and ``close`` each
+    had one (#224/#228). Under ``feature_specs: true`` that record *is* the
+    contract, so an omission here is a contract defect, not a doc nit.
+
+    The verb set is **derived**, not listed twice: it is
+    :data:`tests.unit.test_cli_surface_locked._AUDITED_VERBS` — the one place
+    the audited set is declared — intersected against what the CLI actually
+    registers, so a verb that is audited but unregistered fails loudly here
+    rather than silently shrinking what this guard covers
+    (``code-quality`` Part C).
+    """
+    from harness.cli import app
+    from tests.unit.test_cli_surface_locked import _AUDITED_VERBS
+
+    registered = registered_command_surface(app)
+    unregistered = _AUDITED_VERBS - registered
+    assert not unregistered, (
+        f"Audited verbs that the CLI does not register: {sorted(unregistered)}. "
+        "Fix the derivation or the registration — do not narrow the audited "
+        "set to match, which would shrink this guard silently."
+    )
+    assert len(_AUDITED_VERBS) >= 2, (
+        f"Derived only {_AUDITED_VERBS} as the audited verb set — too few for "
+        "this guard to mean anything. An empty or singleton set makes the "
+        "check below pass trivially."
+    )
+
+    missing = _AUDITED_VERBS - _verb_model_sections()
+    assert not missing, (
+        f"specs/features/verb-model.md has no '### `<verb>`' section for: "
+        f"{sorted(missing)}. It is the as-built record for the verb model "
+        "(feature_specs: true), so every audited lifecycle verb must be "
+        "documented there as a verb — not only mentioned inside another "
+        "verb's scenarios."
+    )
+
+
 def _registered_flags() -> dict[str, set[str]]:
     """Map each command / subcommand path to its registered ``--long`` flags."""
     import click
