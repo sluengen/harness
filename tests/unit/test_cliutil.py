@@ -52,12 +52,6 @@ from tests._gitutil import tracked_py_sources
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# An inline read of any Typer app's registered surface — top-level or a
-# sub-app bound to a name ending in ``app`` (``promote_app``, ``sub_app``, ...).
-# ``\w*app\.`` is load-bearing: it matches inside ``promote_app.`` too, so the
-# sub-app readers in test_promotion_routine_docs.py and
-# test_local_orchestrator_stack_docs.py are in scope as a property of the rule
-# rather than needing allowlist entries.
 _INLINE_SURFACE_READ = re.compile(r"\b\w*app\.registered_(?:commands|groups)\b")
 
 _ADOPTION_ALLOWLIST = {
