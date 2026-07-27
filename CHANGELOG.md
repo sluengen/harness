@@ -91,17 +91,21 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 ### Added — `review-discipline`: CONTEXT.md currency bullet also covers a repo's release runbook (#198)
 - A tracker cutover or branch-topology amendment could update `CONTEXT.md` correctly while leaving a sibling release runbook silently describing the old world — what happened at the Linear→GitHub cutover and the dev→staging→main amendment (see #196). `review-discipline`'s CONTEXT.md currency bullet now also fires on a diff changing `tracker:` or `branches:` roles, phrased generically (no filename hardcoded, since it ships to every consuming repo and a literal cite would trip the app-only-cite guard). **`review-discipline` 0.6.4 → 0.6.5** (registry **0.5.74 → 0.5.75**).
 
-### Added — `work-discovery` gains the return path: when a held ticket is clearable and what released means (#192)
-- The skill owned only the outbound half (skip a held ticket); the inbound half — what makes a hold clearable and what "released" means — was unwritten, so `/decision` (#193) had nowhere to delegate it. New Return path section, single-homing the definition the command consumes rather than restating it there.
-### Added — `harness defer --needs` gains a third hold kind, `input` (#191)
-- Per ADR 0006: `decision`/`operator` did not partition the space, so a ticket waiting on the operator to *supply* something was mis-filed, and `/decision` (#193) would have had to re-triage every sweep. `DeferNeeds` gains `input` (the value stays the additively-applied label name); `work-discovery` names and skips all three, assignment stays the authoritative skip signal, and `operator` narrows to interactive-session-only.
-### Added — `/promote`: agent-orchestrated fallback for repos without the harness app (#190)
-- `commands/promote.md` gains a `## Fallback: no harness app` section — the `/build`-is-available-everywhere pattern applied to release movement, with `$PATH` detection specified. Deliberately reduced per ADR 0003's 2026-07-23 amendment (conflict → stop, red gate → stop, no repair attempt), keeping the verb-backed path's hop asymmetry, plus a stated "what you lose without the ledger" paragraph so a later reader does not "complete" it into a second drifting implementation.
-### Added — `/promote`: a versioned command over the harness promotion verbs (#189)
-- The five promotion verbs shipped (ADR 0003) but their caller existed only as `RUNBOOK.md` prose — unaddressable and uninstallable. New `commands/promote.md` transcribes the loop as a universal command: `/promote <src> to <dst>` resolves each word against `CONTEXT.md` `branches:` roles first, so one invocation drives any repo's own branch names. Documents all ten lifecycle states, the forbidden outer-agent actions, and the bounded-repair/escalation policy; `RUNBOOK.md` now keeps only this repo's cadence and points here. **New `promote` 0.1.0.**
 ### Earlier unreleased changes
 
 > The entries below are folded to one-line summaries to keep this file under its 60,000-byte size gate between releases (CAL-1182). This is the *condense* fix, chosen over forcing a `dev → main` release: the release stays a deliberate, separately-gated act (`main` is PR-only per CAL-1029; the promotion lifecycle is ADR 0003), not a side effect of a headroom fix. Full detail is in git history, and each entry rotates to [`CHANGELOG-archive/2026.md`](CHANGELOG-archive/2026.md) at the next release.
+
+### Added — `/promote`: a versioned command over the harness promotion verbs (#189)
+- `commands/promote.md` transcribes ADR 0003's five promotion verbs as a universal command resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles.
+
+### Added — `/promote`: agent-orchestrated fallback for repos without the harness app (#190)
+- A `## Fallback: no harness app` section, deliberately reduced per ADR 0003's 2026-07-23 amendment (conflict/red-gate → stop, no repair attempt).
+
+### Added — `harness defer --needs` gains a third hold kind, `input` (#191)
+- Per ADR 0006: `decision`/`operator` did not partition the hold space, so `input` covers a ticket waiting on the operator to supply something.
+
+### Added — `work-discovery` gains the return path: when a held ticket is clearable and what released means (#192)
+- The inbound half of the hold contract, so `/decision` (#193) has a single-homed definition to delegate to.
 
 ### Added — code-quality: a linter enforces the file-size limit where it can (#185)
 - Where the repo's linter already has a file-length rule (`max-lines`), turn it on instead of writing the size-guard walker — commit-time enforcement, and an unused rule-disable is itself reported. **`code-quality` 0.14.0 → 0.15.0** (registry **0.5.66 → 0.5.67**).
