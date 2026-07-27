@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.19.0 -->
+<!-- guidance:code-quality@0.20.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -69,7 +69,7 @@ Defaults below. A repo may override the numbers in `CONTEXT.md`; the principles 
 | Module / component / file | 300 lines | 500 lines (justify or ticket — see Part C) |
 | Single function / handler | 40 lines | 60 lines |
 
-Declarative files (schemas, type definitions, token maps) get a higher ceiling: their length is field lists, not logic.
+Declarative files (schemas, type definitions, token maps) get a higher ceiling: their length is field lists, not logic. When a repo mechanizes the file-size limit in its linter, it declares the declarative globs as an `overrides` entry carrying the higher ceiling **in the same change**. An exemption that lives only in this skill's prose is not enforceable, and will surface as a gate failure on a commit that has nothing to do with file size. Default the declarative ceiling to 1.5x the hard limit unless the repo sets its own.
 
 ### Boundaries
 
