@@ -1,4 +1,4 @@
-<!-- guidance:template-size-guard@0.1.0 -->
+<!-- guidance:template-size-guard@0.2.0 -->
 # Size-marker guard (reference implementation)
 
 A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,
@@ -33,6 +33,14 @@ not pass. To justify via a tracking ticket, name it in the reason:
      accreted logic (generated schemas, declarative data). Keep it empty unless
      a file genuinely qualifies; a wrong entry either exempts real logic or
      fails a schema file spuriously.
+   - `DECLARATIVE_GLOBS` / `DECLARATIVE_CEILING` — for a file that is long
+     *because* it is declarative (schemas, type definitions, token maps —
+     `code-quality` Part B) prefer this over `EXEMPTIONS`: a raised ceiling
+     still fires on runaway growth, where an exemption never fires again.
+     `DECLARATIVE_GLOBS` names the globs; `DECLARATIVE_CEILING` is the ceiling
+     they answer to instead of `HARD_LIMIT`, defaulting to 1.5x it. Leave
+     `DECLARATIVE_GLOBS` empty (the shipped default) unless you have files that
+     qualify.
    - `SIZE_MARKER` — the marker regex. The default recognizes the common comment
      leaders (`#`, `//`, `/* */`, `<!-- -->`), so most repos leave it alone; edit
      it for another comment syntax (SQL `--`, Lisp `;`).
@@ -67,6 +75,16 @@ HARD_LIMIT: int = 500
 # accreted logic (generated schemas, declarative data; code-quality Part B).
 # Keep this empty unless a file genuinely qualifies.
 EXEMPTIONS: frozenset[str] = frozenset()
+# Globs (relative to the repo root, same dialect as SOURCE_GLOBS) whose files are
+# declarative by nature — schemas, type definitions, token maps (code-quality
+# Part B). These answer to DECLARATIVE_CEILING instead of HARD_LIMIT, still
+# subject to the marker rule. Prefer this over EXEMPTIONS for a file that is
+# long *because* it is declarative: the raised ceiling still fires on runaway
+# growth, an exemption never fires again.
+DECLARATIVE_GLOBS: tuple[str, ...] = ()
+# The raised ceiling declarative-glob files answer to. Defaults to 1.5x the
+# hard limit (code-quality Part B); a repo may set its own number.
+DECLARATIVE_CEILING: int = HARD_LIMIT * 3 // 2
 
 # The marker: a comment carrying ``size:`` followed by a non-empty reason. The
 # default recognizes the common comment leaders — ``#`` (Python, shell, YAML),
@@ -84,10 +102,18 @@ def find_offenders(
     globs: tuple[str, ...] = SOURCE_GLOBS,
     limit: int = HARD_LIMIT,
     exemptions: frozenset[str] = EXEMPTIONS,
+    declarative_globs: tuple[str, ...] = DECLARATIVE_GLOBS,
+    declarative_ceiling: int = DECLARATIVE_CEILING,
     marker: re.Pattern[str] = SIZE_MARKER,
 ) -> list[str]:
     """Return repo-relative paths of over-limit source files lacking a marker."""
     root = Path(root)
+    declarative = {
+        p.relative_to(root).as_posix()
+        for g in declarative_globs
+        for p in root.glob(g)
+        if p.is_file()
+    }
     offenders: list[str] = []
     seen: set[Path] = set()
     for glob in globs:
@@ -98,8 +124,9 @@ def find_offenders(
             rel = path.relative_to(root).as_posix()
             if rel in exemptions:
                 continue
+            ceiling = declarative_ceiling if rel in declarative else limit
             text = path.read_text(encoding="utf-8")
-            if len(text.splitlines()) > limit and not marker.search(text):
+            if len(text.splitlines()) > ceiling and not marker.search(text):
                 offenders.append(rel)
     return offenders
 
@@ -110,8 +137,9 @@ def test_source_files_are_under_limit_or_justified() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     offenders = find_offenders(repo_root)
     assert not offenders, (
-        f"these files exceed the {HARD_LIMIT}-line limit with no `# size: "
-        "<reason>` justification — add a one-line marker recording why the file "
-        "may exceed the limit, or split it:\n" + "\n".join(f"  - {p}" for p in offenders)
+        f"these files exceed their line limit ({HARD_LIMIT}; {DECLARATIVE_CEILING} "
+        "for declarative globs) with no `# size: <reason>` justification — add a "
+        "one-line marker recording why the file may exceed the limit, or split "
+        "it:\n" + "\n".join(f"  - {p}" for p in offenders)
     )
 ```
