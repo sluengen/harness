@@ -51,6 +51,7 @@ from pathlib import Path
 
 from harness.cli.promote import promote_app
 from harness.state.promotions import PROMOTION_STATUSES
+from tests._cliutil import registered_command_surface
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COMMAND = _REPO_ROOT / "commands" / "promote.md"
@@ -129,7 +130,7 @@ def test_ac2_shows_this_repos_own_flows() -> None:
 def test_ac3_names_every_promote_subcommand() -> None:
     """AC-3: every live ``promote`` subcommand is named (derived from the Typer app)."""
     doc = _command_doc()
-    names = sorted(c.name for c in promote_app.registered_commands if c.name)
+    names = sorted(registered_command_surface(promote_app))
     assert names, "the promote app registered no subcommands — introspection is broken"
     missing = [name for name in names if f"promote {name}" not in doc]
     assert not missing, (
