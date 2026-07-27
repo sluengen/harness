@@ -52,12 +52,13 @@ from tests._gitutil import tracked_py_sources
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# An inline read of the *top-level* app's registered surface. The ``\b`` before
-# ``app`` is load-bearing: it does not match inside ``promote_app``, so the
+# An inline read of any Typer app's registered surface — top-level or a
+# sub-app bound to a name ending in ``app`` (``promote_app``, ``sub_app``, ...).
+# ``\w*app\.`` is load-bearing: it matches inside ``promote_app.`` too, so the
 # sub-app readers in test_promotion_routine_docs.py and
-# test_local_orchestrator_stack_docs.py stay out of scope as a property of the
-# rule rather than as allowlist entries.
-_INLINE_SURFACE_READ = re.compile(r"\bapp\.registered_(?:commands|groups)\b")
+# test_local_orchestrator_stack_docs.py are in scope as a property of the rule
+# rather than needing allowlist entries.
+_INLINE_SURFACE_READ = re.compile(r"\b\w*app\.registered_(?:commands|groups)\b")
 
 _ADOPTION_ALLOWLIST = {
     _REPO_ROOT / "tests" / "_cliutil.py",  # the one legitimate home
@@ -179,10 +180,11 @@ def test_the_adoption_lock_scans_a_non_empty_set() -> None:
         # The multi-line comprehension form — the scan reads whole file text,
         # so a line break must not hide a read.
         ("names = {\n    cmd.name\n    for cmd in app.registered_commands\n}", True),
-        # A sub-app reader: explicitly out of scope, excluded by the \b anchor.
-        ("names = sorted(c.name for c in promote_app.registered_commands if c.name)", False),
-        # The adopted form.
+        # A sub-app reader: a receiver ending in "app" is in scope.
+        ("names = sorted(c.name for c in promote_app.registered_commands if c.name)", True),
+        # The adopted form, including the sub-app receiver.
         ("surface = registered_command_surface(app)", False),
+        ("surface = registered_command_surface(promote_app)", False),
     ],
 )
 def test_inline_surface_read_detection(text: str, flagged: bool) -> None:
