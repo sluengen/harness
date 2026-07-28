@@ -815,8 +815,18 @@ async def test_linear_client_transition_calls_mutation(
                     }
                 }
             }
-        # mutation call
-        return {"data": {"issueUpdate": {"success": True}}}
+        # mutation call — the post-write state confirms the request (#233)
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {
+                        "id": "issue-id",
+                        "state": {"id": "state-ip-id", "name": "In Progress"},
+                    },
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
@@ -1072,6 +1082,38 @@ def test_transition_failure_rolls_back_worktree_and_db_row(
     wt_root = repo / ".worktrees" / "harness"
     remaining = list(wt_root.iterdir()) if wt_root.exists() else []
     assert remaining == [], f"expected no worktrees after transition failure, got {remaining}"
+
+
+@pytest.mark.slow
+def test_unconfirmed_transition_rolls_back_same_as_a_raised_request_error(
+    repo: Path, db_path: Path
+) -> None:
+    """``TrackerTransitionUnconfirmed`` subclasses ``TrackerRequestError`` (#233),
+    so ``start``'s existing rollback handler catches it with no new unhandled
+    path — pinned directly, rather than only inferred from the subclass
+    relationship, since that inference is exactly what a future refactor could
+    silently break."""
+    from harness.tracker_errors import TrackerTransitionUnconfirmed
+
+    stub = _make_linear_stub(
+        raise_on_transition=TrackerTransitionUnconfirmed(
+            "issueUpdate reported success, but the post-write state is In Review"
+        )
+    )
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code != 0
+    assert fetch_runs(db_path) == []
+    wt_root = repo / ".worktrees" / "harness"
+    remaining = list(wt_root.iterdir()) if wt_root.exists() else []
+    assert remaining == []
 
 
 # ---------------------------------------------------------------------------

@@ -104,7 +104,14 @@ class WorkflowFailedEventData(BaseModel):
 
 
 class CloseEventData(BaseModel):
-    """Payload of a ``close`` event — the audited record of a landed run."""
+    """Payload of a ``close`` event — the audited record of a landed run.
+
+    No ``ticket_done`` field (#233): the event's *existence* now carries the
+    confirmation — a ``close`` event can only be written once the tracker
+    transition is confirmed (or the repo is tracker-less) — and the
+    tracker-less case is derivable from ``CONTEXT.md`` → ``tracker:``. Adding a
+    field would change a locked payload for information already implied.
+    """
 
     run_id: str
     ticket: str

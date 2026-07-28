@@ -35,6 +35,7 @@ from harness.tracker_errors import (
     TrackerConfigError,
     TrackerNotFound,
     TrackerRequestError,
+    TrackerTransitionUnconfirmed,
 )
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,27 @@ def _client(responses: dict[str, Any], *, settings: GitHubSettings | None = None
     client._request = fake_request  # type: ignore[method-assign]
     client.calls = calls  # type: ignore[attr-defined]
     return client
+
+
+def _confirmed_set_status(item_id: str = "IT") -> Any:
+    """A ``SetStatus`` canned response confirming whatever ``optionId`` was
+    requested (#233) — echoes the caller's own ``optionId`` back through
+    ``fieldValueByName``, so it confirms correctly regardless of which state
+    the test transitions to."""
+
+    def _respond(variables: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "data": {
+                "updateProjectV2ItemFieldValue": {
+                    "projectV2Item": {
+                        "id": item_id,
+                        "fieldValueByName": {"optionId": variables["optionId"], "name": None},
+                    }
+                }
+            }
+        }
+
+    return _respond
 
 
 _PROJECT_META = {
@@ -229,9 +251,7 @@ def test_transition_adds_to_board_when_absent_then_sets_status() -> None:
                 "data": {"repository": {"issue": {"id": "I_42", "projectItems": {"nodes": []}}}}
             },
             "AddItem": {"data": {"addProjectV2ItemById": {"item": {"id": "ITEM_9"}}}},
-            "SetStatus": {
-                "data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "ITEM_9"}}}
-            },
+            "SetStatus": _confirmed_set_status("ITEM_9"),
         }
     )
     _run(client.transition_to_in_progress("42"))
@@ -260,9 +280,7 @@ def test_transition_uses_existing_board_item() -> None:
                     }
                 }
             },
-            "SetStatus": {
-                "data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "ITEM_5"}}}
-            },
+            "SetStatus": _confirmed_set_status("ITEM_5"),
         }
     )
     _run(client.transition_to_done("42"))
@@ -291,9 +309,7 @@ def test_transition_in_review_and_unstarted_map_to_named_options() -> None:
                         }
                     }
                 },
-                "SetStatus": {
-                    "data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "IT"}}}
-                },
+                "SetStatus": _confirmed_set_status("IT"),
             }
         )
 
@@ -343,14 +359,82 @@ def test_owner_kind_organization_uses_organization_root() -> None:
                     }
                 }
             },
-            "SetStatus": {
-                "data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "IT"}}}
-            },
+            "SetStatus": _confirmed_set_status("IT"),
         }
     )
     _run(client.transition_to_done("1"))
     # ProjectMeta was resolved through the organization root, not user.
     assert next(v for op, v in client.calls if op == "SetStatus")["optionId"] == "opt_done"  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# _set_status confirmation (#233) — a self-reported item is not proof the
+# field actually moved; the post-write option must match what was requested.
+# ---------------------------------------------------------------------------
+
+
+def test_set_status_raises_unconfirmed_when_post_option_mismatches() -> None:
+    """The mutation reports an item, but its post-write option is not the one
+    requested — a tracker-side rule (or a stale read) silently kept the old
+    value. Must raise, not report success."""
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueItems": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_42",
+                            "projectItems": {
+                                "nodes": [{"id": "IT", "project": {"id": "PVT_1"}}]
+                            },
+                        }
+                    }
+                }
+            },
+            "SetStatus": {
+                "data": {
+                    "updateProjectV2ItemFieldValue": {
+                        "projectV2Item": {
+                            "id": "IT",
+                            "fieldValueByName": {"optionId": "opt_rev", "name": "In Review"},
+                        }
+                    }
+                }
+            },
+        }
+    )
+    with pytest.raises(TrackerTransitionUnconfirmed, match="opt_rev"):
+        _run(client.transition_to_done("42"))
+
+
+def test_set_status_raises_unconfirmed_when_field_value_is_missing() -> None:
+    """An item came back with no ``fieldValueByName`` at all — absent evidence
+    is refused, not trusted."""
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueItems": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_42",
+                            "projectItems": {
+                                "nodes": [{"id": "IT", "project": {"id": "PVT_1"}}]
+                            },
+                        }
+                    }
+                }
+            },
+            "SetStatus": {
+                "data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "IT"}}}
+            },
+        }
+    )
+    with pytest.raises(TrackerTransitionUnconfirmed):
+        _run(client.transition_to_done("42"))
 
 
 def test_missing_board_raises_not_found() -> None:
