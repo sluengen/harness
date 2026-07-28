@@ -1448,6 +1448,154 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
 
 
 # ---------------------------------------------------------------------------
+# #237: `--resume` on a still-open run reuses that run unchanged — it does not
+# reset the breaker budget on its own. These pin the mechanic the doc's new
+# "recovering from a breaker trip" note (cancel before resume) now asserts.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_resume_on_open_run_returns_it_unchanged_without_probing_branches(
+    repo: Path, db_path: Path
+) -> None:
+    """#237: `--resume` on a ticket with an existing open run short-circuits at
+    step 4 (the duplicate-run guard) before step 4b's resume resolution ever
+    runs — same `run_id`, same `started_at`, no second row, no branch probe.
+    This is exactly why a breaker-tripped run is not fixed by `--resume` alone."""
+    stub = _make_resume_stub("harness/should-not-be-probed")
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        first = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert first.exit_code == 0, first.output
+        first_payload = json.loads(first.output)
+
+        second = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert second.exit_code == 0, second.output
+    second_payload = json.loads(second.output)
+
+    assert second_payload["run_id"] == first_payload["run_id"]
+    rows = fetch_runs(db_path)
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == first_payload["run_id"]
+    stub.fetch_resume_branch.assert_not_awaited()
+    stub.fetch_handoff_branch.assert_not_awaited()
+
+
+@pytest.mark.slow
+def test_cancel_then_resume_opens_a_new_run_from_the_preserved_branch(
+    repo: Path, db_path: Path
+) -> None:
+    """#237: cancelling the tripped run first (the doc's step 3) clears the open
+    row, so the following `--resume` opens a genuinely NEW run — new `run_id`,
+    strictly later `started_at` — based on the checkpoint-pushed WIP tip."""
+    wip_branch, wip_sha = _setup_origin_with_wip(repo)
+    stub = _make_resume_stub(None, handoff_branch=wip_branch)
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        first = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert first.exit_code == 0, first.output
+        first_run_id = json.loads(first.output)["run_id"]
+
+        cancel = cli_runner.invoke(
+            app, ["cancel", first_run_id, "--db", str(db_path), "--json"]
+        )
+        assert cancel.exit_code == 0, cancel.output
+
+        second = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert second.exit_code == 0, second.output
+    second_payload = json.loads(second.output)
+    assert second_payload["run_id"] != first_run_id
+    assert _worktree_head(Path(second_payload["worktree_path"])) == wip_sha
+
+    rows = {r["run_id"]: r for r in fetch_runs(db_path)}
+    assert rows[first_run_id]["started_at"] < rows[second_payload["run_id"]]["started_at"]
+    stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
+    stub.fetch_handoff_branch.assert_awaited_once_with("CAL-570")
+
+
+def test_cancel_then_resume_resets_the_wall_clock_breaker(
+    repo: Path, db_path: Path
+) -> None:
+    """#237: the measuring test for the doc note's central quantity. A run whose
+    `started_at` is past the wall-clock budget trips the breaker; a fresh row
+    opened after cancel + resume, with its own recent `started_at`, does not —
+    proving the budget window resets only because a NEW row exists, not because
+    `--resume` alone rewrote anything on the old one."""
+    from datetime import UTC, datetime, timedelta
+
+    from harness.loop_budget import (
+        WALL_CLOCK_BUDGET_REASON,
+        evaluate_breakers,
+        load_loop_budget,
+    )
+
+    stub = _make_resume_stub(None)
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        first = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert first.exit_code == 0, first.output
+        first_run_id = json.loads(first.output)["run_id"]
+
+        cancel = cli_runner.invoke(
+            app, ["cancel", first_run_id, "--db", str(db_path), "--json"]
+        )
+        assert cancel.exit_code == 0, cancel.output
+
+        second = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert second.exit_code == 0, second.output
+        second_run_id = json.loads(second.output)["run_id"]
+
+    budget = load_loop_budget(repo)
+    now = datetime.now(UTC)
+    rows = {r["run_id"]: r for r in fetch_runs(db_path)}
+
+    tripped_started_at = now - timedelta(
+        minutes=budget.wall_clock_budget_minutes + 1
+    )
+    trip = evaluate_breakers(
+        prior_review_count=0, started_at=tripped_started_at, now=now, budget=budget
+    )
+    assert trip is not None and trip.reason == WALL_CLOCK_BUDGET_REASON
+
+    fresh_started_at = datetime.fromisoformat(rows[second_run_id]["started_at"])
+    no_trip = evaluate_breakers(
+        prior_review_count=0, started_at=fresh_started_at, now=now, budget=budget
+    )
+    assert no_trip is None, (
+        "the new run's fresh started_at must not trip the wall-clock breaker — "
+        "that is the reset the doc's cancel-before-resume recipe buys"
+    )
+
+
+# ---------------------------------------------------------------------------
 # CAL-1154: a clean start bases the run worktree off origin/<base>, with a
 # local-<base> fallback, since close no longer advances the local base branch.
 # ---------------------------------------------------------------------------

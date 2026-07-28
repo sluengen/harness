@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.7 -->
+<!-- guidance:harness@0.2.8 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -127,6 +127,15 @@ Act on `verdict`:
 - **`defer`** — the implementation is shippable, but the review surfaced a genuinely out-of-scope finding (needs its own spec or a redesign). Handle the finding by **filing a follow-up** — use `/harness ingest` to create a child ticket capturing it — then proceed to close.
 - **`pass`** — proceed to close.
 
+**Recovering from a breaker trip.** A breaker refusal escalates to the human, and the human may authorise continuing. If they do, the recovery is *not* `harness start <TICKET> --resume` on its own: the tripped run is still `open`, and `start` — with or without `--resume` — resolves a ticket's existing open run and **returns it unchanged** (same `run_id`, same `started_at`), so the wall-clock window and the review-cycle count carry straight over and the next `harness review` trips the identical breaker immediately. `--resume` chooses the *start point of a new run*; it does not reset an existing one. Recover in four steps, in order:
+
+1. `harness checkpoint --run-id <run_id>` — push the WIP, because `--resume` recovers what is on `origin`, nothing local.
+2. **Post the handoff comment** naming that branch (format and rationale under *Proactive context-rollover handoff* below) — resume resolution reads that comment, not the ledger.
+3. `harness cancel <run_id>` — mark the tripped run `cancelled`: a ledger-only write that records the abandon event, leaves the ticket **In Progress**, and touches no branch, so the `close` gate is unaffected. This clears the ticket's open row; without it, step 4 is a no-op that hands back the tripped run.
+4. `harness start <TICKET> --resume` — a **new** `run_id` with a fresh `started_at`, worktree based on the preserved branch tip. Confirm with `harness status <run_id>`: `started_at` reads as now, and the old run still reads `cancelled`.
+
+Do this **once**, on an explicit human decision. Cancel + resume opens a new budget window — it resets *both* breakers, wall-clock and cycle count — so looping it is exactly the runaway spend the breakers exist to bound.
+
 **Step 4 — `close`.** Finalize through the gate:
 
 ```bash
@@ -169,6 +178,8 @@ When a build is **alive but nearing its context limit** mid-ticket, hand off gra
 1. **`harness checkpoint --run-id <run_id>`** — push the WIP branch so it is durable (the existing verb; pushes only the feature branch, so the `close` gate is untouched).
 2. **Post a handoff comment** on the ticket naming the checkpoint-pushed branch, in the single-sourced `harness.reclaim_marker.format_handoff_comment` format — marker `Context-rollover handoff by \`harness checkpoint\`` with a ``Preserved branch: `<branch>` `` clause. Post it through the `linear` skill (`commentCreate`). **Leave the ticket In Progress** — do **not** revert it to Todo and do **not** apply the `reclaimed` label.
 3. **A fresh session continues the same ticket** with `harness start <TICKET> --resume`: resume resolution reads the handoff marker (`LinearClient.fetch_handoff_branch`), fetches the branch from `origin`, and starts the worktree from its tip while keeping `base_branch` = `dev` — so `close`'s HEAD-bound gate keeps the resumed run safe from double-merge. Re-orient via `git log` on the recovered WIP before continuing.
+
+The same mechanic applies here: `start --resume` opens a new run only when the ticket has **no** open run. A handoff that leaves its run `open` hands the fresh session the *same* row — same `run_id`, same `started_at` — so the prior session's wall-clock window and cycle count keep running against it. Cancel the handed-off run (`harness cancel <run_id>`, after step 2's comment) so the continuing session gets its own budget; the ordered recipe is *Recovering from a breaker trip* above.
 
 **This is distinct from death-keyed reclamation** (`harness reclaim`, Step 0 of `/harness routine build`), and the two never collide:
 
