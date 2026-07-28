@@ -33,7 +33,10 @@ guarantee):
    shared tree — the loser's push is rejected non-fast-forward and it retries
    (CAL-1154). The push advances ``refs/remotes/origin/<base>`` locally, which is
    what ``start`` / ``worktrees cleanup`` base off (Option 1).
-2. Transition the Linear ticket to Done.
+2. Transition the ticket to Done. The backend confirms the write took by
+   reading the post-write state back off that same mutation's response (#233)
+   — a self-reported ``success`` is not proof the state changed, so
+   ``ticket_done: true`` means the tracker was *observed* Done.
 3. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
    one transaction (CAL-1002), so a failed ledger write never strands a terminal
    run with no close event.
@@ -61,8 +64,12 @@ an exit-1 error (retryable), not a gate refusal.
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
-* 1 — unexpected error (git failure, push failure, DB error, or a Linear
-  transition/request error while marking the ticket Done).
+* 1 — unexpected error (git failure, push failure, or a DB error); or a
+  post-merge ticket-transition failure, tagged with a :data:`FailureReason` —
+  ``ticket_transition_failed`` (the tracker raised) or
+  ``ticket_transition_unconfirmed`` (success reported, but the post-write
+  state wasn't the one requested, #233). Not a gate refusal — the merge
+  already landed; re-run ``harness close`` once the tracker is healthy.
 * 2 — gate refusal (``no_run`` / ``dirty_worktree`` / ``no_passing_review`` /
   ``stale_review``), or Linear is unconfigured (a missing ``LINEAR_API_KEY``);
   the latter carries no ``reason`` and is checked before any side effect.
@@ -104,6 +111,7 @@ from harness.tracker_errors import (
     TrackerConfigError,
     TrackerNotFound,
     TrackerRequestError,
+    TrackerTransitionUnconfirmed,
 )
 
 __all__ = ["close_command", "CloseOutput"]
@@ -116,6 +124,11 @@ RefusalReason = Literal[
     "stale_review",
     "no_gate_evidence",
 ]
+
+# The structured ticket-transition failure reasons (exit 1, #233) — separate
+# from RefusalReason because the merge already landed by the time either
+# fires, unlike a gate refusal's "nothing happened".
+FailureReason = Literal["ticket_transition_failed", "ticket_transition_unconfirmed"]
 
 #: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
 #: assert guards against a rename drifting the inlined INSERT away from the
@@ -131,10 +144,10 @@ class CloseOutput(BaseModel):
     (context-economy AC).  The fields are the bounded status an orchestrating
     agent needs to confirm the close landed.
 
-    ``ticket_done`` records whether a tracker transition actually happened, so a
-    tracker-less close (``layers.linear: false``, CAL-1104) reports ``False`` —
-    the merge still landed. It is not a success flag: read ``merged`` /
-    ``status`` for that.
+    ``ticket_done`` records whether the tracker was **observed** Done after the
+    transition (#233), not merely attempted. A tracker-less close
+    (``layers.linear: false``, CAL-1104) reports ``False`` — the merge still
+    landed. It is not a success flag: read ``merged`` / ``status`` for that.
     """
 
     run_id: str
@@ -148,11 +161,11 @@ class CloseOutput(BaseModel):
 class _CloseError(VerbError):
     """``close``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`) so
-    the structured ``{"error", "reason"}`` JSON names the refusal kind; it is
-    left ``None`` for unexpected (exit 1) errors. The ``(message, code, reason)``
-    carrier is inherited from the base; every raise site passes ``reason=`` by
-    keyword.
+    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`, exit
+    2) and for the two ticket-transition failures (a :data:`FailureReason`,
+    exit 1, #233 — the merge already landed, so exit 2's "refused, nothing
+    happened" contract would misreport them); every other exit-1 error leaves
+    ``reason`` unset. Every raise site passes ``reason=`` by keyword.
     """
 
 
@@ -286,14 +299,29 @@ async def _run_close(
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
 
-    # 7. Transition the ticket to Done (remote side effect). Skipped tracker-less
-    #    — and reported as such in step 10 rather than claimed.
+    # 7. Transition the ticket to Done; the backend confirms the write took off
+    #    that mutation's own response (#233). Skipped tracker-less. The merge
+    #    already landed, so a confirmed failure is exit 1, not a gate refusal:
+    #    re-running close recovers (merge/push is idempotent). Check
+    #    ``TrackerTransitionUnconfirmed`` first — it subclasses the other.
     ticket_done = False
     if client is not None:
         try:
             await client.transition_to_done(ticket)
+        except TrackerTransitionUnconfirmed as exc:
+            raise _CloseError(
+                f"ticket {ticket} was not confirmed Done: {exc}; the merge landed",
+                1,
+                reason="ticket_transition_unconfirmed",
+                extra={"merged": True, "run_id": resolved_run_id},
+            ) from exc
         except (TrackerNotFound, TrackerRequestError) as exc:
-            raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
+            raise _CloseError(
+                f"failed to transition ticket {ticket} to Done: {exc}; the merge landed",
+                1,
+                reason="ticket_transition_failed",
+                extra={"merged": True, "run_id": resolved_run_id},
+            ) from exc
         ticket_done = True
 
     # 8. Flip the run row to closed and record the close event in one

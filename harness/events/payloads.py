@@ -104,7 +104,14 @@ class WorkflowFailedEventData(BaseModel):
 
 
 class CloseEventData(BaseModel):
-    """Payload of a ``close`` event — the audited record of a landed run."""
+    """Payload of a ``close`` event — the audited record of a landed run.
+
+    No ``ticket_done`` field (#233): the event's *existence* now carries the
+    confirmation — a ``close`` event can only be written once the tracker
+    transition is confirmed (or the repo is tracker-less) — and the
+    tracker-less case is derivable from ``CONTEXT.md`` → ``tracker:``. Adding a
+    field would change a locked payload for information already implied.
+    """
 
     run_id: str
     ticket: str
@@ -154,6 +161,14 @@ class DesignEventData(BaseModel):
     ``status`` and ``design_hash`` back out (:data:`DESIGN_STATUS_KEY`,
     :data:`DESIGN_HASH_KEY`) to decide whether a design exists to review
     against, and to authenticate the text supplied for it.
+
+    ``invoked_at`` and ``concurrent_prior_at`` (#236) are set on both shapes,
+    the concurrent-invocation detector's evidence: ``invoked_at`` is when this
+    attempt began (captured before any engine work), and ``concurrent_prior_at``
+    — present only when a stray overlapping invocation is detected — is the
+    ``timestamp`` of the run's prior ``design`` event that finished *after*
+    this one started. A legitimate sequential re-run, whose prior event
+    predates ``invoked_at``, never sets it.
     """
 
     run_id: str
@@ -165,6 +180,8 @@ class DesignEventData(BaseModel):
     grounded_sha: str | None = None
     reason: str | None = None
     detail: str | None = None
+    invoked_at: str | None = None
+    concurrent_prior_at: str | None = None
 
 
 class ReleaseEventData(BaseModel):

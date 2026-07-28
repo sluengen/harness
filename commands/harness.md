@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.5 -->
+<!-- guidance:harness@0.2.8 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -61,6 +61,8 @@ A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedi
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
   "grounded_sha": "...", "model": "opus", "status": "ok" }
 ```
+
+**Run it as a single top-level background command — never chain a bare `&` inside a command that is *also* launched with your runtime's own background flag (#236).** A nested-background invocation detaches a process your session no longer tracks: it looks dead, but it is often still running to completion. If a redirected output file reads empty shortly after launch, that means **not finished yet**, never *dead* — wait and re-read, or check `harness events <run_id> --type design`, rather than relaunching. If two invocations do run, the **last one to finish silently becomes the run's bound design**, and it may not be the one you read — `harness design`'s own output then carries `concurrent_prior_at` (and the underlying `design` event does too) as the machine-readable warning that this happened; a stderr `warning:` line says the same. The recovery is not a bypass: run `harness design` once, cleanly, and implement from *that* output — the idempotent re-run contract below is unchanged.
 
 **Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design.
 
@@ -125,13 +127,22 @@ Act on `verdict`:
 - **`defer`** — the implementation is shippable, but the review surfaced a genuinely out-of-scope finding (needs its own spec or a redesign). Handle the finding by **filing a follow-up** — use `/harness ingest` to create a child ticket capturing it — then proceed to close.
 - **`pass`** — proceed to close.
 
+**Recovering from a breaker trip.** A breaker refusal escalates to the human, and the human may authorise continuing. If they do, the recovery is *not* `harness start <TICKET> --resume` on its own: the tripped run is still `open`, and `start` — with or without `--resume` — resolves a ticket's existing open run and **returns it unchanged** (same `run_id`, same `started_at`), so the wall-clock window and the review-cycle count carry straight over and the next `harness review` trips the identical breaker immediately. `--resume` chooses the *start point of a new run*; it does not reset an existing one. Recover in four steps, in order:
+
+1. `harness checkpoint --run-id <run_id>` — push the WIP, because `--resume` recovers what is on `origin`, nothing local.
+2. **Post the handoff comment** naming that branch (format and rationale under *Proactive context-rollover handoff* below) — resume resolution reads that comment, not the ledger.
+3. `harness cancel <run_id>` — mark the tripped run `cancelled`: a ledger-only write that records the abandon event, leaves the ticket **In Progress**, and touches no branch, so the `close` gate is unaffected. This clears the ticket's open row; without it, step 4 is a no-op that hands back the tripped run.
+4. `harness start <TICKET> --resume` — a **new** `run_id` with a fresh `started_at`, worktree based on the preserved branch tip. Confirm with `harness status <run_id>`: `started_at` reads as now, and the old run still reads `cancelled`.
+
+Do this **once**, on an explicit human decision. Cancel + resume opens a new budget window — it resets *both* breakers, wall-clock and cycle count — so looping it is exactly the runaway spend the breakers exist to bound.
+
 **Step 4 — `close`.** Finalize through the gate:
 
 ```bash
 harness close <ISSUE-ID> --run-id <run_id>    # [--repo .]
 ```
 
-`close` enforces the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commits, merges, pushes, transitions the ticket Done, and marks the run closed. On success it emits `CloseOutput`:
+`close` enforces the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commits, merges, pushes, transitions the ticket Done **and confirms it landed against that same mutation's own post-write response** (#233 — a transition that merely did not raise is not proof it took), and marks the run closed. On success it emits `CloseOutput`, whose `ticket_done: true` means the tracker was *observed* Done, not merely that a transition was attempted:
 
 ```json
 { "run_id": "...", "ticket": "...", "reviewed_sha": "...", "merged": true, "ticket_done": true, "status": "..." }
@@ -149,6 +160,8 @@ If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The 
 
 There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal, so no `reason` key). Both are retryable: for a conflict, rebase the run branch on the updated base, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
 
+**A ticket-transition failure is exit 1, not a gate refusal (#233).** The merge has already landed by the time the ticket-Done transition is attempted, so a confirmed-failed transition cannot use exit 2's "refused, nothing happened" contract — it exits **1** with `{"error": ..., "reason": ..., "merged": true, "run_id": "..."}`, `reason` being one of two tags: `ticket_transition_failed` (the tracker raised — an outage, a permission error) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the requested state never took). Re-run `harness close` once the tracker is healthy — the merge/push step is idempotent for an already-landed run branch, so the retry only needs the transition to succeed this time.
+
 A gate refusal is the gate doing its job. **Do not work around it** — do not hand-roll the merge/push/transition to "finish" the run. If the refusal is something you cannot resolve by re-running a verb (e.g. an unexpected error, or a verb that itself fails), **surface it to the human / Hermes** with the `reason` and the `run_id`; do not improvise a bypass.
 
 ### Context economy / compaction
@@ -165,6 +178,8 @@ When a build is **alive but nearing its context limit** mid-ticket, hand off gra
 1. **`harness checkpoint --run-id <run_id>`** — push the WIP branch so it is durable (the existing verb; pushes only the feature branch, so the `close` gate is untouched).
 2. **Post a handoff comment** on the ticket naming the checkpoint-pushed branch, in the single-sourced `harness.reclaim_marker.format_handoff_comment` format — marker `Context-rollover handoff by \`harness checkpoint\`` with a ``Preserved branch: `<branch>` `` clause. Post it through the `linear` skill (`commentCreate`). **Leave the ticket In Progress** — do **not** revert it to Todo and do **not** apply the `reclaimed` label.
 3. **A fresh session continues the same ticket** with `harness start <TICKET> --resume`: resume resolution reads the handoff marker (`LinearClient.fetch_handoff_branch`), fetches the branch from `origin`, and starts the worktree from its tip while keeping `base_branch` = `dev` — so `close`'s HEAD-bound gate keeps the resumed run safe from double-merge. Re-orient via `git log` on the recovered WIP before continuing.
+
+The same mechanic applies here: `start --resume` opens a new run only when the ticket has **no** open run. A handoff that leaves its run `open` hands the fresh session the *same* row — same `run_id`, same `started_at` — so the prior session's wall-clock window and cycle count keep running against it. Cancel the handed-off run (`harness cancel <run_id>`, after step 2's comment) so the continuing session gets its own budget; the ordered recipe is *Recovering from a breaker trip* above.
 
 **This is distinct from death-keyed reclamation** (`harness reclaim`, Step 0 of `/harness routine build`), and the two never collide:
 
@@ -213,7 +228,7 @@ This **runs first, before the pick step**, so the routine **unblocks the backlog
 harness worktrees cleanup --merged --age 7d   # delete merged worktrees + their branch; rm orphaned dirs >7d old
 ```
 
-This is **best-effort and idempotent**: `--merged` removes each worktree whose branch has already landed on `dev`/`main`/`master` and deletes that merged branch (local + on `origin`); `--age 7d` reclaims orphaned directories left by runs that died long ago (the cruft a plain `git worktree remove` can no longer touch). It never removes a recent, unmerged worktree — including a reclaimed ticket's preserved WIP branch, which lives on `origin` and is fetched by `--resume`, not from the local directory. *Fallback (`/build`, harness tool unavailable):* run the same `harness worktrees cleanup --merged --age 7d` by hand in the repo as part of the pre-flight.
+This is **best-effort and idempotent**: `--merged` removes each worktree whose branch has already landed on `dev`/`main`/`master` and deletes that merged branch (local + on `origin`); `--age 7d` reclaims orphaned directories left by runs that died long ago (the cruft a plain `git worktree remove` can no longer touch). It never removes a recent, unmerged worktree — including a reclaimed ticket's preserved WIP branch, which lives on `origin` and is fetched by `--resume`, not from the local directory. `--merged` treats a merge-ancestry match as necessary but not sufficient (#235): a fresh run branch with zero commits is trivially "merged" (its tip equals the base) even though its WIP may be `git stash`'d rather than committed, so before deleting it also checks the run's ledger status, `git stash list`, and the worktree's own dirty state — a hit on any of the three keeps the worktree and prints why, unless `--force` is given. *Fallback (`/build`, harness tool unavailable):* run the same `harness worktrees cleanup --merged --age 7d` by hand in the repo as part of the pre-flight.
 
 The loop:
 

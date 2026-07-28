@@ -37,6 +37,7 @@ from harness.events.payloads import (
     CheckpointEventData,
     CloseEventData,
     DeferEventData,
+    DesignEventData,
     ReviewEventData,
     WorkflowFailedEventData,
     _field_name,
@@ -135,6 +136,40 @@ def test_review_event_data_includes_set_optionals() -> None:
     assert dumped["deferred_brief"] == "brief"
     assert dumped["gate_command"] == "bash scripts/verify.sh"
     assert dumped["gate_exit_code"] == 0
+
+
+def test_design_event_data_omits_unset_concurrency_fields() -> None:
+    """#236: ``invoked_at``/``concurrent_prior_at`` default absent, not null —
+    the normal (non-concurrent) design event's key set stays unchanged."""
+    dumped = DesignEventData(
+        run_id="R1",
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:00Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+    ).model_dump(exclude_none=True)
+
+    assert "invoked_at" not in dumped
+    assert "concurrent_prior_at" not in dumped
+
+
+def test_design_event_data_includes_set_concurrency_fields() -> None:
+    dumped = DesignEventData(
+        run_id="R1",
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:05Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+        invoked_at="2026-07-28T00:00:00Z",
+        concurrent_prior_at="2026-07-28T00:00:02Z",
+    ).model_dump(exclude_none=True)
+
+    assert dumped["invoked_at"] == "2026-07-28T00:00:00Z"
+    assert dumped["concurrent_prior_at"] == "2026-07-28T00:00:02Z"
 
 
 def test_checkpoint_event_data_keys() -> None:

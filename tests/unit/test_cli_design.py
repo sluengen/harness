@@ -382,6 +382,207 @@ def test_re_running_appends_a_second_event(repo: Path, db_path: Path) -> None:
     assert len(events) == 2
     assert events[0]["data"]["design_hash"] != events[1]["data"]["design_hash"]
     assert stub.post_comment.await_count == 2
+    # A legitimate sequential re-run (this invocation started well after the
+    # prior one finished) must never be flagged as concurrent (#236).
+    assert "concurrent_prior_at" not in events[1]["data"]
+    assert "concurrent_prior_at" not in json.loads(second.output.strip().splitlines()[-1])
+
+
+# ---------------------------------------------------------------------------
+# #236 — a nested/overlapping invocation is detected and flagged
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_invocation_flags_the_later_writer(repo: Path, db_path: Path) -> None:
+    """The incident this ticket exists for: a second invocation's event lands
+    on the ledger while this invocation's engine is still running. The later
+    writer — the one that silently becomes authoritative — must flag it."""
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+    captured: dict[str, Any] = {}
+
+    async def _insert_stray_event() -> str:
+        from harness._time import iso_z as _iso_z
+
+        ts = _iso_z()
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                "VALUES (?, 'design', ?, ?)",
+                (_RUN_ID, ts, json.dumps({"run_id": _RUN_ID, "status": "ok"})),
+            )
+            await conn.commit()
+        return ts
+
+    async def _runner(**_: Any) -> design_mod.RunResult:
+        captured["injected_ts"] = await _insert_stray_event()
+        return design_mod.RunResult(stdout=_submit(), stderr="", returncode=0)
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert payload["concurrent_prior_at"] == captured["injected_ts"]
+    events = design_events(db_path)
+    assert events[-1]["data"]["concurrent_prior_at"] == captured["injected_ts"]
+    assert "warning:" in result.output
+    assert _RUN_ID in result.output
+
+
+def test_first_design_has_no_flag(repo: Path, db_path: Path) -> None:
+    """No prior event at all: nothing to flag."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert "concurrent_prior_at" not in json.loads(result.output.strip().splitlines()[-1])
+    assert "concurrent_prior_at" not in design_events(db_path)[0]["data"]
+
+
+def test_a_concurrent_event_on_another_run_is_ignored(repo: Path, db_path: Path) -> None:
+    """Scope is one run: an overlapping ``design`` event on a *different*
+    run_id must never flag this one."""
+    _seed_open_run(db_path, repo)
+    other_run_id = "01JOTHERRUNXXXXXXXXXXXXX01"
+
+    async def _seed_other_run() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
+                "state_json, inputs_json, base_branch, worktree_path, worktree_branch, "
+                "ticket, started_at, pid) VALUES (?, '', 0, 'open', '{}', '{}', 'dev', "
+                "?, ?, '999', ?, 1)",
+                (
+                    other_run_id,
+                    str(repo) + "-other",
+                    f"harness/{other_run_id}",
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            await conn.commit()
+
+    async def _insert_other_run_event() -> None:
+        from harness._time import iso_z as _iso_z
+
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                "VALUES (?, 'design', ?, ?)",
+                (other_run_id, _iso_z(), json.dumps({"run_id": other_run_id})),
+            )
+            await conn.commit()
+
+    _sync(_seed_other_run())
+
+    async def _runner(**_: Any) -> design_mod.RunResult:
+        await _insert_other_run_event()
+        return design_mod.RunResult(stdout=_submit(), stderr="", returncode=0)
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert "concurrent_prior_at" not in json.loads(result.output.strip().splitlines()[-1])
+
+
+def test_failed_attempt_carries_the_flag(repo: Path, db_path: Path) -> None:
+    """The nastier variant: a stray invocation that *fails* still supersedes a
+    good design, and the exit-3 failure must carry the same evidence."""
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+    captured: dict[str, Any] = {}
+
+    async def _insert_stray_event() -> str:
+        from harness._time import iso_z as _iso_z
+
+        ts = _iso_z()
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                "VALUES (?, 'design', ?, ?)",
+                (_RUN_ID, ts, json.dumps({"run_id": _RUN_ID, "status": "ok"})),
+            )
+            await conn.commit()
+        return ts
+
+    async def _runner(**_: Any) -> design_mod.RunResult:
+        captured["injected_ts"] = await _insert_stray_event()
+        raise design_mod.EngineTimeoutError(600.0)
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=stub)
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert payload["concurrent_prior_at"] == captured["injected_ts"]
+    assert payload["reason"] == "engine_timeout"
+    events = design_events(db_path)
+    assert events[-1]["data"]["concurrent_prior_at"] == captured["injected_ts"]
+    assert "warning:" in result.output
+
+
+def test_detection_failure_does_not_break_the_design(repo: Path, db_path: Path) -> None:
+    """Detection fails open: a broken reader never wedges the write (D4)."""
+    _seed_open_run(db_path, repo)
+
+    with mock.patch.object(
+        design_mod, "_read_latest_design_timestamp", side_effect=RuntimeError("db locked")
+    ):
+        result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert "concurrent_prior_at" not in json.loads(result.output.strip().splitlines()[-1])
+    events = design_events(db_path)
+    assert len(events) == 1
+    assert events[0]["data"]["status"] == "ok"
+
+
+def test_microsecond_boundary_uses_parsed_not_string_comparison(
+    repo: Path, db_path: Path
+) -> None:
+    """A prior timestamp with no microseconds must still compare correctly
+    against an ``invoked_at`` that has them — ``parse_iso_z``, never a bare
+    string comparison (#236). ``datetime.isoformat()`` omits a zero
+    microsecond field, so lexicographically ``"...:00Z"`` sorts *after*
+    ``"...:00.5Z"`` — a string comparison would misjudge a genuinely earlier,
+    non-concurrent prior event as an overlap.
+
+    Exercises :func:`design_mod._record_design_event` directly (the helper
+    level), rather than a full CLI invocation whose real-clock ``invoked_at``
+    cannot be pinned to this exact boundary.
+    """
+    _seed_open_run(db_path, repo)
+
+    async def _seed_prior_event() -> None:
+        await store.init_db(db_path)
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                "VALUES (?, 'design', ?, ?)",
+                (_RUN_ID, "2026-07-28T00:00:00Z", json.dumps({"run_id": _RUN_ID})),
+            )
+            await conn.commit()
+
+    _sync(_seed_prior_event())
+
+    data = design_mod.DesignEventData(
+        run_id=_RUN_ID,
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:00.500001Z",
+        invoked_at="2026-07-28T00:00:00.500000Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+    )
+
+    recorded = _sync(design_mod._record_design_event(db_path, data))
+
+    assert recorded.concurrent_prior_at is None, (
+        "the prior event (00:00:00, no microseconds) is chronologically "
+        "earlier than invoked_at (00:00:00.5) and must not be flagged; a "
+        "bare string comparison sorts '...:00Z' after '...:00.5Z' and would "
+        "wrongly flag it"
+    )
 
 
 # ---------------------------------------------------------------------------

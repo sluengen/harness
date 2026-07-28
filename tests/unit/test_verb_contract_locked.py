@@ -40,7 +40,7 @@ from pydantic import BaseModel
 from typer.testing import CliRunner
 
 from harness.cli import app
-from harness.cli.close import CloseOutput, RefusalReason
+from harness.cli.close import CloseOutput, FailureReason, RefusalReason
 from harness.cli.review import Engine, ReviewOutput, Verdict
 from harness.cli.start import StartOutput, TicketContext
 from harness.state import store
@@ -194,6 +194,25 @@ def test_refusal_reason_enum_matches_the_locked_contract() -> None:
     interface change (major); version the exposing unit and update the snapshot.
     """
     assert set(get_args(RefusalReason)) == EXPECTED_REFUSAL_REASONS
+
+
+#: The structured ``close`` ticket-transition **failure** reasons (#233) —
+#: exit 1, not exit 2, because the merge has already landed by the time either
+#: fires. Deliberately a *separate* locked set from ``EXPECTED_REFUSAL_REASONS``:
+#: folding them together would let a caller that correctly reads "a reason
+#: means no side effects" draw that conclusion at exactly the moment it is
+#: false.
+EXPECTED_CLOSE_FAILURE_REASONS = {
+    "ticket_transition_failed",
+    "ticket_transition_unconfirmed",
+}
+
+
+def test_close_failure_reason_enum_matches_the_locked_contract() -> None:
+    """The ``close`` ticket-transition failure-reason type holds exactly the
+    locked members — the exit-1 counterpart to the exit-2 refusal-reason lock
+    above. Fails on any added / dropped / renamed reason."""
+    assert set(get_args(FailureReason)) == EXPECTED_CLOSE_FAILURE_REASONS
 
 
 #: The ``review`` verdict values (``harness/cli/review.py``). An orchestrating

@@ -582,6 +582,20 @@ def test_resolve_design_gate_drops_context_on_a_hash_mismatch() -> None:
     assert gate.warning is not None
 
 
+def test_resolve_design_gate_ignores_the_concurrency_detection_fields() -> None:
+    """#236 adds ``invoked_at``/``concurrent_prior_at`` to the payload; the gate
+    must resolve exactly as before — added keys never drop design context."""
+    event = {
+        "status": "ok",
+        "design_hash": design_content_hash(_DESIGN),
+        "invoked_at": "2026-07-28T00:00:00Z",
+        "concurrent_prior_at": "2026-07-28T00:00:02Z",
+    }
+    gate = resolve_design_gate(event, _DESIGN)
+    assert gate.refusal_reason is None
+    assert gate.design_markdown == _DESIGN
+
+
 def test_no_design_is_the_only_refusal_the_design_gate_produces() -> None:
     """Enforcement refuses; context degrades — one refusal, not two."""
     ok = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}

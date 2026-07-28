@@ -12,8 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import get_args
 
+from harness.cli._abandon import CANCELLABLE_STATUSES
 from harness.state import store
-from harness.state.schema import RUN_STATUSES, RunStatus
+from harness.state.schema import IN_FLIGHT_STATUSES, RUN_STATUSES, RunStatus
 
 
 def test_run_statuses_includes_verb_lifecycle() -> None:
@@ -40,6 +41,22 @@ def test_run_statuses_retains_legacy_engine_statuses() -> None:
 def test_run_statuses_derived_from_literal() -> None:
     """The frozenset stays the runtime view of the Literal — no drift."""
     assert frozenset(get_args(RunStatus)) == RUN_STATUSES
+
+
+def test_in_flight_statuses_is_a_subset_of_run_statuses() -> None:
+    """#235: the non-terminal allowlist can never admit a status the canonical
+    Literal doesn't recognise."""
+    assert IN_FLIGHT_STATUSES <= RUN_STATUSES
+    assert "open" in IN_FLIGHT_STATUSES
+    assert "closed" not in IN_FLIGHT_STATUSES
+
+
+def test_cancellable_statuses_is_an_alias_of_in_flight_statuses() -> None:
+    """``harness.cli._abandon.CANCELLABLE_STATUSES`` and ``worktrees
+    cleanup --merged``'s in-flight veto (#235) answer the same question — "is
+    this run still in flight" — so they share one definition and cannot drift
+    apart."""
+    assert CANCELLABLE_STATUSES == IN_FLIGHT_STATUSES
 
 
 async def test_status_written_by_start_and_close_validates(tmp_path: Path) -> None:
