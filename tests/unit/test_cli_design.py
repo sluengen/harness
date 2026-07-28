@@ -536,6 +536,55 @@ def test_detection_failure_does_not_break_the_design(repo: Path, db_path: Path) 
     assert events[0]["data"]["status"] == "ok"
 
 
+def test_microsecond_boundary_uses_parsed_not_string_comparison(
+    repo: Path, db_path: Path
+) -> None:
+    """A prior timestamp with no microseconds must still compare correctly
+    against an ``invoked_at`` that has them — ``parse_iso_z``, never a bare
+    string comparison (#236). ``datetime.isoformat()`` omits a zero
+    microsecond field, so lexicographically ``"...:00Z"`` sorts *after*
+    ``"...:00.5Z"`` — a string comparison would misjudge a genuinely earlier,
+    non-concurrent prior event as an overlap.
+
+    Exercises :func:`design_mod._record_design_event` directly (the helper
+    level), rather than a full CLI invocation whose real-clock ``invoked_at``
+    cannot be pinned to this exact boundary.
+    """
+    _seed_open_run(db_path, repo)
+
+    async def _seed_prior_event() -> None:
+        await store.init_db(db_path)
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                "VALUES (?, 'design', ?, ?)",
+                (_RUN_ID, "2026-07-28T00:00:00Z", json.dumps({"run_id": _RUN_ID})),
+            )
+            await conn.commit()
+
+    _sync(_seed_prior_event())
+
+    data = design_mod.DesignEventData(
+        run_id=_RUN_ID,
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:00.500001Z",
+        invoked_at="2026-07-28T00:00:00.500000Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+    )
+
+    recorded = _sync(design_mod._record_design_event(db_path, data))
+
+    assert recorded.concurrent_prior_at is None, (
+        "the prior event (00:00:00, no microseconds) is chronologically "
+        "earlier than invoked_at (00:00:00.5) and must not be flagged; a "
+        "bare string comparison sorts '...:00Z' after '...:00.5Z' and would "
+        "wrongly flag it"
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-2 — degrade and record (ADR 0007 D4)
 # ---------------------------------------------------------------------------
