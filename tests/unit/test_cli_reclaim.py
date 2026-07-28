@@ -517,6 +517,24 @@ def test_reclaim_linear_failure_leaves_run_in_flight(tmp_path: Path) -> None:
     assert _fetch_events(db, "R1", "workflow_failed") == []
 
 
+def test_reclaim_unconfirmed_transition_leaves_run_in_flight(tmp_path: Path) -> None:
+    """``TrackerTransitionUnconfirmed`` subclasses ``TrackerRequestError`` (#233),
+    so it takes the same in-flight-preserving path as any other tracker
+    failure — pinned directly rather than only inferred from the subclass
+    relationship."""
+    from harness.tracker_errors import TrackerTransitionUnconfirmed
+
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="R1", status="open", ticket="CAL-735")
+    stub = _make_linear_stub(
+        raise_on_transition=TrackerTransitionUnconfirmed("post-write state still In Progress")
+    )
+    result = _invoke(["reclaim", "R1", "--json", "--db", str(db)], stub)
+    assert result.exit_code != 0
+    assert _fetch_row(db, "R1")["status"] == "open"  # type: ignore[index]
+    assert _fetch_events(db, "R1", "workflow_failed") == []
+
+
 # ===========================================================================
 # Single-source-of-truth — shared helpers
 # ===========================================================================
