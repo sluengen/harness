@@ -31,7 +31,7 @@ The harness distributes `skills/design-system/SKILL.md` to every repo it serves.
 
 **There is nothing at the other end of that pointer.** The harness ships the discipline for using a design system and no way to get one. A repo that turns the layer on has to invent the structure, and two of them already did — independently, and identically.
 
-`calibrate` (`~/Code/form/design/`) and `nano-erp` (`~/Code/nano-erp/design/`) run the same eight-layer system:
+`calibrate` (`~/Code/calibrate/design/`, remote `sluengen/calibrate`) and `nano-erp` (`~/Code/nano-erp/design/`) run the same eight-layer system:
 
 ```
 00-brand → 01-voice → 02-principles → 03-tokens → 04-primitives → 05-patterns → 06-archetypes → 07-flows
