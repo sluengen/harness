@@ -272,7 +272,7 @@ harness logs      <run-id>                [--follow] [--node <id>]
 harness events    <run-id>                [--type <event_type>] [--json] [--after-id <n>]
 harness runs                              [--limit <n>]
 harness worktrees list                    [--json]
-harness worktrees cleanup                 [--age <duration>] [--merged]
+harness worktrees cleanup                 [--age <duration>] [--merged] [--force] [--db <p>]
 
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)

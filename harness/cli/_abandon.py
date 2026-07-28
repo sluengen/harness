@@ -25,7 +25,7 @@ import aiosqlite
 from harness.cli._verb import VerbError
 from harness.events.payloads import WorkflowFailedEventData
 from harness.events.schema import EVENT_TYPES
-from harness.state.schema import RUN_STATUSES
+from harness.state.schema import IN_FLIGHT_STATUSES, RUN_STATUSES
 
 __all__ = [
     "ABANDON_EVENT_TYPE",
@@ -34,15 +34,12 @@ __all__ = [
     "abandon_run_in_ledger",
 ]
 
-#: In-flight statuses a run can be abandoned *from* — an explicit allowlist. The
-#: verb model only ever writes ``open``; the rest are legacy engine / intake
-#: states that may still appear on historical rows. An allowlist means an unknown
-#: or future status is **refused**, never silently overwritten.
-CANCELLABLE_STATUSES: frozenset[str] = frozenset(
-    {"open", "running", "pending", "paused", "stalled"}
-)
-# The allowlist must stay a subset of the canonical run-status set.
-assert CANCELLABLE_STATUSES <= RUN_STATUSES
+#: In-flight statuses a run can be abandoned *from* — an alias of
+#: :data:`harness.state.schema.IN_FLIGHT_STATUSES`, the same non-terminal set
+#: ``harness worktrees cleanup --merged`` (#235) vetoes on. One definition so
+#: the two questions ("can this be abandoned" / "is this still in flight")
+#: cannot drift apart.
+CANCELLABLE_STATUSES: frozenset[str] = IN_FLIGHT_STATUSES
 
 #: The abandonment event. ``workflow_failed`` (carrying ``reason``) is the
 #: canonical mark (a member of :data:`EVENT_TYPES`) that ``harness status`` reads

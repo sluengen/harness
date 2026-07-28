@@ -23,11 +23,35 @@ Filters for ``cleanup``:
 Without filters, ``cleanup`` is a no-op (it prints "kept" lines so the
 operator sees what would have been candidate). The conservative default
 matches the harness rule "never assume uncommitted work is stale".
+
+**#235 — a "merged" branch is not always safe to delete.** ``git merge-base
+--is-ancestor`` is true both for a branch that genuinely landed *and* for a
+fresh run branch that has made zero commits yet — its tip trivially equals the
+base. A run whose WIP is ``git stash``'d rather than committed looks exactly
+like the second case, so ``--merged`` could delete a live run's worktree and
+branch out from under it. Before honouring an ancestry-true match, ``--merged``
+now runs three vetoes and takes the first hit:
+
+1. **Ledger** — the run's ``runs`` row (matched by ``worktree_path`` first,
+   then by ``run_id``) has a non-terminal status
+   (:data:`harness.state.schema.IN_FLIGHT_STATUSES`).
+2. **Stash** — ``git stash list`` in the worktree has an entry for this branch.
+3. **Dirty tree** — the worktree has uncommitted changes
+   (:func:`harness.close_merge.worktree_porcelain`).
+
+A vetoed worktree is kept (the reason is printed) unless ``--force`` is given,
+which removes it anyway and names what it overrode. ``--age`` is untouched by
+any of this — it exists specifically to reclaim the directories of runs that
+never closed (whose ledger rows can stay non-terminal forever), so vetoing
+there would re-open the cruft leak CAL-767 closed; it also never touches the
+branch or ``refs/stash``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,7 +66,11 @@ from harness.cli._git import (
     run_git,
     teardown_worktree,
 )
+from harness.cli._repo import resolve_verb_db_path
+from harness.close_merge import CloseMergeError, worktree_porcelain
 from harness.identity import WORKTREES_SUBDIR
+from harness.state import store
+from harness.state.schema import IN_FLIGHT_STATUSES
 
 worktrees_app = typer.Typer(
     help="Inspect or clean up worktrees under .worktrees/harness/",
@@ -171,6 +199,129 @@ def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     return proc.returncode == 0
 
 
+class _InFlightRuns:
+    """The ledger's non-terminal runs, indexed for the two ways a worktree
+    directory maps back to a ``runs`` row: an exact ``worktree_path`` match
+    (the authoritative one — ``start`` writes it), falling back to the
+    directory name as ``run_id`` (the ``harness/<ULID>`` convention, which
+    also covers a row with no ``worktree_path`` recorded)."""
+
+    def __init__(self, rows: list[tuple[str, str | None, str]]) -> None:
+        self._by_run_id = {run_id: status for run_id, _path, status in rows}
+        self._by_path = {
+            Path(path).resolve(): (run_id, status)
+            for run_id, path, status in rows
+            if path is not None
+        }
+
+    def veto(self, run_id: str, worktree_path: Path) -> str | None:
+        hit = self._by_path.get(worktree_path.resolve())
+        if hit is not None:
+            matched_run_id, matched_status = hit
+            return f"run {matched_run_id} in flight (status={matched_status})"
+        by_id_status = self._by_run_id.get(run_id)
+        if by_id_status is not None:
+            return f"run {run_id} in flight (status={by_id_status})"
+        return None
+
+
+async def _in_flight_runs_async(db_path: Path) -> _InFlightRuns:
+    # The placeholder count comes from the fixed local IN_FLIGHT_STATUSES
+    # frozenset, never from request/tracker input — bound parameters carry
+    # the actual values, so this is not a string-built query.
+    placeholders = ",".join("?" for _ in IN_FLIGHT_STATUSES)
+    query = f"SELECT run_id, worktree_path, status FROM runs WHERE status IN ({placeholders})"  # noqa: S608
+    async with store.connect(db_path) as conn:
+        cursor = await conn.execute(query, tuple(IN_FLIGHT_STATUSES))
+        rows = await cursor.fetchall()
+    return _InFlightRuns([(str(r[0]), r[1], str(r[2])) for r in rows])
+
+
+def _in_flight_runs(db_path: Path) -> _InFlightRuns:
+    """The ledger's non-terminal runs — a no-op lookup when the DB is absent.
+
+    #235: a worktree's branch can be a trivial merge-base ancestor of the
+    integration branch simply because the run hasn't committed anything yet
+    (WIP stashed, not committed) — ``git`` ancestry alone can't tell that
+    apart from a genuinely-landed, safe-to-delete branch. The ledger's run
+    status is the authoritative "is this run still in flight" signal (the
+    same one ``close`` and ``reclaim`` use). An absent DB (the fresh-container
+    regime, or a repo never driven by the harness) has no opinion — it is not
+    itself a veto, since the other two probes (stash / dirty tree) still
+    guard that case, and vetoing on absence alone would turn every sweep into
+    a no-op there.
+    """
+    if not db_path.exists():
+        return _InFlightRuns([])
+    return asyncio.run(_in_flight_runs_async(db_path))
+
+
+def _worktree_toplevel_matches(worktree_path: Path) -> bool:
+    """True iff ``git -C worktree_path rev-parse --show-toplevel`` resolves
+    back to ``worktree_path`` itself.
+
+    The stash / dirty-tree probes read ``git`` state *anchored at the
+    worktree*; without this guard, a directory whose worktree registration
+    was already pruned (or that never was a proper worktree) has ``git``
+    walk up and report the *main checkout's* state instead — which would
+    veto an orphaned directory whenever the operator's own tree happens to
+    be dirty.
+    """
+    proc = run_git(worktree_path, "rev-parse", "--show-toplevel")
+    if proc.returncode != 0:
+        return False
+    try:
+        return Path(proc.stdout.strip()).resolve() == worktree_path.resolve()
+    except OSError:
+        return False
+
+
+_STASH_SUBJECT_RE = re.compile(r"^(?:WIP on|On) (?P<branch>.+):")
+
+
+def _stash_veto(worktree_path: Path, branch: str) -> str | None:
+    """A ``git stash`` entry for ``branch`` in ``worktree_path`` is a veto —
+    it is uncommitted WIP a ``--merged`` delete would destroy with no
+    recovery path beyond dangling-object forensics (the exact #235 repro)."""
+    if not _worktree_toplevel_matches(worktree_path):
+        return None
+    proc = run_git(worktree_path, "stash", "list", "--format=%gd%x09%gs")
+    if proc.returncode != 0:
+        return f"could not verify worktree state: {proc.stderr.strip()}"
+    for line in proc.stdout.splitlines():
+        selector, _, subject = line.partition("\t")
+        match = _STASH_SUBJECT_RE.match(subject)
+        if match is not None and match.group("branch") == branch:
+            return f"stashed WIP on {branch} ({selector})"
+    return None
+
+
+def _dirty_veto(worktree_path: Path) -> str | None:
+    """Uncommitted changes in ``worktree_path`` are a veto — ``teardown_worktree``
+    uses ``git worktree remove --force``, which would discard them silently."""
+    if not _worktree_toplevel_matches(worktree_path):
+        return None
+    try:
+        porcelain = worktree_porcelain(worktree_path)
+    except CloseMergeError as exc:
+        return f"could not verify worktree state: {exc}"
+    if porcelain:
+        return "uncommitted changes in the worktree"
+    return None
+
+
+def _merge_veto(
+    in_flight: _InFlightRuns, run_id: str, worktree_path: Path, branch: str
+) -> str | None:
+    """The first of the three #235 probes (ledger, stash, dirty tree) to
+    object to reclaiming this merged worktree, or ``None`` if none does."""
+    return (
+        in_flight.veto(run_id, worktree_path)
+        or _stash_veto(worktree_path, branch)
+        or _dirty_veto(worktree_path)
+    )
+
+
 @worktrees_app.command(
     "cleanup", help="Remove worktrees matching the supplied filters."
 )
@@ -189,8 +340,18 @@ def cleanup_command(
         help=(
             "Remove worktrees whose branch is merged into the repo's configured "
             "integration base (CONTEXT.md branches.integration, else the origin "
-            "default, else dev), and delete that merged branch (local + remote)."
+            "default, else dev), and delete that merged branch (local + remote). "
+            "Skips a worktree whose run is still in flight, has a stash, or has "
+            "uncommitted changes (#235) unless --force is given."
         ),
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Remove a --merged candidate despite an in-flight/stash/dirty veto (#235).",
+    ),
+    db: Path | None = typer.Option(
+        None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
 ) -> None:
     """Remove worktrees matching ``--age`` / ``--merged``."""
@@ -203,11 +364,16 @@ def cleanup_command(
     if age is not None:
         cutoff = datetime.now(UTC) - _parse_duration(age)
 
-    removed: list[str] = []
-    kept: list[str] = []
+    in_flight = (
+        _in_flight_runs(resolve_verb_db_path(db, repo_root)) if merged else _InFlightRuns([])
+    )
+
+    removed: list[tuple[str, str | None]] = []
+    kept: list[tuple[str, str | None]] = []
     failures: list[tuple[str, str]] = []
 
     for item in items:
+        run_id = str(item["run_id"])
         path = Path(str(item["path"]))
         last_modified = parse_iso_z(str(item["last_modified"]))
         branch = item.get("branch")
@@ -218,18 +384,23 @@ def cleanup_command(
         # branch is provably integrated, so it is safe. An ``--age`` removal
         # retains the branch (an aged worktree may still hold unmerged work).
         delete_branch = False
+        veto: str | None = None
+        forced_over: str | None = None
         if cutoff is not None and last_modified < cutoff:
             should_remove = True
-        if (
-            merged
-            and branch_str is not None
-            and _branch_merged_into_base(repo_root, branch_str)
-        ):
-            should_remove = True
-            delete_branch = True
+        if merged and branch_str is not None and _branch_merged_into_base(repo_root, branch_str):
+            veto = _merge_veto(in_flight, run_id, path, branch_str)
+            if veto is None:
+                should_remove = True
+                delete_branch = True
+            elif force:
+                should_remove = True
+                delete_branch = True
+                forced_over = veto
 
         if not should_remove:
-            kept.append(str(item["run_id"]))
+            note = f"merged, but {veto}" if veto is not None else None
+            kept.append((run_id, note))
             continue
 
         # Orphan-safe removal + optional branch deletion (local + remote). The
@@ -243,15 +414,18 @@ def cleanup_command(
         )
         if path.exists():
             failures.append(
-                (str(item["run_id"]), "worktree directory still present after removal")
+                (run_id, "worktree directory still present after removal")
             )
         else:
-            removed.append(str(item["run_id"]))
+            note = f"forced over: {forced_over}" if forced_over is not None else None
+            removed.append((run_id, note))
 
-    for run_id in removed:
-        typer.echo(f"removed {run_id}")
-    for run_id in kept:
-        typer.echo(f"kept    {run_id}")
+    for run_id, note in removed:
+        suffix = f" ({note})" if note is not None else ""
+        typer.echo(f"removed {run_id}{suffix}")
+    for run_id, note in kept:
+        suffix = f" ({note})" if note is not None else ""
+        typer.echo(f"kept    {run_id}{suffix}")
     for run_id, err in failures:
         typer.echo(f"failed  {run_id}: {err}", err=True)
 

@@ -59,14 +59,15 @@ async def _seed_run_async(
     started_at: str,
     completed_at: str | None,
     duration_ms: int | None,
+    worktree_path: str | None = None,
 ) -> None:
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
         await conn.execute(
             "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
             "state_json, inputs_json, base_branch, worktree_branch, exit_code, "
-            "started_at, completed_at, duration_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "started_at, completed_at, duration_ms, worktree_path) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 workflow_name,
@@ -80,6 +81,7 @@ async def _seed_run_async(
                 started_at,
                 completed_at,
                 duration_ms,
+                worktree_path,
             ),
         )
         await conn.commit()
@@ -112,6 +114,7 @@ def _seed_run(
     started_at: str = "2026-05-08T12:00:00Z",
     completed_at: str | None = "2026-05-08T12:30:00Z",
     duration_ms: int | None = 1_800_000,
+    worktree_path: str | None = None,
 ) -> None:
     _run_sync(
         _seed_run_async(
@@ -128,6 +131,7 @@ def _seed_run(
             started_at=started_at,
             completed_at=completed_at,
             duration_ms=duration_ms,
+            worktree_path=worktree_path,
         )
     )
 
@@ -605,6 +609,318 @@ def test_worktrees_cleanup_merged_removes_branch_merged_into_dev(
         check=True, capture_output=True, text=True,
     ).stdout.split()
     assert "harness/R-merged" not in branches
+
+
+def test_worktrees_cleanup_merged_skips_open_run(tmp_path: Path) -> None:
+    """#235: a branch that is trivially "merged" only because the run hasn't
+    committed yet (e.g. WIP is ``git stash``'d, not committed) must not be
+    deleted while its ledger row is still ``open`` — deleting it destroys
+    uncommitted work with no recovery path other than dangling-object forensics.
+    """
+    repo_root = tmp_path
+    subprocess.run(
+        ["git", "init", "-q", "-b", "dev", str(repo_root)], check=True
+    )
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty",
+         "-q", "-m", "init"], check=True,
+    )
+    # Branch tip == dev (no commits yet) — the same shape a fresh `harness
+    # start` + `git stash` (uncommitted WIP) produces.
+    wt = repo_root / ".worktrees" / "harness" / "R-open-wip"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-open-wip", str(wt)],
+        check=True,
+    )
+    _seed_run(
+        repo_root / ".harness" / "harness.db",
+        run_id="R-open-wip",
+        status="open",
+        worktree_branch="harness/R-open-wip",
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert wt.exists()
+    assert "kept" in result.stdout and "R-open-wip" in result.stdout
+    assert "run R-open-wip in flight (status=open)" in result.stdout
+    branches = subprocess.run(
+        ["git", "-C", str(repo_root), "branch", "--format=%(refname:short)"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert "harness/R-open-wip" in branches
+
+
+def test_worktrees_cleanup_merged_skips_stashed_wip_no_ledger(tmp_path: Path) -> None:
+    """#235: even with no ledger DB at all (the fresh-container regime), a
+    ``git stash`` for the branch is its own veto — the repro's actual mechanism
+    (WIP stashed, not committed)."""
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-stash"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-stash", str(wt)], check=True,
+    )
+    (wt / "wip.txt").write_text("uncommitted\n")
+    subprocess.run(["git", "-C", str(wt), "add", "wip.txt"], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "stash", "push", "-q", "-m", "flake-baseline check"],
+        check=True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert wt.exists()
+    assert "stashed WIP on harness/R-stash" in result.stdout
+    stash_list = subprocess.run(
+        ["git", "-C", str(wt), "stash", "list"],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    assert "flake-baseline check" in stash_list
+
+
+def test_worktrees_cleanup_merged_stash_on_other_branch_does_not_veto(
+    tmp_path: Path,
+) -> None:
+    """A stash that names a different branch must not pin an unrelated
+    worktree — ``refs/stash`` is repo-wide, not per-worktree, so the branch
+    filter (not mere presence of any stash) is what makes the veto per-run."""
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    # A stash on `dev` itself, in the main checkout — visible repo-wide.
+    (repo_root / "unrelated.txt").write_text("noise\n")
+    subprocess.run(["git", "-C", str(repo_root), "add", "unrelated.txt"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "stash", "push", "-q", "-m", "unrelated wip"],
+        check=True,
+    )
+
+    wt = repo_root / ".worktrees" / "harness" / "R-target"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-target", str(wt)], check=True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    assert "removed R-target" in result.stdout
+
+
+def test_worktrees_cleanup_merged_dirty_tree_veto(tmp_path: Path) -> None:
+    """Uncommitted (unstashed) changes in the worktree are their own veto —
+    ``teardown_worktree`` uses ``git worktree remove --force``, which would
+    discard them with no recovery path at all."""
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-dirty"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-dirty", str(wt)], check=True,
+    )
+    (wt / "dirty.txt").write_text("not committed, not stashed\n")
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert wt.exists()
+    assert (wt / "dirty.txt").exists()
+    assert "uncommitted changes in the worktree" in result.stdout
+
+
+def test_worktrees_cleanup_merged_force_overrides_veto(tmp_path: Path) -> None:
+    """``--force`` removes a vetoed worktree anyway and names what it overrode
+    — the operator's escape hatch, distinct from the automatic default."""
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-forced"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-forced", str(wt)], check=True,
+    )
+    _seed_run(
+        repo_root / ".harness" / "harness.db",
+        run_id="R-forced",
+        status="open",
+        worktree_branch="harness/R-forced",
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged", "--force"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    assert "removed" in result.stdout and "R-forced" in result.stdout
+    assert "forced over:" in result.stdout
+    assert "in flight (status=open)" in result.stdout
+    branches = subprocess.run(
+        ["git", "-C", str(repo_root), "branch", "--format=%(refname:short)"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert "harness/R-forced" not in branches
+
+
+def test_worktrees_cleanup_merged_veto_still_lets_age_reclaim_directory(
+    tmp_path: Path,
+) -> None:
+    """A ``--merged`` veto only blocks the ``--merged`` arm — an old vetoed
+    worktree is still reclaimed by ``--age`` (directory only; the branch, and
+    ``refs/stash``, are untouched), matching the pre-existing ``--age``
+    contract."""
+    import os
+
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-old-open"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-old-open", str(wt)], check=True,
+    )
+    _seed_run(
+        repo_root / ".harness" / "harness.db",
+        run_id="R-old-open",
+        status="open",
+        worktree_branch="harness/R-old-open",
+    )
+    old_time = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+    os.utime(wt, (old_time, old_time))
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged", "--age", "1d"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert not wt.exists()
+    branches = subprocess.run(
+        ["git", "-C", str(repo_root), "branch", "--format=%(refname:short)"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert "harness/R-old-open" in branches
+
+
+def test_worktrees_cleanup_merged_ledger_matches_by_worktree_path(
+    tmp_path: Path,
+) -> None:
+    """A ledger row is matched by ``worktree_path`` even when its ``run_id``
+    differs from the worktree's directory name (e.g. a resumed run)."""
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-path-match"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-path-match", str(wt)], check=True,
+    )
+    _seed_run(
+        repo_root / ".harness" / "harness.db",
+        run_id="totally-different-run-id",
+        status="open",
+        worktree_branch="harness/R-path-match",
+        worktree_path=str(wt.resolve()),
+    )
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert wt.exists()
+    assert "run totally-different-run-id in flight (status=open)" in result.stdout
+
+
+def test_worktrees_cleanup_merged_probe_failure_is_kept_not_removed(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    """A git probe that itself fails (non-zero exit) is treated as a veto, not
+    a false-clean — matching the module's existing conservatism for an
+    unreadable base ref."""
+    from harness.cli import worktrees as worktrees_module
+
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-probe-fail"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-probe-fail", str(wt)], check=True,
+    )
+
+    real_run_git = worktrees_module.run_git
+
+    def fake_run_git(cwd: Path, *args: str, timeout: float | None = None) -> Any:
+        if args[:2] == ("stash", "list"):
+            return subprocess.CompletedProcess(
+                args=["git", *args], returncode=128,
+                stdout="", stderr="fatal: boom",
+            )
+        return real_run_git(cwd, *args, timeout=timeout)
+
+    monkeypatch.setattr(worktrees_module, "run_git", fake_run_git)
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--merged"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert wt.exists()
+    assert "could not verify worktree state" in result.stdout
+    assert "boom" in result.stdout
 
 
 def test_worktrees_cleanup_merged_deletes_remote_branch(tmp_path: Path) -> None:
