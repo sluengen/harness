@@ -49,7 +49,14 @@ async def test_transition_to_unstarted_targets_todo_state(
                     }
                 }
             }
-        return {"data": {"issueUpdate": {"success": True}}}
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {"id": "issue-id", "state": {"id": "s-todo", "name": "Todo"}},
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
@@ -83,7 +90,14 @@ async def test_transition_to_unstarted_falls_back_to_first_unstarted(
                     }
                 }
             }
-        return {"data": {"issueUpdate": {"success": True}}}
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {"id": "issue-id", "state": {"id": "s-upnext", "name": "Up Next"}},
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
@@ -158,7 +172,14 @@ async def test_transition_to_in_review_targets_in_review_state(
                     }
                 }
             }
-        return {"data": {"issueUpdate": {"success": True}}}
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {"id": "issue-id", "state": {"id": "s-ir", "name": "In Review"}},
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")

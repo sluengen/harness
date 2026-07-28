@@ -48,6 +48,7 @@ from harness.tracker_errors import (
     TrackerConfigError,
     TrackerNotFound,
     TrackerRequestError,
+    TrackerTransitionUnconfirmed,
 )
 
 # size: one cohesive GitHub GraphQL boundary class — the exact mirror of the
@@ -355,49 +356,6 @@ query Reclaimable($login: String!, $number: Int!, $field: String!) {{
     async def transition_to_done(self, identifier: str) -> None:
         """Set the issue's board Status to *Done*."""
         await self._set_status(identifier, "done")
-
-    async def issue_is_done(self, identifier: str) -> bool:
-        """Whether the issue's board Status option is *Done*.
-
-        A read-only counterpart to :meth:`transition_to_done` (#233): observes
-        the item's current Status rather than trusting a mutation's
-        acknowledgement. Deliberately does **not** reuse :meth:`_resolve_item`
-        — a verification read must mutate nothing, and that helper adds the
-        issue to the board when it is absent. An issue on no item of the
-        configured board is reported ``False``, not an error.
-
-        Raises:
-            GitHubNotFound: the issue does not exist.
-            GitHubRequestError: the API returned an error.
-        """
-        number = _issue_number(identifier)
-        meta = await self._project_metadata()
-        query = """
-query IssueStatus($owner: String!, $name: String!, $number: Int!, $field: String!) {
-  repository(owner: $owner, name: $name) {
-    issue(number: $number) {
-      id
-      projectItems(first: 20) {
-        nodes {
-          project { id }
-          fieldValueByName(name: $field) {
-            ... on ProjectV2ItemFieldSingleSelectValue { name }
-          }
-        }
-      }
-    }
-  }
-}
-"""
-        issue = await self._issue_node(
-            query, number, ("issue",), extra_variables={"field": self._status_field}
-        )
-        for item in (issue.get("projectItems") or {}).get("nodes", []):
-            if (item.get("project") or {}).get("id") != meta.project_id:
-                continue
-            status = (item.get("fieldValueByName") or {}).get("name")
-            return (status or "").lower() == _STATE_OPTION_NAME["done"].lower()
-        return False
 
     async def transition_to_unstarted(self, identifier: str) -> None:
         """Set the issue's board Status back to *Todo* (the reclamation revert)."""
@@ -767,12 +725,19 @@ mutation CreateIssue($repoId: ID!, $title: String!, $body: String!) {
 
         Resolves the board's field + option ids (memoized), the option whose name
         matches the state, and the issue's project item (adding the issue to the
-        board if it is not on it yet), then fires ``updateProjectV2ItemFieldValue``.
+        board if it is not on it yet), then fires ``updateProjectV2ItemFieldValue``
+        and confirms it landed by reading the post-write field value back off
+        that same mutation's response (#233) — no extra round trip, and so no
+        write-then-read replica-lag window.
 
         Raises:
             GitHubNotFound: the issue does not exist.
-            GitHubRequestError: the API errored, the board has no matching status
-                option, or the mutation returned no result.
+            GitHubRequestError: the API errored, or the board has no matching
+                status option.
+            TrackerTransitionUnconfirmed: the mutation returned an item, but its
+                post-write field value is not the option that was requested (or
+                the response omits it) — an item coming back is not evidence the
+                field moved.
         """
         meta = await self._project_metadata()
         option_name = _STATE_OPTION_NAME[state]
@@ -785,7 +750,9 @@ mutation CreateIssue($repoId: ID!, $title: String!, $body: String!) {
             )
         item_id = await self._resolve_item(identifier, meta)
         mutation = """
-mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+mutation SetStatus(
+  $projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!, $fieldName: String!
+) {
   updateProjectV2ItemFieldValue(
     input: {
       projectId: $projectId
@@ -794,7 +761,12 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
       value: {singleSelectOptionId: $optionId}
     }
   ) {
-    projectV2Item { id }
+    projectV2Item {
+      id
+      fieldValueByName(name: $fieldName) {
+        ... on ProjectV2ItemFieldSingleSelectValue { optionId name }
+      }
+    }
   }
 }
 """
@@ -805,6 +777,7 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
                 "itemId": item_id,
                 "fieldId": meta.field_id,
                 "optionId": option_id,
+                "fieldName": self._status_field,
             },
         )
         updated = (
@@ -816,6 +789,18 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
             raise GitHubRequestError(
                 f"GitHub updateProjectV2ItemFieldValue returned no item for "
                 f"{identifier!r}; response: {result!r}"
+            )
+        # Confirm the write actually took: compare the returned optionId
+        # against the id this call requested. A missing ``fieldValueByName`` is
+        # refused, not trusted — the same fail-safe reading close's verify-gate
+        # backstop already applies to absent evidence (CAL-1082).
+        post_option_id = (updated.get("fieldValueByName") or {}).get("optionId")
+        if post_option_id != option_id:
+            raise TrackerTransitionUnconfirmed(
+                f"GitHub updateProjectV2ItemFieldValue for {identifier!r} returned "
+                f"an item, but its post-write {self._status_field!r} option is "
+                f"{post_option_id!r}, not the requested {option_name!r} "
+                f"({option_id!r}); response: {result!r}"
             )
 
     async def _resolve_item(self, identifier: str, meta: _ProjectMeta) -> str:
@@ -942,29 +927,16 @@ query OwnerKind($login: String!) { repositoryOwner(login: $login) { __typename }
     # ------------------------------------------------------------------
 
     async def _issue_node(
-        self,
-        query: str,
-        number: int,
-        path: tuple[str, ...],
-        *,
-        extra_variables: dict[str, Any] | None = None,
+        self, query: str, number: int, path: tuple[str, ...]
     ) -> dict[str, Any]:
         """Run ``query`` for an issue by number and return the issue node.
 
         ``path`` is the key sequence below ``repository`` down to the issue node
-        (``("issue",)`` for a direct ``repository.issue`` query). ``extra_variables``
-        merges into the standard ``owner``/``name``/``number`` set, for a query
-        that needs one more (e.g. :meth:`issue_is_done`'s ``$field``). Raises
+        (``("issue",)`` for a direct ``repository.issue`` query). Raises
         :class:`GitHubNotFound` when the repository or issue is absent.
         """
         data = await self._request(
-            query,
-            {
-                "owner": self._owner,
-                "name": self._name,
-                "number": number,
-                **(extra_variables or {}),
-            },
+            query, {"owner": self._owner, "name": self._name, "number": number}
         )
         node: Any = (data.get("data") or {}).get("repository")
         if node is None:

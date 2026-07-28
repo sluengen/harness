@@ -42,6 +42,7 @@ from harness.tracker_errors import (
     TrackerConfigError,
     TrackerNotFound,
     TrackerRequestError,
+    TrackerTransitionUnconfirmed,
 )
 
 # size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
@@ -405,36 +406,6 @@ query MarkedBranch($id: String!) {{
         await self._transition(
             identifier, state_type="completed", preferred_name="done"
         )
-
-    async def issue_is_done(self, identifier: str) -> bool:
-        """Whether issue ``identifier``'s current workflow state is completed.
-
-        A read-only counterpart to :meth:`transition_to_done` (#233): observes
-        the issue's *current* state rather than trusting a mutation's
-        acknowledgement, so ``close`` can confirm a Done transition actually
-        took instead of merely reporting that it did not raise. ``canceled`` is
-        a distinct workflow-state type from ``completed`` and is not done.
-
-        Raises:
-            LinearNotFound: the issue does not exist.
-            LinearRequestError: the API returned an error.
-        """
-        query = """
-query IssueState($id: String!) {
-  issue(id: $id) {
-    id
-    state {
-      type
-    }
-  }
-}
-"""
-        data = await self._request(query, {"id": identifier})
-        issue = (data.get("data") or {}).get("issue")
-        if issue is None:
-            raise LinearNotFound(f"Linear issue {identifier!r} not found")
-        state = issue.get("state") or {}
-        return state.get("type") == "completed"
 
     async def transition_to_unstarted(self, identifier: str) -> None:
         """Transition issue ``identifier`` back to its Todo (unstarted) state.
@@ -934,13 +905,18 @@ mutation CreateIssue(
         the team's workflow states, selects
         a state literally named ``preferred_name`` (case-insensitive) if present
         else the first state of ``state_type``, then fires an ``issueUpdate``
-        mutation.
+        mutation and confirms it landed by reading the post-write state back
+        off that same mutation's response (#233) — no extra round trip, and so
+        no write-then-read replica-lag window.
 
         Raises:
             LinearNotFound: the issue does not exist.
-            LinearRequestError: the API returned an error, no ``state_type``
-                workflow state is configured on the issue's team, or the
-                ``issueUpdate`` mutation did not report ``success: true``.
+            LinearRequestError: the API returned an error, or no ``state_type``
+                workflow state is configured on the issue's team.
+            TrackerTransitionUnconfirmed: the mutation reported ``success: true``
+                but the returned post-write state is not the state that was
+                requested (or the response omits it) — a self-reported
+                ``success`` is not proof the state actually changed.
         """
         states_query = """
 query IssueStates($id: String!) {
@@ -987,15 +963,35 @@ query IssueStates($id: String!) {
 mutation TransitionIssue($id: String!, $stateId: String!) {
   issueUpdate(id: $id, input: {stateId: $stateId}) {
     success
+    issue {
+      id
+      state {
+        id
+        name
+      }
+    }
   }
 }
 """
         result = await self._request(mutation, {"id": issue_id, "stateId": state_id})
-        success = (result.get("data") or {}).get("issueUpdate", {}).get("success")
-        if not success:
+        payload = (result.get("data") or {}).get("issueUpdate") or {}
+        if not payload.get("success"):
             raise LinearRequestError(
                 f"Linear issueUpdate mutation did not report success for {identifier!r}; "
                 f"response: {result!r}"
+            )
+        # Confirm the write actually took: compare the returned state id against
+        # the id this call selected, not against the literal name
+        # ``preferred_name`` — a team whose completed state is named "Shipped"
+        # must still confirm. A missing ``issue``/``state`` is refused, not
+        # trusted (the same fail-safe reading close's verify-gate backstop
+        # already applies to absent evidence, CAL-1082).
+        post_state = ((payload.get("issue") or {}).get("state") or {}).get("id")
+        if post_state != state_id:
+            raise TrackerTransitionUnconfirmed(
+                f"Linear issueUpdate for {identifier!r} reported success, but the "
+                f"post-write state is {post_state!r}, not the requested "
+                f"{target.get('name')!r} ({state_id!r}); response: {result!r}"
             )
 
     # ------------------------------------------------------------------

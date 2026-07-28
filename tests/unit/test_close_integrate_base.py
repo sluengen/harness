@@ -235,10 +235,6 @@ def _run_status(db_path: Path, run_id: str) -> str | None:
 def _make_linear_stub() -> MagicMock:
     stub = MagicMock()
     stub.transition_to_done = AsyncMock(return_value=None)
-    # Confirms Done on the first read-back (#233) — every test below exercises
-    # the merge mechanics, not close_ticket's retry logic (test_cli_close.py
-    # covers that independently), so the happy path is the useful default.
-    stub.issue_is_done = AsyncMock(return_value=True)
     return stub
 
 

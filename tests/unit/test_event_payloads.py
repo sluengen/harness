@@ -156,7 +156,6 @@ def test_close_event_data_keys() -> None:
         "ticket": "CAL-1",
         "merged_sha": "s",
         "closed_at": "t",
-        "ticket_done": False,
     }
 
 

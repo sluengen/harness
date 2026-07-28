@@ -815,8 +815,18 @@ async def test_linear_client_transition_calls_mutation(
                     }
                 }
             }
-        # mutation call
-        return {"data": {"issueUpdate": {"success": True}}}
+        # mutation call — the post-write state confirms the request (#233)
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {
+                        "id": "issue-id",
+                        "state": {"id": "state-ip-id", "name": "In Progress"},
+                    },
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
