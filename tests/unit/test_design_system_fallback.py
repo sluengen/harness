@@ -106,21 +106,37 @@ def test_token_discipline_rule_undamaged() -> None:
     assert "not a licence to hardcode" in sec
 
 
+SCAFFOLD_TERMS = ("00-brand", "07-flows", "tokens.json", "archetype")
+
+
+def _scope_creep_hits(section: str) -> list[str]:
+    """The out-of-scope predicate: which scaffold-contract terms, if any,
+    leak into a lookup-section body. Shared by the real guard and its teeth
+    test, so the teeth test proves the *predicate* catches a leak — not just
+    that a hand-built string happens to contain the term."""
+    return [term for term in SCAFFOLD_TERMS if term in section]
+
+
 def test_fallback_does_not_copy_in_scaffold_rules() -> None:
     """Out-of-scope guard — the lookup section stays a pointer; none of the
     scaffold contract's own layer/rule vocabulary leaks into it."""
-    sec = _lookup_section()
-    for term in ("00-brand", "07-flows", "tokens.json", "archetype"):
-        assert term not in sec, (
-            f"the lookup section must not absorb scaffold-contract rules "
-            f"({term!r} found) — #239 owns those, this skill only routes."
-        )
+    hits = _scope_creep_hits(_lookup_section())
+    assert hits == [], (
+        f"the lookup section must not absorb scaffold-contract rules "
+        f"({hits} found) — #239 owns those, this skill only routes."
+    )
 
 
 def test_lookup_section_guard_has_teeth() -> None:
-    """The out-of-scope guard is not green by construction: a variant with
-    scaffold vocabulary injected must fail it."""
-    sec = _lookup_section()
-    tampered = sec + "\nUse tokens.json and the 00-brand layer directly."
-    assert "tokens.json" in tampered
-    assert "00-brand" in tampered
+    """The out-of-scope guard is not green by construction: re-running the
+    same predicate against a section with scaffold vocabulary injected must
+    report the leak, proving the guard would actually catch it."""
+    tampered = _lookup_section() + "\nUse tokens.json and the 00-brand layer directly."
+    hits = _scope_creep_hits(tampered)
+    assert hits == ["00-brand", "tokens.json"], hits
+
+
+def test_lookup_section_is_non_empty() -> None:
+    """Anti-vacuity — the parsed section is not empty, so the assertions
+    above are not vacuously true against a blank string."""
+    assert _lookup_section().strip(), "the two-stage lookup section parsed empty"
