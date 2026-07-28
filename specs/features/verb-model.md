@@ -122,7 +122,7 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
+- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done **and confirms it landed against the mutation's own post-write state** (#233, `harness/linear.py`, `harness/github.py`), flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
 
 #### Scenario: the base advanced during the run
 
@@ -137,6 +137,12 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 - WHEN the agent runs `harness close`
 - THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
 
+#### Scenario: the ticket-Done transition cannot be confirmed
+
+- GIVEN the merge has already landed, and the tracker's transition mutation either raises or reports success without a post-write state matching the one requested (#233)
+- WHEN the agent runs `harness close`
+- THEN the verb exits **1** — not a gate refusal, because the merge already landed — with `merged: true` and one of two `reason`s: `ticket_transition_failed` (the tracker raised) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the state never took); the run row stays `open` and no `close` event is written, so re-running `harness close` is the recovery once the tracker is healthy (the merge/push step is idempotent for an already-landed run branch)
+
 #### Scenario: the merge never touches the main checkout
 
 - GIVEN an open run whose gate is satisfied, and a main checkout in **any** state — clean, carrying uncommitted edits, or even mid-merge
@@ -148,6 +154,8 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 `no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
 `close` does **not** auto-commit. A dirty worktree is refused outright, because uncommitted edits are not in HEAD and so were never reviewed (`stale_review` catches a commit *after* review; only the clean-tree check catches an edit *without* committing — CAL-586, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`). A gate refusal is the gate doing its job and is never worked around — the verb never bypasses its own gate.
+
+**The ticket-Done transition is verified, not trusted (#233).** A mutation that reports success is not proof the tracker's state actually changed — its acknowledgement can arrive detached from the write it names, or a tracker-side rule can silently keep the old value. `LinearClient._transition` and `GitHubClient._set_status` — the one shared implementation behind every transition (`start`'s In Progress, `review`'s In Review, `close`'s Done, `reclaim`'s revert to Todo) — now ride the confirmation on the **same mutation** that already fires: the Linear `issueUpdate` selects `issue { state { id name } }` back, and the GitHub `updateProjectV2ItemFieldValue` selects `fieldValueByName` back, so confirming costs no extra round trip and opens no write-then-read replica-lag window. When the returned post-write state doesn't match the one requested — or is missing entirely — the client raises `TrackerTransitionUnconfirmed` (`harness/tracker_errors.py`), a `TrackerRequestError` subclass, so every verb that already catches that base handles it as the tracker failure it already models; only `close` branches on the subclass itself, to attach its own `ticket_transition_unconfirmed` reason (distinct from a raised `ticket_transition_failed`, above) — both are exit-1, not gate refusals, because the merge already landed.
 
 ### The tracker switch — `tracker:`
 

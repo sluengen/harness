@@ -35,7 +35,7 @@ harness cancel    <run-id>                [--db <p>] [--json]      # abandon an 
 harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--older-than <dur>]] [--db <p>] [--json]   # reclaim a stranded run (single ticket), or --stale sweeps active tickets idle past the threshold — the whole tracker queue, or one --project when given
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket; record a defer event carrying the needs kind (CAL-1143, CAL-1167, ADR 0006)
 harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket; record a release event carrying the needs kind (#193, the `defer` shape in reverse)
-harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
+harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged] [--force] [--db <p>]   # remove stale worktrees (git/fs); --merged vetoes an in-flight/stashed/dirty run unless --force (#235)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]
 
@@ -75,7 +75,7 @@ There is **no separate `verify` command** in v1, by design. Gate execution runs 
 | Code | Meaning |
 |------|---------|
 | 0 | Command succeeded (including a recorded review `fail` — a *successful* review) |
-| 1 | Unexpected error (git failure, DB error, Linear error) |
+| 1 | Unexpected error (git failure, DB error, tracker error); `close`'s two ticket-transition failure reasons (`ticket_transition_failed`, `ticket_transition_unconfirmed`) also land here — the merge already landed, so each carries `reason` + `merged: true` rather than the exit-2 gate-refusal shape (#233) |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
 | 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
@@ -89,6 +89,12 @@ Each of `review`'s dedicated codes exists so an orchestrating agent can tell the
 - GIVEN `harness close` whose gate is not satisfied
 - WHEN it runs
 - THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
+
+#### Scenario: an unconfirmed ticket transition exits 1, not 2
+
+- GIVEN `harness close` whose merge has already landed, and the tracker's transition mutation either raises or reports success without confirming the requested post-write state (#233)
+- WHEN it runs
+- THEN it exits **1** with `merged: true` and one of `reason=ticket_transition_failed` (the tracker raised) or `reason=ticket_transition_unconfirmed` (success reported, state unconfirmed) — not the exit-2 gate-refusal shape, because the merge already happened and exit 2's "refused, nothing happened" contract would misreport it; re-running `harness close` is the recovery once the tracker is healthy
 
 #### Scenario: a run that cannot be certified as reviewable exits 5
 

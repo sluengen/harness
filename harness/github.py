@@ -48,6 +48,7 @@ from harness.tracker_errors import (
     TrackerConfigError,
     TrackerNotFound,
     TrackerRequestError,
+    TrackerTransitionUnconfirmed,
 )
 
 # size: one cohesive GitHub GraphQL boundary class — the exact mirror of the
@@ -724,12 +725,19 @@ mutation CreateIssue($repoId: ID!, $title: String!, $body: String!) {
 
         Resolves the board's field + option ids (memoized), the option whose name
         matches the state, and the issue's project item (adding the issue to the
-        board if it is not on it yet), then fires ``updateProjectV2ItemFieldValue``.
+        board if it is not on it yet), then fires ``updateProjectV2ItemFieldValue``
+        and confirms it landed by reading the post-write field value back off
+        that same mutation's response (#233) — no extra round trip, and so no
+        write-then-read replica-lag window.
 
         Raises:
             GitHubNotFound: the issue does not exist.
-            GitHubRequestError: the API errored, the board has no matching status
-                option, or the mutation returned no result.
+            GitHubRequestError: the API errored, or the board has no matching
+                status option.
+            TrackerTransitionUnconfirmed: the mutation returned an item, but its
+                post-write field value is not the option that was requested (or
+                the response omits it) — an item coming back is not evidence the
+                field moved.
         """
         meta = await self._project_metadata()
         option_name = _STATE_OPTION_NAME[state]
@@ -742,7 +750,9 @@ mutation CreateIssue($repoId: ID!, $title: String!, $body: String!) {
             )
         item_id = await self._resolve_item(identifier, meta)
         mutation = """
-mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+mutation SetStatus(
+  $projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!, $fieldName: String!
+) {
   updateProjectV2ItemFieldValue(
     input: {
       projectId: $projectId
@@ -751,7 +761,12 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
       value: {singleSelectOptionId: $optionId}
     }
   ) {
-    projectV2Item { id }
+    projectV2Item {
+      id
+      fieldValueByName(name: $fieldName) {
+        ... on ProjectV2ItemFieldSingleSelectValue { optionId name }
+      }
+    }
   }
 }
 """
@@ -762,6 +777,7 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
                 "itemId": item_id,
                 "fieldId": meta.field_id,
                 "optionId": option_id,
+                "fieldName": self._status_field,
             },
         )
         updated = (
@@ -773,6 +789,18 @@ mutation SetStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: Stri
             raise GitHubRequestError(
                 f"GitHub updateProjectV2ItemFieldValue returned no item for "
                 f"{identifier!r}; response: {result!r}"
+            )
+        # Confirm the write actually took: compare the returned optionId
+        # against the id this call requested. A missing ``fieldValueByName`` is
+        # refused, not trusted — the same fail-safe reading close's verify-gate
+        # backstop already applies to absent evidence (CAL-1082).
+        post_option_id = (updated.get("fieldValueByName") or {}).get("optionId")
+        if post_option_id != option_id:
+            raise TrackerTransitionUnconfirmed(
+                f"GitHub updateProjectV2ItemFieldValue for {identifier!r} returned "
+                f"an item, but its post-write {self._status_field!r} option is "
+                f"{post_option_id!r}, not the requested {option_name!r} "
+                f"({option_id!r}); response: {result!r}"
             )
 
     async def _resolve_item(self, identifier: str, meta: _ProjectMeta) -> str:

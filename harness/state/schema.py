@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Literal, get_args
 
-__all__ = ["RUN_STATUSES", "RunStatus"]
+__all__ = ["IN_FLIGHT_STATUSES", "RUN_STATUSES", "RunStatus"]
 
 
 # Canonical run-status enum — see ``specs/features/run-ledger.md`` ("status values").
@@ -50,3 +50,16 @@ RunStatus = Literal[
 RUN_STATUSES: frozenset[str] = frozenset(get_args(RunStatus))
 """Runtime view of the canonical run statuses — derived from
 :data:`RunStatus` so the two cannot drift."""
+
+#: Non-terminal statuses — a run in one of these is still in flight (the verb
+#: model only ever writes ``open``; the rest are legacy engine states that may
+#: still appear on historical rows). An explicit allowlist, not a terminal
+#: denylist, so an unknown or future status is never silently treated as
+#: in-flight. Shared by ``harness.cli._abandon`` (what a run can be abandoned
+#: *from*) and ``harness worktrees cleanup --merged`` (#235: a worktree whose
+#: run is still in flight is never provably safe to reclaim, whatever git
+#: ancestry says) — one set so the two questions cannot drift apart.
+IN_FLIGHT_STATUSES: frozenset[str] = frozenset(
+    {"open", "running", "pending", "paused", "stalled"}
+)
+assert IN_FLIGHT_STATUSES <= RUN_STATUSES

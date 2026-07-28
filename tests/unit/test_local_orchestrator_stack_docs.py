@@ -41,6 +41,7 @@ from pathlib import Path
 
 from harness.cli.promote import promote_app
 from harness.state.promotions import PROMOTION_STATUSES
+from tests._cliutil import registered_command_surface
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DOC = _REPO_ROOT / "specs" / "local-orchestrator-stack.md"
@@ -118,7 +119,7 @@ def test_ac2_names_every_promote_subcommand() -> None:
     until the runbook documents it.
     """
     text = _doc()
-    names = sorted(c.name for c in promote_app.registered_commands if c.name)
+    names = sorted(registered_command_surface(promote_app))
     assert names, "the promote app registered no subcommands — introspection is broken"
     missing = [name for name in names if f"promote {name}" not in text]
     assert not missing, (
@@ -208,7 +209,7 @@ def test_ac6_promotion_surface_exists() -> None:
     verbs existing (CAL-1113–1118). That is a checkable property of the live
     surface, so it is asserted here rather than claimed in prose.
     """
-    names = {c.name for c in promote_app.registered_commands if c.name}
+    names = registered_command_surface(promote_app)
     for verb in ("start", "continue", "status", "pr", "escalate"):
         assert verb in names, (
             f"AC-6: the promotion surface is missing '{verb}' — this ticket's "

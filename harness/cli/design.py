@@ -60,13 +60,14 @@ Exit codes (mirroring ``harness review``):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from pathlib import Path
 
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import iso_z, parse_iso_z
 from harness.cli._engine import EngineTimeoutError, Runner, RunResult, run_engine_subprocess
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
@@ -91,6 +92,7 @@ from harness.cli.design_tracker import (
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import DesignEventData
 from harness.loop_budget import load_loop_budget
+from harness.state import store
 
 __all__ = [
     "DESIGN_ENGINE",
@@ -100,6 +102,10 @@ __all__ = [
     "RunResult",
     "design_command",
 ]
+
+# size: the design verb — one cohesive orchestration (engine → comment → event
+# → output) on a single asyncio event loop, the same shape as ``review.py``;
+# splitting it would scatter one verb's control flow across files.
 
 # The design engine. Claude only — ADR 0002 keeps the in-container engine
 # unprivileged, where codex's bwrap sandbox cannot start, so unlike ``review``
@@ -132,6 +138,15 @@ _SUBMIT_FAILURE_REASONS = {
     MALFORMED_SUBMIT_SENTINEL: MALFORMED_SUBMIT_REASON,
 }
 
+# The one wording of the concurrent-invocation warning (#236), so the stderr
+# line and any future reader cannot drift into two phrasings of the same fact.
+_CONCURRENT_DESIGN_WARNING = (
+    "another design event for run {run_id} was recorded at {ts}, after this "
+    "invocation started — a second design invocation ran concurrently, and "
+    "the last one to finish is the one bound to the run; confirm which design "
+    "this run is bound to before implementing against it"
+)
+
 
 class DesignOutput(BaseModel):
     """The design the calling session implements from, plus its provenance.
@@ -141,6 +156,11 @@ class DesignOutput(BaseModel):
     ``design_markdown`` is on the printed contract by design (ADR 0007). The
     context-economy guarantee still holds: what escapes is the engine's parsed
     ``SUBMIT`` payload, never its reasoning, tool calls, or file reads.
+
+    ``concurrent_prior_at`` (#236) is set only when a stray overlapping
+    ``design`` invocation is detected — see :func:`_record_design_event`.
+    Dumped with ``exclude_none=True`` so the normal-path key set stays the six
+    keys pinned since #211.
     """
 
     run_id: str
@@ -149,6 +169,7 @@ class DesignOutput(BaseModel):
     grounded_sha: str
     model: str
     status: str
+    concurrent_prior_at: str | None = None
 
 
 class _DesignError(VerbError):
@@ -253,7 +274,7 @@ def design_command(
     )
 
     if json_output:
-        typer.echo(output.model_dump_json())
+        typer.echo(output.model_dump_json(exclude_none=True))
     else:
         typer.echo(
             f"design recorded ({output.design_hash[:12]}) grounded at "
@@ -288,6 +309,11 @@ async def _run_design(
     resolved_run_id, worktree_path = resolved[0], resolved[1]
     resolved_model = model if model is not None else DESIGN_MODEL_DEFAULT
 
+    # Captured before any engine work — the concurrent-invocation detector's
+    # (#236) reference point: a prior design event that finished at or after
+    # this moment means a second invocation overlapped this one.
+    invoked_at = iso_z()
+
     # Everything from here on is recordable: a failure to produce a design is
     # data, not an error, so it appends its event before surfacing (ADR 0007 D4).
     try:
@@ -298,9 +324,10 @@ async def _run_design(
             worktree_path=Path(worktree_path),
             model=resolved_model,
             runner=runner,
+            invoked_at=invoked_at,
         )
     except _DesignNotProducedError as exc:
-        await _record_design_event(
+        recorded = await _record_design_event(
             db_path,
             DesignEventData(
                 run_id=resolved_run_id,
@@ -308,9 +335,15 @@ async def _run_design(
                 engine=DESIGN_ENGINE,
                 model=resolved_model,
                 designed_at=iso_z(),
+                invoked_at=invoked_at,
                 reason=exc.reason,
                 detail=exc.detail,
             ),
+        )
+        extra = (
+            {"concurrent_prior_at": recorded.concurrent_prior_at}
+            if recorded.concurrent_prior_at is not None
+            else None
         )
         raise _DesignError(
             f"no design was produced for run {resolved_run_id}: {exc.detail}. The "
@@ -318,6 +351,7 @@ async def _run_design(
             f"implement without a design (ADR 0007 D4).",
             EXIT_DESIGN_FAILED,
             reason=exc.reason,
+            extra=extra,
         ) from exc
 
 
@@ -329,6 +363,7 @@ async def _produce_design(
     worktree_path: Path,
     model: str,
     runner: Runner,
+    invoked_at: str,
 ) -> DesignOutput:
     """The success path: engine → comment → event → output.
 
@@ -398,7 +433,7 @@ async def _produce_design(
         )
     except TicketCommentFailedError as exc:
         raise _DesignError(exc.detail, 1) from exc
-    await _record_design_event(
+    recorded = await _record_design_event(
         db_path,
         DesignEventData(
             run_id=run_id,
@@ -406,6 +441,7 @@ async def _produce_design(
             engine=DESIGN_ENGINE,
             model=model,
             designed_at=iso_z(),
+            invoked_at=invoked_at,
             design_hash=design_hash,
             grounded_sha=grounded_sha,
         ),
@@ -418,6 +454,7 @@ async def _produce_design(
         grounded_sha=grounded_sha,
         model=model,
         status="ok",
+        concurrent_prior_at=recorded.concurrent_prior_at,
     )
 
 
@@ -426,14 +463,42 @@ async def _produce_design(
 # ---------------------------------------------------------------------------
 
 
-async def _record_design_event(db_path: Path, data: DesignEventData) -> None:
+async def _record_design_event(db_path: Path, data: DesignEventData) -> DesignEventData:
     """Append the ``design`` event — the run's recorded design attempt.
+
+    Detects a concurrent invocation (#236) before writing: if the run's newest
+    prior ``design`` event finished at or after this attempt's ``invoked_at``,
+    a second invocation ran concurrently with this one and — since ``design``
+    is idempotent-by-append (the newest event is authoritative) — this write
+    is about to silently become the run's bound design, superseding one that
+    someone may already be reading. That case gets ``concurrent_prior_at``
+    stamped on the recorded event and a warning on stderr; a legitimate
+    sequential re-run (the prior event predates ``invoked_at``) is untouched.
+
+    Detection fails open: a DB read error or an unparseable timestamp records
+    the design unchanged, with no flag — the artifact already exists, and
+    wedging its recording on a diagnostic would violate ADR 0007 D4.
 
     ``exclude_none=True`` keeps each status's unused fields out of the JSON: an
     ``ok`` event carries no ``reason``/``detail``, a ``failed`` one no
     ``design_hash``/``grounded_sha``, rather than either reading as an explicit
     ``null``.
+
+    Returns the (possibly flag-updated) data, so the caller can surface
+    ``concurrent_prior_at`` on the printed output / error JSON too.
     """
+    if data.invoked_at is not None:
+        with contextlib.suppress(Exception):
+            prior_timestamp = await _read_latest_design_timestamp(db_path, data.run_id)
+            if prior_timestamp is not None and parse_iso_z(prior_timestamp) >= parse_iso_z(
+                data.invoked_at
+            ):
+                data = data.model_copy(update={"concurrent_prior_at": prior_timestamp})
+                typer.echo(
+                    f"warning: {_CONCURRENT_DESIGN_WARNING.format(run_id=data.run_id, ts=prior_timestamp)}",  # noqa: E501
+                    err=True,
+                )
+
     try:
         await EventEmitter(db_path).emit(
             run_id=data.run_id,
@@ -442,3 +507,26 @@ async def _record_design_event(db_path: Path, data: DesignEventData) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         raise _DesignError(f"failed to record design event: {exc}", 1) from exc
+    return data
+
+
+async def _read_latest_design_timestamp(db_path: Path, run_id: str) -> str | None:
+    """The ``timestamp`` of the run's most recent prior ``design`` event, or ``None``.
+
+    Ordered by ``id`` (append order), the same authority rule
+    ``review._read_latest_design_event`` uses. Reading before this call's own
+    insert is load-bearing — the query must not be able to see the row this
+    invocation is about to write.
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT timestamp FROM events WHERE run_id = ? AND event_type = 'design' "
+            "ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    return str(row[0]) if row is not None and row[0] is not None else None

@@ -18,7 +18,12 @@ Subclassing is deliberately transparent to the existing Linear path: an
 
 from __future__ import annotations
 
-__all__ = ["TrackerConfigError", "TrackerNotFound", "TrackerRequestError"]
+__all__ = [
+    "TrackerConfigError",
+    "TrackerNotFound",
+    "TrackerRequestError",
+    "TrackerTransitionUnconfirmed",
+]
 
 
 class TrackerConfigError(RuntimeError):
@@ -43,4 +48,17 @@ class TrackerRequestError(RuntimeError):
 
     The base of :class:`~harness.linear.LinearRequestError` and
     :class:`~harness.github.GitHubRequestError`.
+    """
+
+
+class TrackerTransitionUnconfirmed(TrackerRequestError):  # noqa: N818 — SPEC vocab
+    """A transition mutation returned without error, but the tracker's
+    post-write state is not the state that was requested (#233).
+
+    Subclasses :class:`TrackerRequestError` — not a fresh ``RuntimeError`` —
+    so every verb that already catches that base (``start`` rolls the run
+    back, ``review`` warns and keeps the verdict, ``reclaim`` exits 2) handles
+    an unconfirmed transition as the tracker failure it already models,
+    without a new unhandled path. Only ``close`` branches on the subclass
+    itself, to attach its own ``ticket_transition_unconfirmed`` reason.
     """
