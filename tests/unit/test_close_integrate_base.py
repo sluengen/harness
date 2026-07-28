@@ -235,6 +235,10 @@ def _run_status(db_path: Path, run_id: str) -> str | None:
 def _make_linear_stub() -> MagicMock:
     stub = MagicMock()
     stub.transition_to_done = AsyncMock(return_value=None)
+    # Confirms Done on the first read-back (#233) — every test below exercises
+    # the merge mechanics, not close_ticket's retry logic (test_cli_close.py
+    # covers that independently), so the happy path is the useful default.
+    stub.issue_is_done = AsyncMock(return_value=True)
     return stub
 
 
@@ -425,3 +429,29 @@ def test_close_recovery_after_conflict_refusal_succeeds(
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["merged"] is True
     assert _run_status(db_path, RUN_ID) == "closed"
+
+
+def test_merge_run_branch_is_idempotent_for_an_already_landed_run(
+    tmp_path: Path, _allow_tmp_workspace: None
+) -> None:
+    """#233's retry path (re-running ``close`` after a confirmed-failed ticket
+    transition) is only safe because re-merging an already-landed run branch is
+    a clean no-op: ``git merge --no-ff`` of a ref already an ancestor of the
+    fetched tip reports "Already up to date" rather than erroring, and pushing
+    the unchanged tip back is a no-op push. This pins that fact directly against
+    :func:`harness.close_merge.merge_run_branch`, independent of the close verb.
+    """
+    from harness.close_merge import merge_run_branch
+
+    origin, main = _setup_origin_and_main(tmp_path)
+    path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run work\n")
+
+    merge_run_branch(repo_root=main, run_id=RUN_ID, base_branch="dev", worktree_branch=branch)
+    origin_tip_after_first = _git(main, "rev-parse", "origin/dev").stdout.strip()
+
+    # Re-run for the same run branch — exactly what a `ticket_transition_failed`
+    # retry does, since close's merge step precedes the ticket-Done step.
+    merge_run_branch(repo_root=main, run_id=RUN_ID, base_branch="dev", worktree_branch=branch)
+    origin_tip_after_second = _git(main, "rev-parse", "origin/dev").stdout.strip()
+
+    assert origin_tip_after_second == origin_tip_after_first

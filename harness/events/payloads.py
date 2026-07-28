@@ -104,12 +104,21 @@ class WorkflowFailedEventData(BaseModel):
 
 
 class CloseEventData(BaseModel):
-    """Payload of a ``close`` event — the audited record of a landed run."""
+    """Payload of a ``close`` event — the audited record of a landed run.
+
+    ``ticket_done`` (#233) records whether the tracker was *observed* Done
+    after the transition (:mod:`harness.cli.close_ticket`'s read-back), not
+    merely that a transition was attempted — the same distinction
+    :class:`~harness.cli.close.CloseOutput.ticket_done` documents. Defaults to
+    ``False`` so a historical row predating this field reads back unchanged
+    (no ledger migration).
+    """
 
     run_id: str
     ticket: str
     merged_sha: str
     closed_at: str
+    ticket_done: bool = False
 
 
 class DeferEventData(BaseModel):

@@ -423,6 +423,121 @@ def test_fetch_issue_project_none_when_not_on_board() -> None:
     assert _run(client.fetch_issue_project("1")) is None
 
 
+# ---------------------------------------------------------------------------
+# issue_is_done (#233) — the read-only verification `close` uses to confirm
+# a Done transition actually took.
+# ---------------------------------------------------------------------------
+
+
+def test_issue_is_done_true_when_status_is_done() -> None:
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueStatus": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_1",
+                            "projectItems": {
+                                "nodes": [
+                                    {
+                                        "project": {"id": "PVT_1"},
+                                        "fieldValueByName": {"name": "Done"},
+                                    }
+                                ]
+                            },
+                        }
+                    }
+                }
+            },
+        }
+    )
+    assert _run(client.issue_is_done("1")) is True
+
+
+def test_issue_is_done_false_when_status_is_in_review() -> None:
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueStatus": {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "id": "I_1",
+                            "projectItems": {
+                                "nodes": [
+                                    {
+                                        "project": {"id": "PVT_1"},
+                                        "fieldValueByName": {"name": "In Review"},
+                                    }
+                                ]
+                            },
+                        }
+                    }
+                }
+            },
+        }
+    )
+    assert _run(client.issue_is_done("1")) is False
+
+
+def test_issue_is_done_false_when_issue_on_no_board_item() -> None:
+    """An issue not on the configured board's items at all is simply not done —
+    never an error, and never a reason to add it (verification mutates nothing)."""
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueStatus": {
+                "data": {
+                    "repository": {
+                        "issue": {"id": "I_1", "projectItems": {"nodes": []}}
+                    }
+                }
+            },
+        }
+    )
+    assert _run(client.issue_is_done("1")) is False
+
+
+def test_issue_is_done_never_mutates_the_board() -> None:
+    """The verification read must never add the issue to the board or set its
+    status — those mutations are not in the fake's canned responses, so if the
+    client called either, the fake's ``AssertionError`` for an unlisted
+    operation would fail this test."""
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueStatus": {
+                "data": {
+                    "repository": {
+                        "issue": {"id": "I_1", "projectItems": {"nodes": []}}
+                    }
+                }
+            },
+        }
+    )
+    _run(client.issue_is_done("1"))
+    ops = [op for op, _ in client.calls]  # type: ignore[attr-defined]
+    assert "AddItem" not in ops
+    assert "SetStatus" not in ops
+
+
+def test_issue_is_done_raises_not_found_for_missing_issue() -> None:
+    client = _client(
+        {
+            "OwnerKind": _OWNER_USER,
+            "ProjectMeta": _PROJECT_META,
+            "IssueStatus": {"data": {"repository": {"issue": None}}},
+        }
+    )
+    with pytest.raises(GitHubNotFound):
+        _run(client.issue_is_done("1"))
+
+
 def test_fetch_reclaimable_filters_to_transient_states() -> None:
     items = {
         "data": {

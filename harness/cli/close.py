@@ -33,7 +33,10 @@ guarantee):
    shared tree — the loser's push is rejected non-fast-forward and it retries
    (CAL-1154). The push advances ``refs/remotes/origin/<base>`` locally, which is
    what ``start`` / ``worktrees cleanup`` base off (Option 1).
-2. Transition the Linear ticket to Done.
+2. Transition the ticket to Done, then **read its state back** to confirm the
+   transition actually took (:mod:`harness.cli.close_ticket`, #233) — a
+   ``ticket_done: true`` means the tracker was *observed* Done, not merely that
+   a transition was attempted and did not raise.
 3. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
    one transaction (CAL-1002), so a failed ledger write never strands a terminal
    run with no close event.
@@ -61,8 +64,11 @@ an exit-1 error (retryable), not a gate refusal.
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
-* 1 — unexpected error (git failure, push failure, DB error, or a Linear
-  transition/request error while marking the ticket Done).
+* 1 — unexpected error (git failure, push failure, or a DB error), or the
+  ticket was never observed Done after two transition attempts
+  (``reason: ticket_transition_failed`` — the merge already landed, so this is
+  not a gate refusal; re-run ``harness close`` once the tracker is healthy, see
+  :mod:`harness.cli.close_ticket`).
 * 2 — gate refusal (``no_run`` / ``dirty_worktree`` / ``no_passing_review`` /
   ``stale_review``), or Linear is unconfigured (a missing ``LINEAR_API_KEY``);
   the latter carries no ``reason`` and is checked before any side effect.
@@ -89,6 +95,7 @@ from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.close_ticket import TicketNotDoneError, confirm_ticket_done
 from harness.events.payloads import (
     REVIEW_GATE_RAN_PATH,
     REVIEW_GATE_REASON_PATH,
@@ -100,11 +107,7 @@ from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
 from harness.state import store
 from harness.tracker import Tracker, tracker_client
-from harness.tracker_errors import (
-    TrackerConfigError,
-    TrackerNotFound,
-    TrackerRequestError,
-)
+from harness.tracker_errors import TrackerConfigError
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -131,10 +134,11 @@ class CloseOutput(BaseModel):
     (context-economy AC).  The fields are the bounded status an orchestrating
     agent needs to confirm the close landed.
 
-    ``ticket_done`` records whether a tracker transition actually happened, so a
-    tracker-less close (``layers.linear: false``, CAL-1104) reports ``False`` —
-    the merge still landed. It is not a success flag: read ``merged`` /
-    ``status`` for that.
+    ``ticket_done`` records whether the tracker was **observed** Done after the
+    transition (#233's read-back, :mod:`harness.cli.close_ticket`), not merely
+    that a transition was attempted and did not raise. A tracker-less close
+    (``layers.linear: false``, CAL-1104) reports ``False`` — the merge still
+    landed. It is not a success flag: read ``merged`` / ``status`` for that.
     """
 
     run_id: str
@@ -148,11 +152,13 @@ class CloseOutput(BaseModel):
 class _CloseError(VerbError):
     """``close``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`) so
-    the structured ``{"error", "reason"}`` JSON names the refusal kind; it is
-    left ``None`` for unexpected (exit 1) errors. The ``(message, code, reason)``
-    carrier is inherited from the base; every raise site passes ``reason=`` by
-    keyword.
+    ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`, exit
+    2) so the structured ``{"error", "reason"}`` JSON names the refusal kind. It
+    also sets a ``reason`` on one exit-1 case — ``ticket_transition_failed``
+    (#233): the merge has already landed, so exit 2's "refused, nothing
+    happened" contract would misreport it; it is otherwise left ``None`` for
+    unexpected (exit 1) errors. The ``(message, code, reason)`` carrier is
+    inherited from the base; every raise site passes ``reason=`` by keyword.
     """
 
 
@@ -286,14 +292,23 @@ async def _run_close(
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
 
-    # 7. Transition the ticket to Done (remote side effect). Skipped tracker-less
-    #    — and reported as such in step 10 rather than claimed.
+    # 7. Transition the ticket to Done and verify it by reading the state back
+    #    (remote side effects, #233). Skipped tracker-less — and reported as
+    #    such below rather than claimed. The merge has already landed by this
+    #    point, so a confirmed failure is an exit-1 error carrying its own
+    #    reason (not a gate refusal): re-running close is the recovery path,
+    #    and the merge/push is idempotent for an already-landed ref.
     ticket_done = False
     if client is not None:
         try:
-            await client.transition_to_done(ticket)
-        except (TrackerNotFound, TrackerRequestError) as exc:
-            raise _CloseError(f"failed to transition ticket to Done: {exc}", 1) from exc
+            await confirm_ticket_done(client, ticket)
+        except TicketNotDoneError as exc:
+            raise _CloseError(
+                f"{exc}; the merge landed",
+                1,
+                reason="ticket_transition_failed",
+                extra={"merged": True, "run_id": resolved_run_id},
+            ) from exc
         ticket_done = True
 
     # 8. Flip the run row to closed and record the close event in one
@@ -308,6 +323,7 @@ async def _run_close(
                 ticket=ticket,
                 merged_sha=head_sha,
                 closed_at=closed_at,
+                ticket_done=ticket_done,
             ).model_dump(),
             event_ts=closed_at,
         )

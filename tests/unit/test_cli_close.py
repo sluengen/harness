@@ -239,12 +239,28 @@ def _install_close_event_failure_trigger(db_path: Path) -> None:
     _sync(_install())
 
 
-def _make_linear_stub(raise_on_transition: Exception | None = None) -> MagicMock:
+def _make_linear_stub(
+    raise_on_transition: Exception | None = None,
+    issue_is_done: bool | list[bool] | Exception = True,
+) -> MagicMock:
+    """A tracker stub whose ``issue_is_done`` defaults to confirming Done.
+
+    ``issue_is_done`` accepts a single bool (every call returns it), a list
+    (one value per call, in order — for the recovers-on-second-attempt shape),
+    or an ``Exception`` (every call raises it — the request-still-runs and
+    both-attempts-fail shapes). Defaults to ``True`` so every pre-existing
+    caller of this helper keeps exercising the happy Done-confirmed path
+    without change (#233).
+    """
     stub = MagicMock()
     if raise_on_transition is not None:
         stub.transition_to_done = AsyncMock(side_effect=raise_on_transition)
     else:
         stub.transition_to_done = AsyncMock(return_value=None)
+    if isinstance(issue_is_done, (Exception, list)):
+        stub.issue_is_done = AsyncMock(side_effect=issue_is_done)
+    else:
+        stub.issue_is_done = AsyncMock(return_value=issue_is_done)
     return stub
 
 
@@ -293,9 +309,11 @@ def test_ac1_close_succeeds_when_pass_for_head(repo: Path, db_path: Path) -> Non
     result, merge = _invoke(repo, db_path, run_id, stub)
     assert result.exit_code == 0, result.output
 
-    # Merge/push happened, ticket transitioned to Done.
+    # Merge/push happened, ticket transitioned to Done and confirmed with a
+    # single attempt (the read observed Done on the first try).
     merge.assert_called_once()
     stub.transition_to_done.assert_called_once_with("CAL-572")
+    stub.issue_is_done.assert_called_once_with("CAL-572")
 
     payload = json.loads(result.output)
     assert payload["run_id"] == run_id
@@ -345,6 +363,7 @@ def test_ac2_stale_review_when_head_advanced(repo: Path, db_path: Path) -> None:
     # No merge, no Done, run still open.
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -380,6 +399,7 @@ def test_dirty_worktree_refused_when_uncommitted_edits(repo: Path, db_path: Path
     # No merge, no Done, run still open — the unreviewed edit never lands.
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -399,6 +419,7 @@ def test_dirty_worktree_refused_with_modified_tracked_file(repo: Path, db_path: 
     assert json.loads(result.output)["reason"] == "dirty_worktree"
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -421,6 +442,7 @@ def test_ac3_no_passing_review_only_fail(repo: Path, db_path: Path) -> None:
 
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -436,6 +458,7 @@ def test_ac3_no_review_at_all(repo: Path, db_path: Path) -> None:
 
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -464,6 +487,7 @@ def test_pass_without_gate_evidence_is_refused(repo: Path, db_path: Path) -> Non
 
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -516,6 +540,7 @@ def test_ac4_no_open_run(repo: Path, db_path: Path) -> None:
 
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +595,7 @@ def test_close_exits_2_when_linear_unconfigured(repo: Path, db_path: Path) -> No
     # The gate passed, but the unset key blocks before any side effect.
     merge.assert_not_called()
     stub.transition_to_done.assert_not_called()
+    stub.issue_is_done.assert_not_called()
     assert fetch_run_status(db_path, run_id) == "open"
 
 
@@ -600,6 +626,14 @@ def test_close_docstring_exit_codes_match_contract() -> None:
     assert "Linear error" not in one_entry, (
         "a missing/unconfigured Linear key exits 2, not 1; the exit-1 entry "
         "must not claim a generic 'Linear error' exits 1"
+    )
+    assert "ticket_transition_failed" in one_entry, (
+        "exit 1 covers a ticket never observed Done after two transition "
+        "attempts (#233); document its reason tag in the exit-1 entry"
+    )
+    assert "ticket_transition_failed" not in two_entry, (
+        "ticket_transition_failed is an exit-1 reason (the merge already "
+        "landed); it must not appear in the exit-2 gate-refusal entry"
     )
 
 
@@ -756,6 +790,66 @@ async def test_linear_transition_to_done_raises_when_no_completed_state(
 
 
 # ---------------------------------------------------------------------------
+# LinearClient.issue_is_done — the read-only verification counterpart (#233)
+# ---------------------------------------------------------------------------
+
+
+async def test_linear_issue_is_done_true_for_completed_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.linear import LinearClient
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": {"id": "issue-id", "state": {"type": "completed"}}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.issue_is_done("CAL-572") is True
+
+
+async def test_linear_issue_is_done_false_for_started_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.linear import LinearClient
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": {"id": "issue-id", "state": {"type": "started"}}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.issue_is_done("CAL-572") is False
+
+
+async def test_linear_issue_is_done_false_for_canceled_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``canceled`` is a distinct workflow-state type from ``completed`` — a
+    canceled ticket is not Done."""
+    from harness.linear import LinearClient
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": {"id": "issue-id", "state": {"type": "canceled"}}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.issue_is_done("CAL-572") is False
+
+
+async def test_linear_issue_is_done_raises_not_found_for_missing_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.linear import LinearClient, LinearNotFound
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(LinearNotFound):
+        await client.issue_is_done("CAL-572")
+
+
+# ---------------------------------------------------------------------------
 # AC-teardown (CAL-767): a successful close reclaims the worktree + branch
 # ---------------------------------------------------------------------------
 
@@ -866,37 +960,122 @@ def test_close_records_close_event_on_success(repo: Path, db_path: Path) -> None
     assert data["run_id"] == run_id
     assert data["ticket"] == "CAL-572"
     assert data["merged_sha"] == head
+    assert data["ticket_done"] is True
 
 
 def test_close_transition_failure_after_merge_leaves_run_open(
     repo: Path, db_path: Path
 ) -> None:
-    """A Linear Done-transition failure AFTER merge+push exits 1 and leaves the
-    ledger consistent — the run stays ``open`` and no ``close`` event is written,
-    so close is re-drivable. Exercises the previously-unused
-    ``_make_linear_stub(raise_on_transition=...)`` path (CAL-1002)."""
+    """A Linear Done-transition failure that is NEVER confirmed by the read-back
+    exits 1 and leaves the ledger consistent — the run stays ``open`` and no
+    ``close`` event is written, so close is re-drivable (CAL-1002, extended by
+    #233's read-back). The transition raising does not short-circuit: the read
+    still runs every attempt, and it also raises here, so the ticket is never
+    observed Done."""
     from harness.linear import LinearRequestError
 
     run_id = _seed_open_run(db_path, repo)
     head = _head_sha(repo)
     _emit_review(db_path, run_id, head, "pass")
     stub = _make_linear_stub(
-        raise_on_transition=LinearRequestError("permission denied")
+        raise_on_transition=LinearRequestError("permission denied"),
+        issue_is_done=LinearRequestError("permission denied"),
     )
 
     result, merge = _invoke(repo, db_path, run_id, stub)
 
-    # Exit 1 (an unexpected error), not a gate refusal (no ``reason``).
+    # Exit 1, carrying the #233 reason — the merge already landed, so this is
+    # not a gate refusal.
     assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
-    assert "reason" not in payload
-    assert "transition ticket to Done" in payload["error"]
+    assert payload["reason"] == "ticket_transition_failed"
+    assert payload["merged"] is True
+    assert payload["run_id"] == run_id
+    assert "not Done after 2 transition attempts" in payload["error"]
 
-    # Merge+push happened before the failure; the Done transition was attempted.
+    # Merge+push happened before the failure; both attempts transitioned AND
+    # read back — the raising transition never short-circuits the read.
     merge.assert_called_once()
-    stub.transition_to_done.assert_called_once_with("CAL-572")
+    assert stub.transition_to_done.call_count == 2
+    assert stub.issue_is_done.call_count == 2
 
     # Ledger stays consistent: run still open, no close event.
+    assert fetch_run_status(db_path, run_id) == "open"
+    assert fetch_close_events(db_path, run_id) == []
+
+
+def test_close_recovers_when_read_confirms_done_despite_transition_error(
+    repo: Path, db_path: Path
+) -> None:
+    """The observed state outranks a failed transition acknowledgement (#233).
+
+    A write can land while its HTTP response is lost — so a ``transition_to_done``
+    that raises must not be treated as failure if the read-back confirms Done.
+    """
+    from harness.linear import LinearRequestError
+
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub(
+        raise_on_transition=LinearRequestError("response lost"),
+        issue_is_done=True,
+    )
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ticket_done"] is True
+    merge.assert_called_once()
+    # One attempt was enough: the read confirmed Done despite the raise.
+    assert stub.transition_to_done.call_count == 1
+    assert stub.issue_is_done.call_count == 1
+    assert fetch_run_status(db_path, run_id) == "closed"
+
+
+def test_close_recovers_on_second_attempt_when_first_read_is_stale(
+    repo: Path, db_path: Path
+) -> None:
+    """A not-yet-propagated read on the first attempt recovers on the second."""
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub(issue_is_done=[False, True])
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ticket_done"] is True
+    merge.assert_called_once()
+    assert stub.transition_to_done.call_count == 2
+    assert stub.issue_is_done.call_count == 2
+    assert fetch_run_status(db_path, run_id) == "closed"
+
+
+def test_close_fails_when_ticket_never_observed_done(repo: Path, db_path: Path) -> None:
+    """Two attempts, the transition itself always "succeeds", but the read-back
+    never once reports Done — a tracker-side rule silently reverting the state,
+    say. This must fail exactly like a raising transition (#233's example)."""
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub(issue_is_done=False)
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "ticket_transition_failed"
+    assert payload["merged"] is True
+    # No underlying exception this time — the message names only the attempts.
+    assert payload["error"] == (
+        "ticket CAL-572 was not Done after 2 transition attempts; the merge landed"
+    )
+    merge.assert_called_once()
+    assert stub.transition_to_done.call_count == 2
+    assert stub.issue_is_done.call_count == 2
     assert fetch_run_status(db_path, run_id) == "open"
     assert fetch_close_events(db_path, run_id) == []
 

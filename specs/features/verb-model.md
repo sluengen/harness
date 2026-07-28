@@ -122,7 +122,7 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done, flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
+- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done **and confirms it by reading the state back** (#233, `harness/cli/close_ticket.py`), flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
 
 #### Scenario: the base advanced during the run
 
@@ -137,6 +137,12 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 - WHEN the agent runs `harness close`
 - THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
 
+#### Scenario: the ticket is never observed Done
+
+- GIVEN the merge has already landed and the tracker transition is attempted, but reading the issue's state back never once reports Done across two attempts (#233)
+- WHEN the agent runs `harness close`
+- THEN the verb exits **1** — not a gate refusal, because the merge already landed — with `reason=ticket_transition_failed` and `merged: true` in the JSON; the run row stays `open` and no `close` event is written, so re-running `harness close` is the recovery once the tracker is healthy (the merge/push step is idempotent for an already-landed run branch)
+
 #### Scenario: the merge never touches the main checkout
 
 - GIVEN an open run whose gate is satisfied, and a main checkout in **any** state — clean, carrying uncommitted edits, or even mid-merge
@@ -148,6 +154,8 @@ This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md
 `no_gate_evidence` is the backstop under the gate step above (CAL-1082): a pass recorded by a harness that predates the verify gate carries no `gate_ran` key, `json_extract` yields `NULL`, and close reads that as *no evidence a test ever ran* and refuses. Fail-safe by construction — an old pass cannot be spent on a merge, and no ledger migration is needed. A pass whose `gate_reason` is `not_configured` is allowed: the repo defines no gate, and the ledger says so honestly. (Whether `close` should tighten *that* is a separate decision — it would strand every repo without a `verify:`.)
 
 `close` does **not** auto-commit. A dirty worktree is refused outright, because uncommitted edits are not in HEAD and so were never reviewed (`stale_review` catches a commit *after* review; only the clean-tree check catches an edit *without* committing — CAL-586, locked by `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits`). A gate refusal is the gate doing its job and is never worked around — the verb never bypasses its own gate.
+
+**The ticket-Done transition is verified, not trusted (#233, `harness/cli/close_ticket.py`).** A mutation that does not raise is not proof the tracker's state actually changed — its acknowledgement can be lost while the write lands, or a tracker-side rule can revert it. `confirm_ticket_done` attempts the transition, then reads the issue's state back; a raising transition does **not** skip that read (the read is the source of truth), and the function returns as soon as a read observes Done. Bounded at two attempts, no sleep or backoff — a wedged tracker must not burn the run's wall-clock budget. Only a read that observes Done sets `CloseOutput.ticket_done: true` / `CloseEventData.ticket_done: true`; a transition that merely did not raise is no longer sufficient. When neither attempt observes Done, the merge has already landed, so this is reported as an exit-1 `ticket_transition_failed` (above) rather than folded into the exit-2 gate-refusal contract.
 
 ### The tracker switch — `tracker:`
 

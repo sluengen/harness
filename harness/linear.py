@@ -406,6 +406,36 @@ query MarkedBranch($id: String!) {{
             identifier, state_type="completed", preferred_name="done"
         )
 
+    async def issue_is_done(self, identifier: str) -> bool:
+        """Whether issue ``identifier``'s current workflow state is completed.
+
+        A read-only counterpart to :meth:`transition_to_done` (#233): observes
+        the issue's *current* state rather than trusting a mutation's
+        acknowledgement, so ``close`` can confirm a Done transition actually
+        took instead of merely reporting that it did not raise. ``canceled`` is
+        a distinct workflow-state type from ``completed`` and is not done.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        query = """
+query IssueState($id: String!) {
+  issue(id: $id) {
+    id
+    state {
+      type
+    }
+  }
+}
+"""
+        data = await self._request(query, {"id": identifier})
+        issue = (data.get("data") or {}).get("issue")
+        if issue is None:
+            raise LinearNotFound(f"Linear issue {identifier!r} not found")
+        state = issue.get("state") or {}
+        return state.get("type") == "completed"
+
     async def transition_to_unstarted(self, identifier: str) -> None:
         """Transition issue ``identifier`` back to its Todo (unstarted) state.
 

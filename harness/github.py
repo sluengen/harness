@@ -356,6 +356,49 @@ query Reclaimable($login: String!, $number: Int!, $field: String!) {{
         """Set the issue's board Status to *Done*."""
         await self._set_status(identifier, "done")
 
+    async def issue_is_done(self, identifier: str) -> bool:
+        """Whether the issue's board Status option is *Done*.
+
+        A read-only counterpart to :meth:`transition_to_done` (#233): observes
+        the item's current Status rather than trusting a mutation's
+        acknowledgement. Deliberately does **not** reuse :meth:`_resolve_item`
+        — a verification read must mutate nothing, and that helper adds the
+        issue to the board when it is absent. An issue on no item of the
+        configured board is reported ``False``, not an error.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error.
+        """
+        number = _issue_number(identifier)
+        meta = await self._project_metadata()
+        query = """
+query IssueStatus($owner: String!, $name: String!, $number: Int!, $field: String!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      id
+      projectItems(first: 20) {
+        nodes {
+          project { id }
+          fieldValueByName(name: $field) {
+            ... on ProjectV2ItemFieldSingleSelectValue { name }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+        issue = await self._issue_node(
+            query, number, ("issue",), extra_variables={"field": self._status_field}
+        )
+        for item in (issue.get("projectItems") or {}).get("nodes", []):
+            if (item.get("project") or {}).get("id") != meta.project_id:
+                continue
+            status = (item.get("fieldValueByName") or {}).get("name")
+            return (status or "").lower() == _STATE_OPTION_NAME["done"].lower()
+        return False
+
     async def transition_to_unstarted(self, identifier: str) -> None:
         """Set the issue's board Status back to *Todo* (the reclamation revert)."""
         await self._set_status(identifier, "todo")
@@ -899,16 +942,29 @@ query OwnerKind($login: String!) { repositoryOwner(login: $login) { __typename }
     # ------------------------------------------------------------------
 
     async def _issue_node(
-        self, query: str, number: int, path: tuple[str, ...]
+        self,
+        query: str,
+        number: int,
+        path: tuple[str, ...],
+        *,
+        extra_variables: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run ``query`` for an issue by number and return the issue node.
 
         ``path`` is the key sequence below ``repository`` down to the issue node
-        (``("issue",)`` for a direct ``repository.issue`` query). Raises
+        (``("issue",)`` for a direct ``repository.issue`` query). ``extra_variables``
+        merges into the standard ``owner``/``name``/``number`` set, for a query
+        that needs one more (e.g. :meth:`issue_is_done`'s ``$field``). Raises
         :class:`GitHubNotFound` when the repository or issue is absent.
         """
         data = await self._request(
-            query, {"owner": self._owner, "name": self._name, "number": number}
+            query,
+            {
+                "owner": self._owner,
+                "name": self._name,
+                "number": number,
+                **(extra_variables or {}),
+            },
         )
         node: Any = (data.get("data") or {}).get("repository")
         if node is None:

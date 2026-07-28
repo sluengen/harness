@@ -75,7 +75,7 @@ There is **no separate `verify` command** in v1, by design. Gate execution runs 
 | Code | Meaning |
 |------|---------|
 | 0 | Command succeeded (including a recorded review `fail` — a *successful* review) |
-| 1 | Unexpected error (git failure, DB error, Linear error) |
+| 1 | Unexpected error (git failure, DB error, tracker error); `close`'s `ticket_transition_failed` also lands here — the merge already landed, so it carries `reason` + `merged: true` rather than the exit-2 gate-refusal shape (#233) |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
 | 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
@@ -89,6 +89,12 @@ Each of `review`'s dedicated codes exists so an orchestrating agent can tell the
 - GIVEN `harness close` whose gate is not satisfied
 - WHEN it runs
 - THEN it exits 2 with exactly one structured `reason` (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review` / `no_gate_evidence`)
+
+#### Scenario: a ticket never observed Done exits 1, not 2
+
+- GIVEN `harness close` whose merge has already landed, but the ticket is never observed Done across two transition-then-read attempts (#233, `harness/cli/close_ticket.py`)
+- WHEN it runs
+- THEN it exits **1** with `reason=ticket_transition_failed` and `merged: true` — not the exit-2 gate-refusal shape, because the merge already happened and exit 2's "refused, nothing happened" contract would misreport it; re-running `harness close` is the recovery once the tracker is healthy
 
 #### Scenario: a run that cannot be certified as reviewable exits 5
 
