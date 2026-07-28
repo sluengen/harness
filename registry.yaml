@@ -1,4 +1,4 @@
-# guidance:registry@0.5.96
+# guidance:registry@0.5.97
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -61,7 +61,7 @@ files:
   # gates whether it engages, not whether it installs). ux-design applies to any
   # user-facing surface, independent of that layer — never gate it. (Install-time
   # layer gating is unbuilt; do not omit profile files by layer — CAL-749.)
-  skills/design-system/SKILL.md: { id: design-system,            version: 0.3.1, profiles: [harness] }
+  skills/design-system/SKILL.md: { id: design-system,            version: 0.4.0, profiles: [harness] }
   skills/ux-design/SKILL.md: { id: ux-design,                version: 0.2.0, profiles: [harness] }
   # Discovery knowledge the unattended routine invokes — its single home (CAL-907,
   # proposal harden-loop-layer WS2/B2). Justified as a distributed skill because the
@@ -153,4 +153,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.1 }
-  registry.yaml:                      { id: registry,                 version: 0.5.96 }
+  registry.yaml:                      { id: registry,                 version: 0.5.97 }
