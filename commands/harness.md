@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.5 -->
+<!-- guidance:harness@0.2.6 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -213,7 +213,7 @@ This **runs first, before the pick step**, so the routine **unblocks the backlog
 harness worktrees cleanup --merged --age 7d   # delete merged worktrees + their branch; rm orphaned dirs >7d old
 ```
 
-This is **best-effort and idempotent**: `--merged` removes each worktree whose branch has already landed on `dev`/`main`/`master` and deletes that merged branch (local + on `origin`); `--age 7d` reclaims orphaned directories left by runs that died long ago (the cruft a plain `git worktree remove` can no longer touch). It never removes a recent, unmerged worktree — including a reclaimed ticket's preserved WIP branch, which lives on `origin` and is fetched by `--resume`, not from the local directory. *Fallback (`/build`, harness tool unavailable):* run the same `harness worktrees cleanup --merged --age 7d` by hand in the repo as part of the pre-flight.
+This is **best-effort and idempotent**: `--merged` removes each worktree whose branch has already landed on `dev`/`main`/`master` and deletes that merged branch (local + on `origin`); `--age 7d` reclaims orphaned directories left by runs that died long ago (the cruft a plain `git worktree remove` can no longer touch). It never removes a recent, unmerged worktree — including a reclaimed ticket's preserved WIP branch, which lives on `origin` and is fetched by `--resume`, not from the local directory. `--merged` treats a merge-ancestry match as necessary but not sufficient (#235): a fresh run branch with zero commits is trivially "merged" (its tip equals the base) even though its WIP may be `git stash`'d rather than committed, so before deleting it also checks the run's ledger status, `git stash list`, and the worktree's own dirty state — a hit on any of the three keeps the worktree and prints why, unless `--force` is given. *Fallback (`/build`, harness tool unavailable):* run the same `harness worktrees cleanup --merged --age 7d` by hand in the repo as part of the pre-flight.
 
 The loop:
 

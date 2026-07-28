@@ -75,14 +75,23 @@ Once the merge has landed — and the ticket is Done and the ledger row closed �
 
 ### Housekeeping — `harness worktrees`
 
-`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged]` is the safety-net sweep for worktrees `close` did not reclaim — a run whose container died before close's teardown step, or cruft from before self-cleaning close landed. It removes the worktree *directories* matching the filters via `teardown_worktree` (orphan-safe: an `rmtree` fallback reclaims a directory whose worktree registration is already pruned, which `git worktree remove` cannot touch). `--merged` additionally **deletes the merged branch** (local + on `origin`) — it is provably integrated, so dead weight; `--age` removes the directory but **retains the branch** (an aged worktree may still hold unmerged work). The Build routine (`/harness routine build`) runs `harness worktrees cleanup --merged --age 7d` in its pre-flight so the reclaim is automatic, not operator-only.
+`harness worktrees list` discovers the worktrees under `<repo_root>/.worktrees/harness/`. `harness worktrees cleanup [--age <duration>] [--merged] [--force] [--db <p>]` is the safety-net sweep for worktrees `close` did not reclaim — a run whose container died before close's teardown step, or cruft from before self-cleaning close landed. It removes the worktree *directories* matching the filters via `teardown_worktree` (orphan-safe: an `rmtree` fallback reclaims a directory whose worktree registration is already pruned, which `git worktree remove` cannot touch). `--merged` additionally **deletes the merged branch** (local + on `origin`) — it is provably integrated, so dead weight; `--age` removes the directory but **retains the branch** (an aged worktree may still hold unmerged work).
+
+**`--merged` is a merge-ancestry test, not a liveness test (#235).** `git merge-base --is-ancestor <branch> <base>` is true both for a branch that genuinely landed *and* for a fresh run branch that has made zero commits yet — its tip trivially equals the base. A run whose WIP is `git stash`'d rather than committed looks exactly like the second case, so ancestry alone is not sufficient to call a worktree safe to delete. Before honouring an ancestry-true match, `--merged` runs three vetoes and takes the first hit: (1) **ledger** — the run's `runs` row (matched by `worktree_path`, falling back to `run_id`) has a non-terminal status (`harness.state.schema.IN_FLIGHT_STATUSES`); (2) **stash** — `git stash list`, anchored in the worktree, has an entry naming this branch; (3) **dirty tree** — the worktree has uncommitted changes (`worktree_porcelain`). A vetoed worktree is kept (with the reason printed) unless `--force` is given, which removes it anyway and names what it overrode. The veto applies only to the `--merged` arm — an `--age`-driven removal of the same (old, vetoed) worktree still proceeds, retaining the branch, exactly as before. The Build routine (`/harness routine build`) runs `harness worktrees cleanup --merged --age 7d` in its pre-flight so the reclaim is automatic, not operator-only.
 
 #### Scenario: `--merged` deletes the worktree and its branch
 
-- GIVEN a worktree whose branch is merged into the repo's configured integration base (`branches.integration`, else the origin default, else `dev` — the same `resolve_base_branch` resolution `start` uses, CAL-1106), its branch pushed to `origin`
+- GIVEN a worktree whose branch is merged into the repo's configured integration base (`branches.integration`, else the origin default, else `dev` — the same `resolve_base_branch` resolution `start` uses, CAL-1106), its branch pushed to `origin`, its run terminal (or unrecorded) in the ledger, no stash naming the branch, and a clean tree
 - WHEN `harness worktrees cleanup --merged` runs
 - THEN it checks ancestry against `origin/<base>` when it resolves — else the local base (`preferred_base_ref`, CAL-1154) — so a run merged into `origin/<base>` by a throwaway-worktree close (which never advances the local branch) is still recognised as merged; it removes the directory and deletes the branch locally and on `origin`
 - AND an orphaned directory (no live worktree registration) older than `--age` is still removed via the `rmtree` fallback
+
+#### Scenario: `--merged` skips an in-flight run whose WIP is only stashed (#235)
+
+- GIVEN a worktree whose branch is a trivial ancestor of the base (no commits yet) because its run's WIP is `git stash`'d rather than committed, and its ledger row is still non-terminal (or, with no ledger DB, the stash alone stands as evidence)
+- WHEN `harness worktrees cleanup --merged` runs
+- THEN the worktree and its branch survive, and the kept line names the vetoing reason (the in-flight run, or the stash)
+- AND `harness worktrees cleanup --merged --force` removes it anyway and names what it overrode
 
 ## Data model
 

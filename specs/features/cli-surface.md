@@ -35,7 +35,7 @@ harness cancel    <run-id>                [--db <p>] [--json]      # abandon an 
 harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--older-than <dur>]] [--db <p>] [--json]   # reclaim a stranded run (single ticket), or --stale sweeps active tickets idle past the threshold — the whole tracker queue, or one --project when given
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket; record a defer event carrying the needs kind (CAL-1143, CAL-1167, ADR 0006)
 harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket; record a release event carrying the needs kind (#193, the `defer` shape in reverse)
-harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged]   # remove stale worktrees (git/fs)
+harness worktrees cleanup                 [--repo-root <p>] [--age <duration>] [--merged] [--force] [--db <p>]   # remove stale worktrees (git/fs); --merged vetoes an in-flight/stashed/dirty run unless --force (#235)
 harness doctor                            [--db <p>]               # system health checks (read-only)
 harness version                           [--json]
 
