@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.6 -->
+<!-- guidance:harness@0.2.7 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -61,6 +61,8 @@ A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedi
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
   "grounded_sha": "...", "model": "opus", "status": "ok" }
 ```
+
+**Run it as a single top-level background command — never chain a bare `&` inside a command that is *also* launched with your runtime's own background flag (#236).** A nested-background invocation detaches a process your session no longer tracks: it looks dead, but it is often still running to completion. If a redirected output file reads empty shortly after launch, that means **not finished yet**, never *dead* — wait and re-read, or check `harness events <run_id> --type design`, rather than relaunching. If two invocations do run, the **last one to finish silently becomes the run's bound design**, and it may not be the one you read — `harness design`'s own output then carries `concurrent_prior_at` (and the underlying `design` event does too) as the machine-readable warning that this happened; a stderr `warning:` line says the same. The recovery is not a bypass: run `harness design` once, cleanly, and implement from *that* output — the idempotent re-run contract below is unchanged.
 
 **Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design.
 
