@@ -601,6 +601,22 @@ def test_close_docstring_exit_codes_match_contract() -> None:
         "a missing/unconfigured Linear key exits 2, not 1; the exit-1 entry "
         "must not claim a generic 'Linear error' exits 1"
     )
+    assert "ticket_transition_failed" in one_entry, (
+        "exit 1 covers a raised tracker error while transitioning the ticket "
+        "to Done (#233); document its reason tag in the exit-1 entry"
+    )
+    assert "ticket_transition_unconfirmed" in one_entry, (
+        "exit 1 also covers a transition whose post-write state could not be "
+        "confirmed (#233); document its reason tag in the exit-1 entry"
+    )
+    assert "ticket_transition_failed" not in two_entry, (
+        "ticket_transition_failed is an exit-1 reason (the merge already "
+        "landed); it must not appear in the exit-2 gate-refusal entry"
+    )
+    assert "ticket_transition_unconfirmed" not in two_entry, (
+        "ticket_transition_unconfirmed is an exit-1 reason (the merge already "
+        "landed); it must not appear in the exit-2 gate-refusal entry"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +695,14 @@ async def test_linear_transition_to_done_prefers_named_done(
                     }
                 }
             }
-        return {"data": {"issueUpdate": {"success": True}}}
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {"id": "issue-id", "state": {"id": "state-done", "name": "Done"}},
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
@@ -716,7 +739,17 @@ async def test_linear_transition_to_done_falls_back_to_first_completed(
                     }
                 }
             }
-        return {"data": {"issueUpdate": {"success": True}}}
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {
+                        "id": "issue-id",
+                        "state": {"id": "state-shipped", "name": "Shipped"},
+                    },
+                }
+            }
+        }
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
     client = LinearClient(api_key="fake-key")
@@ -753,6 +786,81 @@ async def test_linear_transition_to_done_raises_when_no_completed_state(
 
     with pytest.raises(LinearRequestError, match="no 'completed' workflow state"):
         await client.transition_to_done("CAL-572")
+
+
+# ---------------------------------------------------------------------------
+# LinearClient._transition confirmation (#233) — a self-reported ``success``
+# is not proof the state actually changed; the post-write state must match.
+# ---------------------------------------------------------------------------
+
+
+async def test_transition_to_done_raises_when_post_state_is_not_the_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reproduces the reported incident at the layer that lied: the mutation
+    reports ``success: true``, but the returned post-write state is still In
+    Review, not the "Done" state that was requested."""
+    from harness.linear import LinearClient, TrackerTransitionUnconfirmed
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        if "states" in query:
+            return {
+                "data": {
+                    "issue": {
+                        "id": "issue-id",
+                        "team": {
+                            "states": {
+                                "nodes": [{"id": "state-done", "name": "Done", "type": "completed"}]
+                            }
+                        },
+                    }
+                }
+            }
+        return {
+            "data": {
+                "issueUpdate": {
+                    "success": True,
+                    "issue": {
+                        "id": "issue-id",
+                        "state": {"id": "state-inreview", "name": "In Review"},
+                    },
+                }
+            }
+        }
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(TrackerTransitionUnconfirmed):
+        await client.transition_to_done("CAL-992")
+
+
+async def test_transition_to_done_raises_unconfirmed_when_state_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mutation reporting ``success: true`` but omitting ``issue``/``state``
+    entirely is refused, not trusted — absent evidence is not evidence."""
+    from harness.linear import LinearClient, TrackerTransitionUnconfirmed
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        if "states" in query:
+            return {
+                "data": {
+                    "issue": {
+                        "id": "issue-id",
+                        "team": {
+                            "states": {
+                                "nodes": [{"id": "state-done", "name": "Done", "type": "completed"}]
+                            }
+                        },
+                    }
+                }
+            }
+        return {"data": {"issueUpdate": {"success": True}}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    with pytest.raises(TrackerTransitionUnconfirmed):
+        await client.transition_to_done("CAL-992")
 
 
 # ---------------------------------------------------------------------------
@@ -873,8 +981,8 @@ def test_close_transition_failure_after_merge_leaves_run_open(
 ) -> None:
     """A Linear Done-transition failure AFTER merge+push exits 1 and leaves the
     ledger consistent — the run stays ``open`` and no ``close`` event is written,
-    so close is re-drivable. Exercises the previously-unused
-    ``_make_linear_stub(raise_on_transition=...)`` path (CAL-1002)."""
+    so close is re-drivable (CAL-1002). Tagged with the #233 ``reason`` — the
+    merge already landed, so this is not a gate refusal."""
     from harness.linear import LinearRequestError
 
     run_id = _seed_open_run(db_path, repo)
@@ -886,11 +994,11 @@ def test_close_transition_failure_after_merge_leaves_run_open(
 
     result, merge = _invoke(repo, db_path, run_id, stub)
 
-    # Exit 1 (an unexpected error), not a gate refusal (no ``reason``).
     assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
-    assert "reason" not in payload
-    assert "transition ticket to Done" in payload["error"]
+    assert payload["reason"] == "ticket_transition_failed"
+    assert payload["merged"] is True
+    assert payload["run_id"] == run_id
 
     # Merge+push happened before the failure; the Done transition was attempted.
     merge.assert_called_once()
@@ -899,6 +1007,74 @@ def test_close_transition_failure_after_merge_leaves_run_open(
     # Ledger stays consistent: run still open, no close event.
     assert fetch_run_status(db_path, run_id) == "open"
     assert fetch_close_events(db_path, run_id) == []
+
+
+def test_close_transition_unconfirmed_after_merge_leaves_run_open(
+    repo: Path, db_path: Path
+) -> None:
+    """The CAL-992 incident, reproduced at the ``close`` mapping layer: the
+    transition mutation does not raise, but the backend could not confirm the
+    post-write state — must exit 1 with the distinct ``ticket_transition_unconfirmed``
+    reason (#233), not report success, and leave the run open/re-drivable."""
+    from harness.tracker_errors import TrackerTransitionUnconfirmed
+
+    run_id, path, branch = _seed_run_with_worktree(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    stub = _make_linear_stub(
+        raise_on_transition=TrackerTransitionUnconfirmed(
+            "issueUpdate reported success, but the post-write state is In Review"
+        )
+    )
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "ticket_transition_unconfirmed"
+    assert payload["merged"] is True
+    assert payload["run_id"] == run_id
+
+    merge.assert_called_once()
+    stub.transition_to_done.assert_called_once_with("CAL-572")
+
+    # Ledger stays consistent, and — unlike a successful close — the worktree
+    # and branch are never torn down (teardown is reached only after a closed
+    # ledger row).
+    assert fetch_run_status(db_path, run_id) == "open"
+    assert fetch_close_events(db_path, run_id) == []
+    assert path.exists()
+    assert branch in _local_branches(repo)
+
+
+def test_close_retry_after_unconfirmed_transition_completes_normally(
+    repo: Path, db_path: Path
+) -> None:
+    """The recovery property the CAL-992 incident lacked: re-running the
+    identical ``harness close`` once the tracker is healthy completes the run —
+    the merge (already landed) is a no-op, the transition is retried, and the
+    ticket is confirmed Done (#233)."""
+    from harness.tracker_errors import TrackerTransitionUnconfirmed
+
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    failing = _make_linear_stub(
+        raise_on_transition=TrackerTransitionUnconfirmed("not yet Done")
+    )
+    first = _invoke(repo, db_path, run_id, failing)
+    assert first[0].exit_code == 1, first[0].output
+    assert fetch_run_status(db_path, run_id) == "open"
+
+    confirming = _make_linear_stub()
+    second, merge = _invoke(repo, db_path, run_id, confirming)
+
+    assert second.exit_code == 0, second.output
+    payload = json.loads(second.output)
+    assert payload["ticket_done"] is True
+    merge.assert_called_once()
+    assert fetch_run_status(db_path, run_id) == "closed"
+    assert len(fetch_close_events(db_path, run_id)) == 1
 
 
 def test_close_event_write_failure_leaves_ledger_consistent(

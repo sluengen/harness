@@ -80,6 +80,11 @@ def find_offenders() -> Callable[..., list[str]]:
     return _extract_reference()["find_offenders"]
 
 
+@pytest.fixture()
+def declarative_ceiling() -> int:
+    return _extract_reference()["DECLARATIVE_CEILING"]
+
+
 def _write_lines(path: Path, count: int, *, marker: str | None) -> None:
     """Write a ``.py`` file of ``count`` lines, optionally carrying a marker line."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,6 +173,188 @@ def test_reference_respects_exemptions(
         limit=_HARD_LIMIT,
         exemptions=frozenset({"generated/schema.py"}),
     ) == []
+
+
+def test_reference_raises_ceiling_for_declarative_glob_file(
+    find_offenders: Callable[..., list[str]],
+    declarative_ceiling: int,
+    tmp_path: Path,
+) -> None:
+    """A declarative-glob file above the hard limit but under the raised ceiling
+    passes — the raise is a tripwire relocation, not an exemption."""
+    _write_lines(tmp_path / "schemas" / "tokens.py", _HARD_LIMIT + 100, marker=None)
+    assert (
+        find_offenders(
+            tmp_path,
+            globs=("**/*.py",),
+            limit=_HARD_LIMIT,
+            declarative_globs=("schemas/**/*.py",),
+        )
+        == []
+    )
+
+
+def test_reference_flags_declarative_glob_file_over_raised_ceiling(
+    find_offenders: Callable[..., list[str]],
+    declarative_ceiling: int,
+    tmp_path: Path,
+) -> None:
+    """A declarative-glob file over the raised ceiling is still an offender — the
+    raise moves the tripwire, it does not disable it."""
+    _write_lines(
+        tmp_path / "schemas" / "tokens.py", declarative_ceiling + 1, marker=None
+    )
+    assert find_offenders(
+        tmp_path,
+        globs=("**/*.py",),
+        limit=_HARD_LIMIT,
+        declarative_globs=("schemas/**/*.py",),
+    ) == ["schemas/tokens.py"]
+
+
+def test_reference_raised_ceiling_is_scoped_to_declarative_globs(
+    find_offenders: Callable[..., list[str]], tmp_path: Path
+) -> None:
+    """The raised ceiling applies only to files matched by ``declarative_globs`` —
+    a same-length non-declarative file is still measured against the hard limit."""
+    length = _HARD_LIMIT + 100
+    _write_lines(tmp_path / "schemas" / "tokens.py", length, marker=None)
+    _write_lines(tmp_path / "app" / "service.py", length, marker=None)
+    assert find_offenders(
+        tmp_path,
+        globs=("**/*.py",),
+        limit=_HARD_LIMIT,
+        declarative_globs=("schemas/**/*.py",),
+    ) == ["app/service.py"]
+
+
+def test_reference_marker_passes_above_raised_ceiling(
+    find_offenders: Callable[..., list[str]],
+    declarative_ceiling: int,
+    tmp_path: Path,
+) -> None:
+    """A ``# size:`` marker still justifies a declarative file above the raised
+    ceiling — marker semantics are unchanged, only the ceiling moved."""
+    _write_lines(
+        tmp_path / "schemas" / "tokens.py",
+        declarative_ceiling + 1,
+        marker="# size: generated field list",
+    )
+    assert (
+        find_offenders(
+            tmp_path,
+            globs=("**/*.py",),
+            limit=_HARD_LIMIT,
+            declarative_globs=("schemas/**/*.py",),
+        )
+        == []
+    )
+
+
+def test_reference_declarative_default_is_inert(
+    find_offenders: Callable[..., list[str]], tmp_path: Path
+) -> None:
+    """The shipped ``DECLARATIVE_GLOBS`` default is empty, so an adopter who has
+    not opted in sees identical behaviour to before this change."""
+    _write_lines(tmp_path / "schemas" / "tokens.py", _HARD_LIMIT + 1, marker=None)
+    assert find_offenders(tmp_path, globs=("**/*.py",), limit=_HARD_LIMIT) == [
+        "schemas/tokens.py"
+    ]
+
+
+def test_reference_declarative_ceiling_constant_defaults_to_1_5x_hard_limit() -> None:
+    """AC-1/AC-3: the constant exists, is distinct from ``EXEMPTIONS``, and
+    defaults to 1.5x the hard limit, not a value someone typed once."""
+    ns = _extract_reference()
+    assert ns["DECLARATIVE_GLOBS"] == ()
+    assert ns["DECLARATIVE_CEILING"] == ns["HARD_LIMIT"] * 3 // 2
+    assert isinstance(ns["EXEMPTIONS"], frozenset)
+
+
+def test_reference_exemption_wins_over_declarative_ceiling(
+    find_offenders: Callable[..., list[str]],
+    declarative_ceiling: int,
+    tmp_path: Path,
+) -> None:
+    """A path in both ``EXEMPTIONS`` and a declarative glob is skipped — exemption
+    is checked first and wins, pinning the precedence order."""
+    _write_lines(
+        tmp_path / "schemas" / "tokens.py", declarative_ceiling + 100, marker=None
+    )
+    assert (
+        find_offenders(
+            tmp_path,
+            globs=("**/*.py",),
+            limit=_HARD_LIMIT,
+            exemptions=frozenset({"schemas/tokens.py"}),
+            declarative_globs=("schemas/**/*.py",),
+        )
+        == []
+    )
+
+
+def test_reference_declarative_glob_matching_directory_is_not_a_file(
+    find_offenders: Callable[..., list[str]], tmp_path: Path
+) -> None:
+    """A declarative glob matching a directory entry contributes nothing to the
+    declarative set — only files carry the raised ceiling."""
+    _write_lines(tmp_path / "schemas" / "tokens.py", _HARD_LIMIT + 100, marker=None)
+    # "schemas" itself (the directory) matches "schemas*" but must be filtered by
+    # is_file(); the file inside still needs its own glob to be scanned at all.
+    assert find_offenders(
+        tmp_path,
+        globs=("**/*.py",),
+        limit=_HARD_LIMIT,
+        declarative_globs=("schemas*", "schemas/**/*.py"),
+    ) == []
+
+
+def test_reference_declarative_glob_outside_source_globs_is_never_scanned(
+    find_offenders: Callable[..., list[str]], tmp_path: Path
+) -> None:
+    """``declarative_globs`` narrows a ceiling within the scanned set — it does
+    not widen the scan to files ``globs`` never selects."""
+    _write_lines(tmp_path / "schemas" / "tokens.txt", _HARD_LIMIT + 100, marker=None)
+    assert (
+        find_offenders(
+            tmp_path,
+            globs=("**/*.py",),
+            limit=_HARD_LIMIT,
+            declarative_globs=("schemas/**/*.txt",),
+        )
+        == []
+    )
+
+
+def test_reference_declarative_set_dedups_across_overlapping_globs(
+    find_offenders: Callable[..., list[str]],
+    declarative_ceiling: int,
+    tmp_path: Path,
+) -> None:
+    """A file matched by two overlapping ``declarative_globs`` entries is not
+    double-counted — it is flagged at most once when over the raised ceiling."""
+    _write_lines(
+        tmp_path / "schemas" / "tokens.py", declarative_ceiling + 1, marker=None
+    )
+    assert find_offenders(
+        tmp_path,
+        globs=("**/*.py",),
+        limit=_HARD_LIMIT,
+        declarative_globs=("schemas/**/*.py", "schemas/**"),
+    ) == ["schemas/tokens.py"]
+
+
+def test_code_quality_declarative_ceiling_claim_matches_the_shipped_constant() -> None:
+    """AC-3: `code-quality` Part C's claim that the walker's config carries 'the
+    higher declarative-file ceiling from Part B' is true only if the shipped
+    reference actually defines that constant — asserting both halves is the
+    point, since either alone can drift back into the gap this ticket closes."""
+    skill = (_REPO_ROOT / "skills" / "code-quality" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "the higher declarative-file ceiling from Part B" in skill
+    ns = _extract_reference()
+    assert "DECLARATIVE_CEILING" in ns
 
 
 def test_reference_is_registered_and_header_matches() -> None:
