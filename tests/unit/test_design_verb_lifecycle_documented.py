@@ -32,9 +32,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.unit.test_cli_surface_locked import _AUDITED_VERBS, _FENCE, _INVOCATION
+
 REPO_ROOT = Path(__file__).parent.parent.parent
 COMMAND_DOC = REPO_ROOT / "commands" / "harness.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
+README = REPO_ROOT / "README.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
@@ -160,6 +163,120 @@ def test_context_architecture_lists_four_verbs() -> None:
     assert re.search(r"^- \*\*`design`\*\*", text, re.M), (
         "CONTEXT.md's Architecture verb list must carry a `design` bullet "
         "(#213 AC-2)."
+    )
+
+
+# --- #249: README.md's remaining three-verb framing -------------------------
+# CODE-1 (2026-07-29 assess pass). The 2026-07-26 fix corrected exactly the
+# four README locations its own "Where" list named, leaving six other live
+# occurrences of the same three-verb framing untouched. `test_cli_surface_
+# locked.py`'s subset-enumeration guard (widened to README in the same change)
+# catches the backtick-slash-list locations (`:16`, `:29`); the four guards
+# below catch the shapes that guard does not scan for — an arrow diagram, a
+# fenced invocation loop, a bullet enumeration, and a bare cardinality claim.
+
+
+def _readme_live_text() -> str:
+    """README text up to the ``## Changelog`` heading.
+
+    The dated entries below it (e.g. "calling three deterministic verbs")
+    record the three-verb era faithfully as of when they were written and are
+    correct history, not drift — the same exclusion the #249 assessment drew.
+    """
+    text = README.read_text()
+    cut = text.find("\n## Changelog")
+    return text if cut == -1 else text[:cut]
+
+
+#: A word token not introduced by ``/``, so the agent-led ``/start → /review →
+#: /ship`` sequence (live in CLAUDE.md) is never read as a harness verb chain.
+_INVOCATION_TOKEN = re.compile(r"(?<!/)\b(\w+)\b")
+
+
+def _arrow_lifecycle_offenders(text: str, audited: set[str]) -> list[list[str]]:
+    """Every line that *draws* the lifecycle (contains an arrow) yet names a
+    proper subset of the audited verbs. Line-scoped, not match-scoped: a chain
+    broken by ``(fix → review)*`` is still one drawing of one lifecycle."""
+    out = []
+    for line in text.splitlines():
+        if "→" not in line:
+            continue
+        named = set(_INVOCATION_TOKEN.findall(line)) & audited
+        if len(named) >= 2 and named != audited:
+            out.append(sorted(named))
+    return out
+
+
+def _loop_fence_offenders(text: str, audited: set[str]) -> list[list[str]]:
+    """Every fenced block that invokes two or more audited verbs, yet not all."""
+    out = []
+    for block in _FENCE.findall(text):
+        named = set(_INVOCATION.findall(block)) & audited
+        if len(named) >= 2 and named != audited:
+            out.append(sorted(named))
+    return out
+
+
+#: A number word or digit followed by an optional single adjective and then
+#: "verb(s)"/"command(s)" — the ``:45``/``:94`` idiom ("three verbs", "three
+#: commands"). Requires the leading numeral so "read commands" and "two
+#: triggers" (no verb/command noun, or no leading count) are left alone.
+_COUNT_CLAIM = re.compile(
+    r"\b(one|two|three|four|five|six|\d+)\s+(?:\w+\s+)?(verbs?|commands?)\b",
+    re.I,
+)
+
+
+def test_readme_what_it_does_bullets_every_audited_verb() -> None:
+    """README's ``## What it does`` section documents every audited verb as its
+    own bullet, not merely mentions it (the ``:47-49`` defect: `design` had no
+    bullet at all)."""
+    text = _readme_live_text()
+    section = text[text.index("## What it does") : text.index("## The model:")]
+    missing = {
+        verb
+        for verb in _AUDITED_VERBS
+        if not re.search(rf"^- \*\*`{verb}`\*\*", section, re.M)
+    }
+    assert not missing, (
+        f"README.md's '## What it does' section has no `- **`<verb>`**` bullet "
+        f"for {sorted(missing)} — every audited verb needs its own bullet (#249)."
+    )
+
+
+def test_readme_lifecycle_arrows_name_every_audited_verb() -> None:
+    """README's arrow-drawn lifecycle diagrams name the full audited set (the
+    ``:69`` defect: the inner diagram line omitted `design`)."""
+    offenders = _arrow_lifecycle_offenders(_readme_live_text(), _AUDITED_VERBS)
+    assert not offenders, (
+        f"README.md draws the lifecycle naming a proper subset of the audited "
+        f"verbs: {offenders}. Name the full set {sorted(_AUDITED_VERBS)} (#249)."
+    )
+
+
+def test_readme_loop_fences_invoke_every_audited_verb() -> None:
+    """README's fenced ``harness <verb>`` loops invoke the full audited set
+    (the ``:94`` and ``:153-160`` defects: both fences skipped `design`)."""
+    offenders = _loop_fence_offenders(_readme_live_text(), _AUDITED_VERBS)
+    assert not offenders, (
+        f"README.md has a fenced loop invoking a proper subset of the audited "
+        f"verbs: {offenders}. Name the full set {sorted(_AUDITED_VERBS)} (#249)."
+    )
+
+
+def test_readme_states_no_stale_verb_cardinality() -> None:
+    """README states no stale verb/command count (the ``:45``/``:94`` defect:
+    "three verbs" / "three commands" after `design` joined the lifecycle)."""
+    text = _readme_live_text()
+    stale = [
+        m.group(0)
+        for m in _COUNT_CLAIM.finditer(text)
+        if m.group(1).lower() != str(len(_AUDITED_VERBS))
+        and m.group(1).lower() != "four"
+    ]
+    assert not stale, (
+        f"README.md states a stale verb/command count: {stale}. The lifecycle "
+        f"now has {len(_AUDITED_VERBS)} verbs (#249)."
     )
 
 
