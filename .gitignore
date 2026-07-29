@@ -32,7 +32,12 @@ htmlcov/
 *.db-wal
 
 # Worktrees
+# .worktrees/ is the harness's own verb-created root (harness/identity.py);
+# .claude/worktrees/ is the Claude Code CLI's agent-dispatch root — different
+# owner, same hazard. Keep comments on their own lines: git does not treat a
+# trailing '#' on a pattern line as a comment.
 .worktrees/
+.claude/worktrees/
 
 # OS
 .DS_Store
