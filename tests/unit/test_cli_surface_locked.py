@@ -544,6 +544,22 @@ def _documented_options() -> dict[str, set[str]]:
     return sigs
 
 
+#: Commands that register a ``--run-id`` option: the four audited verbs where
+#: it overrides CWD-based run resolution, plus the three read commands where
+#: it aliases the positional ``RUN_ID`` (#245). Equality (not a subset check)
+#: locks both directions — a dropped alias and an unintended new one both fail.
+EXPECTED_RUN_ID_COMMANDS = {
+    "design", "review", "close", "checkpoint",  # verbs
+    "status", "logs", "events",  # read commands
+}
+
+
+def test_run_id_flag_surface_is_locked() -> None:
+    """Exactly the expected commands register ``--run-id`` (#245 AC-4)."""
+    actual = {cmd for cmd, opts in _real_options().items() if "--run-id" in opts}
+    assert actual == EXPECTED_RUN_ID_COMMANDS
+
+
 def test_documented_options_exist_on_the_command() -> None:
     """Every ``--option`` SPEC §11 documents is a real option on that command.
 

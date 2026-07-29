@@ -267,9 +267,9 @@ harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
 
 # Read / inspection — never mutate state
-harness status    <run-id>                [--json]
-harness logs      <run-id>                [--follow] [--node <id>]
-harness events    <run-id>                [--type <event_type>] [--json] [--after-id <n>]
+harness status    [<run-id>]              [--run-id <id>] [--json]
+harness logs      [<run-id>]              [--run-id <id>] [--follow] [--node <id>]
+harness events    [<run-id>]              [--run-id <id>] [--type <event_type>] [--json] [--after-id <n>]
 harness runs                              [--limit <n>]
 harness worktrees list                    [--json]
 harness worktrees cleanup                 [--age <duration>] [--merged] [--force] [--db <p>]

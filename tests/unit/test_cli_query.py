@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app, query_events
@@ -421,6 +422,108 @@ def test_events_unknown_run_exits_2(tmp_path: Path) -> None:
     _init_db(db_path)
     result = runner.invoke(app, ["events", "missing", "--db", str(db_path)])
     assert result.exit_code == 2
+
+
+# ---------------------------------------------------------------------------
+# --run-id as an alias for the positional run id (#245)
+# ---------------------------------------------------------------------------
+
+
+def test_events_accepts_run_id_as_a_flag(tmp_path: Path) -> None:
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
+        db_path, run_id="R1", event_type="workflow_started",
+        timestamp="2026-07-29T12:00:00Z",
+    )
+    result = runner.invoke(app, ["events", "--run-id", "R1", "--db", str(db_path)])
+    assert result.exit_code == 0, result.stdout
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_run_id_flag_and_positional_are_equivalent(
+    command: str, tmp_path: Path
+) -> None:
+    """AC-1: `--run-id` behaves identically to the positional form."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_event(
+        db_path, run_id="R1", event_type="workflow_started",
+        timestamp="2026-07-29T12:00:00Z",
+    )
+    positional = runner.invoke(app, [command, "R1", "--db", str(db_path)])
+    flagged = runner.invoke(app, [command, "--run-id", "R1", "--db", str(db_path)])
+    assert positional.exit_code == 0, positional.stdout
+    assert flagged.exit_code == 0, flagged.stdout
+    assert flagged.stdout == positional.stdout
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_positional_run_id_still_works(command: str, tmp_path: Path) -> None:
+    """AC-2: the positional form is unchanged."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    result = runner.invoke(app, [command, "R1", "--db", str(db_path)])
+    assert result.exit_code == 0, result.stdout
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_missing_run_id_exits_2(command: str, tmp_path: Path) -> None:
+    """Neither the positional nor `--run-id` is supplied."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _init_db(db_path)
+    result = runner.invoke(app, [command, "--db", str(db_path)])
+    assert result.exit_code == 2
+    combined = result.stdout + (result.stderr or "")
+    assert "run id required" in combined
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_conflicting_run_id_and_positional_refused(
+    command: str, tmp_path: Path
+) -> None:
+    """AC-3: a positional id and a `--run-id` with a *different* value refuse
+    rather than silently preferring one."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    _seed_run(db_path, run_id="R2")
+    result = runner.invoke(
+        app, [command, "R1", "--run-id", "R2", "--db", str(db_path)]
+    )
+    assert result.exit_code == 2
+    combined = result.stdout + (result.stderr or "")
+    assert "conflicting run ids" in combined
+    assert "R1" in combined and "R2" in combined
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_matching_run_id_and_positional_succeeds(
+    command: str, tmp_path: Path
+) -> None:
+    """Supplying both forms with the *same* value is not a conflict."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    result = runner.invoke(
+        app, [command, "R1", "--run-id", "R1", "--db", str(db_path)]
+    )
+    assert result.exit_code == 0, result.stdout
+
+
+@pytest.mark.parametrize("command", ["status", "logs", "events"])
+def test_empty_run_id_flag_is_a_supplied_value_not_a_fallback(
+    command: str, tmp_path: Path
+) -> None:
+    """`--run-id ""` is *supplied* (``is not None``, not truthiness) — it must
+    not silently fall back to the positional; it hits the ordinary unknown-run
+    refusal instead."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    _seed_run(db_path, run_id="R1")
+    result = runner.invoke(
+        app, [command, "R1", "--run-id", "", "--db", str(db_path)]
+    )
+    assert result.exit_code == 2
+    combined = result.stdout + (result.stderr or "")
+    assert "conflicting run ids" in combined
 
 
 # ---------------------------------------------------------------------------
