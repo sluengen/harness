@@ -19,7 +19,7 @@ github:   # the GitHub tracker backend config, read only when tracker: github (C
   # status_field omitted → defaults to the built-in "Status" field (Todo / In Progress /
   # In Review / Done), so transitions show on the board's default view (issue #172).
 layers:
-  design_system: false
+  design_system: true   # on → design/ is the source of truth for docs/index.html (templates/design-system.md, #241)
   feature_specs: true   # on → as-built record lives in specs/features/ (templates/feature.md); the harness dogfoods the surface it publishes
 stack:
   language: Python 3.11+
@@ -50,6 +50,7 @@ paths:
   proposals: specs/proposals/
   features: specs/features/   # as-built feature specs (feature_specs layer on): verb-model, run-ledger, worktree-lifecycle, cli-surface
   decisions: specs/decisions/   # ADRs (0001+); design docs still in specs/
+  design_system: design/   # the eight-layer design system for docs/index.html (templates/design-system.md, #241)
 architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
   files:
     - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107 (CAL-1014)
