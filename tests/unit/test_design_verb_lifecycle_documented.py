@@ -226,6 +226,16 @@ _COUNT_CLAIM = re.compile(
     re.I,
 )
 
+#: Word-form numbers the claim above may spell out, normalised to int so a
+#: claim can be compared against ``len(_AUDITED_VERBS)`` without hardcoding
+#: today's cardinality as a literal — a fifth audited verb re-arms the check
+#: with no edit here.
+_NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+
+
+def _claimed_count(word: str) -> int:
+    return int(word) if word.isdigit() else _NUMBER_WORDS[word.lower()]
+
 
 def test_readme_what_it_does_bullets_every_audited_verb() -> None:
     """README's ``## What it does`` section documents every audited verb as its
@@ -271,8 +281,7 @@ def test_readme_states_no_stale_verb_cardinality() -> None:
     stale = [
         m.group(0)
         for m in _COUNT_CLAIM.finditer(text)
-        if m.group(1).lower() != str(len(_AUDITED_VERBS))
-        and m.group(1).lower() != "four"
+        if _claimed_count(m.group(1)) != len(_AUDITED_VERBS)
     ]
     assert not stale, (
         f"README.md states a stale verb/command count: {stale}. The lifecycle "
