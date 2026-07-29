@@ -211,13 +211,18 @@ def main(argv: list[str] | None = None) -> int:
             drift = check_generated_region(args.page, args.tokens)
             if drift:
                 print(
-                    f"design tokens: {args.page} has drifted from {args.tokens}:",
+                    f"design-token drift guard: {args.page} has drifted from "
+                    f"{args.tokens}:",
                     file=sys.stderr,
                 )
                 for line in drift:
                     print(f"  {line}", file=sys.stderr)
+                print(
+                    "  fix: run scripts/build_design_tokens.py to regenerate.",
+                    file=sys.stderr,
+                )
                 return 1
-            print(f"design tokens: OK — {args.page} matches {args.tokens}.")
+            print(f"design-token drift guard: OK — {args.page} matches {args.tokens}.")
             return 0
         write_generated_region(args.page, args.tokens)
         print(f"design tokens: wrote the generated region in {args.page}.")
