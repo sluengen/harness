@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.8 -->
+<!-- guidance:harness@0.2.9 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -163,6 +163,10 @@ There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktre
 **A ticket-transition failure is exit 1, not a gate refusal (#233).** The merge has already landed by the time the ticket-Done transition is attempted, so a confirmed-failed transition cannot use exit 2's "refused, nothing happened" contract — it exits **1** with `{"error": ..., "reason": ..., "merged": true, "run_id": "..."}`, `reason` being one of two tags: `ticket_transition_failed` (the tracker raised — an outage, a permission error) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the requested state never took). Re-run `harness close` once the tracker is healthy — the merge/push step is idempotent for an already-landed run branch, so the retry only needs the transition to succeed this time.
 
 A gate refusal is the gate doing its job. **Do not work around it** — do not hand-roll the merge/push/transition to "finish" the run. If the refusal is something you cannot resolve by re-running a verb (e.g. an unexpected error, or a verb that itself fails), **surface it to the human / Hermes** with the `reason` and the `run_id`; do not improvise a bypass.
+
+#### Shared invocation refusal: `no_ledger` (#244)
+
+`checkpoint`, `review`, `close`, and `design` all resolve their open run the same way, and can all refuse the same way before they even get to their own gate or refusal logic: if the resolved `.harness/harness.db` **does not exist on disk**, the verb exits `2` with `{"error": ..., "reason": "no_ledger", "ledger_path": "..."}` — distinct from `no open run found for worktree ...` (which means the ledger *was* read but held no matching open row). If you see `no_ledger`, the cause is almost always that the verb ran from the wrong place — outside the repo that owns the run, or a container mounting only a worktree whose main checkout isn't reachable — not that the run is dead. `cd` to the repo (or worktree) `start` reported, or pass the run's `--repo` / `--db` explicitly, and re-run.
 
 ### Context economy / compaction
 

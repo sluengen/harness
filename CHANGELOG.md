@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Fixed — a missing ledger now reports `no_ledger`, not `no open run found` (#244)
+- Found auditing 188 session transcripts: `no open run found for worktree ...` is the single most common verb failure in Sonnet-orchestrated sessions, and it recurs read as a dead run rather than as working-directory drift — because a `db_path` that does not exist on disk resolved to the same `None` as a ledger genuinely holding no open row. `resolve_open_run` (`harness/cli/_runs.py`) now raises `LedgerNotFoundError` (`reason="no_ledger"`, naming the resolved `ledger_path`) in place of the old `return None`; `checkpoint` / `review` / `close` / `design` all inherit the fix through `run_verb`'s shared `VerbError` handling, no per-verb edit. The ledger-present "genuinely no open run" case (`close`'s `no_run` included) is unchanged. 20 new/changed tests across `test_runs_resolver.py` and new `test_verb_ledger_missing.py`, parametrized over all four verbs. `harness` command 0.2.8 → 0.2.9 (registry 0.5.97 → 0.5.98).
+
 ### Added — skills/design-system: route to the scaffold contract when no system exists yet (#240)
 - `SKILL.md`'s two-stage lookup pointed at `CONTEXT.md` `paths.design_system` for the system itself but gave no way forward when that key is unset or dangling — the state every repo starts in (#239 shipped the thing to point at). New fallback paragraph in the lookup: stand the system up from `templates/design-system.md` and set `paths.design_system` to where it landed; restates the no-hardcode rule inline so a future trim can't drop it. An external-but-uninstalled system, or one with declared `status: scaffold` layers, does not trigger the fallback. 8 new tests in `test_design_system_fallback.py`. `design-system` 0.3.1 → 0.4.0 (registry 0.5.96 → 0.5.97), minor — a behaviour a consuming repo has never seen.
 

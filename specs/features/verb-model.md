@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-07-26
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197]
+last_updated: 2026-07-29
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244"]
 ---
 
 # Verb model — start / design / review / close
@@ -207,6 +207,8 @@ One execution model, **two triggers** that produce an identical execution path: 
 The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is [`commands/harness.md`](../../commands/harness.md). The verb implementations live in `harness/cli/start.py`, `harness/cli/design.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
 
 Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb.py`) — and translates it through one epilogue, `run_verb`, so the error-JSON shape is single-sourced rather than re-declared per verb (CAL-1013). The shape: `{"error": <message>}` on stdout under `--json`, plus a machine-readable `"reason"` **only when set** (absent, never `null`). `review` and `close` set a `reason` (the gate-refusal kinds above; an infra-wall tag for `review`); the other verbs leave it unset, keeping their bare `{"error"}` shape. The `--json` *default* stays a per-verb choice (orchestrator-consumed verbs default it on; the human-facing `reclaim` / `cancel` default it off) and is deliberately not unified. `reclaim` emits a typed `ReclaimOutput` / `SweepOutput` like every sibling verb.
+
+**A missing ledger is a distinct refusal from "no open run" (#244).** `checkpoint` / `review` / `close` / `design` all resolve their open run through the one shared `resolve_open_run` (`harness/cli/_runs.py`). Before, a `db_path` that did not exist on disk resolved to the same `None` as a ledger that was read but held no matching `status='open'` row, so every caller rendered both as `no open run found for worktree ...` — hiding the common real cause (the verb was invoked from outside the repo that owns the run) behind a message that reads like a dead or absent run. `resolve_open_run` now raises `LedgerNotFoundError` (a `VerbError` subclass, `reason="no_ledger"`, naming the resolved `ledger_path` in `extra`) in place of the old `return None`; the historical `no open run found` message and its per-verb `reason` (`close`'s `no_run`) are unchanged for the case where the ledger genuinely holds no open row. Because every caller goes through `run_verb`'s shared `VerbError` handling, the fix reaches all four verbs from the one resolver — no per-caller edit.
 
 ## Known limitations
 
