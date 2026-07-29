@@ -24,9 +24,9 @@ harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-j
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json/--no-json]   # push the run branch to origin mid-flight so committed WIP survives the container dying — pushes only the feature branch, never merges
 
 # Read / inspection — never mutate state
-harness status    <run-id>                [--db <p>] [--json]
-harness logs      <run-id>                [--follow] [--node <id>] [--db <p>]
-harness events    <run-id>                [--type <event_type>] [--after-id <n>] [--db <p>] [--json]
+harness status    [<run-id>]              [--run-id <id>] [--db <p>] [--json]   # --run-id aliases the positional; both given with differing values is refused (#245)
+harness logs      [<run-id>]              [--run-id <id>] [--follow] [--node <id>] [--db <p>]
+harness events    [<run-id>]              [--run-id <id>] [--type <event_type>] [--after-id <n>] [--db <p>] [--json]
 harness runs                              [--limit <n>] [--db <p>]
 harness worktrees list                    [--repo-root <p>] [--json]
 
