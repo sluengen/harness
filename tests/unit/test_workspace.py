@@ -90,6 +90,28 @@ def test_empty_roots_rejects_all(tmp_path: Path) -> None:
         resolve_within_allowlist(tmp_path, [])
 
 
+def test_empty_roots_refusal_names_the_wrapper(tmp_path: Path) -> None:
+    """Empty roots usually means the native CLI ran where ~/bin/harness should have (#246)."""
+    with pytest.raises(WorkspaceNotAllowed) as excinfo:
+        resolve_within_allowlist(tmp_path, [])
+    message = str(excinfo.value)
+    assert "~/bin/harness" in message
+    assert "HARNESS_WORKSPACE_ROOTS is unset or empty" in message
+
+
+def test_configured_roots_refusal_omits_the_wrapper_hint(tmp_path: Path) -> None:
+    """A genuinely-outside-the-roots refusal is not a wrong-binary story (AC-2)."""
+    root = tmp_path / "work"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    with pytest.raises(WorkspaceNotAllowed) as excinfo:
+        resolve_within_allowlist(outside, [root.resolve()])
+    message = str(excinfo.value)
+    assert "~/bin/harness" not in message
+    assert str(outside.resolve()) in message
+
+
 # ---------------------------------------------------------------------------
 # allowed_roots — env parsing
 # ---------------------------------------------------------------------------
@@ -138,8 +160,18 @@ def test_resolve_repo_root_accepts_under_configured_root(tmp_path: Path) -> None
 
 def test_resolve_repo_root_fails_closed_when_unset(tmp_path: Path) -> None:
     repo = init_repo(tmp_path / "repo")
-    with pytest.raises(WorkspaceNotAllowed):
+    with pytest.raises(WorkspaceNotAllowed) as excinfo:
         resolve_repo_root(repo, {})
+    assert "~/bin/harness" in str(excinfo.value)
+
+
+def test_resolve_repo_root_names_the_wrapper_when_set_but_empty(tmp_path: Path) -> None:
+    """Set-but-empty (whitespace/colons only) reads as unset — same hint (#246)."""
+    repo = init_repo(tmp_path / "repo")
+    env = {WORKSPACE_ROOTS_ENV: "  :  : "}
+    with pytest.raises(WorkspaceNotAllowed) as excinfo:
+        resolve_repo_root(repo, env)
+    assert "~/bin/harness" in str(excinfo.value)
 
 
 def test_resolve_repo_root_rejects_outside_configured_root(tmp_path: Path) -> None:
@@ -248,6 +280,8 @@ def test_not_a_git_top_level_is_not_a_workspace_not_allowed(tmp_path: Path) -> N
     assert not isinstance(excinfo.value, WorkspaceNotAllowed)
     # ...and the message does not borrow the allowlist's vocabulary.
     assert "outside the allowed workspace roots" not in str(excinfo.value)
+    # ...nor the wrapper hint, which only makes sense inside that story (#246).
+    assert "~/bin/harness" not in str(excinfo.value)
 
 
 def test_resolve_within_allowlist_does_not_apply_the_git_check(

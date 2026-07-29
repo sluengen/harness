@@ -46,6 +46,8 @@ def test_verb_rejects_repo_outside_allowlist(
     assert result.exit_code == 2
     # The rejection is reported on stderr and names the rejected path.
     assert str(outside.resolve()) in result.stderr
+    # Roots are configured here, so this is not a wrong-binary story (#246).
+    assert "~/bin/harness" not in result.stderr
 
 
 @pytest.mark.parametrize("verb", ["start", "review", "close"])
@@ -60,6 +62,9 @@ def test_verb_fails_closed_when_roots_unset(
 
     assert result.exit_code == 2
     assert str(repo.resolve()) in result.stderr
+    # Empty roots usually means the native CLI ran where the wrapper should
+    # have — name it (#246).
+    assert "~/bin/harness" in result.stderr
 
 
 @pytest.mark.parametrize("verb", ["start", "review", "close"])
