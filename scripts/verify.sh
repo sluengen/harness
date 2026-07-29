@@ -40,5 +40,12 @@ echo "=== landing-page drift guard ==="
 # Lean guard, not a generator — ADR 0004 (CAL-1202). Stdlib only.
 uv run --extra dev python scripts/check_landing_page_guidance.py
 
+echo "=== design-token drift guard ==="
+# Fail the gate if docs/index.html's generated :root block has drifted from
+# design/03-tokens/tokens.json — the source of truth (#242). ADR 0004,
+# narrowed (#243): the guidance catalog above stays guarded and hand-authored;
+# this block is mechanical, generated content instead.
+uv run --extra dev python scripts/build_design_tokens.py --check
+
 echo ""
 echo "All checks passed."

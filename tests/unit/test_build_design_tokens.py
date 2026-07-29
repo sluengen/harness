@@ -18,12 +18,17 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "build_design_tokens.py"
+VERIFY = REPO_ROOT / "scripts" / "verify.sh"
+PAGE = REPO_ROOT / "docs" / "index.html"
+TOKENS = REPO_ROOT / "design" / "03-tokens" / "tokens.json"
 
 
 def _module():
@@ -251,3 +256,83 @@ def test_check_reports_drift(tmp_path: Path) -> None:
     drift = bdt.check_generated_region(page_path, tokens_path)
     assert drift, "changed token must be reported as drift"
     assert any("--build" in d for d in drift)
+
+
+# --------------------------------------------------------------------------- #
+# #243 AC-1 — the gate step is wired into scripts/verify.sh
+# --------------------------------------------------------------------------- #
+
+
+def test_check_wired_into_verify_sh() -> None:
+    """``scripts/verify.sh`` invokes the drift guard, so the gate runs it."""
+    verify = VERIFY.read_text(encoding="utf-8")
+    assert "build_design_tokens.py --check" in verify, (
+        "scripts/verify.sh must invoke the design-token drift guard"
+    )
+
+
+def test_check_cli_passes_on_real_page() -> None:
+    """AC-1: the real, committed page matches tokens.json — the gate step passes."""
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--check"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"--check failed on the real page (exit {result.returncode}):\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# #243 AC-2 — a hand-edit to the generated region fails the gate
+# --------------------------------------------------------------------------- #
+
+
+def test_check_cli_fails_on_hand_edited_region(tmp_path: Path) -> None:
+    """A hand-edit inside the generated region fails ``--check``, naming the
+    drifted property and the regenerating command."""
+    page_path = tmp_path / "index.html"
+    page_path.write_text(
+        PAGE.read_text(encoding="utf-8").replace("--ink:#0e1430", "--ink:#000000"),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--check", "--page", str(page_path), "--tokens", str(TOKENS)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "a hand-edited region must fail the gate"
+    output = result.stdout + result.stderr
+    assert "--ink" in output, "the failure must name the drifted property"
+    assert "build_design_tokens.py" in output, (
+        "the failure must name the regenerating command"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# #243 AC-3 — a tokens.json change without regenerating fails the gate
+# --------------------------------------------------------------------------- #
+
+
+def test_check_cli_fails_when_tokens_changed_without_regenerating(tmp_path: Path) -> None:
+    """A ``tokens.json`` edit the page was never regenerated against fails
+    ``--check`` the same way a hand-edit does — the check is symmetric."""
+    tokens = _tokens()
+    tokens["color"]["primitive"]["build"]["base"]["value"] = "#123456"
+    tokens_path = tmp_path / "tokens.json"
+    tokens_path.write_text(json.dumps(tokens))
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--check", "--page", str(PAGE), "--tokens", str(tokens_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "an unregenerated tokens.json change must fail the gate"
+    assert "--build" in (result.stdout + result.stderr), (
+        "the failure must name the drifted property"
+    )
