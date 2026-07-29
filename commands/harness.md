@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.9 -->
+<!-- guidance:harness@0.2.10 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -64,7 +64,7 @@ A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedi
 
 **Run it as a single top-level background command — never chain a bare `&` inside a command that is *also* launched with your runtime's own background flag (#236).** A nested-background invocation detaches a process your session no longer tracks: it looks dead, but it is often still running to completion. If a redirected output file reads empty shortly after launch, that means **not finished yet**, never *dead* — wait and re-read, or check `harness events <run_id> --type design`, rather than relaunching. If two invocations do run, the **last one to finish silently becomes the run's bound design**, and it may not be the one you read — `harness design`'s own output then carries `concurrent_prior_at` (and the underlying `design` event does too) as the machine-readable warning that this happened; a stderr `warning:` line says the same. The recovery is not a bypass: run `harness design` once, cleanly, and implement from *that* output — the idempotent re-run contract below is unchanged.
 
-**Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design.
+**Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design. **Stage that file inside the repo tree** (e.g. under the worktree) — the `~/bin/harness` wrapper mounts only the invoking CWD into each verb's container, so a host-only path like `/tmp` never resolves there. `review` refuses a `--design-file` outside that mount up front (`reason=design_file_outside_workspace`, AC-2 #247) rather than silently reviewing design-blind.
 
 The stage is **unconditional** — it runs for every ticket, whatever its judged difficulty; the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005 semantics are untouched).
 
@@ -94,14 +94,15 @@ harness review --run-id <run_id> --engine codex   # cross-model review — host-
 ```bash
 bash <your verify gate> > /tmp/gate.log 2>&1; echo $?     # whatever CONTEXT.md → verify: says
 harness review --run-id <run_id> --gate-exit <code> --gate-log /tmp/gate.log \
-  --design-file /tmp/design.md                            # Step 1.5's design_markdown
+  --design-file design.md                                 # Step 1.5's design_markdown, staged in the worktree — NOT /tmp
 ```
 
-`--design-file` carries the `design_markdown` Step 1.5 printed, and the recorded `design_hash` authenticates it: the engine then reviews the diff **against the design**, so the fix loop converges on conformance instead of re-deriving intent each cycle. It is **enrichment, not enforcement** — an absent, unreadable, or hash-mismatched file drops the context rather than failing the run (a supplied-but-unmatched file warns on stderr), and it can neither satisfy nor bypass the `no_design` check, which keys on the ledger alone. Whether a review actually saw the design is recorded on the `review` event as `design_context`.
+`--design-file` carries the `design_markdown` Step 1.5 printed, and the recorded `design_hash` authenticates it: the engine then reviews the diff **against the design**, so the fix loop converges on conformance instead of re-deriving intent each cycle. It is **enrichment, not enforcement** — an unreadable or hash-mismatched file (both inside the workspace) drops the context rather than failing the run (a supplied-but-unmatched file warns on stderr), and it can neither satisfy nor bypass the `no_design` check, which keys on the ledger alone. A path the container cannot even resolve under its mounted workspace is a *different* case — a caller error, refused outright before the engine runs (see the `design_file_outside_workspace` refusal below), rather than a design to drop. Whether a review actually saw the design — and, if not, why (`not_supplied` / `unreadable` / `hash_mismatch` / `design_failed`) — is recorded on the `review` event as `design_context` / `design_context_reason` (AC-1 #247).
 
 The verb does **not** run the gate itself — the toolchain lives on your side, not in the verb's container, and no image can carry every target repo's toolchain (an Xcode target never runs in a Linux container). What the verb does is refuse to certify what it cannot show was verified:
 
 - **No recorded `design` event for the run** → exit `5`, `reason=no_design`, checked **first** (a run that never recorded a design stage is malformed whatever its gate colour — root cause before symptom). Run Step 1.5 and review again; a *failed* design attempt satisfies it.
+- **`--design-file` names a path outside the mounted workspace** → exit `5`, `reason=design_file_outside_workspace`, checked before the file is even opened. The message names the rejected path and the workspace root(s) — stage the file inside the repo tree and re-run.
 - **No `--gate-exit` while `verify:` is configured** → exit `5`, `reason=no_gate_evidence`. Silence is not a pass.
 - **`--gate-exit` non-zero** → exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`. **No engine, no verdict recorded.** Fix what the tail reports and re-run.
 - **Green** → the engine runs, and the `review` event records `gate_ran`, `gate_command`, `gate_exit_code`, and the log tail, bound to the reviewed SHA — so a recorded `pass` means *the gate ran green*, not *a reviewer read the diff*.

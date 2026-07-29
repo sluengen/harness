@@ -119,6 +119,7 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+from harness.workspace import WorkspaceNotAllowed, allowed_roots, resolve_within_allowlist
 
 # The dimension resolve_model_tier reads for this verb (#177) — the review-tier
 # label family (``review:<tier>``), independent of the build-tier family the
@@ -156,6 +157,7 @@ __all__ = [
     "GATE_FAILED_REASON",
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
+    "DESIGN_FILE_OUTSIDE_WORKSPACE_REASON",
 ]
 
 # The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
@@ -269,14 +271,16 @@ EXIT_INFRA_FAILURE = 3
 EXIT_BREAKER_TRIPPED = 4
 
 # Exit code for a run that cannot be certified as reviewable — the verify gate
-# went red or supplied no evidence (CAL-1082), or the run recorded no design
-# attempt (#212, ADR 0007 D3). All three mean there is nothing worth reviewing:
-# the verb refuses BEFORE the engine, records no review event, and spends no
-# tokens. One code, because the response is the same shape in each case (supply
-# the missing evidence and review again); the machine-readable ``reason`` names
-# which. Distinct from every other code — 2 is already the invocation error — so
-# the orchestrator can tell an uncertifiable run from a rejected diff, an infra
-# wall, or a bounded-out loop.
+# went red or supplied no evidence (CAL-1082), the run recorded no design
+# attempt (#212, ADR 0007 D3), or ``--design-file`` names a path outside the
+# workspace allowlist (AC-2, #247). All four mean there is nothing worth
+# reviewing, or the request cannot be honoured as given: the verb refuses
+# BEFORE the engine, records no review event, and spends no tokens. One code,
+# because the response is the same shape in each case (supply the missing
+# evidence, or fix the input, and review again); the machine-readable
+# ``reason`` names which. Distinct from every other code — 2 is already the
+# invocation error — so the orchestrator can tell an uncertifiable run from a
+# rejected diff, an infra wall, or a bounded-out loop.
 EXIT_GATE_FAILED = 5
 
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
@@ -289,6 +293,15 @@ GATE_FAILED_REASON = "gate_failed"
 # supplied (CAL-1082). The orchestrator must run the gate and pass the result;
 # silence is not a pass.
 NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
+
+# Machine-readable ``reason`` for a ``--design-file`` that resolves outside the
+# workspace allowlist (AC-2, #247). Distinct from the ADR 0007 design-context
+# drop: an unreachable path is the wrong flag value, not an unusable design to
+# degrade past, so it is refused as a caller error BEFORE the engine runs and
+# BEFORE ``_read_design_file`` would otherwise map it to the same "unreadable"
+# outcome as a legitimately stale in-workspace file. Shares
+# ``EXIT_GATE_FAILED`` — same response shape (fix the input, review again).
+DESIGN_FILE_OUTSIDE_WORKSPACE_REASON = "design_file_outside_workspace"
 
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
@@ -530,6 +543,34 @@ async def _run_review(
     #     neither satisfy nor bypass it. The flag only supplies the design text
     #     for context, and only a hash that matches the recorded event's lets it
     #     reach the prompt.
+    #
+    #     Before reading it at all, ``--design-file`` is checked against the
+    #     workspace allowlist (AC-2, #247): a path that cannot resolve under it
+    #     is a caller error — most often a host-only path like ``/tmp`` the
+    #     harness wrapper never mounts into the container — not an unusable
+    #     design to degrade past. Refusing it here, distinctly from the
+    #     ADR 0007 drop below, keeps "wrong flag value" from silently reading
+    #     identically to "a design that went stale" (the gap AC-1 also closes).
+    #     Reuses :func:`harness.workspace.resolve_within_allowlist`, the same
+    #     ``HARNESS_WORKSPACE_ROOTS`` boundary every verb's ``--repo`` is
+    #     already checked against, so "the resolved workspace root" names one
+    #     boundary, not a second ad hoc one.
+    if design_file is not None:
+        try:
+            resolve_within_allowlist(design_file, allowed_roots())
+        except WorkspaceNotAllowed as exc:
+            roots_desc = ", ".join(str(r) for r in exc.roots) if exc.roots else "none configured"
+            raise _ReviewError(
+                f"--design-file {design_file} resolves to {exc.path}, which is "
+                f"not reachable under the workspace root(s) this container can "
+                f"read ({roots_desc}). The harness wrapper mounts only the repo "
+                f"root into the container — stage the design file inside the "
+                f"repo tree (e.g. under the worktree), not a host-only path "
+                f"like /tmp.",
+                EXIT_GATE_FAILED,
+                reason=DESIGN_FILE_OUTSIDE_WORKSPACE_REASON,
+            ) from exc
+
     design_event = await _read_latest_design_event(db_path, resolved_run_id)
     design_gate = resolve_design_gate(
         design_event, await asyncio.to_thread(_read_design_file, design_file)
@@ -716,6 +757,7 @@ async def _run_review(
         created_at=created_at,
         gate_ran=gate_ran,
         design_context=design_gate.design_markdown is not None,
+        design_context_reason=design_gate.context_reason,
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,

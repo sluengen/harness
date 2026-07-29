@@ -138,6 +138,40 @@ def test_review_event_data_includes_set_optionals() -> None:
     assert dumped["gate_exit_code"] == 0
 
 
+def test_review_event_data_omits_design_context_reason_by_default() -> None:
+    """AC-1 (#247): the reason a design was not applied is optional and absent
+    on a payload built before the field existed, or on a review that applied
+    the design successfully — only the *unset* case had no reason to record."""
+    dumped = ReviewEventData(
+        run_id="R1",
+        reviewed_sha="abc123",
+        verdict="pass",
+        issues=[],
+        engine="claude",
+        convergence_check_required=False,
+        created_at="2026-06-10T00:00:00Z",
+        gate_ran=False,
+    ).model_dump(exclude_none=True)
+
+    assert "design_context_reason" not in dumped
+
+
+def test_review_event_data_includes_design_context_reason_when_set() -> None:
+    dumped = ReviewEventData(
+        run_id="R1",
+        reviewed_sha="abc123",
+        verdict="pass",
+        issues=[],
+        engine="claude",
+        convergence_check_required=False,
+        created_at="2026-06-10T00:00:00Z",
+        gate_ran=False,
+        design_context_reason="hash_mismatch",
+    ).model_dump(exclude_none=True)
+
+    assert dumped["design_context_reason"] == "hash_mismatch"
+
+
 def test_design_event_data_omits_unset_concurrency_fields() -> None:
     """#236: ``invoked_at``/``concurrent_prior_at`` default absent, not null —
     the normal (non-concurrent) design event's key set stays unchanged."""
