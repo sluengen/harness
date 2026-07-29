@@ -233,8 +233,18 @@ _COUNT_CLAIM = re.compile(
 _NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 
 
-def _claimed_count(word: str) -> int:
-    return int(word) if word.isdigit() else _NUMBER_WORDS[word.lower()]
+def _stale_count_claims(text: str, expected: int) -> list[str]:
+    """Every ``_COUNT_CLAIM`` hit in *text* whose number does not equal
+    *expected*. An unmapped word is ignored, not raised on — ``_COUNT_CLAIM``'s
+    closed word set already keeps the regex from matching arbitrary prose, so
+    this stays defensive rather than relying on that exclusively."""
+    out = []
+    for m in _COUNT_CLAIM.finditer(text):
+        tok = m.group(1).lower()
+        n = int(tok) if tok.isdigit() else _NUMBER_WORDS.get(tok)
+        if n is not None and n != expected:
+            out.append(m.group(0))
+    return out
 
 
 def test_readme_what_it_does_bullets_every_audited_verb() -> None:
@@ -277,12 +287,7 @@ def test_readme_loop_fences_invoke_every_audited_verb() -> None:
 def test_readme_states_no_stale_verb_cardinality() -> None:
     """README states no stale verb/command count (the ``:45``/``:94`` defect:
     "three verbs" / "three commands" after `design` joined the lifecycle)."""
-    text = _readme_live_text()
-    stale = [
-        m.group(0)
-        for m in _COUNT_CLAIM.finditer(text)
-        if _claimed_count(m.group(1)) != len(_AUDITED_VERBS)
-    ]
+    stale = _stale_count_claims(_readme_live_text(), len(_AUDITED_VERBS))
     assert not stale, (
         f"README.md states a stale verb/command count: {stale}. The lifecycle "
         f"now has {len(_AUDITED_VERBS)} verbs (#249)."
