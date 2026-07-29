@@ -38,6 +38,7 @@ from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 
 __all__ = [
     "DEFAULT_ENGINE",
+    "DesignContextReason",
     "DesignGate",
     "Engine",
     "ModelTier",
@@ -162,19 +163,33 @@ def build_review_prompt(design_markdown: str | None = None) -> str:
 #: a degradation rather than a second refusal.
 NO_DESIGN_REASON = "no_design"
 
+#: Why a review proceeded WITHOUT design context, when it did (AC-1, #247) —
+#: recorded alongside ``design_context`` so "did the linkage stop working, and
+#: why" is a ledger question, not a console-noise one. ``design_failed``: the
+#: run's design attempt did not succeed (ADR 0007 D4). ``not_supplied``: no
+#: ``--design-file`` was passed. ``unreadable``: a path was passed but could
+#: not be read — see :data:`DESIGN_FILE_OUTSIDE_WORKSPACE_REASON` for the
+#: subset of this now caught earlier, as a refusal. ``hash_mismatch``: a
+#: readable file's content hash does not match the recorded ``design_hash``
+#: (or none was recorded to check against).
+DesignContextReason = Literal["design_failed", "not_supplied", "unreadable", "hash_mismatch"]
+
 
 class DesignGate(BaseModel):
     """What the design stage's record says this review may do.
 
     One refusal (:data:`NO_DESIGN_REASON`), or a ``design_markdown`` to review
     against, or neither — proceed with no design context, which is what a
-    recorded *failed* attempt earns. A ``warning`` may accompany the last case.
+    recorded *failed* attempt earns. A ``warning`` may accompany the last case,
+    and ``context_reason`` (AC-1, #247) always does, naming *why* no design
+    reached the engine — absent only when ``design_markdown`` is set.
     """
 
     refusal_reason: str | None = None
     refusal_message: str | None = None
     design_markdown: str | None = None
     warning: str | None = None
+    context_reason: DesignContextReason | None = None
 
 
 def resolve_design_gate(
@@ -188,19 +203,27 @@ def resolve_design_gate(
     not be read, so an unreadable file is reported rather than passed over as
     though nothing was supplied.
 
-    Four outcomes:
+    Five outcomes, each recorded on the returned :class:`DesignGate` as
+    ``context_reason`` (:data:`DesignContextReason`, AC-1 #247) when no design
+    reaches the engine — a ``None`` reason means the last outcome, the design
+    applied:
 
     * **no event** → refuse :data:`NO_DESIGN_REASON`. The design stage runs on
       every run (ADR 0007 D1), so its absence means it was skipped.
-    * **a ``failed`` event** → proceed with no context. D4 is explicit that the
-      check is *attempted and recorded*, not *succeeded*; there is no design to
-      review against, and any text supplied for one is ignored, since no
-      recorded hash could authenticate it.
+    * **a ``failed`` event** → proceed with no context, reason
+      ``"design_failed"``. D4 is explicit that the check is *attempted and
+      recorded*, not *succeeded*; there is no design to review against, and
+      any text supplied for one is ignored, since no recorded hash could
+      authenticate it.
+    * **an ``ok`` event + no text supplied** → proceed with no context, reason
+      ``"not_supplied"``.
+    * **an ``ok`` event + text that could not be read** (the empty-string
+      sentinel) → proceed with no context, reason ``"unreadable"``.
+    * **an ``ok`` event + text that does not match the recorded hash** (or the
+      event recorded none to check against) → proceed with no context, reason
+      ``"hash_mismatch"``.
     * **an ``ok`` event + text whose hash matches** → that design becomes the
-      context the engine reviews against.
-    * **an ``ok`` event + no text, or text that does not match (or is
-      unreadable, or has no recorded hash to check against)** → proceed with
-      **no** context.
+      context the engine reviews against; ``context_reason`` stays ``None``.
 
     **Enforcement refuses; context degrades.** The two halves of ADR 0007's
     review linkage have deliberately different postures. Enforcement keys on the
@@ -233,20 +256,32 @@ def resolve_design_gate(
             ),
         )
     if event.get(DESIGN_STATUS_KEY) != "ok":
-        return DesignGate()
+        return DesignGate(context_reason="design_failed")
     if supplied_design is None:
-        return DesignGate()
+        return DesignGate(context_reason="not_supplied")
+    if supplied_design == "":
+        return DesignGate(
+            context_reason="unreadable",
+            warning=(
+                "the file passed to --design-file could not be read (it does "
+                "not exist, or is not accessible from this workspace). "
+                "Reviewing against the ticket alone rather than against an "
+                "unverified design — pass the `design_markdown` from this "
+                "run's `harness design` output, staged inside the repo tree."
+            ),
+        )
     recorded_hash = event.get(DESIGN_HASH_KEY)
     if not recorded_hash or design_content_hash(supplied_design) != recorded_hash:
         return DesignGate(
+            context_reason="hash_mismatch",
             warning=(
                 "the design supplied with --design-file is not the one this run "
-                "recorded: it could not be read, or its content hash does not "
-                "match the design event's design_hash. Reviewing against the "
-                "ticket alone rather than against an unverified design — pass "
-                "the `design_markdown` from this run's `harness design` output, "
-                "or re-run `harness design`."
-            )
+                "recorded: its content hash does not match the design event's "
+                "design_hash. Reviewing against the ticket alone rather than "
+                "against an unverified design — pass the `design_markdown` "
+                "from this run's `harness design` output, or re-run "
+                "`harness design`."
+            ),
         )
     return DesignGate(design_markdown=supplied_design)
 

@@ -64,6 +64,17 @@ class ReviewEventData(BaseModel):
     than warned about — which makes "did the linkage stop working?" a ledger
     question instead of a console-noise one. Nothing gates on it: it is audit,
     where the enforcement lives on the ``design`` event's presence.
+
+    ``design_context_reason`` (AC-1, #247) is the machine-readable *why* behind
+    a ``False`` ``design_context``: one of the
+    :data:`~harness.cli.review_protocol.DesignContextReason` values
+    (``design_failed`` / ``not_supplied`` / ``unreadable`` / ``hash_mismatch``).
+    Optional and absent whenever ``design_context`` is ``True`` — a success has
+    no reason to record — and on any event written before this field existed.
+    Distinguishing the reasons closes the gap where "never passed
+    ``--design-file``" and "passed one the container could not read" recorded
+    identically: before, only the stderr warning (easy to miss in captured
+    output) told the two apart, and only for the read-failure case.
     """
 
     run_id: str
@@ -75,6 +86,7 @@ class ReviewEventData(BaseModel):
     created_at: str
     gate_ran: bool
     design_context: bool = False
+    design_context_reason: str | None = None
     gate_command: str | None = None
     gate_exit_code: int | None = None
     gate_reason: str | None = None
