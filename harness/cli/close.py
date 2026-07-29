@@ -96,6 +96,7 @@ from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.close_tracker import TicketNotDone, transition_ticket_done
 from harness.events.payloads import (
     REVIEW_GATE_RAN_PATH,
     REVIEW_GATE_REASON_PATH,
@@ -107,12 +108,7 @@ from harness.events.schema import EVENT_TYPES
 from harness.gate import GATE_NOT_CONFIGURED_REASON
 from harness.state import store
 from harness.tracker import Tracker, tracker_client
-from harness.tracker_errors import (
-    TrackerConfigError,
-    TrackerNotFound,
-    TrackerRequestError,
-    TrackerTransitionUnconfirmed,
-)
+from harness.tracker_errors import TrackerConfigError
 
 __all__ = ["close_command", "CloseOutput"]
 
@@ -302,24 +298,21 @@ async def _run_close(
     # 7. Transition the ticket to Done; the backend confirms the write took off
     #    that mutation's own response (#233). Skipped tracker-less. The merge
     #    already landed, so a confirmed failure is exit 1, not a gate refusal:
-    #    re-running close recovers (merge/push is idempotent). Check
-    #    ``TrackerTransitionUnconfirmed`` first — it subclasses the other.
+    #    re-running close recovers (merge/push is idempotent). The tracker's
+    #    failure-shape mapping lives in ``close_tracker`` (#251); this verb maps
+    #    its ``TicketNotDone.unconfirmed`` flag to the exit-1 ``reason`` tag.
     ticket_done = False
     if client is not None:
         try:
-            await client.transition_to_done(ticket)
-        except TrackerTransitionUnconfirmed as exc:
+            await transition_ticket_done(client, ticket)
+        except TicketNotDone as exc:
+            reason: FailureReason = (
+                "ticket_transition_unconfirmed" if exc.unconfirmed else "ticket_transition_failed"
+            )
             raise _CloseError(
-                f"ticket {ticket} was not confirmed Done: {exc}; the merge landed",
+                f"{exc.detail}; the merge landed",
                 1,
-                reason="ticket_transition_unconfirmed",
-                extra={"merged": True, "run_id": resolved_run_id},
-            ) from exc
-        except (TrackerNotFound, TrackerRequestError) as exc:
-            raise _CloseError(
-                f"failed to transition ticket {ticket} to Done: {exc}; the merge landed",
-                1,
-                reason="ticket_transition_failed",
+                reason=reason,
                 extra={"merged": True, "run_id": resolved_run_id},
             ) from exc
         ticket_done = True

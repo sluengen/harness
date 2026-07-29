@@ -54,7 +54,7 @@ paths:
 architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
   files:
     - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107 (CAL-1014)
-    - harness/cli/close.py   # the close gate (_evaluate_gate, _has_gate_evidence) + ledger finalization (_mark_run_closed); the git integrate/merge/push concern split out to close_merge.py in CAL-1154 (throwaway-worktree merge), retiring the # size: justification (now under 500); tied for the most churn in the package (CAL-1139)
+    - harness/cli/close.py   # the close gate (_evaluate_gate, _has_gate_evidence) + ledger finalization (_mark_run_closed); the git integrate/merge/push concern split out to close_merge.py in CAL-1154 (throwaway-worktree merge), and the tracker Done-transition mapping split out to close_tracker.py in #251, both retiring the # size: justification (now ~485 lines); tied for the most churn in the package (CAL-1139)
 env:
   file: .env
   linear_token: LINEAR_API_KEY

@@ -2,7 +2,7 @@
 name: architecture
 description: Use when making a cross-cutting design decision — data models, contracts, interfaces — and recording it in the spec it governs. Load when shaping how something is built; every decision should trace to engineering-principles.
 ---
-<!-- guidance:architecture@0.6.0 -->
+<!-- guidance:architecture@0.7.0 -->
 # Architecture
 
 How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
@@ -51,6 +51,8 @@ The list is **repo-owned**: a repo opts in by naming its *own* gravity wells, an
 2. **An explicit deferral** — record *why* extraction is deferred this time (no safe seam in this diff, too risky without a redesign, blocked on a decision). A named reason, not silence.
 
 Either outcome is valid; an *unrecorded* one is not. Touching a gravity well is never invisible — the change either improves the seam or states on the record why it did not.
+
+**Who carries the section.** Review is the last checkpoint, not the only one — where the repo's process runs an unconditional design stage before the build (a repo self-hosting the harness verb loop — skip this where it does not apply), that stage is the earlier, mechanized carrier: when the design's grounding diff or ticket touches `architecture_watchlist.files`, its output should include the `Watchlist trigger` section, the same way its other sections are already conditioned on what the change touches. The section stays **conditional** — present only when the touched set intersects the watchlist, absent otherwise. Review then *confirms* the record is there rather than being the first and only place it could have been remembered; a repo with no such stage is unaffected, and the builder stays the carrier with review as the sole confirmation, exactly as today.
 
 **Computing the touched set (the reviewer).** Compare the actual diff against the repo's **integration branch** (`CONTEXT.md` → `branches.integration`):
 
