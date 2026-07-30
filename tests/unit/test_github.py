@@ -38,6 +38,7 @@ from harness.tracker_errors import (
     TrackerRequestError,
     TrackerTransitionUnconfirmed,
 )
+from harness.tracker_queue import QueueMembership
 
 # ---------------------------------------------------------------------------
 # Test harness: a fake GraphQL transport dispatching on operation name.
@@ -460,52 +461,69 @@ def test_unknown_owner_raises_not_found() -> None:
 
 
 # ---------------------------------------------------------------------------
-# fetch_issue_project + fetch_reclaimable_issues
+# fetch_queue_membership + fetch_reclaimable_issues
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_issue_project_returns_board_title_when_on_board() -> None:
-    client = _client(
+def _membership_client(project_node: dict[str, str] | None) -> Any:
+    """A client whose issue carries ``project_node`` as its one project item."""
+    nodes = [] if project_node is None else [{"project": project_node}]
+    return _client(
         {
             "OwnerKind": _OWNER_USER,
             "ProjectMeta": _PROJECT_META,
             "IssueProjects": {
                 "data": {
                     "repository": {
-                        "issue": {
-                            "id": "I_1",
-                            "projectItems": {
-                                "nodes": [{"project": {"id": "PVT_1", "title": "Build"}}]
-                            },
-                        }
+                        "issue": {"id": "I_1", "projectItems": {"nodes": nodes}}
                     }
                 }
             },
         }
     )
-    assert _run(client.fetch_issue_project("1")) == "Build"
 
 
-def test_fetch_issue_project_none_when_not_on_board() -> None:
-    client = _client(
-        {
-            "OwnerKind": _OWNER_USER,
-            "ProjectMeta": _PROJECT_META,
-            "IssueProjects": {
-                "data": {
-                    "repository": {
-                        "issue": {
-                            "id": "I_1",
-                            "projectItems": {
-                                "nodes": [{"project": {"id": "OTHER", "title": "Elsewhere"}}]
-                            },
-                        }
-                    }
-                }
-            },
-        }
+def test_fetch_queue_membership_on_board_reports_the_board_title() -> None:
+    client = _membership_client({"id": "PVT_1", "title": "Build"})
+    assert _run(client.fetch_queue_membership("1", project=None)) == QueueMembership(
+        on_queue=True, project="Build"
     )
-    assert _run(client.fetch_issue_project("1")) is None
+
+
+def test_fetch_queue_membership_off_board_is_not_on_queue() -> None:
+    client = _membership_client({"id": "OTHER", "title": "Elsewhere"})
+    assert _run(client.fetch_queue_membership("1", project=None)) == QueueMembership(
+        on_queue=False, project=None
+    )
+
+
+def test_fetch_queue_membership_ignores_a_mismatched_configured_project() -> None:
+    """The board *is* the queue on GitHub, so ``project`` is ignored (#248).
+
+    Before #248 the caller compared the board title against ``repo.project``.
+    Because the board is resolved from ``repo.github`` independently of
+    ``repo.project``, that comparison could only ever produce a **false**
+    refusal — a descriptive ``repo.project`` that does not match the board title
+    verbatim — and could never catch an off-queue issue the board check does not
+    already catch. This pins that a mismatch is no longer a refusal.
+    """
+    client = _membership_client({"id": "PVT_1", "title": "Build"})
+    assert _run(
+        client.fetch_queue_membership("1", project="Something Descriptive")
+    ) == QueueMembership(on_queue=True, project="Build")
+
+
+def test_fetch_queue_membership_on_board_with_an_empty_title() -> None:
+    """On the board but the title is blank — ``on_queue`` without a project name.
+
+    The combination the old ``str | None`` return could not express: it had to
+    report ``None``, which the caller read as "not on the Build queue" and
+    refused.
+    """
+    client = _membership_client({"id": "PVT_1", "title": ""})
+    assert _run(client.fetch_queue_membership("1", project=None)) == QueueMembership(
+        on_queue=True, project=None
+    )
 
 
 def test_fetch_reclaimable_filters_to_transient_states() -> None:

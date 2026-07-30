@@ -34,6 +34,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from harness.tracker_queue import QueueMembership
 
 cli_runner = CliRunner()
 
@@ -72,21 +73,131 @@ def _write_context(
 def _make_stub(
     *,
     ticket_project: str | None = _BUILD_PROJECT,
+    on_queue: bool = True,
     not_found: bool = False,
 ) -> MagicMock:
-    """A LinearClient mock: ``fetch_issue_project`` returns the ticket's project (or
-    raises ``LinearNotFound``); the comment + label primitives are no-op AsyncMocks."""
+    """A LinearClient mock: ``fetch_queue_membership`` answers the Build-queue
+    question (or raises ``LinearNotFound``); the comment + label primitives are
+    no-op AsyncMocks.
+
+    Since #248 the *decision* lives in the backend, not the verb, so the stub
+    states it directly: ``on_queue`` is the answer, ``ticket_project`` the
+    container the backend reports. The real per-backend comparison is pinned at
+    the backend level (``test_linear.py`` / ``test_github.py``), which is where it
+    now belongs.
+    """
     from harness.linear import LinearNotFound
 
     mock = MagicMock()
     if not_found:
-        mock.fetch_issue_project = AsyncMock(side_effect=LinearNotFound("nope"))
+        mock.fetch_queue_membership = AsyncMock(side_effect=LinearNotFound("nope"))
     else:
-        mock.fetch_issue_project = AsyncMock(return_value=ticket_project)
+        mock.fetch_queue_membership = AsyncMock(
+            return_value=QueueMembership(on_queue=on_queue, project=ticket_project)
+        )
     mock.post_comment = AsyncMock(return_value=None)
     mock.apply_label = AsyncMock(return_value=None)
     mock.assign_to_viewer = AsyncMock(return_value=None)
     return mock
+
+
+def test_defer_unscoped_refuses_a_ticket_off_the_queue(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Unset scope is not "accept anything" — the seam still bounds the write.
+
+    The membership gate is the only thing between an operator-supplied ticket
+    identifier and three tracker writes, so removing the `repo.project`
+    precondition must not remove the bound: on Linear it moves from project to
+    team. Nothing is written when the seam says off-queue.
+    """
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = _make_stub(on_queue=False, ticket_project=None)
+
+    result = _invoke(
+        ["defer", "OTHER-1", "--reason", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_on_build_queue"
+    stub.post_comment.assert_not_awaited()
+    stub.apply_label.assert_not_awaited()
+    stub.assign_to_viewer.assert_not_awaited()
+    assert _fetch_defer_events(db) == []
+
+
+def test_defer_unscoped_refusal_names_the_whole_tracker_queue(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The refusal says which queue was in force — `reclaim`'s phrasing."""
+    _write_context(tmp_path, project=None)
+    stub = _make_stub(on_queue=False, ticket_project=None)
+
+    result = _invoke(
+        ["defer", "OTHER-1", "--reason", "x", "--db", str(tmp_path / "h.db")],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2
+    assert "the whole tracker queue" in result.output
+
+
+def test_defer_unscoped_human_output_never_prints_none(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The non-JSON line must not interpolate a bare `None` (#248)."""
+    _write_context(tmp_path, project=None)
+    stub = _make_stub(ticket_project=None)
+
+    result = _invoke(
+        ["defer", "ERP-221", "--reason", "x", "--db", str(tmp_path / "h.db")],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "None" not in result.output
+    assert "the whole tracker queue" in result.output
+
+
+def test_defer_unscoped_records_the_tickets_own_project(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """With no scope the effective project is the ticket's own, not `null`."""
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = _make_stub(ticket_project="Design System")
+
+    result = _invoke(
+        ["defer", "ERP-209", "--reason", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["project"] == "Design System"
+    assert _fetch_defer_events(db)[0]["project"] == "Design System"
+
+
+def test_defer_scoped_records_the_configured_project_not_the_tickets(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Scoped, the configured value wins — so the ledger is byte-identical to
+    before #248 for every repo that already sets `repo.project`."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    # A GitHub-shaped case: the backend reports the board title, which need not
+    # equal a descriptive `repo.project`.
+    stub = _make_stub(ticket_project="Board Title")
+
+    result = _invoke(
+        ["defer", "CAL-1", "--reason", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["project"] == _BUILD_PROJECT
+    assert _fetch_defer_events(db)[0]["project"] == _BUILD_PROJECT
 
 
 def _make_labelled_stub(existing_labels: list[str]) -> MagicMock:
@@ -94,7 +205,9 @@ def _make_labelled_stub(existing_labels: list[str]) -> MagicMock:
     can assert pre-existing labels survive a new label being additively applied
     — the CLI-level shape of "additive", not just the mutation name."""
     mock = MagicMock()
-    mock.fetch_issue_project = AsyncMock(return_value=_BUILD_PROJECT)
+    mock.fetch_queue_membership = AsyncMock(
+        return_value=QueueMembership(on_queue=True, project=_BUILD_PROJECT)
+    )
     mock.post_comment = AsyncMock(return_value=None)
     mock.assign_to_viewer = AsyncMock(return_value=None)
     labels = list(existing_labels)
@@ -134,6 +247,53 @@ def _fetch_defer_events(db_path: Path) -> list[dict[str, Any]]:
         return [json.loads(r[0]) for r in rows]
 
     return _run_sync(_select())  # type: ignore[return-value]
+
+
+# ===========================================================================
+# AC: an unscoped repo (`repo.project` absent) can still triage (#248)
+# ===========================================================================
+
+
+def test_defer_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) -> None:
+    """`repo.project` absent is the whole tracker queue, not a refusal (#248).
+
+    The ticket's repro: #174/#175/#176 made scope nullable everywhere *except*
+    the two triage verbs, so a repo that adopted the unscoped mode got a working
+    build loop and simultaneously lost both halves of triage. Nothing could be
+    deferred and nothing already held could be released — through the audited
+    path — leaving the held pile drainable only by hand-rolled tracker writes,
+    which is exactly what these verbs exist to replace.
+
+    The seam answers membership for its own queue, so with no scope configured
+    the verb writes normally and records the *ticket's own* project — here
+    ``None``, a Linear issue inside the team but attached to no project.
+    """
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = MagicMock()
+    stub.fetch_queue_membership = AsyncMock(
+        return_value=QueueMembership(on_queue=True, project=None)
+    )
+    stub.post_comment = AsyncMock(return_value=None)
+    stub.apply_label = AsyncMock(return_value=None)
+    stub.assign_to_viewer = AsyncMock(return_value=None)
+
+    result = _invoke(
+        ["defer", "ERP-221", "--reason", "needs a call", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "deferred"
+    assert payload["project"] is None
+    stub.post_comment.assert_awaited_once()
+    stub.apply_label.assert_awaited_once()
+    stub.assign_to_viewer.assert_awaited_once()
+    events = _fetch_defer_events(db)
+    assert len(events) == 1
+    assert events[0]["project"] is None
+
 
 
 # ===========================================================================
@@ -403,7 +563,7 @@ def test_defer_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: An
     """A ticket on a different project than ``repo.project`` is refused (exit 2)."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
-    stub = _make_stub(ticket_project="Some Other Project")
+    stub = _make_stub(on_queue=False, ticket_project="Some Other Project")
 
     result = _invoke(
         ["defer", "CAL-777", "--reason", "x", "--db", str(db), "--json"],
@@ -437,7 +597,7 @@ def test_defer_tracker_less_is_a_clean_noop(tmp_path: Path, monkeypatch: Any) ->
     )
 
     assert result.exit_code == 0, result.output
-    stub.fetch_issue_project.assert_not_awaited()
+    stub.fetch_queue_membership.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
     stub.assign_to_viewer.assert_not_awaited()

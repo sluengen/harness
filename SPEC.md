@@ -277,8 +277,8 @@ harness worktrees cleanup                 [--age <duration>] [--merged] [--force
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
 harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
-harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket; record a defer event (CAL-1143)
-harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket; record a release event (#193)
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a defer event (CAL-1143)
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a release event (#193)
 harness doctor                                # system health checks
 harness version                           [--json]
 

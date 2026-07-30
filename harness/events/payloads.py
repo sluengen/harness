@@ -142,7 +142,10 @@ class DeferEventData(BaseModel):
     run_id: str
     ticket: str
     reason: str
-    project: str
+    #: The effective Build-queue scope: ``repo.project`` when configured, else the
+    #: ticket's own project as the backend reports it, else ``None`` — nullable
+    #: since #248 made the two triage verbs work on an unscoped repo.
+    project: str | None
     needs: str
     deferred_at: str
 
@@ -218,7 +221,9 @@ class ReleaseEventData(BaseModel):
 
     run_id: str
     ticket: str
-    project: str
+    #: The effective Build-queue scope — nullable since #248, exactly as
+    #: :class:`DeferEventData`'s field.
+    project: str | None
     needs: str
     released_at: str
 

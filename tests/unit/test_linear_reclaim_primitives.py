@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from harness.linear import LinearClient, LinearNotFound, LinearRequestError
+from harness.tracker_queue import QueueMembership
 
 # ---------------------------------------------------------------------------
 # transition_to_unstarted — revert to Todo
@@ -942,3 +943,147 @@ async def test_fetch_handoff_branch_finds_newest_marker_beyond_first_page(
     )
     client = LinearClient(api_key="fake-key")
     assert await client.fetch_handoff_branch("CAL-1005") == "harness/newest"
+
+
+# ---------------------------------------------------------------------------
+# fetch_queue_membership — the nullable Build-queue scope (#248)
+# ---------------------------------------------------------------------------
+
+
+def _membership_client(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: list[dict[str, Any]],
+    *,
+    project: str | None,
+    team: str | None,
+    client_team: str | None,
+) -> LinearClient:
+    """A client whose issue sits in ``project`` / ``team``, scoped to ``client_team``."""
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        calls.append({"query": query, "variables": variables})
+        return {
+            "data": {
+                "issue": {
+                    "id": "issue-id",
+                    "project": None if project is None else {"name": project},
+                    "team": None if team is None else {"key": team},
+                }
+            }
+        }
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    return LinearClient(api_key="fake-key", team=client_team)
+
+
+async def test_queue_membership_scoped_matches_the_configured_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project="Harness v3", team="CAL", client_team="CAL"
+    )
+    result = await client.fetch_queue_membership("CAL-1", project="Harness v3")
+    assert result == QueueMembership(on_queue=True, project="Harness v3")
+
+
+async def test_queue_membership_scoped_refuses_another_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Today's behaviour, unchanged — the scoped-mode regression guard."""
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project="Elsewhere", team="CAL", client_team="CAL"
+    )
+    result = await client.fetch_queue_membership("CAL-1", project="Harness v3")
+    assert result == QueueMembership(on_queue=False, project="Elsewhere")
+
+
+async def test_queue_membership_unscoped_accepts_an_issue_in_the_repo_team(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset scope → the queue is the ``repo.linear`` team, whatever the project.
+
+    The ticket's repro shape: an issue in the team attached to *no* project is
+    legitimately on the queue, and reports ``project=None``. The old
+    ``str | None`` return could not distinguish this from "not on the queue".
+    """
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project=None, team="ERP", client_team="ERP"
+    )
+    result = await client.fetch_queue_membership("ERP-221", project=None)
+    assert result == QueueMembership(on_queue=True, project=None)
+
+
+async def test_queue_membership_unscoped_reports_the_tickets_own_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset scope, issue on a project → on the queue, and the *ticket's* project
+    is what the ledger event and ``--json`` will record."""
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project="Design System", team="ERP", client_team="ERP"
+    )
+    result = await client.fetch_queue_membership("ERP-209", project=None)
+    assert result == QueueMembership(on_queue=True, project="Design System")
+
+
+async def test_queue_membership_unscoped_refuses_a_foreign_team(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset scope still bounds the write — a ticket in another team is refused."""
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project=None, team="OTHER", client_team="ERP"
+    )
+    result = await client.fetch_queue_membership("OTHER-1", project=None)
+    assert result == QueueMembership(on_queue=False, project=None)
+
+
+async def test_queue_membership_unscoped_with_no_team_accepts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No project *and* no team — nothing is available to bound by, so accept.
+
+    This deliberately differs from ``fetch_reclaimable_issues``, which refuses the
+    same configuration: that call *enumerates* and would sweep every team the
+    token can see, whereas this resolves a single ticket the operator named. A
+    refusal here would re-wedge triage for exactly the repos #248 is about.
+    """
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project=None, team="ANY", client_team=None
+    )
+    result = await client.fetch_queue_membership("ANY-1", project=None)
+    assert result == QueueMembership(on_queue=True, project=None)
+
+
+async def test_queue_membership_reads_team_in_the_same_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The nullable scope costs no extra round trip — one request, team included.
+
+    The measurable claim in #248's design: substituting the ticket's own project
+    and checking team membership must not add a tracker call. Counting requests
+    is the only thing that proves it; a structural read of the query is not.
+    """
+    calls: list[dict[str, Any]] = []
+    client = _membership_client(
+        monkeypatch, calls, project=None, team="ERP", client_team="ERP"
+    )
+    await client.fetch_queue_membership("ERP-221", project=None)
+    assert len(calls) == 1
+    assert re.search(r"team\s*{\s*key\s*}", calls[0]["query"])
+
+
+async def test_queue_membership_raises_not_found_for_a_missing_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return {"data": {"issue": None}}
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key", team="ERP")
+    with pytest.raises(LinearNotFound):
+        await client.fetch_queue_membership("ERP-999", project=None)
