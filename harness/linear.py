@@ -45,6 +45,7 @@ from harness.tracker_errors import (
     TrackerRequestError,
     TrackerTransitionUnconfirmed,
 )
+from harness.tracker_queue import QueueMembership
 
 # size: one cohesive Linear GraphQL boundary class. The CAL-731 embed guard
 # requires every Linear GraphQL operation to live in this client (never in
@@ -147,24 +148,52 @@ query FetchIssue($id: String!) {
         ]
         return result
 
-    async def fetch_issue_project(self, identifier: str) -> str | None:
-        """Return the name of the project issue ``identifier`` belongs to, or ``None``.
+    async def fetch_queue_membership(
+        self, identifier: str, *, project: str | None
+    ) -> QueueMembership:
+        """Whether issue ``identifier`` is on this repo's Build queue (CAL-1143, #248).
 
-        The Build-queue membership check ``harness defer`` binds to (CAL-1143):
-        the verb only defers a ticket on this repo's ``repo.project``, so it reads
-        the ticket's project name and compares. ``None`` means the issue is on no
-        project — the caller treats that as "not on the Build queue".
+        The membership check ``harness defer`` / ``harness release`` bind to. The
+        *scope* is nullable, mirroring :meth:`fetch_reclaimable_issues` (#174):
+
+        * ``project`` set → the queue is that project; membership is
+          ``issue's project name == project``.
+        * ``project`` ``None`` (the whole-queue mode) → the queue is the client's
+          ``repo.linear`` team, so an issue in that team is on the queue whatever
+          project it does or does not sit in. With no team configured either, the
+          repo has declared no scope at all and the only membership fact left is
+          that the issue exists, so the answer is ``True``.
+
+        The last case deliberately differs from :meth:`fetch_reclaimable_issues`,
+        which *refuses* the same configuration: that call **enumerates** and would
+        sweep every team the token can see, whereas this one resolves a single
+        ticket the operator named explicitly. Refusing here for symmetry would
+        re-wedge triage for exactly the class of repo #248 is about, just under a
+        different reason.
+
+        The returned ``project`` is always the issue's *own* project name (or
+        ``None``), never the configured scope echoed back — it feeds the ledger
+        event and ``--json`` when no scope is configured.
+
+        The team is read in the **same** request as the project, so a nullable
+        scope costs no extra round trip. Deriving it from the ``TEAM-123``
+        identifier prefix instead was rejected: the API answers authoritatively
+        here, and string-parsing an identifier is the kind of inference this
+        method exists to remove.
 
         Raises:
             LinearNotFound: the issue does not exist.
             LinearRequestError: the API returned an error.
         """
         query = """
-query IssueProject($id: String!) {
+query IssueQueueMembership($id: String!) {
   issue(id: $id) {
     id
     project {
       name
+    }
+    team {
+      key
     }
   }
 }
@@ -173,9 +202,17 @@ query IssueProject($id: String!) {
         issue = (data.get("data") or {}).get("issue")
         if issue is None:
             raise LinearNotFound(f"Linear issue {identifier!r} not found")
-        project = issue.get("project") or {}
-        name = project.get("name")
-        return str(name) if name else None
+        name = (issue.get("project") or {}).get("name")
+        issue_project = str(name) if name else None
+
+        if project is not None:
+            return QueueMembership(on_queue=issue_project == project, project=issue_project)
+
+        if self._team is None:
+            return QueueMembership(on_queue=True, project=issue_project)
+
+        team_key = (issue.get("team") or {}).get("key")
+        return QueueMembership(on_queue=team_key == self._team, project=issue_project)
 
     async def fetch_reclaimable_issues(
         self, *, project: str | None

@@ -40,6 +40,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from harness.tracker_queue import QueueMembership
 
 cli_runner = CliRunner()
 
@@ -73,17 +74,22 @@ def _write_context(
 def _make_stub(
     *,
     ticket_project: str | None = _BUILD_PROJECT,
+    on_queue: bool = True,
     not_found: bool = False,
     body: str = _EXISTING_BODY,
 ) -> MagicMock:
+    """``defer``'s stub in reverse — see its docstring for why ``on_queue`` is
+    stated directly rather than derived from ``ticket_project`` (#248)."""
     from harness.linear import LinearNotFound
 
     mock = MagicMock()
     if not_found:
-        mock.fetch_issue_project = AsyncMock(side_effect=LinearNotFound("nope"))
+        mock.fetch_queue_membership = AsyncMock(side_effect=LinearNotFound("nope"))
         mock.fetch_issue = AsyncMock(side_effect=LinearNotFound("nope"))
     else:
-        mock.fetch_issue_project = AsyncMock(return_value=ticket_project)
+        mock.fetch_queue_membership = AsyncMock(
+            return_value=QueueMembership(on_queue=on_queue, project=ticket_project)
+        )
         mock.fetch_issue = AsyncMock(return_value={"description": body})
     mock.update_issue_body = AsyncMock(return_value=None)
     mock.remove_label = AsyncMock(return_value=None)
@@ -116,6 +122,135 @@ def _fetch_release_events(db_path: Path) -> list[dict[str, Any]]:
         return [json.loads(r[0]) for r in rows]
 
     return _run_sync(_select())  # type: ignore[return-value]
+
+
+# ===========================================================================
+# AC: an unscoped repo (`repo.project` absent) can still release (#248)
+# ===========================================================================
+
+
+def test_release_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) -> None:
+    """`repo.project` absent is the whole tracker queue, not a refusal (#248).
+
+    ``defer``'s mirror. The ticket's second recorded occurrence was a ``release``
+    — ERP-221 and ERP-222 were released by hand-rolling the tracker writes, so
+    both are correct on the tracker and absent from the ledger. The whole point
+    of the verb is that a triage write is audited; a refusal that forces the
+    write elsewhere loses the audit trail, not just the convenience.
+    """
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = MagicMock()
+    stub.fetch_queue_membership = AsyncMock(
+        return_value=QueueMembership(on_queue=True, project=None)
+    )
+    stub.fetch_issue = AsyncMock(return_value={"description": _EXISTING_BODY})
+    stub.update_issue_body = AsyncMock(return_value=None)
+    stub.remove_label = AsyncMock(return_value=None)
+    stub.unassign_viewer = AsyncMock(return_value=None)
+
+    result = _invoke(
+        ["release", "ERP-221", "--resolution", "do it", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "released"
+    assert payload["project"] is None
+    stub.update_issue_body.assert_awaited_once()
+    stub.remove_label.assert_awaited_once()
+    stub.unassign_viewer.assert_awaited_once()
+    events = _fetch_release_events(db)
+    assert len(events) == 1
+    assert events[0]["project"] is None
+
+
+
+def test_release_unscoped_refuses_a_ticket_off_the_queue(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """`defer`'s mirror — unset scope still bounds the write."""
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = _make_stub(on_queue=False, ticket_project=None)
+
+    result = _invoke(
+        ["release", "OTHER-1", "--resolution", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_on_build_queue"
+    stub.update_issue_body.assert_not_awaited()
+    stub.remove_label.assert_not_awaited()
+    stub.unassign_viewer.assert_not_awaited()
+    assert _fetch_release_events(db) == []
+
+
+def test_release_unscoped_refusal_names_the_whole_tracker_queue(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    _write_context(tmp_path, project=None)
+    stub = _make_stub(on_queue=False, ticket_project=None)
+
+    result = _invoke(
+        ["release", "OTHER-1", "--resolution", "x", "--db", str(tmp_path / "h.db")],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2
+    assert "the whole tracker queue" in result.output
+
+
+def test_release_unscoped_human_output_never_prints_none(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    _write_context(tmp_path, project=None)
+    stub = _make_stub(ticket_project=None)
+
+    result = _invoke(
+        ["release", "ERP-221", "--resolution", "x", "--db", str(tmp_path / "h.db")],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "None" not in result.output
+    assert "the whole tracker queue" in result.output
+
+
+def test_release_unscoped_records_the_tickets_own_project(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    _write_context(tmp_path, project=None)
+    db = tmp_path / "harness.db"
+    stub = _make_stub(ticket_project="Design System")
+
+    result = _invoke(
+        ["release", "ERP-209", "--resolution", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["project"] == "Design System"
+    assert _fetch_release_events(db)[0]["project"] == "Design System"
+
+
+def test_release_scoped_records_the_configured_project_not_the_tickets(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub(ticket_project="Board Title")
+
+    result = _invoke(
+        ["release", "CAL-1", "--resolution", "x", "--db", str(db), "--json"],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["project"] == _BUILD_PROJECT
+    assert _fetch_release_events(db)[0]["project"] == _BUILD_PROJECT
 
 
 # ===========================================================================
@@ -263,7 +398,7 @@ def test_release_refuses_ticket_not_found(tmp_path: Path, monkeypatch: Any) -> N
 def test_release_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: Any) -> None:
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
-    stub = _make_stub(ticket_project="Some Other Project")
+    stub = _make_stub(on_queue=False, ticket_project="Some Other Project")
 
     result = _invoke(
         ["release", "CAL-777", "--resolution", "x", "--db", str(db), "--json"],
@@ -295,7 +430,7 @@ def test_release_tracker_less_is_a_clean_noop(tmp_path: Path, monkeypatch: Any) 
     )
 
     assert result.exit_code == 0, result.output
-    stub.fetch_issue_project.assert_not_awaited()
+    stub.fetch_queue_membership.assert_not_awaited()
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
     stub.unassign_viewer.assert_not_awaited()
