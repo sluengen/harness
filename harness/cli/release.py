@@ -98,8 +98,14 @@ class ReleaseOutput(BaseModel):
     """Typed result of a ``release`` — like every sibling verb.
 
     ``run_id`` is the synthetic run row anchoring the ``release`` event, or
-    ``None`` for a tracker-less no-op; ``project`` is the Build queue the
-    ticket was bound to (``None`` tracker-less)."""
+    ``None`` for a tracker-less no-op. ``project`` is the effective Build-queue
+    scope: ``repo.project`` when configured, else the ticket's own project as
+    the backend reports it.
+
+    ``project`` is ``None`` on a tracker-less no-op **and**, since #248, on a
+    *successful* release against an unscoped repo whose ticket sits on no
+    project. So it no longer distinguishes the two — read ``outcome``, which is
+    the field that says what happened."""
 
     ticket: str
     outcome: str
