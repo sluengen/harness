@@ -29,6 +29,9 @@ lives nowhere but this comment: the ledger event carries only a ``design_hash``
 and a ``grounded_sha``, deliberately (ADR 0007). So #258 is the reader that
 :func:`parse_design_comment` exists for, and the deferral is resolved by the
 reader turning up rather than by overriding the reasoning that deferred it.
+That reader shipped in #258 (:mod:`harness.cli.design_adopt`), which also drove
+:func:`is_design_comment` out of it — the *selection* half a caller sifting a
+comment stream needs, kept here so it cannot disagree with the parser.
 
 The parser reports what the comment *claims*; it never authenticates. Its caller
 recomputes the hash over the recovered text and refuses a mismatch — ADR 0008's

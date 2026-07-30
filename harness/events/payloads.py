@@ -258,8 +258,14 @@ WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
 #: ``design`` payload (#212): ``status`` discriminates the two shapes (a
 #: ``failed`` attempt still satisfies the ``no_design`` check, ADR 0007 D4), and
 #: ``design_hash`` authenticates the design text the orchestrator hands back
-#: before it reaches the review engine's prompt. Bare field names, not
-#: ``json_extract`` paths — the gate indexes a ``dict``, and no SQL reader of
-#: this payload exists (#217).
+#: before it reaches the review engine's prompt. Bare field names because that
+#: gate indexes an already-parsed ``dict`` (#217).
 DESIGN_STATUS_KEY = _field_name(DesignEventData, "status")
 DESIGN_HASH_KEY = _field_name(DesignEventData, "design_hash")
+
+#: The same two keys as ``json_extract`` paths, for the one reader that *is* SQL:
+#: ``design``'s adopt path (#258) selects a prior ``status='ok'`` event by its
+#: ``design_hash`` across the ticket's runs. Derived from the same fields as the
+#: bare-name constants above, so a rename cannot leave the two readers disagreeing.
+DESIGN_STATUS_PATH = _field_path(DesignEventData, "status")
+DESIGN_HASH_PATH = _field_path(DesignEventData, "design_hash")

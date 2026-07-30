@@ -20,10 +20,15 @@ change named two ways to close that gap — re-fetch the comment, or have the
 ``DesignOutput`` consumer pass it — and this build takes the second: the
 orchestrator that ran ``harness design`` already holds the design on stdout, so
 it hands it back with ``--design-file`` and the verb **verifies it against the
-recorded hash** before it reaches the prompt. That keeps the tracker seam out of
-it (no comment-read method on two backends), keeps the ledger event the single
-key for both behaviours, and matches #211's own as-built note that nothing reads
-the design back out of the comment.
+recorded hash** before it reaches the prompt. That keeps the ledger event the
+single key for both behaviours.
+
+The first option was declined here partly to keep a comment-read method off the
+two tracker backends. **#258 added one anyway** — ADR 0008's adopt path has a
+resumed run recover its predecessor's design text, which lives nowhere but the
+comment — so that argument no longer applies. What still holds, and is what
+these tests pin, is the division of labour: ``review`` reads the *ledger* to
+decide both enforcement and authentication, and never the ticket.
 
 **Enforcement refuses; context degrades.** The presence check is ledger-keyed
 and unbypassable, so it refuses. Supplying the design is enrichment: an absent,

@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
+from harness.design_marker import format_design_comment
 from harness.github import (
     GitHubClient,
     GitHubConfigError,
@@ -26,7 +27,6 @@ from harness.github import (
     GitHubRequestError,
     github_token,
 )
-from harness.design_marker import format_design_comment
 from harness.layers import GitHubSettings
 from harness.reclaim_marker import (
     format_handoff_comment,

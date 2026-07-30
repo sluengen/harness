@@ -36,8 +36,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from harness.layers import GitHubSettings
 from harness.design_marker import is_design_comment
+from harness.layers import GitHubSettings
 from harness.reclaim_marker import (
     HANDOFF_MARKER,
     RECLAIM_LABEL,

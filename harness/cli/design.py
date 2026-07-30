@@ -23,14 +23,19 @@ Flow (one ``asyncio.run`` event loop for all I/O):
 1. Resolve "the current run" — the ``status='open'`` runs row whose
    ``worktree_path`` matches the resolved ``--repo`` (or ``--run-id`` override),
    through the same shared resolver ``review`` and ``close`` use.
-2. Fetch the ticket's title + description: they are the spec the design answers
+2. Try the **adopt path** (:mod:`harness.cli.design_adopt`, ADR 0008 D1): a run
+   that resumed from a preserved WIP branch, whose ticket carries a design that
+   authenticates against a recorded ``ok`` event, records its **own** ``design``
+   event marked ``inherited_from`` and returns the recovered design — no engine,
+   no comment. Every other run falls through to steps 3–6 unchanged.
+3. Fetch the ticket's title + description: they are the spec the design answers
    to, and ``start`` persists neither on the run row.
-3. Capture ``git rev-parse HEAD`` in the worktree as ``grounded_sha``.
-4. Run the read-only claude engine (``claude -p --permission-mode plan --model
+4. Capture ``git rev-parse HEAD`` in the worktree as ``grounded_sha``.
+5. Run the read-only claude engine (``claude -p --permission-mode plan --model
    opus``, built by :mod:`harness.cli.design_protocol`) under the configured
    ``engine_timeout_seconds`` ceiling, and scan its stdout for the ``SUBMIT:``
    line.
-5. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
+6. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
 
 **Degrade and record (ADR 0007 D4).** The design stage must never wedge a run.
 Every way it can fail to produce a design — a killed engine, an engine that
@@ -73,6 +78,7 @@ from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.design_adopt import AdoptedDesign, resolve_adoption
 from harness.cli.design_protocol import (
     DESIGN_MODEL_DEFAULT,
     MALFORMED_SUBMIT_SENTINEL,
@@ -103,9 +109,15 @@ __all__ = [
     "design_command",
 ]
 
-# size: the design verb — one cohesive orchestration (engine → comment → event
-# → output) on a single asyncio event loop, the same shape as ``review.py``;
-# splitting it would scatter one verb's control flow across files.
+# size: the design verb — one cohesive orchestration (adopt-or-engine → comment
+# → event → output) on a single asyncio event loop, the same shape as
+# ``review.py``; splitting it would scatter one verb's control flow across files.
+# The two concerns that *are* separable already are: tracker I/O
+# (``design_tracker.py``, #211) and the adopt decision (``design_adopt.py``,
+# #258). What remains is flow plus the ledger write the flow's two branches
+# share, which is why ``_record_adopted_design`` stays here rather than moving
+# into ``design_adopt`` — it needs ``DesignOutput`` and ``_record_design_event``,
+# and importing them back would make the seam circular.
 
 # The design engine. Claude only — ADR 0002 keeps the in-container engine
 # unprivileged, where codex's bwrap sandbox cannot start, so unlike ``review``
@@ -373,6 +385,21 @@ async def _produce_design(
     # 2. The ticket is the spec the design answers to. ``start`` persists no
     #    title/description on the run row, so they are fetched here.
     ticket = await read_run_ticket(db_path, run_id)
+
+    # 2b. Adopt a prior design instead of designing one, when this run resumed
+    #     from a preserved WIP branch and the ticket carries an authenticated
+    #     design (ADR 0008 D1). Checked before the spec fetch: adoption needs no
+    #     spec, so a flaky ticket read cannot cost a run a design it already has.
+    adoption = await resolve_adoption(
+        repo_root=repo_root,
+        db_path=db_path,
+        run_id=run_id,
+        ticket=ticket,
+        invoked_at=invoked_at,
+    )
+    if adoption is not None:
+        return await _record_adopted_design(db_path, adoption)
+
     try:
         title, description = await fetch_ticket_spec(repo_root, ticket)
     except TicketSpecUnavailableError as exc:
@@ -453,6 +480,39 @@ async def _produce_design(
         design_hash=design_hash,
         grounded_sha=grounded_sha,
         model=model,
+        status="ok",
+        concurrent_prior_at=recorded.concurrent_prior_at,
+    )
+
+
+async def _record_adopted_design(
+    db_path: Path, adoption: AdoptedDesign
+) -> DesignOutput:
+    """Record an inherited design and emit it as an ordinary :class:`DesignOutput`.
+
+    **No comment is posted.** The design is already on the ticket — that is where
+    it was recovered from — and a second copy would fork the artifact ADR 0007 D2
+    scopes to the change spec.
+
+    The printed contract is unchanged, so the orchestrator's Step 1.5 handling
+    (save ``design_markdown``, pass it as ``--design-file`` to ``review``) needs
+    no adjustment and cannot tell an adopted design from a designed one. That
+    the engine did not run is on the **ledger** (``inherited_from``) and on
+    stderr, where an operator reading a tick log will see it.
+    """
+    event = adoption.event
+    recorded = await _record_design_event(db_path, event)
+    typer.echo(
+        f"note: adopted the design recorded for run {event.inherited_from} "
+        f"(design_hash {(event.design_hash or '')[:12]}); no design engine ran",
+        err=True,
+    )
+    return DesignOutput(
+        run_id=event.run_id,
+        design_markdown=adoption.design_markdown,
+        design_hash=event.design_hash or "",
+        grounded_sha=event.grounded_sha or "",
+        model=event.model,
         status="ok",
         concurrent_prior_at=recorded.concurrent_prior_at,
     )
