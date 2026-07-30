@@ -106,6 +106,34 @@ def git_common_dir(repo_root: Path) -> Path | None:
     return common_dir.resolve()
 
 
+def worktree_toplevel_matches(worktree_path: Path) -> bool:
+    """True iff ``git -C worktree_path rev-parse --show-toplevel`` resolves
+    back to ``worktree_path`` itself.
+
+    The anchoring guard every probe that reads ``git`` state *at a worktree* needs
+    first. Without it, a directory whose worktree registration was already pruned
+    (or that never was a proper worktree) has ``git`` walk **up** and report the
+    *main checkout's* state instead. Both existing callers rely on that:
+    ``worktrees cleanup --merged``'s stash / dirty-tree vetoes (#235) would
+    otherwise veto an orphaned directory whenever the operator's own tree happens
+    to be dirty, and ``reclaim --stale``'s worktree-mtime signal (#254) would read
+    the main checkout's index — almost always freshly edited — and so spare every
+    stale ticket, silently switching the sweep off.
+
+    Lives here rather than in either caller because reaching into a command
+    module's private helper is exactly what the CLI module-boundary guard forbids,
+    and a second copy of a check whose failure mode is "the feature silently
+    stops working" is worse than a shared one.
+    """
+    proc = run_git(worktree_path, "rev-parse", "--show-toplevel")
+    if proc.returncode != 0:
+        return False
+    try:
+        return Path(proc.stdout.strip()).resolve() == worktree_path.resolve()
+    except OSError:
+        return False
+
+
 def rev_parse_head(worktree_path: Path) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 
