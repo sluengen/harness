@@ -206,6 +206,49 @@ def test_design_event_data_includes_set_concurrency_fields() -> None:
     assert dumped["concurrent_prior_at"] == "2026-07-28T00:00:02Z"
 
 
+def test_design_event_data_omits_unset_inherited_from() -> None:
+    """AC-8 (#258): an engine-produced event dumps **no** ``inherited_from`` key.
+
+    The field is additive to the ``ok`` shape, so every existing reader must see
+    the key set it has always seen — absent, not an explicit ``null``. This is
+    what makes ``inherited_from``'s *presence* a reliable "this design was
+    adopted, not designed" signal for a ledger reader.
+    """
+    dumped = DesignEventData(
+        run_id="R1",
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:00Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+    ).model_dump(exclude_none=True)
+
+    assert "inherited_from" not in dumped
+
+
+def test_design_event_data_includes_set_inherited_from() -> None:
+    """AC-1 (#258): an adopted event carries the source run id, and stays ``ok``.
+
+    ``status`` deliberately does **not** gain a third value: ``resolve_design_gate``
+    keys on ``!= 'ok'`` and would read ``status='inherited'`` as a failed attempt,
+    silently dropping the design from every resumed review.
+    """
+    dumped = DesignEventData(
+        run_id="R2",
+        status="ok",
+        engine="claude",
+        model="opus",
+        designed_at="2026-07-28T00:00:00Z",
+        design_hash="abc123",
+        grounded_sha="def456",
+        inherited_from="R1",
+    ).model_dump(exclude_none=True)
+
+    assert dumped["inherited_from"] == "R1"
+    assert dumped["status"] == "ok"
+
+
 def test_checkpoint_event_data_keys() -> None:
     assert CheckpointEventData(
         run_id="R1", branch="b", pushed_sha="s", pushed_at="t"

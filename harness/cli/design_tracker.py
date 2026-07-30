@@ -6,6 +6,11 @@ design answers to) before designing, and **posts** the finished design back as a
 marked comment after. Both are the tracker boundary, not verb orchestration, so
 they live here and :mod:`harness.cli.design` keeps only the flow between them.
 
+Since #258 there is a third, which is why the module rather than the verb is the
+right home for it: ADR 0008's adopt path **reads back** a prior design comment
+(:func:`fetch_prior_design`), so the comment is now something this seam both
+writes and reads.
+
 Split out of the verb in #211 so a brand-new module was not born over the repo's
 500-line hard limit with a ``# size:`` justification papering over a seam that
 plainly existed (``code-quality`` Part C).
@@ -21,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness._time import iso_z
-from harness.design_marker import format_design_comment
+from harness.design_marker import ParsedDesign, format_design_comment, parse_design_comment
 from harness.state import store
 from harness.tracker import tracker_client
 from harness.tracker_errors import (
@@ -33,9 +38,11 @@ from harness.tracker_errors import (
 __all__ = [
     "TicketSpecUnavailableError",
     "TicketCommentFailedError",
+    "fetch_prior_design",
     "fetch_ticket_spec",
     "post_design_comment",
     "read_run_ticket",
+    "read_run_resumed_from",
 ]
 
 
@@ -77,6 +84,56 @@ async def read_run_ticket(db_path: Path, run_id: str) -> str | None:
     if row is None or row[0] is None:
         return None
     return str(row[0])
+
+
+async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
+    """The preserved WIP branch this run resumed from, or ``None`` (#258).
+
+    ADR 0008's F2 gate, read off the run row ``start`` wrote. ``None`` covers
+    both a clean start and a ``--resume`` that fell back — in either case the
+    tree a prior design described is not what this worktree holds, so there is
+    nothing to inherit.
+    """
+    if not db_path.exists():
+        return None
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute("SELECT resumed_from FROM runs WHERE run_id = ?", (run_id,)) as cur,
+    ):
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0])
+
+
+async def fetch_prior_design(repo_root: Path, ticket: str | None) -> ParsedDesign | None:
+    """The design recovered from the ticket's latest design comment, or ``None``.
+
+    The read half of the comment contract this module already writes. Returns
+    what the comment *claims* — the parser never authenticates (#257) — so the
+    caller re-hashes the recovered text and checks the claim against the ledger
+    before adopting anything.
+
+    **Best-effort, unlike :func:`fetch_ticket_spec`.** That fetch is load-bearing
+    (no spec, no design), so its failures raise. This one is an optimisation: a
+    tracker-less repo, an unresolvable client, a missing ticket, or a failed
+    fetch all mean "no prior design to adopt", and the verb then runs the engine
+    exactly as it did before #258. Costing a run its Opus saving is the right
+    price for an outage; costing it the ability to design is not.
+    """
+    if ticket is None:
+        return None
+    try:
+        client = tracker_client(repo_root)
+    except TrackerConfigError:
+        return None
+    if client is None:
+        return None
+    try:
+        body = await client.fetch_design_comment(ticket)
+    except (TrackerNotFound, TrackerRequestError):
+        return None
+    return None if body is None else parse_design_comment(body)
 
 
 async def fetch_ticket_spec(repo_root: Path, ticket: str | None) -> tuple[str, str]:

@@ -123,7 +123,7 @@ async def _fetch_all_runs(db_path: Path) -> list[dict[str, Any]]:
         conn.row_factory = None  # raw tuples
         async with conn.execute(
             "SELECT run_id, ticket, status, base_branch, worktree_path, "
-            "worktree_branch, started_at FROM runs"
+            "worktree_branch, started_at, resumed_from FROM runs"
         ) as cur:
             cols = [d[0] for d in cur.description]  # type: ignore[union-attr]
             rows = await cur.fetchall()
@@ -1396,6 +1396,75 @@ def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) ->
     payload = json.loads(result.output)
     assert _worktree_head(Path(payload["worktree_path"])) == dev_sha
     assert fetch_runs(db_path)[0]["base_branch"] == "dev"
+
+
+@pytest.mark.slow
+def test_resume_records_the_recovered_branch_on_the_run(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-6 (#258): a resume that recovered WIP records that branch in ``resumed_from``.
+
+    ADR 0008's F2 gate: the *branch name* is recorded rather than the tip SHA the
+    worktree started at, because that is what identifies the preserved WIP — the
+    SHA is already on the worktree, and a reader asking "what did this run
+    resume from?" wants the ref `checkpoint` pushed.
+    """
+    wip_branch, _ = _setup_origin_with_wip(repo)
+    stub = _make_resume_stub(wip_branch)
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db_path)[0]["resumed_from"] == wip_branch
+
+
+@pytest.mark.slow
+def test_resume_that_falls_back_records_no_resumed_from(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-6 (#258): a ``--resume`` that fell back to a clean start records ``NULL``.
+
+    The distinction the adopt path turns on. The flag was passed and the probe
+    ran, but no durable WIP came back — so the tree the prior design described is
+    gone, and ``design`` must re-run the engine rather than inherit.
+    """
+    stub = _make_resume_stub(None)
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--resume", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db_path)[0]["resumed_from"] is None
+
+
+@pytest.mark.slow
+def test_plain_start_records_no_resumed_from(repo: Path, db_path: Path) -> None:
+    """#258: an ordinary start (no ``--resume``) records ``NULL`` — the common path."""
+    stub = _make_resume_stub("harness/should-not-be-used")
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db_path)[0]["resumed_from"] is None
 
 
 @pytest.mark.slow

@@ -36,6 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from harness.design_marker import is_design_comment
 from harness.layers import GitHubSettings
 from harness.reclaim_marker import (
     HANDOFF_MARKER,
@@ -344,6 +345,24 @@ query Reclaimable($login: String!, $number: Int!, $field: String!) {{
             marker=HANDOFF_MARKER,
             parser=parse_handoff_branch,
         )
+
+    async def fetch_design_comment(self, identifier: str) -> str | None:
+        """The body of the issue's latest design comment, or ``None`` (#258).
+
+        The GitHub counterpart of
+        :meth:`~harness.linear.LinearClient.fetch_design_comment`, feeding
+        ADR 0008's adopt path. The body comes back **verbatim** — the caller
+        authenticates it by recomputing the content hash over exactly these
+        bytes. Selection is the design contract's own
+        :func:`~harness.design_marker.is_design_comment`, so it cannot drift from
+        what the parser accepts, and there is **no label gate**: a design comment
+        is posted on every run and no label marks it.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error.
+        """
+        return await self._latest_comment_body(identifier, matches=is_design_comment)
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Set the issue's board Status to *In Progress* (adding it to the board if absent)."""
@@ -994,8 +1013,37 @@ mutation CreateLabel($repoId: ID!, $name: String!, $color: String!) {
         The GitHub mirror of :meth:`~harness.linear.LinearClient._latest_marked_branch`
         behind both resume (death-keyed, label-gated) and handoff (proactive, no
         gate). The **latest** matching comment wins; every non-match returns
-        ``None`` so the caller restarts clean. ``comments(last: 100)`` windows the
-        newest comments so the freshest marker is always on the page.
+        ``None`` so the caller restarts clean.
+
+        Both resume markers are single formatter-written lines, so a **substring**
+        test identifies them safely — the design reader, whose comments embed
+        arbitrary markdown, deliberately uses a stricter predicate (#257).
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error.
+        """
+        body = await self._latest_comment_body(
+            identifier,
+            matches=lambda candidate: marker in candidate,
+            require_label=require_label,
+        )
+        return None if body is None else parser(body)
+
+    async def _latest_comment_body(
+        self,
+        identifier: str,
+        *,
+        matches: Callable[[str], bool],
+        require_label: str | None = None,
+    ) -> str | None:
+        """The body of the latest issue comment satisfying ``matches``, or ``None``.
+
+        The GitHub mirror of
+        :meth:`~harness.linear.LinearClient._latest_comment_body`: the one read
+        behind every marker-keyed reader, so the query, the latest-wins rule and
+        the label gate exist once. ``comments(last: 100)`` windows the newest
+        comments so the freshest marker is always on the page.
 
         Raises:
             GitHubNotFound: the issue does not exist.
@@ -1023,11 +1071,11 @@ query MarkedBranch($owner: String!, $name: String!, $number: Int!) {
         comment_nodes: list[dict[str, Any]] = (
             (issue.get("comments") or {}).get("nodes", [])
         )
-        marked = [c for c in comment_nodes if marker in (c.get("body") or "")]
+        marked = [c for c in comment_nodes if matches(c.get("body") or "")]
         if not marked:
             return None
         latest = max(marked, key=lambda c: c.get("createdAt") or "")
-        return parser(latest.get("body") or "")
+        return str(latest.get("body") or "")
 
     # ------------------------------------------------------------------
     # Internal HTTP helper

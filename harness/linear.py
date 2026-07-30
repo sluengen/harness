@@ -31,6 +31,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from harness.design_marker import is_design_comment
 from harness.reclaim_marker import (
     HANDOFF_MARKER,
     RECLAIM_LABEL,
@@ -283,6 +284,27 @@ query ReclaimableIssues($team: String!) {
             require_label=RECLAIM_LABEL,
         )
 
+    async def fetch_design_comment(self, identifier: str) -> str | None:
+        """The body of the ticket's latest design comment, or ``None`` (#258).
+
+        The read side of the design-comment contract, feeding ADR 0008's adopt
+        path: a resumed run recovers its predecessor's design from the ticket
+        rather than paying for a fresh Opus call. The **body** is returned
+        verbatim rather than a parsed design, because the caller authenticates it
+        by recomputing the content hash over exactly these bytes — parsing (and
+        judging) is the caller's, and the seam stays free of design vocabulary.
+
+        Selection is :func:`~harness.design_marker.is_design_comment`, the
+        contract's own predicate, so this cannot drift from what the parser will
+        accept. Unlike the two resume readers there is **no label gate**: a
+        design comment is posted on every run, and no label marks it.
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        return await self._latest_comment_body(identifier, matches=is_design_comment)
+
     async def _latest_marked_branch(
         self,
         identifier: str,
@@ -301,6 +323,37 @@ query ReclaimableIssues($team: String!) {
         wins (a ticket marked more than once resumes from its freshest branch),
         and every non-match (no ``require_label``, no marked comment, a marker
         that preserved no branch) returns ``None`` so the caller restarts clean.
+
+        Both resume markers are single formatter-written lines with no embedded
+        free text, so a **substring** test identifies them safely — which is why
+        the design reader, whose comments embed arbitrary markdown, does not
+        share this predicate (#257).
+
+        Raises:
+            LinearNotFound: the issue does not exist.
+            LinearRequestError: the API returned an error.
+        """
+        body = await self._latest_comment_body(
+            identifier,
+            matches=lambda candidate: marker in candidate,
+            require_label=require_label,
+        )
+        return None if body is None else parser(body)
+
+    async def _latest_comment_body(
+        self,
+        identifier: str,
+        *,
+        matches: Callable[[str], bool],
+        require_label: str | None = None,
+    ) -> str | None:
+        """The body of the latest comment satisfying ``matches``, or ``None``.
+
+        The one Linear read behind every marker-keyed reader — the two resume
+        sources and the design reader — so the query, the windowing, the
+        latest-wins rule and the label gate exist once. Callers differ only in
+        the predicate that recognises their comment, and in what they do with the
+        body they get back.
 
         ``last: 20`` — Linear's default connection order is oldest-first, so
         ``first`` would return the *oldest* comments and drop the freshest marker
@@ -336,11 +389,11 @@ query MarkedBranch($id: String!) {{
         comment_nodes: list[dict[str, Any]] = (
             (issue.get("comments") or {}).get("nodes", [])
         )
-        marked = [c for c in comment_nodes if marker in (c.get("body") or "")]
+        marked = [c for c in comment_nodes if matches(c.get("body") or "")]
         if not marked:
             return None
         latest = max(marked, key=lambda c: c.get("createdAt") or "")
-        return parser(latest.get("body") or "")
+        return str(latest.get("body") or "")
 
     async def fetch_handoff_branch(self, identifier: str) -> str | None:
         """The preserved WIP branch a **proactively handed-off** ticket continues from.

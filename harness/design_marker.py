@@ -29,6 +29,9 @@ lives nowhere but this comment: the ledger event carries only a ``design_hash``
 and a ``grounded_sha``, deliberately (ADR 0007). So #258 is the reader that
 :func:`parse_design_comment` exists for, and the deferral is resolved by the
 reader turning up rather than by overriding the reasoning that deferred it.
+That reader shipped in #258 (:mod:`harness.cli.design_adopt`), which also drove
+:func:`is_design_comment` out of it — the *selection* half a caller sifting a
+comment stream needs, kept here so it cannot disagree with the parser.
 
 The parser reports what the comment *claims*; it never authenticates. Its caller
 recomputes the hash over the recovered text and refuses a mismatch — ADR 0008's
@@ -50,6 +53,7 @@ __all__ = [
     "DESIGN_MARKER",
     "ParsedDesign",
     "format_design_comment",
+    "is_design_comment",
     "parse_design_comment",
 ]
 
@@ -162,3 +166,21 @@ def parse_design_comment(comment_body: str) -> ParsedDesign | None:
         grounded_sha=_clause(_GROUNDED_SHA_RE, header),
         run_id=_clause(_RUN_ID_RE, header),
     )
+
+
+def is_design_comment(comment_body: str) -> bool:
+    """Whether ``comment_body`` is a design comment a reader can recover from.
+
+    The **selection** predicate, for a caller sifting a comment stream — where
+    :func:`parse_design_comment` is the recovery. Defined as "parses", not as
+    "carries the marker", so the two can never disagree about what counts: a
+    tracker client picking the latest design comment and the parser recovering
+    its text apply one rule, and a comment that merely *quotes* the marker (or
+    carries it with nothing after the separator) is excluded by both.
+
+    That distinction is load-bearing rather than pedantic. Selection normally
+    takes the **latest** matching comment, so a substring test would let a newer
+    quoting comment shadow the genuine design beneath it — and the caller would
+    decline to adopt a design the ticket demonstrably carries.
+    """
+    return parse_design_comment(comment_body) is not None
