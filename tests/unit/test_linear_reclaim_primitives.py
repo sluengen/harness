@@ -645,6 +645,65 @@ def _resume_issue(labels: list[str], comments: list[str]) -> dict[str, Any]:
     }
 
 
+def _design_body(design: str = "### Data model\n\nNone.\n") -> str:
+    from harness.design_marker import format_design_comment
+
+    return format_design_comment(
+        "R1", design, design_hash="h" * 64, grounded_sha="s" * 40,
+        when="2026-06-16T00:00:00Z",
+    )
+
+
+async def test_fetch_design_comment_returns_the_latest_design_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#258: the latest design comment, returned verbatim for the caller to hash."""
+    older = _design_body("### Data model\n\nOld.\n")
+    newer = _design_body("### Data model\n\nNew.\n")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [older, "an unrelated comment", newer])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_design_comment("CAL-739") == newer
+
+
+async def test_fetch_design_comment_none_when_no_design_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No design comment → ``None``; the caller runs the engine as today."""
+    from harness.reclaim_marker import format_handoff_comment
+
+    handoff = format_handoff_comment("R1", "harness/x", when="2026-06-16T00:00:00Z")
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [handoff])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_design_comment("CAL-739") is None
+
+
+async def test_fetch_design_comment_ignores_a_comment_quoting_the_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#257's prefix gate at selection: a newer *quoting* comment must not shadow
+    the genuine design below it (a substring gate would let it)."""
+    genuine = _design_body("### Data model\n\nThe real design.\n")
+    quoting = (
+        "A note: the comment above begins with Design by `harness design` and "
+        "carries the design verbatim.\n\n---\n\nnot a design\n"
+    )
+
+    async def fake_request(self: Any, query: str, variables: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+        return _resume_issue([], [genuine, quoting])
+
+    monkeypatch.setattr(LinearClient, "_request", fake_request)
+    client = LinearClient(api_key="fake-key")
+    assert await client.fetch_design_comment("CAL-739") == genuine
+
+
 async def test_fetch_resume_branch_returns_branch_from_latest_reclaim_comment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
