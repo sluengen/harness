@@ -64,10 +64,14 @@ Linear revert, no duplicate event). The sweep is idempotent the same way — onc
 reverted a ticket is Todo, so the next sweep's enumeration no longer returns it.
 
 Exit codes (SPEC §11):
-* 0  — reclaimed (or an idempotent no-op / a revert-only when no local run).
+* 0  — reclaimed or undone (or an idempotent no-op / a revert-only when no local run).
 * 2  — invocation error: neither or both selectors, unknown run-id, a run with
        no associated ticket, a terminal/unrecognised run status, missing
-       ``LINEAR_API_KEY``, or the ticket is not found on Linear.
+       ``LINEAR_API_KEY``, or the ticket is not found on Linear. ``--undo``'s
+       refusals carry a machine-readable ``reason`` (``ambiguous_mode``,
+       ``ambiguous_selector``, ``unknown_run``, ``not_reclaimed``,
+       ``ticket_has_open_run``, ``tracker_config``, ``ticket_not_found``,
+       ``tracker_error``).
 * 1  — unexpected error (DB failure, or an unexpected Linear transport error).
 """
 
@@ -89,6 +93,8 @@ from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.reclaim_liveness import locally_live, open_run_liveness
+from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
+from harness.cli.reclaim_undo import describe as describe_undo
 from harness.layers import tracker as tracker_backend
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
@@ -104,7 +110,11 @@ from harness.tracker_errors import (
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
 # layer *over* that same path, which splitting would only scatter across files.
 # CAL-1104 threaded the tracker layer through both arms so a tracker-less repo
-# reclaims locally, pushing it just over the 500-line limit.
+# reclaims locally, pushing it just over the 500-line limit. #254 added two more
+# arms without adding net length: the liveness rule moved out to
+# ``reclaim_liveness.py`` and the whole ``--undo`` path lives in
+# ``reclaim_undo.py``, so what remains here is the Typer surface, the mode/selector
+# validation, and the printing — the composer, not the mechanics.
 
 __all__ = [
     "ReclaimOutput",
@@ -124,8 +134,11 @@ _RECLAIM_REASON = "reclaimed"
 class _ReclaimError(VerbError):
     """``reclaim``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    The ``(message, code)`` carrier is inherited from the base; ``reclaim`` never
-    sets a ``reason``.
+    The ``(message, code)`` carrier is inherited from the base. The reclaim and
+    sweep arms set no ``reason`` (their refusals are invocation errors a human
+    reads); the ``--undo`` arm does, because a caller branches on its refusals —
+    ``ambiguous_mode`` is raised here and the rest in
+    :mod:`harness.cli.reclaim_undo`.
     """
 
 
@@ -509,6 +522,13 @@ def reclaim_command(
         "--older-than",
         help="Staleness threshold for --stale (e.g. 90m, 12h, 7d). Default 90m.",
     ),
+    undo: bool = typer.Option(
+        False,
+        "--undo",
+        help="Reverse a reclaim confirmed to be a false positive: restore the "
+        "ticket to In Progress, drop the reclaimed label, re-open the run. "
+        "Takes <run-id> or --ticket; mutually exclusive with --stale.",
+    ),
 ) -> None:
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
     db_path = _resolve_db_path(db)
@@ -520,7 +540,18 @@ def reclaim_command(
     # silently taking the tracker-less no-op path.
     tracker = tracker_backend(Path.cwd()) != "none"
 
-    def _do() -> SweepOutput | ReclaimOutput:
+    def _do() -> SweepOutput | ReclaimOutput | ReclaimUndoOutput:
+        if undo:
+            # ``--stale`` sweeps the queue; ``--undo`` reverses one target. There is
+            # no coherent bulk reversal — a false positive is confirmed per ticket
+            # by a human — so the combination is refused rather than interpreted.
+            if stale:
+                raise _ReclaimError(
+                    "--undo reverses one reclaim; do not combine it with --stale",
+                    2,
+                    reason="ambiguous_mode",
+                )
+            return asyncio.run(run_undo(db_path, run_id, ticket, tracker=tracker))
         if stale:
             # Sweep mode owns the scope; a single-target selector is ambiguous.
             if run_id is not None or ticket is not None:
@@ -560,6 +591,10 @@ def reclaim_command(
 
     if isinstance(result, SweepOutput):
         _print_sweep(result)
+        return
+
+    if isinstance(result, ReclaimUndoOutput):
+        typer.echo(describe_undo(result))
         return
 
     if result.outcome == "already_reclaimed":

@@ -24,8 +24,10 @@ from harness.reclaim_marker import (
     NO_BRANCH_SENTINEL,
     RECLAIM_LABEL,
     RECLAIM_MARKER,
+    UNRECLAIM_MARKER,
     format_handoff_comment,
     format_reclaim_comment,
+    format_unreclaim_comment,
     parse_handoff_branch,
     parse_preserved_branch,
 )
@@ -121,3 +123,58 @@ def test_handoff_comment_is_not_read_as_reclaim() -> None:
     body = format_handoff_comment("H1", "harness/handoff", when="2026-07-02T00:00:00Z")
     assert parse_preserved_branch(body) is None
     assert RECLAIM_LABEL not in body
+
+
+# ---------------------------------------------------------------------------
+# #254 — the third marker: a reclaim REVERSED (a confirmed false positive)
+# ---------------------------------------------------------------------------
+
+
+def test_unreclaim_comment_carries_marker_and_states_in_progress() -> None:
+    """The correcting comment names what changed: the ticket is In Progress again."""
+    body = format_unreclaim_comment("01JRUN", when="2026-07-30T00:00:00Z")
+    assert UNRECLAIM_MARKER in body
+    assert "In Progress" in body
+    assert "01JRUN" in body
+
+
+def test_the_three_markers_are_pairwise_non_containing() -> None:
+    """The structural basis for non-collision, now across **three** protocols.
+
+    Containment, not mere inequality, is the property that matters: every reader
+    gates with ``MARKER not in body``, so a marker that appeared as a *substring*
+    of another's body would be silently cross-matched. Undo is the dangerous one —
+    its subject is a reclamation, so it is the marker most tempted to quote the
+    reclaim phrasing.
+    """
+    markers = {
+        "reclaim": RECLAIM_MARKER,
+        "handoff": HANDOFF_MARKER,
+        "unreclaim": UNRECLAIM_MARKER,
+    }
+    for a_name, a in markers.items():
+        for b_name, b in markers.items():
+            if a_name == b_name:
+                continue
+            assert a not in b, f"{a_name} marker is contained in the {b_name} marker"
+
+
+def test_unreclaim_comment_is_read_by_neither_branch_parser() -> None:
+    """An undo comment yields no branch to either resume reader.
+
+    ``start --resume`` scans a ticket's comments for a preserved ref. An undo
+    comment sits on the *same* ticket as the reclaim comment it reverses, so if
+    either parser matched it the resumed run could be based on a ref this comment
+    never named. It carries no ``Preserved branch:`` clause at all, so both
+    parsers must return ``None``.
+    """
+    body = format_unreclaim_comment("01JRUN", when="2026-07-30T00:00:00Z")
+    assert parse_preserved_branch(body) is None
+    assert parse_handoff_branch(body) is None
+    assert "Preserved branch:" not in body
+
+
+def test_unreclaim_comment_does_not_claim_the_reclaimed_label() -> None:
+    """Undo *removes* the label, so its comment must not read as applying one."""
+    body = format_unreclaim_comment("01JRUN", when="2026-07-30T00:00:00Z")
+    assert f"labelled `{RECLAIM_LABEL}`" not in body
