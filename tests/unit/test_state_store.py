@@ -95,8 +95,12 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "pid",          # dormant column; engine-era SIGTERM cancel removed (CAL-587)
         "ticket",       # CAL-570: Linear ticket identifier for ``harness start``
         "worktree_path",  # CAL-570: worktree filesystem path for ``harness start``
+        "resumed_from",   # #258: the preserved branch ``--resume`` recovered, else NULL
     }
     assert set(cols.keys()) == expected
+    # #258 / ADR 0008 F2: the adopt gate reads this as "did the WIP come back?",
+    # so a clean start must be distinguishable — the column has to be nullable.
+    assert cols["resumed_from"]["notnull"] == 0
     assert cols["run_id"]["pk"] == 1
     assert cols["workflow_name"]["notnull"] == 1
     assert cols["workflow_version"]["notnull"] == 1
@@ -245,3 +249,85 @@ async def test_pid_column_present_via_schema(tmp_path: Path) -> None:
     await store.init_db(db_path)
     cols = await _table_columns(db_path, "runs")
     assert "pid" in cols
+
+
+# ---------------------------------------------------------------------------
+# #258 — the ``runs.resumed_from`` migration (AC-7)
+# ---------------------------------------------------------------------------
+
+
+async def _premigration_ledger(db_path: Path, run_id: str) -> None:
+    """Build a ledger as it stood *before* the ``resumed_from`` migration.
+
+    ``_SCHEMA``'s ``CREATE TABLE IF NOT EXISTS`` cannot express the column drop,
+    so the pre-migration shape is written directly: today's ``runs`` table minus
+    ``resumed_from``, carrying one row. Running :func:`store.init_db` over this
+    is exactly what an existing checkout's ledger meets on upgrade.
+    """
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            "CREATE TABLE runs ("
+            "run_id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, "
+            "workflow_version INTEGER NOT NULL, status TEXT NOT NULL, "
+            "state_json TEXT NOT NULL, inputs_json TEXT NOT NULL, "
+            "base_branch TEXT, worktree_branch TEXT, exit_code INTEGER, "
+            "started_at TEXT NOT NULL, completed_at TEXT, duration_ms INTEGER, "
+            "pid INTEGER, ticket TEXT, worktree_path TEXT)"
+        )
+        await conn.execute(
+            "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
+            "state_json, inputs_json, started_at) VALUES (?, '', 0, 'open', "
+            "'{}', '{}', '2026-07-30T00:00:00Z')",
+            (run_id,),
+        )
+        await conn.commit()
+
+
+async def test_resumed_from_migration_opens_a_premigration_ledger(
+    tmp_path: Path,
+) -> None:
+    """AC-7: a ledger predating the migration upgrades, and its runs read ``NULL``.
+
+    The whole point of the additive ``ALTER TABLE``: an existing checkout's
+    ledger gains the column without losing a row, and every run written before
+    it reads ``resumed_from IS NULL`` — which the adopt gate treats as a clean
+    start, so pre-migration runs behave exactly as they did.
+    """
+    db_path = tmp_path / "harness.db"
+    await _premigration_ledger(db_path, "01JOLDRUNXXXXXXXXXXXXXXXX1")
+
+    await store.init_db(db_path)
+
+    assert "resumed_from" in await _table_columns(db_path, "runs")
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute("SELECT run_id, resumed_from FROM runs") as cursor,
+    ):
+        rows = await cursor.fetchall()
+    assert rows == [("01JOLDRUNXXXXXXXXXXXXXXXX1", None)]
+
+
+async def test_resumed_from_migration_is_idempotent(tmp_path: Path) -> None:
+    """AC-7: applying the migration twice succeeds and preserves the value.
+
+    ``init_db`` runs on every verb invocation, so the second application is the
+    common case, not an edge one. A migration that raised — or that reset a
+    recorded ``resumed_from`` — would break every run after the first.
+    """
+    db_path = tmp_path / "harness.db"
+    await _premigration_ledger(db_path, "01JOLDRUNXXXXXXXXXXXXXXXX2")
+    await store.init_db(db_path)
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE runs SET resumed_from = 'harness/01JSOURCE'",
+        )
+        await conn.commit()
+
+    await store.init_db(db_path)  # second application — must not raise or reset
+
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute("SELECT resumed_from FROM runs") as cursor,
+    ):
+        rows = await cursor.fetchall()
+    assert rows == [("harness/01JSOURCE",)]
