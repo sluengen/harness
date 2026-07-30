@@ -98,6 +98,35 @@ def test_loop_documents_degrade_and_record_posture() -> None:
     )
 
 
+def test_loop_documents_the_adopt_path_posting_no_comment() -> None:
+    """#258: on a successful adopt, two of Step 1.5's three recording places apply.
+
+    The step tells the reader the verb records the design "in three places", the
+    first being the ticket comment. ADR 0008's adopt path posts **none** — the
+    design is already on the ticket, which is where it was recovered from. An
+    operator who goes looking for a design comment against a resumed run's
+    `run_id` will not find one, and that is the surprise worth documenting.
+
+    Asserted on the two facts, not on a wording: that the step names inheritance
+    at all, and that it says no comment is posted. The engine-runs description
+    is left alone deliberately — it is correct for every run that *does* run the
+    engine, which is every clean start and every resumed run whose adoption
+    declines (including one whose predecessor's own design failed).
+    """
+    text = COMMAND_DOC.read_text()
+    assert "inherited_from" in text, (
+        "commands/harness.md Step 1.5 must name the adopt path's ledger marker "
+        "(`inherited_from`), so a reader can tell an adopted design from a "
+        "designed one in `harness events` (#258, ADR 0008 D1)."
+    )
+    assert re.search(r"adopt.{0,400}no (new )?comment", text, re.S | re.I), (
+        "commands/harness.md Step 1.5 must state that the adopt path posts no "
+        "comment — otherwise the documented 'records it in three places' reads "
+        "as unconditional and an operator hunts for a comment that is absent "
+        "(#258)."
+    )
+
+
 def test_lifecycle_summary_matches_across_surfaces() -> None:
     """One canonical string, two surfaces — the drift this test exists to catch."""
     for path in (COMMAND_DOC, CONTEXT):
