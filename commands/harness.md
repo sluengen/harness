@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.10 -->
+<!-- guidance:harness@0.2.11 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -61,6 +61,10 @@ A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedi
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
   "grounded_sha": "...", "model": "opus", "status": "ok" }
 ```
+
+**One narrow exception: a resumed run may adopt its predecessor's design instead (#258, ADR 0008 D1).** When the run resumed from a preserved WIP branch *and* the ticket carries a design that authenticates against a recorded `status='ok'` event, the verb records its own `design` event marked `inherited_from` and emits the recovered design — **no engine runs, and no new comment is posted**, because the design is already on the ticket, which is where it was read from. The three-places description above then covers two: the ledger and stdout. Nothing changes for you — `DesignOutput` has the same shape and Step 3's `--design-file` handling is identical — but if you go looking for a design comment against a resumed run's `run_id`, it will not be there; `harness events <run_id> --type design` and a stderr note both name the source run.
+
+Adoption is deliberately hard to earn, so the engine still runs on most resumed runs: a clean-start fallback, a missing or edited comment, or a predecessor whose own design attempt *failed* all decline it and design from scratch.
 
 **Run it as a single top-level background command — never chain a bare `&` inside a command that is *also* launched with your runtime's own background flag (#236).** A nested-background invocation detaches a process your session no longer tracks: it looks dead, but it is often still running to completion. If a redirected output file reads empty shortly after launch, that means **not finished yet**, never *dead* — wait and re-read, or check `harness events <run_id> --type design`, rather than relaunching. If two invocations do run, the **last one to finish silently becomes the run's bound design**, and it may not be the one you read — `harness design`'s own output then carries `concurrent_prior_at` (and the underlying `design` event does too) as the machine-readable warning that this happened; a stderr `warning:` line says the same. The recovery is not a bypass: run `harness design` once, cleanly, and implement from *that* output — the idempotent re-run contract below is unchanged.
 

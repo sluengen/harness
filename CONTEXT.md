@@ -39,7 +39,7 @@ branches:
 loop:                   # ledger-backed spend breakers for the autonomous loop (CAL-906; read by harness/loop_budget.py)
   max_review_cycles: 6           # hard ceiling — the run stops + escalates on REACHING the 6th review→fix cycle (cycles 1–3 unconditional; 4–5 assess convergence). One coherent stop rule with agents/reviewer.md.
   wall_clock_budget_minutes: 90  # per-run wall-clock budget; deliberately mirrors the stale-run reclamation staleness threshold — if one moves, move both.
-  engine_timeout_seconds: 600    # per-subprocess ceiling for the review engine (claude -p / codex exec); a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Sit it at or below the ops kill so the clean exit wins (CAL-1004).
+  engine_timeout_seconds: 720    # per-subprocess ceiling for BOTH engines — review (claude -p / codex exec) and design (opus, plan mode); a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Sit it at or below the ops kill so the clean exit wins (CAL-1004). Raised 600 → 720 on 2026-07-30: across 18 timed design runs the ceiling sat *inside* the working distribution (successes 213–561s, median 277s, two landing at 516s and 561s) so ~11% were the right tail being clipped, not hung engines. Deliberately not applied to `DEFAULT_ENGINE_TIMEOUT_SECONDS` — the evidence is this repo's ledger, and the design engine (studies a whole worktree) is systematically slower than the review engine (reads a diff), so one knob for two workloads is the underlying mis-fit to revisit.
 conventions:
   commit_format: "type(scope): description — feat / fix / chore / docs / refactor / test / spec"
 tools:
