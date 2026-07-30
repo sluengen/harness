@@ -38,6 +38,7 @@ from harness.events.payloads import (
     CloseEventData,
     DeferEventData,
     DesignEventData,
+    ReleaseEventData,
     ReviewEventData,
     WorkflowFailedEventData,
     _field_name,
@@ -275,6 +276,41 @@ def test_workflow_failed_event_data_keys() -> None:
     assert WorkflowFailedEventData(reason="reclaimed").model_dump() == {
         "reason": "reclaimed"
     }
+
+
+def test_defer_event_data_project_is_nullable() -> None:
+    """An unscoped repo records `project: null` (#248), not a validation error.
+
+    `repo.project` is optional, so the effective scope a defer records can be
+    absent. Existing rows carry strings and still validate — the widening is
+    additive, so no migration.
+    """
+    dumped = DeferEventData(
+        run_id="R1", ticket="ERP-221", reason="needs a call", project=None,
+        needs="decision", deferred_at="t",
+    ).model_dump()
+    assert dumped["project"] is None
+
+
+def test_release_event_data_keys() -> None:
+    assert ReleaseEventData(
+        run_id="R1", ticket="CAL-193", project="Harness v3",
+        needs="decision", released_at="t",
+    ).model_dump() == {
+        "run_id": "R1",
+        "ticket": "CAL-193",
+        "project": "Harness v3",
+        "needs": "decision",
+        "released_at": "t",
+    }
+
+
+def test_release_event_data_project_is_nullable() -> None:
+    """`defer`'s mirror — see its docstring (#248)."""
+    dumped = ReleaseEventData(
+        run_id="R1", ticket="ERP-221", project=None, needs="decision", released_at="t",
+    ).model_dump()
+    assert dumped["project"] is None
 
 
 def test_defer_event_data_keys() -> None:

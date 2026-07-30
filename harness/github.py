@@ -51,6 +51,7 @@ from harness.tracker_errors import (
     TrackerRequestError,
     TrackerTransitionUnconfirmed,
 )
+from harness.tracker_queue import QueueMembership
 
 # size: one cohesive GitHub GraphQL boundary class — the exact mirror of the
 # LinearClient size waiver. Every GitHub Issues/Projects-v2 operation the verbs
@@ -217,13 +218,26 @@ query FetchIssue($owner: String!, $name: String!, $number: Int!) {
             ],
         }
 
-    async def fetch_issue_project(self, identifier: str) -> str | None:
-        """Return the configured board's title if the issue is on it, else ``None``.
+    async def fetch_queue_membership(
+        self, identifier: str, *, project: str | None
+    ) -> QueueMembership:
+        """Whether issue ``identifier`` is on this repo's Build queue (CAL-1143, #248).
 
-        The Build-queue membership check ``harness defer`` binds to (CAL-1143). On
-        GitHub the "project" is the configured Projects v2 board, so this reports
-        the board title when the issue is an item on it and ``None`` otherwise
-        (the caller treats ``None`` as "not on the Build queue").
+        The membership check ``harness defer`` / ``harness release`` bind to. On
+        GitHub the Build queue **is** the configured Projects v2 board, so the
+        answer is simply "is this issue an item on it", and the returned
+        ``project`` is the board's title.
+
+        The ``project`` argument is accepted for seam symmetry and deliberately
+        **ignored** — the same shape :meth:`fetch_reclaimable_issues` already
+        takes. The board is resolved from ``repo.github`` independently of
+        ``repo.project``, so the value this method can report is *always* the
+        configured board's title. Comparing it against ``repo.project`` (what the
+        callers did before #248) could therefore only ever produce a **false**
+        refusal — when a descriptive ``repo.project`` did not match the board
+        title verbatim — and could never catch an off-queue issue the board check
+        does not already catch. Proposal ``optional-project-scope`` D2 settled
+        that ``repo.project`` is descriptive-only on this backend.
 
         Raises:
             GitHubNotFound: the issue does not exist.
@@ -243,11 +257,13 @@ query IssueProjects($owner: String!, $name: String!, $number: Int!) {
         issue = await self._issue_node(query, number, ("issue",))
         meta = await self._project_metadata()
         for item in (issue.get("projectItems") or {}).get("nodes", []):
-            project = item.get("project") or {}
-            if project.get("id") == meta.project_id:
-                title = project.get("title")
-                return str(title) if title else None
-        return None
+            board = item.get("project") or {}
+            if board.get("id") == meta.project_id:
+                title = board.get("title")
+                return QueueMembership(
+                    on_queue=True, project=str(title) if title else None
+                )
+        return QueueMembership(on_queue=False, project=None)
 
     async def fetch_reclaimable_issues(
         self, *, project: str | None
