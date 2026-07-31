@@ -32,7 +32,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness._time import iso_z
-from harness.cli import app
+from harness.cli import app, design_protocol
 from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
 from harness.design_marker import DESIGN_MARKER
@@ -638,10 +638,10 @@ def test_unusable_engine_output_degrades_and_records(
 def test_submit_failure_records_the_unparseable_payload(
     repo: Path, db_path: Path
 ) -> None:
-    """#277: the recorded ``detail`` must diagnose, not just tally.
+    """#277: the event must diagnose, not just tally.
 
-    The failure is silent by design (D4 degrades and the run ships), so the
-    ledger event is the *only* evidence a later reader gets.
+    The failure is silent by design (D4 degrades and the run ships), so this
+    event is the only evidence a later reader gets.
     """
     _seed_open_run(db_path, repo)
     stdout = 'SUBMIT: {"design_markdown": "### Data model\n'
@@ -649,23 +649,66 @@ def test_submit_failure_records_the_unparseable_payload(
     result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
 
     assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
-    detail = design_events(db_path)[0]["data"]["detail"]
-    assert design_mod.MALFORMED_SUBMIT_SENTINEL in detail, "the sentinel still leads"
-    assert '"design_markdown": "### Data model' in detail, "and the payload follows"
+    data = design_events(db_path)[0]["data"]
+    assert data["submit_excerpt"] == stdout
+    assert data["stdout_chars"] == len(stdout)
 
 
-def test_submit_failure_detail_stays_bounded(repo: Path, db_path: Path) -> None:
-    """A 15 KB payload must not land in the ledger whole (#271/#272/#273 sizes)."""
+def test_submit_failure_excerpt_stays_bounded_in_the_ledger(
+    repo: Path, db_path: Path
+) -> None:
+    """A 17 KB stdout must not land in the ledger whole (#271/#272/#273 sizes)."""
     _seed_open_run(db_path, repo)
-    payload = '{"design_markdown": "' + "x" * 15_000
-    stdout = f"SUBMIT: {payload}"
+    stdout = "SUBMIT: {" + "x" * 17_000
 
     result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
 
     assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
-    detail = design_events(db_path)[0]["data"]["detail"]
-    assert str(len(payload)) in detail, "the true payload length is still reported"
-    assert len(detail) < 1_000, f"detail ran to {len(detail)} chars"
+    data = design_events(db_path)[0]["data"]
+    assert data["stdout_chars"] == len(stdout), "the true length is still recorded"
+    assert len(data["submit_excerpt"]) <= design_protocol.SUBMIT_EXCERPT_MAX_CHARS
+
+
+def test_the_excerpt_never_reaches_stdout(repo: Path, db_path: Path) -> None:
+    """DesignOutput promises only the parsed payload escapes, never reasoning.
+
+    The excerpt is exactly that reasoning; it is for an operator reading the
+    ledger, not for the orchestrator's context.
+    """
+    _seed_open_run(db_path, repo)
+    stdout = "SUBMIT: {UNIQUEMARK"
+
+    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+
+    assert "UNIQUEMARK" not in result.output
+    assert "submit_excerpt" not in result.output
+
+
+def test_a_successful_design_records_neither_field(repo: Path, db_path: Path) -> None:
+    """exclude_none=True keeps the ok shape exactly as pinned since #211."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0
+    data = design_events(db_path)[0]["data"]
+    assert "submit_excerpt" not in data
+    assert "stdout_chars" not in data
+
+
+def test_a_timeout_records_no_excerpt(repo: Path, db_path: Path) -> None:
+    """The child was killed; there is no stdout to quote, and an empty one lies."""
+    _seed_open_run(db_path, repo)
+
+    runner = _make_raising_runner(design_mod.EngineTimeoutError(600.0))
+
+    result = _invoke(repo, db_path, runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    data = design_events(db_path)[0]["data"]
+    assert data["reason"] == "engine_timeout"
+    assert "submit_excerpt" not in data
+    assert "stdout_chars" not in data
 
 
 def test_engine_timeout_degrades_and_records(repo: Path, db_path: Path) -> None:

@@ -48,7 +48,8 @@ __all__ = [
     "DesignResult",
     "MALFORMED_SUBMIT_SENTINEL",
     "NO_SUBMIT_SENTINEL",
-    "SUBMIT_EXCERPT_BUDGET",
+    "SUBMIT_EXCERPT_MAX_CHARS",
+    "SUBMIT_EXCERPT_WINDOW_CHARS",
     "build_design_cmd",
     "build_design_prompt",
     "design_content_hash",
@@ -71,16 +72,29 @@ DESIGN_MODEL_DEFAULT = "opus"
 NO_SUBMIT_SENTINEL = "design engine emitted no SUBMIT line"
 MALFORMED_SUBMIT_SENTINEL = "design engine emitted a malformed SUBMIT line"
 
-# How much of the unparseable output a failed parse keeps (#277).
+# How much of the unparseable output a failed parse quotes (#277).
 #
-# The ledger is an audit trail, not a log. A real design payload measured 14–17
-# KB across three recorded runs (#271/#272/#273), so keeping the offending line
-# whole would put a design-sized blob on every failed event. What actually
-# diagnoses is far smaller: how the line *starts* (a code fence, a prose
-# preamble) and where it *stopped* (a truncation, an unterminated string), which
-# is why the window below keeps both ends and elides the middle rather than
-# taking a prefix.
-SUBMIT_EXCERPT_BUDGET = 400
+# The ledger is an audit trail, not a log: a real design payload measured 14–17
+# KB across the runs recorded for #271/#272/#273, so keeping the offending output
+# whole would put a design-sized blob on every failed event.
+#
+# **Two windows, not one.** The point of the excerpt is not to preserve output;
+# it is to discriminate, from a *single* occurrence, between the causes item 3
+# must choose among — and they show up in different places. A payload that spans
+# lines (pretty-printed JSON, or a literal newline where ``\n`` was required)
+# shows at the **start** of the payload; a truncation, and an engine that
+# designed but never submitted, both show at the **end** of stdout. A tail-only
+# window is cheaper and cannot tell the first from the second.
+SUBMIT_EXCERPT_WINDOW_CHARS = 1000
+
+# Fixed-length, deliberately: a marker carrying the elided count would make the
+# maximum below underivable, and that count is already recoverable from the
+# recorded ``stdout_chars``.
+_EXCERPT_ELISION = "\n... [elided] ...\n"
+
+#: The excerpt's hard ceiling, for stdout of any size. Derived, so the bound
+#: cannot drift from the windows it is made of.
+SUBMIT_EXCERPT_MAX_CHARS = 2 * SUBMIT_EXCERPT_WINDOW_CHARS + len(_EXCERPT_ELISION)
 
 # The sections a design must carry, in order. Three come from
 # ``templates/change.md``'s Design block — the artifact is that block, not a
@@ -197,15 +211,19 @@ class DesignResult(BaseModel):
     enforces that a design was *attempted and recorded*, not that it succeeded,
     so a failure here is data, never an exception.
 
-    ``excerpt`` accompanies ``error`` and is ``None`` on success (#277): a
-    bounded description of what would not parse. Without it a failure records
-    only *that* the contract broke, which is why a 12.5% failure rate could
-    accumulate over 72 attempts with nothing to diagnose from.
+    ``submit_excerpt`` and ``stdout_chars`` accompany ``error`` and are both
+    ``None`` on success (#277). Without them a failure records only *that* the
+    contract broke, which is how a 12.5% failure rate accumulated over 72
+    attempts with nothing to diagnose from. ``stdout_chars`` is set on every
+    failure — ``0`` included — while ``submit_excerpt`` is set only when there
+    was output to quote, so empty stdout reads as *the engine emitted nothing*
+    rather than *the engine emitted an empty payload*.
     """
 
     design_markdown: str | None = None
     error: str | None = None
-    excerpt: str | None = None
+    submit_excerpt: str | None = None
+    stdout_chars: int | None = None
 
 
 class _Submit(BaseModel):
@@ -223,25 +241,34 @@ class _Submit(BaseModel):
         return self.design_markdown if self.design_markdown.strip() else None
 
 
-def _describe(text: str, why: str) -> str:
-    """One bounded, self-describing line about output that would not parse.
+def _build_excerpt(stdout: str, *, saw_submit_line: bool) -> str | None:
+    """A bounded quote of the output that would not parse, or ``None`` if empty.
 
-    Three facts, because each answers a different question the next reader has:
-    *why* it failed, *how long* the payload really was (a 15 KB line elided to
-    :data:`SUBMIT_EXCERPT_BUDGET` must still say it was 15 KB, or truncation and
-    verbosity look identical), and a **head-and-tail window** onto the text.
+    Anchored at the **last** ``SUBMIT:`` token when the scanner saw one — the
+    contract asks for a final line, so earlier occurrences are reasoning — and
+    at the end of stdout otherwise, where an engine that designed without
+    submitting leaves its evidence.
 
-    The text is untrusted engine output, so it is bounded here rather than at
-    the caller — this is the only place that knows the budget, and every failure
-    path routes through it.
+    Honest limit: ``rfind`` can land on a mid-line ``SUBMIT:`` the line scanner
+    itself skipped. That is acceptable because the anchor only positions a
+    quote, never a classification, and it avoids threading a character offset
+    through a :meth:`str.splitlines` loop, where ``\\r\\n`` makes the arithmetic
+    wrong.
+
+    The text is untrusted engine output; bounding it is this function's job, so
+    no caller has to remember to do it.
     """
-    if len(text) <= SUBMIT_EXCERPT_BUDGET:
-        window = text
-    else:
-        half = SUBMIT_EXCERPT_BUDGET // 2
-        elided = len(text) - 2 * half
-        window = f"{text[:half]}[…{elided} chars elided…]{text[-half:]}"
-    return f"{why} ({len(text)} chars): {window}"
+    if not stdout:
+        return None
+    window = SUBMIT_EXCERPT_WINDOW_CHARS
+    anchor = stdout.rfind("SUBMIT:") if saw_submit_line else -1
+    if anchor < 0:
+        return stdout[-window:]
+    if len(stdout) - anchor <= 2 * window:
+        # The two windows touch or overlap: quote it whole rather than claim an
+        # elision that removed nothing.
+        return stdout[anchor:]
+    return stdout[anchor : anchor + window] + _EXCERPT_ELISION + stdout[-window:]
 
 
 def parse_design_submit(stdout: str) -> DesignResult:
@@ -261,45 +288,37 @@ def parse_design_submit(stdout: str) -> DesignResult:
     real submission at the end. Malformed is reported only when no valid line
     was found anywhere.
 
-    Either failure also carries an ``excerpt`` (#277) describing what would not
-    parse — for a malformed line, the **last** one that failed, since the real
-    submission is the final line and an earlier stray must not be the thing
-    reported.
+    Either failure also carries a bounded ``submit_excerpt`` and the true
+    ``stdout_chars`` (#277) — see :func:`_build_excerpt` for what is quoted and
+    why two windows rather than one.
     """
-    last_failure: str | None = None
+    saw_submit_line = False
     for line in stdout.splitlines():
         stripped = line.strip()
         if not stripped.startswith("SUBMIT:"):
             continue
+        saw_submit_line = True
         json_part = stripped[len("SUBMIT:") :].strip()
         try:
             payload = json.loads(json_part)
-        except json.JSONDecodeError as exc:
-            last_failure = _describe(json_part, f"the JSON did not parse ({exc})")
+        except json.JSONDecodeError:
             continue
         if not isinstance(payload, dict):
-            last_failure = _describe(
-                json_part, f"the payload is a JSON {type(payload).__name__}, not an object"
-            )
             continue
         try:
             submit = _Submit.model_validate(payload)
         except ValidationError:
-            last_failure = _describe(
-                json_part, "the payload carries no string `design_markdown` field"
-            )
             continue
         design = submit.stripped_or_none()
         if design is None:
-            last_failure = _describe(json_part, "`design_markdown` is blank")
             continue
         return DesignResult(design_markdown=design)
 
-    if last_failure is not None:
-        return DesignResult(error=MALFORMED_SUBMIT_SENTINEL, excerpt=last_failure)
+    error = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
     return DesignResult(
-        error=NO_SUBMIT_SENTINEL,
-        excerpt=_describe(stdout, "no `SUBMIT:` line anywhere in the engine's stdout"),
+        error=error,
+        submit_excerpt=_build_excerpt(stdout, saw_submit_line=saw_submit_line),
+        stdout_chars=len(stdout),
     )
 
 
