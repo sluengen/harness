@@ -245,24 +245,37 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
 # --- CHANGELOG freshness anchor (CAL-651, AC-2) -------------------------------
 
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+FRAGMENT_README = REPO_ROOT / "changelog.d" / "README.md"
 FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 
 def test_changelog_present_and_referenced_by_freshness_hook() -> None:
-    """AC-2: CHANGELOG.md exists and the SOURCE-mode freshness hook nags toward it.
+    """AC-2: the changelog exists and the SOURCE-mode freshness hook nags toward it.
 
     The freshness hook (SOURCE mode) tells an author to record a version bump in
-    CHANGELOG.md. If the hook points there, the file must exist or the pointer is
-    a dead end.
+    the changelog. If the hook points somewhere, that place must exist or the
+    pointer is a dead end.
+
+    Since #267 the place is ``changelog.d/`` — an author writes a fragment, not
+    an entry in ``CHANGELOG.md``, so a reminder still naming the root file would
+    send them to the one file the ratchet forbids them to grow. ``CHANGELOG.md``
+    itself remains a tracked root file: it is the released history the fold
+    writes into.
     """
     assert CHANGELOG.resolve() in tracked_files_under("CHANGELOG.md"), (
-        "CHANGELOG.md must be a committed root file — the SOURCE-mode freshness "
-        "hook nags authors toward it (CAL-651, AC-2)."
+        "CHANGELOG.md must be a committed root file — it holds the released "
+        "history the release fold writes into (CAL-651, AC-2; #267)."
     )
-    assert "CHANGELOG.md" in FRESHNESS_HOOK.read_text(), (
-        "hooks/guidance-freshness.js no longer references CHANGELOG.md. The "
-        "SOURCE-mode bump reminder must point authors at the changelog (CAL-651, "
-        "AC-2)."
+    assert FRAGMENT_README.resolve() in tracked_files_under("changelog.d"), (
+        "changelog.d/README.md must be a committed file — a directory needs a "
+        "tracked file to exist in git at all, and the freshness hook now points "
+        "authors at that directory (#267)."
+    )
+    assert "changelog.d/" in FRESHNESS_HOOK.read_text(), (
+        "hooks/guidance-freshness.js no longer references changelog.d/. The "
+        "SOURCE-mode bump reminder must point authors at the fragment directory "
+        "— since #267 that is where an entry goes, and naming CHANGELOG.md would "
+        "send them to a file the ratchet forbids them to grow (CAL-651, AC-2)."
     )
 
 
