@@ -57,6 +57,24 @@ REVIEW_OUTCOME_FAILED = "failed"
 #: together in the aggregate they exist to make readable.
 REVIEW_UNEXPECTED_REASON = "unexpected_error"
 
+#: The two ways **either** engine verb can fail to get a verdict out of its
+#: engine's ``SUBMIT`` contract. ``design`` had them first; ``review`` classifies
+#: the same failure the same way from #270, which makes this the second copy and
+#: therefore the moment to extract (``code-quality``'s extract-on-the-second-copy
+#: rule). They live here, beside the outcome discriminators, so the two verbs
+#: cannot drift into two spellings of one fact — the same reason
+#: :data:`REVIEW_UNEXPECTED_REASON` and :data:`CLOSE_UNEXPECTED_REASON` share a
+#: value rather than each declaring their own.
+#:
+#: They are kept **distinct from each other** because they mean different things
+#: to an operator reading the ledger: ``no_submit`` says the engine never reached
+#: its contract (it was cut off, rambled, or refused), ``malformed_submit`` says
+#: it tried and emitted garbage. Collapsing them would make "did the reviewer
+#: stop submitting, or start submitting badly?" unanswerable in exactly the
+#: aggregate #262 and #265 exist to serve.
+NO_SUBMIT_REASON = "no_submit"
+MALFORMED_SUBMIT_REASON = "malformed_submit"
+
 #: The three values of the ``close`` payload's ``outcome`` discriminator (#263),
 #: defined above the models for the same reason as ``review``'s: they are the
 #: field *defaults*, and spelling the literal twice is the writer/reader drift

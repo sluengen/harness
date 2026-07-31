@@ -311,9 +311,14 @@ refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused).
   with the review prompt on stdin and scans stdout for the first `SUBMIT: <json>`
   line. The JSON carries `verdict` (`pass`|`fail`|`defer`), `issues[]`, and
   optional `commit_message` / `deferred_brief`. A missing, malformed, or
-  unknown-verdict SUBMIT line is recorded as `verdict='fail'` with the sentinel
-  issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a
-  bad reviewer, it records the failure.
+  unknown-verdict SUBMIT line means the reviewer delivered **no verdict**, so it
+  is an infra failure, not a rejected diff (#270): exit 3 with `reason` of
+  `no_submit` (no `SUBMIT:` line anywhere) or `malformed_submit` (one was seen
+  but none parsed), recorded as a refusal carrying no `verdict`. It consumes no
+  review cycle and leaves the ticket In Review — the same classification the
+  engine timeout and the sandbox walls already carry, on the same principle that
+  an engine which never reviewed the diff produced no verdict. The verb still
+  never raises on a bad reviewer; it records the failure.
 - Appends a `review` event (`harness.events.schema` event type `review`) whose
   `data_json` holds `run_id`, `reviewed_sha`, `verdict`, `issues`, optional
   `commit_message` / `deferred_brief`, and `created_at`.
