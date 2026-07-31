@@ -448,8 +448,13 @@ async def _produce_design(
     parsed = parse_design_submit(result.stdout)
     if parsed.design_markdown is None:
         sentinel = parsed.error or NO_SUBMIT_SENTINEL
+        # The sentinel says *that* the contract broke; the excerpt says how
+        # (#277). Both go on ``detail``, because a degraded run posts no comment
+        # and prints no engine output — the ledger event is the only evidence
+        # anyone gets that this attempt happened at all.
+        detail = sentinel if parsed.excerpt is None else f"{sentinel} — {parsed.excerpt}"
         raise _DesignNotProducedError(
-            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON), sentinel
+            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON), detail
         )
     design_markdown = parsed.design_markdown
     design_hash = design_content_hash(design_markdown)

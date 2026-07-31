@@ -20,6 +20,7 @@ from harness.cli.design_protocol import (
     DESIGN_SECTIONS,
     MALFORMED_SUBMIT_SENTINEL,
     NO_SUBMIT_SENTINEL,
+    SUBMIT_EXCERPT_BUDGET,
     build_design_cmd,
     build_design_prompt,
     parse_design_submit,
@@ -189,3 +190,72 @@ def test_no_label_tier_resolution_is_wired() -> None:
     # The command builder reads no ticket labels: the tier is a constant here,
     # not resolved per ticket. Wiring one is breakdown work, not this ticket.
     assert "labels" not in inspect.signature(design_protocol.build_design_cmd).parameters
+
+
+# ---------------------------------------------------------------------------
+# AC-4 — a failed parse records a bounded excerpt of what would not parse (#277)
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_submit_records_the_offending_payload() -> None:
+    """The excerpt is the diagnosis: without it a failure is a tally mark."""
+    result = parse_design_submit('SUBMIT: {"design_markdown": "### Data mod\n')
+    assert result.error == MALFORMED_SUBMIT_SENTINEL
+    assert result.excerpt is not None
+    assert '"design_markdown": "### Data mod' in result.excerpt
+
+
+def test_malformed_submit_excerpt_names_why_the_payload_failed() -> None:
+    """Which malformation it was is the whole point of capturing it."""
+    result = parse_design_submit('SUBMIT: {"design_markdown": 42}\n')
+    assert result.excerpt is not None
+    assert "design_markdown" in result.excerpt
+    # The four malformations are distinguishable from the excerpt alone.
+    assert parse_design_submit("SUBMIT: {not json\n").excerpt != result.excerpt
+    assert parse_design_submit('SUBMIT: ["a"]\n').excerpt != result.excerpt
+    assert parse_design_submit('SUBMIT: {"design_markdown": " "}\n').excerpt != result.excerpt
+
+
+def test_no_submit_excerpt_carries_what_the_engine_said_instead() -> None:
+    result = parse_design_submit("I studied the worktree but ran out of room.\n")
+    assert result.error == NO_SUBMIT_SENTINEL
+    assert result.excerpt is not None
+    assert "ran out of room" in result.excerpt
+
+
+def test_excerpt_reports_the_unparseable_payloads_true_length() -> None:
+    """A 15 KB payload elided to 400 chars must still say it was 15 KB."""
+    payload = '{"design_markdown": "' + "x" * 15_000
+    result = parse_design_submit(f"SUBMIT: {payload}\n")
+    assert result.excerpt is not None
+    assert str(len(payload)) in result.excerpt
+
+
+def test_excerpt_is_bounded_far_below_a_real_design_payload() -> None:
+    """The ledger is an audit trail, not a log — #271/#272/#273 ran 14–17 KB."""
+    result = parse_design_submit('SUBMIT: {"design_markdown": "' + "x" * 20_000 + "\n")
+    assert result.excerpt is not None
+    assert len(result.excerpt) < 2 * SUBMIT_EXCERPT_BUDGET
+
+
+def test_excerpt_keeps_both_ends_of_an_elided_payload() -> None:
+    """The head says how the line starts, the tail says where it stopped."""
+    payload = '{"design_markdown": "HEADMARK' + "x" * 5_000 + "TAILMARK"
+    result = parse_design_submit(f"SUBMIT: {payload}\n")
+    assert result.excerpt is not None
+    assert "HEADMARK" in result.excerpt
+    assert "TAILMARK" in result.excerpt
+
+
+def test_a_valid_submit_records_no_excerpt() -> None:
+    result = parse_design_submit('SUBMIT: {"design_markdown": "### Data model"}')
+    assert result.error is None
+    assert result.excerpt is None
+
+
+def test_excerpt_describes_the_last_failing_submit_line() -> None:
+    """The real submission is the final line; an earlier stray must not mask it."""
+    stdout = 'SUBMIT: {"stray": 1}\nSUBMIT: {"design_markdown": UNIQUEMARK}\n'
+    result = parse_design_submit(stdout)
+    assert result.excerpt is not None
+    assert "UNIQUEMARK" in result.excerpt

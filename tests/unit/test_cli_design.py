@@ -635,6 +635,39 @@ def test_unusable_engine_output_degrades_and_records(
     assert json.loads(result.output.strip().splitlines()[-1])["reason"] == expected_reason
 
 
+def test_submit_failure_records_the_unparseable_payload(
+    repo: Path, db_path: Path
+) -> None:
+    """#277: the recorded ``detail`` must diagnose, not just tally.
+
+    The failure is silent by design (D4 degrades and the run ships), so the
+    ledger event is the *only* evidence a later reader gets.
+    """
+    _seed_open_run(db_path, repo)
+    stdout = 'SUBMIT: {"design_markdown": "### Data model\n'
+
+    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    detail = design_events(db_path)[0]["data"]["detail"]
+    assert design_mod.MALFORMED_SUBMIT_SENTINEL in detail, "the sentinel still leads"
+    assert '"design_markdown": "### Data model' in detail, "and the payload follows"
+
+
+def test_submit_failure_detail_stays_bounded(repo: Path, db_path: Path) -> None:
+    """A 15 KB payload must not land in the ledger whole (#271/#272/#273 sizes)."""
+    _seed_open_run(db_path, repo)
+    payload = '{"design_markdown": "' + "x" * 15_000
+    stdout = f"SUBMIT: {payload}"
+
+    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    detail = design_events(db_path)[0]["data"]["detail"]
+    assert str(len(payload)) in detail, "the true payload length is still reported"
+    assert len(detail) < 1_000, f"detail ran to {len(detail)} chars"
+
+
 def test_engine_timeout_degrades_and_records(repo: Path, db_path: Path) -> None:
     """A killed engine is a recorded failed attempt, not a hang (CAL-1004 shape)."""
     _seed_open_run(db_path, repo)

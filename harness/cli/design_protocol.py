@@ -48,6 +48,7 @@ __all__ = [
     "DesignResult",
     "MALFORMED_SUBMIT_SENTINEL",
     "NO_SUBMIT_SENTINEL",
+    "SUBMIT_EXCERPT_BUDGET",
     "build_design_cmd",
     "build_design_prompt",
     "design_content_hash",
@@ -69,6 +70,17 @@ DESIGN_MODEL_DEFAULT = "opus"
 # is the only evidence of which happened.
 NO_SUBMIT_SENTINEL = "design engine emitted no SUBMIT line"
 MALFORMED_SUBMIT_SENTINEL = "design engine emitted a malformed SUBMIT line"
+
+# How much of the unparseable output a failed parse keeps (#277).
+#
+# The ledger is an audit trail, not a log. A real design payload measured 14–17
+# KB across three recorded runs (#271/#272/#273), so keeping the offending line
+# whole would put a design-sized blob on every failed event. What actually
+# diagnoses is far smaller: how the line *starts* (a code fence, a prose
+# preamble) and where it *stopped* (a truncation, an unterminated string), which
+# is why the window below keeps both ends and elides the middle rather than
+# taking a prefix.
+SUBMIT_EXCERPT_BUDGET = 400
 
 # The sections a design must carry, in order. Three come from
 # ``templates/change.md``'s Design block — the artifact is that block, not a
@@ -184,10 +196,16 @@ class DesignResult(BaseModel):
     ``error`` on either failure. The verb records whichever it gets — ADR 0007
     enforces that a design was *attempted and recorded*, not that it succeeded,
     so a failure here is data, never an exception.
+
+    ``excerpt`` accompanies ``error`` and is ``None`` on success (#277): a
+    bounded description of what would not parse. Without it a failure records
+    only *that* the contract broke, which is why a 12.5% failure rate could
+    accumulate over 72 attempts with nothing to diagnose from.
     """
 
     design_markdown: str | None = None
     error: str | None = None
+    excerpt: str | None = None
 
 
 class _Submit(BaseModel):
@@ -203,6 +221,27 @@ class _Submit(BaseModel):
         would put an empty Design section on the ticket.
         """
         return self.design_markdown if self.design_markdown.strip() else None
+
+
+def _describe(text: str, why: str) -> str:
+    """One bounded, self-describing line about output that would not parse.
+
+    Three facts, because each answers a different question the next reader has:
+    *why* it failed, *how long* the payload really was (a 15 KB line elided to
+    :data:`SUBMIT_EXCERPT_BUDGET` must still say it was 15 KB, or truncation and
+    verbosity look identical), and a **head-and-tail window** onto the text.
+
+    The text is untrusted engine output, so it is bounded here rather than at
+    the caller — this is the only place that knows the budget, and every failure
+    path routes through it.
+    """
+    if len(text) <= SUBMIT_EXCERPT_BUDGET:
+        window = text
+    else:
+        half = SUBMIT_EXCERPT_BUDGET // 2
+        elided = len(text) - 2 * half
+        window = f"{text[:half]}[…{elided} chars elided…]{text[-half:]}"
+    return f"{why} ({len(text)} chars): {window}"
 
 
 def parse_design_submit(stdout: str) -> DesignResult:
@@ -221,31 +260,47 @@ def parse_design_submit(stdout: str) -> DesignResult:
     one, so a stray ``SUBMIT:`` inside the engine's reasoning cannot mask the
     real submission at the end. Malformed is reported only when no valid line
     was found anywhere.
+
+    Either failure also carries an ``excerpt`` (#277) describing what would not
+    parse — for a malformed line, the **last** one that failed, since the real
+    submission is the final line and an earlier stray must not be the thing
+    reported.
     """
-    saw_submit_line = False
+    last_failure: str | None = None
     for line in stdout.splitlines():
         stripped = line.strip()
         if not stripped.startswith("SUBMIT:"):
             continue
-        saw_submit_line = True
         json_part = stripped[len("SUBMIT:") :].strip()
         try:
             payload = json.loads(json_part)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            last_failure = _describe(json_part, f"the JSON did not parse ({exc})")
             continue
         if not isinstance(payload, dict):
+            last_failure = _describe(
+                json_part, f"the payload is a JSON {type(payload).__name__}, not an object"
+            )
             continue
         try:
             submit = _Submit.model_validate(payload)
         except ValidationError:
+            last_failure = _describe(
+                json_part, "the payload carries no string `design_markdown` field"
+            )
             continue
         design = submit.stripped_or_none()
         if design is None:
+            last_failure = _describe(json_part, "`design_markdown` is blank")
             continue
         return DesignResult(design_markdown=design)
 
-    error = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
-    return DesignResult(error=error)
+    if last_failure is not None:
+        return DesignResult(error=MALFORMED_SUBMIT_SENTINEL, excerpt=last_failure)
+    return DesignResult(
+        error=NO_SUBMIT_SENTINEL,
+        excerpt=_describe(stdout, "no `SUBMIT:` line anywhere in the engine's stdout"),
+    )
 
 
 # ---------------------------------------------------------------------------
