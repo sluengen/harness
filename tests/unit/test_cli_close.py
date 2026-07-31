@@ -139,6 +139,7 @@ def _seed_open_run(
     repo: Path,
     run_id: str = RUN_ID,
     ticket: str = "CAL-572",
+    started_at: str = SEEDED_STARTED_AT,
 ) -> str:
     """Insert an ``open`` runs row whose worktree_path == repo, return run_id."""
 
@@ -162,7 +163,7 @@ def _seed_open_run(
                     str(repo),
                     f"harness/{run_id}",
                     ticket,
-                    SEEDED_STARTED_AT,
+                    started_at,
                     1234,
                 ),
             )
@@ -1231,3 +1232,81 @@ def test_close_stamps_duration_ms_measured_from_started_at(
 
     _completed_at, duration_ms = fetch_run_completion(db_path, run_id)
     assert duration_ms == EXPECTED_DURATION_MS
+
+
+def test_close_measures_duration_from_the_production_started_at_shape(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The two stored shapes of ``started_at`` must yield the same number.
+
+    ``harness start`` writes a plain ``.isoformat()`` (``+00:00``) while the
+    close clock is the trailing-``Z`` form, so every other duration assertion in
+    this file runs on a shape **no production run row carries**. Seeding the
+    ``+00:00`` form is what proves the parse reads the live ledger, not just the
+    fixture.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo, started_at="2026-06-10T00:00:00+00:00")
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    _completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert duration_ms == EXPECTED_DURATION_MS
+
+
+@pytest.mark.parametrize(
+    "started_at",
+    [
+        pytest.param("not-a-timestamp", id="unparseable"),
+        pytest.param("2026-06-10T00:00:00", id="tz-naive"),
+    ],
+)
+def test_close_lands_with_a_null_duration_when_started_at_cannot_be_differenced(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch, started_at: str
+) -> None:
+    """A ``started_at`` the verb cannot difference costs the duration, not the close.
+
+    By the time the stamps are written the merge has landed and the ticket is
+    Done, and the only recovery is re-running ``close`` — which would re-read the
+    same bad cell and fail identically, stranding a merged run ``open`` forever.
+    So the derived value degrades to ``NULL`` (a state the column and both
+    readers already model) while ``completed_at``, which needs no input beyond
+    the clock reading the verb already holds, is stamped regardless.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo, started_at=started_at)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+    assert fetch_run_status(db_path, run_id) == "closed"
+
+    completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert completed_at == FIXED_CLOSED_AT
+    assert duration_ms is None
+
+
+def test_harness_runs_renders_the_duration_close_stamped(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamped duration reaches the reader — the point of storing it.
+
+    ``harness runs`` already knew how to render ``duration_ms``; before #261 a
+    closed run had none, so the column read blank for every run the verb loop
+    ever finished. This is the only assertion that spans close → reader, rather
+    than seeding the column the reader is asked to print.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    close_result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert close_result.exit_code == 0, close_result.output
+
+    listed = cli_runner.invoke(app, ["runs", "--db", str(db_path)])
+    assert listed.exit_code == 0, listed.output
+    assert f"{EXPECTED_DURATION_MS}ms" in listed.stdout
