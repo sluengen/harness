@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.16 -->
+<!-- guidance:harness@0.2.17 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -167,7 +167,17 @@ If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The 
 - **`stale_review`** — there is a passing review, but HEAD moved after it (you committed more work). The passing verdict no longer covers what would merge. **Re-run `harness review`** on the current HEAD to re-establish a fresh `pass`, then close again.
 - **`no_gate_evidence`** — a `pass` covers HEAD, but it carries no evidence that the repo's verify gate ran (it was recorded by a harness predating the gate). **Re-run `harness review`** to record a pass backed by a green gate, then close again.
 
-There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal, so no `reason` key). Both are retryable: for a conflict, rebase the run branch on the updated base, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
+There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal, so no `reason` key). Both are retryable: for a conflict, merge `origin/<base>` into the run branch, commit the resolution, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
+
+#### Base movement needs no rebase
+
+`close` integrates the base itself. It fetches `origin/<base>` and creates a **detached throwaway worktree** at that tip, then merges the run branch into *that* — the run worktree's HEAD is never touched on any path, success or refusal. So `origin/<base>` advancing during a run is not a problem to solve before closing; it is already handled.
+
+**Therefore a run must not rebase for base movement.** A rebase rewrites every SHA on the run branch, so the passing review — which the gate binds to a specific HEAD — no longer covers *any* commit, including the hunks the rebase never touched. The whole branch then needs re-reviewing to reach a `close` that would have succeeded untouched. Base movement alone is not a reason to rebase, and a `stale_review` refusal is not evidence that it was: that refusal means HEAD moved, and a rebase is one of the things that moves it.
+
+A **`push_rejected`** failure is a plain retry: run `harness close` again and it re-fetches the winner's tip. No rebase, and no re-review — the run branch is untouched, so the passing review still covers it.
+
+A **`merge_conflict`** does need work on the run branch, but still not a rebase: merge `origin/<base>` into the run branch, commit the resolution, re-review (the resolution commit moved HEAD, so the gate needs a fresh pass covering it), and close again. Every SHA already on the branch survives. A rebase remains a legal way to resolve the same conflict — it is simply the more expensive one, and nothing here prescribes it.
 
 **A ticket-transition failure is exit 1, not a gate refusal (#233).** The merge has already landed by the time the ticket-Done transition is attempted, so a confirmed-failed transition cannot use exit 2's "refused, nothing happened" contract — it exits **1** with `{"error": ..., "reason": ..., "merged": true, "run_id": "..."}`, `reason` being one of two tags: `ticket_transition_failed` (the tracker raised — an outage, a permission error) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the requested state never took). Re-run `harness close` once the tracker is healthy — the merge/push step is idempotent for an already-landed run branch, so the retry only needs the transition to succeed this time.
 

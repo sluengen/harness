@@ -192,11 +192,14 @@ def _push_branch(*, worktree_path: Path, branch: str) -> str:
     """``git push --force-with-lease origin <branch>`` from the run's worktree.
 
     A **force-with-lease** push (sync — run in a thread). The run branch is the
-    run's own private, rewritable WIP ref, not a shared branch — so when
-    rebase-before-close rewrites it (the standing move when ``dev`` advances
-    mid-run), the checkpoint must still be able to re-push the rewritten tip;
+    run's own private, rewritable WIP ref, not a shared branch — so when a rebase
+    rewrites it, the checkpoint must still be able to re-push the rewritten tip;
     a plain push is rejected non-fast-forward and durability silently reverts to
-    the pre-rebase commit (CAL-1162). The lease keeps the push safe: it still
+    the pre-rebase commit (CAL-1162). (A rebase is *not* the standing move when
+    ``dev`` advances mid-run — ``close`` integrates ``origin/<base>`` in a
+    throwaway worktree, so base movement alone needs none, #266. It stays a legal
+    way to resolve a genuine conflict, which is why the lease is still needed.)
+    The lease keeps the push safe: it still
     **refuses** if ``origin`` carries a commit this run has not seen — that
     refusal is surfaced as the named ``reason='stale_remote'`` outcome rather than
     a raw git error blob, so a run knows its durability lapsed instead of learning

@@ -223,6 +223,84 @@ def test_conflict_refuses_cleanly_and_removes_the_worktree(tmp_path: Path) -> No
     assert survivors == [RUN_ID]
 
 
+def test_conflict_message_does_not_prescribe_a_rebase(tmp_path: Path) -> None:
+    """#266 AC-1: the conflict message names a remedy that rewrites no history.
+
+    ``close`` fetches ``origin/<base>`` and merges the run branch into a detached
+    throwaway worktree, so the run branch never needs rewriting. The old message
+    nevertheless told the operator to *rebase the run branch on the updated base,
+    re-review, and close again* — and a rebase rewrites every SHA on the branch,
+    invalidating the HEAD-bound passing review for hunks it never touched.
+
+    The property pinned here is the **absence of the word** ``rebase``, not the
+    absence of one phrasing: any reworded prescription would slip past a phrase
+    regex, and forcing the word out forces the author to name the non-rewriting
+    route instead. The re-review itself is *not* retired — resolving the conflict
+    moves HEAD, and the gate binds a pass to HEAD.
+    """
+    origin, main = _setup_origin_and_main(tmp_path)
+    _path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")
+    _advance_origin(tmp_path, origin, filename="README.md", content="other line\n")
+
+    with pytest.raises(CloseMergeError) as excinfo:
+        merge_run_branch(
+            repo_root=main, run_id=RUN_ID, base_branch="dev", worktree_branch=branch
+        )
+
+    message = str(excinfo.value)
+    # The retired prescription, in any wording.
+    assert "rebase" not in message.lower()
+    # Positively: it still diagnoses the conflict and names the remedy's parts.
+    assert branch in message
+    assert "origin/dev" in message
+    assert "re-review" in message
+    assert "close again" in message
+
+
+# ---------------------------------------------------------------------------
+# A non-conflicting base advance rewrites nothing on the run branch (#266 AC-2)
+# ---------------------------------------------------------------------------
+
+
+def test_nonconflicting_base_advance_leaves_the_run_worktree_untouched(
+    tmp_path: Path,
+) -> None:
+    """#266 AC-2: base movement alone needs no rebase — the run branch is untouched.
+
+    This is the mechanics-level half of the property the docs now assert. The
+    verb-level half lives in ``test_close_integrate_base.py`` because ``close``
+    tears the run worktree down on success, so HEAD-unchanged can only be
+    asserted here, where the worktree survives the call.
+    """
+    origin, main = _setup_origin_and_main(tmp_path)
+    path, branch = _add_run_worktree(main, RUN_ID, filename="feature.txt", content="run\n")
+    reviewed_sha = _head(main, branch)
+
+    _advance_origin(tmp_path, origin, filename="other.txt", content="other\n")
+
+    before = _checkout_state(path)
+    merge_run_branch(
+        repo_root=main, run_id=RUN_ID, base_branch="dev", worktree_branch=branch
+    )
+    after = _checkout_state(path)
+
+    # The run worktree's HEAD, its working tree, and the branch tip are identical
+    # before and after — nothing was rewritten, so the passing review still covers
+    # exactly what merged.
+    assert before == after
+    assert _head(main, branch) == reviewed_sha
+
+    # And the merge still landed, carrying the reviewed commit as second parent.
+    verify = tmp_path / "verify"
+    subprocess.run(
+        ["git", "clone", str(origin), str(verify)],
+        check=True, capture_output=True, text=True,
+    )
+    assert _head(verify, "HEAD^2") == reviewed_sha
+    assert (verify / "feature.txt").exists()
+    assert (verify / "other.txt").exists()
+
+
 # ---------------------------------------------------------------------------
 # Concurrency — the loser fails cleanly and retryably (AC-4)
 # ---------------------------------------------------------------------------

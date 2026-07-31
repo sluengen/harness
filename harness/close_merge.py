@@ -167,9 +167,11 @@ def merge_run_branch(
                 # main-checkout ``git merge --abort`` — nothing shared was touched.
                 raise CloseMergeError(
                     f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
-                    f"with changes that landed on origin/{base_branch} during the run; "
-                    f"rebase the run branch on the updated {base_branch}, re-review, and "
-                    f"close again",
+                    f"with changes that landed on origin/{base_branch} during the run. "
+                    f"close integrates origin/{base_branch} itself, so nothing already "
+                    f"on {worktree_branch} needs rewriting: merge origin/{base_branch} "
+                    f"into {worktree_branch}, commit the resolution, re-review (the "
+                    f"resolution moved HEAD), and close again",
                     reason="merge_conflict",
                     conflict=True,
                 )
