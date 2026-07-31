@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Fixed — `close`'s merge-conflict message no longer prescribes a rebase (#266)
+- Breakdown item 1 of `rebase-stable-certification` (ADR 0010's cheapest slice). `close` merges the run branch into a detached throwaway worktree at the fetched `origin/<base>` tip, never touching the run worktree's HEAD — so base movement needs no rebase. The `merge_conflict` message said otherwise (*"rebase the run branch on the updated `<base>`…"*) and `commands/harness.md` repeated it; a rebase rewrites every SHA, so the HEAD-bound pass stops covering hunks it never touched (18 runs show ≥2 passing SHAs with no intervening `fail`, 24 empty review cycles). The message now names the non-rewriting route, and the doc gains a `#### Base movement needs no rebase` block covering clean advance, `push_rejected` (plain retry) and `merge_conflict`. Contract unchanged — one string moved. The guard pins the **absence of the word** `rebase`, since any rewording slips past a phrase regex. Two unnamed carriers swept up: `checkpoint.py`'s docstring calling rebase-before-close "the standing move", and `test_close_integrate_base.py`'s "the documented recovery, verbatim". A rebase stays pinned as still-working — this retires a prescription, not a capability. 8 tests. `harness` 0.2.16 → 0.2.17 (registry 0.5.106 → 0.5.107).
+
 ### Changed — one config value now drives both the wall-clock breaker and reclamation staleness, at 110 minutes (#260)
 - "The longest a legitimate run may take" was stored twice: `loop.wall_clock_budget_minutes` (read by `review`'s breaker) and a hardcoded `--older-than` default of `"90m"` in `harness/cli/reclaim.py`, which read no config at all. `CONTEXT.md` documented the coupling as a rule for humans — *"if one moves, move both"* — and nothing enforced it. They were never two quantities: the breaker enforces the bound prospectively, reclamation applies it retrospectively, so divergence is a bug rather than a tuning option — a run aged between two values would be spared reclamation **and** refused at review, alive on the board and unable to finish. `--older-than` now defaults to a **sentinel** and resolves the loop budget when omitted (a default built *from* the config would move the literal, not delete it); an explicit value still overrides. Retuned 90 → 110: on the hourly Build tick a 90-minute threshold already first catches a run at the *second* tick (~120 min in), so 110 preserves that property with slack for jitter and lets a merely-slow run finish, at a ~22% higher per-run spend ceiling. `DEFAULT_WALL_CLOCK_BUDGET_MINUTES` is the shared fallback, so the no-CONTEXT.md path cannot drift either. D2 of `stale-run-reclamation` and D1 of `harden-loop-layer` amended in place. 5 tests, the anti-drift guard written first and watched fail; 4 mutations, 4 caught. `harness` 0.2.15 → 0.2.16, `reviewer` 0.1.7 → 0.1.8 (registry 0.5.105 → 0.5.106).
 
@@ -161,22 +164,14 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 > The entries below are folded to one-line summaries to keep this file under its 60,000-byte size gate between releases (CAL-1182). This is the *condense* fix, chosen over forcing a `dev → main` release: the release stays a deliberate, separately-gated act (`main` is PR-only per CAL-1029; the promotion lifecycle is ADR 0003), not a side effect of a headroom fix. Full detail is in git history, and each entry rotates to [`CHANGELOG-archive/2026.md`](CHANGELOG-archive/2026.md) at the next release.
 
-### Added — `/promote`: a versioned command over the harness promotion verbs (#189)
-- `commands/promote.md` transcribes ADR 0003's five promotion verbs as a universal command resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles.
-
-### Added — `/promote`: agent-orchestrated fallback for repos without the harness app (#190)
-- A `## Fallback: no harness app` section, deliberately reduced per ADR 0003's 2026-07-23 amendment (conflict/red-gate → stop, no repair attempt).
-
-### Added — `harness defer --needs` gains a third hold kind, `input` (#191)
-- Per ADR 0006: `decision`/`operator` did not partition the hold space, so `input` covers a ticket waiting on the operator to supply something.
-
-### Added — `work-discovery` gains the return path: when a held ticket is clearable and what released means (#192)
-- The inbound half of the hold contract, so `/decision` (#193) has a single-homed definition to delegate to.
-
 ### Earlier still — one line each
 
 > A further condensation of the oldest `[Unreleased]` entries, applying the `RELEASING.md` fold a second time: heading and summary collapse onto one line so the file clears its **line** ceiling as well as its byte ceiling. Full detail is in git history; each entry rotates to [`CHANGELOG-archive/2026.md`](CHANGELOG-archive/2026.md) at the next release.
 
+- **Added — `/promote`: a versioned command over the harness promotion verbs (#189)** — `commands/promote.md` transcribes ADR 0003's five promotion verbs as a universal command resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles.
+- **Added — `/promote`: agent-orchestrated fallback for repos without the harness app (#190)** — A `## Fallback: no harness app` section, deliberately reduced per ADR 0003's 2026-07-23 amendment (conflict/red-gate → stop, no repair attempt).
+- **Added — `harness defer --needs` gains a third hold kind, `input` (#191)** — Per ADR 0006: `decision`/`operator` did not partition the hold space, so `input` covers a ticket waiting on the operator to supply something.
+- **Added — `work-discovery` gains the return path: when a held ticket is clearable and what released means (#192)** — The inbound half of the hold contract, so `/decision` (#193) has a single-homed definition to delegate to.
 - **Added — code-quality: a linter enforces the file-size limit where it can (#185)** — Where the repo's linter already has a file-length rule (`max-lines`), turn it on instead of writing the size-guard walker — commit-time enforcement … **`code-quality` 0.14.0 → 0.15.0** (registry **0.5.66 → 0.5.67**).
 - **Added — review-discipline: a CONTEXT.md currency trigger on the stage-two checklist (#184)** — Stage 2 gains a **CONTEXT.md currency** bullet: a diff that adds/removes a test runner, gate step, workspace, or top-level path must be checked … **`review-discipline` 0.6.2 → 0.6.3** (registry **0.5.65 → 0.5.66**).
 - **Added — code-quality: a security-contract test asserts the predicate, not the name (#183)** — A security-contract test proving a control exists (RLS policy, auth guard, CSP directive) must assert what it *evaluates to*, not merely that it's … **`code-quality` 0.13.0 → 0.14.0** (registry **0.5.64 → 0.5.65**).
