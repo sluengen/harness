@@ -57,6 +57,7 @@ from harness.events.payloads import (
     REVIEW_OUTCOME_FAILED,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
+    REVIEW_UNEXPECTED_REASON,
     ReviewRefusalEventData,
 )
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
@@ -329,6 +330,34 @@ def test_each_verdict_records_exactly_one_ok_event(
     assert len(events) == 1, events
     assert events[0]["verdict"] == verdict
     assert events[0][REVIEW_OUTCOME_PATH.removeprefix("$.")] == REVIEW_OUTCOME_OK
+
+
+def test_a_raise_site_with_no_reason_records_the_unexpected_tag(
+    repo: Path, db_path: Path
+) -> None:
+    """The exit-1 paths carry no ``reason``, so the row would record NULL.
+
+    A failed HEAD read and an engine that cannot be invoked both raise without a
+    machine-readable tag. Left as ``None`` they would be indistinguishable from
+    each other — and from any future untagged raise — in the very aggregate this
+    ticket exists to make readable, so they record
+    :data:`REVIEW_UNEXPECTED_REASON`.
+    """
+    _write_context(repo)
+    _seed_run(db_path, repo)
+
+    def _boom(*_: Any, **__: Any) -> str:
+        raise OSError("HEAD is unreadable")
+
+    with mock.patch.object(review_mod, "rev_parse_head", _boom):
+        result = _invoke(repo, db_path, _runner(), *_green(repo))
+
+    assert result.exit_code == 1
+    events = _events(db_path)
+    assert len(events) == 1, events
+    assert events[0]["reason"] == REVIEW_UNEXPECTED_REASON
+    assert events[0][REVIEW_OUTCOME_PATH.removeprefix("$.")] == REVIEW_OUTCOME_FAILED
+    assert "verdict" not in events[0]
 
 
 def test_malformed_submit_records_one_event_as_a_sentinel_fail(

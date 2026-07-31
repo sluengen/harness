@@ -894,11 +894,13 @@ async def _review_resolved_run(
         fallback_from=fallback_from,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
-        # #262: the success half of the denominator, plus the latency pair. A
-        # verdict is an ``ok`` outcome whichever way it went — a ``fail`` is the
-        # review working, not the verb failing, which is why this field is named
-        # ``outcome`` rather than reusing ``design``'s ``status``.
-        outcome=REVIEW_OUTCOME_OK,
+        # #262: the latency pair. ``outcome`` is deliberately NOT passed — it is
+        # the model's default, which is the single source of "a verdict was
+        # produced" for both a new event and a pre-#262 row read back. Passing it
+        # here would be a second copy of the literal that no test could tell from
+        # the default. (A verdict is an ``ok`` outcome whichever way it went: a
+        # ``fail`` is the review working, not the verb failing, which is why the
+        # field is ``outcome`` rather than ``design``'s ``status``.)
         invoked_at=invoked_at,
         duration_ms=elapsed_ms(invoked_at, created_at),
     ).model_dump(exclude_none=True)
