@@ -16,22 +16,22 @@ quietly wrong rather than loudly missing.
 
 **Observation is subordinate to the thing observed** (ADR 0009). A verb that has
 already decided to refuse must refuse with exactly the exit code, ``reason`` and
-printed JSON it would have had before this module existed — so
-:func:`record_terminal_refusal` swallows *every* exception it can raise, down to
-a database that will not open. Losing a telemetry row costs a statistic; letting
-its failure escape would cost the run its actual answer, and would do it at the
-moment the verb was already reporting a problem. The one thing it does not do is
-guess: a path with no run resolved never reaches here, because there is no run to
-anchor the row to (ADR 0009 records the same for ``close``'s ``no_run``).
+printed JSON it would have had before this module existed. That rule now lives in
+:func:`harness.events.observation.emit_observation`, which swallows *every*
+exception the write can raise, down to a database that will not open — extracted
+there on its second caller (#263's ``close`` writer) so the two verbs cannot
+enforce it unevenly. What stays here is this verb's payload. The one thing
+neither does is guess: a path with no run resolved never reaches here, because
+there is no run to anchor the row to (ADR 0009 records the same for ``close``'s
+``no_run``).
 """
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 
 from harness._time import elapsed_ms, iso_z
-from harness.events.emitter import EventEmitter
+from harness.events.observation import emit_observation
 from harness.events.payloads import REVIEW_UNEXPECTED_REASON, ReviewRefusalEventData
 
 __all__ = ["record_terminal_refusal"]
@@ -76,8 +76,4 @@ async def record_terminal_refusal(
         duration_ms=elapsed_ms(invoked_at, created_at),
     ).model_dump(exclude_none=True)
 
-    # Deliberately broad: see the module docstring. A telemetry write that
-    # escaped here would replace the refusal the caller is in the middle of
-    # reporting with an unrelated crash.
-    with contextlib.suppress(Exception):
-        await EventEmitter(db_path).emit(run_id=run_id, event_type="review", data=data)
+    await emit_observation(db_path, run_id=run_id, event_type="review", data=data)

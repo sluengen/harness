@@ -35,6 +35,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli import close as close_mod
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import CLOSE_OUTCOME_OK, CLOSE_OUTCOME_PATH
 from harness.linear import LinearConfigError
 from harness.state import store
 
@@ -111,22 +112,27 @@ RUN_ID = "01JRUNCLOSEXXXXXXXXXXXXX01"
 # ``SEEDED_STARTED_AT`` into the run row; the tests patch ``close``'s clock to
 # ``FIXED_CLOSED_AT``. 62.5s elapsed → 62_500ms.
 SEEDED_STARTED_AT = "2026-06-10T00:00:00Z"
+# #263: the verb's *first* clock reading is now ``invoked_at``, captured right
+# after the run resolves and before the gate. It is not what #261's stamps
+# measure — those run from ``started_at`` — so it is pinned separately and
+# simply consumed ahead of the close reading.
+FIXED_INVOKED_AT = "2026-06-10T00:00:30.000000Z"
 FIXED_CLOSED_AT = "2026-06-10T00:01:02.500000Z"
 EXPECTED_DURATION_MS = 62_500
-# Every clock reading after the first. Distinct on purpose — see _pin_close_clock.
+# Every clock reading after the second. Distinct on purpose — see _pin_close_clock.
 LATER_CLOCK_READING = "2026-06-10T00:05:00.000000Z"
 
 
 def _pin_close_clock(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin ``close``'s clock: ``FIXED_CLOSED_AT`` first, then a *later* reading.
+    """Pin ``close``'s clock: ``invoked_at``, then ``closed_at``, then *later*.
 
     A constant stub would make the AC-1 equality vacuous — an implementation
     that read the clock a second time for ``completed_at`` would still match the
     close event's timestamp, so the drift the single reading exists to prevent
-    would go unguarded. Handing out a distinct value from the second call on is
-    what makes both assertions bite.
+    would go unguarded. Handing out a distinct value once the two the verb
+    legitimately takes are consumed is what makes both assertions bite.
     """
-    readings = iter([FIXED_CLOSED_AT])
+    readings = iter([FIXED_INVOKED_AT, FIXED_CLOSED_AT])
     monkeypatch.setattr(
         close_mod,
         "iso_z",
@@ -243,6 +249,30 @@ async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...
 
 def fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
     return _sync(_fetch_close_events(db_path, run_id))
+
+
+async def _fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT id, data_json FROM events "
+            "WHERE run_id = ? AND event_type = 'close' "
+            f"AND COALESCE(json_extract(data_json, '{CLOSE_OUTCOME_PATH}'), ?) = ?",
+            (run_id, CLOSE_OUTCOME_OK, CLOSE_OUTCOME_OK),
+        ) as cur,
+    ):
+        return list(await cur.fetchall())
+
+
+def fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    """The ``close`` events for a run that actually **landed** (#263).
+
+    Before #263 a ``close`` event existed only on success, so "did this run
+    land?" was "is there a close event". Refusals now share the event type and
+    discriminate on ``outcome``, so the question moved to ``outcome='ok'`` — the
+    ``COALESCE`` keeping a pre-#263 row reading as the landed close it was.
+    """
+    return _sync(_fetch_landed_close_events(db_path, run_id))
 
 
 async def _fetch_run_completion(
@@ -1068,9 +1098,12 @@ def test_close_transition_failure_after_merge_leaves_run_open(
     merge.assert_called_once()
     stub.transition_to_done.assert_called_once_with("CAL-572")
 
-    # Ledger stays consistent: run still open, no close event.
+    # Ledger stays consistent: run still open, and no *landed* close event.
+    # #263 records the failure itself as a close event carrying
+    # ``outcome='failed'`` and the merged SHA, so the invariant this asserts is
+    # "nothing reads as landed", not "nothing was written".
     assert fetch_run_status(db_path, run_id) == "open"
-    assert fetch_close_events(db_path, run_id) == []
+    assert fetch_landed_close_events(db_path, run_id) == []
 
 
 def test_close_transition_unconfirmed_after_merge_leaves_run_open(
@@ -1105,7 +1138,7 @@ def test_close_transition_unconfirmed_after_merge_leaves_run_open(
     # and branch are never torn down (teardown is reached only after a closed
     # ledger row).
     assert fetch_run_status(db_path, run_id) == "open"
-    assert fetch_close_events(db_path, run_id) == []
+    assert fetch_landed_close_events(db_path, run_id) == []  # #263: none landed
     assert path.exists()
     assert branch in _local_branches(repo)
 
@@ -1138,7 +1171,10 @@ def test_close_retry_after_unconfirmed_transition_completes_normally(
     assert payload["ticket_done"] is True
     merge.assert_called_once()
     assert fetch_run_status(db_path, run_id) == "closed"
-    assert len(fetch_close_events(db_path, run_id)) == 1
+    # #263: the ledger now holds the failed attempt *and* the landed one — the
+    # pair is the retry story. Exactly one of them reads as landed.
+    assert len(fetch_close_events(db_path, run_id)) == 2
+    assert len(fetch_landed_close_events(db_path, run_id)) == 1
 
 
 def test_close_event_write_failure_leaves_ledger_consistent(
@@ -1173,6 +1209,10 @@ def test_close_event_write_failure_leaves_ledger_consistent(
 
     # Atomic: the failed close-event write rolled the status flip back.
     assert fetch_run_status(db_path, run_id) == "open"
+    # Still *no* close event at all, not merely none that landed: the injected
+    # trigger aborts every ``close`` INSERT, so #263's best-effort observation
+    # write is suppressed and writes nothing either. This is the one place the
+    # two writers meet.
     assert fetch_close_events(db_path, run_id) == []
 
     # #261: the completion stamps ride the same transaction, so the rollback

@@ -34,6 +34,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+# size: the single home for every event payload's shape — the whole point of
+# the module (see the docstring). Splitting it per-verb would put a writer's
+# model and its reader's derived path constant in different files, which is
+# exactly the drift these declarations exist to prevent. Length here is
+# declarations and their rationale, not logic.
+
 #: The two values of the ``review`` payload's ``outcome`` discriminator (#262).
 #: Defined above the models because they are the field *defaults* — spelling the
 #: literal in the model and again in the constant is the exact writer/reader
@@ -50,6 +56,36 @@ REVIEW_OUTCOME_FAILED = "failed"
 #: not be invoked). Without it those paths record a NULL reason and collapse
 #: together in the aggregate they exist to make readable.
 REVIEW_UNEXPECTED_REASON = "unexpected_error"
+
+#: The three values of the ``close`` payload's ``outcome`` discriminator (#263),
+#: defined above the models for the same reason as ``review``'s: they are the
+#: field *defaults*, and spelling the literal twice is the writer/reader drift
+#: this module exists to prevent.
+#:
+#: They are the verb's own **exit codes**, named — ``0`` / ``2`` / ``1``. Keying
+#: on the exit code rather than on which ``reason`` fired is what stops the two
+#: from drifting: a ``reason`` added later cannot land on the wrong side of a
+#: membership table, because there is no table.
+#:
+#: ``ok`` (exit 0) — the merge landed, the ticket was confirmed Done, the run
+#: closed. The default on :class:`CloseEventData`, so a row written before #263
+#: reads as what it in fact was: every historical ``close`` event is a landed
+#: close. The same string as :data:`REVIEW_OUTCOME_OK` deliberately, so
+#: "attempts vs successes" across verbs stays one predicate.
+CLOSE_OUTCOME_OK = "ok"
+#: ``refused`` (exit 2) — the gate declined **before any side effect**. Nothing
+#: happened, which is exactly what separates it from ``failed``.
+CLOSE_OUTCOME_REFUSED = "refused"
+#: ``failed`` (exit 1) — the verb ended in error. The merge may or may not have
+#: landed; ``merged_sha`` answers that, not this field.
+CLOSE_OUTCOME_FAILED = "failed"
+
+#: ``close``'s counterpart to :data:`REVIEW_UNEXPECTED_REASON`, for the raise
+#: sites carrying no ``reason`` of their own (an unreadable HEAD, a merge
+#: conflict, a rejected push, a failed ledger write, an unconfigured tracker).
+#: Same value as ``review``'s deliberately: one vocabulary across the telemetry
+#: family, so a cross-verb aggregate reads one literal.
+CLOSE_UNEXPECTED_REASON = "unexpected_error"
 
 
 class ReviewEventData(BaseModel):
@@ -218,17 +254,101 @@ class WorkflowFailedEventData(BaseModel):
 class CloseEventData(BaseModel):
     """Payload of a ``close`` event — the audited record of a landed run.
 
-    No ``ticket_done`` field (#233): the event's *existence* now carries the
-    confirmation — a ``close`` event can only be written once the tracker
-    transition is confirmed (or the repo is tracker-less) — and the
+    No ``ticket_done`` field (#233): the confirmation is carried by a
+    ``close`` event with ``outcome='ok'`` — which can only be written once the
+    tracker transition is confirmed (or the repo is tracker-less) — and the
     tracker-less case is derivable from ``CONTEXT.md`` → ``tracker:``. Adding a
     field would change a locked payload for information already implied.
+
+    That claim used to rest on the event's bare *existence*, because a landed
+    close was the only thing that wrote one. #263 puts refusals under the same
+    event type, so the discriminator is what keeps the claim exactly as narrow
+    as it was — and the refusal shape omits ``merged_sha`` entirely, so a reader
+    that keys on the merged SHA rather than on ``outcome`` cannot be widened by
+    one either.
+
+    ``outcome`` (#263) defaults to :data:`CLOSE_OUTCOME_OK` rather than being
+    required, so a row written before the field existed validates as what it in
+    fact was.
+
+    ``invoked_at`` and ``duration_ms`` (#263) are the latency pair, mirroring
+    ``review``'s: ``invoked_at`` is when the verb began work on this run
+    (captured after run resolution, before the HEAD read or any gate check) and
+    ``duration_ms`` is whole milliseconds from there to ``closed_at``. This is
+    the **verb's** own latency and is not ``runs.duration_ms`` (#261), which
+    measures the whole run's life from ``started_at``: one answers "how long
+    does closing take", the other "how long did this ticket take".
     """
 
     run_id: str
     ticket: str
     merged_sha: str
     closed_at: str
+    outcome: str = CLOSE_OUTCOME_OK
+    invoked_at: str | None = None
+    duration_ms: int | None = None
+
+
+class CloseFailureEventData(BaseModel):
+    """Payload of a ``close`` event that did **not** land the close (#263).
+
+    ``close`` wrote an event only on success, so all five gate refusals —
+    ``dirty_worktree``, ``no_passing_review``, ``stale_review``,
+    ``no_gate_evidence``, and the untagged unconfigured-tracker exit — and the
+    post-merge ticket failures left no trace. The ledger held landed merges and
+    no denominator, which is why ADR 0010 had to accept a 24-excess-pass *upper
+    bound* for the ``stale_review`` rate instead of measuring it. This is the row
+    that produces the number.
+
+    **The same ``event_type``, a second model** — ``review``'s split (#262), for
+    the same reason applied to a different reader. The argument is weaker here
+    on inspection, since no code reader ``json_extract``-s ``merged_sha`` today,
+    and it still lands the same way: ``merged_sha`` is the *only* field that
+    answers "did this run actually land?", so making it optional on the success
+    shape would leave nothing — not mypy, not Pydantic — to catch a success
+    written without it, and its absence would then be ambiguous between "refused"
+    and "success that forgot". Two models make that ambiguity impossible, and
+    give ``reason`` / ``detail`` the same protection in the other direction.
+
+    Here ``merged_sha`` is optional, and **present iff the merge landed**: absent
+    on every gate refusal, set on the two post-merge ticket failures and on a
+    ledger-write failure after the merge. That, not ``outcome``, is what stops
+    the ledger reporting a landed merge as a blocked one.
+
+    ``reason`` is the verb's own machine-readable literal — a
+    :data:`~harness.cli.close.RefusalReason` or a
+    :data:`~harness.cli.close.FailureReason` — not a new vocabulary. The one
+    addition is :data:`CLOSE_UNEXPECTED_REASON`, for the raise sites that carry
+    no ``reason`` of their own; without it those paths would record a ``NULL``
+    and be indistinguishable from each other. ``detail`` is the human specifics:
+    the same ``reason``-to-branch-on / message-to-diagnose-from split
+    :class:`~harness.cli._verb.VerbError` makes. It is written to the ledger
+    only — never to ``CloseOutput`` or the printed refusal JSON — so the verb's
+    context-economy guarantee is unchanged.
+
+    ``created_at`` rather than the arguably more honest ``recorded_at``: it is
+    the field :class:`ReviewRefusalEventData` already uses for the same instant,
+    and two sibling telemetry shapes naming one quantity differently is the
+    reader drift this module exists to prevent.
+
+    ``no_run`` never reaches here. ``events.run_id`` is ``NOT NULL`` with a
+    foreign key to ``runs``, and that refusal has resolved no run to anchor a row
+    to; ADR 0009 accepts the gap rather than paying for it with synthetic
+    ``runs`` rows. It is the one hole in the denominator, so the measured rate is
+    *per resolved-run close attempt*.
+    """
+
+    run_id: str
+    ticket: str
+    #: No default: the writer must choose ``refused`` (exit 2) or ``failed``
+    #: (exit 1) rather than inheriting whichever happened to be listed first.
+    outcome: str
+    reason: str
+    detail: str
+    created_at: str
+    merged_sha: str | None = None
+    invoked_at: str | None = None
+    duration_ms: int | None = None
 
 
 class DeferEventData(BaseModel):
@@ -395,6 +515,23 @@ if REVIEW_OUTCOME_PATH != _REVIEW_REFUSAL_OUTCOME_PATH:  # pragma: no cover - im
         "the review success and refusal payloads must discriminate on the same "
         f"field: {REVIEW_OUTCOME_PATH} != {_REVIEW_REFUSAL_OUTCOME_PATH}"
     )
+
+#: The ``outcome`` discriminator (#263) on the ``close`` payloads, derived and
+#: cross-asserted exactly as ``review``'s is: the success and refusal shapes must
+#: name the same key, or the denominator this exists to produce would split in
+#: two without anything failing.
+CLOSE_OUTCOME_PATH = _field_path(CloseEventData, "outcome")
+_CLOSE_FAILURE_OUTCOME_PATH = _field_path(CloseFailureEventData, "outcome")
+if CLOSE_OUTCOME_PATH != _CLOSE_FAILURE_OUTCOME_PATH:  # pragma: no cover - import guard
+    raise ValueError(
+        "the close success and failure payloads must discriminate on the same "
+        f"field: {CLOSE_OUTCOME_PATH} != {_CLOSE_FAILURE_OUTCOME_PATH}"
+    )
+
+#: The path the ``stale_review`` rate query reads (#263) — the measurement this
+#: telemetry exists for. Derived from the failure model, which is the only shape
+#: that carries a ``reason``.
+CLOSE_REASON_PATH = _field_path(CloseFailureEventData, "reason")
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
