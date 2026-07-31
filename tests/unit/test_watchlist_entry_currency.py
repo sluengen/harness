@@ -27,6 +27,31 @@ The helpers are imported from the guards that already own them rather than recop
 — the repo sanctions cross-module test imports
 (``test_design_verb_lifecycle_documented.py:37``), and a fourth private copy of the
 entry parser or the marker pattern could drift and produce a confident false green.
+
+**Recorded departure from this run's design.** The design left AC-2 unmeasured,
+reasoning that pinning the module name as a literal would need editing on every
+extraction and that the generalized form "couples prose to import structure and
+would fire on unrelated helper modules". The first objection is why guard 2 pins no
+literal. The second does not reach what is built here: the sibling set is derived
+from the ``<stem>_*.py`` **filename convention** via ``git ls-files``, never from
+imports, so ``harness.gate`` and ``harness.loop_budget`` — real modules ``review.py``
+imports and the note has no reason to name — are outside it by construction.
+
+AC-2 is measured rather than left to reviewer read because a stated acceptance
+criterion needs a measuring test (``CLAUDE.md``); leaving a doc criterion asserted
+only in prose is the defect class #271 shipped a guard for.
+
+This is not CODE-INSIGHT-1 (#273) arriving early. That ticket edits the universal
+``review-discipline`` checklist — agent-followed prose, whose own out-of-scope
+declines mechanization — and applies to every repo installing the guidance. This is
+the harness's repo-local guard over its own ``CONTEXT.md``, which is what dogfooding
+that checklist looks like; #273 remains needed for the repos that have no such guard.
+
+**Accepted cost:** a future ``close_*`` / ``review_*`` module that is *not* an
+extraction would still have to be named in the note. That is a real false positive
+in principle, kept because the note's job is to record what now sits beside the
+gravity well, and a new sibling module is exactly that whether or not it was carved
+out of the parent. The fix if it ever bites is to name it in the note, one clause.
 """
 
 from __future__ import annotations
