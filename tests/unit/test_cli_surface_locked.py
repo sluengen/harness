@@ -630,29 +630,55 @@ def test_a_stale_audited_slash_list_in_a_live_doc_is_caught(doc: Path) -> None:
     assert _subset_enumeration_offenders(doctored) == [["close", "review", "start"]]
 
 
-def test_enumeration_guard_covers_the_whole_live_doc_corpus() -> None:
-    """The enumeration guard's corpus is ``_live_docs()`` — the floor, pinned.
+def _parametrized_argvalues(func: object, argname: str) -> list[object]:
+    """The values a ``@pytest.mark.parametrize(argname, …)`` captured on *func*.
+
+    Read off the mark rather than inferred, so the assertion below sees the
+    *source expression's* evaluated result — a hand-list stays a hand-list here
+    and does not silently become whatever the comparison recomputes."""
+    marks = [
+        m
+        for m in getattr(func, "pytestmark", [])
+        if m.name == "parametrize" and m.args[0] == argname
+    ]
+    assert len(marks) == 1, f"expected exactly one parametrize({argname!r}), got {marks}"
+    return list(marks[0].args[1])
+
+
+def test_enumeration_guard_is_parametrized_over_the_whole_live_doc_corpus() -> None:
+    """The enumeration guard's corpus **is** ``_live_docs()`` — the floor, pinned.
 
     The failure mode this closes is the one #249 hit and #252 generalizes:
     narrowing the parametrize source deletes cases instead of failing them, so
     the suite stays green while coverage silently collapses. Reverting to the old
-    ``(SPEC, README)`` opt-in would drop ~53 cases and nothing else would notice.
+    ``(SPEC, README)`` opt-in would drop ~53 cases and nothing else would notice
+    — the parametrized all-clean assertion above cannot fail for a case it never
+    generates.
 
-    Membership of representative docs is asserted rather than
-    ``set(_live_docs()) == set(_live_docs())``, which is tautological once the
-    decorator reads the same expression. Every doc named here actually carried an
-    offender before this change, so the floor is evidence-backed.
+    Comparing the *captured mark* against a fresh ``_live_docs()`` is what makes
+    this bite; ``set(_live_docs()) == set(_live_docs())`` would be tautological.
+    A second, evidence-backed floor follows: every doc named there actually
+    carried an offender before this change, so a corpus that quietly stops
+    returning one of them fails here rather than going green with less coverage.
     """
+    guarded = _parametrized_argvalues(
+        test_no_live_doc_handlists_a_command_subset, "doc"
+    )
+    assert guarded == _live_docs(), (
+        "the subset-enumeration guard is no longer parametrized over the whole "
+        "live-doc corpus. Narrowing it deletes cases rather than failing them, "
+        "which is exactly how README sat unguarded for a full assessment cycle "
+        f"(#249, #252). Guarded: {sorted(str(p) for p in guarded)}."
+    )
+
     corpus = set(_live_docs())
-    for doc in _INJECTION_PROBES:
+    for doc in (*_INJECTION_PROBES, CONTEXT, DOCKER_README, RUN_LEDGER_SPEC):
         assert doc in corpus, (
             f"{doc.relative_to(REPO_ROOT)} dropped out of the live-doc corpus — "
             "the enumeration and retired-surface guards both parametrize over "
             "`_live_docs()`, so a doc leaving it silently deletes its cases "
             "rather than failing them (#252)."
         )
-    for doc in (CONTEXT, DOCKER_README, CLI_SURFACE_SPEC, RUN_LEDGER_SPEC):
-        assert doc in corpus
 
 
 def _real_options() -> dict[str, set[str]]:
