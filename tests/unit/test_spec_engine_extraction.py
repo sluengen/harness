@@ -2,7 +2,10 @@
 
 `SPEC.md` was ~two-thirds retired content: §3, §5–§10, §12–§14 described the
 retired deterministic workflow engine, kept inline behind supersede banners
-while only §1–2, §4, §11 (and the tail meta sections) are live. Retired specs
+while only §1–2, §4, §11 (and the tail meta sections) are live. #271 extended
+the same treatment to §15 / §17 / §18 — the engine's migration plan, open
+questions and acceptance criteria — which the original banner named as neither
+live nor retired, leaving them reading as current guidance. Retired specs
 elsewhere were re-homed under ``specs/retired/`` (CAL-661/693); SPEC.md's own
 retired sections were not, so every agent that opened the file paid the context
 tax of scrolling past a deleted engine.
@@ -34,8 +37,11 @@ _SPEC = _REPO_ROOT / "SPEC.md"
 _ENGINE = _REPO_ROOT / "specs" / "retired" / "spec-engine.md"
 
 #: The retired top-level sections, per SPEC.md's status banner (§3, §5–§10,
-#: §12–§14 describe the retired deterministic workflow engine).
-_RETIRED_SECTIONS = (3, 5, 6, 7, 8, 9, 10, 12, 13, 14)
+#: §12–§14 describe the retired deterministic workflow engine; §15, §17 and §18
+#: plan, question and grade that same engine, and were re-homed after it —
+#: §15's migration was abandoned mid-plan when CAL-574 deleted the engine, not
+#: completed, so it is preserved as design history rather than dropped).
+_RETIRED_SECTIONS = (3, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18)
 
 #: The sections that must remain live and intact in SPEC.md.
 _LIVE_SECTIONS = (1, 2, 4, 11)
@@ -54,6 +60,9 @@ _RETIRED_BODY_SENTINELS = {
     12: "Single database per project",
     13: "# docker/Dockerfile",
     14: "name: steward",
+    15: "Cut order: **stewards → bugfix → feature.**",
+    17: "These are deliberately unresolved. Pick before code lands.",
+    18: "The 10-minute workflow test.",
 }
 
 #: The same dated-supersede-banner recognition ``test_docs_consistency`` uses.
@@ -70,12 +79,76 @@ _STUB_MARKER = "**Retired — deterministic workflow engine.** Moved to"
 
 
 def _section_body(num: int, full: str) -> str:
-    """Body of the ``## <num>. …`` section up to the next ``## <n>.`` heading."""
+    """Body of the ``## <num>. …`` section up to the next ``## `` heading.
+
+    Terminates on *any* top-level heading, not only a numbered one: the last
+    numbered section is followed by the unnumbered ``## Appendix A``, and a
+    numbered-only terminator would run it to EOF and count the appendix's lines
+    as that section's body.
+    """
     start = re.search(rf"^## {num}\. ", full, re.M)
     assert start is not None, f"SPEC.md is missing the '## {num}.' section header"
     rest = full[start.end() :]
-    nxt = re.search(r"^## \d+\. ", rest, re.M)
+    nxt = re.search(r"^## ", rest, re.M)
     return rest[: nxt.start()] if nxt else rest
+
+
+# ---------------------------------------------------------------------------
+# The section-splitting helper itself — a retired section at the tail of the
+# numbered run is bounded by the unnumbered section that follows it.
+# ---------------------------------------------------------------------------
+
+
+def test_section_body_is_bounded_by_an_unnumbered_heading() -> None:
+    """A ``## <word>`` heading terminates a section, not only a ``## <n>.`` one.
+
+    The helper originally terminated on ``^## \\d+\\. `` alone, so the *last*
+    numbered section ran to EOF and swallowed everything after it. That makes
+    the stub guard below unsatisfiable for that section: even a correct
+    three-line stub fails the ``<= 6`` non-blank bound, because the trailing
+    unnumbered section's lines are counted as the stub's body.
+    """
+    doc = "\n".join(
+        [
+            "## 18. Success Criteria",
+            "",
+            "> **Retired.** Moved to the re-homed doc.",
+            "",
+            "## Appendix A — Inspirations and design ancestry",
+            "",
+            "- an inspiration",
+            "- another inspiration",
+        ]
+    )
+    body = _section_body(18, doc)
+    assert "Retired." in body, "the section's own body must survive the split"
+    assert "Appendix A" not in body, (
+        "an unnumbered '## ' heading must bound the preceding numbered section"
+    )
+    assert "an inspiration" not in body, (
+        "the unnumbered section's body must not be attributed to §18"
+    )
+    # The heading's own tail ("Success Criteria") is the first body line, since
+    # the split starts after the "## 18. " marker; the stub paragraph is the
+    # second. Nothing from the appendix is counted.
+    assert [ln for ln in body.splitlines() if ln.strip()] == [
+        "Success Criteria",
+        "> **Retired.** Moved to the re-homed doc.",
+    ]
+
+
+def test_spec_md_ends_with_an_unnumbered_section() -> None:
+    """SPEC.md really does exhibit the shape the guard above defends against.
+
+    Without a trailing unnumbered section the helper's numbered-only terminator
+    would be harmless, and the fix above would assert nothing about this repo.
+    """
+    headings = re.findall(r"^## .*", _SPEC.read_text(encoding="utf-8"), re.M)
+    numbered = [h for h in headings if re.match(r"^## \d+\. ", h)]
+    assert headings.index(numbered[-1]) < len(headings) - 1, (
+        "SPEC.md's last numbered section is also its last section — the "
+        "unnumbered-heading terminator is no longer load-bearing here."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -86,13 +159,16 @@ def _section_body(num: int, full: str) -> str:
 #: Headroom above the count at the extraction (was 1,227 lines, cut to ~470).
 #: The bound catches a retired-engine section growing a body back; it is not a
 #: freeze on the live surface, which grows a line per command registered — #265
-#: added ``stats`` and landed on 481 against a bound of 480. Raised to 500 with
-#: the reason stated rather than nudged by one each time a command lands, since
-#: a bound that ratchets to whatever the last change needed has stopped
-#: measuring anything. The retired-bulk teeth are the per-section stub tests
-#: below, which assert each of §3 / §5–§10 / §12–§14 is *reduced to* a pointer —
-#: those cannot be satisfied by a section that regrew, whatever the total.
-_LEAN_LINE_BOUND = 500
+#: added ``stats`` and landed on 481 against a bound of 480, so it was raised to
+#: 500 with the reason stated rather than nudged by one, since a bound that
+#: ratchets to whatever the last change needed has stopped measuring anything.
+#: Re-homing §15 / §17 / §18 (#271) then shed 59 lines to 427, so the bound
+#: **falls** to keep measuring: a bound left at 500 over a 427-line file would
+#: have absorbed the whole cut and stopped catching a regrowing section. The
+#: retired-bulk teeth are the per-section stub tests below, which assert each
+#: retired section is *reduced to* a pointer — those cannot be satisfied by a
+#: section that regrew, whatever the total.
+_LEAN_LINE_BOUND = 440
 
 
 def test_spec_md_is_lean() -> None:
