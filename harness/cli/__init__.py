@@ -36,6 +36,7 @@ from harness.cli.query import (
     events_command,
     logs_command,
     runs_command,
+    stats_command,
     status_command,
 )
 from harness.cli.reclaim import reclaim_command
@@ -83,6 +84,9 @@ app.command(name="release", help="Release a held ticket: write the resolution in
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
 app.command(name="runs", help="List recent runs.")(runs_command)
+app.command(name="stats", help="Aggregate statistics over the run ledger (read-only).")(  # noqa: E501
+    stats_command
+)
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
     start_command
 )
