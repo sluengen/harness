@@ -31,6 +31,9 @@ from harness.cli import query_status as query_status_mod
 from harness.cli import review_protocol as review_protocol_mod
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    REVIEW_OUTCOME_FAILED,
+    REVIEW_OUTCOME_OK,
+    REVIEW_OUTCOME_PATH,
     REVIEW_REVIEWED_SHA_PATH,
     REVIEW_VERDICT_PATH,
     WORKFLOW_FAILED_REASON_KEY,
@@ -40,6 +43,7 @@ from harness.events.payloads import (
     DesignEventData,
     ReleaseEventData,
     ReviewEventData,
+    ReviewRefusalEventData,
     WorkflowFailedEventData,
     _field_name,
     _field_path,
@@ -67,7 +71,9 @@ def test_review_event_data_required_keys() -> None:
     event always states its verify-gate evidence — there is no shape in which a
     fresh ``review`` event stays silent about whether the gate ran.
     ``design_context`` (#212) is the same, for whether the review saw the run's
-    recorded design.
+    recorded design. ``outcome`` (#262) joins them: it defaults rather than being
+    optional, so every fresh event states which half of the denominator it is,
+    and a row that predates the field still validates as the verdict it was.
     """
     dumped = ReviewEventData(
         run_id="R1",
@@ -90,7 +96,44 @@ def test_review_event_data_required_keys() -> None:
         "created_at": "2026-06-10T00:00:00Z",
         "gate_ran": False,
         "design_context": False,
+        "outcome": REVIEW_OUTCOME_OK,
     }
+
+
+def test_both_review_shapes_discriminate_on_the_same_outcome_key() -> None:
+    """One ``event_type``, two models — but they must agree on the key (#262).
+
+    ``REVIEW_OUTCOME_PATH`` is derived from :class:`ReviewEventData`, and every
+    aggregate over the denominator reads that one path. If
+    :class:`ReviewRefusalEventData` ever renamed its own field, the guard in
+    ``payloads`` would raise at import — this asserts the property that guard
+    protects, so the intent survives even if the guard is refactored: a query on
+    one path sees **both** shapes, and the two values are distinct.
+    """
+    refusal = ReviewRefusalEventData(
+        run_id="R1",
+        reason="engine_timeout",
+        detail="killed",
+        created_at="2026-06-10T00:00:00Z",
+    ).model_dump(exclude_none=True)
+    success = ReviewEventData(
+        run_id="R1",
+        reviewed_sha="abc123",
+        verdict="pass",
+        issues=[],
+        engine="claude",
+        convergence_check_required=False,
+        created_at="2026-06-10T00:00:00Z",
+        gate_ran=False,
+    ).model_dump(exclude_none=True)
+
+    key = REVIEW_OUTCOME_PATH.removeprefix("$.")
+    assert refusal[key] == REVIEW_OUTCOME_FAILED
+    assert success[key] == REVIEW_OUTCOME_OK
+    assert REVIEW_OUTCOME_OK != REVIEW_OUTCOME_FAILED
+    # The refusal shape carries neither field the close gate reads.
+    assert "verdict" not in refusal
+    assert "reviewed_sha" not in refusal
 
 
 def test_review_event_data_omits_unset_optionals() -> None:

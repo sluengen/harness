@@ -227,7 +227,11 @@ def test_no_design_event_refuses_before_the_engine(repo: Path, db_path: Path) ->
     payload = json.loads(result.stdout)
     assert payload["reason"] == review_mod.NO_DESIGN_REASON
     assert prompts == [], "an undesigned run must not reach an engine"
-    assert _review_events(db_path) == [], "no event may be recorded on a refusal"
+    # #262 records the refusal; what must stay absent is the *verdict*, which is
+    # what the close gate reads and therefore what "no event" was protecting.
+    (event,) = _review_events(db_path)
+    assert "verdict" not in event, event
+    assert event["reason"] == review_mod.NO_DESIGN_REASON
 
 
 def test_no_design_refusal_names_the_verb_that_satisfies_it(
@@ -452,7 +456,9 @@ def test_design_file_outside_the_workspace_is_refused_before_the_engine(
     assert payload["reason"] == review_mod.DESIGN_FILE_OUTSIDE_WORKSPACE_REASON
     assert str(outside) in payload["error"], "the refusal names the rejected path"
     assert prompts == [], "an out-of-workspace design file must never reach the engine"
-    assert _review_events(db_path) == [], "no event may be recorded on this refusal"
+    (event,) = _review_events(db_path)
+    assert "verdict" not in event, event
+    assert event["reason"] == review_mod.DESIGN_FILE_OUTSIDE_WORKSPACE_REASON
 
 
 def test_design_file_inside_the_workspace_but_a_missing_file_is_not_this_refusal(

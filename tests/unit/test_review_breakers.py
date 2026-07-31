@@ -190,8 +190,13 @@ def test_sixth_cycle_refuses_without_running_the_engine(repo: Path, db_path: Pat
     payload = json.loads(result.output)
     assert payload["reason"] == REVIEW_CYCLE_CEILING_REASON
     assert calls == [], "the engine must not run once the ceiling is reached"
-    # No 6th review event recorded — only the 5 seeded fails remain.
-    assert len(_review_events(db_path)) == 5
+    # No 6th *verdict*: the trip records its refusal (#262) but the 5 seeded
+    # fails stay the only events carrying one — and the refusal row must not
+    # itself count toward the ceiling, or the budget would shrink as it is spent.
+    events = _review_events(db_path)
+    assert len([e for e in events if "verdict" in e]) == 5, events
+    assert events[-1]["reason"] == REVIEW_CYCLE_CEILING_REASON
+    assert _sync(review_mod._count_review_events(db_path, _RUN_ID)) == 5
 
 
 def test_breaker_trip_leaves_ticket_state_untouched(repo: Path, db_path: Path) -> None:

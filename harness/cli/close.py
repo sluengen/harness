@@ -80,7 +80,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -92,7 +91,7 @@ from pydantic import BaseModel
 # ``from harness import promotion``: the mechanics module is referenced at call
 # time (``close_merge.merge_run_branch``), never bound by name at import time.
 from harness import close_merge
-from harness._time import iso_z, parse_iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
@@ -409,33 +408,6 @@ async def _evaluate_gate(
 # ---------------------------------------------------------------------------
 
 
-def _elapsed_ms(started_at: str | None, closed_at: str) -> int | None:
-    """Whole milliseconds from ``started_at`` to ``closed_at``, or ``None``.
-
-    Both ends are ledger timestamps, but they are not written in the same shape:
-    ``runs.started_at`` is a plain ``.isoformat()`` (``+00:00``) while the close
-    clock is :func:`~harness._time.iso_z` (trailing ``Z``) — a split
-    ``harness._time`` documents as deliberate. :func:`~harness._time.parse_iso_z`
-    reads both, since swapping ``Z`` for ``+00:00`` is a no-op on a string that
-    already carries the offset.
-
-    A run whose ``started_at`` is missing or unparseable yields ``None`` rather
-    than raising: the duration is telemetry, and losing it must never cost a run
-    the close its gate already earned.
-    """
-    if started_at is None:
-        return None
-    try:
-        start = parse_iso_z(started_at)
-        end = parse_iso_z(closed_at)
-    except (TypeError, ValueError):
-        return None
-    try:
-        return (end - start) // timedelta(milliseconds=1)
-    except TypeError:  # one side naive, the other aware
-        return None
-
-
 async def _mark_run_closed(
     db_path: Path,
     run_id: str,
@@ -471,7 +443,7 @@ async def _mark_run_closed(
                 (run_id,),
             ) as cur:
                 row = await cur.fetchone()
-            duration_ms = _elapsed_ms(row[0] if row is not None else None, event_ts)
+            duration_ms = elapsed_ms(row[0] if row is not None else None, event_ts)
             await conn.execute(
                 "UPDATE runs SET status = 'closed', completed_at = ?, "
                 "duration_ms = ? WHERE run_id = ?",

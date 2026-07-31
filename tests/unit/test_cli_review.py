@@ -159,6 +159,23 @@ def fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch_review_events(db_path))
 
 
+def assert_no_verdict_recorded(db_path: Path, reason: str) -> None:
+    """The terminal path is on the ledger and carries **no verdict** (#262).
+
+    These sites used to assert ``fetch_review_events(db_path) == []``, which
+    conflated two different claims: *no verdict was recorded* (the invariant —
+    an infra wall must never read as pass/fail, and must never open the close
+    gate) and *nothing at all was recorded* (an accident of the verb having no
+    telemetry). #262 records the path deliberately, so the invariant is asserted
+    on its own terms: exactly one row, no ``verdict`` key, and the right
+    ``reason`` — so a refusal for the wrong cause cannot pass either.
+    """
+    events = fetch_review_events(db_path)
+    assert len(events) == 1, events
+    assert "verdict" not in events[0]["data"], events[0]["data"]
+    assert events[0]["data"]["reason"] == reason, events[0]["data"]
+
+
 def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
     """Build a fake engine runner returning the given stdout/stderr/exit code.
 
@@ -807,7 +824,7 @@ def test_review_cli_surfaces_engine_timeout_as_exit3_reason(
     payload = json.loads(result.output)
     assert payload["reason"] == "engine_timeout"
     # No verdict recorded: infra failure, not a review.
-    assert fetch_review_events(db_path) == []
+    assert_no_verdict_recorded(db_path, review_mod.ENGINE_TIMEOUT_REASON)
 
 
 # AC-1 / AC-4: a usage-limit Codex run falls back to Claude exactly once, the
@@ -1019,8 +1036,8 @@ def test_cal866_sandbox_init_failure_surfaces_as_infra_not_fail(
     assert "error" in payload
 
     # No verdict was recorded: an infra failure must NOT read as pass/fail and
-    # must NOT be swallowed into the ledger as a review event.
-    assert fetch_review_events(db_path) == []
+    # must NOT be swallowed into the ledger as a review verdict.
+    assert_no_verdict_recorded(db_path, review_mod.SANDBOX_INIT_REASON)
 
 
 def test_cal866_sandbox_init_failure_not_recorded_as_fail_verdict(
@@ -1149,7 +1166,7 @@ def test_cal924_bwrap_blocked_defer_surfaces_as_infra_not_verdict(
     assert "error" in payload
 
     # A review that never happened must NOT read as a defer (or any verdict).
-    assert fetch_review_events(db_path) == []
+    assert_no_verdict_recorded(db_path, review_mod.SANDBOX_INIT_REASON)
 
 
 # AC-2 / AC-3: a genuine defer (the reviewer actually inspected the diff) is
