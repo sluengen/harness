@@ -106,6 +106,14 @@ def _sync(coro: Any) -> Any:
 
 RUN_ID = "01JRUNCLOSEXXXXXXXXXXXXX01"
 
+# #261: both ends of the duration measurement are pinned, so the tests assert an
+# exact integer rather than a tolerance window. ``_seed_open_run`` writes
+# ``SEEDED_STARTED_AT`` into the run row; the tests patch ``close``'s clock to
+# ``FIXED_CLOSED_AT``. 62.5s elapsed → 62_500ms.
+SEEDED_STARTED_AT = "2026-06-10T00:00:00Z"
+FIXED_CLOSED_AT = "2026-06-10T00:01:02.500000Z"
+EXPECTED_DURATION_MS = 62_500
+
 
 def _seed_open_run(
     db_path: Path,
@@ -135,7 +143,7 @@ def _seed_open_run(
                     str(repo),
                     f"harness/{run_id}",
                     ticket,
-                    "2026-06-10T00:00:00Z",
+                    SEEDED_STARTED_AT,
                     1234,
                 ),
             )
@@ -215,6 +223,42 @@ async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...
 
 def fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
     return _sync(_fetch_close_events(db_path, run_id))
+
+
+async def _fetch_run_completion(
+    db_path: Path, run_id: str
+) -> tuple[str | None, int | None]:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT completed_at, duration_ms FROM runs WHERE run_id = ?",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+        return (None, None) if row is None else (row[0], row[1])
+
+
+def fetch_run_completion(db_path: Path, run_id: str) -> tuple[str | None, int | None]:
+    """Return the run row's ``(completed_at, duration_ms)`` — #261's stamps."""
+    return _sync(_fetch_run_completion(db_path, run_id))
+
+
+async def _fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT timestamp FROM events "
+            "WHERE run_id = ? AND event_type = 'close'",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+        return None if row is None else row[0]
+
+
+def fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
+    return _sync(_fetch_close_event_timestamp(db_path, run_id))
 
 
 def _install_close_event_failure_trigger(db_path: Path) -> None:
@@ -1110,3 +1154,61 @@ def test_close_event_write_failure_leaves_ledger_consistent(
     # Atomic: the failed close-event write rolled the status flip back.
     assert fetch_run_status(db_path, run_id) == "open"
     assert fetch_close_events(db_path, run_id) == []
+
+    # #261: the completion stamps ride the same transaction, so the rollback
+    # leaves them unset exactly as it leaves ``status`` unflipped.
+    assert fetch_run_completion(db_path, run_id) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# #261: close stamps completed_at + duration_ms on the run row
+# ---------------------------------------------------------------------------
+
+
+def test_close_stamps_completed_at_equal_to_the_close_event_timestamp(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-1: the closed run's ``completed_at`` is the close event's timestamp.
+
+    ``close`` reads the clock **once** (``closed_at = iso_z()``) and uses it for
+    the event payload, the event's ``timestamp`` column, and — as of #261 — the
+    run row's ``completed_at``. Asserting equality with the event's own
+    timestamp, rather than merely non-null, is what pins the single reading: a
+    second ``iso_z()`` call for the run row would still be non-null and would
+    still look right, but the two columns would drift by the write latency.
+    """
+    monkeypatch.setattr(close_mod, "iso_z", lambda *a, **k: FIXED_CLOSED_AT)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    completed_at, _duration_ms = fetch_run_completion(db_path, run_id)
+    assert completed_at is not None
+    assert completed_at == fetch_close_event_timestamp(db_path, run_id)
+    assert completed_at == FIXED_CLOSED_AT
+
+
+def test_close_stamps_duration_ms_measured_from_started_at(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2: ``duration_ms`` is the exact elapsed milliseconds, not a range.
+
+    Both ends of the measurement are fixed — ``_seed_open_run`` writes
+    ``started_at`` as ``SEEDED_STARTED_AT`` and the clock is pinned to
+    ``FIXED_CLOSED_AT`` — so the assertion is a single integer. A tolerance
+    window here would pass just as happily on a duration computed from the
+    wrong origin (e.g. the review event) as on the right one.
+    """
+    monkeypatch.setattr(close_mod, "iso_z", lambda *a, **k: FIXED_CLOSED_AT)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    _completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert duration_ms == EXPECTED_DURATION_MS
