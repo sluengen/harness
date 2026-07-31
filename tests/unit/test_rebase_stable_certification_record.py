@@ -55,8 +55,13 @@ def test_record_states_the_measured_stale_review_rate() -> None:
     """AC-1: the ticket is closed unbuilt *with that number*."""
     text = _read()
     assert "stale_review" in text, "the record must name the rate it measured"
-    assert "zero" in text.lower() or " 0 " in text, (
-        "the record must state the measured count, not merely that a measurement happened"
+    # The rate and its value must be bound together in one statement. A bare
+    # `"zero" in text` would be satisfied by any other use of the word — the record
+    # says "zero intervening `fail`" elsewhere — leaving the load-bearing claim
+    # removable without failing anything.
+    assert re.search(r"stale_review[^\n]*\b(zero|0)\b", text), (
+        "the record must state the measured rate and its value in one statement, not "
+        "merely that a measurement happened"
     )
     assert "#263" in text, (
         "the record must name the ticket whose telemetry made the rate readable, so a "
@@ -87,10 +92,12 @@ def test_record_attributes_every_recent_excess_pass_to_a_removed_cause() -> None
 def test_record_states_the_decision_to_close_unbuilt() -> None:
     """The decision itself, in the file the Precondition names."""
     text = _read()
-    low = text.lower()
-    assert "unbuilt" in low, "the record must state that item 3 was closed unbuilt"
-    assert "## decision" in low, (
-        "the decision must be its own section, not a remark buried in prose"
+    assert "unbuilt" in text.lower(), "the record must state that item 3 was closed unbuilt"
+    # Anchored to the line start with an exact `## ` prefix: a substring test would
+    # accept `### Decision` (and every deeper level), which is the buried remark the
+    # assertion exists to reject.
+    assert re.search(r"^## Decision\b", text, re.MULTILINE), (
+        "the decision must be its own top-level section, not a remark buried in prose"
     )
 
 
