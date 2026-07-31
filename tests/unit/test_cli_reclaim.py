@@ -30,6 +30,12 @@ Contract under test:
   any inside the threshold; an empty / already-reverted project is a clean no-op.
 """
 
+# size: the reclaim verb's whole acceptance surface — the single-target revert, the
+# --stale sweep's three liveness clocks, the closable classifier, and --undo. Over
+# the ceiling because those four production modules are one verb's arms and the
+# cross-arm orderings (spared-before-closable) are only assertable side by side; the
+# per-arm split is tracked in #274.
+
 from __future__ import annotations
 
 import asyncio

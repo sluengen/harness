@@ -51,6 +51,7 @@ Acceptance criteria (this ticket):
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,28 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Part B / Part C of ``code-quality``: the hard limit for a module/file.
 _HARD_LIMIT = 500
+
+# Part B's raised ceiling for files that are long *because* they are declarative
+# — "their length is field lists, not logic" — defaulting to 1.5x the hard limit.
+# Derived from ``_HARD_LIMIT`` rather than typed, so the two cannot drift apart.
+_DECLARATIVE_CEILING = _HARD_LIMIT * 3 // 2
+
+#: Every tracked Python tree, and the ceiling it answers to (#275).
+#:
+#: ``tests/`` sits at the declarative ceiling, not the hard limit: a test
+#: module's length is substantially *case enumeration* against one surface's
+#: acceptance criteria, which is Part B's declarative argument rather than
+#: accreted logic. It is still bounded, and still owes a ``# size:`` marker past
+#: the ceiling — a raised ceiling keeps firing on runaway growth where an
+#: exemption never fires again.
+#:
+#: ``scripts/`` answers to the hard limit like ``harness/``: build-time tooling
+#: is ordinary logic.
+_TREE_CEILINGS = {
+    "harness": _HARD_LIMIT,
+    "scripts": _HARD_LIMIT,
+    "tests": _DECLARATIVE_CEILING,
+}
 
 # A size justification is a Python comment containing the ``size:`` marker
 # followed by a non-empty reason. Harness source is pure Python, so the marker is
@@ -107,21 +130,88 @@ def test_size_marker_regex_rejects_non_justifications(sample: str) -> None:
     assert not _SIZE_JUSTIFICATION.search(sample), f"{sample!r} must not count as a justification"
 
 
+def _tracked_python_trees() -> set[str]:
+    """The top-level directories git tracks any ``*.py`` under.
+
+    Derived from the index, not listed (#219 / #220 — a hand-written set of
+    guarded subjects silently falls behind the tree, and the guard reads green
+    because it never checked rather than because nothing violated it). This is
+    what :func:`test_every_tracked_python_tree_has_a_ceiling` compares
+    ``_TREE_CEILINGS`` against.
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "*.py"],
+        cwd=_REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return {rel.split("/", 1)[0] for rel in out if "/" in rel}
+
+
+def _offenders() -> list[tuple[Path, int, int]]:
+    """Every tracked ``.py`` past its tree's ceiling with no ``size:`` marker."""
+    found: list[tuple[Path, int, int]] = []
+    for tree, ceiling in sorted(_TREE_CEILINGS.items()):
+        for path in sorted(tracked_files_under(tree)):
+            if path.suffix != ".py":
+                continue
+            lines = _line_count(path)
+            if lines > ceiling and not _has_size_justification(path):
+                found.append((path, lines, ceiling))
+    return found
+
+
+def test_every_tracked_python_tree_has_a_ceiling() -> None:
+    """No tracked Python tree is a blind spot (AC-3).
+
+    The guard scoped to ``harness/`` alone for over a year and deferred
+    ``tests/`` in prose (#275); by the time the deferral was revisited the test
+    tree held 14 files past the declarative ceiling, none carrying a recorded
+    decision, and ``scripts/`` had never been in scope at all. A ceiling per
+    tree is a config choice; *which trees exist* is not, so it is derived.
+    """
+    missing = _tracked_python_trees() - set(_TREE_CEILINGS)
+    assert not missing, (
+        "these tracked Python trees answer to no ceiling, so an over-limit file "
+        "in them would never be caught — add each to `_TREE_CEILINGS` with the "
+        f"ceiling it should answer to: {sorted(missing)}"
+    )
+
+
 def test_over_limit_source_files_carry_a_size_justification() -> None:
-    """Every over-limit ``harness/`` source file records a size decision (AC-1, AC-2)."""
-    offenders = [
-        path
-        for path in sorted(tracked_files_under("harness"))
-        if path.suffix == ".py"
-        and _line_count(path) > _HARD_LIMIT
-        and not _has_size_justification(path)
-    ]
+    """Every over-ceiling tracked source file records a size decision (AC-1, AC-2)."""
+    offenders = _offenders()
     assert not offenders, (
-        f"these production source files are over the {_HARD_LIMIT}-line hard "
-        "limit with no `# size: <reason>` justification (code-quality Part C) — "
-        "add a one-line `# size:` comment recording why the file may exceed the "
-        "limit, or split it:\n"
+        "these source files are over their tree's line ceiling with no "
+        "`# size: <reason>` justification (code-quality Part C) — add a one-line "
+        "`# size:` comment recording why the file may exceed the ceiling, or "
+        "split it:\n"
         + "\n".join(
-            f"  - {p.relative_to(_REPO_ROOT)}: {_line_count(p)} lines" for p in offenders
+            f"  - {p.relative_to(_REPO_ROOT)}: {lines} lines (ceiling {ceiling})"
+            for p, lines, ceiling in offenders
         )
     )
+
+
+def test_declarative_ceiling_is_derived_from_the_hard_limit() -> None:
+    """The raised ceiling is 1.5x the hard limit, not a number someone typed.
+
+    ``code-quality`` Part B states the declarative ceiling as a *multiple* of
+    the hard limit. Pinning the relationship rather than the value means moving
+    the hard limit moves both, which is the property #234 asked for when it
+    required the declarative ceiling to be a configured constant rather than
+    prose.
+    """
+    assert _DECLARATIVE_CEILING == _HARD_LIMIT * 3 // 2 == 750
+
+
+def test_tests_tree_answers_to_the_declarative_ceiling() -> None:
+    """``tests/`` is scanned, and at the raised ceiling rather than the hard one (AC-1).
+
+    Pins the two halves of #275's decision separately from the green/red state
+    of the tree: that the test tree is in scope at all, and that being in scope
+    does not silently subject it to the 500-line production limit.
+    """
+    assert _TREE_CEILINGS["tests"] == _DECLARATIVE_CEILING
+    assert _TREE_CEILINGS["tests"] > _TREE_CEILINGS["harness"]

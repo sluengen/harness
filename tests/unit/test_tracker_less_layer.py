@@ -30,6 +30,11 @@ verb that completes under both conditions demonstrably never reached Linear;
 nothing is stubbed into succeeding.
 """
 
+# size: one cross-cutting contract — every verb runs tracker-less under
+# layers.linear: false. The module is per-verb cases of a single invariant, and
+# splitting it per verb loses the point, which is that the invariant holds uniformly
+# across the verb surface.
+
 from __future__ import annotations
 
 import asyncio

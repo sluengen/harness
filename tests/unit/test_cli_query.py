@@ -13,6 +13,11 @@ is invoked via Typer's :class:`CliRunner` so we get stable exit codes and
 captured stdout.
 """
 
+# size: the read-side command surface (status / logs / events / runs) as one
+# contract — SPEC §11. The four commands share the run-resolution and --json shaping
+# they are tested through, so a per-command split forks that shared assertion
+# vocabulary four ways.
+
 from __future__ import annotations
 
 import asyncio

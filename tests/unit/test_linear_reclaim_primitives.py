@@ -10,6 +10,10 @@ fifth transition.  These tests pin that surface, mocking the GraphQL boundary
 (``LinearClient._request``) exactly as the existing client tests do.
 """
 
+# size: the three LinearClient reclamation primitives (revert / label / annotate)
+# against one stubbed GraphQL transport — kept whole so the primitives' shared
+# error-mapping is asserted once rather than three times.
+
 from __future__ import annotations
 
 import re

@@ -25,6 +25,10 @@ The path is fail-safe toward the status quo: declining costs one review cycle,
 wrongly inheriting opens the close gate on a tree nothing verified.
 """
 
+# size: the inherit decision (ADR 0008 D3) end to end — may a resumed run carry a
+# predecessor's pass forward? One decision, enumerated across the ledger states that
+# answer it differently, and those states are only meaningful side by side.
+
 from __future__ import annotations
 
 import ast

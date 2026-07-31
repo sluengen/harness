@@ -377,3 +377,56 @@ def test_reference_is_registered_and_header_matches() -> None:
     assert header.group(1) == row.group("v"), (
         f"header {header.group(1)} != registry {row.group('v')} — bump both together."
     )
+
+
+def test_template_scopes_the_test_tree_at_the_declarative_ceiling() -> None:
+    """#275 — the adopt guidance names the test tree and the ceiling it gets.
+
+    The repo's own guard scoped to production for over a year and deferred
+    ``tests/`` in prose; by the time the deferral was revisited the test tree
+    held 14 files past the declarative ceiling with no recorded decision. The
+    template shipped every consuming repo the same blind spot: its
+    ``SOURCE_GLOBS`` example names one production tree and nothing told an
+    adopter their test tree is source too.
+
+    The fix is guidance, not a defaults change. ``DECLARATIVE_GLOBS`` ships
+    empty on purpose (:func:`test_reference_declarative_default_is_inert`,
+    #234), so this asserts the *prose* carries the scope advice and the
+    ``tests/`` example, leaving the inert-default contract intact.
+
+    Each token below was confirmed absent from the pre-change template, so this
+    measures the new guidance rather than passing on text that was already
+    there.
+    """
+    text = _TEMPLATE.read_text(encoding="utf-8")
+    required = {
+        "the scope heading": "Scope every source tree",
+        "the raised ceiling for tests": "declarative ceiling",
+        "the tests/ DECLARATIVE_GLOBS example": 'DECLARATIVE_GLOBS: tuple[str, ...] = ("tests',
+        "the tests/ SOURCE_GLOBS example": '"tests/**/*.py"',
+        "the green-because-unchecked warning": "reads green",
+        "the auditable-choice framing": "auditable choice",
+    }
+    missing = [name for name, token in required.items() if token not in text]
+    assert not missing, (
+        "templates/size-guard.md's adopt guidance must tell an adopter to scope "
+        "their test tree at the declarative ceiling (#275); missing: "
+        f"{missing}"
+    )
+
+
+def test_template_still_ships_exactly_one_executable_reference() -> None:
+    """The scope guidance's config excerpt must not become a second reference.
+
+    :func:`_extract_reference` requires exactly one ```python block so what a
+    consuming repo executes is unambiguous. The #275 guidance adds a config
+    excerpt, which is deliberately fenced *without* the ``python`` tag for that
+    reason — this pins the distinction so a later edit that promotes the excerpt
+    to a python block fails here with the reason rather than inside the
+    extractor's assert.
+    """
+    text = _TEMPLATE.read_text(encoding="utf-8")
+    assert len(re.findall(r"```python\n", text)) == 1
+    assert 'SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py"' in text, (
+        "the config excerpt must stay in the template as a non-python fence"
+    )
