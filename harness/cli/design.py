@@ -72,7 +72,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z, parse_iso_z
+from harness._time import elapsed_ms, iso_z, parse_iso_z
 from harness.cli._engine import EngineTimeoutError, Runner, RunResult, run_engine_subprocess
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
@@ -559,11 +559,28 @@ async def _record_design_event(db_path: Path, data: DesignEventData) -> DesignEv
                     err=True,
                 )
 
+    # An **adopted** design records no duration (#264). Every other path measures
+    # this invocation end to end, but on an adoption the two instants belong to
+    # different runs: ``invoked_at`` is this run's, while ``designed_at`` is the
+    # source's, carried verbatim (``design_adopt``). Subtracting them measures
+    # backwards, to a design produced before this run began — a negative latency
+    # no engine ever spent. Absence is the honest record, and ``inherited_from``
+    # already marks the row for a reader that wants to attribute it to its source.
+    #
+    # The guard reads the semantic field, not the sign: negative-means-inherited
+    # is an accident of the data, and a sign filter would also swallow a genuine
+    # clock fault this is meant to record as-is.
+    duration_ms = (
+        None
+        if data.inherited_from is not None
+        else elapsed_ms(data.invoked_at, data.designed_at)
+    )
     try:
         await EventEmitter(db_path).emit(
             run_id=data.run_id,
             event_type="design",
             data=data.model_dump(exclude_none=True),
+            duration_ms=duration_ms,
         )
     except Exception as exc:  # noqa: BLE001
         raise _DesignError(f"failed to record design event: {exc}", 1) from exc

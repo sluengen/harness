@@ -32,13 +32,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
+from harness._time import iso_z
 from harness.cli import app
+from harness.cli import release as release_mod
 from harness.state import store
 from harness.tracker_queue import QueueMembership
 
@@ -499,3 +502,106 @@ def test_release_replaces_an_existing_resolution_section(
     assert new_body.count("## Resolution") == 1
     assert "New answer." in new_body
     assert "Old answer." not in new_body
+
+
+# ===========================================================================
+# #264 — the verb's own latency, in the ledger's typed duration column
+# ===========================================================================
+
+
+def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
+    """The ``events.duration_ms`` **column** for every row of ``event_type``.
+
+    Reads the column, never ``json_extract(data_json, ...)``: the duration has
+    one home, and a test that passed against the payload would be asserting the
+    wrong place.
+    """
+    if not db_path.exists():
+        return []
+
+    async def _select() -> list[int | None]:
+        async with store.connect(db_path) as conn:
+            cur = await conn.execute(
+                "SELECT duration_ms FROM events WHERE event_type = ? ORDER BY id",
+                (event_type,),
+            )
+            rows = await cur.fetchall()
+        return [None if r[0] is None else int(r[0]) for r in rows]
+
+    return _run_sync(_select())  # type: ignore[return-value]
+
+
+def _pin_clock(monkeypatch: Any, elapsed_ms: int) -> None:
+    """Hand ``release`` its ``invoked_at`` then a reading ``elapsed_ms`` later.
+
+    Distinct successive readings on purpose (#261's lesson): a constant stub
+    cannot tell one clock read from two, so the duration would pass vacuously
+    at 0 against an implementation that simply read the clock twice at the end.
+    """
+    start = datetime(2026, 7, 31, 8, 0, 0, tzinfo=UTC)
+    readings = iter([iso_z(start), iso_z(start + timedelta(milliseconds=elapsed_ms))])
+    monkeypatch.setattr(
+        release_mod, "iso_z", lambda *_a, **_k: next(readings, iso_z(start))
+    )
+
+def test_release_records_its_duration_in_the_event_column(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """AC-1: the ``release`` event carries the verb's latency as whole ms.
+
+    The window spans the body write, the label removal and the unassign — the
+    three tracker round-trips a release actually spends its time on.
+    """
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    _pin_clock(monkeypatch, 2500)
+
+    result = _invoke(
+        ["release", "CAL-193", "--resolution", "Go with option A.", "--db", str(db)],
+        tmp_path, _make_stub(), monkeypatch,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _event_durations(db, "release") == [2500]
+    assert isinstance(_event_durations(db, "release")[0], int)
+
+
+def test_release_payload_gains_no_duration_key(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """One quantity, one home — the payload's key set is unchanged by #264."""
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    _pin_clock(monkeypatch, 2500)
+
+    _invoke(
+        ["release", "CAL-193", "--resolution", "Go with option A.", "--db", str(db)],
+        tmp_path, _make_stub(), monkeypatch,
+    )
+
+    (payload,) = _fetch_release_events(db)
+    assert "duration_ms" not in payload
+
+
+def test_release_refusal_records_no_event_and_no_duration(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A refused release writes nothing at all — #264 adds no refusal row.
+
+    Like ``defer``, ``release`` has no non-success event path, so it needs no
+    ADR 0009 ``outcome`` field to discriminate one from another.
+    """
+    _write_context(tmp_path)
+    db = tmp_path / "harness.db"
+    stub = _make_stub()
+    stub.fetch_queue_membership = AsyncMock(
+        return_value=QueueMembership(on_queue=False, project="Some Other Project")
+    )
+
+    result = _invoke(
+        ["release", "CAL-193", "--resolution", "Go with option A.", "--db", str(db)],
+        tmp_path, stub, monkeypatch,
+    )
+
+    assert result.exit_code == 2, result.output
+    assert _event_durations(db, "release") == []

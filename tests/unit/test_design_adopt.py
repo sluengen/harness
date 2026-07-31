@@ -173,12 +173,21 @@ async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT run_id, data_json FROM events WHERE event_type = 'design' "
-            "ORDER BY id"
+            "SELECT run_id, data_json, duration_ms FROM events "
+            "WHERE event_type = 'design' ORDER BY id"
         ) as cur,
     ):
         rows = await cur.fetchall()
-    return [{"run_id": r[0], "data": json.loads(r[1])} for r in rows]
+    return [
+        # ``duration_ms`` is the event **column** (#264). Widening the dict is
+        # non-breaking: every existing caller indexes ``["data"]`` / ``["run_id"]``.
+        {
+            "run_id": r[0],
+            "data": json.loads(r[1]),
+            "duration_ms": None if r[2] is None else int(r[2]),
+        }
+        for r in rows
+    ]
 
 
 def design_events(db_path: Path) -> list[dict[str, Any]]:
@@ -602,3 +611,52 @@ def test_a_tracker_failure_declines_rather_than_wedging_the_run(
 
     assert result.exit_code == 0, result.output
     assert engine.calls == 1
+
+
+# ---------------------------------------------------------------------------
+# #264 — an adopted design records no duration, never a negative one
+# ---------------------------------------------------------------------------
+
+
+def test_adopted_design_records_no_duration(repo: Path, db_path: Path) -> None:
+    """An adopted event's ``duration_ms`` is NULL — never a negative number.
+
+    This is the one place the mechanical "duration = designed_at - invoked_at"
+    rule goes wrong, and it goes wrong *silently*. On an adoption the two
+    instants describe different runs: ``invoked_at`` is **this** run's, while
+    ``designed_at`` is carried verbatim from the source (``design_adopt`` keeps
+    every field describing the design as the source's). Subtracting them
+    measures backwards from this invocation to a design produced earlier, so the
+    value is negative — a latency no engine ever spent.
+
+    Absence is the honest record: no design was produced here, and
+    ``inherited_from`` already marks the row for a reader that wants to
+    attribute it to its source.
+    """
+    _seed_resumed_run(db_path, repo)
+    _seed_source_design(db_path)
+
+    result = _invoke(repo, db_path, _EngineSpy(), _tracker_stub(_prior_comment()))
+
+    assert result.exit_code == 0, result.output
+    (adopted,) = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID]
+    assert adopted["data"]["inherited_from"] == _SOURCE_RUN_ID
+    assert adopted["duration_ms"] is None
+
+
+def test_no_design_event_records_a_negative_duration(
+    repo: Path, db_path: Path
+) -> None:
+    """No recorded design latency is negative, whatever path wrote it.
+
+    Stated as the property rather than as a special case, so a future refactor
+    that drops the adoption guard fails here loudly instead of quietly writing a
+    negative sample into the ledger item 5 aggregates.
+    """
+    _seed_resumed_run(db_path, repo)
+    _seed_source_design(db_path)
+
+    _invoke(repo, db_path, _EngineSpy(), _tracker_stub(_prior_comment()))
+
+    durations = [e["duration_ms"] for e in design_events(db_path)]
+    assert all(d is None or d >= 0 for d in durations), durations
