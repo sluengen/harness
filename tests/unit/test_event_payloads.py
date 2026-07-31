@@ -31,6 +31,9 @@ from harness.cli import query_status as query_status_mod
 from harness.cli import review_protocol as review_protocol_mod
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    CLOSE_OUTCOME_FAILED,
+    CLOSE_OUTCOME_OK,
+    CLOSE_OUTCOME_REFUSED,
     REVIEW_OUTCOME_FAILED,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
@@ -39,6 +42,7 @@ from harness.events.payloads import (
     WORKFLOW_FAILED_REASON_KEY,
     CheckpointEventData,
     CloseEventData,
+    CloseFailureEventData,
     DeferEventData,
     DesignEventData,
     ReleaseEventData,
@@ -305,14 +309,65 @@ def test_checkpoint_event_data_keys() -> None:
 
 
 def test_close_event_data_keys() -> None:
+    """The landed-close shape. ``outcome`` defaults to ``ok`` (#263) so a row
+    written before the field existed reads as the landed close it was; the
+    latency pair is absent unless supplied, via ``exclude_none``."""
     assert CloseEventData(
         run_id="R1", ticket="CAL-1", merged_sha="s", closed_at="t"
-    ).model_dump() == {
+    ).model_dump(exclude_none=True) == {
         "run_id": "R1",
         "ticket": "CAL-1",
         "merged_sha": "s",
         "closed_at": "t",
+        "outcome": CLOSE_OUTCOME_OK,
     }
+
+
+def test_close_failure_event_data_keys() -> None:
+    """The non-landed shape (#263). ``outcome`` has no default — the writer must
+    choose ``refused`` (exit 2) or ``failed`` (exit 1) rather than inheriting
+    whichever was listed first."""
+    assert CloseFailureEventData(
+        run_id="R1",
+        ticket="CAL-1",
+        outcome=CLOSE_OUTCOME_REFUSED,
+        reason="stale_review",
+        detail="passing review is stale",
+        created_at="t",
+    ).model_dump(exclude_none=True) == {
+        "run_id": "R1",
+        "ticket": "CAL-1",
+        "outcome": CLOSE_OUTCOME_REFUSED,
+        "reason": "stale_review",
+        "detail": "passing review is stale",
+        "created_at": "t",
+    }
+
+
+def test_close_failure_payload_carries_no_merged_sha_when_nothing_landed() -> None:
+    """Enforcement by absence: a gate refusal omits ``merged_sha`` entirely, so a
+    reader keying on the merged SHA to mean "this run landed" (#233's claim)
+    cannot be satisfied by a refusal row — whatever its ``reason``."""
+    dumped = CloseFailureEventData(
+        run_id="R1",
+        ticket="CAL-1",
+        outcome=CLOSE_OUTCOME_REFUSED,
+        reason="dirty_worktree",
+        detail="uncommitted changes",
+        created_at="t",
+    ).model_dump(exclude_none=True)
+    assert "merged_sha" not in dumped
+
+    landed = CloseFailureEventData(
+        run_id="R1",
+        ticket="CAL-1",
+        outcome=CLOSE_OUTCOME_FAILED,
+        reason="ticket_transition_failed",
+        detail="tracker refused",
+        created_at="t",
+        merged_sha="abc123",
+    ).model_dump(exclude_none=True)
+    assert landed["merged_sha"] == "abc123", "a post-merge failure must say it landed"
 
 
 def test_workflow_failed_event_data_keys() -> None:

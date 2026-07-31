@@ -97,6 +97,7 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.close_telemetry import CloseAttempt, record_terminal_close
 from harness.cli.close_tracker import TicketNotDone, transition_ticket_done
 from harness.events.payloads import CloseEventData
 from harness.events.schema import EVENT_TYPES
@@ -105,6 +106,13 @@ from harness.tracker import Tracker, tracker_client
 from harness.tracker_errors import TrackerConfigError
 
 __all__ = ["close_command", "CloseOutput"]
+
+# size: one cohesive verb orchestration on a single asyncio event loop, whose
+# separable concerns are already four modules — git integrate/merge/push
+# (close_merge), the tracker Done mapping (close_tracker), the gate's ledger
+# question (_review_gate), and terminal telemetry (close_telemetry). What is
+# left is the step order and the refusal vocabulary, which is the contract
+# this file *is*; splitting it further would scatter one gate across files.
 
 # The structured refusal reasons — exactly one is reported on a gate failure.
 RefusalReason = Literal[
@@ -216,7 +224,20 @@ async def _run_close(
     run_id: str | None,
     db_path: Path,
 ) -> CloseOutput:
-    """Drive the close flow; raise :class:`_CloseError` on gate failure or error."""
+    """Resolve the run, then drive the close, recording **every** terminal path.
+
+    The split from :func:`_close_resolved_run` is the whole of #263, mirroring
+    ``review``'s (#262): once a run is resolved every way the verb can end is
+    observable, so the body runs inside one ``except`` that appends the terminal
+    event and re-raises untouched — no raise site needs an emit of its own, and
+    one added later is recorded whether or not its author remembers.
+
+    Resolution stays *outside* that handler on purpose: ``events.run_id`` is
+    ``NOT NULL`` with an FK to ``runs``, and ``no_run`` has resolved none, so
+    there is nothing to anchor a row to. ADR 0009 accepts that hole rather than
+    paying for it with a synthetic ``runs`` row — which makes the measured rate
+    one *per resolved-run close attempt*.
+    """
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
     resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
@@ -225,6 +246,47 @@ async def _run_close(
             2,
             reason="no_run",
         )
+    resolved_run_id = resolved[0]
+
+    # Captured before the HEAD read and any gate check — one end of the duration
+    # every terminal event now carries, and what makes a refusal that took a slow
+    # git probe distinguishable from one decided on a ledger read.
+    attempt = CloseAttempt(invoked_at=iso_z())
+    try:
+        return await _close_resolved_run(
+            ticket=ticket,
+            repo_root=repo_root,
+            db_path=db_path,
+            resolved=resolved,
+            attempt=attempt,
+        )
+    except _CloseError as exc:
+        await record_terminal_close(
+            db_path,
+            run_id=resolved_run_id,
+            ticket=ticket,
+            exit_code=exc.code,
+            reason=exc.reason,
+            detail=str(exc),
+            merged_sha=attempt.merged_sha,
+            invoked_at=attempt.invoked_at,
+        )
+        raise
+
+
+async def _close_resolved_run(
+    *,
+    ticket: str,
+    repo_root: Path,
+    db_path: Path,
+    resolved: tuple[str, str, str, str],
+    attempt: CloseAttempt,
+) -> CloseOutput:
+    """Drive the close flow for an already-resolved run; raise on gate failure.
+
+    Every step is unchanged from before #263 — the function boundary is where the
+    terminal-event recording attaches, not a re-ordering of any refusal.
+    """
     resolved_run_id, worktree_path, base_branch, worktree_branch = resolved
 
     # 2. Capture HEAD of the run's worktree — the SHA the gate binds to.
@@ -288,6 +350,9 @@ async def _run_close(
         raise _CloseError(str(exc), 1) from exc
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
+    # Recorded before anything that can still fail, so every later failure
+    # records as the post-merge failure it is, not as a blocked close (#263).
+    attempt.merged_sha = head_sha
 
     # 7. Transition the ticket to Done; the backend confirms the write took off
     #    that mutation's own response (#233). Skipped tracker-less. The merge
@@ -323,7 +388,9 @@ async def _run_close(
                 ticket=ticket,
                 merged_sha=head_sha,
                 closed_at=closed_at,
-            ).model_dump(),
+                invoked_at=attempt.invoked_at,
+                duration_ms=elapsed_ms(attempt.invoked_at, closed_at),
+            ).model_dump(exclude_none=True),
             event_ts=closed_at,
         )
     except Exception as exc:  # noqa: BLE001
