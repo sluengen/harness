@@ -12,9 +12,13 @@ and when the run started. This module turns those two observable facts into two
   unconditionally; the cycles after that and below the ceiling carry a
   convergence-assessment advisory (the build agent decides whether the fixes are
   converging before spending another cycle);
-* a **per-run wall-clock budget** in minutes (default 90), deliberately mirroring
-  the stale-run reclamation staleness threshold so a runaway run trips this
-  breaker right as reclamation would call it stale (keep the two in step).
+* a **per-run wall-clock budget** in minutes (default 110). It is not merely
+  *aligned* with the stale-run reclamation staleness threshold — since #260 it
+  **is** that threshold: ``reclaim --stale`` resolves the same
+  ``loop.wall_clock_budget_minutes`` when ``--older-than`` is omitted. The
+  breaker reads it prospectively (stop spending on a run past it), reclamation
+  retrospectively (a run past it is presumed dead); one value means they cannot
+  drift, so nobody has to "keep the two in step".
 
 Both thresholds are **read from CONTEXT.md** (the ``loop:`` block), not hardcoded,
 so each self-hosting repo configures its own bounds. The decision functions are
