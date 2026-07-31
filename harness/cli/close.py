@@ -94,18 +94,12 @@ from harness import close_merge
 from harness._time import iso_z
 from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.close_tracker import TicketNotDone, transition_ticket_done
-from harness.events.payloads import (
-    REVIEW_GATE_RAN_PATH,
-    REVIEW_GATE_REASON_PATH,
-    REVIEW_REVIEWED_SHA_PATH,
-    REVIEW_VERDICT_PATH,
-    CloseEventData,
-)
+from harness.events.payloads import CloseEventData
 from harness.events.schema import EVENT_TYPES
-from harness.gate import GATE_NOT_CONFIGURED_REASON
 from harness.state import store
 from harness.tracker import Tracker, tracker_client
 from harness.tracker_errors import TrackerConfigError
@@ -380,73 +374,33 @@ async def _evaluate_gate(
     exists at all, ``stale_review`` when a pass exists but only for a different
     SHA, ``no_gate_evidence`` when the pass covering HEAD cannot show that the
     repo's gate ran (CAL-1082).
-    """
-    async with (
-        store.connect(db_path) as conn,
-        conn.execute(
-            # The json paths are the single-sourced payload-key constants
-            # (CAL-1012), passed as bound parameters — SQLite accepts a bound
-            # json_extract path, so the gate holds no raw ``$.<key>`` literal.
-            "SELECT json_extract(data_json, ?), json_extract(data_json, ?), "
-            "json_extract(data_json, ?) "
-            "FROM events WHERE run_id = ? AND event_type = 'review' "
-            "AND json_extract(data_json, ?) = 'pass'",
-            (
-                REVIEW_REVIEWED_SHA_PATH,
-                REVIEW_GATE_RAN_PATH,
-                REVIEW_GATE_REASON_PATH,
-                run_id,
-                REVIEW_VERDICT_PATH,
-            ),
-        ) as cur,
-    ):
-        rows = await cur.fetchall()
 
-    pass_shas = {str(r[0]) for r in rows if r[0] is not None}
-    if not pass_shas:
+    The ledger question itself lives in :mod:`harness.cli._review_gate`, because
+    ``reclaim --stale`` asks the identical one to classify a stranded run as
+    *closable* (#255) and the two must not be able to disagree — a sweep that
+    reports closable for a run this gate then refuses leaves the ticket neither
+    reclaimed nor closed.  What stays here is the mapping onto ``close``'s own
+    refusal reasons and their messages, which are this verb's user-facing
+    contract and no other caller's business.
+    """
+    certification = await certify_head(db_path, run_id, head_sha)
+    if certification.verdict == "certified":
+        return None
+    if certification.verdict == "no_passing_review":
         return ("no_passing_review", f"no passing review recorded for run {run_id}")
-    if head_sha not in pass_shas:
+    if certification.verdict == "stale_review":
         return (
             "stale_review",
             f"passing review is stale: HEAD {head_sha} has no pass "
-            f"(reviewed SHAs: {sorted(pass_shas)})",
+            f"(reviewed SHAs: {sorted(certification.pass_shas)})",
         )
-    # The verify-gate backstop (CAL-1082): a pass is only evidence that the tree
-    # is green if the review that recorded it actually ran the repo's gate.  A
-    # pass written by an older harness carries no ``gate_ran`` key at all —
-    # ``json_extract`` yields NULL — and is refused rather than trusted, so the
-    # change is fail-safe with no ledger migration.
-    if not any(
-        _has_gate_evidence(gate_ran, gate_reason)
-        for sha, gate_ran, gate_reason in rows
-        if str(sha) == head_sha
-    ):
-        return (
-            "no_gate_evidence",
-            f"passing review for HEAD {head_sha} carries no verify-gate "
-            f"evidence: it was recorded without running the repo's gate (or by a "
-            f"harness that predates it). Re-run review to record a pass backed by "
-            f"a green gate.",
-        )
-    return None
-
-
-def _has_gate_evidence(gate_ran: Any, gate_reason: Any) -> bool:
-    """Whether a pass row shows its verify gate was accounted for.
-
-    Two shapes qualify. A gate that **ran** green (``gate_ran`` true — a red gate
-    never gets an event at all, so a recorded run is a passing one). Or a repo
-    that defines **no** gate (``gate_reason='not_configured'``): the harness
-    cannot gate what a repo does not define, so it allows the close and the
-    ledger records the absence honestly rather than implying a gate ran.
-    Tightening that is a separate decision — it would strand every repo without a
-    ``verify:``.
-
-    ``gate_ran`` arrives from SQLite's ``json_extract`` as ``1`` / ``0`` / ``None``.
-    """
-    if gate_ran == 1:
-        return True
-    return bool(gate_reason == GATE_NOT_CONFIGURED_REASON)
+    return (
+        "no_gate_evidence",
+        f"passing review for HEAD {head_sha} carries no verify-gate "
+        f"evidence: it was recorded without running the repo's gate (or by a "
+        f"harness that predates it). Re-run review to record a pass backed by "
+        f"a green gate.",
+    )
 
 
 # ---------------------------------------------------------------------------

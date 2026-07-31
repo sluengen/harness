@@ -134,12 +134,20 @@ def worktree_toplevel_matches(worktree_path: Path) -> bool:
         return False
 
 
-def rev_parse_head(worktree_path: Path) -> str:
+def rev_parse_head(worktree_path: Path, *, timeout: float | None = None) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 
     Raises :class:`GitError` if ``git rev-parse HEAD`` exits non-zero.
+
+    ``timeout`` is forwarded to :func:`run_git` and defaults to ``None`` — no
+    ceiling — so ``close``, which runs interactively and wants a wedged git to be
+    visible rather than silently reinterpreted, is unchanged. ``reclaim --stale``
+    passes one because it runs as the Build routine's pre-flight every tick,
+    where a hung probe would wedge the loop the sweep exists to unblock; a fired
+    :class:`subprocess.TimeoutExpired` propagates for that caller's guard to
+    catch (#255).
     """
-    result = run_git(worktree_path, "rev-parse", "HEAD")
+    result = run_git(worktree_path, "rev-parse", "HEAD", timeout=timeout)
     if result.returncode != 0:
         raise GitError(
             f"git rev-parse HEAD failed for {worktree_path}: {result.stderr.strip()}"

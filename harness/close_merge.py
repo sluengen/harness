@@ -65,15 +65,21 @@ class CloseMergeError(RuntimeError):
         self.conflict = conflict
 
 
-def worktree_porcelain(worktree: Path) -> str:
+def worktree_porcelain(worktree: Path, *, timeout: float | None = None) -> str:
     """Return ``git status --porcelain`` for ``worktree`` (stripped).
 
     A non-empty result means the run worktree has uncommitted changes (staged,
     unstaged, or untracked). Raises :class:`CloseMergeError`
     (``reason='git_status_failed'``) on a git failure so the caller reports an
     error, not a false-clean.
+
+    ``timeout`` is forwarded to :func:`run_git` and defaults to ``None``, leaving
+    ``close``'s interactive call unchanged; ``reclaim --stale``'s closable
+    predicate bounds it, because that probe runs unattended every tick (#255).
+    A fired :class:`subprocess.TimeoutExpired` propagates rather than reading as
+    a clean tree — the caller's guard decides, and its answer is *not closable*.
     """
-    result = run_git(worktree, "status", "--porcelain")
+    result = run_git(worktree, "status", "--porcelain", timeout=timeout)
     if result.returncode != 0:
         raise CloseMergeError(
             f"git status failed for {worktree}: {result.stderr.strip()}",
