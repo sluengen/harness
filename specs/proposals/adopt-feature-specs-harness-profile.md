@@ -36,7 +36,7 @@ So "adopt feature specs in the harness" precisely means: the harness **exercises
 |---|---|---|
 | 1. **Scope** — all of `specs/` → `specs/features/`, or only the current verb-model subsystems (retired-engine docs stay historical)? *Rec: current subsystems only.* | Scott / architect | this proposal → CONTEXT.md |
 | 2. **Vehicle / dedup vs CAL-652** — fold the harness's `feature_specs` flip into CAL-652 (which already owns the profile→per-repo-config convergence + template-home + process-doc merge), or keep the flip + record-migration as **standalone tickets that depend on CAL-652**? *Rec: standalone, dependent on CAL-652 — keeps CAL-652 focused on the surface/agents-retirement, this owns the harness's record.* | Scott | this proposal |
-| 3. **"Feature" unit in an infra repo** — features map to the agent-facing surface (the `start`/`review`/`close` verbs + subsystems like the ledger and worktree lifecycle). Right unit? *Rec: yes — the verb contract is this tool's product surface.* | Scott / architect | CONTEXT.md |
+| 3. **"Feature" unit in an infra repo** — features map to the agent-facing surface (the `start`, `review`, `close` verbs + subsystems like the ledger and worktree lifecycle). Right unit? *Rec: yes — the verb contract is this tool's product surface.* | Scott / architect | CONTEXT.md |
 
 **Resolved — accepted 2026-06-13.** (1) Scope = current verb-model subsystems only; retired-engine docs stay historical. (2) Vehicle = standalone tickets dependent on CAL-652. (3) "Feature" unit = the verbs + subsystems. Spawned **CAL-660** (turn on `feature_specs`) and **CAL-661** (migrate the record) — both Backlog, blocked by **CAL-652** (and CAL-661 also by CAL-660). The feature-template-home stays with CAL-652.
 

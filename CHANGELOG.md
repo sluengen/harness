@@ -6,6 +6,9 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 ## [Unreleased]
 
+### Changed — the subset-enumeration guard scans every live doc, not a two-doc opt-in (#252)
+- The guard parametrized over an opt-in `(SPEC, README)` while the retired-surface guard in the same file already scanned the whole `_live_docs()` corpus. A doc live enough to be held to "names no retired command" is live enough to be held to "carries no stale command list", so the tuple is deleted rather than kept in sync — a new doc under `specs/`, `commands/` or `skills/` now arms the guard with no edit. The corpus moves to the top of the module; sitting *below* its first consumer is why the two guards never shared it. 23 slash-lists across 12 docs failed: five were stale three-verb claims omitting `design` (`cli-surface.md` carried verbatim the sentence #226 corrected in SPEC §11), the other 18 take the comma form, which changes zero words. The detector is untouched — refining it was measured (23 hits → 13) and rejected as the work the ticket excludes. The floor test reads the guard's captured `parametrize` mark, so narrowing fails instead of silently deleting cases. 3234 → 3292 collected (+58: the guard goes 2 params → 55, plus 2 new test functions); 5 mutations, 5 caught.
+
 ### Fixed — `close`'s merge-conflict message no longer prescribes a rebase (#266)
 - Breakdown item 1 of `rebase-stable-certification` (ADR 0010's cheapest slice). `close` merges the run branch into a detached throwaway worktree at the fetched `origin/<base>` tip, never touching the run worktree's HEAD — so base movement needs no rebase. The `merge_conflict` message said otherwise (*"rebase the run branch on the updated `<base>`…"*) and `commands/harness.md` repeated it; a rebase rewrites every SHA, so the HEAD-bound pass stops covering hunks it never touched (18 runs show ≥2 passing SHAs with no intervening `fail`, 24 empty review cycles). The message now names the non-rewriting route, and the doc gains a `#### Base movement needs no rebase` block covering clean advance, `push_rejected` (plain retry) and `merge_conflict`. Contract unchanged — one string moved. The guard pins the **absence of the word** `rebase`, since any rewording slips past a phrase regex. Two unnamed carriers swept up: `checkpoint.py`'s docstring calling rebase-before-close "the standing move", and `test_close_integrate_base.py`'s "the documented recovery, verbatim". A rebase stays pinned as still-working — this retires a prescription, not a capability. 8 tests. `harness` 0.2.16 → 0.2.17 (registry 0.5.106 → 0.5.107).
 
@@ -90,78 +93,8 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 ### Added — code-quality: a guard's matching predicate obeys the same derive rule as its subject set (#227)
 - Filed by `/assess code` (CODE-INSIGHT-2). #220 governs which units are checked, never what counts as a hit — so a guard can derive its subjects correctly and still narrow through a hand-written predicate, as two did. New paragraph requiring every predicate literal to derive from the same artifact or be justified against the rule's full surface, with the reviewer rejecting a narrower one. 5 tests. `code-quality` 0.17.0 → 0.18.0 (registry 0.5.88 → 0.5.89).
 
-### Fixed — the four-verb lifecycle across the live canonical documents (#224)
-- Filed by `/assess code` (CODE-1, Medium). ADR 0007's `design` verb shipped into four live documents that still said three: every guarded surface stayed current, every unguarded prose surface went stale. Corrected in `specs/features/verb-model.md`, `SPEC.md`, `README.md` and `specs/architecture-principles.md`; point-in-time records still say three. New guard derives the verb set from `_AUDITED_VERBS` and failed first naming `design`. No registry bump.
-
-### Fixed — the between-release CHANGELOG fold covers the line ceiling, not just bytes (#223)
-- `RELEASING.md`'s fold was written against the byte gate alone, while the rotation test enforces two ceilings — and condensing bodies buys bytes, not lines. The section now measures both, splits into a byte pass and the line-collapse pass, and names entry length as the driver under a 1,000-byte budget. New `test_releasing_changelog_fold.py` derives the ceiling-test set from the rotation module; every assertion mutation-checked. No registry bump.
-
-### Fixed — one reader for the Typer app's registered command surface (#222)
-- Filed by `/assess code` (steward, 2026-07-26 pm, **CODE-1**, Medium). Three test modules carried a byte-identical two-line union reading Typer's registered surface; new `tests/_cliutil.registered_command_surface` is the single definition, adopted by five sites (two the ticket's grep missed), locked by an adoption test enumerating `tracked_py_sources("tests")` so a sixth inline copy fails the gate. Six new unit tests. Tests only — no registry bump.
-
-### Added — test-driven-development: cover a new lifecycle stage under every supported configuration (#221)
-- RED gains a rule that a new lifecycle stage must extend every suite walking the lifecycle, not just its own unit suite. `test-driven-development` 0.5.0 → 0.6.0 (registry 0.5.87 → 0.5.88).
-
-### Added — code-quality: a guard derives its subjects, it does not list them (#220)
-- A guard enforcing a rule across a set of files/modules/keys must derive that set from its defining artifact, never a hardcoded literal. `code-quality` 0.16.1 → 0.17.0 (registry 0.5.86 → 0.5.87).
-
-### Fixed — the CLI boundary guard derives its subject set from the registrations (#219)
-- `_registered_command_modules` now `ast`-derives the boundary guard's subject set from `harness/cli/__init__.py`'s live registrations instead of a stale hand-written list. Test-module only — no registry bump.
-
-### Added — the design stage is proven under `tracker: none` and at its tracker boundary (#218)
-- `test_tracker_less_layer.py` gains a `design` case; `design_tracker.py` coverage 79% → 98%. App-only — no registry bump.
-
-### Fixed — the design gate reads its payload keys from single-sourced constants (#217)
-- `resolve_design_gate` reads via new `DESIGN_STATUS_KEY`/`DESIGN_HASH_KEY` constants instead of hardcoded literals. App-only — no registry bump.
-
-### Fixed — tree-walking test guards enumerate from the tracked set, not the working tree (#215)
-- Filed by `/assess code` (**CODE-2**), sibling of #214: two abandoned worktrees nested inside `harness/` made seven guards read stale copies as living. One shared helper, `tests._gitutil.tracked_py_sources`, projects the git-tracked set onto `*.py`; four sites adopt it, nine new tests including a four-way adoption lock.
-
-### Fixed — `reclaim --stale` reads ledger liveness, not just the tracker's `updatedAt` (#216)
-- Filed from an unattended Build tick's own pre-flight: on `tracker: github` the issue's `updatedAt` is not a heartbeat (`start` writes an item-level Projects-v2 field), so a live 60-minute run was reverted at the 90-minute threshold, re-picked and duplicated. Staleness now reads the newest of two clocks — `updatedAt` and `_ledger_last_activity` — consulted in an order that can spare a live run but never condemn one (D3 preserved, D2 amended). Eight new tests.
-
 ### Added — the four-verb lifecycle is documented across the guidance surfaces (#213)
-- Breakdown item 4 of 4 of `design-verb` (ADR 0007), landing last: `commands/harness.md` gains **Step 1.5 — `design`** and `--design-file` on `review`, `CONTEXT.md` moves to "Four verbs, one ledger, one gate", and one canonical lifecycle string is asserted from a single constant so the surfaces cannot drift. **`harness` 0.2.4 → 0.2.5** (registry **0.5.86**).
-
-### Added — `review` enforces the design stage and reviews against the design (#212)
-- `harness review` refuses a run with no recorded `design` event (exit 5, `reason=no_design`); a `status='failed'` attempt still satisfies it (D4). A `status='ok'` design reaches the engine via `--design-file`, authenticated by `design_hash`. 31 tests.
-### Fixed — `resolve_repo_root` refuses a path that is not a git top-level (#214)
-- Steward finding CODE-INSIGHT-1: any resolvable path inside the allowlist was accepted, so a verb one directory too deep silently planted its worktree there. Now also requires a git top-level (`NotAGitTopLevel`, exit 2). Five test modules' fixtures moved to shared `tests/_gitutil.init_repo`.
-### Added — the `harness design` verb: engine, ticket comment, ledger event (#211)
-- Breakdown item 2 of 4 of `design-verb` (ADR 0007). New `harness/cli/design.py` registers the fourth lifecycle verb between `start` and implement, recording the outcome in three places — a marked ticket comment, a `design` ledger event, and `DesignOutput` on stdout. Degrade and record (**D4**): all five failure reasons append a `failed` event and exit 3. Bounded engine driver extracted to `_engine.py`, shared with `review`. 34 tests.
-
-### Added — the design engine protocol: prompt, SUBMIT contract, Opus default (#210)
-- Breakdown item 1 of 4 of `design-verb` (ADR 0007). New `design_protocol.py`: the read-only prompt, the `SUBMIT` contract, and `DESIGN_MODEL_DEFAULT = "opus"`; `parse_design_submit` distinguishes three outcomes, kept separate from `review_protocol.py` because the payloads and failure semantics differ. Inert until the verb consumes it.
-
-### Added — review-discipline: extend the sibling-duplication check to backend module files (#209)
-- Filed by nano-erp's `/assess code` (CODE-INSIGHT-2). New Stage 2 bullet **Cloned backend module helper**, extending the frontend-only sibling-duplication check to backend modules. `review-discipline` 0.6.7 → 0.6.8 (registry 0.5.84 → 0.5.85).
-
-### Added — review-discipline: partial-hook-adoption check also catches skipping the hook entirely (#208)
-- Filed by nano-erp's `/assess code` (CODE-INSIGHT-1). #194's rule only fired on partial adoption; now also triggers on the diff *shape* (fetch/write-refetch, hand-rolled `useState` flow) to catch full non-adoption too. `review-discipline` 0.6.6 → 0.6.7 (registry 0.5.83 → 0.5.84).
-
-### Changed — code-quality: broaden the mirroring self-admission trigger from helper to any duplicated unit (#206)
-- From the form repo (`/assess code`). `code-quality`'s "Extract on the third strike" admission rule was worded around "a helper mirrors a sibling", reading as scoped to pure functions; the trigger's subject broadens to "a helper, component, or module". This entry also folded #185–#181. **`code-quality` 0.16.0 → 0.16.1** (registry **0.5.83**).
-
-### Added — ship the guidance-feedback-upstream rule (#205)
-- Breakdown item 1 of `guidance-feedback-upstream`, whose ticket was lost in the Linear→GitHub cutover. `process/harness.md` (mirrored into `AGENTS`/`CLAUDE`/`GEMINI.md`) gains the rule: on a guidance defect, search existing issues, then draft an issue against the `source.repo` resolved from `.guidance-lock.yaml` — never hardcoded, never sent unattended, never carrying proprietary code.
-
-### Added — code-quality / review-discipline: a placeholder/stub must be flag-gated, not reachable from a live CTA (#204)
-- From the form repo, CAL-1130 (`/assess code`, CODE-INSIGHT-1). `code-quality` Part A gains **Placeholder and stub gating**, mirrored in `review-discipline` Stage 2.
-
-### Added — test-driven-development: cover each of a guard's trigger conditions, not just the one that trips first (#203)
-- From a steward pass: RED gains a bullet requiring one test per independent trigger condition, not just the one that trips first.
-
-### Added — wire `/bug` and `/tweak` into the process docs + command table (#202)
-- Breakdown item 4 of `bug-and-tweak-capture-commands`, landing last so the docs describe what shipped: the process docs' Commands table gains `/bug` + `/tweak` rows and one sentence stating the three-way boundary — `/propose` decides the unconfirmed, `/bug`/`/tweak` capture the confirmed-small, `/start` picks up the filed. (registry **0.5.79**).
-
-### Added — `commands/bug.md`: files a bug straight to Todo (#200)
-- Breakdown item 2: new `commands/bug.md`, filling the shared template with `kind: bug` and filing straight to Todo with no escape hatch. Documents both tracker backends, including the `gh issue create` → `item-add` → `item-edit --single-select-option-id` sequence that explicitly sets Status=Todo, closing the item-add-no-status trap.  **New `bug` 0.1.0** (registry **0.5.77**).
-
-### Added — new `templates/adjustment.md`: the shared capture template for `/bug` and `/tweak` (#199)
-- Breakdown item 1 of `bug-and-tweak-capture-commands`: new `templates/adjustment.md` — `kind: bug | tweak` / `area` frontmatter, *As-built* / *Desired* / *From actual use* / *Acceptance criteria*, and a `tweak`-only escape hatch to `/propose`. Framed as a capture-optimized change spec extended by `/start`. **New `template-adjustment` 0.1.0** (registry **0.5.76**).
-
-### Added — `review-discipline`: CONTEXT.md currency bullet also covers a repo's release runbook (#198)
-- A tracker cutover could update `CONTEXT.md` correctly while leaving a sibling release runbook describing the old world (see #196). The CONTEXT.md currency bullet now also fires on a diff changing `tracker:` or `branches:` roles, phrased generically so it ships to every consuming repo. **`review-discipline` 0.6.4 → 0.6.5** (registry **0.5.75**).
+- Breakdown item 4 of 4 of `design-verb` (ADR 0007), landing last: `commands/harness.md` gains **Step 1.5 — `design`** and `--design-file` on `review`, `CONTEXT.md` moves to "Four verbs, one ledger, one gate", and one canonical lifecycle string is asserted from a single constant so the surfaces cannot drift. Kept at full detail while `test_design_verb_lifecycle_documented.py` requires a `### ` heading for #213. **`harness` 0.2.4 → 0.2.5** (registry **0.5.86**).
 
 ### Earlier unreleased changes
 
@@ -171,6 +104,30 @@ Versions are per-file (see `registry.yaml`). This log records notable changes to
 
 > A further condensation of the oldest `[Unreleased]` entries, applying the `RELEASING.md` fold a second time: heading and summary collapse onto one line so the file clears its **line** ceiling as well as its byte ceiling. Full detail is in git history; each entry rotates to [`CHANGELOG-archive/2026.md`](CHANGELOG-archive/2026.md) at the next release.
 
+- **Fixed — the four-verb lifecycle across the live canonical documents (#224)** — ADR 0007's `design` verb shipped into four live documents that still said three: every guarded surface stayed current, every unguarded prose surface went stale. Corrected in `verb-model.md`, `SPEC.md`, `README.md` and `architecture-principles.md`; point-in-time records still say three. The new guard derives the verb set from `_AUDITED_VERBS`.
+- **Fixed — the between-release CHANGELOG fold covers the line ceiling, not just bytes (#223)** — `RELEASING.md`'s fold was written against the byte gate alone while the rotation test enforces two ceilings, and condensing bodies buys bytes, not lines. It now measures both, splits into a byte pass and a line-collapse pass, and names entry length as the driver under a 1,000-byte budget.
+- **Fixed — one reader for the Typer app's registered command surface (#222)** — Three test modules carried a byte-identical union reading Typer's registered surface; new `tests/_cliutil.registered_command_surface` is the single definition, adopted by five sites and locked by an adoption test over `tracked_py_sources("tests")`.
+- **Added — test-driven-development: cover a new lifecycle stage under every supported configuration (#221)** — RED gains a rule that a new lifecycle stage must extend every suite walking the lifecycle, not just its own unit suite. **`test-driven-development` 0.5.0 → 0.6.0** (registry **0.5.88**).
+- **Added — code-quality: a guard derives its subjects, it does not list them (#220)** — A guard enforcing a rule across a set of files/modules/keys must derive that set from its defining artifact, never a hardcoded literal. **`code-quality` 0.16.1 → 0.17.0** (registry **0.5.87**).
+- **Fixed — the CLI boundary guard derives its subject set from the registrations (#219)** — `_registered_command_modules` now `ast`-derives the subject set from `harness/cli/__init__.py`'s live registrations instead of a stale hand-written list.
+- **Added — the design stage is proven under `tracker: none` and at its tracker boundary (#218)** — `test_tracker_less_layer.py` gains a `design` case; `design_tracker.py` coverage 79% → 98%.
+- **Fixed — the design gate reads its payload keys from single-sourced constants (#217)** — `resolve_design_gate` reads via new `DESIGN_STATUS_KEY`/`DESIGN_HASH_KEY` constants instead of hardcoded literals.
+- **Fixed — tree-walking test guards enumerate from the tracked set, not the working tree (#215)** — Two abandoned worktrees nested inside `harness/` made seven guards read stale copies as living; one shared `tests._gitutil.tracked_py_sources` projects the git-tracked set onto `*.py`, with a four-way adoption lock.
+- **Fixed — `reclaim --stale` reads ledger liveness, not just the tracker's `updatedAt` (#216)** — On `tracker: github` the issue's `updatedAt` is not a heartbeat, so a live 60-minute run was reverted, re-picked and duplicated. Staleness now reads the newest of `updatedAt` and `_ledger_last_activity`, in an order that can spare a live run but never condemn one (D2 amended).
+- **Added — `review` enforces the design stage and reviews against the design (#212)** — `harness review` refuses a run with no recorded `design` event (exit 5, `reason=no_design`); a `failed` attempt still satisfies it (D4). A `status='ok'` design reaches the engine via `--design-file`, authenticated by `design_hash`.
+- **Fixed — `resolve_repo_root` refuses a path that is not a git top-level (#214)** — Any resolvable path inside the allowlist was accepted, so a verb one directory too deep silently planted its worktree there; now also requires a git top-level (`NotAGitTopLevel`, exit 2).
+- **Added — the `harness design` verb: engine, ticket comment, ledger event (#211)** — New `harness/cli/design.py` registers the fourth lifecycle verb, recording the outcome in three places: a marked ticket comment, a `design` ledger event, and `DesignOutput` on stdout. Degrade and record (**D4**): all five failure reasons append a `failed` event and exit 3.
+- **Added — the design engine protocol: prompt, SUBMIT contract, Opus default (#210)** — New `design_protocol.py`: the read-only prompt, the `SUBMIT` contract, and `DESIGN_MODEL_DEFAULT = "opus"`; kept separate from `review_protocol.py` because the payloads and failure semantics differ.
+- **Added — review-discipline: extend the sibling-duplication check to backend module files (#209)** — Filed by nano-erp's `/assess code`. New Stage 2 bullet **Cloned backend module helper**, extending the frontend-only check to backend modules. **`review-discipline` 0.6.7 → 0.6.8** (registry **0.5.85**).
+- **Added — review-discipline: partial-hook-adoption check also catches skipping the hook entirely (#208)** — #194's rule only fired on partial adoption; now also triggers on the diff *shape* (fetch/write-refetch, hand-rolled `useState`) to catch full non-adoption. **`review-discipline` 0.6.6 → 0.6.7** (registry **0.5.84**).
+- **Changed — code-quality: broaden the mirroring self-admission trigger from helper to any duplicated unit (#206)** — "Extract on the third strike" read as scoped to pure functions; the trigger's subject broadens to "a helper, component, or module". **`code-quality` 0.16.0 → 0.16.1** (registry **0.5.83**).
+- **Added — ship the guidance-feedback-upstream rule (#205)** — `process/harness.md` gains the rule: on a guidance defect, search existing issues, then draft one against the `source.repo` resolved from `.guidance-lock.yaml` — never hardcoded, never sent unattended, never carrying proprietary code.
+- **Added — code-quality / review-discipline: a placeholder/stub must be flag-gated, not reachable from a live CTA (#204)** — `code-quality` Part A gains **Placeholder and stub gating**, mirrored in `review-discipline` Stage 2.
+- **Added — test-driven-development: cover each of a guard's trigger conditions, not just the one that trips first (#203)** — RED gains a bullet requiring one test per independent trigger condition.
+- **Added — wire `/bug` and `/tweak` into the process docs + command table (#202)** — The Commands table gains `/bug` + `/tweak` rows and one sentence stating the three-way boundary: `/propose` decides the unconfirmed, `/bug`/`/tweak` capture the confirmed-small, `/start` picks up the filed. (registry **0.5.79**).
+- **Added — `commands/bug.md`: files a bug straight to Todo (#200)** — Fills the shared template with `kind: bug`, no escape hatch; documents the `gh issue create` → `item-add` → `item-edit --single-select-option-id` sequence that closes the item-add-no-status trap. **New `bug` 0.1.0** (registry **0.5.77**).
+- **Added — new `templates/adjustment.md`: the shared capture template for `/bug` and `/tweak` (#199)** — `kind: bug | tweak` / `area` frontmatter, *As-built* / *Desired* / *From actual use* / *Acceptance criteria*, and a `tweak`-only escape hatch to `/propose`. **New `template-adjustment` 0.1.0** (registry **0.5.76**).
+- **Added — `review-discipline`: CONTEXT.md currency bullet also covers a repo's release runbook (#198)** — The currency bullet now also fires on a diff changing `tracker:` or `branches:` roles, phrased generically so it ships to every consuming repo. **`review-discipline` 0.6.4 → 0.6.5** (registry **0.5.75**).
 - **Added — `/promote`: a versioned command over the harness promotion verbs (#189)** — `commands/promote.md` transcribes ADR 0003's five promotion verbs as a universal command resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles.
 - **Added — `/promote`: agent-orchestrated fallback for repos without the harness app (#190)** — A `## Fallback: no harness app` section, deliberately reduced per ADR 0003's 2026-07-23 amendment (conflict/red-gate → stop, no repair attempt).
 - **Added — `harness defer --needs` gains a third hold kind, `input` (#191)** — Per ADR 0006: `decision`/`operator` did not partition the hold space, so `input` covers a ticket waiting on the operator to supply something.
