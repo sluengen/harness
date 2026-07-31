@@ -764,3 +764,55 @@ def test_the_design_gate_reads_the_keys_the_model_writes() -> None:
     assert DESIGN_STATUS_KEY in payload
     assert DESIGN_HASH_KEY in payload
     assert resolve_design_gate(payload, _DESIGN).design_markdown == _DESIGN
+
+
+# ---------------------------------------------------------------------------
+# #264 — the recorded duration is inert with respect to the design gate
+# ---------------------------------------------------------------------------
+
+
+def test_a_duration_bearing_failed_design_still_satisfies_the_check(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-2: recording latency does not regress ADR 0007 D4.
+
+    #264 gives a failed design attempt a ``duration_ms``, and the ``no_design``
+    check keys on the event's presence and ``status`` — never on the column. So
+    a timed-out engine's recorded attempt must let the review proceed exactly as
+    an untimed one did, which is what makes the telemetry safe to collect at all.
+    """
+    _seed_run(db_path, repo)
+    _seed_design(db_path, status="failed", duration_ms=600_000)
+    prompts: list[str] = []
+
+    result = _invoke(repo, db_path, _capturing_runner(_PASS_LINE, prompts))
+
+    assert result.exit_code == 0, result.stdout
+    assert len(prompts) == 1, "a recorded failed attempt must let the review proceed"
+
+
+def test_a_duration_bearing_ok_design_reaches_the_engine_unchanged(
+    repo: Path, db_path: Path
+) -> None:
+    """The gate reads ``status`` and ``design_hash``, never ``duration_ms``.
+
+    Stated as an equivalence: a duration-bearing ``ok`` event behaves identically
+    to one without, so no enforcement path can start keying on a number that is
+    pure observation.
+    """
+    _seed_run(db_path, repo)
+    _seed_design(
+        db_path, design_hash=design_content_hash(_DESIGN), duration_ms=1_500_000
+    )
+    prompts: list[str] = []
+
+    result = _invoke(
+        repo,
+        db_path,
+        _capturing_runner(_PASS_LINE, prompts),
+        "--design-file",
+        str(_write_design_file(repo, _DESIGN)),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert _DESIGN in prompts[0]
