@@ -34,6 +34,12 @@ registered CLI and the live docs, and that the documented surface tracks the
 registered one.
 """
 
+# size: the CLI surface lock — a derivation guard, not accreted logic. Its length is
+# the documented-invocation corpus it walks (every live doc, every SPEC section)
+# plus the helpers projecting docs and the registered surface onto comparable sets;
+# the cases are assertions over that one derivation, and splitting them would
+# duplicate it.
+
 from __future__ import annotations
 
 import ast

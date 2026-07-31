@@ -12,6 +12,11 @@ No test spawns a real engine: every one injects a fake runner, so the protocol
 from #210 is exercised without the ``claude`` binary.
 """
 
+# size: the design verb's acceptance suite (ADR 0007) — engine invocation, the
+# degrade-and-record failure contract, the marked ticket comment, and the ledger
+# event. The degrade paths are only checkable against the success path they degrade
+# from, so they stay together.
+
 from __future__ import annotations
 
 import asyncio

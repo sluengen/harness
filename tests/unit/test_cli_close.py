@@ -20,6 +20,11 @@ never hit the network or a real remote — mirroring how ``test_cli_start.py``
 patches the Linear client and ``test_cli_review.py`` injects the runner.
 """
 
+# size: the close gate — the enforcement linchpin. Every case is a variation on one
+# invariant (a pass whose reviewed_sha equals HEAD, or no merge), and the module's
+# value is that the whole refusal matrix is readable in one place; splitting it
+# hides which refusals are covered.
+
 from __future__ import annotations
 
 import asyncio

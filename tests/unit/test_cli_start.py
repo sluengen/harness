@@ -13,6 +13,11 @@ AC-canonical-identifier: mixed-case/alias inputs cannot open duplicate runs.
 AC-transport-rollback: a transport failure (e.g. timeout) leaves zero side effects.
 """
 
+# size: the start verb's AC-1..AC-5 acceptance suite — one verb, enumerated by
+# criterion. Length is case count over the run/worktree/tracker side-effect matrix,
+# and every case re-asserts the same atomicity invariant (no dangling run, no
+# orphaned worktree), which a split would duplicate rather than separate.
+
 from __future__ import annotations
 
 import asyncio

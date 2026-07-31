@@ -40,6 +40,10 @@ These tests inject a fake engine runner and seed the ledger directly, exactly
 like ``test_review_verify_gate.py``.
 """
 
+# size: the design-to-review linkage (#212, ADR 0007 D3) — the no_design refusal and
+# the review-against-design path as one contract. They are two halves of one gate,
+# asserted against a shared ledger fixture.
+
 from __future__ import annotations
 
 import asyncio

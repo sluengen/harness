@@ -9,6 +9,13 @@ network. The live start→review→close proof (AC-1) is a separate manual
 demonstration; these unit tests cover the method contracts and error branches.
 """
 
+# size: the GitHub tracker seam's whole contract — 64 cases over one stubbed GraphQL
+# transport that dispatches on operation name, which every case shares. Note the
+# Linear counterpart is split by capability instead (test_linear_create_issue /
+# _reclaim_primitives / _release_primitives / _request_errors), so a per-capability
+# split here is feasible and is the natural next touch; kept whole for now because
+# the dispatching stub is the module.
+
 from __future__ import annotations
 
 import asyncio

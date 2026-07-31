@@ -10,6 +10,10 @@ what the arithmetic over them is. A hand-computed expectation beside a seeded
 population is the only way an aggregate can be asserted at all (AC-1).
 """
 
+# size: the stats aggregate reader (#265) over the denominator items 2-4 established
+# — cases that seed one ledger fixture and assert the aggregation over it. The
+# fixture is the module; splitting duplicates the seed.
+
 from __future__ import annotations
 
 import asyncio

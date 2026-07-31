@@ -14,6 +14,10 @@ runner via the ``--run-id`` override + a patched runner so the SUBMIT-line
 scanner is exercised without the codex binary.
 """
 
+# size: the review verb's acceptance suite — verdict parsing, SHA binding, breaker
+# paths, and engine dispatch, all against one stubbed engine harness every case
+# shares. Length is case count over that harness, not accreted logic.
+
 from __future__ import annotations
 
 import asyncio
