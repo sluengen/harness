@@ -47,21 +47,31 @@ Targeting:
   for Linear; the board for GitHub). Liveness of a dead run cannot be observed
   directly (ephemeral container, no shared DB); the only signal is time — a
   ticket idle longer than any legitimate run takes is presumed abandoned
-  (proposal D2). "Idle" reads **two** clocks (#216): the tracker's ``updatedAt``
-  and, for tracker-stale candidates only, the ledger's last activity — because a
-  Projects-v2 Status write never bumps a GitHub issue's ``updatedAt``, so the
-  tracker is not a heartbeat there (see :func:`_ledger_last_activity`). The bulk
+  (proposal D2). "Idle" reads **three** clocks (#216, #254): the tracker's
+  ``updatedAt`` and — for tracker-stale candidates only — the ledger's last
+  activity and the newest mtime among the run's worktree's tracked files, because
+  a Projects-v2 Status write never bumps a GitHub issue's ``updatedAt`` and a
+  session can work for hours without committing or invoking a verb. The two local
+  signals live in :mod:`harness.cli.reclaim_liveness`. The bulk
   arm the hourly Build routine's pre-flight will call (CAL-737).
+* ``harness reclaim --undo (<run-id> | --ticket <ID>)`` — the **reversal** (#254).
+  A confirmed false positive is put back: ticket to In Progress, ``reclaimed``
+  label dropped, a correcting comment posted, and the local ``runs`` row
+  re-opened. See :mod:`harness.cli.reclaim_undo`.
 
 Idempotent: reclaiming a run already ``cancelled`` is a safe no-op (no second
 Linear revert, no duplicate event). The sweep is idempotent the same way — once
 reverted a ticket is Todo, so the next sweep's enumeration no longer returns it.
 
 Exit codes (SPEC §11):
-* 0  — reclaimed (or an idempotent no-op / a revert-only when no local run).
+* 0  — reclaimed or undone (or an idempotent no-op / a revert-only when no local run).
 * 2  — invocation error: neither or both selectors, unknown run-id, a run with
        no associated ticket, a terminal/unrecognised run status, missing
-       ``LINEAR_API_KEY``, or the ticket is not found on Linear.
+       ``LINEAR_API_KEY``, or the ticket is not found on Linear. ``--undo``'s
+       refusals carry a machine-readable ``reason`` (``ambiguous_mode``,
+       ``ambiguous_selector``, ``unknown_run``, ``not_reclaimed``,
+       ``ticket_has_open_run``, ``tracker_config``, ``ticket_not_found``,
+       ``tracker_error``).
 * 1  — unexpected error (DB failure, or an unexpected Linear transport error).
 """
 
@@ -82,6 +92,9 @@ from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.reclaim_liveness import locally_live, open_run_liveness
+from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
+from harness.cli.reclaim_undo import describe as describe_undo
 from harness.layers import tracker as tracker_backend
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
@@ -97,7 +110,11 @@ from harness.tracker_errors import (
 # preserve) plus the --stale sweep that is defined as an enumerate-and-filter
 # layer *over* that same path, which splitting would only scatter across files.
 # CAL-1104 threaded the tracker layer through both arms so a tracker-less repo
-# reclaims locally, pushing it just over the 500-line limit.
+# reclaims locally, pushing it just over the 500-line limit. #254 added two more
+# arms without adding net length: the liveness rule moved out to
+# ``reclaim_liveness.py`` and the whole ``--undo`` path lives in
+# ``reclaim_undo.py``, so what remains here is the Typer surface, the mode/selector
+# validation, and the printing — the composer, not the mechanics.
 
 __all__ = [
     "ReclaimOutput",
@@ -117,8 +134,11 @@ _RECLAIM_REASON = "reclaimed"
 class _ReclaimError(VerbError):
     """``reclaim``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
-    The ``(message, code)`` carrier is inherited from the base; ``reclaim`` never
-    sets a ``reason``.
+    The ``(message, code)`` carrier is inherited from the base. The reclaim and
+    sweep arms set no ``reason`` (their refusals are invocation errors a human
+    reads); the ``--undo`` arm does, because a caller branches on its refusals —
+    ``ambiguous_mode`` is raised here and the rest in
+    :mod:`harness.cli.reclaim_undo`.
     """
 
 
@@ -154,49 +174,6 @@ class SweepOutput(BaseModel):
     scanned: int
     reclaimed: list[ReclaimedEntry]
     skipped: list[str]
-
-
-async def _ledger_last_activity(db_path: Path, ticket: str) -> datetime | None:
-    """Newest sign of life for ``ticket``'s open run — or ``None`` if unreachable.
-
-    The staleness sweep's second signal (#216). ``updatedAt`` on the tracker is
-    **not** a heartbeat on the ``github`` backend: ``start`` transitions a ticket
-    by writing the Projects-v2 *Status* field, an item-level mutation that leaves
-    the underlying issue's ``updatedAt`` alone, and ``checkpoint`` / ``design`` /
-    ``review`` / ``close`` never touch the issue at all. So a perfectly live run
-    can look arbitrarily stale — the observed case reclaimed a 60-minute-old run
-    against a 90-minute threshold because its issue had not been edited in 5h.
-
-    The ledger already records what the tracker does not, so it is read as an
-    *additive* override: ``max(runs.started_at, MAX(events.timestamp))`` over the
-    ticket's open run. ``started_at`` is load-bearing rather than a belt-and-braces
-    extra — ``start`` emits no event, so it is the **only** liveness signal a run
-    has before its first ``design``/``checkpoint``.
-
-    ``None`` means the ledger has no opinion — no DB (the cloud regime, proposal
-    D3: a fresh container never had the dead run's database) or no open run for
-    this ticket. The caller then keys on the tracker timestamp alone, which is
-    exactly today's behaviour, so this can only ever *spare* a live run and never
-    condemn one the tracker-only path would have kept.
-    """
-    if not db_path.exists():
-        return None
-    async with store.connect(db_path) as conn:
-        cur = await conn.execute(
-            "SELECT r.started_at, MAX(e.timestamp) FROM runs r "
-            "LEFT JOIN events e ON e.run_id = r.run_id "
-            "WHERE r.ticket = ? AND r.status = 'open'",
-            (ticket,),
-        )
-        row = await cur.fetchone()
-    # The bare aggregate always yields one row; an all-NULL one means no open run
-    # matched, which is the ledger having no opinion rather than a zero timestamp.
-    if row is None or row[0] is None:
-        return None
-    stamps = [parse_iso_z(str(row[0]))]
-    if row[1] is not None:
-        stamps.append(parse_iso_z(str(row[1])))
-    return max(stamps)
 
 
 async def _resumable_branch(
@@ -413,13 +390,16 @@ async def _run_stale_sweep(
     state the ticket was stranded in. A ticket inside the threshold is left
     untouched.
 
-    Staleness is judged on the newest of two clocks (#216): the tracker's
+    Staleness is judged on the newest of three clocks (#216, #254): the tracker's
     ``updatedAt``, and — consulted **only** for a ticket the tracker already
-    considers stale — the ledger's last activity for that ticket's open run
-    (:func:`_ledger_last_activity`). Ordering the checks this way keeps the
-    ledger a pure rescue: a tracker-fresh ticket short-circuits without a DB
-    read, and the ledger can only ever spare a live run, never condemn one the
-    tracker-only path would have kept.
+    considers stale — the two local signals in
+    :mod:`harness.cli.reclaim_liveness` (the ledger's last activity for that
+    ticket's open run, then that run's worktree's newest tracked-file mtime).
+    Ordering the checks this way keeps the local signals a pure rescue: a
+    tracker-fresh ticket short-circuits without a DB read or a filesystem touch,
+    and neither local signal can ever condemn a run the tracker-only path would
+    have kept — a ticket is reclaimed iff it is tracker-stale **and** the ledger
+    is absent or stale **and** the worktree is unreachable or stale.
 
     Tracker-less (``tracker: none``, CAL-1104/CAL-1197) the sweep is a **clean
     no-op**: enumeration is the tracker's job (proposal D2), so with no tracker
@@ -470,9 +450,12 @@ async def _run_stale_sweep(
             skipped.append(identifier)
             continue
         # Tracker-stale is only a *candidate* (#216). The tracker timestamp is not
-        # a heartbeat on the github backend, so consult the ledger before reverting.
-        ledger_activity = await _ledger_last_activity(db_path, identifier)
-        if ledger_activity is not None and ledger_activity >= cutoff:
+        # a heartbeat on the github backend, so consult the local signals before
+        # reverting: the ledger's last activity, then — since #254 — the newest
+        # mtime among the run's worktree's tracked files, which is the only signal
+        # that sees a session working without committing or invoking a verb.
+        liveness = await open_run_liveness(db_path, identifier)
+        if liveness is not None and await locally_live(liveness, cutoff):
             skipped.append(identifier)
             continue
         result = await _run_reclaim(db_path, None, identifier)
@@ -539,6 +522,13 @@ def reclaim_command(
         "--older-than",
         help="Staleness threshold for --stale (e.g. 90m, 12h, 7d). Default 90m.",
     ),
+    undo: bool = typer.Option(
+        False,
+        "--undo",
+        help="Reverse a reclaim confirmed to be a false positive: restore the "
+        "ticket to In Progress, drop the reclaimed label, re-open the run. "
+        "Takes <run-id> or --ticket; mutually exclusive with --stale.",
+    ),
 ) -> None:
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
     db_path = _resolve_db_path(db)
@@ -550,7 +540,18 @@ def reclaim_command(
     # silently taking the tracker-less no-op path.
     tracker = tracker_backend(Path.cwd()) != "none"
 
-    def _do() -> SweepOutput | ReclaimOutput:
+    def _do() -> SweepOutput | ReclaimOutput | ReclaimUndoOutput:
+        if undo:
+            # ``--stale`` sweeps the queue; ``--undo`` reverses one target. There is
+            # no coherent bulk reversal — a false positive is confirmed per ticket
+            # by a human — so the combination is refused rather than interpreted.
+            if stale:
+                raise _ReclaimError(
+                    "--undo reverses one reclaim; do not combine it with --stale",
+                    2,
+                    reason="ambiguous_mode",
+                )
+            return asyncio.run(run_undo(db_path, run_id, ticket, tracker=tracker))
         if stale:
             # Sweep mode owns the scope; a single-target selector is ambiguous.
             if run_id is not None or ticket is not None:
@@ -590,6 +591,10 @@ def reclaim_command(
 
     if isinstance(result, SweepOutput):
         _print_sweep(result)
+        return
+
+    if isinstance(result, ReclaimUndoOutput):
+        typer.echo(describe_undo(result))
         return
 
     if result.outcome == "already_reclaimed":

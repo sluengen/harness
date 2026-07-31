@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -42,8 +44,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from typer.testing import CliRunner
 
 from harness._time import iso_z
-from harness.cli import app
+from harness.cli import app, reclaim_liveness, reclaim_undo
+from harness.reclaim_marker import UNRECLAIM_MARKER
 from harness.state import store
+from harness.tracker_errors import TrackerRequestError
+from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
 
@@ -146,6 +151,65 @@ def _seed_checkpoint(
                 await conn.commit()
 
     _run_sync(_emit())
+
+
+
+async def _delete_run(db_path: Path, run_id: str) -> None:
+    """Drop a probe row so a following undo is not blocked by its own fixture."""
+    async with store.connect(db_path) as conn:
+        await conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+        await conn.commit()
+
+
+async def _set_completed_at(db_path: Path, run_id: str, stamp: str) -> None:
+    """Order two cancelled runs for the ``--undo --ticket`` newest-wins resolution."""
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE runs SET completed_at = ? WHERE run_id = ?", (stamp, run_id)
+        )
+        await conn.commit()
+
+
+async def _recancel(db_path: Path, run_id: str) -> None:
+    """Re-reclaim a run that was previously undone (a *second*, genuine death)."""
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE runs SET status = 'cancelled', completed_at = ? WHERE run_id = ?",
+            ("2026-06-06T00:00:00+00:00", run_id),
+        )
+        await conn.execute(
+            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, None, "workflow_failed", "2026-06-06T00:00:00+00:00", None,
+             json.dumps({"reason": "reclaimed"})),
+        )
+        await conn.commit()
+
+
+
+async def _cancel_deliberately(db_path: Path, run_id: str) -> None:
+    """The operator's own ``harness cancel`` on a run that was undone earlier."""
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE runs SET status = 'cancelled', completed_at = ? WHERE run_id = ?",
+            ("2026-07-07T00:00:00+00:00", run_id),
+        )
+        await conn.execute(
+            "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+            "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, None, "workflow_failed", "2026-07-07T00:00:00+00:00", None,
+             json.dumps({"reason": "cancelled"})),
+        )
+        await conn.commit()
+
+
+async def _set_status(db_path: Path, run_id: str, status: str) -> None:
+    """Force a run's status — stands in for a concurrent verb winning a race."""
+    async with store.connect(db_path) as conn:
+        await conn.execute(
+            "UPDATE runs SET status = ? WHERE run_id = ?", (status, run_id)
+        )
+        await conn.commit()
 
 
 def _fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
@@ -1010,3 +1074,943 @@ def test_stale_rejects_a_bad_duration(tmp_path: Path) -> None:
         _make_sweep_stub([]),
     )
     assert result.exit_code == 2
+
+
+# ===========================================================================
+# #254 — the THIRD staleness signal: worktree tracked-file mtime
+#
+# The ledger signal (#216) reads the newest of ``runs.started_at`` and the
+# newest event, which covers a run with no event *yet*. It does not cover a run
+# whose last event has already aged past the threshold while the session keeps
+# working: the observed case ran ``design``, implemented every AC, then spent
+# ~3h retrying a contended gate with zero commits and zero further events, so
+# both clocks agreed the ticket looked abandoned. A third signal reads what the
+# session was actually touching — the newest mtime among the open run's
+# worktree's *tracked* files — and, like the ledger, it can only ever *spare* a
+# run, never condemn one the first two checks would have kept.
+# ===========================================================================
+
+
+def _seed_worktree(path: Path, *, minutes_ago: int, name: str = "impl.py") -> Path:
+    """A real git worktree-shaped directory with one **tracked** file aged
+    ``minutes_ago``.
+
+    ``git init`` + ``git add`` only — no commit (which would need a user
+    identity) — because ``git ls-files`` reads the **index**, not history. The
+    mtime is set explicitly with ``os.utime`` rather than inherited from write
+    order, so the test's own clock is the only clock involved.
+    """
+    init_repo(path)
+    target = path / name
+    target.write_text("# work in progress\n")
+    subprocess.run(["git", "add", name], cwd=path, check=True, capture_output=True)
+    stamp = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).timestamp()
+    os.utime(target, (stamp, stamp))
+    return path
+
+
+def test_stale_sweep_spares_a_run_whose_worktree_is_fresh(tmp_path: Path) -> None:
+    """AC-1 + AC-5, the observed case: both clocks stale, worktree fresh → spared.
+
+    Reproduces the 2026-07-29 incident that filed this ticket. The tracker's
+    ``updatedAt`` was 5h old (nothing a run does bumps it on the GitHub backend),
+    the run's last ledger event was ~2h40m old (a ``design`` that finished long
+    before), and yet the session was alive and editing tracked files minutes ago.
+    A two-clock sweep reclaims it underneath the live orchestrator and a second
+    session then re-implements the finished work from scratch.
+    """
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-254", minutes_ago=5)
+    _seed_run(db, run_id="R254", status="open", ticket="254",
+              worktree_branch="harness/254", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    _seed_checkpoint(db, "R254", branch="harness/254",
+                     timestamp=_iso_minutes_ago(160))  # last event, already stale
+    stub = _make_sweep_stub([{"identifier": "254", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    # The live run is left strictly alone: no revert, no label, no comment.
+    stub.transition_to_unstarted.assert_not_awaited()
+    stub.apply_label.assert_not_awaited()
+    stub.post_comment.assert_not_awaited()
+    assert _fetch_row(db, "R254")["status"] == "open"  # type: ignore[index]
+    payload = json.loads(result.output)
+    assert payload["reclaimed"] == []
+    assert payload["skipped"] == ["254"]
+
+
+def test_stale_sweep_reclaims_when_the_worktree_is_also_stale(tmp_path: Path) -> None:
+    """AC-2: all three clocks stale → still reclaimed. The fix narrows, not blocks."""
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-dead", minutes_ago=180)
+    _seed_run(db, run_id="RWDEAD", status="open", ticket="301",
+              worktree_branch="harness/301", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "301", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("301")
+    assert _fetch_row(db, "RWDEAD")["status"] == "cancelled"  # type: ignore[index]
+    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "301"
+
+
+def test_stale_sweep_reclaims_when_the_run_recorded_no_worktree_path(
+    tmp_path: Path,
+) -> None:
+    """AC-2 tail: a NULL ``worktree_path`` is no opinion, not a spare.
+
+    Every pre-CAL-570 run row, and any row a caller wrote without the column, has
+    nothing to probe. The ticket falls back to the tracker+ledger verdict.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="RNOPATH", status="open", ticket="302",
+              worktree_branch="harness/302", worktree_path=None,
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "302", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("302")
+    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "302"
+
+
+def test_stale_sweep_reclaims_when_the_worktree_path_is_absent(tmp_path: Path) -> None:
+    """AC-2 tail, the cloud regime: a recorded path that does not resolve here.
+
+    ``start`` records the path as the *container* saw it (``/workspace/…``), so a
+    ledger read on another host — or in a fresh container — names a directory that
+    is simply not there. No opinion, today's behaviour.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="RGONEPATH", status="open", ticket="303",
+              worktree_branch="harness/303",
+              worktree_path=str(tmp_path / "never-existed"),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "303", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("303")
+
+
+def test_stale_sweep_reclaims_when_the_worktree_path_is_not_a_git_toplevel(
+    tmp_path: Path,
+) -> None:
+    """A plain, freshly-written directory that is not a git tree spares nothing."""
+    db = tmp_path / "harness.db"
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "recent.txt").write_text("just written\n")  # mtime = now
+    _seed_run(db, run_id="RPLAIN", status="open", ticket="304",
+              worktree_branch="harness/304", worktree_path=str(plain),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "304", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("304")
+
+
+def test_stale_sweep_is_not_fooled_by_an_enclosing_repository(tmp_path: Path) -> None:
+    """The load-bearing guard: a pruned worktree must not read the MAIN checkout.
+
+    ``git`` walks **up** from a directory that is not itself a top-level, so
+    ``ls-files`` run in a stale worktree directory would report the enclosing
+    repository's index — the operator's own checkout, whose files are almost
+    always freshly edited. Without the ``--show-toplevel`` guard that spares every
+    stale ticket and silently switches the whole sweep off.
+
+    The nested directory must hold a **tracked, fresh** file of the enclosing
+    repository for this test to discriminate: ``git ls-files`` is prefix-scoped, so
+    a nested directory with nothing tracked under it returns an empty listing and
+    reads as no-opinion whether the guard is present or not. With a tracked fresh
+    file under the prefix, removing the guard makes the probe report *that* file
+    and spare the ticket — which is the regression being pinned.
+    """
+    db = tmp_path / "harness.db"
+    enclosing = init_repo(tmp_path / "enclosing")
+    nested = enclosing / "stale-worktree"
+    nested.mkdir()
+    (nested / "fresh.py").write_text("the operator's own live edits\n")
+    subprocess.run(["git", "add", "stale-worktree/fresh.py"], cwd=enclosing,
+                   check=True, capture_output=True)
+    now = datetime.now(UTC).timestamp()
+    os.utime(nested / "fresh.py", (now, now))
+    _seed_run(db, run_id="RNESTED", status="open", ticket="305",
+              worktree_branch="harness/305", worktree_path=str(nested),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "305", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("305")
+    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "305"
+
+
+def test_stale_sweep_reclaims_when_the_worktree_index_is_empty(tmp_path: Path) -> None:
+    """A git tree with nothing tracked has no mtime to read — no opinion.
+
+    The file exists and is fresh, but it was never ``git add``ed, so ``ls-files``
+    lists nothing. This is the documented limit of the signal (the index bounds
+    the scan) and the reason ``--undo`` is the backstop.
+    """
+    db = tmp_path / "harness.db"
+    empty = init_repo(tmp_path / "wt-untracked")
+    (empty / "never-added.py").write_text("live edits, never staged\n")
+    _seed_run(db, run_id="REMPTY", status="open", ticket="306",
+              worktree_branch="harness/306", worktree_path=str(empty),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "306", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("306")
+
+
+def test_stale_sweep_reclaims_when_a_tracked_file_is_missing_from_the_tree(
+    tmp_path: Path,
+) -> None:
+    """A tracked path deleted from the working tree is skipped, not fatal.
+
+    ``ls-files`` reads the index, so it still names a file ``rm``'d from disk.
+    Its ``stat`` raises; the probe must skip that entry and keep going rather
+    than abort — here every *remaining* entry is stale, so the ticket is
+    reclaimed on the ordinary verdict.
+    """
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-deleted", minutes_ago=200)
+    (worktree / "impl.py").unlink()
+    _seed_run(db, run_id="RDELETED", status="open", ticket="307",
+              worktree_branch="harness/307", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "307", "updated_at": _iso_minutes_ago(300)}])
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("307")
+
+
+def test_stale_sweep_reclaims_when_the_ls_files_probe_times_out(
+    tmp_path: Path,
+) -> None:
+    """A wedged ``git`` degrades to no opinion — it never wedges the pre-flight.
+
+    The Build routine runs this sweep every tick, so a probe that can raise is a
+    probe that can stop the loop it exists to unblock. A fired ``TimeoutExpired``
+    (and any other ``SubprocessError``/``OSError``) must read as "nothing to say".
+    """
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-wedged", minutes_ago=1)  # fresh!
+    _seed_run(db, run_id="RWEDGED", status="open", ticket="308",
+              worktree_branch="harness/308", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "308", "updated_at": _iso_minutes_ago(300)}])
+
+    real_run_git = reclaim_liveness.run_git
+
+    def _wedge(cwd: Path, *args: str, **kwargs: Any) -> Any:
+        if args[:1] == ("ls-files",):
+            raise subprocess.TimeoutExpired(cmd="git ls-files", timeout=15)
+        return real_run_git(cwd, *args, **kwargs)
+
+    with patch.object(reclaim_liveness, "run_git", _wedge):
+        result = _invoke(
+            ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+            stub,
+        )
+    assert result.exit_code == 0, result.output
+    # The worktree is genuinely fresh — only the degraded probe lets it be
+    # reclaimed, which is the documented failure posture.
+    stub.transition_to_unstarted.assert_awaited_once_with("308")
+
+
+def test_stale_sweep_reclaims_when_the_ls_files_probe_fails(tmp_path: Path) -> None:
+    """A non-zero ``ls-files`` exit is no opinion too (a corrupt index, say).
+
+    The stub emits **partial output alongside** the failure — git can write some
+    entries and then die — because that is what makes the check discriminating: an
+    implementation that ignored ``returncode`` would parse ``impl.py``, find it
+    fresh, and spare a ticket on the strength of a failed probe.
+    """
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-broken", minutes_ago=1)  # fresh!
+    _seed_run(db, run_id="RBROKEN", status="open", ticket="309",
+              worktree_branch="harness/309", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "309", "updated_at": _iso_minutes_ago(300)}])
+
+    real_run_git = reclaim_liveness.run_git
+
+    def _fail(cwd: Path, *args: str, **kwargs: Any) -> Any:
+        if args[:1] == ("ls-files",):
+            return subprocess.CompletedProcess(
+                args=["git"], returncode=128, stdout="impl.py\0",
+                stderr="fatal: index file corrupt",
+            )
+        return real_run_git(cwd, *args, **kwargs)
+
+    with patch.object(reclaim_liveness, "run_git", _fail):
+        result = _invoke(
+            ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+            stub,
+        )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("309")
+
+
+def test_stale_sweep_worktree_liveness_respects_a_custom_threshold(
+    tmp_path: Path,
+) -> None:
+    """The worktree mtime is compared against the *resolved* cutoff, not a fixed 90m.
+
+    Two runs whose worktree activity straddles ``--older-than 30m``: the
+    10-minute one is spared, the 50-minute one reclaimed. Both have identically
+    stale tracker and ledger clocks, so the worktree probe is the only thing
+    separating them.
+    """
+    db = tmp_path / "harness.db"
+    fresh = _seed_worktree(tmp_path / "wt-in", minutes_ago=10)
+    stale = _seed_worktree(tmp_path / "wt-out", minutes_ago=50)
+    _seed_run(db, run_id="RWIN", status="open", ticket="310",
+              worktree_branch="harness/310", worktree_path=str(fresh),
+              started_at=_iso_minutes_ago(200))
+    _seed_run(db, run_id="RWOUT", status="open", ticket="311",
+              worktree_branch="harness/311", worktree_path=str(stale),
+              started_at=_iso_minutes_ago(200))
+    stub = _make_sweep_stub(
+        [
+            {"identifier": "310", "updated_at": _iso_minutes_ago(300)},
+            {"identifier": "311", "updated_at": _iso_minutes_ago(300)},
+        ]
+    )
+
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--older-than", "30m",
+         "--json", "--db", str(db)],
+        stub,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["scanned"] == 2
+    assert payload["skipped"] == ["310"]
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["311"]
+
+
+def test_stale_sweep_does_not_probe_a_tracker_fresh_ticket(tmp_path: Path) -> None:
+    """The short-circuit is preserved: a tracker-fresh ticket costs no probe.
+
+    The sweep must not pay a subprocess plus a ``stat`` per tracked file for a
+    ticket the tracker itself says is active. Asserted by making the probe raise
+    if it is ever reached.
+    """
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-fresh-tracker", minutes_ago=200)
+    _seed_run(db, run_id="RFRESHTRACKER", status="open", ticket="312",
+              worktree_branch="harness/312", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(240))
+    stub = _make_sweep_stub([{"identifier": "312", "updated_at": _iso_minutes_ago(5)}])
+
+    def _never(_worktree: Path) -> None:
+        raise AssertionError("the worktree probe ran for a tracker-fresh ticket")
+
+    with patch.object(reclaim_liveness, "worktree_last_activity", _never):
+        result = _invoke(
+            ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+            stub,
+        )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["skipped"] == ["312"]
+
+
+def test_stale_sweep_does_not_probe_when_the_ledger_is_already_fresh(
+    tmp_path: Path,
+) -> None:
+    """Nor does a ledger-fresh ticket: the cheaper signal short-circuits first."""
+    db = tmp_path / "harness.db"
+    worktree = _seed_worktree(tmp_path / "wt-ledger-fresh", minutes_ago=200)
+    _seed_run(db, run_id="RLEDGERFRESH", status="open", ticket="313",
+              worktree_branch="harness/313", worktree_path=str(worktree),
+              started_at=_iso_minutes_ago(10))
+    stub = _make_sweep_stub([{"identifier": "313", "updated_at": _iso_minutes_ago(300)}])
+
+    def _never(_worktree: Path) -> None:
+        raise AssertionError("the worktree probe ran for a ledger-fresh ticket")
+
+    with patch.object(reclaim_liveness, "worktree_last_activity", _never):
+        result = _invoke(
+            ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+            stub,
+        )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["skipped"] == ["313"]
+
+
+def test_stale_sweep_does_not_probe_when_there_is_no_open_run(tmp_path: Path) -> None:
+    """No open run row → no probe at all, and the revert-only path runs unchanged."""
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))  # reachable ledger, no row for this ticket
+    stub = _make_sweep_stub([{"identifier": "314", "updated_at": _iso_minutes_ago(300)}])
+
+    def _never(_worktree: Path) -> None:
+        raise AssertionError("the worktree probe ran with no open run row")
+
+    with patch.object(reclaim_liveness, "worktree_last_activity", _never):
+        result = _invoke(
+            ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+            stub,
+        )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_unstarted.assert_awaited_once_with("314")
+
+
+# ===========================================================================
+# #254 — ``reclaim --undo``: reversing a confirmed false-positive reclaim
+#
+# The worktree signal above narrows how often a live run is reclaimed; it cannot
+# eliminate it (a worktree can vanish, and an untracked-only edit is invisible to
+# the index). Before this arm existed, recovery from a false positive meant a
+# hand-rolled ``git push`` plus a hand-written tracker comment — bypassing the
+# ledger entirely, which is the one thing the verb loop exists to prevent.
+#
+# Undo's authority is deliberately bounded: it re-opens only a run it can *prove*
+# was reclaim-cancelled, and refuses outright when a competing open run exists
+# rather than arbitrating between two sessions.
+# ===========================================================================
+
+
+def _make_undo_stub(*, raise_on_transition: Exception | None = None) -> MagicMock:
+    """A tracker mock carrying the three seam methods undo restores a ticket with.
+
+    Undo adds **no** backend method: ``transition_to_in_progress`` /
+    ``remove_label`` / ``post_comment`` all already exist for `start` and
+    `release`, so both backends are served unchanged.
+    """
+    mock = MagicMock()
+    if raise_on_transition is not None:
+        mock.transition_to_in_progress = AsyncMock(side_effect=raise_on_transition)
+    else:
+        mock.transition_to_in_progress = AsyncMock(return_value=None)
+    mock.remove_label = AsyncMock(return_value=None)
+    mock.post_comment = AsyncMock(return_value=None)
+    return mock
+
+
+def _invoke_undo(args: list[str], stub: MagicMock, *, backend: str = "linear") -> Any:
+    """``_invoke`` for the undo arm: the client is resolved in ``reclaim_undo``."""
+    with (
+        patch("harness.cli.reclaim_undo.tracker_client", return_value=stub),
+        patch("harness.cli.reclaim.tracker_backend", return_value=backend),
+    ):
+        return cli_runner.invoke(app, args)
+
+
+def _seed_reclaimed(
+    db_path: Path,
+    *,
+    run_id: str,
+    ticket: str,
+    reason: str = "reclaimed",
+) -> None:
+    """A run left exactly as ``reclaim`` leaves it: ``cancelled`` + the event.
+
+    ``reason`` is a parameter because the *reason* is the whole gate: a run
+    cancelled by ``harness cancel`` (``reason='cancelled'``) is an intentional
+    abandon, not a false positive, and must not be undoable.
+    """
+    _seed_run(db_path, run_id=run_id, status="cancelled", ticket=ticket,
+              worktree_branch=f"harness/{ticket}")
+
+    async def _finish() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "UPDATE runs SET completed_at = ? WHERE run_id = ?",
+                ("2026-01-01T01:00:00+00:00", run_id),
+            )
+            await conn.execute(
+                "INSERT INTO events (run_id, node_id, event_type, timestamp, "
+                "duration_ms, data_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, None, "workflow_failed", "2026-01-01T01:00:00+00:00", None,
+                 json.dumps({"reason": reason})),
+            )
+            await conn.commit()
+
+    _run_sync(_finish())
+
+
+def test_undo_restores_the_ticket_and_reopens_the_run(tmp_path: Path) -> None:
+    """AC-3, the happy path — all five effects of a reversal."""
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RUNDO", ticket="401")
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RUNDO", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 0, result.output
+    # 1-3. the tracker is restored: In Progress, label dropped, comment posted.
+    stub.transition_to_in_progress.assert_awaited_once_with("401")
+    stub.remove_label.assert_awaited_once_with("401", "reclaimed")
+    stub.post_comment.assert_awaited_once()
+    assert UNRECLAIM_MARKER in stub.post_comment.await_args.args[1]
+    # 4. the row is open again, and no longer claims to have ended.
+    row = _fetch_row(db, "RUNDO")
+    assert row["status"] == "open"  # type: ignore[index]
+    assert row["completed_at"] is None  # type: ignore[index]
+    # 5. the reversal is appended; the reclamation event SURVIVES (append-only).
+    undone = _fetch_events(db, "RUNDO", "reclaim_undone")
+    assert len(undone) == 1
+    assert undone[0]["ticket"] == "401"
+    assert _fetch_events(db, "RUNDO", "workflow_failed")[0]["reason"] == "reclaimed"
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "undone"
+    assert payload["run_id"] == "RUNDO"
+
+
+def test_undo_frees_the_reopened_run_for_the_open_ticket_index(tmp_path: Path) -> None:
+    """The re-opened row occupies ``idx_runs_ticket_open`` again.
+
+    Reclaim's whole local purpose is to *clear* that slot so a fresh ``start``
+    is not blocked; undo must put it back, or two sessions could both start on
+    the ticket the reversal just restored.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RSLOT", ticket="402")
+    assert _insert_fresh_open(db, run_id="RPROBE0", ticket="402") is True
+    # Undo cannot run while that probe row holds the slot — remove it and retry.
+    _run_sync(_delete_run(db, "RPROBE0"))
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RSLOT", "--json", "--db", str(db)], _make_undo_stub()
+    )
+    assert result.exit_code == 0, result.output
+    assert _count_open_for_ticket(db, "402") == 1
+    assert _insert_fresh_open(db, run_id="RPROBE1", ticket="402") is False
+
+
+def test_undo_refuses_when_the_ticket_already_has_another_open_run(
+    tmp_path: Path,
+) -> None:
+    """The observed duplicate-session case: refuse, and touch nothing.
+
+    A second session already ran ``harness start`` on the reverted ticket. Undo
+    must not arbitrate between two sessions — the duplicate may hold real work —
+    so it refuses, names the competing run, and performs **no** tracker write
+    (the operator runs ``harness cancel`` on the duplicate first).
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RLOSER", ticket="403")
+    assert _insert_fresh_open(db, run_id="RWINNER", ticket="403") is True
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RLOSER", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "ticket_has_open_run"
+    assert "RWINNER" in payload["error"]
+    stub.transition_to_in_progress.assert_not_awaited()
+    stub.remove_label.assert_not_awaited()
+    stub.post_comment.assert_not_awaited()
+    assert _fetch_row(db, "RLOSER")["status"] == "cancelled"  # type: ignore[index]
+
+
+def test_undo_refuses_a_deliberately_cancelled_run(tmp_path: Path) -> None:
+    """``harness cancel`` is an intentional abandon, not a false positive."""
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RCANCEL", ticket="404", reason="cancelled")
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RCANCEL", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+    assert _fetch_row(db, "RCANCEL")["status"] == "cancelled"  # type: ignore[index]
+
+
+def test_undo_refuses_a_cancelled_run_with_no_abandon_event(tmp_path: Path) -> None:
+    """A ``cancelled`` row with no ``workflow_failed`` at all cannot be proven
+    to have been reclaimed, so it is refused rather than assumed."""
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="RNOEVENT", status="cancelled", ticket="405",
+              worktree_branch="harness/405")
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RNOEVENT", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_undo_refuses_an_open_run_that_was_never_reclaimed(tmp_path: Path) -> None:
+    """An ``open`` run is 'not cancelled' — it must read as ``not_reclaimed``,
+    NOT as an idempotent ``already_open`` no-op.
+
+    The two outcomes overlap textually (an open run is indeed not cancelled), so
+    the distinction is made on evidence: ``already_open`` requires a recorded
+    ``reclaim_undone`` event proving a prior reversal. Without one, undoing a
+    perfectly live run would be a silent no-op that reports success.
+    """
+    db = tmp_path / "harness.db"
+    _seed_run(db, run_id="RLIVE", status="open", ticket="406",
+              worktree_branch="harness/406")
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RLIVE", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_undo_is_an_idempotent_noop_on_an_already_undone_run(tmp_path: Path) -> None:
+    """Re-running undo on a completed reversal is a clean no-op, like
+    ``already_reclaimed`` — exit 0, and no second tracker write."""
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RTWICE", ticket="407")
+    first = _invoke_undo(
+        ["reclaim", "--undo", "RTWICE", "--json", "--db", str(db)], _make_undo_stub()
+    )
+    assert first.exit_code == 0, first.output
+
+    stub = _make_undo_stub()
+    second = _invoke_undo(
+        ["reclaim", "--undo", "RTWICE", "--json", "--db", str(db)], stub
+    )
+    assert second.exit_code == 0, second.output
+    assert json.loads(second.output)["outcome"] == "already_undone"
+    stub.transition_to_in_progress.assert_not_awaited()
+    stub.post_comment.assert_not_awaited()
+    assert len(_fetch_events(db, "RTWICE", "reclaim_undone")) == 1
+
+
+def test_undo_works_again_on_a_run_reclaimed_after_a_prior_undo(
+    tmp_path: Path,
+) -> None:
+    """A run undone, then *genuinely* reclaimed later, is undoable again.
+
+    The reversal history must not disqualify a run from a later reversal: the run
+    is ``cancelled`` with a ``reclaimed`` abandon event, which is the whole gate.
+    Keying the gate on 'has never been undone' would strand exactly this run.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RAGAIN", ticket="408")
+    assert _invoke_undo(
+        ["reclaim", "--undo", "RAGAIN", "--json", "--db", str(db)], _make_undo_stub()
+    ).exit_code == 0
+    # ...time passes, the session really does die, and reclaim runs again.
+    _run_sync(_recancel(db, "RAGAIN"))
+
+    stub = _make_undo_stub()
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RAGAIN", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["outcome"] == "undone"
+    assert _fetch_row(db, "RAGAIN")["status"] == "open"  # type: ignore[index]
+    assert len(_fetch_events(db, "RAGAIN", "reclaim_undone")) == 2
+
+
+def test_undo_by_ticket_with_no_local_run_restores_the_tracker_only(
+    tmp_path: Path,
+) -> None:
+    """The cloud regime: no reachable run row, so restore the tracker and say so."""
+    db = tmp_path / "absent" / "harness.db"  # never created
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "--ticket", "409", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_in_progress.assert_awaited_once_with("409")
+    stub.remove_label.assert_awaited_once_with("409", "reclaimed")
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "unreverted"
+    assert payload["run_id"] is None
+
+
+def test_undo_by_ticket_targets_the_most_recent_reclaimed_run(tmp_path: Path) -> None:
+    """``--ticket`` resolves to the newest reclaim-cancelled run for that ticket."""
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="ROLD", ticket="410")
+    _seed_reclaimed(db, run_id="RNEW", ticket="410")
+    _run_sync(_set_completed_at(db, "ROLD", "2026-01-01T00:00:00+00:00"))
+    _run_sync(_set_completed_at(db, "RNEW", "2026-05-05T00:00:00+00:00"))
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "--ticket", "410", "--json", "--db", str(db)],
+        _make_undo_stub(),
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["run_id"] == "RNEW"
+    assert _fetch_row(db, "RNEW")["status"] == "open"  # type: ignore[index]
+    assert _fetch_row(db, "ROLD")["status"] == "cancelled"  # type: ignore[index]
+
+
+def test_undo_tracker_failure_leaves_the_run_cancelled(tmp_path: Path) -> None:
+    """Tracker-first, like reclaim: a failed restore leaves work still to undo.
+
+    If the row were re-opened first and the tracker then failed, the ticket would
+    sit in Todo with the ``reclaimed`` label while a run claimed to be open — and
+    a retry would read ``already_undone`` and never fix the tracker.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RTFAIL", ticket="411")
+    stub = _make_undo_stub(
+        raise_on_transition=TrackerRequestError("tracker 502")
+    )
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RTFAIL", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "tracker_error"
+    assert _fetch_row(db, "RTFAIL")["status"] == "cancelled"  # type: ignore[index]
+    assert _fetch_events(db, "RTFAIL", "reclaim_undone") == []
+
+
+def test_undo_on_a_tracker_less_repo_reopens_the_run_only(tmp_path: Path) -> None:
+    """``tracker: none``: there is no ticket state, so do the local half."""
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RNOTRACKER", ticket="412")
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RNOTRACKER", "--json", "--db", str(db)],
+        stub,
+        backend="none",
+    )
+    assert result.exit_code == 0, result.output
+    stub.transition_to_in_progress.assert_not_awaited()
+    assert _fetch_row(db, "RNOTRACKER")["status"] == "open"  # type: ignore[index]
+    assert len(_fetch_events(db, "RNOTRACKER", "reclaim_undone")) == 1
+
+
+def test_undo_refuses_an_unknown_run_id(tmp_path: Path) -> None:
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RNOPE", "--json", "--db", str(db)], _make_undo_stub()
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "unknown_run"
+
+
+def test_undo_refuses_combination_with_stale(tmp_path: Path) -> None:
+    """``--stale`` sweeps; ``--undo`` reverses one target. Together is meaningless."""
+    db = tmp_path / "harness.db"
+    result = _invoke_undo(
+        ["reclaim", "--undo", "--stale", "--json", "--db", str(db)], _make_undo_stub()
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "ambiguous_mode"
+
+
+def test_undo_requires_exactly_one_selector(tmp_path: Path) -> None:
+    """Neither selector, and both selectors, are each refused."""
+    db = tmp_path / "harness.db"
+    neither = _invoke_undo(
+        ["reclaim", "--undo", "--json", "--db", str(db)], _make_undo_stub()
+    )
+    assert neither.exit_code == 2, neither.output
+    assert json.loads(neither.output)["reason"] == "ambiguous_selector"
+
+    both = _invoke_undo(
+        ["reclaim", "--undo", "R1", "--ticket", "413", "--json", "--db", str(db)],
+        _make_undo_stub(),
+    )
+    assert both.exit_code == 2, both.output
+    assert json.loads(both.output)["reason"] == "ambiguous_selector"
+
+
+def test_a_sweep_after_an_undo_spares_the_restored_ticket(tmp_path: Path) -> None:
+    """The regression closing the loop between this ticket's two halves.
+
+    Undo re-opens the run, so ``idx_runs_ticket_open`` sees it again — and the
+    next hourly pre-flight sweep runs against a ticket whose tracker ``updatedAt``
+    is still ancient and whose ``started_at`` is still long past. Without the
+    ``reclaim_undone`` event counting as ledger activity, the very next sweep
+    would re-reclaim the ticket the operator just restored, in a loop.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RLOOP", ticket="414")
+    assert _invoke_undo(
+        ["reclaim", "--undo", "RLOOP", "--json", "--db", str(db)], _make_undo_stub()
+    ).exit_code == 0
+
+    sweep_stub = _make_sweep_stub(
+        [{"identifier": "414", "updated_at": _iso_minutes_ago(300)}]
+    )
+    result = _invoke(
+        ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
+        sweep_stub,
+    )
+    assert result.exit_code == 0, result.output
+    sweep_stub.transition_to_unstarted.assert_not_awaited()
+    assert json.loads(result.output)["skipped"] == ["414"]
+    assert _fetch_row(db, "RLOOP")["status"] == "open"  # type: ignore[index]
+
+
+def test_undo_refuses_a_run_id_when_there_is_no_ledger_at_all(tmp_path: Path) -> None:
+    """A ``<run-id>`` names a specific local row; with no DB there is no such row.
+
+    Without this branch the target would fall through to the tracker-only path
+    carrying ``ticket=None`` — and undo would go on to "restore" a ticket whose
+    identifier is the string ``'None'``. ``--ticket`` legitimately degrades to a
+    tracker-only reversal; a run-id cannot.
+    """
+    db = tmp_path / "absent" / "harness.db"  # never created
+    stub = _make_undo_stub()
+
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RGHOST", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "unknown_run"
+    stub.transition_to_in_progress.assert_not_awaited()
+
+
+def test_undo_refuses_a_run_cancelled_after_a_prior_undo(tmp_path: Path) -> None:
+    """The **newest** abandon reason decides — a later `cancel` is not undoable.
+
+    A run can carry several ``workflow_failed`` events: reclaimed, undone, then
+    deliberately cancelled by the operator. Reading the oldest would see
+    ``reason='reclaimed'`` and happily re-open a run the operator had *chosen* to
+    abandon, ignoring their more recent decision.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RTHENCANCEL", ticket="415")
+    assert _invoke_undo(
+        ["reclaim", "--undo", "RTHENCANCEL", "--json", "--db", str(db)],
+        _make_undo_stub(),
+    ).exit_code == 0
+    _run_sync(_cancel_deliberately(db, "RTHENCANCEL"))
+
+    stub = _make_undo_stub()
+    result = _invoke_undo(
+        ["reclaim", "--undo", "RTHENCANCEL", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+    assert _fetch_row(db, "RTHENCANCEL")["status"] == "cancelled"  # type: ignore[index]
+
+
+def test_undo_refuses_when_a_competing_run_appears_after_the_precheck(
+    tmp_path: Path,
+) -> None:
+    """The re-open transaction re-checks the competing-open-run condition itself.
+
+    The friendly pre-check runs before any write, so it is racy by construction: a
+    second session can ``harness start`` on the ticket in the window between the
+    check and the ``UPDATE``. ``idx_runs_ticket_open`` would then reject the write,
+    but only if the statement is actually guarded — so the transaction re-asserts
+    the condition rather than trusting the pre-check. Simulated by blinding the
+    pre-check while a competing row genuinely exists.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RRACE", ticket="416")
+    assert _insert_fresh_open(db, run_id="RRACEWINNER", ticket="416") is True
+
+    async def _blind(_conn: Any, _ticket: str, _run_id: str) -> str | None:
+        return None
+
+    with patch.object(reclaim_undo, "_competing_open_run", _blind):
+        result = _invoke_undo(
+            ["reclaim", "--undo", "RRACE", "--json", "--db", str(db)],
+            _make_undo_stub(),
+        )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "ticket_has_open_run"
+    assert _fetch_row(db, "RRACE")["status"] == "cancelled"  # type: ignore[index]
+    assert _fetch_events(db, "RRACE", "reclaim_undone") == []
+
+
+def test_undo_does_not_reopen_a_run_that_became_terminal_after_the_precheck(
+    tmp_path: Path,
+) -> None:
+    """The re-open is guarded on the status it observed — never a blind UPDATE.
+
+    If a concurrent ``close`` lands between the pre-check and the write, an
+    unguarded statement would drag a **closed** (merged) run back to ``open``:
+    the ledger would then show merged work as in-flight, and ``close``'s
+    'a start exists' gate would be reading a run that already landed.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RCLOSED", ticket="417")
+
+    async def _close_it_mid_flight(_conn: Any, _ticket: str, _run_id: str) -> None:
+        await _set_status(db, "RCLOSED", "closed")
+        return None
+
+    with patch.object(reclaim_undo, "_competing_open_run", _close_it_mid_flight):
+        result = _invoke_undo(
+            ["reclaim", "--undo", "RCLOSED", "--json", "--db", str(db)],
+            _make_undo_stub(),
+        )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "ticket_has_open_run"
+    assert _fetch_row(db, "RCLOSED")["status"] == "closed"  # type: ignore[index]
+    assert _fetch_events(db, "RCLOSED", "reclaim_undone") == []
+
+
+def test_undo_by_ticket_refuses_when_the_newest_cancellation_was_deliberate(
+    tmp_path: Path,
+) -> None:
+    """`--ticket` applies the same newest-reason gate the run-id path does.
+
+    A run can accumulate several `workflow_failed` events: reclaimed, undone, then
+    deliberately cancelled by the operator. Selecting on "has a reclaimed event
+    *anywhere* in its history" would match that run and re-open something the
+    operator had chosen to abandon — the bounded-authority invariant says only a
+    run whose **current** cancellation is a reclamation is undoable, and the
+    selector must not be a way around it.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RTICKETCANCEL", ticket="418")
+    assert _invoke_undo(
+        ["reclaim", "--undo", "RTICKETCANCEL", "--json", "--db", str(db)],
+        _make_undo_stub(),
+    ).exit_code == 0
+    _run_sync(_cancel_deliberately(db, "RTICKETCANCEL"))
+
+    stub = _make_undo_stub()
+    result = _invoke_undo(
+        ["reclaim", "--undo", "--ticket", "418", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+    stub.remove_label.assert_not_awaited()
+    assert _fetch_row(db, "RTICKETCANCEL")["status"] == "cancelled"  # type: ignore[index]

@@ -65,6 +65,7 @@ from harness.cli._git import (
     resolve_base_branch,
     run_git,
     teardown_worktree,
+    worktree_toplevel_matches,
 )
 from harness.cli._repo import resolve_verb_db_path
 from harness.close_merge import CloseMergeError, worktree_porcelain
@@ -256,26 +257,6 @@ def _in_flight_runs(db_path: Path) -> _InFlightRuns:
     return asyncio.run(_in_flight_runs_async(db_path))
 
 
-def _worktree_toplevel_matches(worktree_path: Path) -> bool:
-    """True iff ``git -C worktree_path rev-parse --show-toplevel`` resolves
-    back to ``worktree_path`` itself.
-
-    The stash / dirty-tree probes read ``git`` state *anchored at the
-    worktree*; without this guard, a directory whose worktree registration
-    was already pruned (or that never was a proper worktree) has ``git``
-    walk up and report the *main checkout's* state instead — which would
-    veto an orphaned directory whenever the operator's own tree happens to
-    be dirty.
-    """
-    proc = run_git(worktree_path, "rev-parse", "--show-toplevel")
-    if proc.returncode != 0:
-        return False
-    try:
-        return Path(proc.stdout.strip()).resolve() == worktree_path.resolve()
-    except OSError:
-        return False
-
-
 _STASH_SUBJECT_RE = re.compile(r"^(?:WIP on|On) (?P<branch>.+):")
 
 
@@ -283,7 +264,7 @@ def _stash_veto(worktree_path: Path, branch: str) -> str | None:
     """A ``git stash`` entry for ``branch`` in ``worktree_path`` is a veto —
     it is uncommitted WIP a ``--merged`` delete would destroy with no
     recovery path beyond dangling-object forensics (the exact #235 repro)."""
-    if not _worktree_toplevel_matches(worktree_path):
+    if not worktree_toplevel_matches(worktree_path):
         return None
     proc = run_git(worktree_path, "stash", "list", "--format=%gd%x09%gs")
     if proc.returncode != 0:
@@ -299,7 +280,7 @@ def _stash_veto(worktree_path: Path, branch: str) -> str | None:
 def _dirty_veto(worktree_path: Path) -> str | None:
     """Uncommitted changes in ``worktree_path`` are a veto — ``teardown_worktree``
     uses ``git worktree remove --force``, which would discard them silently."""
-    if not _worktree_toplevel_matches(worktree_path):
+    if not worktree_toplevel_matches(worktree_path):
         return None
     try:
         porcelain = worktree_porcelain(worktree_path)

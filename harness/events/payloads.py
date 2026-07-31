@@ -228,6 +228,29 @@ class ReleaseEventData(BaseModel):
     released_at: str
 
 
+class ReclaimUndoneEventData(BaseModel):
+    """Payload of a ``reclaim_undone`` event — a reclaim reversed as a confirmed
+    false positive (#254).
+
+    Appended *after* the run's surviving ``workflow_failed{reason: reclaimed}``:
+    the ledger is append-only, so the audit trail shows both the reclamation and
+    its reversal. Consequence to read deliberately — ``harness status`` on a
+    re-opened run reports ``failure_reason='reclaimed'`` (it reads the newest
+    ``workflow_failed``) while ``status`` reads ``open``. The **row** is
+    authoritative; the log is the history, including the mistake.
+
+    No reader ``json_extract``-s these fields; the payload exists so the reversal
+    is inspectable like every other event. The event's *presence* carries two
+    meanings on its own: that this run was un-reclaimed (which is how
+    ``--undo`` tells a completed reversal from a run that was never cancelled),
+    and — being the newest ledger activity — that the restored run is live, so the
+    next ``--stale`` sweep cannot immediately re-reclaim it."""
+
+    run_id: str
+    ticket: str
+    undone_at: str
+
+
 def _field_name(model: type[BaseModel], field: str) -> str:
     """The model's field name, verified to exist.
 
