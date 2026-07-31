@@ -34,6 +34,23 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+#: The two values of the ``review`` payload's ``outcome`` discriminator (#262).
+#: Defined above the models because they are the field *defaults* — spelling the
+#: literal in the model and again in the constant is the exact writer/reader
+#: drift this module exists to prevent.
+#:
+#: ``ok`` — a verdict was produced. The default on :class:`ReviewEventData`, so a
+#: row written before #262 reads as what it in fact was rather than as unknown.
+REVIEW_OUTCOME_OK = "ok"
+#: ``failed`` — the verb ended without a verdict (the terminal paths #262 records).
+REVIEW_OUTCOME_FAILED = "failed"
+
+#: The one ``reason`` #262 adds to the verb's existing literals, for the raise
+#: sites that carry none of their own (a failed HEAD read, an engine that could
+#: not be invoked). Without it those paths record a NULL reason and collapse
+#: together in the aggregate they exist to make readable.
+REVIEW_UNEXPECTED_REASON = "unexpected_error"
+
 
 class ReviewEventData(BaseModel):
     """Payload of a ``review`` event.
@@ -89,6 +106,23 @@ class ReviewEventData(BaseModel):
     It is also what keeps the spend breakers honest: ``review``'s cycle counter
     excludes events carrying it (:data:`REVIEW_INHERITED_FROM_PATH`), because an
     inherited pass runs no engine and so spends nothing there is a budget for.
+
+    ``outcome`` (#262) is the discriminator that makes this event type's
+    *denominator* readable: :data:`REVIEW_OUTCOME_OK` on this model — a verdict
+    was produced — against :data:`REVIEW_OUTCOME_FAILED` on
+    :class:`ReviewRefusalEventData`, which records the terminal paths that write
+    no verdict. It defaults to ``ok`` rather than being required so a row written
+    before the field existed validates as what it in fact was: every historical
+    ``review`` event is a parsed verdict.
+
+    ``invoked_at`` and ``duration_ms`` (#262) are the latency pair, mirroring
+    ``design``'s: ``invoked_at`` is when the verb began work on this run
+    (captured after run resolution, before any breaker or gate check), and
+    ``duration_ms`` is whole milliseconds from there to ``created_at``. Both are
+    optional and absent on a pre-#262 row, and on an **inherited** event they are
+    the source's like every other field describing that review — an inherited
+    pass runs no engine, so minting a fresh duration for it would record time
+    nothing spent.
     """
 
     run_id: str
@@ -99,6 +133,9 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    outcome: str = REVIEW_OUTCOME_OK
+    invoked_at: str | None = None
+    duration_ms: int | None = None
     design_context: bool = False
     design_context_reason: str | None = None
     gate_command: str | None = None
@@ -109,6 +146,54 @@ class ReviewEventData(BaseModel):
     commit_message: str | None = None
     deferred_brief: str | None = None
     inherited_from: str | None = None
+
+
+class ReviewRefusalEventData(BaseModel):
+    """Payload of a ``review`` event that ended **without** a verdict (#262).
+
+    ``review`` used to write an event only when a verdict parsed, so every other
+    terminal path — an engine timeout, a tripped spend breaker, ``no_design``,
+    ``no_gate_evidence``, a red gate, the sandbox wall — left no trace at all.
+    The ledger held verdicts and no denominator: "how often does review succeed?"
+    was unanswerable rather than merely slow. This is the row those paths write.
+
+    **The same ``event_type``, a second model.** ADR 0009 keeps the type
+    ``review`` and discriminates on ``outcome``, exactly as ``design`` does on
+    ``status``. What differs from ``design`` is the *shape* of the split:
+    ``design``'s two shapes fit one model because only two optional fields vary,
+    whereas the fields a refusal cannot have — ``reviewed_sha``, ``verdict``,
+    ``issues``, ``engine``, ``gate_ran`` — are precisely the ones the close gate
+    and the inherit resolver read. Loosening those to ``str | None`` on
+    :class:`ReviewEventData` to accommodate a shape that never carries them would
+    re-open the CAL-1012 hazard the typed contract exists to close: nothing would
+    then catch a *success* written without the SHA the gate binds to. So the
+    required fields stay required, and the refusal shape lives here.
+
+    Carrying **no ``verdict`` key** is what keeps the close gate exactly as wide
+    as it was: :func:`~harness.cli._review_gate.certify_head` filters
+    ``json_extract(data_json, '$.verdict') = 'pass'``, which a missing key
+    answers ``NULL`` — so a refusal row can never satisfy it, whatever its
+    ``reason``. That is enforcement by absence, and it is pinned by test rather
+    than left to inspection.
+
+    ``reason`` is the verb's own machine-readable literal — ``engine_timeout``,
+    ``sandbox_init_failure``, ``no_design``, ``no_gate_evidence``,
+    ``gate_failed``, ``review_cycle_ceiling``, ``wall_clock_budget`` — not a new
+    vocabulary. The one addition is :data:`REVIEW_UNEXPECTED_REASON`, for the
+    raise sites that carry no ``reason`` of their own (a failed HEAD read, an
+    engine that could not be invoked); without it those paths would record a
+    ``NULL`` reason and be indistinguishable from each other in the aggregate.
+    ``detail`` is the human specifics, the same ``reason``-to-branch-on /
+    message-to-diagnose-from split :class:`~harness.cli._verb.VerbError` makes.
+    """
+
+    run_id: str
+    outcome: str = REVIEW_OUTCOME_FAILED
+    reason: str
+    detail: str
+    created_at: str
+    invoked_at: str | None = None
+    duration_ms: int | None = None
 
 
 class CheckpointEventData(BaseModel):
@@ -298,6 +383,18 @@ REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
 #: no engine, so counting it against the review-cycle ceiling would charge a run
 #: for spend it never incurred.
 REVIEW_INHERITED_FROM_PATH = _field_path(ReviewEventData, "inherited_from")
+
+#: The ``outcome`` discriminator (#262) and its two values. The path is derived
+#: from :class:`ReviewEventData` and the *same* field name is asserted on
+#: :class:`ReviewRefusalEventData`, so the two shapes cannot drift apart into
+#: separate keys — which would silently split the denominator in half.
+REVIEW_OUTCOME_PATH = _field_path(ReviewEventData, "outcome")
+_REVIEW_REFUSAL_OUTCOME_PATH = _field_path(ReviewRefusalEventData, "outcome")
+if REVIEW_OUTCOME_PATH != _REVIEW_REFUSAL_OUTCOME_PATH:  # pragma: no cover - import guard
+    raise ValueError(
+        "the review success and refusal payloads must discriminate on the same "
+        f"field: {REVIEW_OUTCOME_PATH} != {_REVIEW_REFUSAL_OUTCOME_PATH}"
+    )
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")

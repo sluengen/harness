@@ -33,7 +33,20 @@ Flow (one ``asyncio.run`` event loop for all I/O):
    ``issues``, ``engine`` (the engine that produced the verdict — ``claude``
    after a fallback), optional ``fallback_from`` (the engine a usage-limit
    fallback replaced), optional ``commit_message`` / ``deferred_brief``,
-   ``created_at``.
+   ``created_at``, and (#262) ``outcome='ok'`` plus the ``invoked_at`` /
+   ``duration_ms`` latency pair.
+
+Every **other** way the verb can end also appends a ``review`` event now (#262,
+ADR 0009) — a refusal shape carrying ``outcome='failed'``, the path's own
+``reason``, and no ``verdict``. Before, only a parsed verdict was recorded, so
+the ledger held verdicts and no denominator: "how often does review succeed?"
+and "how often does the engine time out?" were unanswerable rather than slow.
+The refusal row cannot widen the close gate, which filters ``$.verdict = 'pass'``
+and reads a missing key as NULL, and it does not consume a review cycle, which
+:func:`_count_review_events` excludes it from — a refusal runs no engine, so
+charging it would shrink the budget as the telemetry was collected. The writer is
+:func:`~harness.cli.review_telemetry.record_terminal_refusal`, called from one
+place, and it never raises: observation is subordinate to what it observes.
 6. Print only the bounded verdict (``verdict`` + ``issues`` + ``reviewed_sha`` +
    ``run_id`` + ``engine``).  The engine's full stdout / reasoning stays inside
    the verb and never
@@ -62,8 +75,9 @@ Exit codes (mirroring ``harness start``):
       machine-readable ``reason`` so the orchestrator can tell "the environment
       couldn't run the review" apart from "the diff was rejected" (CAL-866).
       This is NOT a code-review ``fail`` and NOT shippable, so it does not reuse
-      ``defer`` or record a verdict — no review event is written.  Two shapes hit
-      this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
+      ``defer`` or record a **verdict** — since #262 it records a refusal event,
+      which carries no ``verdict`` key and so can never satisfy the close gate.
+      Two shapes hit this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
       (CAL-866), *and* ``codex`` exiting 0 but emitting a well-formed ``defer``
       whose reasoning is the same bwrap wall — every read-only command it ran was
       blocked, so it reviewed nothing (CAL-924).  Both mean the diff was never
@@ -82,7 +96,7 @@ from typing import Any, Literal, cast
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
@@ -105,8 +119,14 @@ from harness.cli.review_protocol import (
     resolve_model_tier,
     scan_submit_line,
 )
+from harness.cli.review_telemetry import record_terminal_refusal
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import REVIEW_INHERITED_FROM_PATH, ReviewEventData
+from harness.events.payloads import (
+    REVIEW_INHERITED_FROM_PATH,
+    REVIEW_OUTCOME_OK,
+    REVIEW_OUTCOME_PATH,
+    ReviewEventData,
+)
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     convergence_check_required,
@@ -142,6 +162,12 @@ _REVIEW_TIER_DIMENSION = "review"
 # — was split out to harness.cli.review_inherit (#259) on the design_adopt.py
 # precedent; what stays here is the guarded early return and the recording, which
 # need ReviewOutput and EventEmitter and so have nowhere else to live.
+# The terminal-observation *writer* — the event every non-verdict exit path now
+# appends (#262) — was split out to harness.cli.review_telemetry on the same
+# precedent, and for a reason the line count understates: inlining an emit at ten
+# raise sites means the eleventh is eventually forgotten, and a denominator that
+# is quietly wrong is worse than one that is loudly missing.  What stays here is
+# the single ``except`` that calls it, which needs _ReviewError.
 # What remains is verb glue with a single caller (`_run_review`): the breaker
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
@@ -498,7 +524,18 @@ async def _run_review(
     design_file: Path | None = None,
     runner: Runner,
 ) -> ReviewOutput:
-    """Drive the review flow; raise :class:`_ReviewError` on failure."""
+    """Resolve the run, then drive the review, recording **every** terminal path.
+
+    The split between this and :func:`_review_resolved_run` is the whole of #262:
+    once a run is resolved, every way the verb can end is observable, so the body
+    runs inside one ``except`` that appends the terminal event and re-raises the
+    refusal untouched. Ten raise sites therefore need no emit of their own, and a
+    raise site added later is recorded whether or not its author remembers to.
+
+    Run resolution stays *outside* that handler on purpose: a ``review`` event is
+    keyed to a run, and the two failures above — no ledger, or no open run — have
+    no run to key it to. ADR 0009 records the same for ``close``'s ``no_run``.
+    """
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
     resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
@@ -509,6 +546,56 @@ async def _run_review(
             2,
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
+
+    # Captured before any breaker, gate or engine work — one end of the duration
+    # every terminal event now carries, and the reference point that makes a slow
+    # refusal distinguishable from a fast one.
+    invoked_at = iso_z()
+    try:
+        return await _review_resolved_run(
+            repo_root=repo_root,
+            db_path=db_path,
+            resolved_run_id=resolved_run_id,
+            worktree_path=worktree_path,
+            engine=engine,
+            model=model,
+            gate_exit=gate_exit,
+            gate_log=gate_log,
+            design_file=design_file,
+            runner=runner,
+            invoked_at=invoked_at,
+        )
+    except _ReviewError as exc:
+        await record_terminal_refusal(
+            db_path,
+            run_id=resolved_run_id,
+            reason=exc.reason,
+            detail=str(exc),
+            invoked_at=invoked_at,
+        )
+        raise
+
+
+async def _review_resolved_run(
+    *,
+    repo_root: Path,
+    db_path: Path,
+    resolved_run_id: str,
+    worktree_path: str,
+    engine: Engine,
+    model: str | None,
+    gate_exit: int | None,
+    gate_log: Path | None,
+    design_file: Path | None,
+    runner: Runner,
+    invoked_at: str,
+) -> ReviewOutput:
+    """Drive the review flow for an already-resolved run; raise on failure.
+
+    Every step below is unchanged from before #262 — the function boundary is
+    where the terminal-event recording attaches, not a re-ordering of any
+    refusal. The order of the checks is load-bearing and documented step by step.
+    """
     # Two pure ledger reads hoisted above the short-circuit below, and reused by
     # the steps that already made them (2b and 1b) so nothing is read twice.
     # Moving a read is behaviour-preserving: every refusal keeps its position.
@@ -807,6 +894,13 @@ async def _run_review(
         fallback_from=fallback_from,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
+        # #262: the success half of the denominator, plus the latency pair. A
+        # verdict is an ``ok`` outcome whichever way it went — a ``fail`` is the
+        # review working, not the verb failing, which is why this field is named
+        # ``outcome`` rather than reusing ``design``'s ``status``.
+        outcome=REVIEW_OUTCOME_OK,
+        invoked_at=invoked_at,
+        duration_ms=elapsed_ms(invoked_at, created_at),
     ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
@@ -905,6 +999,17 @@ async def _count_review_events(db_path: Path, run_id: str) -> int:
     invokes no engine, so counting it would charge a run for spend it never
     incurred — and would let a resumed run's very first action, which costs
     nothing, eat a cycle of the budget it needs for real fixes.
+
+    Non-``ok`` outcomes are excluded for the identical reason (#262). Recording
+    the terminal paths put refusals into this very query's ``event_type =
+    'review'`` population, and a refusal runs no engine either: without this
+    clause, five ``no_gate_evidence`` refusals — which spend nothing and are the
+    orchestrator's *own* mistake to fix — would leave the run one cycle from the
+    ceiling, and adding telemetry would have silently shrunk the review budget.
+    It would also contradict the contract this repo relies on elsewhere, that an
+    ``engine_timeout`` is infra and consumes no cycle. ``COALESCE`` is what keeps
+    the pre-#262 rows counted: they carry no ``outcome`` key, ``json_extract``
+    answers NULL, and every one of them was in fact a verdict.
     """
     if not db_path.exists():
         return 0
@@ -912,8 +1017,15 @@ async def _count_review_events(db_path: Path, run_id: str) -> int:
         store.connect(db_path) as conn,
         conn.execute(
             "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review' "
-            "AND json_extract(data_json, ?) IS NULL",
-            (run_id, REVIEW_INHERITED_FROM_PATH),
+            "AND json_extract(data_json, ?) IS NULL "
+            "AND COALESCE(json_extract(data_json, ?), ?) = ?",
+            (
+                run_id,
+                REVIEW_INHERITED_FROM_PATH,
+                REVIEW_OUTCOME_PATH,
+                REVIEW_OUTCOME_OK,
+                REVIEW_OUTCOME_OK,
+            ),
         ) as cur,
     ):
         row = await cur.fetchone()

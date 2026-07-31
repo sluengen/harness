@@ -241,6 +241,21 @@ def review_events(db_path: Path, run_id: str | None = None) -> list[dict[str, An
     return [e for e in events if run_id is None or e["run_id"] == run_id]
 
 
+def _assert_only_a_refusal(db_path: Path, reason: str) -> None:
+    """The resumed run wrote a refusal (#262) and **nothing inherited**.
+
+    Before #262 these sites asserted the run wrote no event at all, which proved
+    the short-circuit had not fired only incidentally. Now that a refusal is
+    recorded on purpose, the claim is made directly: the row has no ``verdict``
+    (so ``close`` cannot open on it) and no ``inherited_from`` (so no prior pass
+    was carried forward), and it names the refusal that was expected.
+    """
+    (event,) = review_events(db_path, _RUN_ID)
+    assert "verdict" not in event["data"], event["data"]
+    assert "inherited_from" not in event["data"], event["data"]
+    assert event["data"]["reason"] == reason, event["data"]
+
+
 class _EngineSpy:
     """A runner that records every invocation — AC-2's measuring instrument.
 
@@ -583,7 +598,10 @@ def test_declines_when_run_recorded_no_design(repo: Path, db_path: Path) -> None
     assert result.exit_code == review_mod.EXIT_GATE_FAILED, result.output
     assert json.loads(result.stdout)["reason"] == review_mod.NO_DESIGN_REASON
     assert engine.calls == 0
-    assert review_events(db_path, _RUN_ID) == []
+    # #262 records the refusal, but nothing *inherited* was written: the row
+    # carries neither a verdict nor an ``inherited_from``, so the short-circuit
+    # provably did not fire.
+    _assert_only_a_refusal(db_path, review_mod.NO_DESIGN_REASON)
 
 
 def test_declines_when_the_caller_reports_a_red_gate(repo: Path, db_path: Path) -> None:
@@ -608,7 +626,7 @@ def test_declines_when_the_caller_reports_a_red_gate(repo: Path, db_path: Path) 
     assert result.exit_code == review_mod.EXIT_GATE_FAILED, result.output
     assert json.loads(result.stdout)["reason"] == review_mod.GATE_FAILED_REASON
     assert engine.calls == 0
-    assert review_events(db_path, _RUN_ID) == []
+    _assert_only_a_refusal(db_path, review_mod.GATE_FAILED_REASON)
 
 
 def test_declines_when_the_only_covering_pass_is_itself_inherited(

@@ -219,6 +219,24 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch())
 
 
+def _no_verdict_was_recorded(db_path: Path, reason: str) -> bool:
+    """The refusal is on the ledger and **no verdict** is (#262).
+
+    These assertions used to read ``_review_events(db_path) == []``, because a
+    refusal wrote nothing at all. Since #262 it writes one row — that is the
+    point of the change — so the invariant they were really protecting has to be
+    stated directly: the gate's datum, ``verdict``, must be absent, which is what
+    keeps ``certify_head`` unable to match the row. The refusal's own ``reason``
+    is asserted too, so a *wrong* refusal cannot satisfy the check.
+    """
+    events = _review_events(db_path)
+    return (
+        len(events) == 1
+        and "verdict" not in events[0]
+        and events[0]["reason"] == reason
+    )
+
+
 # ---------------------------------------------------------------------------
 # load_gate_command reads CONTEXT.md → verify: (for the record, not to run it)
 # ---------------------------------------------------------------------------
@@ -282,7 +300,7 @@ def test_missing_evidence_refuses_before_the_engine(repo: Path, db_path: Path) -
     payload = json.loads(result.stdout)
     assert payload["reason"] == review_mod.NO_GATE_EVIDENCE_REASON
     assert calls == [], "the engine must not run without gate evidence"
-    assert _review_events(db_path) == [], "no event may be recorded on a refusal"
+    assert _no_verdict_was_recorded(db_path, review_mod.NO_GATE_EVIDENCE_REASON)
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +327,7 @@ def test_red_evidence_refuses_with_the_bounded_tail(repo: Path, db_path: Path) -
     assert "HEAD-NOISE" not in tail
     assert len(tail) <= GATE_OUTPUT_TAIL_LIMIT
     assert calls == [], "a red gate must not spend tokens on a review"
-    assert _review_events(db_path) == []
+    assert _no_verdict_was_recorded(db_path, review_mod.GATE_FAILED_REASON)
 
 
 # ---------------------------------------------------------------------------
