@@ -25,7 +25,7 @@ Cutting a release starts by summarising what shipped since the last one and driv
 
 A change records its changelog entry as its **own file**, `changelog.d/<ticket>.md`, and never by editing `CHANGELOG.md`. Two concurrent runs then write two different files and cannot conflict — before #267 every ticket appended to the same `## [Unreleased]` insertion point, which conflicted by construction on a file whose correct merge semantics are "keep both lines", and cost run `01KYR7T7B5E3QDC3WP7ZGYHTGV` two full rebase → gate → re-review → close rounds before going on to refuse a close on two further ticks.
 
-1. **Write the fragment.** One file per change, named for its ticket — a GitHub issue number (`changelog.d/270.md`) or a legacy Linear key (`changelog.d/CAL-1204.md`). The filename is the primary key, so a resumed run overwrites rather than duplicating. The content is the entry exactly as it renders in `CHANGELOG.md` today, so nothing is reformatted at fold time:
+1. **Write the fragment.** One file per change, named for its ticket — a GitHub issue number (`changelog.d/270.md`), or a legacy pre-cutover key (`changelog.d/CAL-1204.md`), which the format still accepts so historical ids stay writable. The filename is the primary key, so a resumed run overwrites rather than duplicating. The content is the entry exactly as it renders in `CHANGELOG.md` today, so nothing is reformatted at fold time:
 
    ```markdown
    ### Added — `harness stats`, the aggregate ledger reader (#265)

@@ -44,7 +44,6 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 import changelog_fragments as cf  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — real git repositories, never a simulation of one.
 # ---------------------------------------------------------------------------
@@ -244,6 +243,34 @@ def test_fold_writes_the_section_into_the_changelog_above_unreleased(
     assert text.index("## [0.3.0]") > text.index("## [Unreleased]"), (
         "the released section goes below the [Unreleased] window, which stays at "
         "the top for the next cycle"
+    )
+
+
+def test_fold_refuses_to_delete_through_a_symlink(tmp_path: Path) -> None:
+    """The deletion set is bounded to real direct children of ``changelog.d/``.
+
+    ``fold`` is the one genuinely destructive operation here. The enumeration is
+    non-recursive, so a *plain* file is a direct child by construction — but
+    ``Path.resolve()`` follows symlinks, so a link planted in the directory
+    would otherwise resolve outside it and be unlinked. The containment check is
+    that defence, and this is the only test that exercises it (it survived
+    mutation until this test existed).
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "CHANGELOG.md").write_text(_UNRELEASED_HEAD, encoding="utf-8")
+    _seed_fragments(repo, {"271.md": _FIXED_271})
+
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text(_ADDED_270, encoding="utf-8")
+    (repo / cf.FRAGMENT_DIRNAME / "270.md").symlink_to(outside)
+
+    with pytest.raises(cf.FoldError, match="outside"):
+        cf.fold(repo, version="0.3.0", date="2026-08-01")
+
+    assert outside.exists(), (
+        "the fold must not unlink a path that resolves outside changelog.d/ — "
+        "a symlink planted in the directory must be refused, not followed"
     )
 
 
