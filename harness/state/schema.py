@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from typing import Literal, get_args
 
-__all__ = ["IN_FLIGHT_STATUSES", "RUN_STATUSES", "RunStatus"]
+__all__ = [
+    "IN_FLIGHT_STATUSES",
+    "RETIRED_ENGINE_WORKFLOWS",
+    "RUN_STATUSES",
+    "RunStatus",
+]
 
 
 # Canonical run-status enum — see ``specs/features/run-ledger.md`` ("status values").
@@ -63,3 +68,22 @@ IN_FLIGHT_STATUSES: frozenset[str] = frozenset(
     {"open", "running", "pending", "paused", "stalled"}
 )
 assert IN_FLIGHT_STATUSES <= RUN_STATUSES
+
+#: ``runs.workflow_name`` values written by the deterministic engine CAL-574
+#: retired. The other half of the two-lifecycle split :data:`RunStatus`
+#: documents, and it lives here for the same reason: an aggregate over the verb
+#: model that silently includes these rows is corrupt, and 37 of the ledger's
+#: 298 runs are these (#265).
+#:
+#: A **denylist**, where :data:`IN_FLIGHT_STATUSES` is an allowlist, because the
+#: two sets differ in which direction can grow. The retired set is *closed* —
+#: the engine is deleted, so nothing can write a new name into it — while the
+#: verb model's names do grow: ``start`` writes ``''``, ``defer`` writes
+#: ``'defer'``, ``release`` writes ``'release'``. An allowlist would therefore
+#: drop a future verb's runs out of the denominator with nothing failing.
+#:
+#: This is the discriminator, **not** ``worktree_path IS NOT NULL``: ``defer``
+#: and ``release`` write terminal run rows and create no worktree, so that
+#: column answers "did this run have a worktree" and drops 8 live verb-model
+#: rows.
+RETIRED_ENGINE_WORKFLOWS: frozenset[str] = frozenset({"build", "build-codex"})

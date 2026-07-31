@@ -155,7 +155,8 @@ EXPECTED_SURFACE = {
     "status",
     "logs",
     "events",
-    "runs",  # read / inspection
+    "runs",
+    "stats",  # read / inspection ("stats" is the aggregate one, #265)
     "cancel",
     "reclaim",
     "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
