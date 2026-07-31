@@ -158,7 +158,7 @@ No separate `verify` command in v1. Gate execution is part of `start` and `conti
 
 ---
 
-**Lifecycle.** Accepted 2026-07-16. D1-D6 resolved: `dev -> staging -> main` is universal; the promotion MVP surface is `start` / `continue` / `status` / `pr` / `escalate`; local inference is out of scope for harness promotion; repair is one bounded attempt; harness creates PRs by pushing only promotion branches; guidance updates are separate sequenced per-repo jobs.
+**Lifecycle.** Accepted 2026-07-16. D1-D6 resolved: `dev -> staging -> main` is universal; the promotion MVP surface is `start`, `continue`, `status`, `pr`, `escalate`; local inference is out of scope for harness promotion; repair is one bounded attempt; harness creates PRs by pushing only promotion branches; guidance updates are separate sequenced per-repo jobs.
 
 Spawned implementation issues:
 

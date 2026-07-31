@@ -11,7 +11,7 @@ linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
 
 ## Behaviour
 
-Per-run state lives in SQLite at `.harness/harness.db` — one database per project. The `runs` / `events` tables **are** the whole audit trail; the [verbs](verb-model.md) (`start` / `review` / `close`) read and write the ledger through the connection helper, and `close` enforces its gate by querying it. Under the verb model the agent session — not a rehydrated state row — holds run context, so the ledger records *what happened*, it does not drive *what happens next* (decision D5, [`specs/architecture-principles.md`](../architecture-principles.md)).
+Per-run state lives in SQLite at `.harness/harness.db` — one database per project. The `runs` / `events` tables **are** the whole audit trail; the [verbs](verb-model.md) (`start` / `design` / `review` / `close`) read and write the ledger through the connection helper, and `close` enforces its gate by querying it. Under the verb model the agent session — not a rehydrated state row — holds run context, so the ledger records *what happened*, it does not drive *what happens next* (decision D5, [`specs/architecture-principles.md`](../architecture-principles.md)).
 
 ### The verb-model run lifecycle
 
@@ -92,7 +92,7 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 | Table | Key columns | Purpose |
 |---|---|---|
 | `runs` | `run_id` (PK, ULID), `status`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, `started_at`, `completed_at` | One row per run; the open/closed lifecycle |
-| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the live `review` / `close` / `workflow_failed` / `checkpoint` events |
+| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the live `review`, `close`, `workflow_failed`, `checkpoint` events |
 
 The canonical `event_type` set is whatever `EventType` in `harness/events/schema.py` enumerates — that `Literal` is the source of truth, and `EVENT_TYPES` derives from it so the two cannot drift (`test_event_emitter.py` asserts the derived set equals the tested one, so a new type cannot be added without the round-trip test seeing it). One writable type per live emitter: `workflow_failed` (`harness cancel`, and `reclaim`'s reuse of the same abandon transaction), `review`, `close`, `checkpoint` (the run-branch push that makes WIP durable, CAL-738), `defer` (the audited triage write, CAL-1143), `release` (the `/decision` return write, #193), `design` (the design stage's recorded attempt, ADR 0007 / #211), and `reclaim_undone` (a reclaim reversed as a confirmed false positive, #254). CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
 
@@ -104,7 +104,7 @@ New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrati
 
 ## Schema reference
 
-The full SQLite schema, migrations, and status values — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
+The full SQLite schema, migrations, and status values — `harness/state/store.py` owns the connection helper, the schema, and the idempotent migrations; the verbs (`start` / `design` / `review` / `close`) read and write the ledger through `connect()`. (Folded here from the former `specs/state-store.md` in CAL-693 so the feature spec is the sole as-built record.)
 
 > The engine-era per-node state machinery (`read_state` / `update_state` / `restore_state`) and the never-shipped v2-resume snapshot layer (`write_snapshot` / `read_latest_snapshot` + the `run_snapshots` table) were removed in CAL-613: they had no production caller after the deterministic engine was retired (CAL-574). Under the verb model the agent session — not a rehydrated state row — holds run context. The `runs.state_json` column survives (written as `"{}"` by `harness start`, surfaced as `state` in `harness status --json`) but is no longer merged or snapshotted.
 
@@ -176,7 +176,7 @@ Under the **verb model** (proposal [`harness-as-tool`](../proposals/harness-as-t
 | `stalled` | engine (legacy) | No progress within the stall timeout. |
 | `paused` | engine (v2, legacy) | Run awaiting a decision. |
 
-The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the live verb-model statuses (`open` / `closed` / `cancelled`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`/`close`/`cancel` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
+The `RunStatus` `Literal` / `RUN_STATUSES` frozenset in `harness/state/schema.py` enumerates all of the above — both the live verb-model statuses (`open` / `closed` / `cancelled`) and the retired-engine statuses — so a status read out of a `runs` row written by `harness start`, `close`, or `cancel` validates against the type-safe seam (CAL-583, which closed the type drift the verb model had introduced). The `runs.status` column is still plain `TEXT` (no `CHECK`); `RUN_STATUSES` is the validation seam readers use.
 
 ### `BaseState` (removed)
 
