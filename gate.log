@@ -1,0 +1,360 @@
+=== ruff ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+All checks passed!
+=== mypy ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+Success: no issues found in 67 source files
+=== pytest ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+============================= test session starts ==============================
+platform darwin -- Python 3.11.15, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/scottluengen/Code/harness/.worktrees/harness/01KYV1MA06MEMXJCRRGPRDWPEQ
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0, timeout-2.4.0, asyncio-1.3.0
+timeout: 120.0s
+timeout method: signal
+timeout func_only: False
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3183 items
+
+tests/integration/test_docker.py ....                                    [  0%]
+tests/unit/test_adjustment_template.py ......                            [  0%]
+tests/unit/test_adr_0004_amendment.py .....                              [  0%]
+tests/unit/test_architecture_watchlist.py ...............                [  0%]
+tests/unit/test_assess_architecture_scope.py ..............              [  1%]
+tests/unit/test_assess_filing_placement.py ...                           [  1%]
+tests/unit/test_assessments_retention.py ....                            [  1%]
+tests/unit/test_bin_wrapper.py ......                                    [  1%]
+tests/unit/test_bootstrap_onboarding_naming.py ......                    [  1%]
+tests/unit/test_branch_config.py ......                                  [  2%]
+tests/unit/test_breaker_recovery_docs.py ......                          [  2%]
+tests/unit/test_bug_command.py ........                                  [  2%]
+tests/unit/test_build_command_bodies.py .....                            [  2%]
+tests/unit/test_build_command_consolidated.py .......                    [  2%]
+tests/unit/test_build_design_tokens.py ................                  [  3%]
+tests/unit/test_build_thin_driver.py ....                                [  3%]
+tests/unit/test_capture_on_ramp_wired.py ..........                      [  3%]
+tests/unit/test_changelog_rotation.py ..........                         [  4%]
+tests/unit/test_ci_workflow_permissions.py ...                           [  4%]
+tests/unit/test_ci_workflow_triggers.py ..                               [  4%]
+tests/unit/test_cli_cancel.py ...................                        [  4%]
+tests/unit/test_cli_checkpoint.py .........                              [  5%]
+tests/unit/test_cli_close.py ............................                [  6%]
+tests/unit/test_cli_defer.py ......................                      [  6%]
+tests/unit/test_cli_design.py ................................           [  7%]
+tests/unit/test_cli_doctor.py .......................................... [  9%]
+.......                                                                  [  9%]
+tests/unit/test_cli_git.py ..........                                    [  9%]
+tests/unit/test_cli_module_boundaries.py .............                   [ 10%]
+tests/unit/test_cli_promote.py ........                                  [ 10%]
+tests/unit/test_cli_promote_escalate.py .......                          [ 10%]
+tests/unit/test_cli_promote_start.py .............................       [ 11%]
+tests/unit/test_cli_query.py ........................................... [ 12%]
+....................                                                     [ 13%]
+tests/unit/test_cli_reclaim.py ......................................... [ 14%]
+..................................................                       [ 16%]
+tests/unit/test_cli_release.py .................                         [ 16%]
+tests/unit/test_cli_repo.py .....                                        [ 17%]
+tests/unit/test_cli_review.py .......................................... [ 18%]
+...................                                                      [ 18%]
+tests/unit/test_cli_runs.py .......                                      [ 19%]
+tests/unit/test_cli_start.py ........................................... [ 20%]
+.........                                                                [ 20%]
+tests/unit/test_cli_surface_locked.py .................................. [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................                 [ 32%]
+tests/unit/test_cli_workspace_gate.py .........                          [ 32%]
+tests/unit/test_cliutil.py ............................................. [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 38%]
+............................                                             [ 39%]
+tests/unit/test_close_integrate_base.py .....                            [ 39%]
+tests/unit/test_close_merge.py .....                                     [ 40%]
+tests/unit/test_close_tracker.py .....                                   [ 40%]
+tests/unit/test_close_watchlist_entry.py ...                             [ 40%]
+tests/unit/test_code_quality_duplication_threshold.py ....               [ 40%]
+tests/unit/test_code_quality_guard_derives_subjects.py .........         [ 40%]
+tests/unit/test_code_quality_linter_first_size_enforcement.py ...        [ 40%]
+tests/unit/test_code_quality_marker_presence_mechanized.py ..            [ 40%]
+tests/unit/test_code_quality_narrowing_worklist.py ...                   [ 40%]
+tests/unit/test_code_quality_owning_layer_aggregate.py ...               [ 41%]
+tests/unit/test_code_quality_security_contract_predicate.py ....         [ 41%]
+tests/unit/test_code_quality_size_justification.py ..                    [ 41%]
+tests/unit/test_code_quality_sync_critical_second_copy.py .....          [ 41%]
+tests/unit/test_community_docs.py ......                                 [ 41%]
+tests/unit/test_container_hardening.py ........s.......                  [ 42%]
+tests/unit/test_context_rollover_handoff.py ...                          [ 42%]
+tests/unit/test_context_template_tracker_fields.py ........              [ 42%]
+tests/unit/test_decision_id_cites.py ..                                  [ 42%]
+tests/unit/test_declarative_ceiling_mechanized.py ....                   [ 42%]
+tests/unit/test_design_adopt.py ...............                          [ 43%]
+tests/unit/test_design_concurrency_warning.py .....                      [ 43%]
+tests/unit/test_design_marker.py .......................                 [ 44%]
+tests/unit/test_design_protocol.py .....................                 [ 44%]
+tests/unit/test_design_system_composition.py ..                          [ 44%]
+tests/unit/test_design_system_fallback.py ........                       [ 44%]
+tests/unit/test_design_system_layer.py ..........                        [ 45%]
+tests/unit/test_design_system_template.py ............                   [ 45%]
+tests/unit/test_design_verb_lifecycle_documented.py .........            [ 45%]
+tests/unit/test_distributed_prose_app_cites.py ............              [ 46%]
+tests/unit/test_distributed_prose_no_repo_ids.py ....                    [ 46%]
+tests/unit/test_distributed_skill_cites.py ............                  [ 46%]
+tests/unit/test_doc_version_examples.py ..                               [ 46%]
+tests/unit/test_docker_entrypoint.py ...                                 [ 46%]
+tests/unit/test_docs_consistency.py ............................         [ 47%]
+tests/unit/test_engine_retired.py ...................................... [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+.                                                                        [ 55%]
+tests/unit/test_event_emitter.py .................................       [ 56%]
+tests/unit/test_event_payloads.py .........................              [ 57%]
+tests/unit/test_events_spec_cites.py ......                              [ 57%]
+tests/unit/test_extraction_sweep_spec.py ...                             [ 57%]
+tests/unit/test_feature_specs.py ....................                    [ 58%]
+tests/unit/test_feature_template_call_site.py ..                         [ 58%]
+tests/unit/test_fetch_untrusted_urls_checklist.py .......                [ 58%]
+tests/unit/test_force_push_denylist.py ..                                [ 58%]
+tests/unit/test_git_push_guard_hook.py ................................. [ 60%]
+........................................................................ [ 62%]
+...                                                                      [ 62%]
+tests/unit/test_github.py .............................................. [ 63%]
+..................                                                       [ 64%]
+tests/unit/test_gitutil.py ..............                                [ 64%]
+tests/unit/test_grounding_step.py .........                              [ 65%]
+tests/unit/test_guidance_feedback_upstream.py .............              [ 65%]
+tests/unit/test_guidance_footprint.py ...........                        [ 65%]
+tests/unit/test_guidance_github_source.py .......                        [ 66%]
+tests/unit/test_guidance_source.py ..........................            [ 66%]
+tests/unit/test_guidance_update_scheduling_docs.py ......                [ 67%]
+tests/unit/test_harness_command_distributed.py .......                   [ 67%]
+tests/unit/test_hermes_retired.py ............................           [ 68%]
+tests/unit/test_hooks_no_empty_catch.py ..                               [ 68%]
+tests/unit/test_identity.py ....................                         [ 68%]
+tests/unit/test_landing_page.py .......                                  [ 69%]
+tests/unit/test_landing_page_drift_guard.py ......                       [ 69%]
+tests/unit/test_landing_page_hosting.py ..........                       [ 69%]
+tests/unit/test_layers.py ...........                                    [ 69%]
+tests/unit/test_license_boundary.py ................                     [ 70%]
+tests/unit/test_lifecycle_sweep_spec.py ....                             [ 70%]
+tests/unit/test_linear_create_issue.py .....                             [ 70%]
+tests/unit/test_linear_reclaim_primitives.py ........................... [ 71%]
+.................                                                        [ 72%]
+tests/unit/test_linear_release_primitives.py ...........                 [ 72%]
+tests/unit/test_linear_request_errors.py ...                             [ 72%]
+tests/unit/test_linear_skill.py ...........                              [ 72%]
+tests/unit/test_local_orchestrator_stack_docs.py ..............          [ 73%]
+tests/unit/test_loop_budget.py ..................                        [ 73%]
+tests/unit/test_loop_stop_rule_coherence.py ...                          [ 73%]
+tests/unit/test_loop_substrate_decision.py ..........                    [ 74%]
+tests/unit/test_mirroring_trigger_broadened.py ..                        [ 74%]
+tests/unit/test_mirrors_admission_third_strike.py .....                  [ 74%]
+tests/unit/test_mode2_migration_documented.py .......                    [ 74%]
+tests/unit/test_module_home_spec_cites.py ..............                 [ 75%]
+tests/unit/test_network_git_timeouts.py ...............                  [ 75%]
+tests/unit/test_no_private_surfaces.py .                                 [ 75%]
+tests/unit/test_no_tasks_layer.py .........                              [ 75%]
+tests/unit/test_optional_project_scope_guidance.py ..............        [ 76%]
+tests/unit/test_over_engineering_lens.py ......                          [ 76%]
+tests/unit/test_package_hygiene.py ..                                    [ 76%]
+tests/unit/test_placeholder_stub_gating.py ......                        [ 76%]
+tests/unit/test_promote_mechanics.py .................                   [ 77%]
+tests/unit/test_promote_staging_hop.py ...                               [ 77%]
+tests/unit/test_promotion_contract_locked.py ........                    [ 77%]
+tests/unit/test_promotion_design.py .............                        [ 78%]
+tests/unit/test_promotion_escalation.py ....                             [ 78%]
+tests/unit/test_promotion_gate.py ...........                            [ 78%]
+tests/unit/test_promotion_pr.py ......................                   [ 79%]
+tests/unit/test_promotion_routine_docs.py .................              [ 79%]
+tests/unit/test_promotions_ledger.py ...........                         [ 80%]
+tests/unit/test_reclaim_marker.py ................                       [ 80%]
+tests/unit/test_registry_layer_gating_note.py ...                        [ 80%]
+tests/unit/test_registry_self_version_hook.py .....                      [ 80%]
+tests/unit/test_release_docs_currency.py ........                        [ 81%]
+tests/unit/test_release_workflow.py ........                             [ 81%]
+tests/unit/test_releasing_changelog_fold.py ........                     [ 81%]
+tests/unit/test_removal_sweep_spec.py ...                                [ 81%]
+tests/unit/test_repo_config.py ......                                    [ 81%]
+tests/unit/test_resolve_base_branch.py ....                              [ 82%]
+tests/unit/test_retired_spec_cites.py .....................              [ 82%]
+tests/unit/test_review_breakers.py ........                              [ 83%]
+tests/unit/test_review_design_linkage.py ............................... [ 83%]
+........                                                                 [ 84%]
+tests/unit/test_review_discipline_asbuilt_record_gate.py .....           [ 84%]
+tests/unit/test_review_discipline_backend_module_clone.py ...            [ 84%]
+tests/unit/test_review_discipline_context_currency.py ...                [ 84%]
+tests/unit/test_review_discipline_context_currency_releasing.py .        [ 84%]
+tests/unit/test_review_discipline_current_criteria.py ..                 [ 84%]
+tests/unit/test_review_discipline_misplaced_helper.py ..                 [ 84%]
+tests/unit/test_review_discipline_partial_hook_adoption.py ....          [ 84%]
+tests/unit/test_review_discipline_port_orphan.py ..                      [ 84%]
+tests/unit/test_review_discipline_type_predicate_coverage.py ..          [ 84%]
+tests/unit/test_review_engine_decision.py ..........                     [ 85%]
+tests/unit/test_review_inherit.py .................................      [ 86%]
+tests/unit/test_review_model_tier.py .......                             [ 86%]
+tests/unit/test_review_verify_gate.py .................                  [ 87%]
+tests/unit/test_review_watchlist_entry.py .                              [ 87%]
+tests/unit/test_routine_commands.py ......................               [ 87%]
+tests/unit/test_run_statuses.py ......                                   [ 87%]
+tests/unit/test_runs_resolver.py ......                                  [ 88%]
+tests/unit/test_secret_hygiene.py ..                                     [ 88%]
+tests/unit/test_settings_derived_parity.py ...........................   [ 89%]
+tests/unit/test_simplicity_ladder.py ..                                  [ 89%]
+tests/unit/test_size_guard_reference.py .....................            [ 89%]
+tests/unit/test_skill_boundary_dedup.py ...                              [ 89%]
+tests/unit/test_smoke.py ...                                             [ 90%]
+tests/unit/test_source_file_size_justification.py .........              [ 90%]
+tests/unit/test_spec_authoring_no_size_ac.py ..                          [ 90%]
+tests/unit/test_spec_authoring_scope_claim_invariant.py ....             [ 90%]
+tests/unit/test_spec_driven_development_asbuilt_record_gate.py ......    [ 90%]
+tests/unit/test_spec_engine_extraction.py .............................. [ 91%]
+........                                                                 [ 91%]
+tests/unit/test_state_store.py ....................                      [ 92%]
+tests/unit/test_steward_consolidated.py ..........                       [ 92%]
+tests/unit/test_tdd_configuration_coverage.py ....                       [ 92%]
+tests/unit/test_tdd_guard_condition_coverage.py ...                      [ 93%]
+tests/unit/test_teardown_worktree.py .........                           [ 93%]
+tests/unit/test_tests_own_state_principle.py ..                          [ 93%]
+tests/unit/test_time.py ......                                           [ 93%]
+tests/unit/test_timeout_budgets_coherent.py ...                          [ 93%]
+tests/unit/test_tracker.py ...........................                   [ 94%]
+tests/unit/test_tracker_less_layer.py ....................               [ 95%]
+tests/unit/test_tracker_seam.py .......                                  [ 95%]
+tests/unit/test_tweak_command.py ........                                [ 95%]
+tests/unit/test_update_guidance_lock_untracked_adoption.py ......        [ 95%]
+tests/unit/test_venv_clobber_doc.py ......                               [ 95%]
+tests/unit/test_verb_contract_locked.py ............                     [ 96%]
+tests/unit/test_verb_ledger_missing.py ..............                    [ 96%]
+tests/unit/test_verb_plumbing.py ........                                [ 97%]
+tests/unit/test_verify_coverage_gate.py ..                               [ 97%]
+tests/unit/test_verify_gate_unrunnable.py ..                             [ 97%]
+tests/unit/test_work_discovery_skill.py ....................             [ 97%]
+tests/unit/test_workflow_guard_hook.py ..                                [ 97%]
+tests/unit/test_workspace.py ........................                    [ 98%]
+tests/unit/test_worktree.py ..............                               [ 99%]
+tests/unit/test_worktree_convention.py .....                             [ 99%]
+tests/unit/test_worktree_ignore_hygiene.py .....                         [ 99%]
+tests/unit/test_wrapper_image_staleness.py .............                 [ 99%]
+tests/unit/test_wrapper_token_refresh.py .......                         [100%]
+
+=============================== warnings summary ===============================
+tests/unit/test_container_hardening.py::test_wrapper_is_shellcheck_clean
+  /Users/scottluengen/Code/harness/.worktrees/harness/01KYV1MA06MEMXJCRRGPRDWPEQ/.venv/lib/python3.11/site-packages/_pytest/python.py:166: UserWarning: shellcheck is not installed, so the docker/harness-wrapper.sh shellcheck-clean guard did not run (bash -n remains the always-on floor). Install shellcheck to enforce SC-class warnings on the wrapper.
+    result = testfunction(**testargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.15-final-0 _______________
+
+Name                              Stmts   Miss  Cover
+-----------------------------------------------------
+harness/__init__.py                   1      0   100%
+harness/_time.py                      8      0   100%
+harness/branch_config.py             39      1    97%
+harness/cli/__init__.py              39      1    97%
+harness/cli/__main__.py               4      4     0%
+harness/cli/_abandon.py              35      2    94%
+harness/cli/_duration.py             19      1    95%
+harness/cli/_engine.py               26      0   100%
+harness/cli/_git.py                  67      3    96%
+harness/cli/_query_common.py         29      4    86%
+harness/cli/_repo.py                 21      0   100%
+harness/cli/_review_gate.py          31      0   100%
+harness/cli/_runs.py                 31      1    97%
+harness/cli/_verb.py                 27      0   100%
+harness/cli/cancel.py                27      0   100%
+harness/cli/checkpoint.py            59      7    88%
+harness/cli/close.py                106      7    93%
+harness/cli/close_tracker.py         16      0   100%
+harness/cli/defer.py                 92     10    89%
+harness/cli/design.py               121      7    94%
+harness/cli/design_adopt.py          38      3    92%
+harness/cli/design_protocol.py       50      0   100%
+harness/cli/design_tracker.py        61      5    92%
+harness/cli/doctor.py               172     10    94%
+harness/cli/promote.py              192     13    93%
+harness/cli/query.py                  5      0   100%
+harness/cli/query_events.py          87      6    93%
+harness/cli/query_runs.py            25      0   100%
+harness/cli/query_status.py          66      3    95%
+harness/cli/reclaim.py              193     14    93%
+harness/cli/reclaim_closable.py      35      0   100%
+harness/cli/reclaim_liveness.py      57      0   100%
+harness/cli/reclaim_undo.py         121     15    88%
+harness/cli/release.py               95     12    87%
+harness/cli/review.py               221     23    90%
+harness/cli/review_inherit.py        60      2    97%
+harness/cli/review_protocol.py      100      1    99%
+harness/cli/start.py                166     13    92%
+harness/cli/version.py                8      0   100%
+harness/cli/worktrees.py            167     14    92%
+harness/close_merge.py               62      9    85%
+harness/design_marker.py             28      0   100%
+harness/events/__init__.py            0      0   100%
+harness/events/emitter.py            22      1    95%
+harness/events/payloads.py           79      0   100%
+harness/events/schema.py              5      0   100%
+harness/gate.py                      29      0   100%
+harness/github.py                   314      7    98%
+harness/identity.py                  26      0   100%
+harness/layers.py                   107      2    98%
+harness/linear.py                   269      4    99%
+harness/loop_budget.py               46      0   100%
+harness/promotion.py                 94      5    95%
+harness/promotion_escalation.py      19      0   100%
+harness/promotion_gate.py            24      0   100%
+harness/promotion_pr.py              83      2    98%
+harness/reclaim_marker.py            34      0   100%
+harness/repo_config.py               43      1    98%
+harness/state/__init__.py             0      0   100%
+harness/state/promotions.py          57      1    98%
+harness/state/schema.py               8      0   100%
+harness/state/store.py               36      0   100%
+harness/tracker.py                   20      0   100%
+harness/tracker_errors.py             6      0   100%
+harness/tracker_queue.py             11      0   100%
+harness/workspace.py                 44      0   100%
+harness/worktree.py                  34      2    94%
+-----------------------------------------------------
+TOTAL                              4217    216    95%
+Required test coverage of 90% reached. Total coverage: 94.88%
+============================= slowest 20 durations =============================
+1.86s setup    tests/integration/test_docker.py::test_docker_image_builds
+1.52s call     tests/unit/test_distributed_prose_app_cites.py::test_no_distributed_prose_cites_an_app_only_path
+1.17s call     tests/unit/test_cli_doctor.py::test_doctor_output_shows_pass_or_warn_or_fail_prefix
+1.13s call     tests/unit/test_wrapper_image_staleness.py::test_detached_copy_with_image_warns_and_still_runs_the_verb
+1.05s call     tests/unit/test_close_integrate_base.py::test_close_recovery_after_conflict_refusal_succeeds
+0.99s call     tests/unit/test_wrapper_image_staleness.py::test_stale_image_is_rebuilt_before_the_verb_runs
+0.85s call     tests/unit/test_close_merge.py::test_concurrent_close_loser_is_rejected_and_retryable
+0.80s call     tests/unit/test_close_integrate_base.py::test_close_completes_when_origin_advanced_nonconflicting
+0.77s call     tests/unit/test_wrapper_image_staleness.py::test_detached_copy_with_no_image_is_silent
+0.75s call     tests/unit/test_close_merge.py::test_clean_merge_lands_on_origin_and_leaves_main_untouched
+0.74s call     tests/unit/test_cli_promote_start.py::test_continue_agent_may_fix_no_evidence_lands_gate_pending
+0.73s call     tests/unit/test_cli_promote_start.py::test_continue_green_gate_reaches_pr_ready
+0.73s call     tests/unit/test_wrapper_image_staleness.py::test_identical_copy_in_checkout_forwards_copy_status
+0.71s call     tests/unit/test_cli_promote_start.py::test_continue_red_gate_needs_ticket
+0.69s call     tests/unit/test_cli_reclaim.py::test_closable_predicate_agrees_with_the_close_gate
+0.68s call     tests/unit/test_close_merge.py::test_conflict_refuses_cleanly_and_removes_the_worktree
+0.67s call     tests/unit/test_close_integrate_base.py::test_close_leaves_a_dirty_main_checkout_untouched
+0.66s call     tests/unit/test_cli_promote_start.py::test_pr_on_fresh_green_promotion_publishes
+0.66s call     tests/unit/test_close_integrate_base.py::test_close_refuses_on_conflict_and_leaves_run_open
+0.66s call     tests/unit/test_wrapper_image_staleness.py::test_detached_copy_forwards_detached_status
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/test_container_hardening.py:199: shellcheck not installed; bash -n is the always-on floor
+============ 3182 passed, 1 skipped, 1 warning in 114.37s (0:01:54) ============
+=== CLI smoke ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+harness 0.2.1
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+=== landing-page drift guard ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+landing-page drift guard: OK — 29 guidance references all resolve.
+=== design-token drift guard ===
+warning: `VIRTUAL_ENV=/Users/scottluengen/Code/harness/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+design-token drift guard: OK — /Users/scottluengen/Code/harness/.worktrees/harness/01KYV1MA06MEMXJCRRGPRDWPEQ/docs/index.html matches /Users/scottluengen/Code/harness/.worktrees/harness/01KYV1MA06MEMXJCRRGPRDWPEQ/design/03-tokens/tokens.json.
+
+All checks passed.

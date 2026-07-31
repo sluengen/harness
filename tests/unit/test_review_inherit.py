@@ -697,7 +697,7 @@ def test_declines_when_the_source_engine_is_outside_the_printed_literal(
     assert engine.calls == 1
 
 
-def test_declines_when_the_git_probe_is_wedged(repo: Path, db_path: Path) -> None:
+def test_declines_when_the_git_probe_fails(repo: Path, db_path: Path) -> None:
     """A git call that cannot answer declines rather than erroring the verb.
 
     Every uncertainty resolves toward reviewing: the inherit path is an
@@ -716,6 +716,63 @@ def test_declines_when_the_git_probe_is_wedged(repo: Path, db_path: Path) -> Non
 
     assert result.exit_code == 0, result.output
     assert engine.calls == 1
+
+
+def test_the_git_probes_are_bounded_by_a_timeout(repo: Path, db_path: Path) -> None:
+    """A *wedged* probe — one that hangs rather than fails — must also decline.
+
+    The synchronous-raise test above never reaches the missing-ceiling path: an
+    unresponsive mount or a stale ``index.lock`` does not raise, it blocks. Both
+    probes therefore pass the same bounded ceiling ``reclaim --stale``'s closable
+    predicate uses, and a fired :class:`subprocess.TimeoutExpired` is caught here
+    exactly like any other probe failure.
+
+    Simulated by having the probe raise what a fired timeout raises, and pinned
+    by asserting the ceiling was actually passed — a test that only stubbed the
+    exception would stay green if the ``timeout=`` argument were dropped.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo)
+    _seed_source_review(db_path, head)
+    engine = _EngineSpy()
+    seen: dict[str, Any] = {}
+
+    def _hang(worktree: Path, *, timeout: float | None = None) -> str:
+        seen["timeout"] = timeout
+        raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=timeout or 0)
+
+    with mock.patch.object(review_inherit_mod, "worktree_porcelain", _hang):
+        result = _invoke(repo, db_path, engine)
+
+    assert result.exit_code == 0, result.output
+    assert engine.calls == 1
+    assert seen["timeout"] == review_inherit_mod._PROBE_TIMEOUT_SECONDS
+
+
+def test_head_probe_is_bounded_by_the_same_timeout(
+    repo: Path, db_path: Path
+) -> None:
+    """The ceiling covers **both** probes — a clean tree still has to read HEAD.
+
+    ``worktree_porcelain`` runs first, so a test that only wedges it would leave
+    ``rev_parse_head`` unbounded and green.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo)
+    _seed_source_review(db_path, head)
+    engine = _EngineSpy()
+    seen: dict[str, Any] = {}
+
+    def _hang(worktree: Path, *, timeout: float | None = None) -> str:
+        seen["timeout"] = timeout
+        raise subprocess.TimeoutExpired(cmd=["git", "rev-parse"], timeout=timeout or 0)
+
+    with mock.patch.object(review_inherit_mod, "rev_parse_head", _hang):
+        result = _invoke(repo, db_path, engine)
+
+    assert result.exit_code == 0, result.output
+    assert engine.calls == 1
+    assert seen["timeout"] == review_inherit_mod._PROBE_TIMEOUT_SECONDS
 
 
 def test_declines_when_source_event_at_head_is_a_fail(repo: Path, db_path: Path) -> None:

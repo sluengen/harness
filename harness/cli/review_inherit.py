@@ -86,6 +86,15 @@ __all__ = ["InheritedReview", "has_gate_evidence", "resolve_inheritance"]
 #: ``str`` — which every downstream reader would then have to handle.
 _KNOWN_ENGINES: frozenset[str] = frozenset(get_args(Engine))
 
+#: Ceiling (seconds) for both git probes, the twin of
+#: :data:`harness.cli.reclaim_closable._PROBE_TIMEOUT_SECONDS` and set for the
+#: same reason. Both default to no ceiling, which is right for ``close``, where a
+#: wedged git should be *visible* rather than silently reinterpreted. Here it must
+#: not be: this path is an optimisation on the way to an ordinary review, so a
+#: hung probe that blocked would cost the run something a run without the
+#: optimisation never risked. Bounded, it degrades to "review normally".
+_PROBE_TIMEOUT_SECONDS = 15
+
 
 class InheritedReview(NamedTuple):
     """A prior pass authenticated and re-bound to this run, ready to record.
@@ -168,8 +177,9 @@ async def _clean_head(worktree_path: Path) -> str | None:
 
     Both probes are the shared public ones — :func:`harness.close_merge.worktree_porcelain`
     asks the same clean-tree question ``close`` asks before it merges, so "clean"
-    means one thing across the two verbs. A git call that fails or hangs answers
-    ``None``, which declines: every uncertainty resolves toward reviewing.
+    means one thing across the two verbs. Both are bounded by
+    :data:`_PROBE_TIMEOUT_SECONDS`, so a git call that fails **or hangs** answers
+    ``None`` and declines: every uncertainty resolves toward reviewing.
 
     Composing the two here rather than sharing a helper with
     ``reclaim_closable``'s equivalent is deliberate: :mod:`harness.cli._git`
@@ -180,10 +190,14 @@ async def _clean_head(worktree_path: Path) -> str | None:
     composition, not a rule.
     """
     try:
-        if await asyncio.to_thread(worktree_porcelain, worktree_path):
+        if await asyncio.to_thread(
+            worktree_porcelain, worktree_path, timeout=_PROBE_TIMEOUT_SECONDS
+        ):
             return None
-        return await asyncio.to_thread(rev_parse_head, worktree_path)
-    except Exception:  # noqa: BLE001 — any git failure is a decline, not an error.
+        return await asyncio.to_thread(
+            rev_parse_head, worktree_path, timeout=_PROBE_TIMEOUT_SECONDS
+        )
+    except Exception:  # noqa: BLE001 — a git failure or a fired timeout declines.
         return None
 
 
