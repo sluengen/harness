@@ -76,13 +76,22 @@ _LS_FILES_TIMEOUT_SECONDS = 15
 class RunLiveness:
     """What the **local** ledger knows about a ticket's open run.
 
-    Both fields come from one query. ``last_activity`` is signal 2
+    All three fields come from one query. ``last_activity`` is signal 2
     (``max(runs.started_at, MAX(events.timestamp))``); ``worktree_path`` is the
-    *address* of signal 3, ``None`` when the run recorded none.
+    *address* of signal 3, ``None`` when the run recorded none; ``run_id`` is the
+    address of the run those signals describe.
+
+    ``run_id`` is here rather than re-queried by the caller for a structural
+    reason, not a convenience one: the closable predicate (#255,
+    :mod:`harness.cli.reclaim_closable`) needs it, and taking it off *this* row
+    makes the predicate unreachable for a ticket whose liveness lookup returned
+    ``None`` — no ledger, or no open run. That is condition 1 of the predicate
+    enforced by construction instead of by a repeated ``if``.
     """
 
     last_activity: datetime
     worktree_path: Path | None
+    run_id: str
 
 
 async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
@@ -102,7 +111,8 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
         return None
     async with store.connect(db_path) as conn:
         cur = await conn.execute(
-            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path FROM runs r "
+            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path, r.run_id "
+            "FROM runs r "
             "LEFT JOIN events e ON e.run_id = r.run_id "
             "WHERE r.ticket = ? AND r.status = 'open'",
             (ticket,),
@@ -119,6 +129,7 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
     return RunLiveness(
         last_activity=max(stamps),
         worktree_path=Path(str(raw_path)) if raw_path else None,
+        run_id=str(row[3]),
     )
 
 

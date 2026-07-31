@@ -92,6 +92,7 @@ from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.reclaim_closable import closable_run
 from harness.cli.reclaim_liveness import locally_live, open_run_liveness
 from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
 from harness.cli.reclaim_undo import describe as describe_undo
@@ -114,9 +115,12 @@ from harness.tracker_errors import (
 # arms without adding net length: the liveness rule moved out to
 # ``reclaim_liveness.py`` and the whole ``--undo`` path lives in
 # ``reclaim_undo.py``, so what remains here is the Typer surface, the mode/selector
-# validation, and the printing — the composer, not the mechanics.
+# validation, and the printing — the composer, not the mechanics. #255 added the
+# third sweep outcome the same way: the closable predicate lives in
+# ``reclaim_closable.py`` and only its one call site and output model are here.
 
 __all__ = [
+    "ClosableEntry",
     "ReclaimOutput",
     "ReclaimedEntry",
     "SweepOutput",
@@ -165,8 +169,28 @@ class ReclaimOutput(BaseModel):
     branch_preserved: str | None
 
 
+class ClosableEntry(BaseModel):
+    """One ticket a ``--stale`` sweep found **closable** rather than stale (#255).
+
+    Its run passed ``review`` and then lost its session; it is still ``open`` and
+    ``close`` would accept it, so reverting it to Todo would throw away a passing
+    review. Carries the two addresses a caller needs to finish it — the run and
+    the exact HEAD the pass covers.
+    """
+
+    ticket: str
+    run_id: str
+    head_sha: str
+
+
 class SweepOutput(BaseModel):
-    """``--stale`` sweep result over a project's active (In Progress / In Review) tickets."""
+    """``--stale`` sweep result over a project's active (In Progress / In Review) tickets.
+
+    Every scanned ticket lands in exactly one of ``reclaimed`` / ``skipped`` /
+    ``closable``, so ``scanned == len(reclaimed) + len(skipped) + len(closable)``.
+    That totality is what lets a caller trust the report rather than re-deriving
+    the classification.
+    """
 
     mode: Literal["stale-sweep"] = "stale-sweep"
     project: str | None
@@ -174,6 +198,9 @@ class SweepOutput(BaseModel):
     scanned: int
     reclaimed: list[ReclaimedEntry]
     skipped: list[str]
+    #: Defaulted and additive, so an existing ``--json`` consumer is unaffected
+    #: and the tracker-less no-op keeps its shape.
+    closable: list[ClosableEntry] = []
 
 
 async def _resumable_branch(
@@ -415,6 +442,7 @@ async def _run_stale_sweep(
             scanned=0,
             reclaimed=[],
             skipped=[],
+            closable=[],
         )
 
     try:
@@ -441,6 +469,7 @@ async def _run_stale_sweep(
 
     reclaimed: list[ReclaimedEntry] = []
     skipped: list[str] = []
+    closable: list[ClosableEntry] = []
     for issue in issues:
         identifier = str(issue["identifier"])
         updated = parse_iso_z(str(issue["updated_at"]))
@@ -458,6 +487,21 @@ async def _run_stale_sweep(
         if liveness is not None and await locally_live(liveness, cutoff):
             skipped.append(identifier)
             continue
+        # Dead by every clock — but a run that passed review and then lost its
+        # session was never *stranded*, only unfinished (#255). Checked after
+        # liveness, never before: a live session paused at a clean,
+        # previously-passed HEAD must read as spared, not as drainable.
+        if liveness is not None:
+            finishable = await closable_run(db_path, liveness)
+            if finishable is not None:
+                closable.append(
+                    ClosableEntry(
+                        ticket=identifier,
+                        run_id=finishable.run_id,
+                        head_sha=finishable.head_sha,
+                    )
+                )
+                continue
         result = await _run_reclaim(db_path, None, identifier)
         reclaimed.append(
             ReclaimedEntry(
@@ -473,6 +517,7 @@ async def _run_stale_sweep(
         scanned=len(issues),
         reclaimed=reclaimed,
         skipped=skipped,
+        closable=closable,
     )
 
 
@@ -482,12 +527,17 @@ def _print_sweep(result: SweepOutput) -> None:
     typer.echo(
         f"Swept {result.scanned} active ticket(s) in {scope} "
         f"(threshold {result.older_than}): {len(result.reclaimed)} reclaimed, "
-        f"{len(result.skipped)} left in-flight."
+        f"{len(result.skipped)} left in-flight, {len(result.closable)} closable."
     )
     for entry in result.reclaimed:
         typer.echo(f"  reclaimed {entry.ticket} ({entry.outcome})")
     for ident in result.skipped:
         typer.echo(f"  skipped   {ident} (within threshold)")
+    for closable in result.closable:
+        typer.echo(
+            f"  closable  {closable.ticket} (run {closable.run_id} at "
+            f"{closable.head_sha}) — review covers HEAD; harness close will finish it"
+        )
 
 
 def reclaim_command(
