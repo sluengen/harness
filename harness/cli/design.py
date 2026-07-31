@@ -210,10 +210,21 @@ class _DesignNotProducedError(Exception):
     re-implemented at each of the five failure sites.
     """
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(
+        self,
+        reason: str,
+        detail: str,
+        *,
+        submit_excerpt: str | None = None,
+        stdout_chars: int | None = None,
+    ) -> None:
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
+        # Set only at the SUBMIT-failure raise site (#277); every other failure
+        # path has no engine stdout to quote and leaves both None.
+        self.submit_excerpt = submit_excerpt
+        self.stdout_chars = stdout_chars
 
 
 async def _default_runner(
@@ -358,6 +369,8 @@ async def _run_design(
                 invoked_at=invoked_at,
                 reason=exc.reason,
                 detail=exc.detail,
+                submit_excerpt=exc.submit_excerpt,
+                stdout_chars=exc.stdout_chars,
             ),
         )
         extra = (
@@ -448,8 +461,14 @@ async def _produce_design(
     parsed = parse_design_submit(result.stdout)
     if parsed.design_markdown is None:
         sentinel = parsed.error or NO_SUBMIT_SENTINEL
+        # The sentinel says *that* the contract broke; the excerpt says how
+        # (#277). A degraded run posts no comment and prints no engine output,
+        # so the ledger event is the only evidence this attempt leaves.
         raise _DesignNotProducedError(
-            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON), sentinel
+            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON),
+            sentinel,
+            submit_excerpt=parsed.submit_excerpt,
+            stdout_chars=parsed.stdout_chars,
         )
     design_markdown = parsed.design_markdown
     design_hash = design_content_hash(design_markdown)

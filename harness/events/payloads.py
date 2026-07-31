@@ -426,6 +426,16 @@ class DesignEventData(BaseModel):
     ``!= 'ok'``, so a third status value would make every resumed review read an
     inherited design as a *failed* attempt and silently drop it.
 
+    ``submit_excerpt`` and ``stdout_chars`` (#277) are additive to the
+    ``failed`` shape and appear only when ``reason`` is ``no_submit`` or
+    ``malformed_submit`` — the engine's own output, bounded, so a SUBMIT-parse
+    failure is diagnosable from the ledger rather than being one more tally
+    mark. The other failure reasons (``engine_timeout``, ``engine_error``,
+    ``no_ticket_spec``) have no engine stdout in hand to quote and must stay
+    absent rather than record an empty one. They are kept out of ``detail``
+    deliberately: that field is human remediation prose, this is bounded
+    evidence with a different reader.
+
     ``invoked_at`` and ``concurrent_prior_at`` (#236) are set on both shapes,
     the concurrent-invocation detector's evidence: ``invoked_at`` is when this
     attempt began (captured before any engine work), and ``concurrent_prior_at``
@@ -447,6 +457,8 @@ class DesignEventData(BaseModel):
     invoked_at: str | None = None
     concurrent_prior_at: str | None = None
     inherited_from: str | None = None
+    submit_excerpt: str | None = None
+    stdout_chars: int | None = None
 
 
 class ReleaseEventData(BaseModel):
