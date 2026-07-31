@@ -36,7 +36,7 @@ Targeting:
   When there is **no** local open run (the cloud regime, where a fresh container
   never had the dead run's DB) it still reverts the ticket on Linear — the
   contract the ``--stale`` sweep builds on.
-* ``harness reclaim --stale [--project <name>] [--older-than 90m]`` — the **sweep**
+* ``harness reclaim --stale [--project <name>] [--older-than <dur>]`` — the **sweep**
   (CAL-736, breakdown item 3). Enumerate the active tickets in scope — both
   transient ``started`` states, In Progress **and** In Review (CAL-1103: ``review``
   parks a reviewed ticket In Review, so a dead orchestrator can strand it there) —
@@ -47,7 +47,13 @@ Targeting:
   for Linear; the board for GitHub). Liveness of a dead run cannot be observed
   directly (ephemeral container, no shared DB); the only signal is time — a
   ticket idle longer than any legitimate run takes is presumed abandoned
-  (proposal D2). "Idle" reads **three** clocks (#216, #254): the tracker's
+  (proposal D2). *How long that is* is not this module's to decide (#260):
+  omitting ``--older-than`` resolves ``loop.wall_clock_budget_minutes`` from
+  CONTEXT.md — the same value ``review``'s wall-clock breaker enforces
+  prospectively — so the retrospective and prospective readings of "the longest
+  a legitimate run may take" are one configured quantity rather than two
+  literals kept equal by hand. An explicit ``--older-than`` still overrides for
+  a one-off sweep. "Idle" reads **three** clocks (#216, #254): the tracker's
   ``updatedAt`` and — for tracker-stale candidates only — the ledger's last
   activity and the newest mtime among the run's worktree's tracked files, because
   a Projects-v2 Status write never bumps a GitHub issue's ``updatedAt`` and a

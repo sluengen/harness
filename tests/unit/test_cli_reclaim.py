@@ -24,7 +24,7 @@ Contract under test:
 * Refuses cleanly (exit 2) for an unknown run-id, a finished-terminal run, an
   unrecognised status, or an ambiguous invocation (both / neither selector).
   Idempotent — reclaiming an already-``cancelled`` run is a safe no-op.
-* ``--stale --project <name> [--older-than 90m]`` enumerates the project's active
+* ``--stale --project <name> [--older-than <dur>]`` enumerates the project's active
   tickets — In Progress **and** In Review (CAL-1103) — and reclaims each idle past
   the threshold (reusing the single-target ``--ticket`` path per ticket), skipping
   any inside the threshold; an empty / already-reverted project is a clean no-op.
@@ -45,8 +45,8 @@ import pytest
 from typer.testing import CliRunner
 
 from harness._time import iso_z
-from harness.loop_budget import evaluate_breakers, load_loop_budget
 from harness.cli import _review_gate, app, reclaim, reclaim_closable, reclaim_liveness, reclaim_undo
+from harness.loop_budget import evaluate_breakers, load_loop_budget
 from harness.reclaim_marker import UNRECLAIM_MARKER
 from harness.state import store
 from harness.tracker_errors import TrackerRequestError

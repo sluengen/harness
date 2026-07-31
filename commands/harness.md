@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.15 -->
+<!-- guidance:harness@0.2.16 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -229,7 +229,7 @@ The hourly work-pull: take the next logical ticket off the tracker's Todo queue 
 **Step 0 — reclaim stranded runs (pre-flight).** Before picking any work, sweep the queue for tickets stranded **In Progress** by a run that died mid-flight. A session that hits a usage/session limit just *stops*, leaving its ticket In Progress; a fresh run can observe nothing about the dead predecessor, so liveness is unobservable and a **time heuristic** is the only fix that survives a hard kill (proposal `stale-run-reclamation`, D2/D3). Run the sweep first:
 
 ```bash
-harness reclaim --stale --project "<repo.project>" --json   # repo.project SET: scope the sweep to that project ("Harness" here); default staleness threshold 90m
+harness reclaim --stale --project "<repo.project>" --json   # repo.project SET: scope the sweep to that project ("Harness" here); staleness threshold defaults to CONTEXT.md loop.wall_clock_budget_minutes
 harness reclaim --stale --json                              # repo.project UNSET: no --project → sweep the whole tracker queue (a linear team / a github board)
 ```
 

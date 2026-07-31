@@ -105,12 +105,12 @@ The design check runs **before** the gate-evidence check above: a run that never
 
 #### Scenario: the spend breakers bound the fix loop
 
-The `review` verb is the loop boundary, so it enforces two **ledger-backed spend breakers** there (`harness/loop_budget.py`; thresholds read from `CONTEXT.md` → `loop:`, defaults `max_review_cycles: 6` / `wall_clock_budget_minutes: 90`). The harness cannot see the orchestrating session's token meter, but it can observe the ledger — so it bounds the *behaviours* that burn tokens:
+The `review` verb is the loop boundary, so it enforces two **ledger-backed spend breakers** there (`harness/loop_budget.py`; thresholds read from `CONTEXT.md` → `loop:`, defaults `max_review_cycles: 6` / `wall_clock_budget_minutes: 110`). The harness cannot see the orchestrating session's token meter, but it can observe the ledger — so it bounds the *behaviours* that burn tokens:
 
 - GIVEN a run that has already recorded **5** `review` events
 - WHEN the agent runs `harness review` a 6th time
 - THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `4` with `{ "error": ..., "reason": "review_cycle_ceiling" }` — the run stops and escalates to the user (cycles 1–3 run unconditionally; cycles 4–5 carry a `convergence_check_required` advisory on a fail so the agent assesses convergence; the 6th is the hard ceiling, double the unconditional three).
-- AND likewise, GIVEN a run whose `started_at` is older than the 90-minute wall-clock budget, WHEN the agent runs `harness review`, THEN the verb refuses the same way with `reason=wall_clock_budget` (deliberately mirroring the stale-run reclamation staleness threshold — if one moves, move both).
+- AND likewise, GIVEN a run whose `started_at` is older than the configured wall-clock budget (110 minutes), WHEN the agent runs `harness review`, THEN the verb refuses the same way with `reason=wall_clock_budget`. That budget is not merely *aligned* with the stale-run reclamation staleness threshold — since #260 it **is** that threshold: `loop.wall_clock_budget_minutes` is the single value both consumers read, so the breaker (prospective) and `reclaim --stale` (retrospective) cannot drift apart. They are one quantity seen from two directions, and a divergence would strand a run in the gap — spared reclamation, yet refused at review.
 
 This is the one coherent stop rule `agents/reviewer.md` and `commands/harness.md` also state. The breakers are checked at the verb boundary, not mid-session: a run that runs away *between* verbs is bounded by the wall-clock check at the next boundary, not interrupted mid-thought — the honest limit of ledger-backed breakers, and the reason true token/$ metering is deferred.
 
