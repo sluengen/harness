@@ -1983,3 +1983,34 @@ def test_undo_does_not_reopen_a_run_that_became_terminal_after_the_precheck(
     assert json.loads(result.output)["reason"] == "ticket_has_open_run"
     assert _fetch_row(db, "RCLOSED")["status"] == "closed"  # type: ignore[index]
     assert _fetch_events(db, "RCLOSED", "reclaim_undone") == []
+
+
+def test_undo_by_ticket_refuses_when_the_newest_cancellation_was_deliberate(
+    tmp_path: Path,
+) -> None:
+    """`--ticket` applies the same newest-reason gate the run-id path does.
+
+    A run can accumulate several `workflow_failed` events: reclaimed, undone, then
+    deliberately cancelled by the operator. Selecting on "has a reclaimed event
+    *anywhere* in its history" would match that run and re-open something the
+    operator had chosen to abandon — the bounded-authority invariant says only a
+    run whose **current** cancellation is a reclamation is undoable, and the
+    selector must not be a way around it.
+    """
+    db = tmp_path / "harness.db"
+    _seed_reclaimed(db, run_id="RTICKETCANCEL", ticket="418")
+    assert _invoke_undo(
+        ["reclaim", "--undo", "RTICKETCANCEL", "--json", "--db", str(db)],
+        _make_undo_stub(),
+    ).exit_code == 0
+    _run_sync(_cancel_deliberately(db, "RTICKETCANCEL"))
+
+    stub = _make_undo_stub()
+    result = _invoke_undo(
+        ["reclaim", "--undo", "--ticket", "418", "--json", "--db", str(db)], stub
+    )
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    stub.transition_to_in_progress.assert_not_awaited()
+    stub.remove_label.assert_not_awaited()
+    assert _fetch_row(db, "RTICKETCANCEL")["status"] == "cancelled"  # type: ignore[index]

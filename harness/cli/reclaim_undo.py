@@ -187,25 +187,34 @@ async def _resolve_by_run_id(conn: aiosqlite.Connection, run_id: str) -> _Target
 
 
 async def _resolve_by_ticket(conn: aiosqlite.Connection, ticket: str) -> _Target:
-    """The ticket's newest reclaim-cancelled run, or a tracker-only target.
+    """The ticket's newest cancelled run, validated by the same gate as a run-id.
 
-    Deliberately keyed on "is currently a reclaimed cancellation", **not** on
-    "has never been undone": a run undone once and then genuinely reclaimed later
-    is legitimately undoable again, and a never-undone filter would strand exactly
-    that run.
+    Selects the newest **cancelled** run and then delegates to
+    :func:`_resolve_by_run_id`, so the "is this a reclamation?" question is asked
+    in exactly one place. Selecting instead on *"has a reclaimed event anywhere in
+    its history"* would be a way around the bounded-authority rule: a run that was
+    reclaimed, undone, and then deliberately cancelled still carries the old
+    ``reclaimed`` event, so a history-wide match would re-open something the
+    operator chose to abandon. Only the **newest** abandon reason speaks for the
+    current cancellation.
+
+    Choosing the newest cancelled run — rather than the newest *reclaimed* one —
+    is what makes that delegation meaningful: it refuses when the ticket's current
+    state came from a deliberate ``cancel``, instead of silently reaching past it
+    to an older reclamation. Naming the run directly stays available for that case.
+
+    With no cancelled run at all the target is tracker-only (the cloud regime,
+    mirroring reclaim's revert-only arm).
     """
     cur = await conn.execute(
-        "SELECT r.run_id FROM runs r WHERE r.ticket = ? AND r.status = 'cancelled' "
-        "AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.run_id "
-        "AND e.event_type = 'workflow_failed' "
-        "AND json_extract(e.data_json, '$.reason') = ?) "
-        "ORDER BY r.completed_at DESC, r.started_at DESC LIMIT 1",
-        (ticket, _RECLAIMED_REASON),
+        "SELECT run_id FROM runs WHERE ticket = ? AND status = 'cancelled' "
+        "ORDER BY completed_at DESC, started_at DESC LIMIT 1",
+        (ticket,),
     )
     row = await cur.fetchone()
     if row is None:
         return _Target(run_id=None, ticket=ticket)
-    return _Target(run_id=str(row[0]), ticket=ticket)
+    return await _resolve_by_run_id(conn, str(row[0]))
 
 
 async def _restore_ticket(ticket: str, run_id: str | None) -> None:
