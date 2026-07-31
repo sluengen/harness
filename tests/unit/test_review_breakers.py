@@ -247,13 +247,18 @@ def test_post_unconditional_fail_surfaces_convergence_advisory(
 
 
 # ---------------------------------------------------------------------------
-# AC-3: the 90-minute wall-clock is flagged at the verb boundary
+# AC-3: the configured wall-clock is flagged at the verb boundary (#260 AC-5)
 # ---------------------------------------------------------------------------
 
 
 def test_wall_clock_exceeded_trips_at_review_boundary(repo: Path, db_path: Path) -> None:
-    """A run older than 90 minutes trips the wall-clock breaker on the next review (AC-3)."""
-    old = datetime.now(UTC) - timedelta(minutes=91)
+    """A run older than the 110-minute budget trips the breaker on the next review.
+
+    111 rather than 91: the budget is the configured
+    ``loop.wall_clock_budget_minutes``, now 110 (#260), and a fixture sitting
+    just inside it would pass for the wrong reason.
+    """
+    old = datetime.now(UTC) - timedelta(minutes=111)
     _seed_run(db_path, repo, started_at=old, prior_fail_reviews=0)
     calls: list[int] = []
     result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, calls))
@@ -265,7 +270,7 @@ def test_wall_clock_exceeded_trips_at_review_boundary(repo: Path, db_path: Path)
 
 
 def test_wall_clock_within_budget_runs(repo: Path, db_path: Path) -> None:
-    """A run well within the 90-minute budget reviews normally."""
+    """A run well within the 110-minute budget reviews normally."""
     recent = datetime.now(UTC) - timedelta(minutes=5)
     _seed_run(db_path, repo, started_at=recent, prior_fail_reviews=0)
     result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))

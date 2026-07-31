@@ -97,6 +97,7 @@ from harness.cli.reclaim_liveness import locally_live, open_run_liveness
 from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
 from harness.cli.reclaim_undo import describe as describe_undo
 from harness.layers import tracker as tracker_backend
+from harness.loop_budget import load_loop_budget
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
@@ -567,10 +568,12 @@ def reclaim_command(
         help="Scope the --stale sweep to one project; omit to sweep the whole "
         "tracker queue (the repo.linear team for Linear; the board for GitHub).",
     ),
-    older_than: str = typer.Option(
-        "90m",
+    older_than: str | None = typer.Option(
+        None,
         "--older-than",
-        help="Staleness threshold for --stale (e.g. 90m, 12h, 7d). Default 90m.",
+        help="Staleness threshold for --stale (e.g. 110m, 12h, 7d). Omit to use "
+        "CONTEXT.md's loop.wall_clock_budget_minutes — the single source of truth "
+        "this mirrors.",
     ),
     undo: bool = typer.Option(
         False,
@@ -618,12 +621,24 @@ def reclaim_command(
             # via typer.BadParameter, exactly like ``worktrees cleanup --age``.
             # ``run_verb`` only catches ``VerbError``, so BadParameter propagates
             # to Typer's own handler as before.
-            threshold = _parse_duration(older_than)
+            # ``--older-than`` defaults to a *sentinel*, not a duration string:
+            # reclamation staleness and the ``review`` wall-clock breaker are one
+            # quantity read from two directions, so an omitted flag resolves from
+            # the same ``loop.wall_clock_budget_minutes`` the breaker reads (#260).
+            # Defaulting to a string built from the config would merely move the
+            # literal rather than delete it. CWD-anchored like the tracker read
+            # above — ``reclaim`` has no ``--repo`` (CAL-1104).
+            resolved_older_than = (
+                older_than
+                if older_than is not None
+                else f"{load_loop_budget(Path.cwd()).wall_clock_budget_minutes}m"
+            )
+            threshold = _parse_duration(resolved_older_than)
             return asyncio.run(
                 _run_stale_sweep(
                     db_path,
                     project=project,
-                    older_than=older_than,
+                    older_than=resolved_older_than,
                     threshold=threshold,
                     tracker=tracker,
                 )

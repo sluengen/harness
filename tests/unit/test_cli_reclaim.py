@@ -41,9 +41,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from harness._time import iso_z
+from harness.loop_budget import evaluate_breakers, load_loop_budget
 from harness.cli import _review_gate, app, reclaim, reclaim_closable, reclaim_liveness, reclaim_undo
 from harness.reclaim_marker import UNRECLAIM_MARKER
 from harness.state import store
@@ -631,7 +633,7 @@ def test_stale_sweep_reclaims_past_threshold(tmp_path: Path) -> None:
     regime) the revert-only path runs — the load-bearing case for the routine."""
     db = tmp_path / "harness.db"
     _run_sync(store.init_db(db))  # empty ledger — cloud regime
-    stub = _make_sweep_stub([{"identifier": "CAL-800", "updated_at": _iso_minutes_ago(100)}])
+    stub = _make_sweep_stub([{"identifier": "CAL-800", "updated_at": _iso_minutes_ago(150)}])
 
     result = _invoke(
         ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
@@ -660,7 +662,7 @@ def test_stale_sweep_reclaims_stranded_in_review_ticket(tmp_path: Path) -> None:
     Review forever and the old sweep, In-Progress-only, never touched it."""
     db = tmp_path / "harness.db"
     _run_sync(store.init_db(db))  # cloud regime: revert-only, no local run
-    stub = _make_sweep_stub([{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(120)}])
+    stub = _make_sweep_stub([{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(150)}])
 
     result = _invoke(
         ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
@@ -755,7 +757,7 @@ def test_stale_sweep_idempotent_across_ticks(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     _run_sync(store.init_db(db))
     # Tick 1: the ticket is stale and In Progress → reclaimed.
-    tick1 = _make_sweep_stub([{"identifier": "CAL-830", "updated_at": _iso_minutes_ago(120)}])
+    tick1 = _make_sweep_stub([{"identifier": "CAL-830", "updated_at": _iso_minutes_ago(150)}])
     assert _invoke(
         ["reclaim", "--stale", "--project", "Harness v3", "--db", str(db)], tick1
     ).exit_code == 0
@@ -777,9 +779,9 @@ def test_stale_sweep_full_reclaim_when_local_run_exists(tmp_path: Path) -> None:
     # Durable WIP pushed — back-dated past the threshold so the run reads as dead
     # on *both* signals (#216): an event stamped "now" would make this a live run.
     _seed_checkpoint(
-        db, "R9", branch="harness/cal-840", timestamp=_iso_minutes_ago(100)
+        db, "R9", branch="harness/cal-840", timestamp=_iso_minutes_ago(150)
     )
-    stub = _make_sweep_stub([{"identifier": "CAL-840", "updated_at": _iso_minutes_ago(100)}])
+    stub = _make_sweep_stub([{"identifier": "CAL-840", "updated_at": _iso_minutes_ago(150)}])
 
     result = _invoke(
         ["reclaim", "--stale", "--project", "Harness v3", "--json", "--db", str(db)],
@@ -1019,7 +1021,7 @@ def test_stale_without_project_sweeps_the_whole_queue(tmp_path: Path) -> None:
     db = tmp_path / "harness.db"
     _run_sync(store.init_db(db))
     stub = _make_sweep_stub(
-        [{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(120)}]
+        [{"identifier": "CAL-900", "updated_at": _iso_minutes_ago(150)}]
     )
     result = _invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
     assert result.exit_code == 0, result.output
@@ -2597,3 +2599,170 @@ def test_undo_by_ticket_refuses_when_the_newest_cancellation_was_deliberate(
     stub.transition_to_in_progress.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
     assert _fetch_row(db, "RTICKETCANCEL")["status"] == "cancelled"  # type: ignore[index]
+
+
+# ===========================================================================
+# #260: one config key drives BOTH the wall-clock breaker and reclamation
+# staleness — the anti-drift guard
+# ===========================================================================
+
+
+def test_one_context_key_drives_both_the_breaker_and_reclaim_staleness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2 — the core of #260: **one** ``CONTEXT.md`` edit moves both consumers.
+
+    The wall-clock breaker and reclamation staleness are the same quantity read
+    from two directions — prospectively (stop spending on a run past it) and
+    retrospectively (a run past it is presumed dead). They used to be two
+    independent literals kept equal by a comment asking humans to remember; this
+    test is what makes divergence impossible.
+
+    45 is chosen deliberately: it is neither the old hardcoded 90 nor the new
+    configured 110, so neither a surviving literal nor the new default can
+    satisfy it. Against today's code the reclaim half fails — a 46-minute-idle
+    ticket is fresh under the hardcoded ``90m`` and is never reclaimed.
+    """
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  max_review_cycles: 6\n  wall_clock_budget_minutes: 45\n```\n"
+    )
+
+    # --- Consumer 1: the per-run wall-clock breaker (harness review) ---------
+    budget = load_loop_budget(tmp_path)
+    assert budget.wall_clock_budget_minutes == 45
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    assert (
+        evaluate_breakers(
+            prior_review_count=0,
+            started_at=t0,
+            now=t0 + timedelta(minutes=46),
+            budget=budget,
+        )
+        is not None
+    ), "a 46-minute run must trip a 45-minute budget"
+    assert (
+        evaluate_breakers(
+            prior_review_count=0,
+            started_at=t0,
+            now=t0 + timedelta(minutes=44),
+            budget=budget,
+        )
+        is None
+    ), "a 44-minute run is inside a 45-minute budget"
+
+    # --- Consumer 2: reclamation staleness (harness reclaim --stale) ---------
+    # ``reclaim`` is CWD-anchored (no ``--repo``), so chdir is how the same
+    # CONTEXT.md above reaches it — patching ``load_loop_budget`` instead would
+    # prove nothing about the file actually being read.
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub(
+        [
+            {"identifier": "STALE-46", "updated_at": _iso_minutes_ago(46)},
+            {"identifier": "FRESH-44", "updated_at": _iso_minutes_ago(44)},
+        ]
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = _invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["STALE-46"]
+    assert payload["skipped"] == ["FRESH-44"]
+    # The resolved threshold is echoed as a duration string, so the JSON shape
+    # is unchanged and the resolution is observable rather than inferred.
+    assert payload["older_than"] == "45m"
+
+
+def test_reclaim_carries_no_default_duration_literal_of_its_own() -> None:
+    """AC-1 — the hardcoded ``"90m"`` is *deleted*, not updated.
+
+    The point of #260 is that reclamation owns no duration constant at all: the
+    ``--older-than`` option defaults to ``None`` and the value is resolved from
+    the loop budget. A literal reintroduced here — even one that happens to read
+    ``110m`` today — restores exactly the two-places-to-edit drift this removed,
+    so the *absence* is the thing worth pinning.
+    """
+    import inspect
+
+    source = inspect.getsource(reclaim.reclaim_command)
+    assert '"90m"' not in source
+    assert '"110m"' not in source
+    # The resolution goes through the shared loader, not a private copy.
+    assert reclaim.load_loop_budget is load_loop_budget
+
+
+def test_shipped_context_configures_the_same_value_the_code_defaults_to() -> None:
+    """AC-5/AC-4 — this repo's CONTEXT.md configures 110, and the code's fallback
+    agrees with it.
+
+    Two numbers that must not drift: the value shipped in ``CONTEXT.md`` and the
+    constant a repo with no ``loop:`` block falls back to. If they diverge, a
+    consuming repo silently runs a different budget from this one and the
+    boundary tests below describe nobody's actual configuration.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    assert load_loop_budget(repo_root).wall_clock_budget_minutes == 110
+    from harness.loop_budget import DEFAULT_WALL_CLOCK_BUDGET_MINUTES
+
+    assert DEFAULT_WALL_CLOCK_BUDGET_MINUTES == 110
+
+
+def test_stale_sweep_brackets_the_configured_110_minute_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-5, reclaim side — the sweep's boundary sits at the configured 110.
+
+    Bracketed at 109/111 rather than asserted at exactly 110: the sweep compares
+    against ``datetime.now(UTC)`` at execution time, so a fixture built as
+    "exactly 110 minutes ago" has already aged past the cutoff by the time the
+    comparison runs and would flake. The exact boundary is pinned on the pure,
+    clock-injected side (``test_wall_clock_within_budget_does_not_trip`` /
+    ``..._exceeded_trips``); here the resolved threshold string carries it.
+    """
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  wall_clock_budget_minutes: 110\n```\n"
+    )
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub(
+        [
+            {"identifier": "PAST-111", "updated_at": _iso_minutes_ago(111)},
+            {"identifier": "INSIDE-109", "updated_at": _iso_minutes_ago(109)},
+        ]
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = _invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["PAST-111"]
+    assert payload["skipped"] == ["INSIDE-109"]
+    assert payload["older_than"] == "110m"
+
+
+def test_stale_sweep_falls_back_to_the_shared_default_without_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-4 — no CONTEXT.md at all, and reclamation still lands on the *same*
+    constant the breaker falls back to, so the unconfigured path cannot drift
+    either. A repo that never wrote a ``loop:`` block gets one coherent budget,
+    not a configured breaker beside a hardcoded sweep."""
+    from harness.loop_budget import DEFAULT_WALL_CLOCK_BUDGET_MINUTES
+
+    db = tmp_path / "harness.db"
+    _run_sync(store.init_db(db))
+    stub = _make_sweep_stub([])
+    monkeypatch.chdir(tmp_path)  # no CONTEXT.md written
+
+    result = _invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["older_than"] == f"{DEFAULT_WALL_CLOCK_BUDGET_MINUTES}m"
+    assert (
+        load_loop_budget(tmp_path).wall_clock_budget_minutes
+        == DEFAULT_WALL_CLOCK_BUDGET_MINUTES
+    )
