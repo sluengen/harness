@@ -65,7 +65,7 @@ from typing import Any, NamedTuple, get_args
 
 from pydantic import ValidationError
 
-from harness.cli._git import rev_parse_head
+from harness._git import rev_parse_head
 from harness.cli._review_gate import has_gate_evidence
 from harness.cli._runs import read_run_resumed_from
 from harness.cli.review_protocol import Engine
@@ -182,7 +182,7 @@ async def _clean_head(worktree_path: Path) -> str | None:
     ``None`` and declines: every uncertainty resolves toward reviewing.
 
     Composing the two here rather than sharing a helper with
-    ``reclaim_closable``'s equivalent is deliberate: :mod:`harness.cli._git`
+    ``reclaim_closable``'s equivalent is deliberate: :mod:`harness._git`
     cannot host it (``close_merge`` already imports ``_git``, so the import would
     cycle) and hoisting it into ``close_merge`` would put a review-path probe in
     the merge module. What must never drift — *what counts as certified* — is

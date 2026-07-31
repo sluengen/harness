@@ -42,7 +42,8 @@ cross-reference to a module that homes elsewhere — §4.2's body mentions
 ``harness.worktree``, but ``worktree`` is §4.5's header name, so §4.2 is not a
 home for it. A header-parent heuristic was rejected (it let a dotted submodule
 resolve to a sibling section via the shared top-level ``harness`` package, and
-``harness.cli._git`` to any of §4.2–§4.4).
+``harness.cli._git`` — as the module was then named, before #269 re-homed it to
+``harness._git`` — to any of §4.2–§4.4 via its ``harness.cli`` parent).
 
 Acceptance criteria:
 
@@ -185,7 +186,7 @@ _RULE_CASES = [
     # top-level `harness` package — invalid
     ("harness.events.schema", "4.5", False),
     # a module §4 does not document has no home cite that resolves
-    ("harness.cli._git", "4.2", False),
+    ("harness._git", "4.2", False),
 ]
 
 

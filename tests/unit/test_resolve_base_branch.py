@@ -1,4 +1,4 @@
-"""``harness.cli._git.resolve_base_branch`` — the base-branch resolution order.
+"""``harness._git.resolve_base_branch`` — the base-branch resolution order.
 
 CAL-1106: the base a run builds off (and a merged worktree is reclaimed against)
 is no longer the literal ``"dev"``. It resolves, in order:
@@ -16,7 +16,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from harness.cli._git import origin_default_branch, resolve_base_branch
+from harness._git import origin_default_branch, resolve_base_branch
 
 
 def _git(repo: Path, *args: str) -> None:

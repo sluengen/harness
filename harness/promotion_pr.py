@@ -39,17 +39,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from harness import promotion as _mechanics
-from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git
+from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git
 
 # NB: the *module* import above (not ``from harness.promotion import
-# PromotionMechanicsError``) is deliberate, and its attribute is only ever read
-# **inside** the functions below — never at module top. The import graph is a
-# cycle: ``harness.promotion`` imports ``harness.cli._git``, whose package
-# ``harness.cli`` imports ``harness.cli.promote``, which imports this module — so
-# when we are first pulled in, ``harness.promotion`` may still be *partially*
-# initialised and ``PromotionMechanicsError`` not yet bound. Reading it lazily at
-# raise time (``_mechanics.PromotionMechanicsError``) sidesteps that, exactly as
-# ``harness.cli.promote`` does. The guard test in ``test_promotion_pr.py`` pins it.
+# PromotionMechanicsError``) reads its attribute only **inside** the functions
+# below — never at module top — exactly as ``harness.cli.promote`` does.
+#
+# This used to be load-bearing against an import cycle: ``harness.promotion``
+# imported ``harness.cli._git``, whose package ``harness.cli`` imports
+# ``harness.cli.promote``, which imports this module — so when this module was
+# pulled in first, ``harness.promotion`` was still partially initialised and
+# ``PromotionMechanicsError`` not yet bound. #269 removed that cycle at its root
+# by re-homing the git helpers to the ``harness._git`` leaf, so the lazy read is
+# now inert: a top-level name import would work. It stays because it is correct
+# and churn-free to leave, not because anything depends on it.
 
 __all__ = [
     "DIRECT_PUSH_TARGET",

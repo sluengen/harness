@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from harness import close_merge
-from harness.cli._git import GitError, rev_parse_head, worktree_toplevel_matches
+from harness._git import GitError, rev_parse_head, worktree_toplevel_matches
 from harness.cli._review_gate import certify_head
 from harness.cli.reclaim_liveness import RunLiveness
 
@@ -74,7 +74,7 @@ def _probe_head_of_clean_worktree(worktree: Path) -> str | None:
       resolves a worktree it is actively driving. Here a pruned-but-present
       directory would make git walk *up* and report the **enclosing checkout's**
       HEAD — a false-positive shape, and the same trap
-      :func:`~harness.cli._git.worktree_toplevel_matches` exists for (#235/#254).
+      :func:`~harness._git.worktree_toplevel_matches` exists for (#235/#254).
     * **The probes are bounded**; ``close``'s are not.
 
     The clean-tree check is not extra: it is ``close``'s own second gate conjunct
