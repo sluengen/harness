@@ -22,7 +22,7 @@ But two gates are keyed on `run_id` as well, and they reset with it:
 Nothing is destroyed by a reclaim. The design comment is still on the ticket; both ledger events still exist under the dead `run_id`. **Only the query scope is wrong.** Two observed costs:
 
 1. **Mid-build death.** A run designs, implements half the ticket, dies. Reclaim preserves the checkpoint-pushed branch; `--resume` recovers it. The resumed session is handed working code produced *against a design it is then forbidden to see* — and must spend an Opus call to regenerate a design for work already done.
-2. **Death between `review` and `close`.** A run passes review, then the session stops (context, wall clock, container). At 90 min the sweep reclaims it — a threshold deliberately set to mirror the wall-clock breaker. The fresh run re-designs *and* re-reviews to reach a `close` that was one command away.
+2. **Death between `review` and `close`.** A run passes review, then the session stops (context, wall clock, container). Once it is idle past `loop.wall_clock_budget_minutes` (110 min) the sweep reclaims it — since #260 that is not a threshold *mirroring* the wall-clock breaker but the very same configured value. The fresh run re-designs *and* re-reviews to reach a `close` that was one command away.
 
 The status quo cost is not the wasted tokens alone. It is that the most expensive, least-recoverable runs — the long ones — are the ones charged twice, and the charge lands on the unattended loop where no human is watching it.
 

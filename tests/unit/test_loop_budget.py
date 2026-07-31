@@ -7,7 +7,7 @@ the two deterministic breakers the harness *can* observe from the ledger:
 * a **hard ceiling** on review→fix cycles per run — the run stops and escalates
   on reaching the ceiling-th cycle (default 6; cycles 1–3 unconditional, 4–5
   assess convergence);
-* a **per-run wall-clock budget** in minutes (default 90, deliberately mirroring
+* a **per-run wall-clock budget** in minutes (default 110, the single source
   the stale-run reclamation staleness threshold).
 
 Both thresholds are **read from CONTEXT.md** (the ``loop:`` block), not
@@ -40,7 +40,7 @@ from harness.loop_budget import (
 _T0 = datetime(2026, 6, 30, 12, 0, 0, tzinfo=UTC)
 
 
-def _budget(max_cycles: int = 6, wall_clock: int = 90) -> LoopBudget:
+def _budget(max_cycles: int = 6, wall_clock: int = 110) -> LoopBudget:
     return LoopBudget(
         max_review_cycles=max_cycles, wall_clock_budget_minutes=wall_clock
     )
@@ -81,10 +81,10 @@ def test_load_reads_thresholds_from_context(tmp_path: Path) -> None:
 
 
 def test_load_defaults_when_no_context(tmp_path: Path) -> None:
-    """A repo with no CONTEXT.md falls back to the documented defaults (6 / 90)."""
+    """A repo with no CONTEXT.md falls back to the documented defaults (6 / 110)."""
     budget = load_loop_budget(tmp_path)
     assert budget.max_review_cycles == DEFAULT_MAX_REVIEW_CYCLES == 6
-    assert budget.wall_clock_budget_minutes == DEFAULT_WALL_CLOCK_BUDGET_MINUTES == 90
+    assert budget.wall_clock_budget_minutes == DEFAULT_WALL_CLOCK_BUDGET_MINUTES == 110
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ def test_load_defaults_when_loop_block_absent(tmp_path: Path) -> None:
     (tmp_path / "CONTEXT.md").write_text("```yaml\nprofile: harness\n```\n")
     budget = load_loop_budget(tmp_path)
     assert budget.max_review_cycles == 6
-    assert budget.wall_clock_budget_minutes == 90
+    assert budget.wall_clock_budget_minutes == 110
 
 
 def test_load_partial_loop_block_defaults_the_missing_key(tmp_path: Path) -> None:
@@ -128,7 +128,7 @@ def test_load_partial_loop_block_defaults_the_missing_key(tmp_path: Path) -> Non
     )
     budget = load_loop_budget(tmp_path)
     assert budget.max_review_cycles == 8
-    assert budget.wall_clock_budget_minutes == 90
+    assert budget.wall_clock_budget_minutes == 110
 
 
 # ---------------------------------------------------------------------------
@@ -171,13 +171,18 @@ def test_ceiling_is_read_from_budget_not_hardcoded() -> None:
 
 
 # ---------------------------------------------------------------------------
-# evaluate_breakers — the 90-minute wall-clock (AC-3)
+# evaluate_breakers — the configured wall-clock boundary (AC-3; #260 AC-5)
 # ---------------------------------------------------------------------------
 
 
 def test_wall_clock_within_budget_does_not_trip() -> None:
-    """A run at exactly 90 minutes has not *exceeded* the budget — no trip."""
-    now = _T0 + timedelta(minutes=90)
+    """A run at exactly 110 minutes has not *exceeded* the budget — no trip.
+
+    The boundary pair below is stated at the **configured** value (#260 AC-5),
+    so it moves with ``DEFAULT_WALL_CLOCK_BUDGET_MINUTES`` rather than pinning a
+    number the shipped config no longer uses.
+    """
+    now = _T0 + timedelta(minutes=110)
     trip = evaluate_breakers(
         prior_review_count=0, started_at=_T0, now=now, budget=_budget()
     )
@@ -185,14 +190,14 @@ def test_wall_clock_within_budget_does_not_trip() -> None:
 
 
 def test_wall_clock_exceeded_trips() -> None:
-    """A run past 90 minutes trips the wall-clock breaker (AC-3)."""
-    now = _T0 + timedelta(minutes=90, seconds=1)
+    """A run past 110 minutes trips the wall-clock breaker (AC-3)."""
+    now = _T0 + timedelta(minutes=110, seconds=1)
     trip = evaluate_breakers(
         prior_review_count=0, started_at=_T0, now=now, budget=_budget()
     )
     assert trip is not None
     assert trip.reason == WALL_CLOCK_BUDGET_REASON
-    assert "90" in trip.message
+    assert "110" in trip.message
 
 
 def test_wall_clock_is_read_from_budget_not_hardcoded() -> None:

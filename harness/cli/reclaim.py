@@ -36,7 +36,7 @@ Targeting:
   When there is **no** local open run (the cloud regime, where a fresh container
   never had the dead run's DB) it still reverts the ticket on Linear — the
   contract the ``--stale`` sweep builds on.
-* ``harness reclaim --stale [--project <name>] [--older-than 90m]`` — the **sweep**
+* ``harness reclaim --stale [--project <name>] [--older-than <dur>]`` — the **sweep**
   (CAL-736, breakdown item 3). Enumerate the active tickets in scope — both
   transient ``started`` states, In Progress **and** In Review (CAL-1103: ``review``
   parks a reviewed ticket In Review, so a dead orchestrator can strand it there) —
@@ -47,7 +47,13 @@ Targeting:
   for Linear; the board for GitHub). Liveness of a dead run cannot be observed
   directly (ephemeral container, no shared DB); the only signal is time — a
   ticket idle longer than any legitimate run takes is presumed abandoned
-  (proposal D2). "Idle" reads **three** clocks (#216, #254): the tracker's
+  (proposal D2). *How long that is* is not this module's to decide (#260):
+  omitting ``--older-than`` resolves ``loop.wall_clock_budget_minutes`` from
+  CONTEXT.md — the same value ``review``'s wall-clock breaker enforces
+  prospectively — so the retrospective and prospective readings of "the longest
+  a legitimate run may take" are one configured quantity rather than two
+  literals kept equal by hand. An explicit ``--older-than`` still overrides for
+  a one-off sweep. "Idle" reads **three** clocks (#216, #254): the tracker's
   ``updatedAt`` and — for tracker-stale candidates only — the ledger's last
   activity and the newest mtime among the run's worktree's tracked files, because
   a Projects-v2 Status write never bumps a GitHub issue's ``updatedAt`` and a
@@ -97,6 +103,7 @@ from harness.cli.reclaim_liveness import locally_live, open_run_liveness
 from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
 from harness.cli.reclaim_undo import describe as describe_undo
 from harness.layers import tracker as tracker_backend
+from harness.loop_budget import load_loop_budget
 from harness.reclaim_marker import RECLAIM_LABEL, format_reclaim_comment
 from harness.state import store
 from harness.state.schema import RUN_STATUSES
@@ -567,10 +574,12 @@ def reclaim_command(
         help="Scope the --stale sweep to one project; omit to sweep the whole "
         "tracker queue (the repo.linear team for Linear; the board for GitHub).",
     ),
-    older_than: str = typer.Option(
-        "90m",
+    older_than: str | None = typer.Option(
+        None,
         "--older-than",
-        help="Staleness threshold for --stale (e.g. 90m, 12h, 7d). Default 90m.",
+        help="Staleness threshold for --stale (e.g. 110m, 12h, 7d). Omit to use "
+        "CONTEXT.md's loop.wall_clock_budget_minutes — the single source of truth "
+        "this mirrors.",
     ),
     undo: bool = typer.Option(
         False,
@@ -618,12 +627,24 @@ def reclaim_command(
             # via typer.BadParameter, exactly like ``worktrees cleanup --age``.
             # ``run_verb`` only catches ``VerbError``, so BadParameter propagates
             # to Typer's own handler as before.
-            threshold = _parse_duration(older_than)
+            # ``--older-than`` defaults to a *sentinel*, not a duration string:
+            # reclamation staleness and the ``review`` wall-clock breaker are one
+            # quantity read from two directions, so an omitted flag resolves from
+            # the same ``loop.wall_clock_budget_minutes`` the breaker reads (#260).
+            # Defaulting to a string built from the config would merely move the
+            # literal rather than delete it. CWD-anchored like the tracker read
+            # above — ``reclaim`` has no ``--repo`` (CAL-1104).
+            resolved_older_than = (
+                older_than
+                if older_than is not None
+                else f"{load_loop_budget(Path.cwd()).wall_clock_budget_minutes}m"
+            )
+            threshold = _parse_duration(resolved_older_than)
             return asyncio.run(
                 _run_stale_sweep(
                     db_path,
                     project=project,
-                    older_than=older_than,
+                    older_than=resolved_older_than,
                     threshold=threshold,
                     tracker=tracker,
                 )

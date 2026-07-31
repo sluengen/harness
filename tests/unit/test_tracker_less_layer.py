@@ -181,7 +181,8 @@ def _seed_open_run(
     ``started_at`` defaults to the frozen literal every existing caller was
     written against. A caller that drives ``review`` must override it with a
     fresh timestamp: ``evaluate_breakers`` measures the run's wall clock from
-    this column against a 90-minute budget, so the frozen date trips
+    this column against the configured ``loop.wall_clock_budget_minutes``
+    budget (#260), so the frozen date trips
     ``wall_clock_budget`` before the design gate is ever consulted — and the
     test would pass or fail having proved nothing about what it names.
     """

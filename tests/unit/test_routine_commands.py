@@ -229,8 +229,16 @@ def test_routines_documented_local_trigger_only() -> None:
 
 def test_build_routine_runs_reclaim_preflight() -> None:
     """CAL-737 AC-1: the Build routine runs the Linear-keyed
-    ``harness reclaim --stale`` sweep (scoped to a ``--project``, default 90m)
-    as its pre-flight, before picking work."""
+    ``harness reclaim --stale`` sweep (scoped to a ``--project``) as its
+    pre-flight, before picking work.
+
+    The threshold half of this guard inverted at #260. It used to require the
+    doc to *name* the 90-minute default; the default is now resolved from
+    ``loop.wall_clock_budget_minutes``, so a duration literal here is precisely
+    the drift the change removed — a reader who trusts it would be reading a
+    number the sweep does not use. The guard therefore requires the config key
+    and **forbids** the literal.
+    """
     body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
     assert "harness reclaim --stale" in body, (
         "the Build routine must run `harness reclaim --stale` as its pre-flight "
@@ -240,9 +248,14 @@ def test_build_routine_runs_reclaim_preflight() -> None:
         "the `--stale` sweep is required to be scoped to a project; the Build "
         "routine must pass `--project` (CAL-737 AC-1)."
     )
-    assert re.search(r"90\s*(m|min)", body, re.IGNORECASE), (
-        "the Build routine must note the default 90-minute staleness threshold "
-        "for the reclaim pre-flight (CAL-737 AC-1)."
+    assert "wall_clock_budget_minutes" in body, (
+        "the Build routine must name `loop.wall_clock_budget_minutes` as where "
+        "the reclaim pre-flight's staleness threshold comes from (#260)."
+    )
+    assert not re.search(r"\b\d+\s*(m|min)\b", body, re.IGNORECASE), (
+        "the Build routine must not state a duration literal as the staleness "
+        "default — it resolves from CONTEXT.md, and a number written here goes "
+        "stale the moment that key is retuned (#260)."
     )
 
 
