@@ -289,3 +289,96 @@ def test_wrapper_mounts_codex_readonly() -> None:
 def test_readme_documents_key_scoping() -> None:
     """The README warns that the forwarded agent should hold a scoped key."""
     assert "scoped to the target remote" in _readme()
+
+
+# ---------------------------------------------------------------------------
+# The container writes no bytecode into the mounted host tree (#278)
+# ---------------------------------------------------------------------------
+#
+# Python run inside the container writes ``__pycache__/*.pyc`` whose embedded
+# source paths are the *container's* (``/workspace/...``) into the tree the host
+# also uses. CPython validates a cache entry against the source's recorded mtime
+# and size, not its content, so a later **host** run loads those entries and any
+# test relying on ``inspect.getsource`` / ``linecache`` fails with ``OSError:
+# could not get source code`` — a false red on the very gate that certifies a
+# review (observed on run 01KYWT8MJ7GVE3X8T1FYWB69YJ, #275).
+#
+# The fix pins ``PYTHONDONTWRITEBYTECODE=1`` at each invocation seam rather than
+# in the image: the wrapper's staleness guard compares the image against
+# ``git log -1 --format=%ct -- harness/``, a path a ``docker/``-only change never
+# touches, so an image ``ENV`` would ship green and still leak until something
+# forced a rebuild. The wrapper is symlinked from the checkout, so a change to it
+# is live on the next invocation.
+
+# The two invocation formats under docker/. Deriving the seam set from the
+# directory (rather than naming the two files) is what makes a third seam added
+# later fail this guard instead of slipping through — docs are excluded because
+# prose does not invoke a container.
+_SEAM_SUFFIXES = (".sh", ".yml", ".yaml")
+
+# Accepts both formats' pinned spellings — shell ``-e NAME=1`` and YAML
+# ``NAME: "1"`` — and rejects an empty or absent value, which CPython treats as
+# "off".
+_BYTECODE_PINNED_RE = re.compile(r'PYTHONDONTWRITEBYTECODE\s*[:=]\s*"?1"?')
+
+_WORKSPACE_MOUNT_RE = re.compile(r":/workspace\b")
+
+
+def _uncommented(text: str) -> str:
+    """Drop whole-line comments — both formats use ``#`` — so a mount or a flag
+    that only appears in an example inside a comment does not count as real."""
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def _mounting_seams() -> dict[str, str]:
+    """Every ``docker/`` file that actually invokes a container with a host tree
+    mounted at ``/workspace``, as ``{filename: uncommented text}``."""
+    return {
+        path.name: body
+        for path in sorted((PROJECT_ROOT / "docker").iterdir())
+        if path.is_file()
+        and path.suffix in _SEAM_SUFFIXES
+        and _WORKSPACE_MOUNT_RE.search(body := _uncommented(path.read_text()))
+    }
+
+
+def test_the_seam_derivation_finds_both_known_mounting_seams() -> None:
+    """The derived guard below is only as good as its subject set: a derivation
+    that silently matched nothing would pass while enforcing nothing."""
+    seams = _mounting_seams()
+    assert {"harness-wrapper.sh", "docker-compose.yml"} <= set(seams), (
+        "the /workspace-mount derivation no longer finds both known invocation "
+        f"seams (found {sorted(seams)}) — fix the derivation, not the assertion"
+    )
+
+
+def test_every_mounting_seam_suppresses_bytecode_writes() -> None:
+    """Each seam that bind-mounts a host tree pins PYTHONDONTWRITEBYTECODE=1.
+
+    Without it the container leaves host-invalid ``.pyc`` in the mount and the
+    next host gate run false-reddens (#278).
+    """
+    for name, body in _mounting_seams().items():
+        assert _BYTECODE_PINNED_RE.search(body), (
+            f"docker/{name} mounts a host tree at /workspace but does not pin "
+            "PYTHONDONTWRITEBYTECODE=1, so container-authored bytecode lands in "
+            "the mount and false-reddens the next host gate run (#278)"
+        )
+
+
+def test_bytecode_suppression_is_pinned_not_forwarded_from_the_host() -> None:
+    """``-e PYTHONDONTWRITEBYTECODE`` (bare) would forward the *host's* value, and
+    a host exporting it empty silently disables the protection — CPython treats
+    only a non-empty value as on. Pin the literal, as HARNESS_WORKSPACE_ROOTS is
+    pinned for the same class of reason."""
+    for name, body in _mounting_seams().items():
+        for forwarded in (
+            r"-e\s+PYTHONDONTWRITEBYTECODE\s*(\\|$)",
+            r"PYTHONDONTWRITEBYTECODE:\s*\"?\$\{",
+        ):
+            assert not re.search(forwarded, body, re.MULTILINE), (
+                f"docker/{name} forwards PYTHONDONTWRITEBYTECODE from the host "
+                "instead of pinning it to 1; an empty host value would disable it"
+            )
