@@ -113,6 +113,25 @@ RUN_ID = "01JRUNCLOSEXXXXXXXXXXXXX01"
 SEEDED_STARTED_AT = "2026-06-10T00:00:00Z"
 FIXED_CLOSED_AT = "2026-06-10T00:01:02.500000Z"
 EXPECTED_DURATION_MS = 62_500
+# Every clock reading after the first. Distinct on purpose — see _pin_close_clock.
+LATER_CLOCK_READING = "2026-06-10T00:05:00.000000Z"
+
+
+def _pin_close_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``close``'s clock: ``FIXED_CLOSED_AT`` first, then a *later* reading.
+
+    A constant stub would make the AC-1 equality vacuous — an implementation
+    that read the clock a second time for ``completed_at`` would still match the
+    close event's timestamp, so the drift the single reading exists to prevent
+    would go unguarded. Handing out a distinct value from the second call on is
+    what makes both assertions bite.
+    """
+    readings = iter([FIXED_CLOSED_AT])
+    monkeypatch.setattr(
+        close_mod,
+        "iso_z",
+        lambda *_a, **_k: next(readings, LATER_CLOCK_READING),
+    )
 
 
 def _seed_open_run(
@@ -1177,7 +1196,7 @@ def test_close_stamps_completed_at_equal_to_the_close_event_timestamp(
     second ``iso_z()`` call for the run row would still be non-null and would
     still look right, but the two columns would drift by the write latency.
     """
-    monkeypatch.setattr(close_mod, "iso_z", lambda *a, **k: FIXED_CLOSED_AT)
+    _pin_close_clock(monkeypatch)
     run_id = _seed_open_run(db_path, repo)
     head = _head_sha(repo)
     _emit_review(db_path, run_id, head, "pass")
@@ -1202,7 +1221,7 @@ def test_close_stamps_duration_ms_measured_from_started_at(
     window here would pass just as happily on a duration computed from the
     wrong origin (e.g. the review event) as on the right one.
     """
-    monkeypatch.setattr(close_mod, "iso_z", lambda *a, **k: FIXED_CLOSED_AT)
+    _pin_close_clock(monkeypatch)
     run_id = _seed_open_run(db_path, repo)
     head = _head_sha(repo)
     _emit_review(db_path, run_id, head, "pass")
