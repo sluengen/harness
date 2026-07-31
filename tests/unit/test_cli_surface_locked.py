@@ -112,9 +112,12 @@ def _has_supersede_banner(path: Path) -> bool:
 
 
 #: SPEC.md is live only in the sections its own status banner declares current:
-#: §1–2 (the model), §4 (modules), and §11 (CLI). §3 and §5–§10, §12–§14 are
-#: retained engine history behind the §3 banner and are not scanned. (If another
-#: section is promoted to current, add it here and to the banner together.)
+#: §1–2 (the model), §4 (modules), §11 (CLI), and §16 (non-goals). §3, §5–§10,
+#: §12–§15 and §17–§18 are retained engine history behind the §3 banner and are
+#: not scanned. (If another section is promoted to current, add it here and to
+#: the banner together.) §16 is live policy but carries no command surface, so
+#: it stays out of the scanned set — this list is what the CLI guard reads, not
+#: the currency map itself, which SPEC.md's banner owns.
 _SPEC_LIVE_SECTIONS = (1, 2, 4, 11)
 
 
