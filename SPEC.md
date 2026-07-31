@@ -271,6 +271,7 @@ harness status    [<run-id>]              [--run-id <id>] [--json]
 harness logs      [<run-id>]              [--run-id <id>] [--follow] [--node <id>]
 harness events    [<run-id>]              [--run-id <id>] [--type <event_type>] [--json] [--after-id <n>]
 harness runs                              [--limit <n>]
+harness stats                             [--since <dur>] [--db <p>] [--json]   # the aggregate reader over the whole ledger (#265): per-verb attempts split ok/refused/failed, verb + run latency (median and max), review cycles per run, recovery counts, engine verdicts. Read-only — opened `mode=ro`, so it cannot write. Retired-engine rows (CAL-574) are excluded and reported separately, and the covered window is stated rather than implied
 harness worktrees list                    [--json]
 harness worktrees cleanup                 [--age <duration>] [--merged] [--force] [--db <p>]
 

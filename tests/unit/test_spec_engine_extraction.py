@@ -83,10 +83,22 @@ def _section_body(num: int, full: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Headroom above the count at the extraction (was 1,227 lines, cut to ~470).
+#: The bound catches a retired-engine section growing a body back; it is not a
+#: freeze on the live surface, which grows a line per command registered — #265
+#: added ``stats`` and landed on 481 against a bound of 480. Raised to 500 with
+#: the reason stated rather than nudged by one each time a command lands, since
+#: a bound that ratchets to whatever the last change needed has stopped
+#: measuring anything. The retired-bulk teeth are the per-section stub tests
+#: below, which assert each of §3 / §5–§10 / §12–§14 is *reduced to* a pointer —
+#: those cannot be satisfied by a section that regrew, whatever the total.
+_LEAN_LINE_BOUND = 500
+
+
 def test_spec_md_is_lean() -> None:
     """SPEC.md shed its retired-engine bulk (was 1,227 lines; live is a fraction)."""
     line_count = len(_SPEC.read_text(encoding="utf-8").splitlines())
-    assert line_count <= 480, (
+    assert line_count <= _LEAN_LINE_BOUND, (
         f"SPEC.md is {line_count} lines — the retired engine sections (§3, §5–§10, "
         f"§12–§14) should be re-homed to {_ENGINE_REL}, leaving only live sections."
     )

@@ -254,11 +254,16 @@ def test_every_derived_module_has_a_source_file() -> None:
 
 
 def test_many_names_from_one_module_collapse_to_one_stem() -> None:
-    """``status`` / ``logs`` / ``events`` / ``runs`` are four names, one module."""
+    """The read commands are many names behind one import surface.
+
+    ``harness.cli.query`` re-exports from focused ``query_*`` siblings, so the
+    derivation must collapse them to the one stem rather than reporting five
+    modules that could then import each other's privates unnoticed.
+    """
     query_names = {
         name for name, stem in _COMMAND_MODULES_BY_NAME.items() if stem == "query"
     }
-    assert query_names == {"status", "logs", "events", "runs"}
+    assert query_names == {"status", "logs", "events", "runs", "stats"}
 
 
 def test_parser_reads_both_registration_forms(tmp_path: Path) -> None:
