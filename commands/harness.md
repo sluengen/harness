@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.14 -->
+<!-- guidance:harness@0.2.15 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -111,6 +111,10 @@ The verb does **not** run the gate itself — the toolchain lives on your side, 
 - **`--gate-exit` non-zero** → exit `5`, `{"error": ..., "reason": "gate_failed", "gate_output_tail": ...}`. **No engine, no verdict recorded.** Fix what the tail reports and re-run.
 - **Green** → the engine runs, and the `review` event records `gate_ran`, `gate_command`, `gate_exit_code`, and the log tail, bound to the reviewed SHA — so a recorded `pass` means *the gate ran green*, not *a reviewer read the diff*.
 - **No `verify:` configured** → recorded honestly (`gate_ran=false, gate_reason="not_configured"`) and review proceeds; the harness cannot gate what a repo does not define.
+
+**One narrow exception, mirroring Step 1.5's adopted design: a resumed run may inherit a prior pass (#259, ADR 0008 D3).** When the run resumed from a preserved WIP branch *and* its worktree HEAD is the **exact commit** another run for the same ticket already passed behind a green gate, the verb records its own `review` pass carrying that source's `reviewed_sha`, verify-gate evidence and `engine`, marked `inherited_from` — **no engine runs, and no fresh gate evidence is needed**, because the gate already ran green over this byte-identical tree. `ReviewOutput` has the same shape (`verdict: "pass"`), so Step 4 is unchanged; a stderr note and `harness events <run_id> --type review` name the source run.
+
+Inheritance is deliberately hard to earn, so most resumed runs still review normally: a clean start, a HEAD no pass covers, a dirty worktree, a source pass carrying no gate evidence, or a source `fail` at the same SHA all decline and run the engine. It also never skips a refusal that is about **this** run — a run with no recorded design still gets `no_design`, and if you pass a non-zero `--gate-exit` you still get `gate_failed`, because a red gate you just ran is never overridden by an old green one. What it does skip, besides the engine, is the **spend breakers**: an inherited pass consumes no review cycle and cannot trip the wall-clock budget, since it buys no engine time.
 
 Do not route around a refusal: `close` refuses a pass carrying no gate evidence (`no_gate_evidence`). Reporting a green exit code for a gate you did not run is falsifying the record the whole loop rests on.
 
