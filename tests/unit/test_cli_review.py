@@ -281,10 +281,12 @@ def _invoke(
 
 
 def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
-    """A fake runner that records the ``cmd`` it was handed, then yields stdout.
+    """A fake runner that records the ``cmd`` and ``env`` it was handed, then
+    yields stdout.
 
-    Lets a test assert *which engine command* the verb built (AC-1/AC-3) without
-    spawning a real subprocess.
+    Lets a test assert *which engine command* the verb built (AC-1/AC-3), and
+    *what environment it built it with* (#278), without spawning a real
+    subprocess.
     """
 
     async def _runner(
@@ -296,6 +298,7 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
         timeout: float | None = None,
     ) -> review_mod.RunResult:
         captured["cmd"] = cmd
+        captured["env"] = env
         return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)
 
     return _runner
@@ -1339,3 +1342,35 @@ def test_cal1103_tracker_less_review_records_verdict_without_transition(
     stub.transition_to_in_review.assert_not_awaited()
     stub.transition_to_in_progress.assert_not_awaited()
     assert len(fetch_review_events(db_path)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The engine subprocess inherits the container's environment unfiltered (#278)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_subprocess_inherits_bytecode_suppression(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine subprocess inherits the process environment unfiltered.
+
+    The #278 fix pins ``PYTHONDONTWRITEBYTECODE=1`` on the container, and relies
+    on that flag reaching whatever Python the *review engine* runs against the
+    mounted worktree — not merely the harness process. That works only because
+    the verb hands the engine ``env=dict(os.environ)``. Locking it here means a
+    future env allowlist on that seam fails this test instead of silently
+    reintroducing the bytecode leak.
+    """
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner)
+    assert result.exit_code == 0, result.output
+
+    assert captured["env"].get("PYTHONDONTWRITEBYTECODE") == "1", (
+        "the review engine subprocess must inherit PYTHONDONTWRITEBYTECODE from "
+        "the verb's environment, or the engine's own Python still writes "
+        f"container-path bytecode into the mount (#278): {captured['env']!r}"
+    )

@@ -232,6 +232,20 @@ if [[ -t 0 ]]; then
   TTY_ARGS=(-it)
 fi
 
+# PYTHONDONTWRITEBYTECODE=1 below is load-bearing, not hygiene (#278). The repo
+# is bind-mounted read-write at /workspace, so any Python the container runs
+# leaves `__pycache__/*.pyc` in the HOST tree whose embedded source paths are the
+# container's. CPython validates a cache entry against the source's mtime and
+# size, not its content, so the next host-side gate run loads those entries and
+# anything using `inspect.getsource` / `linecache` fails with "could not get
+# source code" — a false red on the gate that certifies a review. Pinned to the
+# literal `1`, never forwarded as a bare `-e PYTHONDONTWRITEBYTECODE`: CPython
+# treats only a NON-EMPTY value as on, so a host exporting it empty would
+# silently disable the protection (the same reason HARNESS_WORKSPACE_ROOTS is
+# pinned). It is set here rather than as a Dockerfile `ENV` because the staleness
+# guard above compares the image against `git log -1 --format=%ct -- harness/` —
+# a path a docker/-only change never touches — so an image-level default would
+# not take effect until something unrelated forced a rebuild.
 exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -v "$(pwd)":/workspace \
   -w /workspace \
@@ -241,6 +255,7 @@ exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -e LINEAR_API_KEY \
   -e GITHUB_TOKEN \
   -e HARNESS_WORKSPACE_ROOTS=/workspace \
+  -e PYTHONDONTWRITEBYTECODE=1 \
   -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
