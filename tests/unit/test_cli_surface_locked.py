@@ -511,6 +511,29 @@ def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> No
     assert not _subset_enumeration_offenders(_spec_live_text(doctored))
 
 
+def test_a_stale_audited_slash_list_in_live_readme_is_caught() -> None:
+    """The #249 widening is non-vacuous: README's new param catches a stale list.
+
+    Without this, ``_ENUMERATION_GUARDED_DOCS``'s new ``README`` member asserted
+    only that today's corrected README is clean — it would have stayed green if
+    the widening were reverted, since the parametrization would simply stop
+    generating the case. Injecting the offending idiom proves the param is
+    actually scanning README.
+
+    ``_live_text(README)`` is identity (only ``SPEC`` gets section-scoped), so
+    passing the doctored text straight to the predicate travels the guard's own
+    path rather than a re-implementation of it.
+    """
+    assert README in _ENUMERATION_GUARDED_DOCS, (
+        "README must stay in the guarded set — dropping it would silently "
+        "delete the parametrized case rather than fail it (#249)."
+    )
+    doctored = README.read_text().replace(
+        "## What it does", _STALE_AUDITED_LIST + "\n## What it does", 1
+    )
+    assert _subset_enumeration_offenders(doctored) == [["close", "review", "start"]]
+
+
 def _real_options() -> dict[str, set[str]]:
     """Map every command (incl. ``worktrees list`` / ``worktrees cleanup``) to the
     set of ``--long`` options it actually exposes, via the live Typer/click app."""
