@@ -86,13 +86,15 @@ from typing import Any, Literal
 import typer
 from pydantic import BaseModel
 
-# ``from harness import close_merge`` (the module, not its names) breaks the
-# close ↔ close_merge ↔ harness.cli import cycle, mirroring promote.py's
-# ``from harness import promotion``: the mechanics module is referenced at call
-# time (``close_merge.merge_run_branch``), never bound by name at import time.
+# ``from harness import close_merge`` (the module, not its names), mirroring
+# promote.py's ``from harness import promotion``: the mechanics module is
+# referenced at call time (``close_merge.merge_run_branch``). It used to also be
+# load-bearing against a close ↔ close_merge ↔ harness.cli cycle; #269 removed
+# that cycle at its root by re-homing the git helpers to harness._git, so this is
+# now a style choice, not a workaround.
 from harness import close_merge
+from harness._git import rev_parse_head, teardown_worktree
 from harness._time import elapsed_ms, iso_z
-from harness.cli._git import rev_parse_head, teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run

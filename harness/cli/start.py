@@ -61,7 +61,7 @@ import aiosqlite
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import (
+from harness._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
     preferred_base_ref,
     resolve_base_branch,
@@ -590,7 +590,7 @@ async def _delete_run_row(db_path: Path, run_id: str) -> None:
 def _cleanup_worktree_sync(repo_root: Path, worktree_path: str) -> None:
     """Best-effort rollback of a failed ``start`` create: remove the worktree.
 
-    Delegates to the shared :func:`harness.cli._git.teardown_worktree` so the
+    Delegates to the shared :func:`harness._git.teardown_worktree` so the
     reclaim logic — worktree-remove (with an orphan ``rmtree`` fallback), prune,
     and local ``branch -D`` — has one home (CAL-767). ``start`` never pushed the
     branch, so ``delete_remote`` stays ``False``. Kept as a named wrapper so the

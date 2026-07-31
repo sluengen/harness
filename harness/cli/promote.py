@@ -94,8 +94,8 @@ import typer
 
 from harness import promotion as mechanics
 from harness import repo_config
+from harness._git import teardown_worktree
 from harness._time import iso_z
-from harness.cli._git import teardown_worktree
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id

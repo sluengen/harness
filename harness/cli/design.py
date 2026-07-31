@@ -72,9 +72,9 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
+from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z, parse_iso_z
 from harness.cli._engine import EngineTimeoutError, Runner, RunResult, run_engine_subprocess
-from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb

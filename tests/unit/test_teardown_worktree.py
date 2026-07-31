@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-import harness.cli._git as gitmod
-from harness.cli._git import teardown_worktree
+import harness._git as gitmod
+from harness._git import teardown_worktree
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

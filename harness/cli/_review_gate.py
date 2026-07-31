@@ -11,7 +11,7 @@ sharper argument: a sweep that reports *closable* for a run ``close`` will refus
 leaves the ticket neither reclaimed nor closed — wedged in exactly the state both
 paths exist to prevent. The precedent is already in the tree twice —
 :mod:`harness.cli._abandon` gave ``cancel`` and ``reclaim`` one ledger
-transaction, and :func:`harness.cli._git.worktree_toplevel_matches` moved to a
+transaction, and :func:`harness._git.worktree_toplevel_matches` moved to a
 shared home in its own words, *a second copy of a check whose failure mode is
 the feature silently stops working is worse than a shared one*.
 

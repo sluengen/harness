@@ -53,8 +53,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from harness._git import run_git, worktree_toplevel_matches
 from harness._time import parse_iso_z
-from harness.cli._git import run_git, worktree_toplevel_matches
 from harness.state import store
 
 __all__ = [

@@ -33,7 +33,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git, teardown_worktree
+from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git, teardown_worktree
 from harness.worktree import worktree_path
 
 __all__ = [
@@ -207,7 +207,7 @@ def _create_merge_worktree(repo_root: Path, run_id: str, *, base_tip: str) -> Pa
     """Create the detached throwaway close-merge worktree at ``base_tip``.
 
     At ``.worktrees/harness/<run_id>-close`` — inside the area
-    :func:`harness.cli._git.teardown_worktree` guards, distinct from the run's own
+    :func:`harness._git.teardown_worktree` guards, distinct from the run's own
     worktree. Detached (no branch), so a concurrent base branch already checked out
     in the main tree is no obstacle. Writes relative worktree pointers (git ≥ 2.48)
     so the path resolves identically on host and in the container (CAL-866). Raises

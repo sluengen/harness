@@ -1,6 +1,11 @@
-"""Unit tests for the shared CLI git helper (CAL-606, CAL-610).
+"""Unit tests for the shared git helper (CAL-606, CAL-610).
 
-``harness.cli._git.rev_parse_head`` is the single home for the HEAD-SHA read
+Named for :mod:`harness._git`, which is where the module lives since #269 moved
+it out of the ``harness.cli`` package — it is consumed from below the CLI as well
+as inside it, and homing it in the CLI package made three lower modules
+un-importable first (``tests/unit/test_import_layering.py`` guards that).
+
+``harness._git.rev_parse_head`` is the single home for the HEAD-SHA read
 that the ``review`` gate binds to and the ``close`` gate checks — extracted
 from byte-for-byte copies that previously lived in ``review.py`` and
 ``close.py``. These tests pin the extracted contract directly so the helper has
@@ -19,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.cli._git import GitError, git_common_dir, rev_parse_head, run_git
+from harness._git import GitError, git_common_dir, rev_parse_head, run_git
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
