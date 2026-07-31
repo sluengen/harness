@@ -1,4 +1,4 @@
-# Harness — Retired Engine Design (SPEC §3, §5–§10, §12–§14, §15, §17–§18)
+# Harness — Retired Engine Design (SPEC §3, §5–§10, §12–§15, §17–§18)
 
 > **Superseded 2026-07-07** by the verb model — proposal [`harness-as-tool`](../proposals/harness-as-tool.md) (accepted 2026-06-09), decision recorded in [`architecture-principles`](../architecture-principles.md). This document is the re-homed body of the retired deterministic-engine sections of [`SPEC.md`](../../SPEC.md): §3 (Repository Structure), §5–§10 (workflow schema, state, merge semantics, identity, worktree isolation, execution engine), §12–§14 (SQLite schema, Docker, the steward example), §15 (Migration Plan), and §17–§18 (Open Questions, Success Criteria). The YAML-walking engine these sections describe was deleted in CAL-574; they are kept as design history only. The current design is SPEC §1–2 (verb model), §4 (core modules), and §11 (CLI); the current schema reference is [`run-ledger.md`](../features/run-ledger.md).
 

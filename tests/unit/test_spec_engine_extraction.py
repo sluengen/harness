@@ -43,8 +43,12 @@ _ENGINE = _REPO_ROOT / "specs" / "retired" / "spec-engine.md"
 #: completed, so it is preserved as design history rather than dropped).
 _RETIRED_SECTIONS = (3, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18)
 
-#: The sections that must remain live and intact in SPEC.md.
-_LIVE_SECTIONS = (1, 2, 4, 11)
+#: The sections that must remain live and intact in SPEC.md. §16 (Non-Goals) is
+#: here because #271 retired the sections either side of it: it is standing
+#: policy README.md and CONTEXT.md lean on, and it carries the "*Resolved:
+#: external*" boundary the retired §17.4 stated, so it is the one live section
+#: bracketed by stubs — the shape most at risk from a sloppy multi-line delete.
+_LIVE_SECTIONS = (1, 2, 4, 11, 16)
 
 #: A distinctive body sentence from each retired block — present in SPEC.md
 #: today; after the move each must live in ``spec-engine.md`` and be gone from
@@ -207,6 +211,83 @@ def test_retired_body_is_gone_from_spec_md(num: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# The currency map — SPEC.md's status banner and the re-homed doc's H1 both
+# enumerate the retired set, and must agree with the set the guards enforce.
+# ---------------------------------------------------------------------------
+
+
+#: A run of section cites: ``§3``, ``§5–§10`` (en dash, em dash or hyphen), with
+#: or without a second ``§``. Expanded to the full set so a range and its
+#: spelled-out equivalent are the same claim — ``§12–§15`` and
+#: ``§12, §13, §14, §15`` must not be able to disagree.
+_SECTION_RUN_RE = re.compile(r"§\s*(\d+)\s*(?:[–—-]\s*§?\s*(\d+))?")
+
+
+def _enumerated_sections(text: str) -> set[int]:
+    """Every section number a cite run names, ranges expanded."""
+    found: set[int] = set()
+    for low, high in _SECTION_RUN_RE.findall(text):
+        found.update(range(int(low), int(high or low) + 1))
+    return found
+
+
+def test_spec_status_banner_enumerates_exactly_the_retired_set() -> None:
+    """SPEC.md's own banner names the same retired sections the guards enforce.
+
+    The map is duplicated across the banner, the §3 banner, the spec-index row
+    and the re-homed doc's H1; a change that moves one and not the others leaves
+    the file contradicting itself, which is the defect #271 existed to fix.
+    """
+    status = next(
+        ln
+        for ln in _SPEC.read_text(encoding="utf-8").splitlines()
+        if ln.startswith("**Status:**")
+    )
+    run = re.search(r"((?:§\s*\d+\s*(?:[–—-]\s*§?\s*\d+)?[,\s]*(?:and\s+)?)+)described", status)
+    assert run is not None, (
+        "SPEC.md's **Status:** line must enumerate the retired sections "
+        "immediately before the word 'described'."
+    )
+    assert _enumerated_sections(run.group(1)) == set(_RETIRED_SECTIONS), (
+        "SPEC.md's status banner and _RETIRED_SECTIONS disagree about which "
+        "sections are retired — the banner is what a reader trusts."
+    )
+
+
+def test_rehomed_doc_h1_enumerates_exactly_the_retired_set() -> None:
+    """The re-homed doc's H1 names every section whose body it carries."""
+    h1 = next(
+        ln
+        for ln in _ENGINE.read_text(encoding="utf-8").splitlines()
+        if ln.startswith("# ")
+    )
+    assert _enumerated_sections(h1) == set(_RETIRED_SECTIONS), (
+        f"{_ENGINE_REL}'s H1 must enumerate exactly the sections it carries; it "
+        "is the first thing a reader arriving from a stub pointer sees."
+    )
+
+
+def test_live_and_retired_sections_partition_spec_md() -> None:
+    """Every numbered section is declared exactly once — live or retired.
+
+    §15 / §17 / §18 sat in *neither* list before #271, which is precisely how
+    three sections of retired design went on reading as live guidance.
+    """
+    numbered = {
+        int(m)
+        for m in re.findall(r"^## (\d+)\. ", _SPEC.read_text(encoding="utf-8"), re.M)
+    }
+    declared = set(_RETIRED_SECTIONS) | set(_LIVE_SECTIONS)
+    assert numbered == declared, (
+        f"sections declared by neither list: {sorted(numbered - declared)}; "
+        f"declared but absent from SPEC.md: {sorted(declared - numbered)}"
+    )
+    assert not set(_RETIRED_SECTIONS) & set(_LIVE_SECTIONS), (
+        "a section cannot be both live and retired"
+    )
+
+
+# ---------------------------------------------------------------------------
 # AC-2 — the re-homed doc carries the moved bodies, tracked and bannered.
 # ---------------------------------------------------------------------------
 
@@ -253,6 +334,28 @@ def test_retired_body_lives_in_spec_engine_doc(num: int) -> None:
 # ---------------------------------------------------------------------------
 # AC-3 — the live sections survive intact in SPEC.md.
 # ---------------------------------------------------------------------------
+
+
+def test_non_goals_still_carries_the_boundary_retired_17_deferred_to_it() -> None:
+    """§16 keeps the boundary that justified retiring §17 (#271).
+
+    §17.4 asked whether an external trigger source belongs in the harness and
+    answered "*Resolved: external*". Retiring §17 loses nothing **only because**
+    §16 states the same boundary as standing policy — no daemon, no built-in
+    scheduling, not a general-purpose agent framework. If that content ever left
+    §16, retiring §17 would have quietly dropped a live resolution, so the
+    justification is pinned here rather than left as prose in a changelog.
+    """
+    body = _section_body(16, _SPEC.read_text(encoding="utf-8"))
+    for claim, pattern in (
+        ("no long-running daemon", r"daemon"),
+        ("no built-in scheduling", r"[Bb]uilt-in scheduling"),
+        ("not a general-purpose agent framework", r"[Gg]eneral-purpose agent framework"),
+    ):
+        assert re.search(pattern, body), (
+            f"SPEC §16 no longer states '{claim}' — retired §17.4 deferred its "
+            "'Resolved: external' boundary to §16, so §16 must keep carrying it."
+        )
 
 
 @pytest.mark.parametrize("num", _LIVE_SECTIONS)
