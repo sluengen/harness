@@ -46,7 +46,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, rev_parse_head, run_git
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
@@ -140,6 +140,14 @@ async def _run_checkpoint(
         )
     resolved_run_id, worktree_path, _base_branch, worktree_branch = resolved
 
+    # Captured after run resolution, before any work — the start of the latency
+    # this verb records (#264). Reading the clock *after* resolution is what
+    # keeps the recorded duration from ever describing an invocation with no run
+    # behind it; the sibling verbs (``review``, ``close``) bound theirs the same
+    # way, so item 5 compares one quantity across verbs rather than four
+    # differently-bounded ones.
+    invoked_at = iso_z()
+
     # 2. Capture HEAD — the SHA the checkpoint records as durable.
     try:
         head_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
@@ -160,6 +168,10 @@ async def _run_checkpoint(
         raise _CheckpointError(f"checkpoint push failed: {exc}", 1) from exc
 
     # 4. Record the checkpoint event (the durable-WIP ledger signal reclaim reads).
+    #    One clock reading serves both the payload's ``pushed_at`` and the
+    #    duration's end, the rule ``close`` already sets: the row cannot disagree
+    #    with itself by the width of the write latency.
+    pushed_at = iso_z()
     try:
         await EventEmitter(db_path).emit(
             run_id=resolved_run_id,
@@ -168,8 +180,9 @@ async def _run_checkpoint(
                 run_id=resolved_run_id,
                 branch=worktree_branch,
                 pushed_sha=head_sha,
-                pushed_at=iso_z(),
+                pushed_at=pushed_at,
             ).model_dump(),
+            duration_ms=elapsed_ms(invoked_at, pushed_at),
         )
     except Exception as exc:  # noqa: BLE001
         raise _CheckpointError(f"failed to record checkpoint event: {exc}", 1) from exc

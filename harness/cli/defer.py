@@ -62,7 +62,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
@@ -133,7 +133,13 @@ class DeferOutput(BaseModel):
 
 
 async def _record_defer_event(
-    db_path: Path, ticket: str, reason: str, project: str | None, needs: str
+    db_path: Path,
+    ticket: str,
+    reason: str,
+    project: str | None,
+    needs: str,
+    *,
+    invoked_at: str,
 ) -> str:
     """Anchor a ``defer`` event in the ledger and return its run id.
 
@@ -144,6 +150,9 @@ async def _record_defer_event(
     on the same ticket is never blocked by a defer row.
     """
     run_id = generate_run_id()
+    # One clock reading serves the run row, the payload's ``deferred_at``, and the
+    # duration's end (#264) — the row cannot disagree with itself by the width of
+    # the write latency.
     now = iso_z()
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -166,6 +175,7 @@ async def _record_defer_event(
             needs=needs,
             deferred_at=now,
         ).model_dump(),
+        duration_ms=elapsed_ms(invoked_at, now),
     )
     return run_id
 
@@ -178,6 +188,12 @@ async def _run_defer(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to comment on, label, or assign, so the honest outcome is "skipped".
     """
+    # The start of the latency this verb records (#264): the window spans the
+    # queue-membership lookup and the three tracker writes, which is where a
+    # defer actually spends its time. Read before the tracker-less guard so the
+    # measurement never depends on which branch is taken.
+    invoked_at = iso_z()
+
     # Only ``tracker: none`` is a clean tracker-less skip. A configured backend
     # (linear or github) resolves a real client below; a *misconfigured* one
     # (missing credential/config) fails loudly there, never silently no-ops here.
@@ -259,7 +275,7 @@ async def _run_defer(
 
     # 5. Record the defer in the ledger (audit trail) — after the Linear write.
     run_id = await _record_defer_event(
-        db_path, ticket, reason, effective_project, needs.value
+        db_path, ticket, reason, effective_project, needs.value, invoked_at=invoked_at
     )
     return DeferOutput(
         ticket=ticket, outcome="deferred", project=effective_project, run_id=run_id

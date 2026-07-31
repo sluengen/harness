@@ -19,13 +19,14 @@ import hashlib
 import json
 import subprocess
 import unittest.mock as mock
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
+from harness._time import iso_z
 from harness.cli import app
 from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
@@ -125,12 +126,23 @@ async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT run_id, data_json FROM events WHERE event_type = 'design' "
-            "ORDER BY id"
+            "SELECT run_id, data_json, duration_ms FROM events "
+            "WHERE event_type = 'design' ORDER BY id"
         ) as cur,
     ):
         rows = await cur.fetchall()
-    return [{"run_id": r[0], "data": json.loads(r[1])} for r in rows]
+    return [
+        {
+            "run_id": r[0],
+            "data": json.loads(r[1]),
+            # The **column**, not ``json_extract(data_json, ...)``: #264 records
+            # the verb's latency in the typed column ``harness events`` already
+            # surfaces. Widening the dict is non-breaking — every existing caller
+            # indexes ``["data"]`` or ``["run_id"]``.
+            "duration_ms": None if r[2] is None else int(r[2]),
+        }
+        for r in rows
+    ]
 
 
 def design_events(db_path: Path) -> list[dict[str, Any]]:
@@ -929,3 +941,109 @@ def test_a_failed_comment_post_exits_1_and_records_nothing(
     # orchestrator branches on.
     assert "reason" not in payload
     assert "re-run" in payload["error"]
+
+
+# ---------------------------------------------------------------------------
+# #264 — the verb's own latency, in the ledger's typed duration column
+# ---------------------------------------------------------------------------
+
+
+def _pin_clock(elapsed_ms: int) -> Any:
+    """Patch ``design``'s ``iso_z`` with distinct successive readings.
+
+    A constant stub cannot distinguish one clock read from two, so an
+    implementation that read the clock a second time for ``designed_at`` would
+    still satisfy the equality — and the duration would pass vacuously at 0
+    (#261's lesson).
+    """
+    start = datetime(2026, 7, 31, 8, 0, 0, tzinfo=UTC)
+    readings = iter([iso_z(start), iso_z(start + timedelta(milliseconds=elapsed_ms))])
+    return mock.patch.object(
+        design_mod, "iso_z", lambda *_a, **_k: next(readings, iso_z(start))
+    )
+
+
+def test_design_records_its_duration_in_the_event_column(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-1: a successful design records the engine's latency as whole ms.
+
+    This is the case the ticket exists for — ``design``'s latency previously had
+    to be reconstructed by subtracting ``designed_at`` from ``invoked_at``, the
+    archaeology that raising the engine timeout 600 → 720 required.
+    """
+    _seed_open_run(db_path, repo)
+    with _pin_clock(1_500_000):
+        result = _invoke(
+            repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub()
+        )
+    assert result.exit_code == 0, result.output
+
+    (event,) = design_events(db_path)
+    assert event["duration_ms"] == 1_500_000
+    assert isinstance(event["duration_ms"], int)
+
+
+def test_design_payload_gains_no_duration_key(repo: Path, db_path: Path) -> None:
+    """One quantity, one home — the payload keeps its exact #263 key set.
+
+    ``invoked_at`` and ``designed_at`` stay (ADR 0009 keeps the two-timestamp
+    form because it survives a verb that dies before writing a duration), but the
+    derived duration lives only in the column.
+    """
+    _seed_open_run(db_path, repo)
+    with _pin_clock(1_500_000):
+        _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+
+    (event,) = design_events(db_path)
+    assert "duration_ms" not in event["data"]
+
+
+def test_failed_design_records_its_duration_alongside_the_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-2: the degrade-and-record path is timed too.
+
+    A killed engine is the *most* worth timing — it is the row that says how long
+    the run waited before giving up. The verb still exits ``EXIT_DESIGN_FAILED``
+    with its unchanged reason, so ADR 0007 D4 is not regressed.
+    """
+    _seed_open_run(db_path, repo)
+    runner = _make_raising_runner(design_mod.EngineTimeoutError(600.0))
+
+    with _pin_clock(600_000):
+        result = _invoke(repo, db_path, runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    (event,) = design_events(db_path)
+    assert event["duration_ms"] == 600_000
+    assert event["data"]["status"] == "failed"
+    assert event["data"]["reason"] == "engine_timeout"
+
+
+def test_design_latency_is_one_query_over_the_column(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-3: latency reads from ``duration_ms`` alone.
+
+    The measuring test for the ticket's actual goal: no ``json_extract``, no
+    ``designed_at - invoked_at`` subtraction. Item 5 (``harness stats``) is the
+    reader this makes possible, so the query shape is asserted, not just the
+    number.
+    """
+    _seed_open_run(db_path, repo)
+    with _pin_clock(1_500_000):
+        _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+
+    query = (
+        "SELECT MAX(duration_ms) FROM events "
+        "WHERE event_type = 'design' AND duration_ms IS NOT NULL"
+    )
+    assert "json_extract" not in query
+
+    async def _worst() -> int | None:
+        async with store.connect(db_path) as conn, conn.execute(query) as cur:
+            row = await cur.fetchone()
+        return None if row is None or row[0] is None else int(row[0])
+
+    assert _sync(_worst()) == 1_500_000

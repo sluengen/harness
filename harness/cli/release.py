@@ -52,7 +52,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.defer import DeferNeeds
@@ -114,7 +114,7 @@ class ReleaseOutput(BaseModel):
 
 
 async def _record_release_event(
-    db_path: Path, ticket: str, project: str | None, needs: str
+    db_path: Path, ticket: str, project: str | None, needs: str, *, invoked_at: str
 ) -> str:
     """Anchor a ``release`` event in the ledger and return its run id.
 
@@ -125,6 +125,8 @@ async def _record_release_event(
     never blocked.
     """
     run_id = generate_run_id()
+    # One clock reading serves the run row, the payload's ``released_at``, and the
+    # duration's end (#264) — see ``defer``, whose shape this mirrors.
     now = iso_z()
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -146,6 +148,7 @@ async def _record_release_event(
             needs=needs,
             released_at=now,
         ).model_dump(),
+        duration_ms=elapsed_ms(invoked_at, now),
     )
     return run_id
 
@@ -163,6 +166,9 @@ async def _run_release(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to write to, so the honest outcome is "skipped".
     """
+    # The start of the latency this verb records (#264) — see ``defer``.
+    invoked_at = iso_z()
+
     if tracker_backend(repo_root) == "none":
         return ReleaseOutput(
             ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
@@ -234,7 +240,7 @@ async def _run_release(
 
     # 5. Record the release in the ledger (audit trail) — after the tracker write.
     run_id = await _record_release_event(
-        db_path, ticket, effective_project, needs.value
+        db_path, ticket, effective_project, needs.value, invoked_at=invoked_at
     )
     return ReleaseOutput(
         ticket=ticket, outcome="released", project=effective_project, run_id=run_id
