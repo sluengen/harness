@@ -53,6 +53,14 @@ htmlcov/
 # .codex/ and .gemini/ are committed like .claude/ in this committed-mode repo.
 # Ignore only genuinely per-machine bits if any appear (e.g. an absolute-path hook config).
 
-# Verify-gate output captured for `harness review --gate-log` (#259) — a run
-# artifact, and an untracked one reads as a dirty worktree to the close gate.
+# Run artifacts a verb loop stages at the worktree root, because the wrapper
+# mounts only the invoking CWD into each verb's container so `/tmp` never
+# resolves there (`commands/harness.md`). Untracked each reads as a dirty
+# worktree to the close gate; `git add -A` publishes it instead. Not covered by
+# `.harness/` above — both land at the root.
+#   gate.log   — verify-gate output for `harness review --gate-log` (#259)
+#   /design.md — Step 1.5's design_markdown for `review --design-file`
+# `design.md` is root-anchored: it is a name worth tracking under docs/ or
+# specs/, unlike the distinctive `gate.log`.
 gate.log
+/design.md
