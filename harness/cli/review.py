@@ -77,7 +77,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import typer
 from pydantic import BaseModel
@@ -88,6 +88,7 @@ from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
     NO_DESIGN_REASON,
@@ -105,7 +106,7 @@ from harness.cli.review_protocol import (
     scan_submit_line,
 )
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import ReviewEventData
+from harness.events.payloads import REVIEW_INHERITED_FROM_PATH, ReviewEventData
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     convergence_check_required,
@@ -137,6 +138,10 @@ _REVIEW_TIER_DIMENSION = "review"
 # The bounded engine *subprocess driver* was split out to harness.cli._engine
 # (#211), shared with the ``design`` verb; ``_default_runner`` is now only the
 # review-specific translation of a timeout into this verb's infra failure.
+# The inherit *decision* — may a resumed run carry a predecessor's pass forward?
+# — was split out to harness.cli.review_inherit (#259) on the design_adopt.py
+# precedent; what stays here is the guarded early return and the recording, which
+# need ReviewOutput and EventEmitter and so have nowhere else to live.
 # What remains is verb glue with a single caller (`_run_review`): the breaker
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
@@ -234,9 +239,7 @@ async def _default_runner(
     via ``_ReviewError`` (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`).
     """
     try:
-        return await run_engine_subprocess(
-            cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout
-        )
+        return await run_engine_subprocess(cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout)
     except EngineTimeoutError as exc:
         raise _ReviewError(
             f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
@@ -500,11 +503,52 @@ async def _run_review(
     resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
         raise _ReviewError(
-            f"no open run found for worktree {repo_root} "
-            f"(run_id={run_id!r})" if run_id else f"no open run found for worktree {repo_root}",
+            f"no open run found for worktree {repo_root} (run_id={run_id!r})"
+            if run_id
+            else f"no open run found for worktree {repo_root}",
             2,
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
+    # Two pure ledger reads hoisted above the short-circuit below, and reused by
+    # the steps that already made them (2b and 1b) so nothing is read twice.
+    # Moving a read is behaviour-preserving: every refusal keeps its position.
+    ticket = await _read_ticket(db_path, resolved_run_id)
+    design_event = await _read_latest_design_event(db_path, resolved_run_id)
+
+    # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
+    #       from a preserved WIP branch and its HEAD is the exact commit a
+    #       predecessor already passed behind a green gate (#259, ADR 0008 D3).
+    #       Whether that is warranted lives in harness.cli.review_inherit; this is
+    #       the verb recording it.
+    #
+    #       Deliberately FIRST — before the spend breakers and the verify-gate
+    #       evidence check. Both exist to bound or certify the cost of running an
+    #       engine over an unreviewed tree, and this path runs no engine over a
+    #       tree already reviewed: charging it a review cycle would spend budget
+    #       nothing consumed, and demanding fresh gate evidence would re-run the
+    #       gate over a byte-identical tree, which is the second cost this path
+    #       removes.
+    #
+    #       What it must NOT skip is a refusal about *this run's own state*, so
+    #       the resolver takes the design event and the supplied gate exit as
+    #       inputs and declines on either: a run with no recorded design still
+    #       meets ``no_design``, and a caller reporting a red gate still meets
+    #       ``gate_failed``, both from the normal path below. The safety the
+    #       ordering rests on is otherwise entirely in the conditions — resume
+    #       provenance, a clean worktree, an exact SHA match against another run
+    #       for the same ticket, and that source pass's own gate evidence, the
+    #       same predicate ``close`` will apply to the event this writes.
+    inherited = await resolve_inheritance(
+        db_path=db_path,
+        run_id=resolved_run_id,
+        ticket=ticket,
+        worktree_path=Path(worktree_path),
+        design_recorded=design_event is not None,
+        gate_exit=gate_exit,
+        created_at=iso_z(),
+    )
+    if inherited is not None:
+        return await _record_inherited_review(repo_root, db_path, ticket, inherited)
 
     # 1a. Enforce the ledger-backed spend breakers BEFORE running an engine
     #     (CAL-906). This verb is the loop boundary, so the cycle ceiling and the
@@ -571,7 +615,6 @@ async def _run_review(
                 reason=DESIGN_FILE_OUTSIDE_WORKSPACE_REASON,
             ) from exc
 
-    design_event = await _read_latest_design_event(db_path, resolved_run_id)
     design_gate = resolve_design_gate(
         design_event, await asyncio.to_thread(_read_design_file, design_file)
     )
@@ -639,7 +682,6 @@ async def _run_review(
     #     an escalating or red-gated run leaves the ticket where it stopped. The
     #     move is best-effort: a tracker-less run or a Linear hiccup never loses
     #     the review (the verdict is the record; the transition is bookkeeping).
-    ticket = await _read_ticket(db_path, resolved_run_id)
     await _park_ticket(repo_root, ticket, to="in_review")
 
     # 2c. Resolve the claude-engine model tier (#177): an explicit --model
@@ -798,24 +840,80 @@ async def _run_review(
     )
 
 
+async def _record_inherited_review(
+    repo_root: Path,
+    db_path: Path,
+    ticket: str | None,
+    inherited: InheritedReview,
+) -> ReviewOutput:
+    """Record an inherited pass and emit it as an ordinary :class:`ReviewOutput`.
+
+    **No engine runs.** The ticket is still parked In Review, best-effort: CAL-1103's
+    invariant is that ``review`` owns the In-Review state, and a ``pass`` leaves it
+    there for ``close`` — an inherited pass is not an exception to where the ticket
+    ends up, only to how it got there.
+
+    The printed contract is unchanged, so the orchestrator's Step 3 handling needs
+    no adjustment and cannot tell an inherited pass from an earned one. The printed
+    ``engine`` is the source's — the rule the usage-limit fallback already sets
+    (CAL-702): ``engine`` names the engine that produced the verdict. That no engine
+    ran *here* is on the **ledger** (``inherited_from``) and on stderr, where an
+    operator reading a tick log will see it.
+    """
+    event = inherited.event
+    emitter = EventEmitter(db_path)
+    try:
+        await emitter.emit(
+            run_id=event.run_id,
+            event_type="review",
+            data=event.model_dump(exclude_none=True),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _ReviewError(f"failed to record review event: {exc}", 1) from exc
+
+    await _park_ticket(repo_root, ticket, to="in_review")
+    typer.echo(
+        f"note: inherited the passing review recorded for run "
+        f"{inherited.source_run_id} against this exact HEAD "
+        f"({event.reviewed_sha[:12]}); no review engine ran",
+        err=True,
+    )
+    return ReviewOutput(
+        verdict="pass",
+        issues=event.issues,
+        reviewed_sha=event.reviewed_sha,
+        run_id=event.run_id,
+        # Narrowed by review_inherit, which declines a source whose engine is
+        # outside the literal — so this cast asserts a checked fact.
+        engine=cast("Engine", event.engine),
+        convergence_check_required=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Ledger reads for the spend breakers (CAL-906)
 # ---------------------------------------------------------------------------
 
 
 async def _count_review_events(db_path: Path, run_id: str) -> int:
-    """Count the ``review`` events already recorded for ``run_id``.
+    """Count the engine-run ``review`` events already recorded for ``run_id``.
 
     This is the prior review→fix cycle count the cycle ceiling is measured
     against. A missing DB (no run yet) counts as zero.
+
+    Events carrying ``inherited_from`` are **excluded** (#259): an inherited pass
+    invokes no engine, so counting it would charge a run for spend it never
+    incurred — and would let a resumed run's very first action, which costs
+    nothing, eat a cycle of the budget it needs for real fixes.
     """
     if not db_path.exists():
         return 0
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review'",
-            (run_id,),
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review' "
+            "AND json_extract(data_json, ?) IS NULL",
+            (run_id, REVIEW_INHERITED_FROM_PATH),
         ) as cur,
     ):
         row = await cur.fetchone()

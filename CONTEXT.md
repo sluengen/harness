@@ -53,7 +53,7 @@ paths:
   design_system: design/   # the eight-layer design system for docs/index.html (templates/design-system.md, #241)
 architecture_watchlist:   # gravity wells — a change touching one carries a `Watchlist trigger` section (architecture skill)
   files:
-    - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107 (CAL-1014)
+    - harness/cli/review.py   # verb orchestration + usage-limit fallback + breaker/gate/tracker glue; the engine-protocol layer (prompt, SUBMIT parser, per-engine builder, failure detectors) split out to review_protocol.py in CAL-1107, and in #259 the inherit *decision* (may a resumed run carry a predecessor's pass forward?) to review_inherit.py on the design_adopt.py precedent — the verb keeps only the guarded early return and the recording, which need ReviewOutput/EventEmitter (CAL-1014)
     - harness/cli/close.py   # the close gate (_evaluate_gate) + ledger finalization (_mark_run_closed); the git integrate/merge/push concern split out to close_merge.py in CAL-1154 (throwaway-worktree merge), the tracker Done-transition mapping to close_tracker.py in #251, and in #255 the gate's *ledger question* (the passing-review lookup + the verify-gate evidence rule, formerly _has_gate_evidence) to _review_gate.py — shared with reclaim --stale's closable predicate so the sweep's prediction and this gate cannot disagree; what stays here is the mapping onto close's own RefusalReason messages. All three retired the # size: justification (now ~450 lines); tied for the most churn in the package (CAL-1139)
 env:
   file: .env

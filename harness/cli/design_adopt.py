@@ -39,8 +39,9 @@ import json
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from harness.cli._runs import read_run_resumed_from
 from harness.cli.design_protocol import design_content_hash
-from harness.cli.design_tracker import fetch_prior_design, read_run_resumed_from
+from harness.cli.design_tracker import fetch_prior_design
 from harness.events.payloads import (
     DESIGN_HASH_PATH,
     DESIGN_STATUS_PATH,

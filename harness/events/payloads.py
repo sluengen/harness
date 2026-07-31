@@ -75,6 +75,20 @@ class ReviewEventData(BaseModel):
     ``--design-file``" and "passed one the container could not read" recorded
     identically: before, only the stderr warning (easy to miss in captured
     output) told the two apart, and only for the read-failure case.
+
+    ``inherited_from`` (#259) is the ``run_id`` of the run whose passing review
+    this event carries forward, set only when ``harness review`` took ADR 0008's
+    inherit path — a resumed run whose HEAD is the exact commit a predecessor
+    already passed. On an inherited event every field describing *the review* is
+    the source's, carried verbatim: ``reviewed_sha`` (the SHA binding the close
+    gate rests on), the ``gate_*`` evidence (without which ``close`` refuses the
+    inherited pass ``no_gate_evidence``), and the ``engine`` that produced the
+    verdict. Only ``run_id``, ``created_at`` and this field describe the
+    inheritance.
+
+    It is also what keeps the spend breakers honest: ``review``'s cycle counter
+    excludes events carrying it (:data:`REVIEW_INHERITED_FROM_PATH`), because an
+    inherited pass runs no engine and so spends nothing there is a budget for.
     """
 
     run_id: str
@@ -94,6 +108,7 @@ class ReviewEventData(BaseModel):
     fallback_from: str | None = None
     commit_message: str | None = None
     deferred_brief: str | None = None
+    inherited_from: str | None = None
 
 
 class CheckpointEventData(BaseModel):
@@ -278,6 +293,11 @@ REVIEW_VERDICT_PATH = _field_path(ReviewEventData, "verdict")
 #: ``gate_reason`` is not the honest "no gate configured" — is refused.
 REVIEW_GATE_RAN_PATH = _field_path(ReviewEventData, "gate_ran")
 REVIEW_GATE_REASON_PATH = _field_path(ReviewEventData, "gate_reason")
+
+#: The path ``review``'s cycle counter excludes on (#259): an inherited pass ran
+#: no engine, so counting it against the review-cycle ceiling would charge a run
+#: for spend it never incurred.
+REVIEW_INHERITED_FROM_PATH = _field_path(ReviewEventData, "inherited_from")
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")
