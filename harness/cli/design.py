@@ -96,7 +96,11 @@ from harness.cli.design_tracker import (
     read_run_ticket,
 )
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import DesignEventData
+from harness.events.payloads import (
+    MALFORMED_SUBMIT_REASON,
+    NO_SUBMIT_REASON,
+    DesignEventData,
+)
 from harness.loop_budget import load_loop_budget
 from harness.state import store
 
@@ -138,9 +142,13 @@ EXIT_DESIGN_FAILED = 3
 # distinguishable failure gets its own tag.
 ENGINE_TIMEOUT_REASON = "engine_timeout"
 ENGINE_ERROR_REASON = "engine_error"
-NO_SUBMIT_REASON = "no_submit"
-MALFORMED_SUBMIT_REASON = "malformed_submit"
 NO_TICKET_SPEC_REASON = "no_ticket_spec"
+# The two SUBMIT-protocol tags are NOT declared here: ``review`` classifies the
+# same failure the same way from #270, so they live in
+# :mod:`harness.events.payloads` beside the other shared telemetry literals and
+# are imported above. Re-exported under these names so every existing
+# ``design.NO_SUBMIT_REASON`` reference — and the verb's own error JSON — keeps
+# resolving to the identical string it always did.
 
 # Maps the design protocol's two failure sentinels onto their reason tags. The
 # protocol layer reports failures as human sentinels (it is pure and knows

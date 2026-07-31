@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.17 -->
+<!-- guidance:harness@0.2.18 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -129,6 +129,8 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 **In-container, the review engine is Claude; `--engine codex` is host-only** (the harness's in-container-review-engine decision, ADR 0002). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude.
 
 **The claude engine's model is a per-ticket tier, not fixed** (ADR 0005, #177). `review` resolves the ticket's `review:<tier>` label (`sonnet` default, `opus` opt-in) and passes it to the claude engine as `--model <alias>`; codex is unaffected. Pass `--model <alias>` yourself to override the resolved tier (host/testing only).
+
+**A review that produced no verdict is not a `fail`.** If the engine emits no parseable `SUBMIT` line, the verb exits **3** with `reason=no_submit` (no `SUBMIT:` line anywhere) or `reason=malformed_submit` (one was seen but none parsed) and prints no verdict at all (#270). Treat it exactly like the other infra walls (`engine_timeout`, `sandbox_init_failure`): **just re-run `harness review`**. It consumes no review cycle, records a refusal rather than a verdict, and leaves the ticket In Review, so nothing is lost and there is nothing to fix — the reviewer never said anything about the diff. Do not go looking for the issue behind it; before #270 this arrived as a `fail` whose only "finding" named the protocol failure, which is what made it worth reading as a defect rather than as noise.
 
 Act on `verdict`:
 

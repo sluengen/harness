@@ -26,9 +26,11 @@ Flow (one ``asyncio.run`` event loop for all I/O):
    a non-zero exit, CAL-702) fall back **once** to the Claude engine; an ordinary
    Codex failure does *not* fall back.  Scan the resulting stdout for the first
    ``SUBMIT:`` JSON line.
-4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line →
-   ``verdict='fail'`` with the sentinel issue
-   "reviewer emitted no valid SUBMIT line".
+4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line
+   means the reviewer delivered no verdict, so it exits ``EXIT_INFRA_FAILURE``
+   with ``reason`` ``no_submit`` / ``malformed_submit`` rather than recording a
+   ``fail`` (#270) — the same classification the timeout and sandbox walls carry.
+   It therefore costs no review cycle and leaves the ticket In Review.
 5. Append a ``review`` event carrying ``run_id``, ``reviewed_sha``, ``verdict``,
    ``issues``, ``engine`` (the engine that produced the verdict — ``claude``
    after a fallback), optional ``fallback_from`` (the engine a usage-limit
@@ -105,7 +107,9 @@ from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
+    MALFORMED_SUBMIT_SENTINEL,
     NO_DESIGN_REASON,
+    NO_SUBMIT_SENTINEL,
     Engine,
     Runner,
     RunResult,
@@ -122,6 +126,8 @@ from harness.cli.review_protocol import (
 from harness.cli.review_telemetry import record_terminal_refusal
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    MALFORMED_SUBMIT_REASON,
+    NO_SUBMIT_REASON,
     REVIEW_INHERITED_FROM_PATH,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
@@ -338,6 +344,17 @@ DESIGN_FILE_OUTSIDE_WORKSPACE_REASON = "design_file_outside_workspace"
 # no review event is recorded and the run stops with a distinct, greppable tag
 # rather than hanging until an external kill (exit 143).
 ENGINE_TIMEOUT_REASON = "engine_timeout"
+
+# Maps the review protocol's two failure sentinels onto their reason tags (#270),
+# exactly as ``design`` maps its own pair. The protocol layer reports failures as
+# human sentinels — it is pure and knows nothing of exit codes — and the verb owns
+# the machine-readable contract. The tags themselves are shared with ``design``
+# (harness.events.payloads) so one protocol failure has one name across both
+# engine verbs.
+_SUBMIT_FAILURE_REASONS = {
+    NO_SUBMIT_SENTINEL: NO_SUBMIT_REASON,
+    MALFORMED_SUBMIT_SENTINEL: MALFORMED_SUBMIT_REASON,
+}
 
 
 async def _invoke_engine(
@@ -830,11 +847,39 @@ async def _review_resolved_run(
             model=resolved_model,
         )
 
-    # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
-    #    full stdout/stderr stays local to the verb — only the verdict escapes.
+    # 4. Parse the SUBMIT line.  The engine's full stdout/stderr stays local to
+    #    the verb — only the verdict escapes.
     parsed = scan_submit_line(result.stdout)
 
-    # 4a. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
+    # 4a. A reviewer that emitted no parseable SUBMIT line delivered no verdict,
+    #     so this is INFRA, not a rejected diff (#270) — the same classification
+    #     the timeout and both sandbox walls already carry, on the same stated
+    #     principle. Recorded as a ``fail`` it was three things at once: one of
+    #     six review cycles spent on nothing, a spurious bounce of the ticket back
+    #     to In Progress, and 33% of the ``fail`` rate #262 made queryable being
+    #     protocol noise indistinguishable from a real finding.
+    #
+    #     Raising here gets all three from machinery that already exists: the
+    #     ``except _ReviewError`` in :func:`_review` writes #262's refusal shape
+    #     (``outcome='failed'`` + ``reason``, no ``verdict`` key), which
+    #     :func:`_count_review_events` excludes and the close gate cannot match;
+    #     and the In-Progress bounce at step 5b is simply never reached, leaving
+    #     the ticket In Review exactly where the other infra walls leave it.
+    #
+    #     Branching on ``submit_failure`` rather than on ``issues[0]`` is
+    #     deliberate: a reviewer whose genuine finding happened to be worded like
+    #     the sentinel must stay a ``fail``.
+    if parsed.submit_failure is not None:
+        raise _ReviewError(
+            f"review engine produced no verdict: {parsed.submit_failure}. This is "
+            f"an engine protocol failure, not a code-review verdict — the "
+            f"reviewer never delivered one, so there is nothing to fix. No review "
+            f"cycle was consumed; re-run review again.",
+            EXIT_INFRA_FAILURE,
+            reason=_SUBMIT_FAILURE_REASONS[parsed.submit_failure],
+        )
+
+    # 4b. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
     #     sandbox-blocked non-review, not a shippable defer (CAL-924): ``codex
     #     exec`` exited 0, but every read-only command it ran to inspect the diff
     #     was killed by bwrap, so it reviewed nothing.  The stderr/non-zero
@@ -857,7 +902,7 @@ async def _review_resolved_run(
             reason=SANDBOX_INIT_REASON,
         )
 
-    # 4b. The convergence advisory (CAL-906): this review is cycle
+    # 4c. The convergence advisory (CAL-906): this review is cycle
     #     ``prior_review_count + 1``. A fail past the unconditional window and
     #     below the ceiling tells the build agent to assess whether the fixes are
     #     converging before spending another cycle. A bounded bool — no engine

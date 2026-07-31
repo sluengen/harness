@@ -54,6 +54,7 @@ from harness.cli._review_gate import certify_head
 from harness.cli.review_protocol import NO_DESIGN_REASON, NO_SUBMIT_SENTINEL
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    NO_SUBMIT_REASON,
     REVIEW_OUTCOME_FAILED,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
@@ -360,17 +361,24 @@ def test_a_raise_site_with_no_reason_records_the_unexpected_tag(
     assert "verdict" not in events[0]
 
 
-def test_malformed_submit_records_one_event_as_a_sentinel_fail(
+def test_malformed_submit_records_one_event_as_an_infra_refusal(
     repo: Path, db_path: Path
 ) -> None:
-    """The path the ticket calls unrecorded is in fact already recorded.
+    """The separate defect this test used to defer to is now fixed (#270).
 
-    ``scan_submit_line`` maps a missing/unparseable SUBMIT to a ``fail`` carrying
-    :data:`NO_SUBMIT_SENTINEL`, so this is an ``ok`` outcome (a verdict *was*
-    produced) whose issue names the protocol failure. Pinning it here is what
-    stops a later change quietly reclassifying it — a reviewer protocol failure
-    that reads as a real ``fail`` costs the run a review cycle, which is a
-    separate defect from this ticket's denominator.
+    It pinned the then-current behaviour deliberately — a missing SUBMIT recorded
+    as an ``ok`` outcome carrying a ``fail`` verdict — and its docstring named
+    the defect it was setting aside: *a reviewer protocol failure that reads as a
+    real* ``fail`` *costs the run a review cycle*. #270 reclassified that path as
+    infra, so what belongs here is #262's own property, unchanged in substance:
+    the path still records **exactly one** event. Only which shape it is moved,
+    from a verdict to a refusal — the same shape
+    :func:`test_engine_timeout_records_one_event_and_still_exits_three` asserts,
+    which is the point, since both are engines that produced no verdict.
+
+    The reclassification's own behaviour — the exit code, the two ``reason``
+    tags, and the review cycle that is not consumed — is pinned in
+    ``test_review_no_submit_infra.py``.
     """
     _write_context(repo)
     _seed_run(db_path, repo)
@@ -378,12 +386,15 @@ def test_malformed_submit_records_one_event_as_a_sentinel_fail(
     runner = _runner(stdout="I have opinions but no SUBMIT line\n")
     result = _invoke(repo, db_path, runner, *_green(repo))
 
-    assert result.exit_code == 0
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
     events = _events(db_path)
     assert len(events) == 1, events
-    assert events[0]["verdict"] == "fail"
-    assert events[0]["issues"] == [NO_SUBMIT_SENTINEL]
-    assert events[0][REVIEW_OUTCOME_PATH.removeprefix("$.")] == REVIEW_OUTCOME_OK
+    assert events[0][REVIEW_OUTCOME_PATH.removeprefix("$.")] == REVIEW_OUTCOME_FAILED
+    assert events[0]["reason"] == NO_SUBMIT_REASON
+    assert "verdict" not in events[0]
+    # The sentinel still names the failure to a human — now in the refusal's
+    # ``detail``, rather than as an issue on a verdict never delivered.
+    assert NO_SUBMIT_SENTINEL in events[0]["detail"]
 
 
 # ---------------------------------------------------------------------------
