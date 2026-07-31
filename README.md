@@ -13,7 +13,7 @@ harness owns only what an audit trail depends on:
 
 - **SHA-bound review verdicts** — a `pass` binds to the exact git SHA it reviewed,
   and the `close` gate refuses to merge anything a fresh review didn't cover.
-- **An append-only ledger** — each run's lifecycle (`start` / `review` / `close`)
+- **An append-only ledger** — each run's lifecycle (`start` / `design` / `review` / `close`)
   is a row plus an event log in SQLite; that ledger *is* the audit trail.
 - **Builder / recorder separation** — the agent that promises delivery is not the
   one that records it, which keeps the canonical record honest.
@@ -26,7 +26,7 @@ It is **dogfooded on its own development**: every change to the harness is built
 running the harness on a ticket, through the same `start → design → review → close` verbs it
 ships.
 
-**Status:** verb model (`start` / `review` / `close`). The earlier deterministic
+**Status:** verb model (`start` / `design` / `review` / `close`). The earlier deterministic
 YAML workflow engine was retired in CAL-574; this README and [`SPEC.md`](./SPEC.md)
 §1–2 describe the current model.
 
@@ -42,9 +42,10 @@ builder/recorder split — are the portable part; the plumbing around them is no
 
 ## What it does
 
-A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: three verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
+A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: four verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
+- **`design`** — run a read-only design engine (a fresh, top-tier context, uncontaminated by the session's orchestration state) against the worktree and the ticket, and record the resulting design in three places: the ticket as a marked comment, the ledger as a `design` event carrying its content hash and grounded SHA, and stdout. Unconditional — every run; a *failed* attempt still satisfies `review`'s enforcement, so an infra flake never blocks a run.
 - **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
@@ -66,7 +67,7 @@ trigger ( /harness run CAL-42  |  Hermes† )
    │  launches a Claude session for the ticket
    ▼
 Claude session — orchestrator + implementer
-   start → [implement] → review → (fix → review)* → close
+   start → design → [implement] → review → (fix → review)* → close
    │  shells out to verbs (one-shot `docker run`)
    ▼
 harness verbs:  start / design / review / close   +   SQLite ledger   +   close gate
@@ -91,11 +92,12 @@ uv sync --extra dev          # resolve the dev dependency group (needs uv)
 uv run --extra dev pytest    # the full gate: unit + integration tests
 ```
 
-A verb loop, end to end, is three commands — you (or an agent) do the implementing
+A verb loop, end to end, is four commands — you (or an agent) do the implementing
 in between:
 
 ```bash
 harness start CAL-42                      # open the run: worktree + ledger row + ticket → In Progress
+harness design --run-id <run_id>          # design engine records the change spec's Design section
 # ... write code + tests in the worktree, test-first ...
 harness review --run-id <run_id>          # a verdict bound to the current HEAD; fix + re-run until pass
 harness close CAL-42 --run-id <run_id>    # gate → merge → ticket Done
@@ -154,6 +156,7 @@ By hand, the same loop is:
 
 ```bash
 harness start CAL-42                      # opens the run; prints run_id + worktree_path
+harness design --run-id <run_id>          # design engine records the change spec's Design section
 cd <worktree_path>                        # implement: write code + tests, test-first
 harness review --run-id <run_id>          # review verdict bound to HEAD; fix + re-run until pass
 harness close CAL-42 --run-id <run_id>    # gate → commit / merge / push → ticket Done

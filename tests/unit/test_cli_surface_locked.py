@@ -50,6 +50,7 @@ from tests._gitutil import tracked_py_sources
 #: it, and under a symlinked checkout an unresolved prefix would not match.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC = REPO_ROOT / "SPEC.md"
+README = REPO_ROOT / "README.md"
 HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 
@@ -377,30 +378,41 @@ def _subset_enumeration_offenders(text: str) -> list[list[str]]:
     ]
 
 
-def test_no_live_spec_section_handlists_a_command_subset() -> None:
-    """No live SPEC section enumerates a *proper subset* of a guarded command set.
+#: Live docs held to the subset-enumeration rule. Opt-in, *not* every doc
+#: ``_live_docs()`` returns — widening is per-doc work, added here in the same
+#: change that corrects its prose (#249: README joins SPEC).
+_ENUMERATION_GUARDED_DOCS = (SPEC, README)
+
+
+@pytest.mark.parametrize(
+    "doc", _ENUMERATION_GUARDED_DOCS, ids=lambda p: str(p.relative_to(REPO_ROOT))
+)
+def test_no_live_doc_handlists_a_command_subset(doc: Path) -> None:
+    """No live guarded doc enumerates a *proper subset* of a guarded command set.
 
     AC for CAL-810: §11 is the single guarded source of the command set; any
     other live section that slash-lists the verbs (as §1 principle 5 did) drifts
     the moment a verb is added. Extended in #226 to the audited lifecycle as a
     second guarded set, once ADR 0007 made that set mutable: the *complete*
-    audited set is allowed, a proper subset of it is not.
+    audited set is allowed, a proper subset of it is not. Widened in #249 from
+    SPEC alone to every doc in ``_ENUMERATION_GUARDED_DOCS``, after this exact
+    slash-list idiom survived unguarded in README.md.
 
     A complete list and §11's fenced surface are allowed; the ledger ``runs`` /
     ``events`` tables pair names no audited verb and is allowed; a lone audited
     verb beside a non-registered token is a reference, not an enumeration, and is
     allowed. A proper subset of either guarded set is not.
     """
-    offenders = _subset_enumeration_offenders(_live_text(SPEC))
+    offenders = _subset_enumeration_offenders(_live_text(doc))
     assert not offenders, (
-        "A live SPEC section hand-lists a proper subset of a guarded command "
-        f"set: {offenders}. The guarded sets are the registered command surface "
-        f"({sorted(_registered_surface())}) and the audited lifecycle verbs "
-        f"({sorted(_AUDITED_VERBS)}); §11 is the single guarded source of the "
-        "command set (`test_spec_command_surface_equals_registered`). Name the "
-        "command categories and defer the exact set to §11, or name the audited "
-        "lifecycle in full — do not repeat a slash-list that goes stale the next "
-        "time a verb is added (CAL-810, #226)."
+        f"{doc.relative_to(REPO_ROOT)} hand-lists a proper subset of a guarded "
+        f"command set: {offenders}. The guarded sets are the registered command "
+        f"surface ({sorted(_registered_surface())}) and the audited lifecycle "
+        f"verbs ({sorted(_AUDITED_VERBS)}); §11 is the single guarded source of "
+        "the command set (`test_spec_command_surface_equals_registered`). Name "
+        "the command categories and defer the exact set to §11, or name the "
+        "audited lifecycle in full — do not repeat a slash-list that goes stale "
+        "the next time a verb is added (CAL-810, #226, #249)."
     )
 
 
@@ -497,6 +509,29 @@ def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> No
     """
     doctored = _inject_into_section(SPEC.read_text(), "## 3. ", _STALE_AUDITED_LIST)
     assert not _subset_enumeration_offenders(_spec_live_text(doctored))
+
+
+def test_a_stale_audited_slash_list_in_live_readme_is_caught() -> None:
+    """The #249 widening is non-vacuous: README's new param catches a stale list.
+
+    Without this, ``_ENUMERATION_GUARDED_DOCS``'s new ``README`` member asserted
+    only that today's corrected README is clean — it would have stayed green if
+    the widening were reverted, since the parametrization would simply stop
+    generating the case. Injecting the offending idiom proves the param is
+    actually scanning README.
+
+    ``_live_text(README)`` is identity (only ``SPEC`` gets section-scoped), so
+    passing the doctored text straight to the predicate travels the guard's own
+    path rather than a re-implementation of it.
+    """
+    assert README in _ENUMERATION_GUARDED_DOCS, (
+        "README must stay in the guarded set — dropping it would silently "
+        "delete the parametrized case rather than fail it (#249)."
+    )
+    doctored = README.read_text().replace(
+        "## What it does", _STALE_AUDITED_LIST + "\n## What it does", 1
+    )
+    assert _subset_enumeration_offenders(doctored) == [["close", "review", "start"]]
 
 
 def _real_options() -> dict[str, set[str]]:
