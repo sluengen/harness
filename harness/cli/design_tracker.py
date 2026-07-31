@@ -42,7 +42,6 @@ __all__ = [
     "fetch_ticket_spec",
     "post_design_comment",
     "read_run_ticket",
-    "read_run_resumed_from",
 ]
 
 
@@ -79,26 +78,6 @@ async def read_run_ticket(db_path: Path, run_id: str) -> str | None:
     async with (
         store.connect(db_path) as conn,
         conn.execute("SELECT ticket FROM runs WHERE run_id = ?", (run_id,)) as cur,
-    ):
-        row = await cur.fetchone()
-    if row is None or row[0] is None:
-        return None
-    return str(row[0])
-
-
-async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
-    """The preserved WIP branch this run resumed from, or ``None`` (#258).
-
-    ADR 0008's F2 gate, read off the run row ``start`` wrote. ``None`` covers
-    both a clean start and a ``--resume`` that fell back — in either case the
-    tree a prior design described is not what this worktree holds, so there is
-    nothing to inherit.
-    """
-    if not db_path.exists():
-        return None
-    async with (
-        store.connect(db_path) as conn,
-        conn.execute("SELECT resumed_from FROM runs WHERE run_id = ?", (run_id,)) as cur,
     ):
         row = await cur.fetchone()
     if row is None or row[0] is None:
@@ -160,8 +139,7 @@ async def fetch_ticket_spec(repo_root: Path, ticket: str | None) -> tuple[str, s
         client = tracker_client(repo_root)
     except TrackerConfigError as exc:
         raise TicketSpecUnavailableError(
-            f"the tracker could not be resolved, so ticket {ticket}'s spec is "
-            f"unreadable: {exc}"
+            f"the tracker could not be resolved, so ticket {ticket}'s spec is unreadable: {exc}"
         ) from exc
     if client is None:
         raise TicketSpecUnavailableError(
