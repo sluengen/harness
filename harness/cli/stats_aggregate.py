@@ -46,7 +46,7 @@ from typing import Any
 
 import aiosqlite
 
-from harness._time import parse_iso_z
+from harness._time import iso_z, parse_iso_z
 from harness.cli.stats_report import (
     EngineReport,
     EnginesReport,
@@ -113,6 +113,24 @@ assert VERB_EVENT_TYPES <= EVENT_TYPES, "every verb type must be a writable type
 #: breakdown would empty out with nothing failing.
 _REASON_PATH = CLOSE_REASON_PATH
 
+#: Each discriminating verb's ``SELECT`` alias in :func:`_fetch_events`. The
+#: keys must be exactly the verbs whose :data:`VERB_OUTCOME_PATHS` entry is not
+#: ``None`` — asserted below, because giving a verb a discriminator in one
+#: mapping and forgetting the other would leave its outcomes silently unread and
+#: every one of its rows scored ``ok``.
+_OUTCOME_ALIASES: dict[str, str] = {
+    "review": "review_outcome",
+    "close": "close_outcome",
+    "design": "design_status",
+}
+
+_DISCRIMINATING_VERBS = {v for v, path in VERB_OUTCOME_PATHS.items() if path is not None}
+if set(_OUTCOME_ALIASES) != _DISCRIMINATING_VERBS:  # pragma: no cover - import guard
+    raise ValueError(
+        "every verb with an outcome path needs a column alias to read it back: "
+        f"{sorted(_OUTCOME_ALIASES)} != {sorted(_DISCRIMINATING_VERBS)}"
+    )
+
 _WORKFLOW_FAILED_REASON_PATH = f"$.{WORKFLOW_FAILED_REASON_KEY}"
 if _WORKFLOW_FAILED_REASON_PATH != _REASON_PATH:  # pragma: no cover - import guard
     raise ValueError(
@@ -168,21 +186,26 @@ def _latency(samples: Sequence[int]) -> LatencyReport:
     )
 
 
-def _bucket(outcome: str | None, path: str | None) -> str:
+def _bucket(outcome: str | None) -> str:
     """Which of the three buckets a row falls in.
 
-    ``path is None`` marks a verb that writes only on success. Otherwise a
-    missing key ``COALESCE``s to ``ok`` — every row written before its verb
-    gained the discriminator was in fact a success, which is what keeps the
-    historical ledger from reading as a wall of unknowns.
+    A missing value ``COALESCE``s to ``ok``, and that one rule covers two cases
+    at once. Every row written before its verb gained the discriminator was in
+    fact a success, which is what keeps the historical ledger from reading as a
+    wall of unknowns — and a verb that writes an event *only* on success
+    (``checkpoint`` / ``defer`` / ``release``, whose payloads carry no such
+    field at all) reads ``None`` here for the same reason and lands in the same
+    bucket. An explicit "this verb has no discriminator" branch was tried and
+    removed: nothing could distinguish it from this line, which makes it a
+    second copy of it rather than a second rule. The fact it was expressing is
+    already carried by :data:`VERB_OUTCOME_PATHS`, where those three map to
+    ``None``.
 
     Anything unrecognised reads as ``failed``, the conservative direction: a
     verb that recorded something this reader does not understand did not
     demonstrably succeed, and scoring it ``ok`` would inflate the very rate the
     command exists to report.
     """
-    if path is None:
-        return "ok"
     if outcome is None or outcome == CLOSE_OUTCOME_OK:
         return "ok"
     if outcome == CLOSE_OUTCOME_REFUSED:
@@ -225,12 +248,13 @@ async def _fetch_runs(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
 
 
 def _outcome_of(row: dict[str, Any]) -> str | None:
-    """The row's own discriminator value, read from the column its verb uses."""
-    return {
-        "review": row["review_outcome"],
-        "close": row["close_outcome"],
-        "design": row["design_status"],
-    }.get(str(row["event_type"]))
+    """The row's own discriminator value, read from the column its verb uses.
+
+    A verb absent from :data:`_OUTCOME_ALIASES` has no discriminator and answers
+    ``None``, which :func:`_bucket` reads as ``ok``.
+    """
+    alias = _OUTCOME_ALIASES.get(str(row["event_type"]))
+    return None if alias is None else row[alias]
 
 
 def _duration_of(row: dict[str, Any]) -> int | None:
@@ -261,7 +285,7 @@ def _verb_reports(events: Iterable[dict[str, Any]]) -> list[VerbReport]:
         verb = str(row["event_type"])
         if verb not in VERB_OUTCOME_PATHS:
             continue
-        bucket = _bucket(_outcome_of(row), VERB_OUTCOME_PATHS[verb])
+        bucket = _bucket(_outcome_of(row))
         buckets[verb][bucket] += 1
         if bucket != "ok" and row["reason"] is not None:
             reasons[verb][str(row["reason"])] += 1
@@ -295,7 +319,7 @@ def _review_cycles(events: Iterable[dict[str, Any]]) -> ReviewCycleReport:
             continue
         if row["inherited_from"] is not None:
             continue
-        if _bucket(row["review_outcome"], REVIEW_OUTCOME_PATH) != "ok":
+        if _bucket(row["review_outcome"]) != "ok":
             continue
         per_run[str(row["run_id"])] += 1
 
@@ -383,7 +407,7 @@ def build_report(
     return StatsReport(
         window=WindowReport(
             since=since,
-            from_timestamp=cutoff.isoformat().replace("+00:00", "Z") if cutoff else None,
+            from_timestamp=iso_z(cutoff) if cutoff else None,
             earliest_event=timestamps[0] if timestamps else None,
             latest_event=timestamps[-1] if timestamps else None,
         ),

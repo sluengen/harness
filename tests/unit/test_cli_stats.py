@@ -210,6 +210,30 @@ def test_retired_engine_event_types_are_excluded(tmp_path: Path) -> None:
     assert _verb(report, "close").attempts == 1
 
 
+def test_a_retired_event_type_does_not_widen_the_reported_window(
+    tmp_path: Path,
+) -> None:
+    """The window must describe the rows actually counted.
+
+    This is where the ``EVENT_TYPES`` allowlist does work no other filter does.
+    Every *report* below re-checks the event type for itself — the verb table,
+    the cycle count, the engines, the recovery breakdown — so dropping the
+    allowlist changes none of them. The window span is the one consumer that
+    reads the whole population, and a legacy row bleeding into it would state a
+    covered range wider than anything the numbers describe.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, "run-1")
+    seed_event(db, "run-1", "close", data={"outcome": "ok"}, timestamp="2026-07-02T00:00:00Z")
+    seed_event(db, "run-1", "node_started", timestamp="2020-01-01T00:00:00Z")
+    seed_event(db, "run-1", "node_completed", timestamp="2030-01-01T00:00:00Z")
+
+    window = _stats(db).window
+
+    assert window.earliest_event == "2026-07-02T00:00:00Z"
+    assert window.latest_event == "2026-07-02T00:00:00Z"
+
+
 def test_engine_era_failures_do_not_pollute_the_recovery_reasons(
     tmp_path: Path,
 ) -> None:
