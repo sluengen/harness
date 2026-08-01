@@ -6,7 +6,9 @@
 # docker/README.md "Thin shell wrapper". Do not hand-copy a snapshot of the
 # script into ~/bin/harness: a detached copy silently rots (it missed CAL-1008's
 # credential-path fix for 12 days). Symlinking to this file keeps ~/bin/harness
-# in lockstep with the repo on every `git pull`.
+# in lockstep with the checkout, which the guard below now fast-forwards to its
+# upstream on each run (#286) — so a shipped wrapper fix reaches the next
+# invocation without anyone running `git pull` by hand.
 #
 # Usage: harness start CAL-123   (then review / close — the verb loop)
 #   (identical to the native CLI; the container mounts the current directory.)
@@ -29,6 +31,12 @@ IMAGE="${HARNESS_IMAGE:-$DEFAULT_IMAGE}"
 # lives here because the wrapper is the one component every verb goes through —
 # `doctor` is not run every tick, which is the failure mode being fixed.
 #
+# WHICH ref it measures is the whole correctness question, and the answer is not
+# the obvious one: it measures the checked-out branch in `_source_root`, which no
+# verb advances. `_sync_source_checkout` below fast-forwards that branch to its
+# upstream first, so the comparison reads the tip the loop actually ships to
+# (#286). Without that, this guard cannot fire at all once nobody pulls by hand.
+#
 # When the source is newer than the image we rebuild rather than refuse: the loop
 # is unattended, and a hard error would trade a silent stale image for a queue
 # that wedges every hour until a human rebuilds. The rebuild fires only when the
@@ -50,6 +58,106 @@ _wrapper_source_root() {
     if [[ "$src" != /* ]]; then src="$dir/$src"; fi
   done
   (cd -P "$(dirname "$src")/.." && pwd)
+}
+
+# Source-checkout sync (#286). The staleness guard below measures the source tree
+# at `_source_root`, i.e. `refs/heads/<checked-out branch>` — and that is the one
+# ref the loop never advances. `close` merges and pushes `origin/<base>` from a
+# throwaway worktree and never touches the main checkout (CAL-1154 Option 1), and
+# `start` bases each worktree off `origin/<base>`. So once nobody runs `git pull`
+# by hand, `_source_committed` is frozen and non-increasing, and the guard below
+# can never fire again — failing open in exactly the case it was written for. It
+# happened: the checkout sat 37 commits behind `origin/dev`, and #278's shipped,
+# reviewed, closed fix was not in effect on the machine running the loop, with no
+# signal of any kind that the engine and the record disagreed.
+#
+# Fast-forwarding here rather than measuring `origin/<base>` and building from a
+# detached worktree is deliberate: `~/bin/harness` is a SYMLINK into this working
+# tree, so the wrapper script itself is served from the checkout. Measuring the
+# remote would rebuild the image correctly and still execute stale wrapper text —
+# leaving a wrapper fix (which #278 was) exactly as un-live as before. Advancing
+# the tree fixes the image and the wrapper together. The lag it cannot close: a
+# fast-forward cannot re-exec the wrapper already running, so a wrapper change
+# takes effect on the NEXT invocation.
+#
+# `fetch` + `merge --ff-only` rather than `pull --ff-only`: operator gitconfig
+# (`pull.rebase`, `pull.ff`) must not be able to change what this does, and a
+# network failure and a divergence need different messages — `pull` collapses
+# them into one exit code. The upstream comes from git's own `@{upstream}`, not
+# from `CONTEXT.md`: in a cross-repo run the nearest CONTEXT.md is the TARGET
+# repo's, and an operator parked on `staging` for a promotion should not be
+# dragged onto `dev`. A checkout with no upstream (detached HEAD, no tracking
+# branch, a detached wrapper copy) is a silent no-op.
+#
+# This only ever fast-forwards. It never commits, rebases, creates a merge, or
+# changes which branch is out; a state that cannot be fast-forwarded is REPORTED,
+# never repaired. Only `_source_root` is written — `$(pwd)` is the target repo,
+# frequently not this one, and is never touched. No outcome changes the exit code.
+
+# Set by _sync_source_checkout when the fast-forward moved a path under harness/.
+_ff_touched_harness=0
+
+_sync_source_checkout() {
+  local root="$1"
+  local upstream ahead behind ff_from
+
+  # No upstream -> nothing to sync against. Covers a detached copy (not a
+  # checkout at all), a detached HEAD, and a clone with no tracking branch.
+  upstream=$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+  if [[ -z "$upstream" ]]; then
+    return 0
+  fi
+
+  # Bounded and non-interactive: an unreachable or hijacked remote must not hang
+  # the unattended loop or prompt for a credential that no human is there to type.
+  local -a fetch_cmd=(git -C "$root" fetch --quiet)
+  if command -v timeout >/dev/null 2>&1; then
+    fetch_cmd=(timeout 30 "${fetch_cmd[@]}")
+  elif command -v gtimeout >/dev/null 2>&1; then
+    fetch_cmd=(gtimeout 30 "${fetch_cmd[@]}")
+  fi
+  if ! GIT_TERMINAL_PROMPT=0 "${fetch_cmd[@]}" 2>/dev/null; then
+    echo "harness: could not fetch $upstream — continuing against the last-known remote ref, which may leave the image built from a tip older than what shipped." >&2
+  fi
+
+  local counts
+  counts=$(git -C "$root" rev-list --left-right --count "HEAD...$upstream" 2>/dev/null || true)
+  if [[ -z "$counts" ]]; then
+    return 0
+  fi
+  ahead=${counts%%[[:space:]]*}
+  behind=${counts##*[[:space:]]}
+
+  if [[ "$behind" -eq 0 ]]; then
+    return 0
+  fi
+
+  # Diverged: no fast-forward can heal this, and repairing it (a rebase) is a
+  # judgment call the loop must not make on the operator's commits. Report it —
+  # proceeding SILENTLY on a stale engine is the failure this whole guard exists
+  # to remove.
+  if [[ "$ahead" -gt 0 ]]; then
+    echo "harness: source checkout has DIVERGED from $upstream ($ahead ahead, $behind behind) — cannot fast-forward, so the image may be built from commits that never shipped." >&2
+    echo "harness: resolve it by hand in $root (rebase or drop the local commits): git -C \"$root\" rebase $upstream" >&2
+    return 0
+  fi
+
+  ff_from=$(git -C "$root" rev-parse HEAD 2>/dev/null || true)
+  if ! git -C "$root" merge --ff-only "$upstream" --quiet 2>/dev/null; then
+    echo "harness: could not fast-forward the source checkout to $upstream ($behind behind) — continuing as-is, which may build a stale image. Check for uncommitted changes or a stale index.lock in $root." >&2
+    return 0
+  fi
+  echo "harness: source checkout was $behind commit(s) behind $upstream — fast-forwarded to $(git -C "$root" rev-parse --short HEAD)." >&2
+
+  # Whether the fast-forward moved harness/ is its own rebuild trigger, and it is
+  # load-bearing rather than an optimisation: `git log -1 --format=%ct -- harness/`
+  # is NOT monotonic across a fast-forward. History simplification resolves a
+  # merge to the feature commit's own committer date, which can predate the image
+  # — so the timestamp comparison below can stay false even though the tree moved.
+  # Trusting it alone would reinstate the silent-stale-engine defect.
+  if [[ -n "$ff_from" ]] && ! git -C "$root" diff --quiet "$ff_from" HEAD -- harness/ 2>/dev/null; then
+    _ff_touched_harness=1
+  fi
 }
 
 # Wrapper-drift status (CAL-1149). `doctor` runs in-container and cannot read the
@@ -95,6 +203,10 @@ print(int(datetime.datetime.fromisoformat(s).timestamp()))
 # manage: rebuilding a deliberately-pinned tag off this tree would clobber it.
 if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   _source_root=$(_wrapper_source_root)
+  # Advance the checkout BEFORE measuring it, so the comparison below reads the
+  # ref the loop actually ships to (#286). `|| true` is load-bearing under
+  # `set -euo pipefail`: no sync outcome may abort the wrapper.
+  _sync_source_checkout "$_source_root" || true
   _image_created=$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null || true)
   _source_committed=$(git -C "$_source_root" log -1 --format=%ct -- harness/ 2>/dev/null || true)
   # Three cases, split so the middle one is reachable (CAL-1153):
@@ -108,7 +220,7 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   #     terms). Stay a silent no-op.
   if [[ -n "$_image_created" && -n "$_source_committed" ]]; then
     _image_epoch=$(_rfc3339_to_epoch "$_image_created" || true)
-    if [[ -n "${_image_epoch:-}" && "$_source_committed" -gt "$_image_epoch" ]]; then
+    if [[ -n "${_image_epoch:-}" ]] && { [[ "$_source_committed" -gt "$_image_epoch" ]] || [[ "$_ff_touched_harness" -eq 1 ]]; }; then
       echo "harness: $IMAGE is stale — harness/ has moved since the image was built ($_image_created)." >&2
       echo "harness: rebuilding it now (docker build -t $IMAGE -f docker/Dockerfile . in $_source_root)" >&2
       if ! docker build -t "$IMAGE" -f "$_source_root/docker/Dockerfile" "$_source_root" >&2; then
