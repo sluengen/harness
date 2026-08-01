@@ -80,7 +80,9 @@ def _git(*args: str, cwd: Path, epoch: int | None = None) -> None:
     )
 
 
-def _checkout_behind_origin(tmp_path: Path, *, diverged: bool = False) -> Path:
+def _checkout_behind_origin(
+    tmp_path: Path, *, diverged: bool = False, docker_only_delta: bool = False
+) -> Path:
     """Build a real checkout that is behind ``origin/dev``, the way the operator
     machine is after a tick ships.
 
@@ -117,7 +119,13 @@ def _checkout_behind_origin(tmp_path: Path, *, diverged: bool = False) -> Path:
     # the main checkout never sees.
     other = tmp_path / "other"
     _git("clone", "-q", str(origin), str(other), cwd=tmp_path)
-    (other / _MARKER).write_text("origin-tip-shipped\n")
+    if docker_only_delta:
+        # A change under docker/ never moves `git log -1 -- harness/`, so it can
+        # never trigger the freshness rebuild. That blind spot is out of scope
+        # here; the fixture exists so a test can pin it as deliberate.
+        (other / "docker" / "Dockerfile").write_text("FROM scratch\nRUN true\n")
+    else:
+        (other / _MARKER).write_text("origin-tip-shipped\n")
     _git("add", "-A", cwd=other)
     _git("commit", "-qm", "shipped", cwd=other, epoch=_ORIGIN_COMMIT_EPOCH)
     _git("push", "-q", "origin", "HEAD:refs/heads/dev", cwd=other)
@@ -326,6 +334,72 @@ def test_an_overridden_image_never_touches_the_operators_checkout(
     assert "docker build" not in calls, (
         f"an overridden image tag must not be rebuilt:\n{calls}"
     )
+    assert result.returncode == 0
+
+
+def test_a_dirty_tree_blocking_the_fast_forward_warns_and_continues(
+    tmp_path: Path,
+) -> None:
+    """Uncommitted operator work outranks the sync.
+
+    A fast-forward that would overwrite a modified file is refused by git itself.
+    The wrapper must take that refusal as final — the operator's unsaved edits are
+    worth more than a fresh image — say so, and still run the verb. Silently
+    losing the edits would be far worse than the staleness being guarded against,
+    and wedging the queue would be worse than both.
+    """
+    checkout = _checkout_behind_origin(tmp_path)
+    # Dirty exactly the file origin advanced, so the fast-forward cannot apply.
+    (checkout / _MARKER).write_text("operator's uncommitted work\n")
+    head_before = _head(checkout)
+
+    result = _run_from_checkout(
+        checkout, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert (checkout / _MARKER).read_text() == "operator's uncommitted work\n", (
+        "the operator's uncommitted edit must survive — the sync may never "
+        "discard local work to freshen an image"
+    )
+    assert _head(checkout) == head_before, "a refused fast-forward moves nothing"
+    assert "could not fast-forward" in result.stderr.lower(), (
+        f"a refused fast-forward must be visible, not silent:\n{result.stderr}"
+    )
+    assert "docker run" in calls, f"the verb must still run:\n{calls}"
+    assert result.returncode == 0, "a refused fast-forward must not wedge the queue"
+
+
+def test_a_docker_only_delta_fast_forwards_without_rebuilding(
+    tmp_path: Path,
+) -> None:
+    """The ``docker/``-only blind spot is deliberate here, not accidental.
+
+    The freshness comparison keys on ``harness/``, so a delta touching only
+    ``docker/`` moves the checkout without triggering a rebuild. That gap is real
+    and explicitly out of scope for #286 — this test pins the current behaviour so
+    the gap stays a recorded decision, and so whoever closes it has to change a
+    test that says what it is changing.
+
+    What #286 *does* owe this case is the fast-forward itself: the checkout must
+    still advance, because the wrapper script lives under ``docker/`` and that is
+    precisely how a wrapper fix reaches the next invocation.
+    """
+    checkout = _checkout_behind_origin(tmp_path, docker_only_delta=True)
+    result = _run_from_checkout(
+        checkout, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert "fast-forwarded" in result.stderr.lower(), (
+        "the checkout must still advance — a docker/-only delta is how a wrapper "
+        f"fix propagates:\n{result.stderr}"
+    )
+    assert "docker build" not in calls, (
+        "a delta that never touched harness/ does not trigger the freshness "
+        f"rebuild; that blind spot is out of scope for #286:\n{calls}"
+    )
+    assert "docker run" in calls, f"the verb must still run:\n{calls}"
     assert result.returncode == 0
 
 
