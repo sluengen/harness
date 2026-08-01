@@ -27,13 +27,16 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
+from harness._time import iso_z
 from harness.cli import app
+from harness.cli import checkpoint as checkpoint_mod
 from harness.state import store
 
 cli_runner = CliRunner()
@@ -145,6 +148,48 @@ def _checkpoint_events(db_path: Path, run_id: str) -> list[dict[str, Any]]:
         return [json.loads(r[0]) for r in rows]
 
     return _sync(_select())
+
+
+def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
+    """The ``events.duration_ms`` **column** for every row of ``event_type``.
+
+    Deliberately reads the column, not ``json_extract(data_json, ...)``: #264
+    records the verb's latency in the typed column that ``harness events``
+    already surfaces, and a payload copy would be the same quantity in a second
+    home. A test that passed against the payload would be asserting the wrong
+    place.
+    """
+
+    async def _select() -> list[int | None]:
+        async with store.connect(db_path) as conn:
+            cur = await conn.execute(
+                "SELECT duration_ms FROM events WHERE event_type = ? ORDER BY id",
+                (event_type,),
+            )
+            rows = await cur.fetchall()
+        return [None if r[0] is None else int(r[0]) for r in rows]
+
+    return _sync(_select())
+
+
+def _pin_clock(monkeypatch: pytest.MonkeyPatch, elapsed_ms: int) -> None:
+    """Hand ``checkpoint`` its ``invoked_at`` then a reading ``elapsed_ms`` later.
+
+    Distinct successive readings on purpose (#261's lesson): a constant stub
+    cannot tell one clock read from two, so an implementation that read the
+    clock again for its terminal stamp would still satisfy an equality this
+    pinning exists to enforce — and the duration would pass vacuously at 0.
+    """
+    start = datetime(2026, 7, 31, 8, 0, 0, tzinfo=UTC)
+    readings = iter(
+        [
+            iso_z(start),
+            iso_z(start + timedelta(milliseconds=elapsed_ms)),
+        ]
+    )
+    monkeypatch.setattr(
+        checkpoint_mod, "iso_z", lambda *_a, **_k: next(readings, iso_z(start))
+    )
 
 
 def _remote_has_branch(remote: Path, branch: str) -> bool:
@@ -398,3 +443,82 @@ def test_checkpoint_does_not_emit_a_review_or_close_event(
             return {r[0] for r in await cur.fetchall()}
 
     assert _sync(_types()) == {"checkpoint"}
+
+
+# ===========================================================================
+# #264 — the verb's own latency, in the ledger's typed duration column
+# ===========================================================================
+
+
+def test_checkpoint_records_its_duration_in_the_event_column(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-1: the ``checkpoint`` event carries the verb's latency as a whole
+    number of milliseconds, measured across the force-with-lease network push.
+
+    ``isinstance(..., int)`` is not redundant with the equality: it is what pins
+    the floor-division contract, since a float would round-trip through the
+    INTEGER column unremarked.
+    """
+    _seed_open_run(db_path, repo)
+    _pin_clock(monkeypatch, 1500)
+
+    result = cli_runner.invoke(
+        app,
+        ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path)],
+    )
+    assert result.exit_code == 0, result.output
+
+    assert _event_durations(db_path, "checkpoint") == [1500]
+    assert isinstance(_event_durations(db_path, "checkpoint")[0], int)
+
+
+def test_checkpoint_payload_gains_no_duration_key(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One quantity, one home: the duration goes in the column, so the payload's
+    key set is byte-identical to before #264.
+
+    Without this, an implementation could satisfy the column assertion *and*
+    quietly write a second copy into ``data_json`` — two homes that a later
+    reader has to reconcile, and that can drift apart.
+    """
+    _seed_open_run(db_path, repo)
+    _pin_clock(monkeypatch, 1500)
+
+    cli_runner.invoke(
+        app,
+        ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo), "--db", str(db_path)],
+    )
+
+    (payload,) = _checkpoint_events(db_path, RUN_ID)
+    assert set(payload) == {"run_id", "branch", "pushed_sha", "pushed_at"}
+
+
+def test_checkpoint_push_failure_records_no_event_and_no_duration(
+    tmp_path: Path,
+) -> None:
+    """#264 adds no refusal row: a failed push still writes nothing at all.
+
+    ``checkpoint`` has no non-success event path, which is precisely why it
+    needs no ADR 0009 ``outcome`` field — there are no refusal rows for a
+    success marker to discriminate against.
+    """
+    repo_root = tmp_path / "noremote"
+    repo_root.mkdir()
+    _git(repo_root, "init", "-b", "dev")
+    _git(repo_root, "config", "user.email", "test@example.com")
+    _git(repo_root, "config", "user.name", "Test")
+    (repo_root / ".gitignore").write_text(".harness/\n")
+    _git(repo_root, "add", "-A")
+    _git(repo_root, "commit", "-m", "base")
+    _git(repo_root, "checkout", "-b", BRANCH)
+    db = repo_root / ".harness" / "harness.db"
+    _seed_open_run(db, repo_root)
+
+    result = cli_runner.invoke(
+        app,
+        ["checkpoint", "--run-id", RUN_ID, "--repo", str(repo_root), "--db", str(db)],
+    )
+    assert result.exit_code == 1, result.output
+    assert _event_durations(db, "checkpoint") == []

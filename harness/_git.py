@@ -15,6 +15,24 @@ same SHA is still HEAD. That logic previously lived as byte-for-byte copies in
 ``review.py`` and ``close.py``, differing only in which verb-private exception
 they raised. Giving the rule one home lets each caller re-raise :class:`GitError`
 as its own verb-specific error.
+
+**Why this is a top-level leaf and not ``harness/cli/_git.py`` (#269).** These
+helpers are consumed from *below* the CLI as well as inside it —
+:mod:`harness.close_merge`, :mod:`harness.promotion` and
+:mod:`harness.promotion_pr` all call ``run_git``. While the module lived inside
+the ``harness.cli`` package, importing it forced ``harness/cli/__init__.py`` to
+run, and that eagerly imports every verb module — several of which import those
+same three modules back. So entering the graph through any of them raised
+``ImportError`` on a partially initialized module, and the failure was latent:
+in a full-suite run something else imports ``harness.cli`` first, so the gate
+stayed green and only a single-file ``pytest`` run ever hit it.
+
+The module itself was never the problem — it imports only
+:mod:`harness.branch_config` and :mod:`harness.identity`, both leaves, and has
+never referenced anything under ``harness.cli``. It was simply mis-homed. Here,
+beside :mod:`harness._time`, it sits below every consumer and the edges only
+point down. ``tests/unit/test_import_layering.py`` fails the gate if a module
+below the CLI reaches back into it.
 """
 
 from __future__ import annotations
@@ -68,8 +86,13 @@ def run_git(
     :class:`subprocess.TimeoutExpired`, which the caller's guard handles; this
     helper does not swallow it.
     """
-    return subprocess.run(  # noqa: S603, S607
-        ["git", "-C", str(cwd), *args],
+    # ``git`` is resolved from PATH (S607) and the args are list-form, never
+    # ``shell=True`` (S603) — the same justification ``harness/cli/**`` carries
+    # as a per-file-ignore for its own subprocess sites. Inline here because this
+    # module sits outside that glob since #269; the two codes are reported on
+    # different lines, so each needs its own marker.
+    return subprocess.run(  # noqa: S603
+        ["git", "-C", str(cwd), *args],  # noqa: S607
         check=False,
         capture_output=True,
         text=True,
@@ -106,12 +129,48 @@ def git_common_dir(repo_root: Path) -> Path | None:
     return common_dir.resolve()
 
 
-def rev_parse_head(worktree_path: Path) -> str:
+def worktree_toplevel_matches(worktree_path: Path) -> bool:
+    """True iff ``git -C worktree_path rev-parse --show-toplevel`` resolves
+    back to ``worktree_path`` itself.
+
+    The anchoring guard every probe that reads ``git`` state *at a worktree* needs
+    first. Without it, a directory whose worktree registration was already pruned
+    (or that never was a proper worktree) has ``git`` walk **up** and report the
+    *main checkout's* state instead. Both existing callers rely on that:
+    ``worktrees cleanup --merged``'s stash / dirty-tree vetoes (#235) would
+    otherwise veto an orphaned directory whenever the operator's own tree happens
+    to be dirty, and ``reclaim --stale``'s worktree-mtime signal (#254) would read
+    the main checkout's index — almost always freshly edited — and so spare every
+    stale ticket, silently switching the sweep off.
+
+    Lives here rather than in either caller because reaching into a command
+    module's private helper is exactly what the CLI module-boundary guard forbids,
+    and a second copy of a check whose failure mode is "the feature silently
+    stops working" is worse than a shared one.
+    """
+    proc = run_git(worktree_path, "rev-parse", "--show-toplevel")
+    if proc.returncode != 0:
+        return False
+    try:
+        return Path(proc.stdout.strip()).resolve() == worktree_path.resolve()
+    except OSError:
+        return False
+
+
+def rev_parse_head(worktree_path: Path, *, timeout: float | None = None) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 
     Raises :class:`GitError` if ``git rev-parse HEAD`` exits non-zero.
+
+    ``timeout`` is forwarded to :func:`run_git` and defaults to ``None`` — no
+    ceiling — so ``close``, which runs interactively and wants a wedged git to be
+    visible rather than silently reinterpreted, is unchanged. ``reclaim --stale``
+    passes one because it runs as the Build routine's pre-flight every tick,
+    where a hung probe would wedge the loop the sweep exists to unblock; a fired
+    :class:`subprocess.TimeoutExpired` propagates for that caller's guard to
+    catch (#255).
     """
-    result = run_git(worktree_path, "rev-parse", "HEAD")
+    result = run_git(worktree_path, "rev-parse", "HEAD", timeout=timeout)
     if result.returncode != 0:
         raise GitError(
             f"git rev-parse HEAD failed for {worktree_path}: {result.stderr.strip()}"

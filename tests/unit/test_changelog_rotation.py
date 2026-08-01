@@ -13,6 +13,10 @@ These tests are the executable form of the acceptance criteria:
 * **Root CHANGELOG bounded** — the root file is under a byte and line ceiling
   well below its pre-rotation size (the *measuring* test for "bounded": the
   ticket frames the problem in KB, so the byte bound is the load-bearing one).
+  Since #267 those ceilings are a **ratchet**: entries accumulate in
+  ``changelog.d/`` instead, so this file does not change between releases and
+  "bounded" tightens to "may not grow". The bound the soft warning used to
+  carry moved with the window it guarded, onto ``changelog.d/`` itself.
 * **Archive exists** — the released history lives in a git-tracked
   ``CHANGELOG-archive/<year>.md`` carrying every moved entry, and is gone from
   the root; the root points at it.
@@ -33,23 +37,36 @@ _CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
 _ARCHIVE_DIR = "CHANGELOG-archive"
 _ARCHIVE = _REPO_ROOT / _ARCHIVE_DIR / "2026.md"
 
-#: The root file's ceilings. Pre-rotation it was 410 lines / 120,212 bytes; the
-#: rotated root holds only the current release cycle's ``[Unreleased]`` window
-#: (~88 lines / ~22KB), so both bounds fail on the old file and pass on the new
-#: with a full release cycle of headroom (~14–20 more entries) before the next
-#: release must rotate. The byte bound is the direct measure of the context tax
-#: the ticket names ("115KB", "megabytes within a year").
-_ROOT_BYTE_BOUND = 60_000
-_ROOT_LINE_BOUND = 250
+#: The root file's ceilings — a **ratchet** since #267, not a headroom budget.
+#:
+#: Entries no longer accumulate here: a change writes ``changelog.d/<ticket>.md``
+#: and only the release fold touches this file, so between releases it does not
+#: change at all. That is what lets the bounds become *may-not-grow*. They are
+#: the measurement at the #267 baseline (156 lines / 45,923 bytes) plus a small
+#: stated allowance — room for a typo fix or a reworded pointer, and nowhere
+#: near the ~500–3,000 bytes and 3 lines a real entry costs. A direct append to
+#: ``[Unreleased]`` therefore trips the gate.
+#:
+#: This is the base-independent half of the guard pair. Its sibling,
+#: ``scripts/changelog_fragments.py require``, is the direct check but must
+#: abstain where the merge base is unknowable (a shallow CI checkout, a detached
+#: ``promote`` worktree); the ratchet holds wherever the suite runs.
+#:
+#: **The release raises them deliberately.** The fold inserts a released section
+#: and the rotation moves it to the archive; re-baselining these two constants
+#: is a step in ``RELEASING.md``, re-taken on purpose the way
+#: ``_RELEASED_SENTINELS`` is.
+_ROOT_BYTE_BOUND = 46_500
+_ROOT_LINE_BOUND = 160
 
-#: A soft-warning threshold below the hard byte gate (80% of it) — CAL-1182 hit
-#: 9 bytes of headroom against the hard bound, then regrew to a second
-#: near-miss within four days (#195) because nothing failed the gate until it
-#: was already nearly wedged. This threshold turns a routine Build tick's
-#: check into an actionable, self-explaining failure well before that point,
-#: naming the fold recipe (``RELEASING.md`` "Between-release CHANGELOG fold")
-#: so the fix is a pointer away rather than an emergency edit.
-_ROOT_SOFT_WARNING_BOUND = 48_000
+#: The fragment directory is the unreleased window now, so it carries the risk
+#: the old byte soft-warning covered. Two bounds, because they fail differently:
+#: too **many** fragments means a release is overdue, while a single overlong
+#: fragment is the entry-length problem ``RELEASING.md``'s per-entry budget has
+#: always named — it just moved file.
+_FRAGMENT_DIRNAME = "changelog.d"
+_FRAGMENT_COUNT_BOUND = 40
+_FRAGMENT_BYTE_BOUND = 3_000
 
 #: Distinctive strings from *released* entries — they must live in the archive
 #: and be gone from the root. These sentinels pin the **rotation boundary**, so
@@ -88,37 +105,80 @@ _UNRELEASED_SENTINELS: tuple[str, ...] = ()
 
 
 def test_root_changelog_is_byte_bounded() -> None:
-    """The root file is under the byte ceiling (the context-tax measure)."""
+    """The root file has not grown (the ratchet's byte half)."""
     size = len(_CHANGELOG.read_bytes())
     assert size <= _ROOT_BYTE_BOUND, (
         f"CHANGELOG.md is {size:,} bytes — over the {_ROOT_BYTE_BOUND:,}-byte "
-        f"ceiling. Rotate released entries to {_ARCHIVE_DIR}/<year>.md, keeping "
-        "only the [Unreleased] window (see RELEASING.md)."
+        "ratchet. Since #267 this file does not accumulate: write your entry as "
+        f"{_FRAGMENT_DIRNAME}/<ticket>.md instead — "
+        "see RELEASING.md 'Changelog fragments'. "
+        "If you are running the release fold, re-baseline this constant "
+        "deliberately as part of it."
     )
 
 
 def test_root_changelog_is_line_bounded() -> None:
-    """The root file is under the line ceiling."""
+    """The root file has not grown (the ratchet's line half)."""
     lines = len(_CHANGELOG.read_text(encoding="utf-8").splitlines())
     assert lines <= _ROOT_LINE_BOUND, (
         f"CHANGELOG.md is {lines} lines — over the {_ROOT_LINE_BOUND}-line "
-        "ceiling. Condensing entry bodies will not clear this: a folded entry "
-        "is still heading + bullet + blank. Collapse the oldest entries' "
-        "heading and summary onto one line — see RELEASING.md "
-        "'Between-release CHANGELOG fold', second pass. (Between releases, "
-        f"rotating to {_ARCHIVE_DIR}/<year>.md is not available: nothing in "
-        "[Unreleased] has shipped.)"
+        "ratchet. Since #267 this file does not accumulate: write your entry as "
+        f"{_FRAGMENT_DIRNAME}/<ticket>.md instead — "
+        "see RELEASING.md 'Changelog fragments'. "
+        "If you are running the release fold, re-baseline this constant "
+        "deliberately as part of it."
     )
 
 
-def test_root_changelog_soft_warning_threshold() -> None:
-    """Fail well before the hard gate, naming the fold recipe by section."""
-    size = len(_CHANGELOG.read_bytes())
-    assert size <= _ROOT_SOFT_WARNING_BOUND, (
-        f"CHANGELOG.md is {size:,} bytes — over the {_ROOT_SOFT_WARNING_BOUND:,}-byte "
-        f"soft-warning threshold (80% of the {_ROOT_BYTE_BOUND:,}-byte hard gate). "
-        "Fold older [Unreleased] entries to a rolling summary now — see "
-        "RELEASING.md 'Between-release CHANGELOG fold'."
+# ---------------------------------------------------------------------------
+# The unreleased window moved to changelog.d/ — so the bound moved with it.
+# ---------------------------------------------------------------------------
+
+
+def _fragment_paths() -> list[Path]:
+    directory = _REPO_ROOT / _FRAGMENT_DIRNAME
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix == ".md" and p.name != "README.md"
+    )
+
+
+def test_unreleased_fragments_are_bounded() -> None:
+    """Too many pending fragments means a release is overdue.
+
+    The intent of the retired byte soft-warning, re-homed onto the surface that
+    now carries the risk: it fired before a wedged file forced an emergency
+    edit, and this fires before a release window grows past what one fold
+    should reasonably carry.
+    """
+    paths = _fragment_paths()
+    assert len(paths) <= _FRAGMENT_COUNT_BOUND, (
+        f"{_FRAGMENT_DIRNAME}/ holds {len(paths)} fragments — over the "
+        f"{_FRAGMENT_COUNT_BOUND} bound. That is a release overdue, not a file "
+        "to fold: cut one (RELEASING.md), which folds them into CHANGELOG.md "
+        "and empties the directory."
+    )
+
+
+def test_each_fragment_is_byte_bounded() -> None:
+    """The per-entry budget, enforced where entries now live.
+
+    ``RELEASING.md`` has asked for ~1,000-byte entries since the fold ran on
+    nine consecutive ticks without buying durable headroom. Asking was not
+    enough — the newest entries ran 2,000–3,000 bytes each. This is that budget
+    with teeth, set at the point where an entry is unambiguously an essay.
+    """
+    oversized = {
+        p.name: len(p.read_bytes())
+        for p in _fragment_paths()
+        if len(p.read_bytes()) > _FRAGMENT_BYTE_BOUND
+    }
+    assert not oversized, (
+        f"these fragments are over the {_FRAGMENT_BYTE_BOUND:,}-byte per-entry "
+        f"budget: {oversized}. Reasoning longer than that belongs in the change "
+        "spec, the commit body, or the review record — where it already lives in "
+        "full, and where nobody pays a context tax to skip it."
     )
 
 

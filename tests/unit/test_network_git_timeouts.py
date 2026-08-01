@@ -24,13 +24,13 @@ from pathlib import Path
 
 import pytest
 
+from harness import _git as git_mod
 from harness import close_merge as close_merge_mod
 from harness import promotion as promotion_mod
 from harness import promotion_pr as promotion_pr_mod
-from harness.cli import _git as git_mod
+from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, teardown_worktree
 from harness.cli import checkpoint as checkpoint_mod
 from harness.cli import start as start_mod
-from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, teardown_worktree
 
 
 def _ok(*, stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:

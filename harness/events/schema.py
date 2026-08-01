@@ -50,6 +50,14 @@ EventType = Literal[
     # the operator unassigned. This event records the release (ticket, kind,
     # timestamp) in the audit trail — the ``defer`` shape, in reverse.
     "release",
+    # ``reclaim --undo`` (#254) — a reclamation confirmed to have been a false
+    # positive is reversed: the ticket returns to In Progress and the ``cancelled``
+    # run row is re-opened. The event is *appended* after the surviving
+    # ``workflow_failed{reason: reclaimed}`` — the log keeps the mistake, the row
+    # status is authoritative. It is also load-bearing as a **liveness** signal:
+    # being the restored run's newest ledger activity, it stops the next hourly
+    # ``--stale`` sweep from immediately re-reclaiming the ticket it just restored.
+    "reclaim_undone",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

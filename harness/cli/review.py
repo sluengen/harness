@@ -26,14 +26,29 @@ Flow (one ``asyncio.run`` event loop for all I/O):
    a non-zero exit, CAL-702) fall back **once** to the Claude engine; an ordinary
    Codex failure does *not* fall back.  Scan the resulting stdout for the first
    ``SUBMIT:`` JSON line.
-4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line →
-   ``verdict='fail'`` with the sentinel issue
-   "reviewer emitted no valid SUBMIT line".
+4. Parse the verdict ('pass'|'fail'|'defer') + issues.  No valid SUBMIT line
+   means the reviewer delivered no verdict, so it exits ``EXIT_INFRA_FAILURE``
+   with ``reason`` ``no_submit`` / ``malformed_submit`` rather than recording a
+   ``fail`` (#270) — the same classification the timeout and sandbox walls carry.
+   It therefore costs no review cycle and leaves the ticket In Review.
 5. Append a ``review`` event carrying ``run_id``, ``reviewed_sha``, ``verdict``,
    ``issues``, ``engine`` (the engine that produced the verdict — ``claude``
    after a fallback), optional ``fallback_from`` (the engine a usage-limit
    fallback replaced), optional ``commit_message`` / ``deferred_brief``,
-   ``created_at``.
+   ``created_at``, and (#262) ``outcome='ok'`` plus the ``invoked_at`` /
+   ``duration_ms`` latency pair.
+
+Every **other** way the verb can end also appends a ``review`` event now (#262,
+ADR 0009) — a refusal shape carrying ``outcome='failed'``, the path's own
+``reason``, and no ``verdict``. Before, only a parsed verdict was recorded, so
+the ledger held verdicts and no denominator: "how often does review succeed?"
+and "how often does the engine time out?" were unanswerable rather than slow.
+The refusal row cannot widen the close gate, which filters ``$.verdict = 'pass'``
+and reads a missing key as NULL, and it does not consume a review cycle, which
+:func:`_count_review_events` excludes it from — a refusal runs no engine, so
+charging it would shrink the budget as the telemetry was collected. The writer is
+:func:`~harness.cli.review_telemetry.record_terminal_refusal`, called from one
+place, and it never raises: observation is subordinate to what it observes.
 6. Print only the bounded verdict (``verdict`` + ``issues`` + ``reviewed_sha`` +
    ``run_id`` + ``engine``).  The engine's full stdout / reasoning stays inside
    the verb and never
@@ -62,8 +77,9 @@ Exit codes (mirroring ``harness start``):
       machine-readable ``reason`` so the orchestrator can tell "the environment
       couldn't run the review" apart from "the diff was rejected" (CAL-866).
       This is NOT a code-review ``fail`` and NOT shippable, so it does not reuse
-      ``defer`` or record a verdict — no review event is written.  Two shapes hit
-      this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
+      ``defer`` or record a **verdict** — since #262 it records a refusal event,
+      which carries no ``verdict`` key and so can never satisfy the close gate.
+      Two shapes hit this exit: ``codex`` exiting non-zero with the bwrap marker on stderr
       (CAL-866), *and* ``codex`` exiting 0 but emitting a well-formed ``defer``
       whose reasoning is the same bwrap wall — every read-only command it ran was
       blocked, so it reviewed nothing (CAL-924).  Both mean the diff was never
@@ -77,20 +93,23 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._git import rev_parse_head
+from harness._time import elapsed_ms, iso_z
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
-from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
+    MALFORMED_SUBMIT_SENTINEL,
     NO_DESIGN_REASON,
+    NO_SUBMIT_SENTINEL,
     Engine,
     Runner,
     RunResult,
@@ -104,8 +123,16 @@ from harness.cli.review_protocol import (
     resolve_model_tier,
     scan_submit_line,
 )
+from harness.cli.review_telemetry import record_terminal_refusal
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import ReviewEventData
+from harness.events.payloads import (
+    MALFORMED_SUBMIT_REASON,
+    NO_SUBMIT_REASON,
+    REVIEW_INHERITED_FROM_PATH,
+    REVIEW_OUTCOME_OK,
+    REVIEW_OUTCOME_PATH,
+    ReviewEventData,
+)
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     convergence_check_required,
@@ -119,6 +146,7 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+from harness.workspace import WorkspaceNotAllowed, allowed_roots, resolve_within_allowlist
 
 # The dimension resolve_model_tier reads for this verb (#177) — the review-tier
 # label family (``review:<tier>``), independent of the build-tier family the
@@ -136,6 +164,16 @@ _REVIEW_TIER_DIMENSION = "review"
 # The bounded engine *subprocess driver* was split out to harness.cli._engine
 # (#211), shared with the ``design`` verb; ``_default_runner`` is now only the
 # review-specific translation of a timeout into this verb's infra failure.
+# The inherit *decision* — may a resumed run carry a predecessor's pass forward?
+# — was split out to harness.cli.review_inherit (#259) on the design_adopt.py
+# precedent; what stays here is the guarded early return and the recording, which
+# need ReviewOutput and EventEmitter and so have nowhere else to live.
+# The terminal-observation *writer* — the event every non-verdict exit path now
+# appends (#262) — was split out to harness.cli.review_telemetry on the same
+# precedent, and for a reason the line count understates: inlining an emit at ten
+# raise sites means the eleventh is eventually forgotten, and a denominator that
+# is quietly wrong is worse than one that is loudly missing.  What stays here is
+# the single ``except`` that calls it, which needs _ReviewError.
 # What remains is verb glue with a single caller (`_run_review`): the breaker
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
@@ -156,6 +194,7 @@ __all__ = [
     "GATE_FAILED_REASON",
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
+    "DESIGN_FILE_OUTSIDE_WORKSPACE_REASON",
 ]
 
 # The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
@@ -232,9 +271,7 @@ async def _default_runner(
     via ``_ReviewError`` (``EXIT_INFRA_FAILURE`` + :data:`ENGINE_TIMEOUT_REASON`).
     """
     try:
-        return await run_engine_subprocess(
-            cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout
-        )
+        return await run_engine_subprocess(cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout)
     except EngineTimeoutError as exc:
         raise _ReviewError(
             f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
@@ -269,14 +306,16 @@ EXIT_INFRA_FAILURE = 3
 EXIT_BREAKER_TRIPPED = 4
 
 # Exit code for a run that cannot be certified as reviewable — the verify gate
-# went red or supplied no evidence (CAL-1082), or the run recorded no design
-# attempt (#212, ADR 0007 D3). All three mean there is nothing worth reviewing:
-# the verb refuses BEFORE the engine, records no review event, and spends no
-# tokens. One code, because the response is the same shape in each case (supply
-# the missing evidence and review again); the machine-readable ``reason`` names
-# which. Distinct from every other code — 2 is already the invocation error — so
-# the orchestrator can tell an uncertifiable run from a rejected diff, an infra
-# wall, or a bounded-out loop.
+# went red or supplied no evidence (CAL-1082), the run recorded no design
+# attempt (#212, ADR 0007 D3), or ``--design-file`` names a path outside the
+# workspace allowlist (AC-2, #247). All four mean there is nothing worth
+# reviewing, or the request cannot be honoured as given: the verb refuses
+# BEFORE the engine, records no review event, and spends no tokens. One code,
+# because the response is the same shape in each case (supply the missing
+# evidence, or fix the input, and review again); the machine-readable
+# ``reason`` names which. Distinct from every other code — 2 is already the
+# invocation error — so the orchestrator can tell an uncertifiable run from a
+# rejected diff, an infra wall, or a bounded-out loop.
 EXIT_GATE_FAILED = 5
 
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
@@ -290,12 +329,32 @@ GATE_FAILED_REASON = "gate_failed"
 # silence is not a pass.
 NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
 
+# Machine-readable ``reason`` for a ``--design-file`` that resolves outside the
+# workspace allowlist (AC-2, #247). Distinct from the ADR 0007 design-context
+# drop: an unreachable path is the wrong flag value, not an unusable design to
+# degrade past, so it is refused as a caller error BEFORE the engine runs and
+# BEFORE ``_read_design_file`` would otherwise map it to the same "unreadable"
+# outcome as a legitimately stale in-workspace file. Shares
+# ``EXIT_GATE_FAILED`` — same response shape (fix the input, review again).
+DESIGN_FILE_OUTSIDE_WORKSPACE_REASON = "design_file_outside_workspace"
+
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
 # the diff, so this is infra (``EXIT_INFRA_FAILURE``), not a code-review verdict:
 # no review event is recorded and the run stops with a distinct, greppable tag
 # rather than hanging until an external kill (exit 143).
 ENGINE_TIMEOUT_REASON = "engine_timeout"
+
+# Maps the review protocol's two failure sentinels onto their reason tags (#270),
+# exactly as ``design`` maps its own pair. The protocol layer reports failures as
+# human sentinels — it is pure and knows nothing of exit codes — and the verb owns
+# the machine-readable contract. The tags themselves are shared with ``design``
+# (harness.events.payloads) so one protocol failure has one name across both
+# engine verbs.
+_SUBMIT_FAILURE_REASONS = {
+    NO_SUBMIT_SENTINEL: NO_SUBMIT_REASON,
+    MALFORMED_SUBMIT_SENTINEL: MALFORMED_SUBMIT_REASON,
+}
 
 
 async def _invoke_engine(
@@ -482,16 +541,118 @@ async def _run_review(
     design_file: Path | None = None,
     runner: Runner,
 ) -> ReviewOutput:
-    """Drive the review flow; raise :class:`_ReviewError` on failure."""
+    """Resolve the run, then drive the review, recording **every** terminal path.
+
+    The split between this and :func:`_review_resolved_run` is the whole of #262:
+    once a run is resolved, every way the verb can end is observable, so the body
+    runs inside one ``except`` that appends the terminal event and re-raises the
+    refusal untouched. Ten raise sites therefore need no emit of their own, and a
+    raise site added later is recorded whether or not its author remembers to.
+
+    Run resolution stays *outside* that handler on purpose: a ``review`` event is
+    keyed to a run, and the two failures above — no ledger, or no open run — have
+    no run to key it to. ADR 0009 records the same for ``close``'s ``no_run``.
+    """
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
     resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
         raise _ReviewError(
-            f"no open run found for worktree {repo_root} "
-            f"(run_id={run_id!r})" if run_id else f"no open run found for worktree {repo_root}",
+            f"no open run found for worktree {repo_root} (run_id={run_id!r})"
+            if run_id
+            else f"no open run found for worktree {repo_root}",
             2,
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
+
+    # Captured before any breaker, gate or engine work — one end of the duration
+    # every terminal event now carries, and the reference point that makes a slow
+    # refusal distinguishable from a fast one.
+    invoked_at = iso_z()
+    try:
+        return await _review_resolved_run(
+            repo_root=repo_root,
+            db_path=db_path,
+            resolved_run_id=resolved_run_id,
+            worktree_path=worktree_path,
+            engine=engine,
+            model=model,
+            gate_exit=gate_exit,
+            gate_log=gate_log,
+            design_file=design_file,
+            runner=runner,
+            invoked_at=invoked_at,
+        )
+    except _ReviewError as exc:
+        await record_terminal_refusal(
+            db_path,
+            run_id=resolved_run_id,
+            reason=exc.reason,
+            detail=str(exc),
+            invoked_at=invoked_at,
+        )
+        raise
+
+
+async def _review_resolved_run(
+    *,
+    repo_root: Path,
+    db_path: Path,
+    resolved_run_id: str,
+    worktree_path: str,
+    engine: Engine,
+    model: str | None,
+    gate_exit: int | None,
+    gate_log: Path | None,
+    design_file: Path | None,
+    runner: Runner,
+    invoked_at: str,
+) -> ReviewOutput:
+    """Drive the review flow for an already-resolved run; raise on failure.
+
+    Every step below is unchanged from before #262 — the function boundary is
+    where the terminal-event recording attaches, not a re-ordering of any
+    refusal. The order of the checks is load-bearing and documented step by step.
+    """
+    # Two pure ledger reads hoisted above the short-circuit below, and reused by
+    # the steps that already made them (2b and 1b) so nothing is read twice.
+    # Moving a read is behaviour-preserving: every refusal keeps its position.
+    ticket = await _read_ticket(db_path, resolved_run_id)
+    design_event = await _read_latest_design_event(db_path, resolved_run_id)
+
+    # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
+    #       from a preserved WIP branch and its HEAD is the exact commit a
+    #       predecessor already passed behind a green gate (#259, ADR 0008 D3).
+    #       Whether that is warranted lives in harness.cli.review_inherit; this is
+    #       the verb recording it.
+    #
+    #       Deliberately FIRST — before the spend breakers and the verify-gate
+    #       evidence check. Both exist to bound or certify the cost of running an
+    #       engine over an unreviewed tree, and this path runs no engine over a
+    #       tree already reviewed: charging it a review cycle would spend budget
+    #       nothing consumed, and demanding fresh gate evidence would re-run the
+    #       gate over a byte-identical tree, which is the second cost this path
+    #       removes.
+    #
+    #       What it must NOT skip is a refusal about *this run's own state*, so
+    #       the resolver takes the design event and the supplied gate exit as
+    #       inputs and declines on either: a run with no recorded design still
+    #       meets ``no_design``, and a caller reporting a red gate still meets
+    #       ``gate_failed``, both from the normal path below. The safety the
+    #       ordering rests on is otherwise entirely in the conditions — resume
+    #       provenance, a clean worktree, an exact SHA match against another run
+    #       for the same ticket, and that source pass's own gate evidence, the
+    #       same predicate ``close`` will apply to the event this writes.
+    inherited = await resolve_inheritance(
+        db_path=db_path,
+        run_id=resolved_run_id,
+        ticket=ticket,
+        worktree_path=Path(worktree_path),
+        design_recorded=design_event is not None,
+        gate_exit=gate_exit,
+        created_at=iso_z(),
+    )
+    if inherited is not None:
+        return await _record_inherited_review(repo_root, db_path, ticket, inherited)
 
     # 1a. Enforce the ledger-backed spend breakers BEFORE running an engine
     #     (CAL-906). This verb is the loop boundary, so the cycle ceiling and the
@@ -530,7 +691,34 @@ async def _run_review(
     #     neither satisfy nor bypass it. The flag only supplies the design text
     #     for context, and only a hash that matches the recorded event's lets it
     #     reach the prompt.
-    design_event = await _read_latest_design_event(db_path, resolved_run_id)
+    #
+    #     Before reading it at all, ``--design-file`` is checked against the
+    #     workspace allowlist (AC-2, #247): a path that cannot resolve under it
+    #     is a caller error — most often a host-only path like ``/tmp`` the
+    #     harness wrapper never mounts into the container — not an unusable
+    #     design to degrade past. Refusing it here, distinctly from the
+    #     ADR 0007 drop below, keeps "wrong flag value" from silently reading
+    #     identically to "a design that went stale" (the gap AC-1 also closes).
+    #     Reuses :func:`harness.workspace.resolve_within_allowlist`, the same
+    #     ``HARNESS_WORKSPACE_ROOTS`` boundary every verb's ``--repo`` is
+    #     already checked against, so "the resolved workspace root" names one
+    #     boundary, not a second ad hoc one.
+    if design_file is not None:
+        try:
+            resolve_within_allowlist(design_file, allowed_roots())
+        except WorkspaceNotAllowed as exc:
+            roots_desc = ", ".join(str(r) for r in exc.roots) if exc.roots else "none configured"
+            raise _ReviewError(
+                f"--design-file {design_file} resolves to {exc.path}, which is "
+                f"not reachable under the workspace root(s) this container can "
+                f"read ({roots_desc}). The harness wrapper mounts only the repo "
+                f"root into the container — stage the design file inside the "
+                f"repo tree (e.g. under the worktree), not a host-only path "
+                f"like /tmp.",
+                EXIT_GATE_FAILED,
+                reason=DESIGN_FILE_OUTSIDE_WORKSPACE_REASON,
+            ) from exc
+
     design_gate = resolve_design_gate(
         design_event, await asyncio.to_thread(_read_design_file, design_file)
     )
@@ -598,7 +786,6 @@ async def _run_review(
     #     an escalating or red-gated run leaves the ticket where it stopped. The
     #     move is best-effort: a tracker-less run or a Linear hiccup never loses
     #     the review (the verdict is the record; the transition is bookkeeping).
-    ticket = await _read_ticket(db_path, resolved_run_id)
     await _park_ticket(repo_root, ticket, to="in_review")
 
     # 2c. Resolve the claude-engine model tier (#177): an explicit --model
@@ -660,11 +847,39 @@ async def _run_review(
             model=resolved_model,
         )
 
-    # 4. Parse the SUBMIT line (bad/missing → fail + sentinel).  The engine's
-    #    full stdout/stderr stays local to the verb — only the verdict escapes.
+    # 4. Parse the SUBMIT line.  The engine's full stdout/stderr stays local to
+    #    the verb — only the verdict escapes.
     parsed = scan_submit_line(result.stdout)
 
-    # 4a. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
+    # 4a. A reviewer that emitted no parseable SUBMIT line delivered no verdict,
+    #     so this is INFRA, not a rejected diff (#270) — the same classification
+    #     the timeout and both sandbox walls already carry, on the same stated
+    #     principle. Recorded as a ``fail`` it was three things at once: one of
+    #     six review cycles spent on nothing, a spurious bounce of the ticket back
+    #     to In Progress, and 33% of the ``fail`` rate #262 made queryable being
+    #     protocol noise indistinguishable from a real finding.
+    #
+    #     Raising here gets all three from machinery that already exists: the
+    #     ``except _ReviewError`` in :func:`_review` writes #262's refusal shape
+    #     (``outcome='failed'`` + ``reason``, no ``verdict`` key), which
+    #     :func:`_count_review_events` excludes and the close gate cannot match;
+    #     and the In-Progress bounce at step 5b is simply never reached, leaving
+    #     the ticket In Review exactly where the other infra walls leave it.
+    #
+    #     Branching on ``submit_failure`` rather than on ``issues[0]`` is
+    #     deliberate: a reviewer whose genuine finding happened to be worded like
+    #     the sentinel must stay a ``fail``.
+    if parsed.submit_failure is not None:
+        raise _ReviewError(
+            f"review engine produced no verdict: {parsed.submit_failure}. This is "
+            f"an engine protocol failure, not a code-review verdict — the "
+            f"reviewer never delivered one, so there is nothing to fix. No review "
+            f"cycle was consumed; re-run review again.",
+            EXIT_INFRA_FAILURE,
+            reason=_SUBMIT_FAILURE_REASONS[parsed.submit_failure],
+        )
+
+    # 4b. A Codex ``defer`` whose reasoning is the bwrap namespace wall is a
     #     sandbox-blocked non-review, not a shippable defer (CAL-924): ``codex
     #     exec`` exited 0, but every read-only command it ran to inspect the diff
     #     was killed by bwrap, so it reviewed nothing.  The stderr/non-zero
@@ -687,7 +902,7 @@ async def _run_review(
             reason=SANDBOX_INIT_REASON,
         )
 
-    # 4b. The convergence advisory (CAL-906): this review is cycle
+    # 4c. The convergence advisory (CAL-906): this review is cycle
     #     ``prior_review_count + 1``. A fail past the unconditional window and
     #     below the ceiling tells the build agent to assess whether the fixes are
     #     converging before spending another cycle. A bounded bool — no engine
@@ -716,6 +931,7 @@ async def _run_review(
         created_at=created_at,
         gate_ran=gate_ran,
         design_context=design_gate.design_markdown is not None,
+        design_context_reason=design_gate.context_reason,
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,
@@ -723,6 +939,15 @@ async def _run_review(
         fallback_from=fallback_from,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
+        # #262: the latency pair. ``outcome`` is deliberately NOT passed — it is
+        # the model's default, which is the single source of "a verdict was
+        # produced" for both a new event and a pre-#262 row read back. Passing it
+        # here would be a second copy of the literal that no test could tell from
+        # the default. (A verdict is an ``ok`` outcome whichever way it went: a
+        # ``fail`` is the review working, not the verb failing, which is why the
+        # field is ``outcome`` rather than ``design``'s ``status``.)
+        invoked_at=invoked_at,
+        duration_ms=elapsed_ms(invoked_at, created_at),
     ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
@@ -756,24 +981,98 @@ async def _run_review(
     )
 
 
+async def _record_inherited_review(
+    repo_root: Path,
+    db_path: Path,
+    ticket: str | None,
+    inherited: InheritedReview,
+) -> ReviewOutput:
+    """Record an inherited pass and emit it as an ordinary :class:`ReviewOutput`.
+
+    **No engine runs.** The ticket is still parked In Review, best-effort: CAL-1103's
+    invariant is that ``review`` owns the In-Review state, and a ``pass`` leaves it
+    there for ``close`` — an inherited pass is not an exception to where the ticket
+    ends up, only to how it got there.
+
+    The printed contract is unchanged, so the orchestrator's Step 3 handling needs
+    no adjustment and cannot tell an inherited pass from an earned one. The printed
+    ``engine`` is the source's — the rule the usage-limit fallback already sets
+    (CAL-702): ``engine`` names the engine that produced the verdict. That no engine
+    ran *here* is on the **ledger** (``inherited_from``) and on stderr, where an
+    operator reading a tick log will see it.
+    """
+    event = inherited.event
+    emitter = EventEmitter(db_path)
+    try:
+        await emitter.emit(
+            run_id=event.run_id,
+            event_type="review",
+            data=event.model_dump(exclude_none=True),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _ReviewError(f"failed to record review event: {exc}", 1) from exc
+
+    await _park_ticket(repo_root, ticket, to="in_review")
+    typer.echo(
+        f"note: inherited the passing review recorded for run "
+        f"{inherited.source_run_id} against this exact HEAD "
+        f"({event.reviewed_sha[:12]}); no review engine ran",
+        err=True,
+    )
+    return ReviewOutput(
+        verdict="pass",
+        issues=event.issues,
+        reviewed_sha=event.reviewed_sha,
+        run_id=event.run_id,
+        # Narrowed by review_inherit, which declines a source whose engine is
+        # outside the literal — so this cast asserts a checked fact.
+        engine=cast("Engine", event.engine),
+        convergence_check_required=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Ledger reads for the spend breakers (CAL-906)
 # ---------------------------------------------------------------------------
 
 
 async def _count_review_events(db_path: Path, run_id: str) -> int:
-    """Count the ``review`` events already recorded for ``run_id``.
+    """Count the engine-run ``review`` events already recorded for ``run_id``.
 
     This is the prior review→fix cycle count the cycle ceiling is measured
     against. A missing DB (no run yet) counts as zero.
+
+    Events carrying ``inherited_from`` are **excluded** (#259): an inherited pass
+    invokes no engine, so counting it would charge a run for spend it never
+    incurred — and would let a resumed run's very first action, which costs
+    nothing, eat a cycle of the budget it needs for real fixes.
+
+    Non-``ok`` outcomes are excluded for the identical reason (#262). Recording
+    the terminal paths put refusals into this very query's ``event_type =
+    'review'`` population, and a refusal runs no engine either: without this
+    clause, five ``no_gate_evidence`` refusals — which spend nothing and are the
+    orchestrator's *own* mistake to fix — would leave the run one cycle from the
+    ceiling, and adding telemetry would have silently shrunk the review budget.
+    It would also contradict the contract this repo relies on elsewhere, that an
+    ``engine_timeout`` is infra and consumes no cycle. ``COALESCE`` is what keeps
+    the pre-#262 rows counted: they carry no ``outcome`` key, ``json_extract``
+    answers NULL, and every one of them was in fact a verdict.
     """
     if not db_path.exists():
         return 0
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review'",
-            (run_id,),
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review' "
+            "AND json_extract(data_json, ?) IS NULL "
+            "AND COALESCE(json_extract(data_json, ?), ?) = ?",
+            (
+                run_id,
+                REVIEW_INHERITED_FROM_PATH,
+                REVIEW_OUTCOME_PATH,
+                REVIEW_OUTCOME_OK,
+                REVIEW_OUTCOME_OK,
+            ),
         ) as cur,
     ):
         row = await cur.fetchone()

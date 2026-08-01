@@ -33,7 +33,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git, teardown_worktree
+from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git, teardown_worktree
 from harness.worktree import worktree_path
 
 __all__ = [
@@ -65,15 +65,21 @@ class CloseMergeError(RuntimeError):
         self.conflict = conflict
 
 
-def worktree_porcelain(worktree: Path) -> str:
+def worktree_porcelain(worktree: Path, *, timeout: float | None = None) -> str:
     """Return ``git status --porcelain`` for ``worktree`` (stripped).
 
     A non-empty result means the run worktree has uncommitted changes (staged,
     unstaged, or untracked). Raises :class:`CloseMergeError`
     (``reason='git_status_failed'``) on a git failure so the caller reports an
     error, not a false-clean.
+
+    ``timeout`` is forwarded to :func:`run_git` and defaults to ``None``, leaving
+    ``close``'s interactive call unchanged; ``reclaim --stale``'s closable
+    predicate bounds it, because that probe runs unattended every tick (#255).
+    A fired :class:`subprocess.TimeoutExpired` propagates rather than reading as
+    a clean tree — the caller's guard decides, and its answer is *not closable*.
     """
-    result = run_git(worktree, "status", "--porcelain")
+    result = run_git(worktree, "status", "--porcelain", timeout=timeout)
     if result.returncode != 0:
         raise CloseMergeError(
             f"git status failed for {worktree}: {result.stderr.strip()}",
@@ -161,9 +167,11 @@ def merge_run_branch(
                 # main-checkout ``git merge --abort`` — nothing shared was touched.
                 raise CloseMergeError(
                     f"cannot merge {worktree_branch} into {base_branch}: it conflicts "
-                    f"with changes that landed on origin/{base_branch} during the run; "
-                    f"rebase the run branch on the updated {base_branch}, re-review, and "
-                    f"close again",
+                    f"with changes that landed on origin/{base_branch} during the run. "
+                    f"close integrates origin/{base_branch} itself, so nothing already "
+                    f"on {worktree_branch} needs rewriting: merge origin/{base_branch} "
+                    f"into {worktree_branch}, commit the resolution, re-review (the "
+                    f"resolution moved HEAD), and close again",
                     reason="merge_conflict",
                     conflict=True,
                 )
@@ -199,7 +207,7 @@ def _create_merge_worktree(repo_root: Path, run_id: str, *, base_tip: str) -> Pa
     """Create the detached throwaway close-merge worktree at ``base_tip``.
 
     At ``.worktrees/harness/<run_id>-close`` — inside the area
-    :func:`harness.cli._git.teardown_worktree` guards, distinct from the run's own
+    :func:`harness._git.teardown_worktree` guards, distinct from the run's own
     worktree. Detached (no branch), so a concurrent base branch already checked out
     in the main tree is no obstacle. Writes relative worktree pointers (git ≥ 2.48)
     so the path resolves identically on host and in the container (CAL-866). Raises

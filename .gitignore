@@ -32,7 +32,12 @@ htmlcov/
 *.db-wal
 
 # Worktrees
+# .worktrees/ is the harness's own verb-created root (harness/identity.py);
+# .claude/worktrees/ is the Claude Code CLI's agent-dispatch root — different
+# owner, same hazard. Keep comments on their own lines: git does not treat a
+# trailing '#' on a pattern line as a comment.
 .worktrees/
+.claude/worktrees/
 
 # OS
 .DS_Store
@@ -47,3 +52,15 @@ htmlcov/
 
 # .codex/ and .gemini/ are committed like .claude/ in this committed-mode repo.
 # Ignore only genuinely per-machine bits if any appear (e.g. an absolute-path hook config).
+
+# Run artifacts a verb loop stages at the worktree root, because the wrapper
+# mounts only the invoking CWD into each verb's container so `/tmp` never
+# resolves there (`commands/harness.md`). Untracked each reads as a dirty
+# worktree to the close gate; `git add -A` publishes it instead. Not covered by
+# `.harness/` above — both land at the root.
+#   gate.log   — verify-gate output for `harness review --gate-log` (#259)
+#   /design.md — Step 1.5's design_markdown for `review --design-file`
+# `design.md` is root-anchored: it is a name worth tracking under docs/ or
+# specs/, unlike the distinctive `gate.log`.
+gate.log
+/design.md

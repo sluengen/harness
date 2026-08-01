@@ -44,8 +44,13 @@ def seed_design_event(
     design_hash: str | None = None,
     grounded_sha: str = "basesha",
     timestamp: str = DEFAULT_DESIGNED_AT,
+    duration_ms: int | None = None,
 ) -> None:
     """Append one ``design`` event for ``run_id``, satisfying ``review``'s check.
+
+    ``duration_ms`` seeds the event **column** (#264) — the verb's own latency.
+    It defaults to ``None``, the shape every row written before #264 carries, so
+    existing fixtures are unaffected.
 
     ``status="ok"`` records a produced design (``design_hash`` identifies it —
     pass :func:`~harness.cli.design_protocol.design_content_hash` of the text a
@@ -72,9 +77,15 @@ def seed_design_event(
     async def _insert() -> None:
         async with store.connect(db_path) as conn:
             await conn.execute(
-                "INSERT INTO events (run_id, event_type, timestamp, data_json) "
-                "VALUES (?, 'design', ?, ?)",
-                (run_id, timestamp, data.model_dump_json(exclude_none=True)),
+                "INSERT INTO events "
+                "(run_id, event_type, timestamp, duration_ms, data_json) "
+                "VALUES (?, 'design', ?, ?, ?)",
+                (
+                    run_id,
+                    timestamp,
+                    duration_ms,
+                    data.model_dump_json(exclude_none=True),
+                ),
             )
             await conn.commit()
 

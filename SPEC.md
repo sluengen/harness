@@ -1,10 +1,10 @@
 # Harness — Design Specification
 
 **Version:** 0.7
-**Status:** Current for §1–2 (the verb model), §4 (core module design), and §11 (CLI design). §3, §5–§10, and §12–§14 described the **retired** deterministic workflow engine; they are superseded and their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers here (see the banner at §3).
+**Status:** Current for §1–2 (the verb model), §4 (core module design), §11 (CLI design), and §16 (non-goals). §3, §5–§10, §12–§15, and §17–§18 described the **retired** deterministic workflow engine — its structure and schema, its migration plan, its open questions, and its acceptance criteria; they are superseded and their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers here (see the banner at §3).
 **Guiding principle:** *The harness is a set of deterministic, audited verbs an agent calls — not a pipeline that drives agents.*
 
-> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling four deterministic verbs — `start` / `design` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model; §4 (modules) and §11 (CLI) describe its as-built surface. The deterministic workflow engine (§3, §5–§10, §12–§14) was retired in CAL-574; its design is re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers in those sections.
+> **Execution model (2026-06).** The harness no longer orchestrates the build. Per proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md) (accepted 2026-06-09; decision recorded in [`specs/architecture-principles.md`](specs/architecture-principles.md)), a single Claude session orchestrates **and** implements, calling four deterministic verbs — `start` / `design` / `review` / `close` — over the SQLite ledger, with process enforcement as a gate inside `close`. §1–2 describe this model; §4 (modules) and §11 (CLI) describe its as-built surface. The deterministic workflow engine (§3, §5–§10, §12–§14) was retired in CAL-574, along with the §15 plan to migrate onto it, the §17 questions it deferred, and the §18 criteria it was to be graded against; that design is re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers in those sections. §16 (non-goals) stays live — it is standing policy, not engine design.
 
 ---
 
@@ -48,7 +48,7 @@ The SQLite schema reference (full DDL, migrations) now lives in [`run-ledger.md`
 | [`specs/retired/engine-loop.md`](specs/retired/engine-loop.md) | Loop blocks, `until:` / `until_bash:`, retry rewind | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/ai-node.md`](specs/retired/ai-node.md) | AI node dispatch, structured output, failure modes | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
 | [`specs/retired/script-node.md`](specs/retired/script-node.md) | Script node subprocess, env, contract | Engine retired (CAL-574); re-homed to `specs/retired/` (CAL-661) |
-| [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md) | SPEC.md's own retired-engine sections — §3 (repo structure), §5–§10 (workflow schema, state, merge, identity, worktree, engine), §12–§14 (SQLite schema, Docker, steward example) | Engine retired (CAL-574); SPEC.md bodies re-homed here, stub pointers left in place (CAL-1010) |
+| [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md) | SPEC.md's own retired-engine sections — §3 (repo structure), §5–§10 (workflow schema, state, merge, identity, worktree, engine), §12–§14 (SQLite schema, Docker, steward example), §15 (migration plan), §17–§18 (open questions, success criteria) | Engine retired (CAL-574); SPEC.md bodies re-homed here, stub pointers left in place (CAL-1010, extended by #271) |
 
 ---
 
@@ -115,7 +115,7 @@ The harness never decides what to build or how. The session does; the verbs reco
 
 ---
 
-> **§3, §5–§10, and §12–§14 described the retired deterministic workflow engine — their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers below.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current.) The re-homed doc is kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement in the re-homed doc as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is [`commands/harness.md`](commands/harness.md).
+> **§3, §5–§10, §12–§15, and §17–§18 described the retired deterministic workflow engine — their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers below.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current, and **§16 *Non-Goals*** is standing policy rather than engine design.) The re-homed doc is kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement in the re-homed doc as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is [`commands/harness.md`](commands/harness.md).
 
 ---
 
@@ -267,18 +267,19 @@ harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
 
 # Read / inspection — never mutate state
-harness status    <run-id>                [--json]
-harness logs      <run-id>                [--follow] [--node <id>]
-harness events    <run-id>                [--type <event_type>] [--json] [--after-id <n>]
+harness status    [<run-id>]              [--run-id <id>] [--json]
+harness logs      [<run-id>]              [--run-id <id>] [--follow] [--node <id>]
+harness events    [<run-id>]              [--run-id <id>] [--type <event_type>] [--json] [--after-id <n>]
 harness runs                              [--limit <n>]
+harness stats                             [--since <dur>] [--db <p>] [--json]   # the aggregate reader over the whole ledger (#265): per-verb attempts split ok/refused/failed, verb + run latency (median and max), review cycles per run, recovery counts, engine verdicts. Read-only — opened `mode=ro`, so it cannot write. Retired-engine rows (CAL-574) are excluded and reported separately, and the covered window is stated rather than implied
 harness worktrees list                    [--json]
 harness worktrees cleanup                 [--age <duration>] [--merged] [--force] [--db <p>]
 
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
-harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold
-harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket; record a defer event (CAL-1143)
-harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket; record a release event (#193)
+harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--undo] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold (default from `loop.wall_clock_budget_minutes`, shared with review's wall-clock breaker — #260; idle = tracker updatedAt, the ledger's last activity, AND the run worktree's newest tracked-file mtime — #254), reporting a third outcome `closable` for an idle run whose clean worktree HEAD already carries a gate-evidenced passing review — it was never stranded, only unfinished, so it is left open for `close` rather than reverted (#255); --undo reverses a reclaim confirmed to be a false positive (ticket back to In Progress, label dropped, run row re-opened)
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a defer event (CAL-1143)
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a release event (#193)
 harness doctor                                # system health checks
 harness version                           [--json]
 
@@ -310,9 +311,14 @@ refuses a pass whose SHA ≠ HEAD, so a stale pass cannot be reused).
   with the review prompt on stdin and scans stdout for the first `SUBMIT: <json>`
   line. The JSON carries `verdict` (`pass`|`fail`|`defer`), `issues[]`, and
   optional `commit_message` / `deferred_brief`. A missing, malformed, or
-  unknown-verdict SUBMIT line is recorded as `verdict='fail'` with the sentinel
-  issue `"reviewer emitted no valid SUBMIT line"` — the verb never raises on a
-  bad reviewer, it records the failure.
+  unknown-verdict SUBMIT line means the reviewer delivered **no verdict**, so it
+  is an infra failure, not a rejected diff (#270): exit 3 with `reason` of
+  `no_submit` (no `SUBMIT:` line anywhere) or `malformed_submit` (one was seen
+  but none parsed), recorded as a refusal carrying no `verdict`. It consumes no
+  review cycle and leaves the ticket In Review — the same classification the
+  engine timeout and the sandbox walls already carry, on the same principle that
+  an engine which never reviewed the diff produced no verdict. The verb still
+  never raises on a bad reviewer; it records the failure.
 - Appends a `review` event (`harness.events.schema` event type `review`) whose
   `data_json` holds `run_id`, `reviewed_sha`, `verdict`, `issues`, optional
   `commit_message` / `deferred_brief`, and `created_at`.
@@ -382,29 +388,7 @@ harness status 01J... --json | jq .status
 
 ## 15. Migration Plan
 
-Cut order: **stewards → bugfix → feature.**
-
-| Phase | Scope | Done when |
-|-------|-------|-----------|
-| **A. Greenfield** | Build harness in isolation. Test with synthetic repo fixture. | Steward workflow runs end-to-end against fixture. Engine emits clean event log. |
-| **B. Shadow** | Run steward + bugfix workflows against a target repo's dev branch alongside the existing pipeline. Worktrees + diffs + reports produced; **no merges**. Compare outputs against existing pipeline. | 5 successful shadow runs per workflow with comparable or better output. |
-| **C. Cutover (partial)** | Stewards live (replace nightly-review). Bugfix live in normal mode. Feature work continues on current pipeline. | Legacy `nightly-review.skill` removed. Bugfixes flow through harness CLI. |
-| **D. Cutover (full)** | Feature workflow live. Project manifest, change folders, strategy migrated or removed. CLAUDE.md slimmed to project-only content. | Project `harness/`, `manifest.yaml`, `harness/changes/` deleted. `CLAUDE.md` under 50 lines. |
-
-### What goes back into a project's `CLAUDE.md` (target state)
-
-A short, project-only file:
-- Project description and tech stack
-- Test/lint commands
-- Code conventions
-- Path to `skills/` (execution-side skills, not pipeline mechanics)
-- Output-contract reminder for AI nodes invoked by harness
-
-Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all leave the project's CLAUDE.md.
-
-### What stays in a project's `skills/`
-
-Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
+> **Retired — deterministic workflow engine.** Moved to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), superseded by the verb model (§1–2; see the status banner at the top of this file).
 
 ---
 
@@ -425,50 +409,13 @@ Explicit list of things this project does **not** do, even on request:
 
 ## 17. Open Questions (deferred decisions)
 
-These are deliberately unresolved. Pick before code lands.
-
-1. **Workflow location: in-repo or harness-side?**
-   - In-repo: workflows live in the project repo (`your-repo/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
-   - Harness-side: workflows live in `harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
-   - **Lean:** harness-side, because cleanliness > convenience for a single-team tool. Revisit when a second project consumes the harness.
-
-2. **State persistence on resume.** ~~Defer until we hit a workflow that genuinely benefits from mid-run resume.~~ **Resolved by the `decision` node (§5):** `actor: human` requires resume capability, and that's promoted to v2 critical path. v1 stores latest state on the row; v2 lifts that to per-completion snapshots so paused runs can be rehydrated cleanly. Resume-from-failure (the broader case) follows the same machinery — once human-decision resume works, resume-from-failure is mostly a CLI verb away.
-
-3. **Concurrent runs against the same project.** Multiple worktrees on the same repo are fine (different branches). The SQLite question deserves an explicit analysis, not a hand-wave:
-
-   - **`runs` table:** each concurrent run owns its row by `run_id` PK. Updates target distinct rows — no contention.
-   - **`events` table:** append-only, autoincrement PK. SQLite WAL mode handles concurrent appenders cleanly (writers serialise on the WAL, readers don't block).
-   - **State writes:** the `runs.state_json` column is updated per-run, so concurrent state writes target different rows. No shared resource.
-   - **Reads (`harness status`, `harness logs`) during a running workflow:** WAL means readers see a snapshot without blocking writers.
-
-   The risk is bounded: the only real contention point is bursty event writes from many concurrent runs, which WAL serialises with millisecond-class lock acquisition. Acceptable for v1's expected workload (1–3 concurrent runs locally). If usage grows beyond that, switch to PostgreSQL — the schema is portable.
-
-4. **External trigger source (Discord, etc.) — built-in or external?** *Resolved: external.* The harness exposes the CLI and does not listen; any process that watches a source and shells out to a verb lives in a sibling repo or in Hermes, never in this tool. The engine-era webhook listener that violated this boundary was retired in CAL-601.
-
-5. **Prompt-cache strategy.** Anthropic cache breakpoints could materially cut token cost for steward runs that re-read the same context daily. Defer to v0.2 once we have real token-cost data.
+> **Retired — deterministic workflow engine.** Moved to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), superseded by the verb model (§1–2; see the status banner at the top of this file).
 
 ---
 
 ## 18. Success Criteria
 
-### For this spec (review)
-
-- [ ] Read in one sitting (~30 minutes).
-- [ ] No "what does X mean" gaps — every term used is defined or obvious.
-- [ ] Repo structure proposal (§3) is concrete enough to scaffold without ambiguity.
-- [ ] YAML schema (§5) is concrete enough to write a workflow without inventing fields.
-- [ ] CLI surface (§11) is stable enough to publish to callers immediately.
-- [ ] Migration plan (§15) is concrete enough to start Phase A this week.
-
-### For v1 implementation (acceptance)
-
-- [ ] **The 10-minute workflow test.** A new workflow can be written from a blank page in under 10 minutes, end-to-end, by someone who's read this spec once. Test with a real example: write a `release-notes` workflow that pulls Linear tickets from the last week and asks Claude to summarise. If it feels slow, verbose, or mentally taxing, the system is too heavy and v1 needs cuts before shipping.
-- [ ] Steward workflow runs end-to-end against a synthetic repo fixture.
-- [ ] Token cost per run is logged and visible in `harness status --json`.
-- [ ] Event log captures every tool call inside an AI node (replay-quality observability).
-- [ ] Concurrent runs against the same project don't collide (per §17.3 analysis).
-
-If any of these fail at scaffolding time, fix the spec before continuing.
+> **Retired — deterministic workflow engine.** Moved to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), superseded by the verb model (§1–2; see the status banner at the top of this file).
 
 ---
 

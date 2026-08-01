@@ -20,10 +20,15 @@ change named two ways to close that gap — re-fetch the comment, or have the
 ``DesignOutput`` consumer pass it — and this build takes the second: the
 orchestrator that ran ``harness design`` already holds the design on stdout, so
 it hands it back with ``--design-file`` and the verb **verifies it against the
-recorded hash** before it reaches the prompt. That keeps the tracker seam out of
-it (no comment-read method on two backends), keeps the ledger event the single
-key for both behaviours, and matches #211's own as-built note that nothing reads
-the design back out of the comment.
+recorded hash** before it reaches the prompt. That keeps the ledger event the
+single key for both behaviours.
+
+The first option was declined here partly to keep a comment-read method off the
+two tracker backends. **#258 added one anyway** — ADR 0008's adopt path has a
+resumed run recover its predecessor's design text, which lives nowhere but the
+comment — so that argument no longer applies. What still holds, and is what
+these tests pin, is the division of labour: ``review`` reads the *ledger* to
+decide both enforcement and authentication, and never the ticket.
 
 **Enforcement refuses; context degrades.** The presence check is ledger-keyed
 and unbypassable, so it refuses. Supplying the design is enrichment: an absent,
@@ -34,6 +39,10 @@ review against an unverified design) and refusing would only add a wedge.
 These tests inject a fake engine runner and seed the ledger directly, exactly
 like ``test_review_verify_gate.py``.
 """
+
+# size: the design-to-review linkage (#212, ADR 0007 D3) — the no_design refusal and
+# the review-against-design path as one contract. They are two halves of one gate,
+# asserted against a shared ledger fixture.
 
 from __future__ import annotations
 
@@ -222,7 +231,11 @@ def test_no_design_event_refuses_before_the_engine(repo: Path, db_path: Path) ->
     payload = json.loads(result.stdout)
     assert payload["reason"] == review_mod.NO_DESIGN_REASON
     assert prompts == [], "an undesigned run must not reach an engine"
-    assert _review_events(db_path) == [], "no event may be recorded on a refusal"
+    # #262 records the refusal; what must stay absent is the *verdict*, which is
+    # what the close gate reads and therefore what "no event" was protecting.
+    (event,) = _review_events(db_path)
+    assert "verdict" not in event, event
+    assert event["reason"] == review_mod.NO_DESIGN_REASON
 
 
 def test_no_design_refusal_names_the_verb_that_satisfies_it(
@@ -339,7 +352,8 @@ def test_supplied_design_whose_hash_does_not_match_is_dropped_with_a_warning(
     assert len(prompts) == 1, "a mismatch degrades the context, it does not refuse"
     assert "tampered" not in prompts[0], "unverified text must not reach the engine"
     assert "does not match" in result.stderr
-    assert len(_review_events(db_path)) == 1
+    (event,) = _review_events(db_path)
+    assert event["design_context_reason"] == "hash_mismatch"
 
 
 def test_ok_design_without_a_design_file_proceeds_and_is_recorded(
@@ -358,6 +372,7 @@ def test_ok_design_without_a_design_file_proceeds_and_is_recorded(
     assert result.stderr == "", "the common case must not put noise on every review"
     (event,) = _review_events(db_path)
     assert event["design_context"] is False
+    assert event["design_context_reason"] == "not_supplied"
 
 
 def test_a_design_backed_review_records_that_it_saw_the_design(
@@ -378,6 +393,9 @@ def test_a_design_backed_review_records_that_it_saw_the_design(
     assert result.exit_code == 0, result.stdout
     (event,) = _review_events(db_path)
     assert event["design_context"] is True
+    assert "design_context_reason" not in event, (
+        "a successful linkage has no reason to record — only its absence does"
+    )
 
 
 def test_a_failed_design_records_no_design_context(repo: Path, db_path: Path) -> None:
@@ -389,6 +407,7 @@ def test_a_failed_design_records_no_design_context(repo: Path, db_path: Path) ->
     assert result.exit_code == 0, result.stdout
     (event,) = _review_events(db_path)
     assert event["design_context"] is False
+    assert event["design_context_reason"] == "design_failed"
 
 
 def test_an_unreadable_design_file_degrades_loudly(repo: Path, db_path: Path) -> None:
@@ -408,7 +427,64 @@ def test_an_unreadable_design_file_degrades_loudly(repo: Path, db_path: Path) ->
     assert result.exit_code == 0, result.stdout
     assert len(prompts) == 1
     assert _DESIGN not in prompts[0]
-    assert "does not match" in result.stderr, "a path that was passed but failed is wrong"
+    assert "could not be read" in result.stderr, "a path that was passed but failed is wrong"
+    (event,) = _review_events(db_path)
+    assert event["design_context_reason"] == "unreadable"
+
+
+# ---------------------------------------------------------------------------
+# AC-2: a --design-file outside the workspace allowlist is refused up front,
+# distinct from the ADR 0007 drop above — a caller error, not an unusable design.
+# ---------------------------------------------------------------------------
+
+
+def test_design_file_outside_the_workspace_is_refused_before_the_engine(
+    repo: Path, db_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    _seed_run(db_path, repo)
+    _seed_design(db_path, design_hash=design_content_hash(_DESIGN))
+    outside = tmp_path_factory.mktemp("outside-the-workspace") / "design.md"
+    outside.write_text(_DESIGN)
+    prompts: list[str] = []
+
+    result = _invoke(
+        repo,
+        db_path,
+        _capturing_runner(_PASS_LINE, prompts),
+        "--design-file",
+        str(outside),
+    )
+
+    assert result.exit_code == review_mod.EXIT_GATE_FAILED
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == review_mod.DESIGN_FILE_OUTSIDE_WORKSPACE_REASON
+    assert str(outside) in payload["error"], "the refusal names the rejected path"
+    assert prompts == [], "an out-of-workspace design file must never reach the engine"
+    (event,) = _review_events(db_path)
+    assert "verdict" not in event, event
+    assert event["reason"] == review_mod.DESIGN_FILE_OUTSIDE_WORKSPACE_REASON
+
+
+def test_design_file_inside_the_workspace_but_a_missing_file_is_not_this_refusal(
+    repo: Path, db_path: Path
+) -> None:
+    """A path under the workspace root that just doesn't exist is AC-1's
+    'unreadable' degrade, not AC-2's caller-error refusal — the two must not
+    collapse into one."""
+    _seed_run(db_path, repo)
+    _seed_design(db_path, design_hash=design_content_hash(_DESIGN))
+    prompts: list[str] = []
+
+    result = _invoke(
+        repo,
+        db_path,
+        _capturing_runner(_PASS_LINE, prompts),
+        "--design-file",
+        str(repo / "does-not-exist.md"),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert len(prompts) == 1
 
 
 def test_the_latest_design_event_is_authoritative(repo: Path, db_path: Path) -> None:
@@ -625,6 +701,49 @@ def test_resolve_design_gate_distrusts_an_ok_event_with_no_recorded_hash() -> No
 
 
 # ---------------------------------------------------------------------------
+# AC-1: the gate distinguishes WHY a design was not applied
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_design_gate_reason_is_none_on_success() -> None:
+    event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
+    gate = resolve_design_gate(event, _DESIGN)
+    assert gate.context_reason is None
+
+
+def test_resolve_design_gate_reason_is_design_failed_for_a_failed_attempt() -> None:
+    gate = resolve_design_gate({"status": "failed", "reason": "engine_timeout"}, _DESIGN)
+    assert gate.context_reason == "design_failed"
+
+
+def test_resolve_design_gate_reason_is_not_supplied_when_no_file_was_given() -> None:
+    event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
+    gate = resolve_design_gate(event, None)
+    assert gate.context_reason == "not_supplied"
+
+
+def test_resolve_design_gate_reason_is_unreadable_for_an_os_error() -> None:
+    """``_read_design_file`` maps an unreadable path to the empty string —
+    distinct from a wrong-but-present text, which is a hash mismatch instead."""
+    event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
+    gate = resolve_design_gate(event, "")
+    assert gate.context_reason == "unreadable"
+    assert gate.warning is not None
+
+
+def test_resolve_design_gate_reason_is_hash_mismatch_for_wrong_text() -> None:
+    event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
+    gate = resolve_design_gate(event, "something else")
+    assert gate.context_reason == "hash_mismatch"
+    assert gate.warning is not None
+
+
+def test_resolve_design_gate_reason_is_hash_mismatch_when_no_hash_was_recorded() -> None:
+    gate = resolve_design_gate({"status": "ok"}, _DESIGN)
+    assert gate.context_reason == "hash_mismatch"
+
+
+# ---------------------------------------------------------------------------
 # The payload contract this verb now reads back out
 # ---------------------------------------------------------------------------
 
@@ -649,3 +768,55 @@ def test_the_design_gate_reads_the_keys_the_model_writes() -> None:
     assert DESIGN_STATUS_KEY in payload
     assert DESIGN_HASH_KEY in payload
     assert resolve_design_gate(payload, _DESIGN).design_markdown == _DESIGN
+
+
+# ---------------------------------------------------------------------------
+# #264 — the recorded duration is inert with respect to the design gate
+# ---------------------------------------------------------------------------
+
+
+def test_a_duration_bearing_failed_design_still_satisfies_the_check(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-2: recording latency does not regress ADR 0007 D4.
+
+    #264 gives a failed design attempt a ``duration_ms``, and the ``no_design``
+    check keys on the event's presence and ``status`` — never on the column. So
+    a timed-out engine's recorded attempt must let the review proceed exactly as
+    an untimed one did, which is what makes the telemetry safe to collect at all.
+    """
+    _seed_run(db_path, repo)
+    _seed_design(db_path, status="failed", duration_ms=600_000)
+    prompts: list[str] = []
+
+    result = _invoke(repo, db_path, _capturing_runner(_PASS_LINE, prompts))
+
+    assert result.exit_code == 0, result.stdout
+    assert len(prompts) == 1, "a recorded failed attempt must let the review proceed"
+
+
+def test_a_duration_bearing_ok_design_reaches_the_engine_unchanged(
+    repo: Path, db_path: Path
+) -> None:
+    """The gate reads ``status`` and ``design_hash``, never ``duration_ms``.
+
+    Stated as an equivalence: a duration-bearing ``ok`` event behaves identically
+    to one without, so no enforcement path can start keying on a number that is
+    pure observation.
+    """
+    _seed_run(db_path, repo)
+    _seed_design(
+        db_path, design_hash=design_content_hash(_DESIGN), duration_ms=1_500_000
+    )
+    prompts: list[str] = []
+
+    result = _invoke(
+        repo,
+        db_path,
+        _capturing_runner(_PASS_LINE, prompts),
+        "--design-file",
+        str(_write_design_file(repo, _DESIGN)),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert _DESIGN in prompts[0]

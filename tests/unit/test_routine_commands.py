@@ -229,8 +229,16 @@ def test_routines_documented_local_trigger_only() -> None:
 
 def test_build_routine_runs_reclaim_preflight() -> None:
     """CAL-737 AC-1: the Build routine runs the Linear-keyed
-    ``harness reclaim --stale`` sweep (scoped to a ``--project``, default 90m)
-    as its pre-flight, before picking work."""
+    ``harness reclaim --stale`` sweep (scoped to a ``--project``) as its
+    pre-flight, before picking work.
+
+    The threshold half of this guard inverted at #260. It used to require the
+    doc to *name* the 90-minute default; the default is now resolved from
+    ``loop.wall_clock_budget_minutes``, so a duration literal here is precisely
+    the drift the change removed — a reader who trusts it would be reading a
+    number the sweep does not use. The guard therefore requires the config key
+    and **forbids** the literal.
+    """
     body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
     assert "harness reclaim --stale" in body, (
         "the Build routine must run `harness reclaim --stale` as its pre-flight "
@@ -240,9 +248,14 @@ def test_build_routine_runs_reclaim_preflight() -> None:
         "the `--stale` sweep is required to be scoped to a project; the Build "
         "routine must pass `--project` (CAL-737 AC-1)."
     )
-    assert re.search(r"90\s*(m|min)", body, re.IGNORECASE), (
-        "the Build routine must note the default 90-minute staleness threshold "
-        "for the reclaim pre-flight (CAL-737 AC-1)."
+    assert "wall_clock_budget_minutes" in body, (
+        "the Build routine must name `loop.wall_clock_budget_minutes` as where "
+        "the reclaim pre-flight's staleness threshold comes from (#260)."
+    )
+    assert not re.search(r"\b\d+\s*(m|min)\b", body, re.IGNORECASE), (
+        "the Build routine must not state a duration literal as the staleness "
+        "default — it resolves from CONTEXT.md, and a number written here goes "
+        "stale the moment that key is retuned (#260)."
     )
 
 
@@ -348,4 +361,149 @@ def test_build_routine_resume_documents_clean_fallback() -> None:
     assert "fall back" in low or "fallback" in low or "falls back" in low, (
         "the resume wiring must document the clean-restart fallback when no "
         "durable WIP exists (CAL-739 AC-2)."
+    )
+
+
+# --- #256: the Build pre-flight drains the sweep's `closable` list -------------
+#
+# Breakdown item 2 of ``specs/proposals/resume-earned-stages.md``, settling D2.
+# #255 taught ``reclaim --stale`` to *report* a stranded-but-passing run as
+# ``closable`` instead of reverting it — which on its own trades "reclaimed and
+# re-done" for "stranded indefinitely". Step 0 gains a third sub-step that
+# finishes each one through ``harness close``, between the sweep and the
+# worktrees housekeeping. These guards pin the four properties the routine body
+# has to carry for that drain to be safe: its ordering (and the reason for it),
+# its bound, its single mechanism, and what the tick reports.
+
+
+def _build_routine_body() -> str:
+    return _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+
+
+def test_build_routine_drains_closable_runs() -> None:
+    """#256 AC-1: step 0 drives `harness close` on the sweep's closable list."""
+    body = _build_routine_body()
+    assert "harness close" in body, (
+        "the Build pre-flight must drive `harness close` on each run the sweep "
+        "reported `closable` — #255 only classifies, so without the drain a "
+        "closable run is stranded indefinitely (#256 AC-1)."
+    )
+    assert "closable" in body, (
+        "the drain must name the sweep's `closable` list as the thing it "
+        "consumes — it derives no closability judgment of its own (#256 AC-1)."
+    )
+
+
+def test_build_routine_sweep_reads_the_closable_list_as_json() -> None:
+    """#256 AC-1: the sweep is invoked with `--json`, which is how the closable
+    entries arrive machine-readably (`reclaim`'s `--json` defaults **off**)."""
+    body = _build_routine_body()
+    assert re.search(r"harness reclaim --stale[^\n]*--json", body), (
+        "the pre-flight's sweep invocation must pass `--json` — `reclaim`'s "
+        "`json_output` Typer option defaults to False, so without it the "
+        "`closable` entries the drain consumes arrive only as prose (#256)."
+    )
+
+
+def test_build_routine_drain_runs_before_worktree_cleanup() -> None:
+    """#256 AC-1: the drain is ordered explicitly before `worktrees cleanup`,
+    with the reason inline — cleanup can remove the worktree `close` needs."""
+    body = _build_routine_body()
+    drain_at = body.find("harness close")
+    cleanup_at = body.find("harness worktrees cleanup")
+    pick_at = body.lower().find("pick the next ticket")
+    assert -1 < drain_at < cleanup_at < pick_at, (
+        "step 0's sub-steps must be ordered sweep → drain → housekeeping, all "
+        "before the pick: `cleanup --age` removes an orphaned worktree "
+        "directory on mtime alone, and a stranded closable run is by "
+        "construction idle, so draining after cleanup can delete the very "
+        "worktree `close` reads HEAD from (#256 AC-1)."
+    )
+    assert re.search(r"before[^.]{0,140}cleanup|cleanup[^.]{0,140}after", body, re.IGNORECASE), (
+        "the ordering must be stated in prose, not left implicit in the "
+        "sub-step sequence (#256 AC-1)."
+    )
+    assert re.search(r"`--age`[^.]{0,200}(mtime|worktree `?close|worktree the close)", body), (
+        "the ordering claim must carry its reason inline — it is the `--age` "
+        "arm, which reclaims a directory on mtime alone and is not subject to "
+        "`--merged`'s vetoes, that can delete a closable run's worktree "
+        "(#256 AC-1)."
+    )
+
+
+def test_build_routine_drain_is_bounded_and_records_refusals() -> None:
+    """#256 AC-2: the drain runs once over the sweep's list, and a refusal is
+    recorded-and-continued rather than compensated for — D5 named as the why."""
+    body = _build_routine_body()
+    low = body.lower()
+    assert "bounded" in low and "re-sweep" in low, (
+        "the drain must be documented as bounded — once over the list the "
+        "sweep produced, never re-sweeping for newly-closable runs (#256 AC-2)."
+    )
+    assert re.search(r"refus\w*[^.]{0,200}continu|continu\w*[^.]{0,200}refus", low), (
+        "a refused close must be recorded and the drain must continue to the "
+        "next entry: the failed close leaves the ticket exactly as step 0 "
+        "found it, which is the status quo, not a regression (#256 AC-2)."
+    )
+    assert "D5" in body, (
+        "the record-and-continue rule must name D5 as the reason no "
+        "compensating mutation is allowed — no hand-rolled merge, no "
+        "`reclaim`, no retry (#256 AC-2)."
+    )
+
+
+def test_build_routine_drain_names_close_as_the_only_mechanism() -> None:
+    """#256 AC-3: `harness close` is the mechanism, run from the main repo root."""
+    body = _build_routine_body()
+    assert re.search(r"harness close [^\n]*--run-id", body), (
+        "the drain must address each entry by the two fields the sweep "
+        "reports — the ticket and `--run-id` — so `close` resolves the run "
+        "wherever its worktree sits (#256 AC-3)."
+    )
+    assert "main repo root" in body.lower(), (
+        "the drain must state the CWD requirement: `close` runs from the main "
+        "repo root, not the run's worktree, or the verb can refuse "
+        "`no_ledger` before it reaches its own gate (#256 AC-3)."
+    )
+
+
+def test_build_routine_reports_what_step_0_closed() -> None:
+    """#256 AC-4: the tick reports what step 0 closed, so a tick that ships
+    someone else's work says so rather than attributing it to its own build."""
+    body = _build_routine_body()
+    assert re.search(r"report[^.]{0,200}(closed|close)", body, re.IGNORECASE), (
+        "step 0 must report what it closed — ticket, run id and outcome — as "
+        "part of the tick's output; otherwise a pre-flight merge reads as the "
+        "tick's own build (#256 AC-4)."
+    )
+
+
+def test_build_routine_drain_cites_the_proposal_decision() -> None:
+    """#256 AC-6: the step cites `resume-earned-stages` D2, the decision that
+    settled whether the pre-flight may close."""
+    body = _build_routine_body()
+    assert "resume-earned-stages" in body, (
+        "the drain must cite the proposal it implements by bare name, so the "
+        "'may the pre-flight merge' decision is traceable from the body that "
+        "implements it (#256 AC-6)."
+    )
+    assert re.search(r"resume-earned-stages`?[^\n]{0,120}\bD2\b", body), (
+        "the citation must name decision **D2** specifically — the file "
+        "already cites `stale-run-reclamation` D2/D3 for a different "
+        "decision, so a bare `D2` elsewhere in the step is not the same "
+        "reference (#256 AC-6)."
+    )
+
+
+def test_build_routine_drops_the_superseded_classifier_only_claim() -> None:
+    """#256 AC-1/AC-2 anti-drift: #255's interim sentence — that a closable
+    ticket is *simply reported on every tick until something finishes it* — is
+    false once the drain lands. This catches the half-done edit that adds the
+    drain while leaving the prose saying nothing drains."""
+    body = _build_routine_body()
+    assert "until something finishes it" not in body.lower(), (
+        "step 0 still carries #255's interim claim that a closable ticket is "
+        "only reported until something finishes it — the drain *is* that "
+        "something. A body that contradicts itself is the coherence failure "
+        "these guards exist to prevent (#256)."
     )

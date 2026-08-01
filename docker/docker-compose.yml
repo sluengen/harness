@@ -30,6 +30,14 @@ services:
       # Override with HARNESS_TARGET_REPO=/abs/path/to/some/repo.
       - "${HARNESS_TARGET_REPO:-..}:/workspace"
     environment:
+      # The container writes no bytecode into the mounted host tree (#278). The
+      # `.pyc` it would leave behind embed CONTAINER source paths, and CPython
+      # revalidates a cache entry on the source's mtime and size rather than its
+      # content — so the next host-side gate run loads them and anything using
+      # `inspect.getsource` fails with "could not get source code". Pinned to the
+      # literal `1`, not forwarded from the host: only a non-empty value is on.
+      # This is the second mounting seam; the first is docker/harness-wrapper.sh.
+      PYTHONDONTWRITEBYTECODE: "1"
       # Secrets are passed through from the host shell; never baked into the image.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       LINEAR_API_KEY: "${LINEAR_API_KEY:-}"

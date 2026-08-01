@@ -18,7 +18,10 @@ merge) does not.
 AC-4: origin/base advances non-conflicting after start → close completes fully
       (merge + push + ticket Done + run closed); origin gets the merge.
 AC-5: a conflicting advance → close fails cleanly, the run stays open and
-      resumable, and the recovery (rebase → re-review → close) lands.
+      resumable, and the recovery lands. #266 retired the *prescription* of a
+      rebase — `close` integrates `origin/<base>` itself, so the documented
+      route is now merge-base-into-branch → re-review → close; a rebase remains
+      legal and is still pinned as such.
 AC-1: a close leaves the main checkout byte-identical even when it is dirty —
       the merge cannot touch it.
 """
@@ -286,7 +289,11 @@ def test_close_completes_when_origin_advanced_nonconflicting(
     assert payload["merged"] is True
     assert payload["ticket_done"] is True
     assert payload["status"] == "closed"
+    # #266 AC-2, verb level: the reviewed SHA that landed is the one the run
+    # already had — no rebase happened anywhere in the path — and the base
+    # advancing produced no gate refusal.
     assert payload["reviewed_sha"] == reviewed
+    assert "reason" not in payload
 
     stub.transition_to_done.assert_called_once_with("CAL-572")
     assert _run_status(db_path, RUN_ID) == "closed"
@@ -299,6 +306,8 @@ def test_close_completes_when_origin_advanced_nonconflicting(
     )
     assert (verify / "feature.txt").exists()
     assert (verify / "other.txt").exists()
+    # The reviewed commit rode in as the merge's second parent, unrewritten.
+    assert _head(verify, "HEAD^2") == reviewed
 
 
 def test_close_refuses_on_conflict_and_leaves_run_open(
@@ -382,13 +391,69 @@ def test_close_leaves_a_dirty_main_checkout_untouched(
     assert (verify / "feature.txt").exists()
 
 
+def test_close_recovery_by_merging_base_into_the_run_branch_succeeds(
+    tmp_path: Path, _allow_tmp_workspace: None
+) -> None:
+    """#266: the route the conflict message now names must actually land.
+
+    The defect being fixed is a message that prescribed a remedy nothing
+    verified. Naming a *new* remedy without driving it end-to-end would repeat
+    that defect one line down — so this drives it exactly as the message reads:
+    fetch, merge `origin/<base>` into the run branch, resolve, commit, re-review
+    (the resolution moved HEAD, so the gate needs a fresh pass), close again.
+    No history is rewritten: the run's original commit stays reachable.
+    """
+    origin, main = _setup_origin_and_main(tmp_path)
+    path, branch = _add_run_worktree(main, RUN_ID, filename="README.md", content="run line\n")
+    original = _head(main, branch)
+    db_path = main / ".harness" / "harness.db"
+    _seed_open_run(db_path, path, branch)
+    _emit_pass(db_path, RUN_ID, original)
+
+    _advance_origin(tmp_path, origin, filename="README.md", content="other line\n")
+
+    stub = _make_linear_stub()
+    assert _invoke_close(main, db_path, RUN_ID, stub).exit_code == 1  # conflict refusal
+
+    # The newly documented recovery, verbatim: merge the base into the run
+    # branch and commit the resolution — no rebase, so every SHA already on the
+    # branch survives.
+    _git(main, "fetch", "origin", "dev")
+    subprocess.run(
+        ["git", "merge", "origin/dev"],
+        cwd=path, check=False, capture_output=True, text=True,
+    )
+    (path / "README.md").write_text("resolved line\n")
+    _git(path, "add", "README.md")
+    _git(path, "-c", "core.editor=true", "commit", "--no-edit")
+    resolved = _head(path)
+    _emit_pass(db_path, RUN_ID, resolved)  # the resolution moved HEAD → re-review
+
+    result = _invoke_close(main, db_path, RUN_ID, stub)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["merged"] is True
+    assert _run_status(db_path, RUN_ID) == "closed"
+    # Nothing was rewritten — the originally reviewed commit is still an ancestor.
+    verify = tmp_path / "verify"
+    subprocess.run(
+        ["git", "clone", str(origin), str(verify)],
+        check=True, capture_output=True, text=True,
+    )
+    assert subprocess.run(
+        ["git", "merge-base", "--is-ancestor", original, "HEAD"],
+        cwd=verify, check=False, capture_output=True, text=True,
+    ).returncode == 0
+
+
 def test_close_recovery_after_conflict_refusal_succeeds(
     tmp_path: Path, _allow_tmp_workspace: None
 ) -> None:
-    """CAL-1151 AC-3 / CAL-1154: close's own prescribed recovery works with no manual git.
+    """CAL-1151 AC-3 / CAL-1154: a rebase recovery still lands, with no manual git.
 
-    A conflict refusal's instructions — rebase the run branch on the updated base,
-    re-review, close again — must land cleanly. Under CAL-1151 this used to hit a
+    #266 retired the *prescription* of a rebase — it did not remove the
+    capability, and a rebase remains a legal way to resolve the conflict. This
+    pins that it still works end-to-end. Under CAL-1151 it used to hit a
     *different*, misleading error because an abandoned merge sat in the base
     checkout; the throwaway-worktree merge removes that failure mode structurally
     (nothing is ever left in the main tree). This drives the whole recovery.
@@ -404,9 +469,9 @@ def test_close_recovery_after_conflict_refusal_succeeds(
     stub = _make_linear_stub()
     assert _invoke_close(main, db_path, RUN_ID, stub).exit_code == 1  # conflict refusal
 
-    # The documented recovery, verbatim: rebase the run branch on the updated
-    # base, resolve, re-review (a fresh HEAD → a fresh pass), close again. No
-    # `git merge --abort` in the main checkout — that is the bug, not the cure.
+    # A rebase recovery: rebase the run branch on the updated base, resolve,
+    # re-review (rewritten SHAs → a fresh pass), close again. No `git merge
+    # --abort` in the main checkout — that is the bug, not the cure.
     _git(main, "fetch", "origin", "dev")
     subprocess.run(
         ["git", "rebase", "origin/dev"],

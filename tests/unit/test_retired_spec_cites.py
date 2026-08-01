@@ -1,9 +1,10 @@
 """CAL-633 — no live ``harness/`` source cites a *retired* SPEC section.
 
 SPEC.md is current only for §1–2 (the verb model), §4 (core module design),
-and §11 (CLI design); **§3, §5–§10, and §12–§14 describe the retired
-deterministic workflow engine and are permanently superseded** (see the banner
-at [SPEC.md:4](../../SPEC.md) / the §3 banner). A docstring or comment that
+§11 (CLI design), and §16 (non-goals); **§3, §5–§10, §12–§15, and §17–§18
+describe the retired deterministic workflow engine and are permanently
+superseded** (see the banner at [SPEC.md:4](../../SPEC.md) / the §3 banner;
+§15 and §17–§18 joined that set in #271). A docstring or comment that
 cross-refers a reader into one of those sections sends them to retired prose:
 worse than no cite at all.
 
@@ -48,15 +49,21 @@ from tests._gitutil import tracked_files_under
 # false-match. ``\s*`` after the glyph also catches the spaced form ``§ 12``
 # (including a non-breaking space, which Unicode ``\s`` matches).
 #
-# Current sections (§1, §2, §4 and its §4.x subsections, §11) are deliberately
-# absent from the alternatives, so a current-section cite never matches
-# regardless of trailing subsection digits — ``§4.7`` cannot match because ``4``
-# is not an alternative. The ``(?!\d)`` lookahead is the only boundary needed:
-# it stops ``§1`` matching inside ``§11`` and ``§12`` inside ``§120``, while
-# still matching a sentence-ending cite (``§6.``, ``§12.``) and — deliberately —
-# a retired *subsection* cite (``§12.1``, ``§6.2``), since every subsection
-# beneath a retired top-level section is itself retired.
-_RETIRED_CITE = re.compile(r"§\s*(?:3|5|6|7|8|9|10|12|13|14)(?!\d)")
+# Current sections (§1, §2, §4 and its §4.x subsections, §11, §16) are
+# deliberately absent from the alternatives, so a current-section cite never
+# matches regardless of trailing subsection digits — ``§4.7`` cannot match
+# because ``4`` is not an alternative. The ``(?!\d)`` lookahead is the only
+# boundary needed: it stops ``§1`` matching inside ``§11`` and ``§12`` inside
+# ``§120``, while still matching a sentence-ending cite (``§6.``, ``§12.``) and
+# — deliberately — a retired *subsection* cite (``§12.1``, ``§6.2``, ``§17.3``),
+# since every subsection beneath a retired top-level section is itself retired.
+#
+# §15 and §17–§18 joined the retired set in #271, which re-homed the engine's
+# migration plan, open questions and success criteria alongside the engine
+# design they belong to. The alternation is a ratchet — widening it can only
+# fail more inputs, never fewer — and no live source cited any of the three when
+# it was widened, so it caught nothing retroactively and guards forward only.
+_RETIRED_CITE = re.compile(r"§\s*(?:3|5|6|7|8|9|10|12|13|14|15|17|18)(?!\d)")
 
 
 def _retired_cites_in(text: str) -> list[tuple[int, str]]:
@@ -83,6 +90,9 @@ _MATCH = [
     "`SPEC.md` §13",           # backticked prefix form
     "SPEC  §9",                # extra whitespace between prefix and glyph
     "see §14 for the row",     # bare ``§`` with no SPEC prefix
+    "SPEC §15 migration",      # retired by #271
+    "per §17.3 analysis",      # retired subsection (#271)
+    "graded by SPEC §18",      # retired by #271
     "SPEC § 12 row",       # ordinary space after the glyph
     "SPEC §\u00a013 row",  # § glyph + non-breaking space (\u00a0) before number
 ]
@@ -92,7 +102,9 @@ _NO_MATCH = [
     "see SPEC §1 ",            # current
     "SPEC §1.",                # current, sentence-terminated
     "§4.4",                    # current subsection
+    "SPEC §16 non-goals",      # current — standing policy, not engine design
     "SPEC §120",               # not a real section; 12 followed by a digit
+    "SPEC §150",               # not a real section; 15 followed by a digit
     "specs/features/run-ledger.md",  # the repointed target — no §, must not self-flag
     "see §Observability",      # non-numeric section label (hermes spec)
 ]
@@ -111,10 +123,11 @@ def test_retired_cite_regex_ignores_current_sections(sample: str) -> None:
 def test_no_live_harness_source_cites_a_retired_spec_section() -> None:
     """No git-tracked ``harness/**/*.py`` cites a retired SPEC section.
 
-    Retired sections (§3, §5–§10, §12–§14) describe the deleted deterministic
-    engine; the current schema reference is ``specs/features/run-ledger.md`` and the
-    current command/module homes are §4 / §11. A cite into a retired section
-    must be repointed, not introduced.
+    Retired sections (§3, §5–§10, §12–§15, §17–§18) describe the deleted
+    deterministic engine, the abandoned plan to migrate onto it, its deferred
+    questions and its acceptance criteria; the current schema reference is
+    ``specs/features/run-ledger.md`` and the current command/module homes are
+    §4 / §11. A cite into a retired section must be repointed, not introduced.
     """
     violations: list[str] = []
     for path in sorted(tracked_files_under("harness")):
@@ -125,6 +138,6 @@ def test_no_live_harness_source_cites_a_retired_spec_section() -> None:
 
     assert not violations, (
         "live harness/ source cites a retired SPEC section (§3, §5–§10, "
-        "§12–§14 are superseded — the current schema reference is "
+        "§12–§15, §17–§18 are superseded — the current schema reference is "
         "specs/features/run-ledger.md):\n  " + "\n  ".join(violations)
     )

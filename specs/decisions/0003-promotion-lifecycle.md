@@ -52,7 +52,7 @@ The orchestrator may repair only small, low-semantic problems, and only **once**
 - **Allowed:** docs / changelog / generated-summary / spec-prose conflicts; small source conflicts under a configured file/line threshold; obvious formatting or import-order gate failures.
 - **Escalate instead of repair:** schema migrations; auth / payment / security / release / deployment scripts; package-lock conflicts unless a repo opts in; conflicts over the file threshold; a second gate failure after one bounded fix; missing credentials or remote-permission failures; ambiguous branch topology or an unclean base.
 
-After a bounded edit the orchestrator runs the gate on the resolved tree host-side and calls `continue` with the resulting `--gate-exit` / `--gate-log` (CAL-1159), which completes the merge, classifies the evidence, and increments the attempt count. A promotion **cannot become `pr_ready` without fresh gate evidence** — the same evidence discipline the `review`/`close` gate already enforces (`code-quality`).
+After a bounded edit the orchestrator runs the gate on the resolved tree host-side and calls `continue` with the resulting `--gate-exit` / `--gate-log` (CAL-1159), which completes the merge, classifies the evidence, and increments the attempt count. A promotion **cannot become `pr_ready` without fresh gate evidence** — the same evidence discipline the `review` and `close` gate already enforces (`code-quality`).
 
 ### PR authority — the harness creates the release PR; it never auto-merges
 

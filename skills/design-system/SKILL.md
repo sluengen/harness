@@ -2,7 +2,7 @@
 name: design-system
 description: Use when doing frontend work in a repo whose design-system layer is on — building UI with its tokens, primitives, and patterns rather than degrading them. Routing and discipline, not a copy of the rules. Pair with ux-design for new-surface design.
 ---
-<!-- guidance:design-system@0.3.1 -->
+<!-- guidance:design-system@0.4.0 -->
 # Design System
 
 How to do frontend work without degrading the design system. Applies only when the repo's `design_system` layer is on; the system itself (tokens, primitives, principles) lives at the path in `CONTEXT.md`, often a dedicated subpackage or repo. This skill is routing and discipline, not a copy of the rules.
@@ -13,6 +13,8 @@ How to do frontend work without degrading the design system. Applies only when t
 
 1. **Find the principle.** What does the design system say should be true here? (Its brand/UX principles, named in `CONTEXT.md`.)
 2. **Find the materialization.** Where is that principle expressed in code — the token definitions, the primitive components? Use those.
+
+**No system yet — stand one up.** If `CONTEXT.md` `paths.design_system` is unset, or names a location with nothing at it, the repo has not stood its system up — the state every repo starts in. Build it from `templates/design-system.md`, the scaffold contract, and set `paths.design_system` to where it landed; then run the lookup above against it. An external package you have yet to install is not a missing system. A missing system is a gap to fill, not a licence to hardcode — do not hand-author visual values in the meantime.
 
 If you are about to write a visual value by hand, stop and do this lookup first.
 

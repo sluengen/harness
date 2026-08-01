@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.6
+// guidance:hook-guidance-freshness@0.3.7
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -148,10 +148,10 @@ function main() {
     if (!recently(D_GENERIC)) {
       mark(D_GENERIC);
       const where = relPath.endsWith(".json")
-        ? "bump its version in registry.yaml (JSON carries no header) and note it in CHANGELOG.md"
+        ? "bump its version in registry.yaml (JSON carries no header) and add a fragment at changelog.d/<ticket>.md"
         : isMeta
-          ? "bump its version in both the file header and the registry `meta:` block, and note it in CHANGELOG.md"
-          : "bump its version in both the file header and registry.yaml, and note it in CHANGELOG.md";
+          ? "bump its version in both the file header and the registry `meta:` block, and add a fragment at changelog.d/<ticket>.md"
+          : "bump its version in both the file header and registry.yaml, and add a fragment at changelog.d/<ticket>.md";
       return done(`[GUIDANCE-FRESHNESS] You edited a version-stamped file (${relPath}). Before finishing: ${where}. ` +
         `An un-bumped edit is invisible to repos that installed it.`);
     }

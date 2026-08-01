@@ -23,14 +23,19 @@ Flow (one ``asyncio.run`` event loop for all I/O):
 1. Resolve "the current run" — the ``status='open'`` runs row whose
    ``worktree_path`` matches the resolved ``--repo`` (or ``--run-id`` override),
    through the same shared resolver ``review`` and ``close`` use.
-2. Fetch the ticket's title + description: they are the spec the design answers
+2. Try the **adopt path** (:mod:`harness.cli.design_adopt`, ADR 0008 D1): a run
+   that resumed from a preserved WIP branch, whose ticket carries a design that
+   authenticates against a recorded ``ok`` event, records its **own** ``design``
+   event marked ``inherited_from`` and returns the recovered design — no engine,
+   no comment. Every other run falls through to steps 3–6 unchanged.
+3. Fetch the ticket's title + description: they are the spec the design answers
    to, and ``start`` persists neither on the run row.
-3. Capture ``git rev-parse HEAD`` in the worktree as ``grounded_sha``.
-4. Run the read-only claude engine (``claude -p --permission-mode plan --model
+4. Capture ``git rev-parse HEAD`` in the worktree as ``grounded_sha``.
+5. Run the read-only claude engine (``claude -p --permission-mode plan --model
    opus``, built by :mod:`harness.cli.design_protocol`) under the configured
    ``engine_timeout_seconds`` ceiling, and scan its stdout for the ``SUBMIT:``
    line.
-5. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
+6. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
 
 **Degrade and record (ADR 0007 D4).** The design stage must never wedge a run.
 Every way it can fail to produce a design — a killed engine, an engine that
@@ -67,12 +72,13 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z, parse_iso_z
+from harness._git import rev_parse_head
+from harness._time import elapsed_ms, iso_z, parse_iso_z
 from harness.cli._engine import EngineTimeoutError, Runner, RunResult, run_engine_subprocess
-from harness.cli._git import rev_parse_head
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.design_adopt import AdoptedDesign, resolve_adoption
 from harness.cli.design_protocol import (
     DESIGN_MODEL_DEFAULT,
     MALFORMED_SUBMIT_SENTINEL,
@@ -90,7 +96,11 @@ from harness.cli.design_tracker import (
     read_run_ticket,
 )
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import DesignEventData
+from harness.events.payloads import (
+    MALFORMED_SUBMIT_REASON,
+    NO_SUBMIT_REASON,
+    DesignEventData,
+)
 from harness.loop_budget import load_loop_budget
 from harness.state import store
 
@@ -103,9 +113,15 @@ __all__ = [
     "design_command",
 ]
 
-# size: the design verb — one cohesive orchestration (engine → comment → event
-# → output) on a single asyncio event loop, the same shape as ``review.py``;
-# splitting it would scatter one verb's control flow across files.
+# size: the design verb — one cohesive orchestration (adopt-or-engine → comment
+# → event → output) on a single asyncio event loop, the same shape as
+# ``review.py``; splitting it would scatter one verb's control flow across files.
+# The two concerns that *are* separable already are: tracker I/O
+# (``design_tracker.py``, #211) and the adopt decision (``design_adopt.py``,
+# #258). What remains is flow plus the ledger write the flow's two branches
+# share, which is why ``_record_adopted_design`` stays here rather than moving
+# into ``design_adopt`` — it needs ``DesignOutput`` and ``_record_design_event``,
+# and importing them back would make the seam circular.
 
 # The design engine. Claude only — ADR 0002 keeps the in-container engine
 # unprivileged, where codex's bwrap sandbox cannot start, so unlike ``review``
@@ -126,9 +142,13 @@ EXIT_DESIGN_FAILED = 3
 # distinguishable failure gets its own tag.
 ENGINE_TIMEOUT_REASON = "engine_timeout"
 ENGINE_ERROR_REASON = "engine_error"
-NO_SUBMIT_REASON = "no_submit"
-MALFORMED_SUBMIT_REASON = "malformed_submit"
 NO_TICKET_SPEC_REASON = "no_ticket_spec"
+# The two SUBMIT-protocol tags are NOT declared here: ``review`` classifies the
+# same failure the same way from #270, so they live in
+# :mod:`harness.events.payloads` beside the other shared telemetry literals and
+# are imported above. Re-exported under these names so every existing
+# ``design.NO_SUBMIT_REASON`` reference — and the verb's own error JSON — keeps
+# resolving to the identical string it always did.
 
 # Maps the design protocol's two failure sentinels onto their reason tags. The
 # protocol layer reports failures as human sentinels (it is pure and knows
@@ -190,10 +210,21 @@ class _DesignNotProducedError(Exception):
     re-implemented at each of the five failure sites.
     """
 
-    def __init__(self, reason: str, detail: str) -> None:
+    def __init__(
+        self,
+        reason: str,
+        detail: str,
+        *,
+        submit_excerpt: str | None = None,
+        stdout_chars: int | None = None,
+    ) -> None:
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
+        # Set only at the SUBMIT-failure raise site (#277); every other failure
+        # path has no engine stdout to quote and leaves both None.
+        self.submit_excerpt = submit_excerpt
+        self.stdout_chars = stdout_chars
 
 
 async def _default_runner(
@@ -338,6 +369,8 @@ async def _run_design(
                 invoked_at=invoked_at,
                 reason=exc.reason,
                 detail=exc.detail,
+                submit_excerpt=exc.submit_excerpt,
+                stdout_chars=exc.stdout_chars,
             ),
         )
         extra = (
@@ -373,6 +406,21 @@ async def _produce_design(
     # 2. The ticket is the spec the design answers to. ``start`` persists no
     #    title/description on the run row, so they are fetched here.
     ticket = await read_run_ticket(db_path, run_id)
+
+    # 2b. Adopt a prior design instead of designing one, when this run resumed
+    #     from a preserved WIP branch and the ticket carries an authenticated
+    #     design (ADR 0008 D1). Checked before the spec fetch: adoption needs no
+    #     spec, so a flaky ticket read cannot cost a run a design it already has.
+    adoption = await resolve_adoption(
+        repo_root=repo_root,
+        db_path=db_path,
+        run_id=run_id,
+        ticket=ticket,
+        invoked_at=invoked_at,
+    )
+    if adoption is not None:
+        return await _record_adopted_design(db_path, adoption)
+
     try:
         title, description = await fetch_ticket_spec(repo_root, ticket)
     except TicketSpecUnavailableError as exc:
@@ -413,8 +461,14 @@ async def _produce_design(
     parsed = parse_design_submit(result.stdout)
     if parsed.design_markdown is None:
         sentinel = parsed.error or NO_SUBMIT_SENTINEL
+        # The sentinel says *that* the contract broke; the excerpt says how
+        # (#277). A degraded run posts no comment and prints no engine output,
+        # so the ledger event is the only evidence this attempt leaves.
         raise _DesignNotProducedError(
-            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON), sentinel
+            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON),
+            sentinel,
+            submit_excerpt=parsed.submit_excerpt,
+            stdout_chars=parsed.stdout_chars,
         )
     design_markdown = parsed.design_markdown
     design_hash = design_content_hash(design_markdown)
@@ -453,6 +507,39 @@ async def _produce_design(
         design_hash=design_hash,
         grounded_sha=grounded_sha,
         model=model,
+        status="ok",
+        concurrent_prior_at=recorded.concurrent_prior_at,
+    )
+
+
+async def _record_adopted_design(
+    db_path: Path, adoption: AdoptedDesign
+) -> DesignOutput:
+    """Record an inherited design and emit it as an ordinary :class:`DesignOutput`.
+
+    **No comment is posted.** The design is already on the ticket — that is where
+    it was recovered from — and a second copy would fork the artifact ADR 0007 D2
+    scopes to the change spec.
+
+    The printed contract is unchanged, so the orchestrator's Step 1.5 handling
+    (save ``design_markdown``, pass it as ``--design-file`` to ``review``) needs
+    no adjustment and cannot tell an adopted design from a designed one. That
+    the engine did not run is on the **ledger** (``inherited_from``) and on
+    stderr, where an operator reading a tick log will see it.
+    """
+    event = adoption.event
+    recorded = await _record_design_event(db_path, event)
+    typer.echo(
+        f"note: adopted the design recorded for run {event.inherited_from} "
+        f"(design_hash {(event.design_hash or '')[:12]}); no design engine ran",
+        err=True,
+    )
+    return DesignOutput(
+        run_id=event.run_id,
+        design_markdown=adoption.design_markdown,
+        design_hash=event.design_hash or "",
+        grounded_sha=event.grounded_sha or "",
+        model=event.model,
         status="ok",
         concurrent_prior_at=recorded.concurrent_prior_at,
     )
@@ -499,11 +586,28 @@ async def _record_design_event(db_path: Path, data: DesignEventData) -> DesignEv
                     err=True,
                 )
 
+    # An **adopted** design records no duration (#264). Every other path measures
+    # this invocation end to end, but on an adoption the two instants belong to
+    # different runs: ``invoked_at`` is this run's, while ``designed_at`` is the
+    # source's, carried verbatim (``design_adopt``). Subtracting them measures
+    # backwards, to a design produced before this run began — a negative latency
+    # no engine ever spent. Absence is the honest record, and ``inherited_from``
+    # already marks the row for a reader that wants to attribute it to its source.
+    #
+    # The guard reads the semantic field, not the sign: negative-means-inherited
+    # is an accident of the data, and a sign filter would also swallow a genuine
+    # clock fault this is meant to record as-is.
+    duration_ms = (
+        None
+        if data.inherited_from is not None
+        else elapsed_ms(data.invoked_at, data.designed_at)
+    )
     try:
         await EventEmitter(db_path).emit(
             run_id=data.run_id,
             event_type="design",
             data=data.model_dump(exclude_none=True),
+            duration_ms=duration_ms,
         )
     except Exception as exc:  # noqa: BLE001
         raise _DesignError(f"failed to record design event: {exc}", 1) from exc

@@ -35,8 +35,10 @@ __all__ = [
     "NO_BRANCH_SENTINEL",
     "RECLAIM_LABEL",
     "RECLAIM_MARKER",
+    "UNRECLAIM_MARKER",
     "format_handoff_comment",
     "format_reclaim_comment",
+    "format_unreclaim_comment",
     "parse_handoff_branch",
     "parse_preserved_branch",
 ]
@@ -54,6 +56,14 @@ RECLAIM_MARKER = "Reclaimed by `harness reclaim`"
 #: carries (CAL-923). Distinct from :data:`RECLAIM_MARKER` so the two readers
 #: never cross-match — the structural basis for non-collision.
 HANDOFF_MARKER = "Context-rollover handoff by `harness checkpoint`"
+
+#: The opening phrase every **reversal** comment carries (#254) — the correcting
+#: comment ``harness reclaim --undo`` posts when a reclaim is confirmed to have
+#: been a false positive. Deliberately worded so it does not *contain* either
+#: sibling marker: its subject is a reclamation, so quoting
+#: :data:`RECLAIM_MARKER` verbatim would make every undo comment cross-match the
+#: resume reader (pinned by the pairwise-containment test).
+UNRECLAIM_MARKER = "Reclaim reversed by `harness reclaim --undo`"
 
 #: The preserved-branch value used when a reclaim/handoff found no durable WIP —
 #: parses back to ``None`` (no resumable branch → a clean restart on resume).
@@ -115,6 +125,28 @@ def format_handoff_comment(run_id: str | None, branch: str | None, *, when: str)
         f"({run_clause}) but near its context budget; the ticket stays "
         f"**In Progress** (no revert, no label) and a fresh session continues the "
         f"same ticket via `harness start --resume`. Preserved branch: `{ref}`."
+    )
+
+
+def format_unreclaim_comment(run_id: str | None, *, when: str) -> str:
+    """The correcting comment ``reclaim --undo`` posts on a false-positive revert (#254).
+
+    Deliberately carries **no** ``Preserved branch:`` clause. The undo comment sits
+    on the same ticket as the reclaim comment it reverses, so a ref named here
+    could be picked up by a later ``start --resume`` scan; the run is being
+    re-opened in place, so there is no ref to hand over in the first place.
+
+    ``when`` is passed in rather than read here, like its two siblings, so the body
+    is deterministic for the round-trip guards. There is no free-text field: the
+    body is published to an externally-visible tracker, and keeping it generated
+    is what makes it testable.
+    """
+    run_clause = f"run `{run_id}`" if run_id else "no local run row found"
+    return (
+        f"{UNRECLAIM_MARKER} at {when}. The earlier reclamation was a false "
+        f"positive — the orchestrating session was alive ({run_clause}). The "
+        f"ticket is restored to **In Progress**, the `{RECLAIM_LABEL}` label is "
+        "removed, and the run is re-opened in its existing worktree."
     )
 
 

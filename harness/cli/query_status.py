@@ -16,9 +16,12 @@ the events / state tables:
   (``worktree_path``, ``worktree_branch``); ``None`` when no artifacts are
   recorded.
 
+The run id may be given positionally or as ``--run-id`` (#245) — resolved by
+:func:`harness.cli._query_common._resolve_run_id`, shared with ``logs``/``events``.
+
 Exit codes (SPEC §11):
 * 0 — succeeded; produced output.
-* 2 — invocation error: unknown ``run-id``, missing DB, bad flags.
+* 2 — invocation error: unknown ``run-id``, missing/conflicting run id, missing DB, bad flags.
 """
 
 from __future__ import annotations
@@ -31,7 +34,11 @@ from typing import Any
 import aiosqlite
 import typer
 
-from harness.cli._query_common import _resolve_db_path, _safe_json_loads
+from harness.cli._query_common import (
+    _resolve_db_path,
+    _resolve_run_id,
+    _safe_json_loads,
+)
 from harness.events.payloads import WORKFLOW_FAILED_REASON_KEY
 
 # ---------------------------------------------------------------------------
@@ -128,15 +135,21 @@ async def _fetch_status_full(
 
 
 def status_command(
-    run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
+    run_id: str | None = typer.Argument(
+        None, help="Run identifier (ULID). May also be given as --run-id."
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit the full row as a JSON object."
     ),
+    run_id_option: str | None = typer.Option(
+        None, "--run-id", help="Run identifier (ULID) — alias for the positional RUN_ID."
+    ),
 ) -> None:
     """Print a run's terminal-state summary."""
+    run_id = _resolve_run_id(run_id, run_id_option)
     db_path = _resolve_db_path(db)
     row, enriched = asyncio.run(_fetch_status_full(db_path, run_id))
     if row is None:

@@ -34,6 +34,12 @@ registered CLI and the live docs, and that the documented surface tracks the
 registered one.
 """
 
+# size: the CLI surface lock — a derivation guard, not accreted logic. Its length is
+# the documented-invocation corpus it walks (every live doc, every SPEC section)
+# plus the helpers projecting docs and the registered surface onto comparable sets;
+# the cases are assertions over that one derivation, and splitting them would
+# duplicate it.
+
 from __future__ import annotations
 
 import ast
@@ -50,8 +56,98 @@ from tests._gitutil import tracked_py_sources
 #: it, and under a symlinked checkout an unresolved prefix would not match.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC = REPO_ROOT / "SPEC.md"
+README = REPO_ROOT / "README.md"
 HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
+CONTEXT = REPO_ROOT / "CONTEXT.md"
+DOCKER_README = REPO_ROOT / "docker" / "README.md"
+RUN_LEDGER_SPEC = REPO_ROOT / "specs" / "features" / "run-ledger.md"
+
+
+# --- Live-doc corpus ----------------------------------------------------------
+# The one set of documents that describe how to use the harness *right now*, and
+# the live-text selection applied to each. Defined here — above every consumer —
+# deliberately: it used to live two hundred lines *below* the subset-enumeration
+# guard, and that ordering is the structural reason the two guards never shared
+# it. The enumeration guard grew a narrower hand-list of its own instead, and
+# README sat unguarded for a full assessment cycle (#249, #252). A corpus defined
+# before its first consumer is a shared concept; one defined after is an
+# invitation to re-derive a narrower set.
+
+
+#: Docs that describe how to *use* the harness right now. Spec design history
+#: under ``specs/`` is excluded — those files carry their own supersede banners
+#: (enforced by ``test_docs_consistency.py``). ``SPEC.md`` is included but only
+#: its live prefix is scanned (see ``_live_text``).
+def _live_docs() -> list[Path]:
+    docs = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "CONTEXT.md",
+        REPO_ROOT / "CLAUDE.md",
+        SPEC,
+        REPO_ROOT / "docker" / "README.md",
+        REPO_ROOT / "docker" / "entrypoint.sh",
+        REPO_ROOT / "docker" / "Dockerfile",
+        REPO_ROOT / "docker" / "docker-compose.yml",
+    ]
+    docs += sorted((REPO_ROOT / "commands").glob("*.md"))
+    docs += sorted((REPO_ROOT / "skills").glob("*.md"))
+    # Design specs under specs/ are scanned too — but the deliberately-retained
+    # engine specs carry a dated supersede banner and are skipped (the same rule
+    # `test_docs_consistency.py` enforces). Non-superseded specs (the current
+    # subsystem docs and the accepted proposal) describe the live system and
+    # must not reference a retired surface.
+    docs += [
+        s
+        for s in sorted((REPO_ROOT / "specs").glob("**/*.md"))
+        if not _has_supersede_banner(s)
+    ]
+    return [d for d in docs if d.exists()]
+
+
+#: Dated supersede banner near the top of a file — ``> **Superseded 2026-06-11**``
+#: — the same recognition ``test_docs_consistency.py`` uses to mark a spec as
+#: retained history. Only the first lines matter (an agent reads the lede).
+_SUPERSEDE_BANNER = re.compile(r"^>\s*\*\*Superseded\s+\d{4}-\d{2}-\d{2}")
+_BANNER_SCAN_LINES = 12
+
+
+def _has_supersede_banner(path: Path) -> bool:
+    head = path.read_text().splitlines()[:_BANNER_SCAN_LINES]
+    return any(_SUPERSEDE_BANNER.match(line) for line in head)
+
+
+#: SPEC.md is live only in the sections its own status banner declares current:
+#: §1–2 (the model), §4 (modules), §11 (CLI), and §16 (non-goals). §3, §5–§10,
+#: §12–§15 and §17–§18 are retained engine history behind the §3 banner and are
+#: not scanned. (If another section is promoted to current, add it here and to
+#: the banner together.) §16 is live policy but carries no command surface, so
+#: it stays out of the scanned set — this list is what the CLI guard reads, not
+#: the currency map itself, which SPEC.md's banner owns.
+_SPEC_LIVE_SECTIONS = (1, 2, 4, 11)
+
+
+def _spec_section_text(num: int, full: str) -> str:
+    """Body of SPEC section ``## <num>. …`` up to the next ``## <n>.`` heading."""
+    start = re.search(rf"^## {num}\. ", full, re.M)
+    if start is None:
+        return ""
+    rest = full[start.end() :]
+    nxt = re.search(r"^## \d+\. ", rest, re.M)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _spec_live_text(text: str) -> str:
+    """The live sections of *text* read as SPEC content — a pure function of the
+    text, so a doctored copy can be scanned through the *same* live-section
+    selection the guard uses instead of a re-implementation of it (and without
+    ever writing the doctored copy to disk)."""
+    return "\n".join(_spec_section_text(n, text) for n in _SPEC_LIVE_SECTIONS)
+
+
+def _live_text(path: Path) -> str:
+    text = path.read_text()
+    return _spec_live_text(text) if path == SPEC else text
 
 
 # --- Registered surface -------------------------------------------------------
@@ -68,7 +164,8 @@ EXPECTED_SURFACE = {
     "status",
     "logs",
     "events",
-    "runs",  # read / inspection
+    "runs",
+    "stats",  # read / inspection ("stats" is the aggregate one, #265)
     "cancel",
     "reclaim",
     "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
@@ -377,30 +474,43 @@ def _subset_enumeration_offenders(text: str) -> list[list[str]]:
     ]
 
 
-def test_no_live_spec_section_handlists_a_command_subset() -> None:
-    """No live SPEC section enumerates a *proper subset* of a guarded command set.
+@pytest.mark.parametrize(
+    "doc", _live_docs(), ids=lambda p: str(p.relative_to(REPO_ROOT))
+)
+def test_no_live_doc_handlists_a_command_subset(doc: Path) -> None:
+    """No live doc enumerates a *proper subset* of a guarded command set.
 
     AC for CAL-810: §11 is the single guarded source of the command set; any
     other live section that slash-lists the verbs (as §1 principle 5 did) drifts
     the moment a verb is added. Extended in #226 to the audited lifecycle as a
     second guarded set, once ADR 0007 made that set mutable: the *complete*
-    audited set is allowed, a proper subset of it is not.
+    audited set is allowed, a proper subset of it is not. Widened in #249 from
+    SPEC alone to a two-doc opt-in tuple, and in #252 from that tuple to the
+    whole ``_live_docs()`` corpus — the same set the retired-surface guard below
+    already scanned. A doc live enough to be held to "names no retired command"
+    is live enough to be held to "carries no stale command list", and the opt-in
+    tuple's per-doc default-off is exactly how README sat unguarded for a full
+    assessment cycle. Adding a doc under ``specs/``, ``commands/`` or ``skills/``
+    now arms this guard over it with no edit here.
 
     A complete list and §11's fenced surface are allowed; the ledger ``runs`` /
     ``events`` tables pair names no audited verb and is allowed; a lone audited
     verb beside a non-registered token is a reference, not an enumeration, and is
     allowed. A proper subset of either guarded set is not.
     """
-    offenders = _subset_enumeration_offenders(_live_text(SPEC))
+    offenders = _subset_enumeration_offenders(_live_text(doc))
     assert not offenders, (
-        "A live SPEC section hand-lists a proper subset of a guarded command "
-        f"set: {offenders}. The guarded sets are the registered command surface "
-        f"({sorted(_registered_surface())}) and the audited lifecycle verbs "
-        f"({sorted(_AUDITED_VERBS)}); §11 is the single guarded source of the "
-        "command set (`test_spec_command_surface_equals_registered`). Name the "
-        "command categories and defer the exact set to §11, or name the audited "
-        "lifecycle in full — do not repeat a slash-list that goes stale the next "
-        "time a verb is added (CAL-810, #226)."
+        f"{doc.relative_to(REPO_ROOT)} hand-lists a proper subset of a guarded "
+        f"command set: {offenders}. The guarded sets are the registered command "
+        f"surface ({sorted(_registered_surface())}) and the audited lifecycle "
+        f"verbs ({sorted(_AUDITED_VERBS)}); §11 is the single guarded source of "
+        "the command set (`test_spec_command_surface_equals_registered`). Name "
+        "the command categories and defer the exact set to §11, or name the "
+        "audited lifecycle in full — do not repeat a slash-list that goes stale "
+        "the next time a verb is added (CAL-810, #226, #249). If this is not a "
+        "claim about a guarded set at all — event types, `promote` subcommands, "
+        "a two-verb handoff — join the names with commas rather than `/`: the "
+        "slash-list idiom is reserved for naming a guarded set in full (#252)."
     )
 
 
@@ -499,6 +609,88 @@ def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> No
     assert not _subset_enumeration_offenders(_spec_live_text(doctored))
 
 
+#: One doc per newly-covered class, injected into below. A root doc (README), a
+#: `docker/` doc, a `specs/features/` as-built record, and a `commands/` contract
+#: — each a class the #252 widening brought in, and the first three each carried
+#: a real offender before it.
+_INJECTION_PROBES = (README, CONTEXT, DOCKER_README, CLI_SURFACE_SPEC, HARNESS_CONTRACT)
+
+
+@pytest.mark.parametrize(
+    "doc", _INJECTION_PROBES, ids=lambda p: str(p.relative_to(REPO_ROOT))
+)
+def test_a_stale_audited_slash_list_in_a_live_doc_is_caught(doc: Path) -> None:
+    """The widening is non-vacuous: each newly-covered class catches a stale list.
+
+    A parametrized all-clean assertion goes green when the corpus *shrinks* —
+    narrowing deletes cases rather than failing them. So proving today's docs are
+    clean proves nothing about the scan; injecting the offending idiom is what
+    proves the guard actually travels each doc. #249 pinned this for README
+    alone; #252 owes the same proof for every class it brought in.
+
+    Two properties are load-bearing. The probe goes through ``_live_text(doc)``,
+    the guard's *own* path, so it cannot pass while the guard's path diverges
+    (identity for every doc here, section-scoped only for SPEC). And it asserts
+    **equality** with the injected offender rather than a non-empty result —
+    which proves both that the hit is the injection and that the doc is clean
+    today; ``assert offenders`` would pass on a pre-existing offender and
+    silently stop testing the injection.
+    """
+    doctored = _live_text(doc) + "\n" + _STALE_AUDITED_LIST
+    assert _subset_enumeration_offenders(doctored) == [["close", "review", "start"]]
+
+
+def _parametrized_argvalues(func: object, argname: str) -> list[object]:
+    """The values a ``@pytest.mark.parametrize(argname, …)`` captured on *func*.
+
+    Read off the mark rather than inferred, so the assertion below sees the
+    *source expression's* evaluated result — a hand-list stays a hand-list here
+    and does not silently become whatever the comparison recomputes."""
+    marks = [
+        m
+        for m in getattr(func, "pytestmark", [])
+        if m.name == "parametrize" and m.args[0] == argname
+    ]
+    assert len(marks) == 1, f"expected exactly one parametrize({argname!r}), got {marks}"
+    return list(marks[0].args[1])
+
+
+def test_enumeration_guard_is_parametrized_over_the_whole_live_doc_corpus() -> None:
+    """The enumeration guard's corpus **is** ``_live_docs()`` — the floor, pinned.
+
+    The failure mode this closes is the one #249 hit and #252 generalizes:
+    narrowing the parametrize source deletes cases instead of failing them, so
+    the suite stays green while coverage silently collapses. Reverting to the old
+    ``(SPEC, README)`` opt-in would drop ~53 cases and nothing else would notice
+    — the parametrized all-clean assertion above cannot fail for a case it never
+    generates.
+
+    Comparing the *captured mark* against a fresh ``_live_docs()`` is what makes
+    this bite; ``set(_live_docs()) == set(_live_docs())`` would be tautological.
+    A second, evidence-backed floor follows: every doc named there actually
+    carried an offender before this change, so a corpus that quietly stops
+    returning one of them fails here rather than going green with less coverage.
+    """
+    guarded = _parametrized_argvalues(
+        test_no_live_doc_handlists_a_command_subset, "doc"
+    )
+    assert guarded == _live_docs(), (
+        "the subset-enumeration guard is no longer parametrized over the whole "
+        "live-doc corpus. Narrowing it deletes cases rather than failing them, "
+        "which is exactly how README sat unguarded for a full assessment cycle "
+        f"(#249, #252). Guarded: {sorted(str(p) for p in guarded)}."
+    )
+
+    corpus = set(_live_docs())
+    for doc in (*_INJECTION_PROBES, CONTEXT, DOCKER_README, RUN_LEDGER_SPEC):
+        assert doc in corpus, (
+            f"{doc.relative_to(REPO_ROOT)} dropped out of the live-doc corpus — "
+            "the enumeration and retired-surface guards both parametrize over "
+            "`_live_docs()`, so a doc leaving it silently deletes its cases "
+            "rather than failing them (#252)."
+        )
+
+
 def _real_options() -> dict[str, set[str]]:
     """Map every command (incl. ``worktrees list`` / ``worktrees cleanup``) to the
     set of ``--long`` options it actually exposes, via the live Typer/click app."""
@@ -544,6 +736,22 @@ def _documented_options() -> dict[str, set[str]]:
     return sigs
 
 
+#: Commands that register a ``--run-id`` option: the four audited verbs where
+#: it overrides CWD-based run resolution, plus the three read commands where
+#: it aliases the positional ``RUN_ID`` (#245). Equality (not a subset check)
+#: locks both directions — a dropped alias and an unintended new one both fail.
+EXPECTED_RUN_ID_COMMANDS = {
+    "design", "review", "close", "checkpoint",  # verbs
+    "status", "logs", "events",  # read commands
+}
+
+
+def test_run_id_flag_surface_is_locked() -> None:
+    """Exactly the expected commands register ``--run-id`` (#245 AC-4)."""
+    actual = {cmd for cmd, opts in _real_options().items() if "--run-id" in opts}
+    assert actual == EXPECTED_RUN_ID_COMMANDS
+
+
 def test_documented_options_exist_on_the_command() -> None:
     """Every ``--option`` SPEC §11 documents is a real option on that command.
 
@@ -581,48 +789,8 @@ def test_contract_documents_only_registered_verbs() -> None:
 
 
 # --- Live-doc reference lock --------------------------------------------------
-
-#: Docs that describe how to *use* the harness right now. Spec design history
-#: under ``specs/`` is excluded — those files carry their own supersede banners
-#: (enforced by ``test_docs_consistency.py``). ``SPEC.md`` is included but only
-#: its live prefix is scanned (see ``_live_text``).
-def _live_docs() -> list[Path]:
-    docs = [
-        REPO_ROOT / "README.md",
-        REPO_ROOT / "CONTEXT.md",
-        REPO_ROOT / "CLAUDE.md",
-        SPEC,
-        REPO_ROOT / "docker" / "README.md",
-        REPO_ROOT / "docker" / "entrypoint.sh",
-        REPO_ROOT / "docker" / "Dockerfile",
-        REPO_ROOT / "docker" / "docker-compose.yml",
-    ]
-    docs += sorted((REPO_ROOT / "commands").glob("*.md"))
-    docs += sorted((REPO_ROOT / "skills").glob("*.md"))
-    # Design specs under specs/ are scanned too — but the deliberately-retained
-    # engine specs carry a dated supersede banner and are skipped (the same rule
-    # `test_docs_consistency.py` enforces). Non-superseded specs (the current
-    # subsystem docs and the accepted proposal) describe the live system and
-    # must not reference a retired surface.
-    docs += [
-        s
-        for s in sorted((REPO_ROOT / "specs").glob("**/*.md"))
-        if not _has_supersede_banner(s)
-    ]
-    return [d for d in docs if d.exists()]
-
-
-#: Dated supersede banner near the top of a file — ``> **Superseded 2026-06-11**``
-#: — the same recognition ``test_docs_consistency.py`` uses to mark a spec as
-#: retained history. Only the first lines matter (an agent reads the lede).
-_SUPERSEDE_BANNER = re.compile(r"^>\s*\*\*Superseded\s+\d{4}-\d{2}-\d{2}")
-_BANNER_SCAN_LINES = 12
-
-
-def _has_supersede_banner(path: Path) -> bool:
-    head = path.read_text().splitlines()[:_BANNER_SCAN_LINES]
-    return any(_SUPERSEDE_BANNER.match(line) for line in head)
-
+# The corpus itself (``_live_docs`` and the live-text selection) lives at the top
+# of this module — it is shared with the subset-enumeration guard (#252).
 
 #: The retired deterministic workflows the engine-era CLI ran as
 #: ``harness <image> run <workflow>``. Caught as a standalone ``run <workflow>``
@@ -652,36 +820,6 @@ _RETIRED_REFERENCE = re.compile(
     r"|\bharness\.(?:engine|nodes|dispatch|workflow)\b"  # retired engine modules
     r"|\bworkflows/[A-Za-z0-9_-]+\.yaml\b"  # retired workflow YAML file
 )
-
-#: SPEC.md is live only in the sections its own status banner declares current:
-#: §1–2 (the model), §4 (modules), and §11 (CLI). §3 and §5–§10, §12–§14 are
-#: retained engine history behind the §3 banner and are not scanned. (If another
-#: section is promoted to current, add it here and to the banner together.)
-_SPEC_LIVE_SECTIONS = (1, 2, 4, 11)
-
-
-def _spec_section_text(num: int, full: str) -> str:
-    """Body of SPEC section ``## <num>. …`` up to the next ``## <n>.`` heading."""
-    start = re.search(rf"^## {num}\. ", full, re.M)
-    if start is None:
-        return ""
-    rest = full[start.end() :]
-    nxt = re.search(r"^## \d+\. ", rest, re.M)
-    return rest[: nxt.start()] if nxt else rest
-
-
-def _spec_live_text(text: str) -> str:
-    """The live sections of *text* read as SPEC content — a pure function of the
-    text, so a doctored copy can be scanned through the *same* live-section
-    selection the guard uses instead of a re-implementation of it (and without
-    ever writing the doctored copy to disk)."""
-    return "\n".join(_spec_section_text(n, text) for n in _SPEC_LIVE_SECTIONS)
-
-
-def _live_text(path: Path) -> str:
-    text = path.read_text()
-    return _spec_live_text(text) if path == SPEC else text
-
 
 @pytest.mark.parametrize(
     "doc", _live_docs(), ids=lambda p: str(p.relative_to(REPO_ROOT))
