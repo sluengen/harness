@@ -13,12 +13,12 @@ replaces has today. Like ``defer``, this is a bounded, named verb rather than a
 hand-rolled tracker write, so the release binds cleanly to its
 ``autoMode.allow`` clause and is auditable in the runs/events ledger.
 
-What ``release`` does, for a ticket on this repo's Build queue
-(``repo.project``):
+What ``release`` does, for a ticket on this repo's Build queue:
 
-1. **Verify Build-queue membership.** Read the ticket's project; a ticket not
-   found, or found but on another project, is refused (exit 2) with a
-   structured ``reason`` — no write, no event.
+1. **Verify Build-queue membership.** Ask the tracker seam whether the ticket is
+   on the queue in force — ``repo.project`` when it is configured, the backend's
+   natural full queue when it is not (#248) — and refuse a ticket that is not
+   found, or found but off the queue (exit 2): no write, no event.
 2. **Write the resolution into the change spec.** Fetch the current issue body
    and append (or replace, if a prior release already left one) a
    ``## Resolution`` section carrying the resolution text, then
@@ -37,8 +37,9 @@ write), consistent with the other verbs — there is no tracker to release on.
 Exit codes (mirrors ``defer``):
 * 0  — released (or a tracker-less clean no-op).
 * 2  — invocation / refusal: neither/both of ``--resolution`` /
-       ``--resolution-file``, ``repo.project`` unconfigured, the ticket not
-       found on the tracker, or the ticket not on the Build queue.
+       ``--resolution-file``, the ticket not found on the tracker, or the ticket
+       not on the Build queue. An absent ``repo.project`` is **not** a refusal —
+       it means the whole tracker queue (#248).
 * 1  — unexpected error (DB failure, or an unexpected tracker transport error).
 """
 
@@ -51,7 +52,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.defer import DeferNeeds
@@ -67,6 +68,7 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+from harness.tracker_queue import scope_phrase
 
 __all__ = ["ReleaseOutput", "release_command"]
 
@@ -96,8 +98,14 @@ class ReleaseOutput(BaseModel):
     """Typed result of a ``release`` — like every sibling verb.
 
     ``run_id`` is the synthetic run row anchoring the ``release`` event, or
-    ``None`` for a tracker-less no-op; ``project`` is the Build queue the
-    ticket was bound to (``None`` tracker-less)."""
+    ``None`` for a tracker-less no-op. ``project`` is the effective Build-queue
+    scope: ``repo.project`` when configured, else the ticket's own project as
+    the backend reports it.
+
+    ``project`` is ``None`` on a tracker-less no-op **and**, since #248, on a
+    *successful* release against an unscoped repo whose ticket sits on no
+    project. So it no longer distinguishes the two — read ``outcome``, which is
+    the field that says what happened."""
 
     ticket: str
     outcome: str
@@ -106,7 +114,7 @@ class ReleaseOutput(BaseModel):
 
 
 async def _record_release_event(
-    db_path: Path, ticket: str, project: str, needs: str
+    db_path: Path, ticket: str, project: str | None, needs: str, *, invoked_at: str
 ) -> str:
     """Anchor a ``release`` event in the ledger and return its run id.
 
@@ -117,6 +125,8 @@ async def _record_release_event(
     never blocked.
     """
     run_id = generate_run_id()
+    # One clock reading serves the run row, the payload's ``released_at``, and the
+    # duration's end (#264) — see ``defer``, whose shape this mirrors.
     now = iso_z()
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -138,6 +148,7 @@ async def _record_release_event(
             needs=needs,
             released_at=now,
         ).model_dump(),
+        duration_ms=elapsed_ms(invoked_at, now),
     )
     return run_id
 
@@ -155,19 +166,16 @@ async def _run_release(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to write to, so the honest outcome is "skipped".
     """
+    # The start of the latency this verb records (#264) — see ``defer``.
+    invoked_at = iso_z()
+
     if tracker_backend(repo_root) == "none":
         return ReleaseOutput(
             ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
         )
 
+    # Nullable scope (#248) — see ``defer``, whose shape this mirrors exactly.
     project = repo_project(repo_root)
-    if not project:
-        raise _ReleaseError(
-            "repo.project is not configured in CONTEXT.md; cannot bind the "
-            "release to a Build queue",
-            2,
-            reason="no_project_configured",
-        )
 
     try:
         client = tracker_client(repo_root)
@@ -178,7 +186,7 @@ async def _run_release(
 
     # 1. Verify the ticket is on this repo's Build queue before any write.
     try:
-        ticket_project = await client.fetch_issue_project(ticket)
+        membership = await client.fetch_queue_membership(ticket, project=project)
     except TrackerNotFound as exc:
         raise _ReleaseError(
             f"ticket {ticket!r} not found on the tracker", 2, reason="ticket_not_found"
@@ -190,13 +198,16 @@ async def _run_release(
             reason="tracker_error",
         ) from exc
 
-    if ticket_project != project:
+    if not membership.on_queue:
         raise _ReleaseError(
-            f"ticket {ticket!r} is not on the Build queue {project!r} "
-            f"(project: {ticket_project!r}); refusing to release",
+            f"ticket {ticket!r} is not on {scope_phrase(project)} "
+            f"(project: {membership.project!r}); refusing to release",
             2,
             reason="not_on_build_queue",
         )
+
+    # See ``defer``: the configured scope when set, else the ticket's own project.
+    effective_project = project if project is not None else membership.project
 
     # 2 + 3 + 4. The release write (load-bearing external effect): the
     #        resolution lands in the change spec first, then the hold label is
@@ -228,9 +239,11 @@ async def _run_release(
         ) from exc
 
     # 5. Record the release in the ledger (audit trail) — after the tracker write.
-    run_id = await _record_release_event(db_path, ticket, project, needs.value)
+    run_id = await _record_release_event(
+        db_path, ticket, effective_project, needs.value, invoked_at=invoked_at
+    )
     return ReleaseOutput(
-        ticket=ticket, outcome="released", project=project, run_id=run_id
+        ticket=ticket, outcome="released", project=effective_project, run_id=run_id
     )
 
 
@@ -299,7 +312,8 @@ def release_command(
     if result.outcome == "skipped_no_tracker":
         typer.echo(f"release {ticket}: no tracker configured (no-op)")
     else:
+        where = result.project if result.project is not None else "the whole tracker queue"
         typer.echo(
-            f"Released {ticket} on {result.project} — resolution written + "
+            f"Released {ticket} on {where} — resolution written + "
             f"`{needs.value}` label removed + unassigned"
         )

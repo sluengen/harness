@@ -12,9 +12,13 @@ and when the run started. This module turns those two observable facts into two
   unconditionally; the cycles after that and below the ceiling carry a
   convergence-assessment advisory (the build agent decides whether the fixes are
   converging before spending another cycle);
-* a **per-run wall-clock budget** in minutes (default 90), deliberately mirroring
-  the stale-run reclamation staleness threshold so a runaway run trips this
-  breaker right as reclamation would call it stale (keep the two in step).
+* a **per-run wall-clock budget** in minutes (default 110). It is not merely
+  *aligned* with the stale-run reclamation staleness threshold — since #260 it
+  **is** that threshold: ``reclaim --stale`` resolves the same
+  ``loop.wall_clock_budget_minutes`` when ``--older-than`` is omitted. The
+  breaker reads it prospectively (stop spending on a run past it), reclamation
+  retrospectively (a run past it is presumed dead); one value means they cannot
+  drift, so nobody has to "keep the two in step".
 
 Both thresholds are **read from CONTEXT.md** (the ``loop:`` block), not hardcoded,
 so each self-hosting repo configures its own bounds. The decision functions are
@@ -52,7 +56,17 @@ __all__ = [
 # fallback when CONTEXT.md does not configure them; a repo overrides them in its
 # CONTEXT.md ``loop:`` block.
 DEFAULT_MAX_REVIEW_CYCLES = 6
-DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 90
+# The longest a legitimate run may take. Read by **two** consumers, not one
+# (#260): ``review``'s wall-clock breaker enforces it prospectively (stop
+# spending on a run past it) and ``reclaim --stale`` applies it retrospectively
+# (a run past it is presumed dead). They are the same quantity viewed from two
+# directions, so divergence is a bug, not a tuning option — a run aged between
+# the two would be spared reclamation *and* refused at review, alive on the
+# board and unable to finish. One value, read twice, is what makes that
+# unrepresentable. 110 keeps the hourly-tick property the old 90 had (a stale
+# run is first caught at the *second* tick after it starts) with slack for tick
+# jitter, while letting a merely-slow run finish.
+DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 110
 
 # The review-engine subprocess ceiling (CAL-1004). The two breakers above are
 # checked only at *verb boundaries*; a review engine that hangs mid-verb is
@@ -121,12 +135,18 @@ def _read_int_key(text: str, key: str, default: int) -> int:
 
 
 def load_loop_budget(repo_root: Path) -> LoopBudget:
-    """Load the breaker thresholds from ``repo_root/CONTEXT.md``.
+    """Load the loop thresholds from ``repo_root/CONTEXT.md``.
 
     Falls back to :data:`DEFAULT_MAX_REVIEW_CYCLES` /
     :data:`DEFAULT_WALL_CLOCK_BUDGET_MINUTES` when CONTEXT.md is absent or a key
     is missing, so a repo that has not configured the ``loop:`` block still gets
-    the proposal's defaults rather than an unbounded loop.
+    the proposal's defaults rather than an unbounded loop. The fallback is
+    shared for the same reason the configured value is (#260): both consumers
+    land on one constant, so the no-CONTEXT.md path cannot drift either.
+
+    Not breaker-only: ``wall_clock_budget_minutes`` is also the single source of
+    ``reclaim --stale``'s default staleness threshold, which resolves it through
+    this same function rather than carrying a literal of its own.
     """
     context = repo_root / "CONTEXT.md"
     try:

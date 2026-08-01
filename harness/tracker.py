@@ -39,6 +39,7 @@ from typing import Any, Protocol, runtime_checkable
 from harness import layers, repo_config
 from harness.github import GitHubClient, GitHubConfigError, github_token
 from harness.linear import LinearClient, linear_api_key
+from harness.tracker_queue import QueueMembership
 
 __all__ = ["Tracker", "tracker_client"]
 
@@ -55,7 +56,9 @@ class Tracker(Protocol):
 
     async def fetch_issue(self, identifier: str) -> dict[str, Any]: ...
 
-    async def fetch_issue_project(self, identifier: str) -> str | None: ...
+    async def fetch_queue_membership(
+        self, identifier: str, *, project: str | None
+    ) -> QueueMembership: ...
 
     async def fetch_reclaimable_issues(
         self, *, project: str | None
@@ -64,6 +67,8 @@ class Tracker(Protocol):
     async def fetch_resume_branch(self, identifier: str) -> str | None: ...
 
     async def fetch_handoff_branch(self, identifier: str) -> str | None: ...
+
+    async def fetch_design_comment(self, identifier: str) -> str | None: ...
 
     async def transition_to_in_progress(self, identifier: str) -> None: ...
 

@@ -36,6 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from harness.design_marker import is_design_comment
 from harness.layers import GitHubSettings
 from harness.reclaim_marker import (
     HANDOFF_MARKER,
@@ -50,6 +51,7 @@ from harness.tracker_errors import (
     TrackerRequestError,
     TrackerTransitionUnconfirmed,
 )
+from harness.tracker_queue import QueueMembership
 
 # size: one cohesive GitHub GraphQL boundary class — the exact mirror of the
 # LinearClient size waiver. Every GitHub Issues/Projects-v2 operation the verbs
@@ -216,13 +218,26 @@ query FetchIssue($owner: String!, $name: String!, $number: Int!) {
             ],
         }
 
-    async def fetch_issue_project(self, identifier: str) -> str | None:
-        """Return the configured board's title if the issue is on it, else ``None``.
+    async def fetch_queue_membership(
+        self, identifier: str, *, project: str | None
+    ) -> QueueMembership:
+        """Whether issue ``identifier`` is on this repo's Build queue (CAL-1143, #248).
 
-        The Build-queue membership check ``harness defer`` binds to (CAL-1143). On
-        GitHub the "project" is the configured Projects v2 board, so this reports
-        the board title when the issue is an item on it and ``None`` otherwise
-        (the caller treats ``None`` as "not on the Build queue").
+        The membership check ``harness defer`` / ``harness release`` bind to. On
+        GitHub the Build queue **is** the configured Projects v2 board, so the
+        answer is simply "is this issue an item on it", and the returned
+        ``project`` is the board's title.
+
+        The ``project`` argument is accepted for seam symmetry and deliberately
+        **ignored** — the same shape :meth:`fetch_reclaimable_issues` already
+        takes. The board is resolved from ``repo.github`` independently of
+        ``repo.project``, so the value this method can report is *always* the
+        configured board's title. Comparing it against ``repo.project`` (what the
+        callers did before #248) could therefore only ever produce a **false**
+        refusal — when a descriptive ``repo.project`` did not match the board
+        title verbatim — and could never catch an off-queue issue the board check
+        does not already catch. Proposal ``optional-project-scope`` D2 settled
+        that ``repo.project`` is descriptive-only on this backend.
 
         Raises:
             GitHubNotFound: the issue does not exist.
@@ -242,11 +257,13 @@ query IssueProjects($owner: String!, $name: String!, $number: Int!) {
         issue = await self._issue_node(query, number, ("issue",))
         meta = await self._project_metadata()
         for item in (issue.get("projectItems") or {}).get("nodes", []):
-            project = item.get("project") or {}
-            if project.get("id") == meta.project_id:
-                title = project.get("title")
-                return str(title) if title else None
-        return None
+            board = item.get("project") or {}
+            if board.get("id") == meta.project_id:
+                title = board.get("title")
+                return QueueMembership(
+                    on_queue=True, project=str(title) if title else None
+                )
+        return QueueMembership(on_queue=False, project=None)
 
     async def fetch_reclaimable_issues(
         self, *, project: str | None
@@ -344,6 +361,24 @@ query Reclaimable($login: String!, $number: Int!, $field: String!) {{
             marker=HANDOFF_MARKER,
             parser=parse_handoff_branch,
         )
+
+    async def fetch_design_comment(self, identifier: str) -> str | None:
+        """The body of the issue's latest design comment, or ``None`` (#258).
+
+        The GitHub counterpart of
+        :meth:`~harness.linear.LinearClient.fetch_design_comment`, feeding
+        ADR 0008's adopt path. The body comes back **verbatim** — the caller
+        authenticates it by recomputing the content hash over exactly these
+        bytes. Selection is the design contract's own
+        :func:`~harness.design_marker.is_design_comment`, so it cannot drift from
+        what the parser accepts, and there is **no label gate**: a design comment
+        is posted on every run and no label marks it.
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error.
+        """
+        return await self._latest_comment_body(identifier, matches=is_design_comment)
 
     async def transition_to_in_progress(self, identifier: str) -> None:
         """Set the issue's board Status to *In Progress* (adding it to the board if absent)."""
@@ -994,8 +1029,37 @@ mutation CreateLabel($repoId: ID!, $name: String!, $color: String!) {
         The GitHub mirror of :meth:`~harness.linear.LinearClient._latest_marked_branch`
         behind both resume (death-keyed, label-gated) and handoff (proactive, no
         gate). The **latest** matching comment wins; every non-match returns
-        ``None`` so the caller restarts clean. ``comments(last: 100)`` windows the
-        newest comments so the freshest marker is always on the page.
+        ``None`` so the caller restarts clean.
+
+        Both resume markers are single formatter-written lines, so a **substring**
+        test identifies them safely — the design reader, whose comments embed
+        arbitrary markdown, deliberately uses a stricter predicate (#257).
+
+        Raises:
+            GitHubNotFound: the issue does not exist.
+            GitHubRequestError: the API returned an error.
+        """
+        body = await self._latest_comment_body(
+            identifier,
+            matches=lambda candidate: marker in candidate,
+            require_label=require_label,
+        )
+        return None if body is None else parser(body)
+
+    async def _latest_comment_body(
+        self,
+        identifier: str,
+        *,
+        matches: Callable[[str], bool],
+        require_label: str | None = None,
+    ) -> str | None:
+        """The body of the latest issue comment satisfying ``matches``, or ``None``.
+
+        The GitHub mirror of
+        :meth:`~harness.linear.LinearClient._latest_comment_body`: the one read
+        behind every marker-keyed reader, so the query, the latest-wins rule and
+        the label gate exist once. ``comments(last: 100)`` windows the newest
+        comments so the freshest marker is always on the page.
 
         Raises:
             GitHubNotFound: the issue does not exist.
@@ -1023,11 +1087,11 @@ query MarkedBranch($owner: String!, $name: String!, $number: Int!) {
         comment_nodes: list[dict[str, Any]] = (
             (issue.get("comments") or {}).get("nodes", [])
         )
-        marked = [c for c in comment_nodes if marker in (c.get("body") or "")]
+        marked = [c for c in comment_nodes if matches(c.get("body") or "")]
         if not marked:
             return None
         latest = max(marked, key=lambda c: c.get("createdAt") or "")
-        return parser(latest.get("body") or "")
+        return str(latest.get("body") or "")
 
     # ------------------------------------------------------------------
     # Internal HTTP helper

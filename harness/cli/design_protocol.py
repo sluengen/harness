@@ -48,6 +48,8 @@ __all__ = [
     "DesignResult",
     "MALFORMED_SUBMIT_SENTINEL",
     "NO_SUBMIT_SENTINEL",
+    "SUBMIT_EXCERPT_MAX_CHARS",
+    "SUBMIT_EXCERPT_WINDOW_CHARS",
     "build_design_cmd",
     "build_design_prompt",
     "design_content_hash",
@@ -69,6 +71,30 @@ DESIGN_MODEL_DEFAULT = "opus"
 # is the only evidence of which happened.
 NO_SUBMIT_SENTINEL = "design engine emitted no SUBMIT line"
 MALFORMED_SUBMIT_SENTINEL = "design engine emitted a malformed SUBMIT line"
+
+# How much of the unparseable output a failed parse quotes (#277).
+#
+# The ledger is an audit trail, not a log: a real design payload measured 14–17
+# KB across the runs recorded for #271/#272/#273, so keeping the offending output
+# whole would put a design-sized blob on every failed event.
+#
+# **Two windows, not one.** The point of the excerpt is not to preserve output;
+# it is to discriminate, from a *single* occurrence, between the causes item 3
+# must choose among — and they show up in different places. A payload that spans
+# lines (pretty-printed JSON, or a literal newline where ``\n`` was required)
+# shows at the **start** of the payload; a truncation, and an engine that
+# designed but never submitted, both show at the **end** of stdout. A tail-only
+# window is cheaper and cannot tell the first from the second.
+SUBMIT_EXCERPT_WINDOW_CHARS = 1000
+
+# Fixed-length, deliberately: a marker carrying the elided count would make the
+# maximum below underivable, and that count is already recoverable from the
+# recorded ``stdout_chars``.
+_EXCERPT_ELISION = "\n... [elided] ...\n"
+
+#: The excerpt's hard ceiling, for stdout of any size. Derived, so the bound
+#: cannot drift from the windows it is made of.
+SUBMIT_EXCERPT_MAX_CHARS = 2 * SUBMIT_EXCERPT_WINDOW_CHARS + len(_EXCERPT_ELISION)
 
 # The sections a design must carry, in order. Three come from
 # ``templates/change.md``'s Design block — the artifact is that block, not a
@@ -184,10 +210,20 @@ class DesignResult(BaseModel):
     ``error`` on either failure. The verb records whichever it gets — ADR 0007
     enforces that a design was *attempted and recorded*, not that it succeeded,
     so a failure here is data, never an exception.
+
+    ``submit_excerpt`` and ``stdout_chars`` accompany ``error`` and are both
+    ``None`` on success (#277). Without them a failure records only *that* the
+    contract broke, which is how a 12.5% failure rate accumulated over 72
+    attempts with nothing to diagnose from. ``stdout_chars`` is set on every
+    failure — ``0`` included — while ``submit_excerpt`` is set only when there
+    was output to quote, so empty stdout reads as *the engine emitted nothing*
+    rather than *the engine emitted an empty payload*.
     """
 
     design_markdown: str | None = None
     error: str | None = None
+    submit_excerpt: str | None = None
+    stdout_chars: int | None = None
 
 
 class _Submit(BaseModel):
@@ -203,6 +239,36 @@ class _Submit(BaseModel):
         would put an empty Design section on the ticket.
         """
         return self.design_markdown if self.design_markdown.strip() else None
+
+
+def _build_excerpt(stdout: str, *, saw_submit_line: bool) -> str | None:
+    """A bounded quote of the output that would not parse, or ``None`` if empty.
+
+    Anchored at the **last** ``SUBMIT:`` token when the scanner saw one — the
+    contract asks for a final line, so earlier occurrences are reasoning — and
+    at the end of stdout otherwise, where an engine that designed without
+    submitting leaves its evidence.
+
+    Honest limit: ``rfind`` can land on a mid-line ``SUBMIT:`` the line scanner
+    itself skipped. That is acceptable because the anchor only positions a
+    quote, never a classification, and it avoids threading a character offset
+    through a :meth:`str.splitlines` loop, where ``\\r\\n`` makes the arithmetic
+    wrong.
+
+    The text is untrusted engine output; bounding it is this function's job, so
+    no caller has to remember to do it.
+    """
+    if not stdout:
+        return None
+    window = SUBMIT_EXCERPT_WINDOW_CHARS
+    anchor = stdout.rfind("SUBMIT:") if saw_submit_line else -1
+    if anchor < 0:
+        return stdout[-window:]
+    if len(stdout) - anchor <= 2 * window:
+        # The two windows touch or overlap: quote it whole rather than claim an
+        # elision that removed nothing.
+        return stdout[anchor:]
+    return stdout[anchor : anchor + window] + _EXCERPT_ELISION + stdout[-window:]
 
 
 def parse_design_submit(stdout: str) -> DesignResult:
@@ -221,6 +287,10 @@ def parse_design_submit(stdout: str) -> DesignResult:
     one, so a stray ``SUBMIT:`` inside the engine's reasoning cannot mask the
     real submission at the end. Malformed is reported only when no valid line
     was found anywhere.
+
+    Either failure also carries a bounded ``submit_excerpt`` and the true
+    ``stdout_chars`` (#277) — see :func:`_build_excerpt` for what is quoted and
+    why two windows rather than one.
     """
     saw_submit_line = False
     for line in stdout.splitlines():
@@ -245,7 +315,11 @@ def parse_design_submit(stdout: str) -> DesignResult:
         return DesignResult(design_markdown=design)
 
     error = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
-    return DesignResult(error=error)
+    return DesignResult(
+        error=error,
+        submit_excerpt=_build_excerpt(stdout, saw_submit_line=saw_submit_line),
+        stdout_chars=len(stdout),
+    )
 
 
 # ---------------------------------------------------------------------------

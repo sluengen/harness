@@ -55,13 +55,13 @@ import asyncio
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import aiosqlite
 import typer
 from pydantic import BaseModel
 
-from harness.cli._git import (
+from harness._git import (
     NETWORK_GIT_TIMEOUT_SECONDS,
     preferred_base_ref,
     resolve_base_branch,
@@ -265,9 +265,15 @@ async def _run_start(
     # Tracker-less, both resume sources are tracker comments, so there is
     # nothing to read: resume degrades to the clean start it already falls back
     # to for a ticket with no durable WIP.
-    start_point: str | None = None
+    #
+    # The *branch* it recovered (not the tip SHA the worktree starts at) is kept
+    # for the ledger row: ADR 0008 gates design inheritance on whether the WIP
+    # came back (F2), and the branch ref is what names the preserved WIP. Before
+    # #258 this distinction was computed here and then thrown away.
+    resumed: _ResumeStartPoint | None = None
     if resume and client is not None:
-        start_point = await _resolve_resume_start_point(client, canonical, repo_root)
+        resumed = await _resolve_resume_start_point(client, canonical, repo_root)
+    start_point: str | None = resumed.start_point if resumed is not None else None
 
     # 4c. Clean start (no resume WIP): base the worktree off ``origin/<base>`` when
     # it resolves, so the run starts from the tip ``close`` pushed there. Since
@@ -304,6 +310,7 @@ async def _run_start(
             worktree_path=worktree_path,
             worktree_branch=worktree_branch,
             started_at=started_at,
+            resumed_from=resumed.branch if resumed is not None else None,
         )
     except aiosqlite.IntegrityError:
         # A concurrent start process won the race — the unique partial index on
@@ -375,10 +382,25 @@ def _compact_ticket(ticket_data: dict[str, Any]) -> TicketContext:
 # ---------------------------------------------------------------------------
 
 
+class _ResumeStartPoint(NamedTuple):
+    """What a successful resume recovered: where to start, and from which ref.
+
+    Both halves are needed and neither substitutes for the other.
+    ``start_point`` is the fetched **tip SHA**, so the worktree starts at an
+    exact commit rather than a branch name a later op could move (see
+    :func:`_fetch_origin_branch`). ``branch`` is the preserved WIP ref itself,
+    recorded on the run row as ``resumed_from`` — the durable answer to "did the
+    WIP come back, and from where?" that ADR 0008's adopt path gates on.
+    """
+
+    start_point: str
+    branch: str
+
+
 async def _resolve_resume_start_point(
     client: Tracker, ticket: str, repo_root: Path
-) -> str | None:
-    """The git commit a resumed run starts from, or ``None`` for a clean start.
+) -> _ResumeStartPoint | None:
+    """What a resumed run starts from, or ``None`` for a clean start.
 
     Reads the ticket's preserved (checkpoint-pushed) branch from Linear and
     fetches it from ``origin``, returning the fetched tip SHA. Two sources feed
@@ -407,7 +429,10 @@ async def _resolve_resume_start_point(
         return None
     if not branch:
         return None
-    return await asyncio.to_thread(_fetch_origin_branch, repo_root, branch)
+    start_point = await asyncio.to_thread(_fetch_origin_branch, repo_root, branch)
+    if start_point is None:
+        return None
+    return _ResumeStartPoint(start_point=start_point, branch=branch)
 
 
 def _fetch_origin_branch(repo_root: Path, branch: str) -> str | None:
@@ -499,16 +524,22 @@ async def _insert_open_run(
     worktree_path: str,
     worktree_branch: str,
     started_at: str,
+    resumed_from: str | None = None,
 ) -> None:
-    """Insert a ``status='open'`` row into ``runs``."""
+    """Insert a ``status='open'`` row into ``runs``.
+
+    ``resumed_from`` is the preserved WIP branch a ``--resume`` recovered, and
+    ``None`` for every other start — a clean one, or a ``--resume`` that found
+    no durable WIP. ADR 0008's adopt path reads it as F2's signal.
+    """
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
         await conn.execute(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, "
             "state_json, inputs_json, base_branch, worktree_path, "
-            "worktree_branch, ticket, started_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "worktree_branch, ticket, started_at, resumed_from"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 "",          # workflow_name — not yet known at open time
@@ -521,6 +552,7 @@ async def _insert_open_run(
                 worktree_branch,
                 ticket,
                 started_at,
+                resumed_from,
             ),
         )
         await conn.commit()
@@ -558,7 +590,7 @@ async def _delete_run_row(db_path: Path, run_id: str) -> None:
 def _cleanup_worktree_sync(repo_root: Path, worktree_path: str) -> None:
     """Best-effort rollback of a failed ``start`` create: remove the worktree.
 
-    Delegates to the shared :func:`harness.cli._git.teardown_worktree` so the
+    Delegates to the shared :func:`harness._git.teardown_worktree` so the
     reclaim logic — worktree-remove (with an orphan ``rmtree`` fallback), prune,
     and local ``branch -D`` — has one home (CAL-767). ``start`` never pushed the
     branch, so ``delete_remote`` stays ``False``. Kept as a named wrapper so the

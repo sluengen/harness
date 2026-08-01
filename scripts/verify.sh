@@ -40,5 +40,23 @@ echo "=== landing-page drift guard ==="
 # Lean guard, not a generator — ADR 0004 (CAL-1202). Stdlib only.
 uv run --extra dev python scripts/check_landing_page_guidance.py
 
+echo "=== design-token drift guard ==="
+# Fail the gate if docs/index.html's generated :root block has drifted from
+# design/03-tokens/tokens.json — the source of truth (#242). ADR 0004,
+# narrowed (#243): the guidance catalog above stays guarded and hand-authored;
+# this block is mechanical, generated content instead.
+uv run --extra dev python scripts/build_design_tokens.py --check
+
+echo "=== changelog fragment guard ==="
+# Two guards, cause and symptom, because neither subsumes the other (#267).
+# `check` is structural and base-independent, so it is meaningful wherever the
+# gate runs. `require` is the direct presence check but needs a merge base, and
+# abstains with a printed reason where one cannot be resolved (a shallow CI
+# checkout, a detached `promote` worktree). The base-independent half that
+# holds the line either way is the CHANGELOG ratchet in
+# tests/unit/test_changelog_rotation.py.
+uv run --extra dev python scripts/changelog_fragments.py check
+uv run --extra dev python scripts/changelog_fragments.py require
+
 echo ""
 echo "All checks passed."

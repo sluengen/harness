@@ -450,3 +450,35 @@ def test_drifted_copy_in_checkout_forwards_drifted_status(tmp_path: Path) -> Non
     assert "HARNESS_WRAPPER_STATUS=drifted" in calls, (
         f"a drifted copy must forward the drifted status:\n{calls}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The flag reaches the real `docker run` argv (#278)
+# ---------------------------------------------------------------------------
+#
+# `tests/unit/test_container_hardening.py` locks PYTHONDONTWRITEBYTECODE=1 in the
+# wrapper's *text*. That guard is satisfiable by a flag that never reaches the
+# invocation — sitting in a dead branch, or lost to one of the array expansions
+# on the `exec docker run` line. This module is the one that *executes* the real
+# wrapper against stubs, so the argv proof belongs here alongside the other
+# forwarded-env assertions.
+
+
+def test_wrapper_passes_bytecode_suppression_on_the_docker_run_line(
+    tmp_path: Path,
+) -> None:
+    """The pinned flag survives to the actual container invocation.
+
+    Without it, Python in the container writes ``__pycache__`` carrying container
+    paths into the mounted host tree, and the next host gate run false-reddens
+    with ``OSError: could not get source code`` (#278).
+    """
+    result = _run_wrapper(tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    run_lines = [ln for ln in calls.splitlines() if ln.startswith("docker run")]
+    assert run_lines, f"the wrapper never reached `docker run`:\n{calls}"
+    for line in run_lines:
+        assert "-e PYTHONDONTWRITEBYTECODE=1" in line, (
+            "the docker run argv must pin PYTHONDONTWRITEBYTECODE=1 so the "
+            f"container writes no bytecode into the mount (#278):\n{line}"
+        )

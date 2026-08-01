@@ -11,11 +11,13 @@ autonomous auto-mode classifier intermittently blocked — a bounded, named verb
 binds to its ``autoMode.allow`` clause far more reliably than a ``docker run
 python3 <GraphQL script>``.
 
-What ``defer`` does, for a ticket on this repo's Build queue (``repo.project``):
+What ``defer`` does, for a ticket on this repo's Build queue:
 
-1. **Verify Build-queue membership.** Read the ticket's project; a ticket not
-   found on Linear, or found but on another project, is refused (exit 2) with a
-   structured ``reason`` — no comment, no label, no event.
+1. **Verify Build-queue membership.** Ask the tracker seam whether the ticket is
+   on the queue in force — ``repo.project`` when it is configured, the backend's
+   natural full queue when it is not (#248) — and refuse a ticket that is not
+   found, or found but off the queue (exit 2) with a structured ``reason``: no
+   comment, no label, no event.
 2. **Post the reason as a comment** (``commentCreate``).
 3. **Additively apply the hold label** — ``decision`` (a judgment call, the
    default), ``input`` (the operator must supply something the run cannot), or
@@ -45,8 +47,9 @@ write), consistent with the other verbs — there is no tracker to defer on.
 Exit codes (SPEC §11):
 * 0  — deferred (or a tracker-less clean no-op).
 * 2  — invocation / refusal: neither/both of ``--reason`` / ``--reason-file``,
-       missing ``LINEAR_API_KEY``, ``repo.project`` unconfigured, the ticket not
-       found on Linear, or the ticket not on the Build queue.
+       missing ``LINEAR_API_KEY``, the ticket not found on Linear, or the ticket
+       not on the Build queue. An absent ``repo.project`` is **not** a refusal —
+       it means the whole tracker queue (#248).
 * 1  — unexpected error (DB failure, or an unexpected Linear transport error).
 """
 
@@ -59,7 +62,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
-from harness._time import iso_z
+from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
@@ -74,6 +77,7 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+from harness.tracker_queue import scope_phrase
 
 __all__ = ["DeferNeeds", "DeferOutput", "defer_command"]
 
@@ -112,8 +116,14 @@ class DeferOutput(BaseModel):
     """Typed result of a ``defer`` — like every sibling verb (CAL-1013).
 
     ``run_id`` is the synthetic run row anchoring the ``defer`` event, or
-    ``None`` for a tracker-less no-op; ``project`` is the Build queue the ticket
-    was bound to (``None`` tracker-less).
+    ``None`` for a tracker-less no-op. ``project`` is the effective Build-queue
+    scope: ``repo.project`` when configured, else the ticket's own project as
+    the backend reports it.
+
+    ``project`` is ``None`` on a tracker-less no-op **and**, since #248, on a
+    *successful* defer against an unscoped repo whose ticket sits on no project.
+    So it no longer distinguishes the two — read ``outcome``, which is the field
+    that says what happened.
     """
 
     ticket: str
@@ -123,7 +133,13 @@ class DeferOutput(BaseModel):
 
 
 async def _record_defer_event(
-    db_path: Path, ticket: str, reason: str, project: str, needs: str
+    db_path: Path,
+    ticket: str,
+    reason: str,
+    project: str | None,
+    needs: str,
+    *,
+    invoked_at: str,
 ) -> str:
     """Anchor a ``defer`` event in the ledger and return its run id.
 
@@ -134,6 +150,9 @@ async def _record_defer_event(
     on the same ticket is never blocked by a defer row.
     """
     run_id = generate_run_id()
+    # One clock reading serves the run row, the payload's ``deferred_at``, and the
+    # duration's end (#264) — the row cannot disagree with itself by the width of
+    # the write latency.
     now = iso_z()
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -156,6 +175,7 @@ async def _record_defer_event(
             needs=needs,
             deferred_at=now,
         ).model_dump(),
+        duration_ms=elapsed_ms(invoked_at, now),
     )
     return run_id
 
@@ -168,6 +188,12 @@ async def _run_defer(
     Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
     tracker to comment on, label, or assign, so the honest outcome is "skipped".
     """
+    # The start of the latency this verb records (#264): the window spans the
+    # queue-membership lookup and the three tracker writes, which is where a
+    # defer actually spends its time. Read before the tracker-less guard so the
+    # measurement never depends on which branch is taken.
+    invoked_at = iso_z()
+
     # Only ``tracker: none`` is a clean tracker-less skip. A configured backend
     # (linear or github) resolves a real client below; a *misconfigured* one
     # (missing credential/config) fails loudly there, never silently no-ops here.
@@ -176,14 +202,10 @@ async def _run_defer(
             ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
         )
 
+    # The scope is nullable (#248, mirroring #174): set → that one project;
+    # unset → the backend's natural full queue. The seam owns what "unset" means
+    # per backend, so this layer just passes the scope through.
     project = repo_project(repo_root)
-    if not project:
-        raise _DeferError(
-            "repo.project is not configured in CONTEXT.md; cannot bind the defer "
-            "to a Build queue",
-            2,
-            reason="no_project_configured",
-        )
 
     try:
         client = tracker_client(repo_root)
@@ -198,7 +220,7 @@ async def _run_defer(
 
     # 1. Verify the ticket is on this repo's Build queue before any write.
     try:
-        ticket_project = await client.fetch_issue_project(ticket)
+        membership = await client.fetch_queue_membership(ticket, project=project)
     except TrackerNotFound as exc:
         raise _DeferError(
             f"ticket {ticket!r} not found on the tracker", 2, reason="ticket_not_found"
@@ -210,13 +232,19 @@ async def _run_defer(
             reason="tracker_error",
         ) from exc
 
-    if ticket_project != project:
+    if not membership.on_queue:
         raise _DeferError(
-            f"ticket {ticket!r} is not on the Build queue {project!r} "
-            f"(project: {ticket_project!r}); refusing to defer",
+            f"ticket {ticket!r} is not on {scope_phrase(project)} "
+            f"(project: {membership.project!r}); refusing to defer",
             2,
             reason="not_on_build_queue",
         )
+
+    # The value recorded in the ledger and returned in ``--json``: the configured
+    # scope when there is one, else the ticket's own project as the backend
+    # reports it. Preferring the configured value keeps the scoped path recording
+    # byte-identical values to before #248.
+    effective_project = project if project is not None else membership.project
 
     # 2 + 3 + 4. The triage write (load-bearing external effect): comment first,
     #        then the additive `decision`/`input`/`operator` label, then assign
@@ -246,9 +274,11 @@ async def _run_defer(
         ) from exc
 
     # 5. Record the defer in the ledger (audit trail) — after the Linear write.
-    run_id = await _record_defer_event(db_path, ticket, reason, project, needs.value)
+    run_id = await _record_defer_event(
+        db_path, ticket, reason, effective_project, needs.value, invoked_at=invoked_at
+    )
     return DeferOutput(
-        ticket=ticket, outcome="deferred", project=project, run_id=run_id
+        ticket=ticket, outcome="deferred", project=effective_project, run_id=run_id
     )
 
 
@@ -320,7 +350,8 @@ def defer_command(
     if result.outcome == "skipped_no_tracker":
         typer.echo(f"defer {ticket}: no tracker configured (no-op)")
     else:
+        where = result.project if result.project is not None else "the whole tracker queue"
         typer.echo(
-            f"Deferred {ticket} on {result.project} — commented + "
+            f"Deferred {ticket} on {where} — commented + "
             f"`{needs.value}` label + assigned to operator"
         )

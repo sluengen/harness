@@ -20,7 +20,7 @@ from pathlib import Path
 
 import typer
 
-from harness.cli._git import git_common_dir
+from harness._git import git_common_dir
 from harness.state import store
 from harness.workspace import NotAGitTopLevel, WorkspaceNotAllowed, resolve_repo_root
 
@@ -46,7 +46,7 @@ def resolve_ledger_root(repo_root: Path) -> Path:
 
     ``harness start`` writes the ``runs`` row under the *main checkout's*
     ``.harness/`` — a worktree it creates (``.worktrees/harness/<run_id>/``)
-    never gets its own. Walks up via :func:`harness.cli._git.git_common_dir` —
+    never gets its own. Walks up via :func:`harness._git.git_common_dir` —
     the same shared state git itself resolves a worktree against — so a later
     verb invoked with ``--repo`` pointing at that worktree (or run with CWD
     inside one, per ``commands/harness.md`` Step 1) still finds the ledger the

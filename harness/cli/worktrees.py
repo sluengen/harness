@@ -2,7 +2,7 @@
 
 Scope is deliberately narrow: walk ``<repo_root>/.worktrees/harness/`` on
 disk, then for ``cleanup`` reclaim each candidate via the shared
-:func:`harness.cli._git.teardown_worktree` primitive (orphan-safe — it falls
+:func:`harness._git.teardown_worktree` primitive (orphan-safe — it falls
 back to ``rmtree`` for a directory whose worktree registration is already
 pruned, the cruft a plain ``git worktree remove`` cannot touch). The ``start``
 verb has its own :class:`harness.worktree.WorktreeNode` helper for run-time
@@ -58,14 +58,15 @@ from pathlib import Path
 
 import typer
 
-from harness._time import iso_z, parse_iso_z
-from harness.cli._duration import _parse_duration
-from harness.cli._git import (
+from harness._git import (
     preferred_base_ref,
     resolve_base_branch,
     run_git,
     teardown_worktree,
+    worktree_toplevel_matches,
 )
+from harness._time import iso_z, parse_iso_z
+from harness.cli._duration import _parse_duration
 from harness.cli._repo import resolve_verb_db_path
 from harness.close_merge import CloseMergeError, worktree_porcelain
 from harness.identity import WORKTREES_SUBDIR
@@ -188,7 +189,7 @@ def _branch_merged_into_base(repo_root: Path, branch: str) -> bool:
     branch, a just-closed run is merged into ``origin/<base>`` but *not* local
     ``<base>`` — checking the local branch would leave it forever unreclaimed.
     Falls back to the local base for offline / no-origin repos
-    (:func:`~harness.cli._git.preferred_base_ref`).
+    (:func:`~harness._git.preferred_base_ref`).
 
     ``--merged`` is conservative: an absent branch ref (or an unreadable base)
     counts as not-merged so we never remove a worktree whose ref state we can't
@@ -256,26 +257,6 @@ def _in_flight_runs(db_path: Path) -> _InFlightRuns:
     return asyncio.run(_in_flight_runs_async(db_path))
 
 
-def _worktree_toplevel_matches(worktree_path: Path) -> bool:
-    """True iff ``git -C worktree_path rev-parse --show-toplevel`` resolves
-    back to ``worktree_path`` itself.
-
-    The stash / dirty-tree probes read ``git`` state *anchored at the
-    worktree*; without this guard, a directory whose worktree registration
-    was already pruned (or that never was a proper worktree) has ``git``
-    walk up and report the *main checkout's* state instead — which would
-    veto an orphaned directory whenever the operator's own tree happens to
-    be dirty.
-    """
-    proc = run_git(worktree_path, "rev-parse", "--show-toplevel")
-    if proc.returncode != 0:
-        return False
-    try:
-        return Path(proc.stdout.strip()).resolve() == worktree_path.resolve()
-    except OSError:
-        return False
-
-
 _STASH_SUBJECT_RE = re.compile(r"^(?:WIP on|On) (?P<branch>.+):")
 
 
@@ -283,7 +264,7 @@ def _stash_veto(worktree_path: Path, branch: str) -> str | None:
     """A ``git stash`` entry for ``branch`` in ``worktree_path`` is a veto —
     it is uncommitted WIP a ``--merged`` delete would destroy with no
     recovery path beyond dangling-object forensics (the exact #235 repro)."""
-    if not _worktree_toplevel_matches(worktree_path):
+    if not worktree_toplevel_matches(worktree_path):
         return None
     proc = run_git(worktree_path, "stash", "list", "--format=%gd%x09%gs")
     if proc.returncode != 0:
@@ -299,7 +280,7 @@ def _stash_veto(worktree_path: Path, branch: str) -> str | None:
 def _dirty_veto(worktree_path: Path) -> str | None:
     """Uncommitted changes in ``worktree_path`` are a veto — ``teardown_worktree``
     uses ``git worktree remove --force``, which would discard them silently."""
-    if not _worktree_toplevel_matches(worktree_path):
+    if not worktree_toplevel_matches(worktree_path):
         return None
     try:
         porcelain = worktree_porcelain(worktree_path)

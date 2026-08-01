@@ -50,6 +50,17 @@ __all__ = [
 #: Environment variable holding the colon-separated allowlist of host roots.
 WORKSPACE_ROOTS_ENV = "HARNESS_WORKSPACE_ROOTS"
 
+#: Appended to the refusal message when no roots are configured at all — the
+#: Docker wrapper (``~/bin/harness``) pins this allowlist itself, so an empty
+#: one usually means the native CLI ran by mistake (#246).
+_EMPTY_ROOTS_HINT = (
+    " The Docker wrapper ~/bin/harness pins that allowlist itself, so an "
+    "empty one usually means the native CLI ran instead: in a venv-activated "
+    "shell, bare `harness` resolves to the console script on PATH, not the "
+    "wrapper. Invoke ~/bin/harness by absolute path, or export "
+    f"{WORKSPACE_ROOTS_ENV} to run natively on purpose."
+)
+
 
 class WorkspaceNotAllowed(Exception):  # noqa: N818 — mirrors SPEC vocabulary
     """A repo path resolves outside every configured workspace root.
@@ -63,11 +74,13 @@ class WorkspaceNotAllowed(Exception):  # noqa: N818 — mirrors SPEC vocabulary
         self.roots = roots
         if roots:
             roots_desc = ", ".join(str(r) for r in roots)
+            hint = ""
         else:
             roots_desc = f"none — {WORKSPACE_ROOTS_ENV} is unset or empty"
+            hint = _EMPTY_ROOTS_HINT
         super().__init__(
             f"repo path {path} is outside the allowed workspace roots "
-            f"({roots_desc})"
+            f"({roots_desc}){hint}"
         )
 
 

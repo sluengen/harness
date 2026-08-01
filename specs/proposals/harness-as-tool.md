@@ -8,7 +8,7 @@ related: [SPEC.md, specs/retired/hermes-control-model.md, specs/retired/build-wo
 
 # Proposal: Harness as agent tool — invert the orchestration boundary
 
-> Stop building the harness as a pipeline that drives agents. Rebuild it as a small set of deterministic, audited verbs (`start` / `review` / `close`) that one agent calls while it does the implementation itself — with process enforcement living in the `close` gate. There is **one execution model** (an agent using the harness as a tool); it has **two triggers** (a human, or Hermes).
+> Stop building the harness as a pipeline that drives agents. Rebuild it as a small set of deterministic, audited verbs (`start`, `review`, `close`) that one agent calls while it does the implementation itself — with process enforcement living in the `close` gate. There is **one execution model** (an agent using the harness as a tool); it has **two triggers** (a human, or Hermes).
 
 ## Problem / motivation
 
@@ -121,7 +121,7 @@ Each item is shippable on its own. Spawned 2026-06-09: **1→CAL-570, 2→CAL-57
 
 ## Risks / unknowns
 
-- **Stale-pass hole** — closed by D2 (HEAD-bound passing review). The single most important correctness detail; if `review`/`close` do not actually bind to the same SHA, the gate is theatre.
+- **Stale-pass hole** — closed by D2 (HEAD-bound passing review). The single most important correctness detail; if `review` and `close` do not actually bind to the same SHA, the gate is theatre.
 - **Audit completeness depends on routing (D5).** A hand-rolled `git commit` or Linear CURL leaves a hole in the ledger. Mitigated by skill mandate + close-time history validation; residual risk remains and is stated, not hidden.
 - **Reproducibility is genuinely given up.** Own it: `SPEC.md` principles #2/#4 now apply to the *verbs*, not the journey. Acceptable because we are not running deterministic autonomy — autonomy is Hermes-launches-a-session.
 - **Engine-retirement scope (D1).** Retiring the engine also removes `release` and `steward` — confirmed acceptable (never run; both convert cleanly to agent-tasks). Item 5 is the largest piece and can be staged (verbs first, engine deletion last).
