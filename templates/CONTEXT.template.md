@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.13 -->
+<!-- guidance:template-context@0.1.14 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -51,6 +51,16 @@ commands:
 branches:
   integration: {e.g. dev}      # feature branches base from and merge here
   release: {e.g. main}         # how production is fed
+# The autonomous loop's spend bounds, read by the harness engine. Values are
+# bare integers, never {e.g. …} placeholders — the reader matches digits only, so
+# a placeholder silently falls back to the code default while reading to a human
+# as though it were set. Shipped equal to those defaults, so deleting a line
+# changes nothing until you retune it. Only relevant if this repo self-hosts the
+# harness routine loops.
+loop:
+  max_review_cycles: 6           # hard ceiling — the run stops and escalates on REACHING this review→fix cycle (the first half run unconditionally; the rest assess convergence first)
+  wall_clock_budget_minutes: 110 # the longest a legitimate run may take. ALSO `harness reclaim --stale`'s default staleness threshold — one quantity seen from two directions (a run refused at review but spared reclamation would be alive on the board and unable to finish), so this single line moves both.
+  engine_timeout_seconds: 720    # per-subprocess ceiling for BOTH engines, review and design — a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Raise it if a legitimately slow design is being killed; sit it at or below any external ops kill so the clean exit wins.
 conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
