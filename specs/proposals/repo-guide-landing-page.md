@@ -51,7 +51,7 @@ This keeps the README as the canonical text front door (GitHub renders it on the
 
 Content scope for the page, in one screen's worth of narrative:
 - **Hero — The Four Loops** (kept, corrected): the operating model, with Build as the harness-driven core.
-- **The harness** (new): the three verbs (`start` / `review` / `close`) + read/ops verbs, the two invariants that make the record trustworthy (SHA-bound verdicts; append-only ledger; builder ≠ recorder), and how an agent drives them (`/harness run`, the verb loop; the Docker wrapper). This is the "how it works" the ask calls for.
+- **The harness** (new): the three verbs (`start`, `review`, `close`) + read/ops verbs, the two invariants that make the record trustworthy (SHA-bound verdicts; append-only ledger; builder ≠ recorder), and how an agent drives them (`/harness run`, the verb loop; the Docker wrapper). This is the "how it works" the ask calls for.
 - **The guidance** (new): the catalog it distributes — skills, agents, commands — each with a one-liner, sourced from `registry.yaml` so the list is honest.
 
 ## Open decisions
@@ -68,7 +68,7 @@ Content scope for the page, in one screen's worth of narrative:
 The change specs this would spawn once accepted, each shippable on its own:
 
 1. **Refresh + relocate the Four Loops content** — correct the stale claims (reviewer records the as-built spec on PASS; ADRs in `specs/decisions/`; verb model), move `four-loops.html` → `docs/index.html`, commit it. The page still renders standalone after this step.
-2. **Add "The harness" section** — verb cards (`start` / `review` / `close` + read/ops), the gate/ledger invariants, and how the agent drives them (`/harness run`, the verb loop, the Docker wrapper), in the existing visual style.
+2. **Add "The harness" section** — verb cards (`start`, `review`, `close` + read/ops), the gate/ledger invariants, and how the agent drives them (`/harness run`, the verb loop, the Docker wrapper), in the existing visual style.
 3. **Add "The guidance" section** — the skills / agents / commands catalog with one-liners, laid out to match the spec-flow section.
 4. **Wire up hosting** — enable Pages on the chosen mechanism, add `<meta>`/Open-Graph tags + a favicon for a shareable card, and link the hosted page from the top of the README. (Includes the operator step to turn Pages on.)
 5. **(if the guard is adopted) Drift guard** — a `scripts/`-level check, run in the verify gate, asserting every command/skill/agent named in `docs/index.html` resolves in `registry.yaml`.

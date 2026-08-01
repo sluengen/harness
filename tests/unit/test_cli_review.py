@@ -14,6 +14,10 @@ runner via the ``--run-id`` override + a patched runner so the SUBMIT-line
 scanner is exercised without the codex binary.
 """
 
+# size: the review verb's acceptance suite — verdict parsing, SHA binding, breaker
+# paths, and engine dispatch, all against one stubbed engine harness every case
+# shares. Length is case count over that harness, not accreted logic.
+
 from __future__ import annotations
 
 import asyncio
@@ -31,6 +35,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.cli import review as review_mod
+from harness.events.payloads import MALFORMED_SUBMIT_REASON, NO_SUBMIT_REASON
 from harness.state import store
 from tests._ledger import seed_design_event
 
@@ -159,6 +164,23 @@ def fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch_review_events(db_path))
 
 
+def assert_no_verdict_recorded(db_path: Path, reason: str) -> None:
+    """The terminal path is on the ledger and carries **no verdict** (#262).
+
+    These sites used to assert ``fetch_review_events(db_path) == []``, which
+    conflated two different claims: *no verdict was recorded* (the invariant —
+    an infra wall must never read as pass/fail, and must never open the close
+    gate) and *nothing at all was recorded* (an accident of the verb having no
+    telemetry). #262 records the path deliberately, so the invariant is asserted
+    on its own terms: exactly one row, no ``verdict`` key, and the right
+    ``reason`` — so a refusal for the wrong cause cannot pass either.
+    """
+    events = fetch_review_events(db_path)
+    assert len(events) == 1, events
+    assert "verdict" not in events[0]["data"], events[0]["data"]
+    assert events[0]["data"]["reason"] == reason, events[0]["data"]
+
+
 def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
     """Build a fake engine runner returning the given stdout/stderr/exit code.
 
@@ -259,10 +281,12 @@ def _invoke(
 
 
 def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
-    """A fake runner that records the ``cmd`` it was handed, then yields stdout.
+    """A fake runner that records the ``cmd`` and ``env`` it was handed, then
+    yields stdout.
 
-    Lets a test assert *which engine command* the verb built (AC-1/AC-3) without
-    spawning a real subprocess.
+    Lets a test assert *which engine command* the verb built (AC-1/AC-3), and
+    *what environment it built it with* (#278), without spawning a real
+    subprocess.
     """
 
     async def _runner(
@@ -274,6 +298,7 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
         timeout: float | None = None,
     ) -> review_mod.RunResult:
         captured["cmd"] = cmd
+        captured["env"] = env
         return review_mod.RunResult(stdout=stdout, stderr="", returncode=0)
 
     return _runner
@@ -361,51 +386,45 @@ def test_ac2_fail_with_issues_list(repo: Path, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-3: missing / garbled SUBMIT line → recorded fail with sentinel issue
+# AC-3 (as amended by #270): missing / garbled SUBMIT line → an INFRA failure
+# carrying no verdict, not a recorded ``fail``.
+#
+# These three cases were CAL-571's AC-3 and pinned "the verb never raises on a
+# bad reviewer, it records the failure" — exit 0, ``verdict='fail'``, the
+# sentinel as the sole issue. #270 reclassified them: a reviewer that emitted no
+# parseable SUBMIT line delivered no verdict, so it is the same infra wall as an
+# engine timeout, and recording it as a rejected diff cost a review cycle and
+# inflated the fail rate. What survives from AC-3 is the half that was never in
+# question — the verb still does not crash on a bad reviewer, it still records
+# the failure — now as #262's refusal shape. The full behaviour lives in
+# ``test_review_no_submit_infra.py``; these keep the three input shapes pinned
+# where CAL-571's own tests can see them.
 # ---------------------------------------------------------------------------
 
 
-SENTINEL = "reviewer emitted no valid SUBMIT line"
-
-
-def test_ac3_no_submit_line_records_fail_sentinel(repo: Path, db_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("stdout", "expected_reason"),
+    [
+        ("I looked at the code and it seems fine to me.\n", NO_SUBMIT_REASON),
+        ("SUBMIT: {this is not valid json\n", MALFORMED_SUBMIT_REASON),
+        ('SUBMIT: {"verdict": "maybe", "issues": []}\n', MALFORMED_SUBMIT_REASON),
+    ],
+    ids=["no_submit_line", "garbled_json", "unknown_verdict"],
+)
+def test_ac3_unparseable_submit_is_infra_carrying_no_verdict(
+    repo: Path, db_path: Path, stdout: str, expected_reason: str
+) -> None:
     run_id = _seed_open_run(db_path, repo)
-    runner = _make_runner("I looked at the code and it seems fine to me.\n")
+    runner = _make_runner(stdout)
 
     result = _invoke(repo, db_path, run_id, runner)
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE, result.output
+    assert json.loads(result.output)["reason"] == expected_reason
 
     events = fetch_review_events(db_path)
     assert len(events) == 1
-    assert events[0]["data"]["verdict"] == "fail"
-    assert SENTINEL in events[0]["data"]["issues"]
-
-
-def test_ac3_garbled_submit_json_records_fail_sentinel(
-    repo: Path, db_path: Path
-) -> None:
-    run_id = _seed_open_run(db_path, repo)
-    runner = _make_runner("SUBMIT: {this is not valid json\n")
-
-    result = _invoke(repo, db_path, run_id, runner)
-    assert result.exit_code == 0, result.output
-
-    events = fetch_review_events(db_path)
-    assert events[0]["data"]["verdict"] == "fail"
-    assert SENTINEL in events[0]["data"]["issues"]
-
-
-def test_ac3_unknown_verdict_records_fail_sentinel(repo: Path, db_path: Path) -> None:
-    """A SUBMIT line whose verdict is not pass/fail/defer is treated as garbled."""
-    run_id = _seed_open_run(db_path, repo)
-    runner = _make_runner('SUBMIT: {"verdict": "maybe", "issues": []}\n')
-
-    result = _invoke(repo, db_path, run_id, runner)
-    assert result.exit_code == 0, result.output
-
-    events = fetch_review_events(db_path)
-    assert events[0]["data"]["verdict"] == "fail"
-    assert SENTINEL in events[0]["data"]["issues"]
+    assert "verdict" not in events[0]["data"]
+    assert events[0]["data"]["reason"] == expected_reason
 
 
 # ---------------------------------------------------------------------------
@@ -807,7 +826,7 @@ def test_review_cli_surfaces_engine_timeout_as_exit3_reason(
     payload = json.loads(result.output)
     assert payload["reason"] == "engine_timeout"
     # No verdict recorded: infra failure, not a review.
-    assert fetch_review_events(db_path) == []
+    assert_no_verdict_recorded(db_path, review_mod.ENGINE_TIMEOUT_REASON)
 
 
 # AC-1 / AC-4: a usage-limit Codex run falls back to Claude exactly once, the
@@ -870,17 +889,18 @@ def test_ac2_non_limit_codex_failure_does_not_fall_back(
     )
 
     result = _invoke(repo, db_path, run_id, runner, engine="codex")
-    assert result.exit_code == 0, result.output
 
-    assert order == ["codex"]  # no fallback hop
+    # The property under test is the ABSENCE of a fallback hop, and it holds.
+    assert order == ["codex"]
 
-    payload = json.loads(result.output)
-    assert payload["verdict"] == "fail"
-    assert payload["engine"] == "codex"
-
-    event = fetch_review_events(db_path)[0]["data"]
-    assert event["engine"] == "codex"
-    assert "fallback_from" not in event
+    # An ordinary Codex failure produces no parseable SUBMIT line, so since #270
+    # it is infra rather than a recorded ``fail``. That is the fix working, not a
+    # weakening of this test: "connection reset by peer" was never a reviewer
+    # rejecting the diff. What CAL-702 asserts here — that a non-limit failure
+    # does not silently become a Claude verdict — is untouched.
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE, result.output
+    assert json.loads(result.output)["reason"] == NO_SUBMIT_REASON
+    assert all(e["data"].get("verdict") is None for e in fetch_review_events(db_path))
 
 
 def test_default_claude_never_falls_back(repo: Path, db_path: Path) -> None:
@@ -903,11 +923,12 @@ def test_default_claude_never_falls_back(repo: Path, db_path: Path) -> None:
     )
 
     result = _invoke(repo, db_path, run_id, runner)  # default engine = claude
-    assert result.exit_code == 0, result.output
 
-    assert order == ["claude"]  # ran once, no hop to codex
+    assert order == ["claude"]  # ran once, no hop to codex — the property here
+    # No SUBMIT line came back, so #270 classifies it as infra; the recorded row
+    # is a refusal, which by construction carries no ``fallback_from`` either.
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE, result.output
     event = fetch_review_events(db_path)[0]["data"]
-    assert event["engine"] == "claude"
     assert "fallback_from" not in event
 
 
@@ -1019,8 +1040,8 @@ def test_cal866_sandbox_init_failure_surfaces_as_infra_not_fail(
     assert "error" in payload
 
     # No verdict was recorded: an infra failure must NOT read as pass/fail and
-    # must NOT be swallowed into the ledger as a review event.
-    assert fetch_review_events(db_path) == []
+    # must NOT be swallowed into the ledger as a review verdict.
+    assert_no_verdict_recorded(db_path, review_mod.SANDBOX_INIT_REASON)
 
 
 def test_cal866_sandbox_init_failure_not_recorded_as_fail_verdict(
@@ -1039,25 +1060,37 @@ def test_cal866_sandbox_init_failure_not_recorded_as_fail_verdict(
     assert all(e["data"].get("verdict") != "fail" for e in events)
 
 
-# AC-b: a genuine no-SUBMIT on a CLEAN exit still records a code-review ``fail``
-# — the infra detector must not capture an ordinary rejected/empty review.
+# AC-b (as amended by #270): a no-SUBMIT on a CLEAN exit is a SUBMIT-protocol
+# failure, and specifically NOT the sandbox wall — CAL-866's detector must stay
+# narrow enough to leave it alone.
+#
+# This test read "…still records a code-review ``fail``" before #270, which
+# reclassified that outcome. The half CAL-866 actually owns survives and is what
+# is asserted now: the two infra paths stay *distinguishable*. A clean exit with
+# no SUBMIT line is ``no_submit``; only the bwrap marker earns
+# ``sandbox_init_failure``. Collapsing them would lose the difference between "the
+# reviewer said nothing" and "the reviewer could not run a single command", which
+# is the whole reason CAL-866 has its own reason tag.
 
 
-def test_cal866_genuine_no_submit_on_clean_exit_still_fails(
+def test_cal866_genuine_no_submit_on_clean_exit_is_not_the_sandbox_wall(
     repo: Path, db_path: Path
 ) -> None:
     run_id = _seed_open_run(db_path, repo)
-    # Reviewer ran fine (exit 0) but emitted no SUBMIT line — a real code-review
-    # outcome, NOT infra. Must stay a recorded fail + sentinel, exit 0.
+    # Reviewer ran fine (exit 0) but emitted no SUBMIT line, and said nothing
+    # about bwrap: a protocol failure, not a sandbox failure.
     runner = _make_runner("I reviewed it and have nothing structured to add.\n", returncode=0)
 
     result = _invoke(repo, db_path, run_id, runner, engine="codex")
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE, result.output
+
+    reason = json.loads(result.output)["reason"]
+    assert reason == NO_SUBMIT_REASON
+    assert reason != review_mod.SANDBOX_INIT_REASON
 
     events = fetch_review_events(db_path)
     assert len(events) == 1
-    assert events[0]["data"]["verdict"] == "fail"
-    assert SENTINEL in events[0]["data"]["issues"]
+    assert events[0]["data"]["reason"] == NO_SUBMIT_REASON
 
 
 # ---------------------------------------------------------------------------
@@ -1149,7 +1182,7 @@ def test_cal924_bwrap_blocked_defer_surfaces_as_infra_not_verdict(
     assert "error" in payload
 
     # A review that never happened must NOT read as a defer (or any verdict).
-    assert fetch_review_events(db_path) == []
+    assert_no_verdict_recorded(db_path, review_mod.SANDBOX_INIT_REASON)
 
 
 # AC-2 / AC-3: a genuine defer (the reviewer actually inspected the diff) is
@@ -1309,3 +1342,35 @@ def test_cal1103_tracker_less_review_records_verdict_without_transition(
     stub.transition_to_in_review.assert_not_awaited()
     stub.transition_to_in_progress.assert_not_awaited()
     assert len(fetch_review_events(db_path)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The engine subprocess inherits the container's environment unfiltered (#278)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_subprocess_inherits_bytecode_suppression(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine subprocess inherits the process environment unfiltered.
+
+    The #278 fix pins ``PYTHONDONTWRITEBYTECODE=1`` on the container, and relies
+    on that flag reaching whatever Python the *review engine* runs against the
+    mounted worktree — not merely the harness process. That works only because
+    the verb hands the engine ``env=dict(os.environ)``. Locking it here means a
+    future env allowlist on that seam fails this test instead of silently
+    reintroducing the bytecode leak.
+    """
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner)
+    assert result.exit_code == 0, result.output
+
+    assert captured["env"].get("PYTHONDONTWRITEBYTECODE") == "1", (
+        "the review engine subprocess must inherit PYTHONDONTWRITEBYTECODE from "
+        "the verb's environment, or the engine's own Python still writes "
+        f"container-path bytecode into the mount (#278): {captured['env']!r}"
+    )

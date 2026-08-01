@@ -1,8 +1,10 @@
-# Harness — Retired Engine Design (SPEC §3, §5–§10, §12–§14)
+# Harness — Retired Engine Design (SPEC §3, §5–§10, §12–§15, §17–§18)
 
-> **Superseded 2026-07-07** by the verb model — proposal [`harness-as-tool`](../proposals/harness-as-tool.md) (accepted 2026-06-09), decision recorded in [`architecture-principles`](../architecture-principles.md). This document is the re-homed body of the retired deterministic-engine sections of [`SPEC.md`](../../SPEC.md): §3 (Repository Structure), §5–§10 (workflow schema, state, merge semantics, identity, worktree isolation, execution engine), and §12–§14 (SQLite schema, Docker, the steward example). The YAML-walking engine these sections describe was deleted in CAL-574; they are kept as design history only. The current design is SPEC §1–2 (verb model), §4 (core modules), and §11 (CLI); the current schema reference is [`run-ledger.md`](../features/run-ledger.md).
+> **Superseded 2026-07-07** by the verb model — proposal [`harness-as-tool`](../proposals/harness-as-tool.md) (accepted 2026-06-09), decision recorded in [`architecture-principles`](../architecture-principles.md). This document is the re-homed body of the retired deterministic-engine sections of [`SPEC.md`](../../SPEC.md): §3 (Repository Structure), §5–§10 (workflow schema, state, merge semantics, identity, worktree isolation, execution engine), §12–§14 (SQLite schema, Docker, the steward example), §15 (Migration Plan), and §17–§18 (Open Questions, Success Criteria). The YAML-walking engine these sections describe was deleted in CAL-574; they are kept as design history only. The current design is SPEC §1–2 (verb model), §4 (core modules), and §11 (CLI); the current schema reference is [`run-ledger.md`](../features/run-ledger.md).
 
-The sections below are reproduced from SPEC.md as of the CAL-1010 extraction. Treat any "the engine walks the workflow / the YAML decides the route" statement as superseded by SPEC §1–2.
+The sections below are reproduced from SPEC.md as of the CAL-1010 extraction, and §15 / §17–§18 as of the #271 extraction. Treat any "the engine walks the workflow / the YAML decides the route" statement as superseded by SPEC §1–2.
+
+§15 / §17–§18 came later because CAL-1010's banner named them as neither live nor retired, so they sat in limbo reading as current guidance. They are the engine's *plan*, *deferred decisions* and *grading criteria* — retired with it, and preserved rather than deleted because the migration was abandoned mid-plan when CAL-574 deleted the engine, not completed. Two claims in §17 are known-false as design history: §17.2's per-completion snapshot layer (`run_snapshots`) was removed in CAL-613 and never shipped, and §17.3's "the `runs.state_json` column is updated per-run" no longer holds — `state_json` survives as always-`"{}"` (see [`run-ledger.md`](../features/run-ledger.md)).
 
 ---
 
@@ -814,3 +816,82 @@ The core ergonomics commitment: **a workflow is a YAML file. Nothing else.**
 
 ---
 
+
+## 15. Migration Plan
+
+Cut order: **stewards → bugfix → feature.**
+
+| Phase | Scope | Done when |
+|-------|-------|-----------|
+| **A. Greenfield** | Build harness in isolation. Test with synthetic repo fixture. | Steward workflow runs end-to-end against fixture. Engine emits clean event log. |
+| **B. Shadow** | Run steward + bugfix workflows against a target repo's dev branch alongside the existing pipeline. Worktrees + diffs + reports produced; **no merges**. Compare outputs against existing pipeline. | 5 successful shadow runs per workflow with comparable or better output. |
+| **C. Cutover (partial)** | Stewards live (replace nightly-review). Bugfix live in normal mode. Feature work continues on current pipeline. | Legacy `nightly-review.skill` removed. Bugfixes flow through harness CLI. |
+| **D. Cutover (full)** | Feature workflow live. Project manifest, change folders, strategy migrated or removed. CLAUDE.md slimmed to project-only content. | Project `harness/`, `manifest.yaml`, `harness/changes/` deleted. `CLAUDE.md` under 50 lines. |
+
+### What goes back into a project's `CLAUDE.md` (target state)
+
+A short, project-only file:
+- Project description and tech stack
+- Test/lint commands
+- Code conventions
+- Path to `skills/` (execution-side skills, not pipeline mechanics)
+- Output-contract reminder for AI nodes invoked by harness
+
+Pipeline phases, manifest, strategy, brand guidelines, harness mechanics — all leave the project's CLAUDE.md.
+
+### What stays in a project's `skills/`
+
+Only execution-side skills the AI nodes need to do good work: design-system rules, code conventions, security review checklist. Anything pipeline-related (linear, worktree-isolation, dev-loop, start, nightly-review, etc.) deletes — the harness owns those concerns now.
+
+---
+
+
+## 17. Open Questions (deferred decisions)
+
+These are deliberately unresolved. Pick before code lands.
+
+1. **Workflow location: in-repo or harness-side?**
+   - In-repo: workflows live in the project repo (`your-repo/.harness/workflows/`). Pro: per-project customisation lives with the project. Con: re-conflates the two repos we just decoupled.
+   - Harness-side: workflows live in `harness/workflows/`, parameterised per project. Pro: clean decoupling. Con: per-project tweaks require touching the harness repo.
+   - **Lean:** harness-side, because cleanliness > convenience for a single-team tool. Revisit when a second project consumes the harness.
+
+2. **State persistence on resume.** ~~Defer until we hit a workflow that genuinely benefits from mid-run resume.~~ **Resolved by the `decision` node (§5):** `actor: human` requires resume capability, and that's promoted to v2 critical path. v1 stores latest state on the row; v2 lifts that to per-completion snapshots so paused runs can be rehydrated cleanly. Resume-from-failure (the broader case) follows the same machinery — once human-decision resume works, resume-from-failure is mostly a CLI verb away.
+
+3. **Concurrent runs against the same project.** Multiple worktrees on the same repo are fine (different branches). The SQLite question deserves an explicit analysis, not a hand-wave:
+
+   - **`runs` table:** each concurrent run owns its row by `run_id` PK. Updates target distinct rows — no contention.
+   - **`events` table:** append-only, autoincrement PK. SQLite WAL mode handles concurrent appenders cleanly (writers serialise on the WAL, readers don't block).
+   - **State writes:** the `runs.state_json` column is updated per-run, so concurrent state writes target different rows. No shared resource.
+   - **Reads (`harness status`, `harness logs`) during a running workflow:** WAL means readers see a snapshot without blocking writers.
+
+   The risk is bounded: the only real contention point is bursty event writes from many concurrent runs, which WAL serialises with millisecond-class lock acquisition. Acceptable for v1's expected workload (1–3 concurrent runs locally). If usage grows beyond that, switch to PostgreSQL — the schema is portable.
+
+4. **External trigger source (Discord, etc.) — built-in or external?** *Resolved: external.* The harness exposes the CLI and does not listen; any process that watches a source and shells out to a verb lives in a sibling repo or in Hermes, never in this tool. The engine-era webhook listener that violated this boundary was retired in CAL-601.
+
+5. **Prompt-cache strategy.** Anthropic cache breakpoints could materially cut token cost for steward runs that re-read the same context daily. Defer to v0.2 once we have real token-cost data.
+
+---
+
+
+## 18. Success Criteria
+
+### For this spec (review)
+
+- [ ] Read in one sitting (~30 minutes).
+- [ ] No "what does X mean" gaps — every term used is defined or obvious.
+- [ ] Repo structure proposal (§3) is concrete enough to scaffold without ambiguity.
+- [ ] YAML schema (§5) is concrete enough to write a workflow without inventing fields.
+- [ ] CLI surface (§11) is stable enough to publish to callers immediately.
+- [ ] Migration plan (§15) is concrete enough to start Phase A this week.
+
+### For v1 implementation (acceptance)
+
+- [ ] **The 10-minute workflow test.** A new workflow can be written from a blank page in under 10 minutes, end-to-end, by someone who's read this spec once. Test with a real example: write a `release-notes` workflow that pulls Linear tickets from the last week and asks Claude to summarise. If it feels slow, verbose, or mentally taxing, the system is too heavy and v1 needs cuts before shipping.
+- [ ] Steward workflow runs end-to-end against a synthetic repo fixture.
+- [ ] Token cost per run is logged and visible in `harness status --json`.
+- [ ] Event log captures every tool call inside an AI node (replay-quality observability).
+- [ ] Concurrent runs against the same project don't collide (per §17.3 analysis).
+
+If any of these fail at scaffolding time, fix the spec before continuing.
+
+---

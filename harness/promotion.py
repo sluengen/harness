@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from harness.cli._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git
+from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git
 from harness.worktree import worktree_path
 
 __all__ = [

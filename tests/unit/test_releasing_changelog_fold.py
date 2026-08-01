@@ -1,44 +1,45 @@
-"""#223 — the between-release fold procedure clears whichever ceiling tripped.
+"""#267 — ``RELEASING.md`` documents the fragment mechanism it actually has.
 
-``RELEASING.md``'s "Between-release CHANGELOG fold" was written entirely against
-the **byte** gate: it cited the 60,000-byte hard bound and the ~48,000-byte soft
-warning, and prescribed condensing older entries' bodies. But
-:mod:`tests.unit.test_changelog_rotation` enforces **two** ceilings, and the
-prescribed fold is close to a no-op against the second — a condensed entry is
-still heading + bullet + blank, three lines, exactly what it occupied before.
+Before #267 this module guarded a "Between-release CHANGELOG fold" section: a
+two-pass procedure (condense bodies for bytes, collapse to one line for lines)
+against a root file that every ticket appended to. #267 removed the
+accumulation, so both passes describe a mechanism that no longer exists —
+there is nothing to fold between releases because ``CHANGELOG.md`` no longer
+grows between releases.
 
-That played out on 2026-07-26: a four-entry fold took the file 47,674 → 42,825
-bytes, then two new entries tripped ``test_root_changelog_is_line_bounded`` at
-251 lines against 250 while bytes were still comfortable. The gate named the
-right ceiling; the runbook had no procedure for it, so the fix — collapsing the
-oldest entries' heading and summary onto one line, 251 → 174 — was invented
-mid-run and landed as ``c907faf``.
+The guard moves with the doc rather than being deleted, because what made it
+load-bearing is unchanged: a runbook that drifts from the gate sends an author
+whose build just failed in the wrong direction, which is exactly what happened
+on 2026-07-26 when the line ceiling tripped and the runbook had no procedure
+for it.
 
-These tests are the executable form of the acceptance criteria:
+Two mechanisms are kept verbatim from the retired version, and they are the
+reason this guard cannot go stale:
 
-* **AC-1 — both bounds named, with values read from the test.** The ceiling
-  constants are *imported* from :mod:`tests.unit.test_changelog_rotation` and
-  formatted here, never retyped, so changing a bound fails this guard rather
-  than silently staling the runbook. The set of ceiling tests the section must
-  name is **derived** by introspecting that module for ``test_root_changelog_*``
+* **The bound values are imported from the enforcing test and formatted here**,
+  never retyped — so re-baselining the ratchet fails this guard until the
+  runbook is updated with it.
+* **The ceiling-test set is derived** by introspecting
+  :mod:`tests.unit.test_changelog_rotation` for ``test_root_changelog_*``
   rather than listed (``code-quality`` Part C, "a guard derives its subjects; it
-  does not list them", #220) — a fourth ceiling test added later fails here
-  until the runbook documents it.
-* **AC-2 — which fold relieves which ceiling.** Body condensation is stated to
-  relieve bytes only; the one-line collapse is prescribed for the line ceiling,
-  with ``c907faf`` cited as prior art alongside ``208118e``.
-* **AC-3 — a way to tell which fold is needed.** Both ``wc`` readings are taken
-  before folding.
-* **AC-4 — entry length named as the upstream driver**, with a per-entry budget.
-* **AC-5 — this module is the guard**, mirroring
-  :mod:`tests.unit.test_release_docs_currency`, the nearest doc-currency guard.
+  does not list them", #220) — so a ceiling added or renamed later fails here
+  until the runbook names it.
 
-**Every content assertion is scoped to the fold section**, never to the whole
-file: "byte", "60,000" and "ceiling" all appear elsewhere in ``RELEASING.md``,
-so an unscoped check would pass on the wrong prose. And every assertion is
-anchored on the step *bodies* rather than their bold titles — a bullet's own
-title is a sibling of its body, so a title-satisfiable assertion pins nothing
-(the failure mode #221 found by mutation-checking).
+These tests are the executable form of AC-6:
+
+* **The section documents the write** — the fragment path, the heading grammar,
+  and the closed category set.
+* **The section documents the exemption** — the ``### None`` form, which is the
+  only way past the presence gate for a change that warrants no entry.
+* **The section documents the fold** — the invocation, at release rather than
+  between releases.
+* **The section documents the ratchet**, with both bounds and both tests named.
+* **The release step owns the re-baseline** — the one place allowed to move a
+  ratchet constant says so.
+
+**Every content assertion is scoped to the section**, never to the whole file:
+``changelog.d`` and ``CHANGELOG.md`` both appear elsewhere in ``RELEASING.md``
+now, so an unscoped check would pass on the wrong prose.
 """
 
 from __future__ import annotations
@@ -52,40 +53,47 @@ from tests.unit import test_changelog_rotation as rotation
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RELEASING = _REPO_ROOT / "RELEASING.md"
 
-#: The fold section's H2 heading. ``test_root_changelog_soft_warning_threshold``
-#: already points authors here by this exact name, so renaming it breaks that
-#: pointer too — the slicer raises rather than falling back to the whole file.
-_SECTION = "## Between-release CHANGELOG fold"
+#: The fragment section's H2 heading. Both ratchet tests name it verbatim in
+#: their failure messages, so renaming it breaks those pointers too — the
+#: slicer raises rather than falling back to the whole file.
+_SECTION = "## Changelog fragments"
 
-#: The paragraph stating the per-entry budget. Assertions about the budget are
-#: scoped to it, not to the section: the section quotes byte figures in its
-#: prior art and in its driver evidence, so a section-wide "<n> bytes" search
-#: matches those and pins nothing.
+#: The release step that owns the deliberate re-baseline of the ratchet.
+_RELEASE_SECTION = "## Release notes + the `staging → main` promotion"
+
+#: The per-entry budget paragraph. Budget assertions are scoped to it, not to
+#: the section: the section quotes byte figures in its ratchet table and its
+#: prior art, so a section-wide "<n> bytes" search matches those and pins
+#: nothing.
 _BUDGET_PARAGRAPH = "**The per-entry budget.**"
 
-#: A per-entry budget, written as a digits-and-unit claim. Matched by pattern
-#: rather than by literal so the budget can be re-tuned without a test edit,
-#: while removing it altogether still fails.
+#: A per-entry budget, written as a digits-and-unit claim. Matched by pattern so
+#: the budget can be re-tuned without a test edit, while removing it altogether
+#: still fails.
 _BUDGET = re.compile(r"\*\*[\d,]{3,} bytes[^*]*\*\*")
 
 
-def _fold_section() -> str:
-    """The fold section's body, to the next H2 heading."""
+def _section(heading: str) -> str:
+    """A section's body, to the next H2 heading."""
     text = _RELEASING.read_text(encoding="utf-8")
-    start = text.find(f"\n{_SECTION}")
+    start = text.find(f"\n{heading}")
     assert start != -1, (
-        f"RELEASING.md has no '{_SECTION}' section. It is the documented home of "
-        "the between-release fold, and test_root_changelog_soft_warning_threshold "
-        "names it verbatim in its failure message — rename both together or not "
-        "at all."
+        f"RELEASING.md has no '{heading}' section. It is the documented home of "
+        "the changelog fragment mechanism, and tests/unit/"
+        "test_changelog_rotation.py names it verbatim in the failure messages of "
+        "both ratchet tests — rename them together or not at all."
     )
     rest = text[start + 1 :]
-    nxt = re.search(r"^## ", rest[len(_SECTION) :], re.MULTILINE)
-    return rest if nxt is None else rest[: len(_SECTION) + nxt.start()]
+    nxt = re.search(r"^## ", rest[len(heading) :], re.MULTILINE)
+    return rest if nxt is None else rest[: len(heading) + nxt.start()]
+
+
+def _fold_section() -> str:
+    return _section(_SECTION)
 
 
 def _paragraph(lead: str) -> str:
-    """The single paragraph of the fold section opening with ``lead``."""
+    """The single paragraph of the fragment section opening with ``lead``."""
     section = _fold_section()
     start = section.find(lead)
     assert start != -1, (
@@ -96,7 +104,7 @@ def _paragraph(lead: str) -> str:
 
 
 def _ceiling_tests() -> list[str]:
-    """Every ``test_root_changelog_*`` test — the ceilings the fold must clear.
+    """Every ``test_root_changelog_*`` test — the ceilings the doc must name.
 
     Derived from the rotation module rather than listed here, so a ceiling
     added later fails this guard until the runbook documents it.
@@ -109,33 +117,134 @@ def _ceiling_tests() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# AC-1 — both bounds named, values single-sourced from the enforcing test.
+# The section documents the fragment write.
 # ---------------------------------------------------------------------------
 
 
-def test_fold_names_both_ceilings_with_current_values() -> None:
+def test_section_documents_the_fragment_path() -> None:
+    """The path an author must create, in its placeholder form."""
+    section = _fold_section()
+    assert "`changelog.d/<ticket>.md`" in section, (
+        f"RELEASING.md '{_SECTION}' must name the fragment path as "
+        "`changelog.d/<ticket>.md`. It is the one thing an author needs from "
+        "this section, and the presence gate's failure message names the same "
+        "shape."
+    )
+
+
+def test_section_documents_the_heading_grammar_and_categories() -> None:
+    """The closed category set, derived from the script that enforces it."""
+    import sys
+
+    sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+    import changelog_fragments as cf
+
+    section = _fold_section()
+    missing = [c for c in cf.CATEGORIES if f"`{c}`" not in section]
+    assert not missing, (
+        f"RELEASING.md '{_SECTION}' does not name these categories: {missing}. "
+        "The set is closed — `check` rejects anything outside it — so an author "
+        "who cannot see the whole set from the runbook will guess and fail the "
+        "gate."
+    )
+
+
+def test_section_states_the_filename_is_the_key() -> None:
+    """Why a resumed run cannot duplicate an entry."""
+    section = _fold_section()
+    assert "primary key" in section and "overwrites" in section, (
+        f"RELEASING.md '{_SECTION}' must say the filename is the primary key and "
+        "that a resumed run overwrites rather than duplicating. Without it, an "
+        "author resuming a build looks for a de-duplication step that does not "
+        "exist."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The section documents the exemption — the only way past the presence gate.
+# ---------------------------------------------------------------------------
+
+
+def test_section_documents_the_exemption_form() -> None:
+    section = _fold_section()
+    assert "### None — " in section, (
+        f"RELEASING.md '{_SECTION}' must give the exemption form verbatim "
+        "('### None — <why> (#<ticket>)'). A change that genuinely warrants no "
+        "entry has no other way past the presence gate, and an author who cannot "
+        "find it will fake an entry instead."
+    )
+    assert "reviewer" in section, (
+        f"RELEASING.md '{_SECTION}' must say why the exemption is a file in the "
+        "diff rather than a flag: so a reviewer sees the claim and can disagree "
+        "with it. Without the reason it reads as a formality to satisfy."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The section documents the fold, and the release step owns the re-baseline.
+# ---------------------------------------------------------------------------
+
+
+def test_section_states_the_fold_is_a_release_step() -> None:
+    """There is no between-release fold any more — the doc must say so."""
+    section = _fold_section()
+    assert "at release, not between releases" in section, (
+        f"RELEASING.md '{_SECTION}' must state that the fold happens at release "
+        "rather than between releases. The retired two-pass procedure ran on "
+        "nine consecutive Build ticks; an author who still believes in it will "
+        "go looking for a fold to run when the ratchet trips, and the fix is to "
+        "write a fragment instead."
+    )
+
+
+def test_release_step_names_the_fold_invocation() -> None:
+    """The release checklist carries the command, not a description of it."""
+    release = _section(_RELEASE_SECTION)
+    assert "scripts/changelog_fragments.py fold" in release, (
+        f"RELEASING.md '{_RELEASE_SECTION}' must name the fold invocation. The "
+        "fold is the step that turns fragments into released history; a "
+        "checklist that only describes it leaves the operator to reconstruct "
+        "the command."
+    )
+
+
+def test_release_step_owns_the_ratchet_rebaseline() -> None:
+    """Exactly one place may move a ratchet constant, and it says so."""
+    release = _section(_RELEASE_SECTION)
+    assert "_ROOT_BYTE_BOUND" in release and "_ROOT_LINE_BOUND" in release, (
+        f"RELEASING.md '{_RELEASE_SECTION}' must name both ratchet constants. "
+        "The fold is the one step allowed to move them, so the instruction to "
+        "re-baseline belongs with it — otherwise the next release trips a gate "
+        "with no documented way through."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The ratchet — values imported from the enforcing test, tests derived.
+# ---------------------------------------------------------------------------
+
+
+def test_section_names_both_ratchet_bounds_with_current_values() -> None:
     """The section carries every bound's current value, formatted from the test."""
     section = _fold_section()
     for label, value in (
-        ("hard byte gate", f"{rotation._ROOT_BYTE_BOUND:,}-byte"),
-        ("line ceiling", f"{rotation._ROOT_LINE_BOUND}-line"),
-        ("soft byte warning", f"{rotation._ROOT_SOFT_WARNING_BOUND:,}-byte"),
+        ("byte ratchet", f"{rotation._ROOT_BYTE_BOUND:,} bytes"),
+        ("line ratchet", f"{rotation._ROOT_LINE_BOUND} lines"),
     ):
         assert value in section, (
             f"RELEASING.md '{_SECTION}' does not name the {label} ({value}). The "
-            "fold procedure must state every bound tests/unit/"
-            "test_changelog_rotation.py enforces, in the unit-qualified comma "
-            "form — an author whose gate just tripped needs to know which "
-            "ceiling they are folding against, and a bare digit could be any "
-            "figure the prose happens to quote."
+            "section must state every bound tests/unit/test_changelog_rotation.py "
+            "enforces, in the unit-qualified comma form — an author whose gate "
+            "just tripped needs to know which ceiling they are against, and a "
+            "bare digit could be any figure the prose happens to quote."
         )
 
 
-def test_fold_names_every_ceiling_test() -> None:
+def test_section_names_every_ceiling_test() -> None:
     """Each ``test_root_changelog_*`` test is named in the section.
 
-    The subject set is derived, not listed, so adding a fourth ceiling test
-    fails here until the runbook tells an author how to clear it.
+    The subject set is derived, not listed, so adding a third ceiling test fails
+    here until the runbook tells an author how to clear it.
     """
     names = _ceiling_tests()
     assert len(names) >= 2, (
@@ -152,91 +261,54 @@ def test_fold_names_every_ceiling_test() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-2 — which fold relieves which ceiling.
-# ---------------------------------------------------------------------------
-
-
-def test_fold_states_the_body_condensation_relieves_bytes_only() -> None:
-    """The first pass is stated to buy bytes and no lines, in the step's body.
-
-    The claim must survive deleting the step's bold title: "bytes" appears in
-    the section's opening paragraph, so a bare substring check would pin
-    nothing.
-    """
+def test_section_explains_why_there_are_two_guards() -> None:
+    """The pair is deliberate — neither guard subsumes the other."""
     section = _fold_section()
-    assert "three lines, exactly what it occupied before" in section, (
-        f"RELEASING.md '{_SECTION}' must say in the first pass's body why "
-        "condensing an entry buys no lines — a condensed entry is still a "
-        "heading, a bullet and a blank line, three lines, exactly what it "
-        "occupied before. Without the reason, an author reads the pass as a "
-        "general-purpose fold and reruns it against a line failure it cannot fix."
+    assert "abstain" in section, (
+        f"RELEASING.md '{_SECTION}' must say that the presence check abstains "
+        "where the base cannot resolve. A reader who does not know that will "
+        "read a passing gate as proof the fragment was checked."
+    )
+    assert "Neither subsumes the other" in section, (
+        f"RELEASING.md '{_SECTION}' must state why both the presence check and "
+        "the ratchet exist: one is direct but base-dependent, the other "
+        "base-independent but indirect. Without the reason, the next author to "
+        "find them redundant deletes the one their environment does not exercise."
     )
 
 
-def test_fold_prescribes_the_one_line_collapse_for_the_line_ceiling() -> None:
-    """The second pass — the only fold that relieves lines — has a procedure."""
-    section = _fold_section()
-    for fragment in ("### Earlier still — one line each", "one line per entry"):
-        assert fragment in section, (
-            f"RELEASING.md '{_SECTION}' is missing the second-pass collapse "
-            f"({fragment!r}). Clearing the {rotation._ROOT_LINE_BOUND}-line "
-            "ceiling requires collapsing an entry's heading and summary onto a "
-            "single line; nothing else moves the line count."
-        )
-
-
-def test_fold_cites_the_second_pass_prior_art() -> None:
-    """Both passes cite a landed commit, the way ``208118e`` is cited today."""
-    section = _fold_section()
-    for sha, pass_name in (
-        ("208118e", "first-pass byte fold"),
-        ("c907faf", "second-pass line collapse"),
-    ):
-        assert sha in section, (
-            f"RELEASING.md '{_SECTION}' does not cite {sha}, the {pass_name} this "
-            "procedure gives a durable home. Prior art is how an author sees the "
-            "shape of the edit before making it."
-        )
-
-
-# ---------------------------------------------------------------------------
-# AC-3 — measure first, so the fold matches the ceiling that actually tripped.
-# ---------------------------------------------------------------------------
-
-
-def test_fold_gives_a_measurement_step() -> None:
-    """Both readings are taken before folding — the two ceilings move apart."""
+def test_section_gives_the_measurement_commands() -> None:
+    """Both readings, so an author can see where the file sits."""
     section = _fold_section()
     for command in ("wc -c CHANGELOG.md", "wc -l CHANGELOG.md"):
         assert command in section, (
-            f"RELEASING.md '{_SECTION}' does not tell the author to run "
-            f"`{command}` before folding. Bytes and lines move independently, so "
-            "the reading decides which pass to run; without both, the author "
-            "guesses."
+            f"RELEASING.md '{_SECTION}' does not tell the author how to take the "
+            f"`{command}` reading. Bytes and lines ratchet independently, so a "
+            "single reading cannot tell them which one tripped."
         )
 
 
 # ---------------------------------------------------------------------------
-# AC-4 — entry length is the upstream driver, with a stated budget.
+# The per-entry budget survives the move — it was always the upstream driver.
 # ---------------------------------------------------------------------------
 
 
-def test_fold_sets_a_per_entry_budget() -> None:
+def test_section_sets_a_per_entry_budget() -> None:
     """The section names entry length as the driver and states a budget."""
     paragraph = _paragraph(_BUDGET_PARAGRAPH)
     assert "length" in paragraph, (
         f"RELEASING.md '{_SECTION}' must name entry length as the upstream "
-        "driver in its budget paragraph. The fold fired on nine consecutive "
-        "ticks without buying durable headroom because entries kept growing; "
-        "a budget that does not say what it is budgeting explains nothing."
+        "driver in its budget paragraph. The retired fold fired on nine "
+        "consecutive ticks without buying durable headroom because entries kept "
+        "growing; a budget that does not say what it is budgeting explains "
+        "nothing, and fragments inherit the problem unchanged."
     )
     assert _BUDGET.search(paragraph), (
         f"RELEASING.md '{_SECTION}' states no numeric per-entry budget in its "
         f"budget paragraph (an emphasised '<n> bytes …' claim matching "
-        f"{_BUDGET.pattern}). An expectation an author cannot measure against "
-        "is not an expectation — and the byte figures elsewhere in the section "
-        "are prior art and evidence, not a budget."
+        f"{_BUDGET.pattern}). An expectation an author cannot measure against is "
+        "not an expectation — and the byte figures elsewhere in the section are "
+        "the ratchet table and prior art, not a budget."
     )
 
 
@@ -245,21 +317,28 @@ def test_fold_sets_a_per_entry_budget() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_line_bounded_failure_message_points_at_the_fold() -> None:
-    """``test_root_changelog_is_line_bounded`` names the fold section.
+def test_ratchet_failure_messages_point_at_the_fragment_section() -> None:
+    """Both ratchet tests name the section that tells an author what to do.
 
-    Its message used to say "rotate released entries to the archive" — the one
-    action the fold section explicitly forbids between releases, since nothing
-    in ``[Unreleased]`` has shipped. Its byte-side sibling
-    ``test_root_changelog_soft_warning_threshold`` already points at the fold;
-    the line ceiling must too, or the gate that trips sends the author the
-    wrong way.
+    Their messages used to prescribe the two-pass fold — the procedure #267
+    retired. A gate that trips must send the author to the mechanism that
+    actually exists, or it sends them to rewrite a file they should not touch.
     """
-    source = inspect.getsource(rotation.test_root_changelog_is_line_bounded)
-    assert "Between-release CHANGELOG fold" in source, (
-        "test_root_changelog_is_line_bounded's failure message must name "
-        "RELEASING.md's 'Between-release CHANGELOG fold' section, the way "
-        "test_root_changelog_soft_warning_threshold's already does. Rotation "
-        "cannot clear this ceiling between releases — unreleased entries have "
-        "not shipped."
-    )
+    for test in (
+        rotation.test_root_changelog_is_byte_bounded,
+        rotation.test_root_changelog_is_line_bounded,
+    ):
+        source = inspect.getsource(test)
+        assert "Changelog fragments" in source, (
+            f"{test.__name__}'s failure message must name RELEASING.md's "
+            "'Changelog fragments' section. Folding cannot clear these bounds — "
+            "since #267 the way past them is to write a fragment instead of "
+            "editing CHANGELOG.md."
+        )
+        assert "changelog.d" in source or "_FRAGMENT_DIRNAME" in source, (
+            f"{test.__name__}'s failure message must name the fragment directory, "
+            "so the fix is a path away rather than a doc search. Either the "
+            "literal or the interpolated _FRAGMENT_DIRNAME constant satisfies "
+            "this — the constant is the better form, since it single-sources the "
+            "directory name with the enumeration that reads it."
+        )

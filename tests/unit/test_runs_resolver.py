@@ -16,7 +16,9 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from harness.cli._runs import resolve_open_run
+import pytest
+
+from harness.cli._runs import LedgerNotFoundError, resolve_open_run
 from harness.state import store
 
 RUN_ID = "01JRUNRESOLVEXXXXXXXXXXX01"
@@ -114,9 +116,30 @@ def test_no_matching_run_returns_none(tmp_path: Path) -> None:
     assert _sync(resolve_open_run(db_path, other_repo, None)) is None
 
 
-def test_missing_db_returns_none(tmp_path: Path) -> None:
+def test_missing_ledger_raises_ledger_not_found(tmp_path: Path) -> None:
+    """#244: no ledger file at all is a distinct outcome from "no open run" —
+    the lookup never happened, so it must not be conflated with ``None``."""
     db_path = tmp_path / "does-not-exist.db"
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    assert _sync(resolve_open_run(db_path, repo, None)) is None
+    with pytest.raises(LedgerNotFoundError) as exc:
+        _sync(resolve_open_run(db_path, repo, None))
+
+    assert exc.value.reason == "no_ledger"
+    assert exc.value.code == 2
+    assert str(db_path) in exc.value.message
+    assert exc.value.extra == {"ledger_path": str(db_path)}
+
+
+def test_missing_ledger_creates_no_files(tmp_path: Path) -> None:
+    """The refusal must not plant a ``.harness/`` directory as a side effect —
+    the guard runs before ``store.connect`` would create one."""
+    db_path = tmp_path / ".harness" / "harness.db"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    with pytest.raises(LedgerNotFoundError):
+        _sync(resolve_open_run(db_path, repo, None))
+
+    assert not (tmp_path / ".harness").exists()

@@ -36,8 +36,25 @@ from harness.cli._engine import Runner, RunResult
 from harness.cli.design_protocol import design_content_hash
 from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 
+# size: the review engine's protocol layer — one cohesive body of *pure* engine
+# knowledge, split out of the verb in CAL-1107 and kept together because every
+# part of it answers the same question (what does this engine's output mean?):
+# the prompt and its design-context block, the SUBMIT scanner, the per-engine
+# command builder, the three empirically-derived failure detectors, and the
+# per-ticket model-tier resolver. Length here is overwhelmingly the *evidence*
+# for the empirical parts — the captured stderr each detector matches, and why
+# each match is narrow — which is the one thing that must not be trimmed, since
+# without it a future reader cannot tell a real engine quirk from a guess.
+# The module sat one line under the limit and #270 crossed it by adding the
+# second SUBMIT sentinel and its discriminator.
+# The extraction candidate, if it grows again, is the design gate
+# (``DesignGate`` + ``resolve_design_gate``, ~110 lines): it is a *policy*
+# decision about the ledger's design record, not engine-output knowledge, and it
+# is the one part of this module that would read coherently on its own — the
+# ``review_inherit`` / ``design_adopt`` precedent for lifting a decision out.
 __all__ = [
     "DEFAULT_ENGINE",
+    "DesignContextReason",
     "DesignGate",
     "Engine",
     "ModelTier",
@@ -45,6 +62,7 @@ __all__ = [
     "RunResult",
     "Runner",
     "Verdict",
+    "MALFORMED_SUBMIT_SENTINEL",
     "NO_SUBMIT_SENTINEL",
     "build_review_prompt",
     "resolve_design_gate",
@@ -55,8 +73,13 @@ __all__ = [
     "is_sandbox_blocked_defer",
 ]
 
-# Sentinel issue recorded when the reviewer emits no parseable SUBMIT line.
+# The two ways the reviewer can fail to deliver a verdict, kept distinct so the
+# verb can tag them apart in the ledger (#270), mirroring ``design_protocol``'s
+# pair: the first says the engine never reached its contract, the second that it
+# tried and emitted garbage. Reported as human sentinels because this module is
+# pure and knows nothing of exit codes or ``reason`` tags — the verb maps them.
 NO_SUBMIT_SENTINEL = "reviewer emitted no valid SUBMIT line"
+MALFORMED_SUBMIT_SENTINEL = "reviewer emitted a malformed SUBMIT line"
 
 # The verdicts the SUBMIT line may carry.  Anything else is treated as garbled.
 _VALID_VERDICTS: frozenset[str] = frozenset({"pass", "fail", "defer"})
@@ -162,19 +185,33 @@ def build_review_prompt(design_markdown: str | None = None) -> str:
 #: a degradation rather than a second refusal.
 NO_DESIGN_REASON = "no_design"
 
+#: Why a review proceeded WITHOUT design context, when it did (AC-1, #247) —
+#: recorded alongside ``design_context`` so "did the linkage stop working, and
+#: why" is a ledger question, not a console-noise one. ``design_failed``: the
+#: run's design attempt did not succeed (ADR 0007 D4). ``not_supplied``: no
+#: ``--design-file`` was passed. ``unreadable``: a path was passed but could
+#: not be read — see :data:`DESIGN_FILE_OUTSIDE_WORKSPACE_REASON` for the
+#: subset of this now caught earlier, as a refusal. ``hash_mismatch``: a
+#: readable file's content hash does not match the recorded ``design_hash``
+#: (or none was recorded to check against).
+DesignContextReason = Literal["design_failed", "not_supplied", "unreadable", "hash_mismatch"]
+
 
 class DesignGate(BaseModel):
     """What the design stage's record says this review may do.
 
     One refusal (:data:`NO_DESIGN_REASON`), or a ``design_markdown`` to review
     against, or neither — proceed with no design context, which is what a
-    recorded *failed* attempt earns. A ``warning`` may accompany the last case.
+    recorded *failed* attempt earns. A ``warning`` may accompany the last case,
+    and ``context_reason`` (AC-1, #247) always does, naming *why* no design
+    reached the engine — absent only when ``design_markdown`` is set.
     """
 
     refusal_reason: str | None = None
     refusal_message: str | None = None
     design_markdown: str | None = None
     warning: str | None = None
+    context_reason: DesignContextReason | None = None
 
 
 def resolve_design_gate(
@@ -188,19 +225,27 @@ def resolve_design_gate(
     not be read, so an unreadable file is reported rather than passed over as
     though nothing was supplied.
 
-    Four outcomes:
+    Five outcomes, each recorded on the returned :class:`DesignGate` as
+    ``context_reason`` (:data:`DesignContextReason`, AC-1 #247) when no design
+    reaches the engine — a ``None`` reason means the last outcome, the design
+    applied:
 
     * **no event** → refuse :data:`NO_DESIGN_REASON`. The design stage runs on
       every run (ADR 0007 D1), so its absence means it was skipped.
-    * **a ``failed`` event** → proceed with no context. D4 is explicit that the
-      check is *attempted and recorded*, not *succeeded*; there is no design to
-      review against, and any text supplied for one is ignored, since no
-      recorded hash could authenticate it.
+    * **a ``failed`` event** → proceed with no context, reason
+      ``"design_failed"``. D4 is explicit that the check is *attempted and
+      recorded*, not *succeeded*; there is no design to review against, and
+      any text supplied for one is ignored, since no recorded hash could
+      authenticate it.
+    * **an ``ok`` event + no text supplied** → proceed with no context, reason
+      ``"not_supplied"``.
+    * **an ``ok`` event + text that could not be read** (the empty-string
+      sentinel) → proceed with no context, reason ``"unreadable"``.
+    * **an ``ok`` event + text that does not match the recorded hash** (or the
+      event recorded none to check against) → proceed with no context, reason
+      ``"hash_mismatch"``.
     * **an ``ok`` event + text whose hash matches** → that design becomes the
-      context the engine reviews against.
-    * **an ``ok`` event + no text, or text that does not match (or is
-      unreadable, or has no recorded hash to check against)** → proceed with
-      **no** context.
+      context the engine reviews against; ``context_reason`` stays ``None``.
 
     **Enforcement refuses; context degrades.** The two halves of ADR 0007's
     review linkage have deliberately different postures. Enforcement keys on the
@@ -233,20 +278,32 @@ def resolve_design_gate(
             ),
         )
     if event.get(DESIGN_STATUS_KEY) != "ok":
-        return DesignGate()
+        return DesignGate(context_reason="design_failed")
     if supplied_design is None:
-        return DesignGate()
+        return DesignGate(context_reason="not_supplied")
+    if supplied_design == "":
+        return DesignGate(
+            context_reason="unreadable",
+            warning=(
+                "the file passed to --design-file could not be read (it does "
+                "not exist, or is not accessible from this workspace). "
+                "Reviewing against the ticket alone rather than against an "
+                "unverified design — pass the `design_markdown` from this "
+                "run's `harness design` output, staged inside the repo tree."
+            ),
+        )
     recorded_hash = event.get(DESIGN_HASH_KEY)
     if not recorded_hash or design_content_hash(supplied_design) != recorded_hash:
         return DesignGate(
+            context_reason="hash_mismatch",
             warning=(
                 "the design supplied with --design-file is not the one this run "
-                "recorded: it could not be read, or its content hash does not "
-                "match the design event's design_hash. Reviewing against the "
-                "ticket alone rather than against an unverified design — pass "
-                "the `design_markdown` from this run's `harness design` output, "
-                "or re-run `harness design`."
-            )
+                "recorded: its content hash does not match the design event's "
+                "design_hash. Reviewing against the ticket alone rather than "
+                "against an unverified design — pass the `design_markdown` "
+                "from this run's `harness design` output, or re-run "
+                "`harness design`."
+            ),
         )
     return DesignGate(design_markdown=supplied_design)
 
@@ -257,12 +314,19 @@ def resolve_design_gate(
 
 
 class _Parsed(BaseModel):
-    """Internal parse result of the SUBMIT line."""
+    """Internal parse result of the SUBMIT line.
+
+    ``submit_failure`` (#270) is ``None`` exactly when a verdict parsed, else the
+    sentinel naming which protocol failure occurred — so the verb branches on
+    structure, not on string-matching ``issues[0]``, and a reviewer whose genuine
+    finding is worded like a sentinel stays a ``fail``.
+    """
 
     verdict: Verdict
     issues: list[str]
     commit_message: str | None = None
     deferred_brief: str | None = None
+    submit_failure: str | None = None
 
 
 def scan_submit_line(stdout: str) -> _Parsed:
@@ -270,14 +334,23 @@ def scan_submit_line(stdout: str) -> _Parsed:
 
     A line is valid when it starts with ``SUBMIT:`` (after stripping), the JSON
     after the prefix parses to an object, and ``verdict`` is one of
-    ``pass``/``fail``/``defer``.  Missing, malformed, or unknown-verdict SUBMIT
-    lines yield a recorded ``fail`` carrying the :data:`NO_SUBMIT_SENTINEL`
-    issue — the verb never raises on a bad reviewer, it records the failure.
+    ``pass``/``fail``/``defer``.  Anything else yields a ``fail`` carrying a
+    sentinel issue **and** ``submit_failure`` set to that sentinel, which is how
+    the verb tells "produced no verdict" from "rejected the diff" (#270).
+
+    Which sentinel mirrors :func:`~harness.cli.design_protocol.parse_design_submit`:
+    :data:`MALFORMED_SUBMIT_SENTINEL` when a ``SUBMIT:`` line was seen but none
+    parsed, else :data:`NO_SUBMIT_SENTINEL`.  Scanning does not stop at the first
+    bad line — a stray ``SUBMIT:`` in the engine's reasoning must not mask the
+    real submission at the end — so malformed is reported only when no valid line
+    was found anywhere.
     """
+    saw_submit_line = False
     for line in stdout.splitlines():
         stripped = line.strip()
         if not stripped.startswith("SUBMIT:"):
             continue
+        saw_submit_line = True
         json_part = stripped[len("SUBMIT:"):].strip()
         try:
             payload = json.loads(json_part)
@@ -299,8 +372,10 @@ def scan_submit_line(stdout: str) -> _Parsed:
             deferred_brief=deferred_brief if isinstance(deferred_brief, str) else None,
         )
 
-    # No parseable SUBMIT line — record a fail with the sentinel issue.
-    return _Parsed(verdict="fail", issues=[NO_SUBMIT_SENTINEL])
+    # No parseable SUBMIT line — report which failure it was, on both the legacy
+    # ``issues`` shape and the ``submit_failure`` discriminator the verb reads.
+    sentinel = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
+    return _Parsed(verdict="fail", issues=[sentinel], submit_failure=sentinel)
 
 
 # ---------------------------------------------------------------------------

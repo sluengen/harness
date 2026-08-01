@@ -109,6 +109,32 @@ def test_architecture_documents_diff_comparison_and_fallback() -> None:
     )
 
 
+# --- #251 (CODE-INSIGHT-2): design is named as the earlier, mechanized carrier -
+
+
+def test_architecture_names_design_stage_as_watchlist_trigger_carrier() -> None:
+    """The design stage — not just review — is named as a mechanized carrier of
+    the ``Watchlist trigger`` section: conditional, and confirmed (not just
+    remembered) at review (#251, CODE-INSIGHT-2)."""
+    block = _section(ARCHITECTURE.read_text(), WATCHLIST_SECTION).lower()
+    assert "design" in block, (
+        "the section must name a design stage as an earlier, mechanized carrier "
+        "of the Watchlist trigger section, not review alone (#251)."
+    )
+    assert "conditional" in block, (
+        "the section must state the Watchlist trigger section is conditional — "
+        "present only when the touched set intersects the watchlist (#251)."
+    )
+    assert "confirm" in block, (
+        "the section must state that review confirms the record rather than "
+        "being the only place it could be remembered (#251)."
+    )
+    assert "harness/cli/" not in block, (
+        "the paragraph must stay capability-shaped — no concrete "
+        "`harness/cli/...` path in universal guidance (#251)."
+    )
+
+
 # --- AC-6: repo-owned, preserved across updates, and a no-op when absent -------
 
 

@@ -15,6 +15,10 @@ way an orchestrator drives them, covering the five AC-4 paths:
 The remote is a local bare repo, so ``git fetch origin`` is real but offline.
 """
 
+# size: promote start/continue mechanics (ADR 0003) against one real throw-away repo
+# with an origin remote. That fixture is expensive and shared by all five AC-4
+# paths, so splitting re-creates the remote per module for no separation gain.
+
 from __future__ import annotations
 
 import asyncio

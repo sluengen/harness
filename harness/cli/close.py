@@ -86,35 +86,35 @@ from typing import Any, Literal
 import typer
 from pydantic import BaseModel
 
-# ``from harness import close_merge`` (the module, not its names) breaks the
-# close ↔ close_merge ↔ harness.cli import cycle, mirroring promote.py's
-# ``from harness import promotion``: the mechanics module is referenced at call
-# time (``close_merge.merge_run_branch``), never bound by name at import time.
+# ``from harness import close_merge`` (the module, not its names), mirroring
+# promote.py's ``from harness import promotion``: the mechanics module is
+# referenced at call time (``close_merge.merge_run_branch``). It used to also be
+# load-bearing against a close ↔ close_merge ↔ harness.cli cycle; #269 removed
+# that cycle at its root by re-homing the git helpers to harness._git, so this is
+# now a style choice, not a workaround.
 from harness import close_merge
-from harness._time import iso_z
-from harness.cli._git import rev_parse_head, teardown_worktree
+from harness._git import rev_parse_head, teardown_worktree
+from harness._time import elapsed_ms, iso_z
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
-from harness.events.payloads import (
-    REVIEW_GATE_RAN_PATH,
-    REVIEW_GATE_REASON_PATH,
-    REVIEW_REVIEWED_SHA_PATH,
-    REVIEW_VERDICT_PATH,
-    CloseEventData,
-)
+from harness.cli.close_telemetry import CloseAttempt, record_terminal_close
+from harness.cli.close_tracker import TicketNotDone, transition_ticket_done
+from harness.events.payloads import CloseEventData
 from harness.events.schema import EVENT_TYPES
-from harness.gate import GATE_NOT_CONFIGURED_REASON
 from harness.state import store
 from harness.tracker import Tracker, tracker_client
-from harness.tracker_errors import (
-    TrackerConfigError,
-    TrackerNotFound,
-    TrackerRequestError,
-    TrackerTransitionUnconfirmed,
-)
+from harness.tracker_errors import TrackerConfigError
 
 __all__ = ["close_command", "CloseOutput"]
+
+# size: one cohesive verb orchestration on a single asyncio event loop, whose
+# separable concerns are already four modules — git integrate/merge/push
+# (close_merge), the tracker Done mapping (close_tracker), the gate's ledger
+# question (_review_gate), and terminal telemetry (close_telemetry). What is
+# left is the step order and the refusal vocabulary, which is the contract
+# this file *is*; splitting it further would scatter one gate across files.
 
 # The structured refusal reasons — exactly one is reported on a gate failure.
 RefusalReason = Literal[
@@ -226,7 +226,20 @@ async def _run_close(
     run_id: str | None,
     db_path: Path,
 ) -> CloseOutput:
-    """Drive the close flow; raise :class:`_CloseError` on gate failure or error."""
+    """Resolve the run, then drive the close, recording **every** terminal path.
+
+    The split from :func:`_close_resolved_run` is the whole of #263, mirroring
+    ``review``'s (#262): once a run is resolved every way the verb can end is
+    observable, so the body runs inside one ``except`` that appends the terminal
+    event and re-raises untouched — no raise site needs an emit of its own, and
+    one added later is recorded whether or not its author remembers.
+
+    Resolution stays *outside* that handler on purpose: ``events.run_id`` is
+    ``NOT NULL`` with an FK to ``runs``, and ``no_run`` has resolved none, so
+    there is nothing to anchor a row to. ADR 0009 accepts that hole rather than
+    paying for it with a synthetic ``runs`` row — which makes the measured rate
+    one *per resolved-run close attempt*.
+    """
     # 1. Resolve the open run (by explicit id, else by worktree_path == repo).
     resolved = await resolve_open_run(db_path, repo_root, run_id)
     if resolved is None:
@@ -235,6 +248,47 @@ async def _run_close(
             2,
             reason="no_run",
         )
+    resolved_run_id = resolved[0]
+
+    # Captured before the HEAD read and any gate check — one end of the duration
+    # every terminal event now carries, and what makes a refusal that took a slow
+    # git probe distinguishable from one decided on a ledger read.
+    attempt = CloseAttempt(invoked_at=iso_z())
+    try:
+        return await _close_resolved_run(
+            ticket=ticket,
+            repo_root=repo_root,
+            db_path=db_path,
+            resolved=resolved,
+            attempt=attempt,
+        )
+    except _CloseError as exc:
+        await record_terminal_close(
+            db_path,
+            run_id=resolved_run_id,
+            ticket=ticket,
+            exit_code=exc.code,
+            reason=exc.reason,
+            detail=str(exc),
+            merged_sha=attempt.merged_sha,
+            invoked_at=attempt.invoked_at,
+        )
+        raise
+
+
+async def _close_resolved_run(
+    *,
+    ticket: str,
+    repo_root: Path,
+    db_path: Path,
+    resolved: tuple[str, str, str, str],
+    attempt: CloseAttempt,
+) -> CloseOutput:
+    """Drive the close flow for an already-resolved run; raise on gate failure.
+
+    Every step is unchanged from before #263 — the function boundary is where the
+    terminal-event recording attaches, not a re-ordering of any refusal.
+    """
     resolved_run_id, worktree_path, base_branch, worktree_branch = resolved
 
     # 2. Capture HEAD of the run's worktree — the SHA the gate binds to.
@@ -298,28 +352,28 @@ async def _run_close(
         raise _CloseError(str(exc), 1) from exc
     except Exception as exc:  # noqa: BLE001
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
+    # Recorded before anything that can still fail, so every later failure
+    # records as the post-merge failure it is, not as a blocked close (#263).
+    attempt.merged_sha = head_sha
 
     # 7. Transition the ticket to Done; the backend confirms the write took off
     #    that mutation's own response (#233). Skipped tracker-less. The merge
     #    already landed, so a confirmed failure is exit 1, not a gate refusal:
-    #    re-running close recovers (merge/push is idempotent). Check
-    #    ``TrackerTransitionUnconfirmed`` first — it subclasses the other.
+    #    re-running close recovers (merge/push is idempotent). The tracker's
+    #    failure-shape mapping lives in ``close_tracker`` (#251); this verb maps
+    #    its ``TicketNotDone.unconfirmed`` flag to the exit-1 ``reason`` tag.
     ticket_done = False
     if client is not None:
         try:
-            await client.transition_to_done(ticket)
-        except TrackerTransitionUnconfirmed as exc:
+            await transition_ticket_done(client, ticket)
+        except TicketNotDone as exc:
+            reason: FailureReason = (
+                "ticket_transition_unconfirmed" if exc.unconfirmed else "ticket_transition_failed"
+            )
             raise _CloseError(
-                f"ticket {ticket} was not confirmed Done: {exc}; the merge landed",
+                f"{exc.detail}; the merge landed",
                 1,
-                reason="ticket_transition_unconfirmed",
-                extra={"merged": True, "run_id": resolved_run_id},
-            ) from exc
-        except (TrackerNotFound, TrackerRequestError) as exc:
-            raise _CloseError(
-                f"failed to transition ticket {ticket} to Done: {exc}; the merge landed",
-                1,
-                reason="ticket_transition_failed",
+                reason=reason,
                 extra={"merged": True, "run_id": resolved_run_id},
             ) from exc
         ticket_done = True
@@ -336,7 +390,9 @@ async def _run_close(
                 ticket=ticket,
                 merged_sha=head_sha,
                 closed_at=closed_at,
-            ).model_dump(),
+                invoked_at=attempt.invoked_at,
+                duration_ms=elapsed_ms(attempt.invoked_at, closed_at),
+            ).model_dump(exclude_none=True),
             event_ts=closed_at,
         )
     except Exception as exc:  # noqa: BLE001
@@ -387,73 +443,33 @@ async def _evaluate_gate(
     exists at all, ``stale_review`` when a pass exists but only for a different
     SHA, ``no_gate_evidence`` when the pass covering HEAD cannot show that the
     repo's gate ran (CAL-1082).
-    """
-    async with (
-        store.connect(db_path) as conn,
-        conn.execute(
-            # The json paths are the single-sourced payload-key constants
-            # (CAL-1012), passed as bound parameters — SQLite accepts a bound
-            # json_extract path, so the gate holds no raw ``$.<key>`` literal.
-            "SELECT json_extract(data_json, ?), json_extract(data_json, ?), "
-            "json_extract(data_json, ?) "
-            "FROM events WHERE run_id = ? AND event_type = 'review' "
-            "AND json_extract(data_json, ?) = 'pass'",
-            (
-                REVIEW_REVIEWED_SHA_PATH,
-                REVIEW_GATE_RAN_PATH,
-                REVIEW_GATE_REASON_PATH,
-                run_id,
-                REVIEW_VERDICT_PATH,
-            ),
-        ) as cur,
-    ):
-        rows = await cur.fetchall()
 
-    pass_shas = {str(r[0]) for r in rows if r[0] is not None}
-    if not pass_shas:
+    The ledger question itself lives in :mod:`harness.cli._review_gate`, because
+    ``reclaim --stale`` asks the identical one to classify a stranded run as
+    *closable* (#255) and the two must not be able to disagree — a sweep that
+    reports closable for a run this gate then refuses leaves the ticket neither
+    reclaimed nor closed.  What stays here is the mapping onto ``close``'s own
+    refusal reasons and their messages, which are this verb's user-facing
+    contract and no other caller's business.
+    """
+    certification = await certify_head(db_path, run_id, head_sha)
+    if certification.verdict == "certified":
+        return None
+    if certification.verdict == "no_passing_review":
         return ("no_passing_review", f"no passing review recorded for run {run_id}")
-    if head_sha not in pass_shas:
+    if certification.verdict == "stale_review":
         return (
             "stale_review",
             f"passing review is stale: HEAD {head_sha} has no pass "
-            f"(reviewed SHAs: {sorted(pass_shas)})",
+            f"(reviewed SHAs: {sorted(certification.pass_shas)})",
         )
-    # The verify-gate backstop (CAL-1082): a pass is only evidence that the tree
-    # is green if the review that recorded it actually ran the repo's gate.  A
-    # pass written by an older harness carries no ``gate_ran`` key at all —
-    # ``json_extract`` yields NULL — and is refused rather than trusted, so the
-    # change is fail-safe with no ledger migration.
-    if not any(
-        _has_gate_evidence(gate_ran, gate_reason)
-        for sha, gate_ran, gate_reason in rows
-        if str(sha) == head_sha
-    ):
-        return (
-            "no_gate_evidence",
-            f"passing review for HEAD {head_sha} carries no verify-gate "
-            f"evidence: it was recorded without running the repo's gate (or by a "
-            f"harness that predates it). Re-run review to record a pass backed by "
-            f"a green gate.",
-        )
-    return None
-
-
-def _has_gate_evidence(gate_ran: Any, gate_reason: Any) -> bool:
-    """Whether a pass row shows its verify gate was accounted for.
-
-    Two shapes qualify. A gate that **ran** green (``gate_ran`` true — a red gate
-    never gets an event at all, so a recorded run is a passing one). Or a repo
-    that defines **no** gate (``gate_reason='not_configured'``): the harness
-    cannot gate what a repo does not define, so it allows the close and the
-    ledger records the absence honestly rather than implying a gate ran.
-    Tightening that is a separate decision — it would strand every repo without a
-    ``verify:``.
-
-    ``gate_ran`` arrives from SQLite's ``json_extract`` as ``1`` / ``0`` / ``None``.
-    """
-    if gate_ran == 1:
-        return True
-    return bool(gate_reason == GATE_NOT_CONFIGURED_REASON)
+    return (
+        "no_gate_evidence",
+        f"passing review for HEAD {head_sha} carries no verify-gate "
+        f"evidence: it was recorded without running the repo's gate (or by a "
+        f"harness that predates it). Re-run review to record a pass backed by "
+        f"a green gate.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -478,14 +494,29 @@ async def _mark_run_closed(
     (:func:`harness.cli._abandon.abandon_run_in_ledger`); the event INSERT is
     inlined here — not via :class:`~harness.events.emitter.EventEmitter`, which
     opens its own connection — so it shares this commit.
+
+    The flip also stamps ``completed_at`` and ``duration_ms`` (#261). These are
+    run-lifecycle state, not observation, so they ride the same transaction
+    rather than sitting beside it as a best-effort write: a rolled-back close
+    must leave a run wholly open, stamps included. ``completed_at`` is
+    ``event_ts`` itself — the verb reads the clock once and the run row and its
+    close event therefore agree exactly, instead of drifting by the write
+    latency between two readings.
     """
     data_json = json.dumps(event_data)
     async with store.connect(db_path) as conn:
         await conn.execute("BEGIN IMMEDIATE")
         try:
-            await conn.execute(
-                "UPDATE runs SET status = 'closed' WHERE run_id = ?",
+            async with conn.execute(
+                "SELECT started_at FROM runs WHERE run_id = ?",
                 (run_id,),
+            ) as cur:
+                row = await cur.fetchone()
+            duration_ms = elapsed_ms(row[0] if row is not None else None, event_ts)
+            await conn.execute(
+                "UPDATE runs SET status = 'closed', completed_at = ?, "
+                "duration_ms = ? WHERE run_id = ?",
+                (event_ts, duration_ms, run_id),
             )
             await conn.execute(
                 "INSERT INTO events (run_id, node_id, event_type, timestamp, "

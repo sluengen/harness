@@ -1,4 +1,4 @@
-<!-- guidance:template-size-guard@0.2.0 -->
+<!-- guidance:template-size-guard@0.3.0 -->
 # Size-marker guard (reference implementation)
 
 A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,
@@ -46,6 +46,44 @@ not pass. To justify via a tracking ticket, name it in the reason:
      it for another comment syntax (SQL `--`, Lisp `;`).
 3. Point `test_source_files_are_under_limit_or_justified` at your repo root —
    adjust the `parents[...]` index to your test's depth.
+
+### Scope every source tree you have, not just the production one
+
+`SOURCE_GLOBS` ships pointing at one production tree, and that is the shipped
+*example*, not the recommended scope. A repo's test tree is source too, and it
+is usually the larger one — so a guard scoped to production only leaves the
+bigger half unchecked, and the omission is invisible precisely because the guard
+is green.
+
+Scope every tree that holds code, and give the test tree the raised
+**declarative ceiling** rather than the hard limit — a test module's length is
+substantially case enumeration against one surface's acceptance criteria, which
+is Part B's declarative argument, not accreted logic:
+
+```
+SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py", "scripts/**/*.py", "tests/**/*.py")
+DECLARATIVE_GLOBS: tuple[str, ...] = ("tests/**/*.py",)
+```
+
+(An excerpt to edit in your copy — the one ```python block below is the
+reference artifact, and this template ships exactly one of those on purpose so
+what a consuming repo executes is unambiguous.)
+
+A raised ceiling is the right instrument here and an `EXEMPTIONS` entry is the
+wrong one: the ceiling still fires when a test module runs away, where an
+exemption never fires again.
+
+Expect the first run to go red on files that have been over the line for a long
+time. That is the guard working — each one takes a one-line `# size:` marker
+recording the cohesion argument, or a split. The deliverable is that each
+becomes an auditable choice; a marker is cheap, and the value is that the *next*
+one cannot be silent.
+
+Derive which trees you scan rather than trusting this list to stay current — a
+hand-written set of guarded subjects falls behind the repo silently, and the
+guard then reads green because it never checked, not because nothing violated
+it. A companion test asserting that every tree holding source answers to some
+ceiling costs a few lines and closes that blind spot for good.
 
 A repo without a test suite falls back to reviewer enforcement — degraded, but no
 worse than having no mechanical check at all. Marker *substance* stays reviewer

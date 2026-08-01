@@ -23,7 +23,7 @@ The image is **not** a long-running service. The harness CLI is a one-shot
 process: each `docker run` invokes one verb (or one headless agent run) and
 exits. The entrypoint selects the role — `agent <TICKET>` drives the full
 `/harness run` loop headless, `verb <args…>` (or a bare verb) runs a single
-`start` / `review` / `close` / read command.
+`start` / `design` / `review` / `close` / read command.
 
 The image is the harness's **own** runtime, not the target project's. It carries
 only what the verbs themselves need; it does **not** carry the target repo's
@@ -124,7 +124,7 @@ Pass via `-e VAR` or `--env-file`.
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `LINEAR_API_KEY` | yes for `tracker: linear` (`start` / `close` fetch and transition the ticket) | Personal API key. The wrapper reads it from `.env` in the target repo. |
+| `LINEAR_API_KEY` | yes for `tracker: linear` (`start` and `close` fetch and transition the ticket) | Personal API key. The wrapper reads it from `.env` in the target repo. |
 | `GITHUB_TOKEN` | yes for `tracker: github` (the Projects v2 tracker backend, CAL-1105) | A token with the `repo` and `project` scopes. The wrapper resolves it **env → `.env` → `gh auth token`** and forwards it into the container. The `gh auth token` fallback (issue #170) fetches a fresh token each invocation — a `gh` OAuth token rotates (~8h, auto-refreshed from the keyring), so a static `.env` snapshot would go stale and break the unattended loop; a consuming repo's long-lived PAT in `.env` still takes precedence. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes (agent mode, and any Claude use) | Extracted from macOS Keychain automatically by `~/bin/harness`. |
 | `HARNESS_WORKSPACE_ROOTS` | yes (verbs fail closed if unset) | Colon-separated allowlist of host roots a `--repo` may resolve under (CAL-584). The wrapper sets it to `/workspace` (the mounted CWD) automatically. |
@@ -275,6 +275,23 @@ directory with no flags or env-var setup.
   image exists it warns once on stderr — naming the detached-copy cause and the
   symlink remedy — then runs the verb unguarded rather than failing (CAL-1153).
   Symlink the wrapper to arm the guard.
+- **Source-checkout sync** — fast-forwards the wrapper's own checkout to its
+  upstream before that freshness comparison runs (#286). It is what makes the
+  comparison mean anything: the loop transacts entirely in `origin/<base>`
+  (`close` merges and pushes from a throwaway worktree, `start` bases each
+  worktree off the remote ref), so `refs/heads/<base>` — the ref the guard
+  measures — is the one ref nothing advances. Left alone it freezes, and the
+  freshness check above can never fire again. Observed: the checkout sat 37
+  commits behind `origin/dev` with a shipped, closed fix not in effect and no
+  signal of any kind. It uses `fetch` + `merge --ff-only` rather than `pull` so
+  operator gitconfig cannot change what it does, takes its target from git's own
+  `@{upstream}`, and **only ever fast-forwards** — a diverged checkout (a stray
+  local commit) is reported on stderr with both counts and left untouched, never
+  rebased. A missing upstream, an unreachable remote, or a refused fast-forward
+  each warn and continue; none changes the exit code, because wedging the
+  unattended queue would be worse than the staleness it guards. An explicit
+  `HARNESS_IMAGE` suppresses the sync too — a pinned tag means the operator's
+  tree should not be written either.
 - **Git identity** — passes `GIT_AUTHOR_NAME/EMAIL` and
   `GIT_COMMITTER_NAME/EMAIL` from the host git config so commits inside the
   container are attributed correctly.
@@ -312,9 +329,11 @@ behaviour is documented in [What the wrapper does automatically](#what-the-wrapp
 above; install it by putting it on your `PATH` as `harness`.
 
 **Symlink (recommended).** A symlink keeps `~/bin/harness` in lockstep with the
-repo — every `git pull` that fixes the wrapper (as CAL-1008 and CAL-1122 did)
-propagates automatically, so the installed tool can never silently drift from
-its versioned source:
+repo — a wrapper fix (as CAL-1008 and CAL-1122 were) propagates automatically, so
+the installed tool can never silently drift from its versioned source. Since
+[#286](https://github.com/sluengen/harness/issues/286) the wrapper fast-forwards
+that checkout itself, so this no longer depends on anyone remembering to `git
+pull`; the fix lands on the next invocation:
 
 ```bash
 mkdir -p ~/bin

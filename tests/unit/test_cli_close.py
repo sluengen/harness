@@ -20,6 +20,11 @@ never hit the network or a real remote — mirroring how ``test_cli_start.py``
 patches the Linear client and ``test_cli_review.py`` injects the runner.
 """
 
+# size: the close gate — the enforcement linchpin. Every case is a variation on one
+# invariant (a pass whose reviewed_sha equals HEAD, or no merge), and the module's
+# value is that the whole refusal matrix is readable in one place; splitting it
+# hides which refusals are covered.
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +40,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli import close as close_mod
 from harness.events.emitter import EventEmitter
+from harness.events.payloads import CLOSE_OUTCOME_OK, CLOSE_OUTCOME_PATH
 from harness.linear import LinearConfigError
 from harness.state import store
 
@@ -106,12 +112,45 @@ def _sync(coro: Any) -> Any:
 
 RUN_ID = "01JRUNCLOSEXXXXXXXXXXXXX01"
 
+# #261: both ends of the duration measurement are pinned, so the tests assert an
+# exact integer rather than a tolerance window. ``_seed_open_run`` writes
+# ``SEEDED_STARTED_AT`` into the run row; the tests patch ``close``'s clock to
+# ``FIXED_CLOSED_AT``. 62.5s elapsed → 62_500ms.
+SEEDED_STARTED_AT = "2026-06-10T00:00:00Z"
+# #263: the verb's *first* clock reading is now ``invoked_at``, captured right
+# after the run resolves and before the gate. It is not what #261's stamps
+# measure — those run from ``started_at`` — so it is pinned separately and
+# simply consumed ahead of the close reading.
+FIXED_INVOKED_AT = "2026-06-10T00:00:30.000000Z"
+FIXED_CLOSED_AT = "2026-06-10T00:01:02.500000Z"
+EXPECTED_DURATION_MS = 62_500
+# Every clock reading after the second. Distinct on purpose — see _pin_close_clock.
+LATER_CLOCK_READING = "2026-06-10T00:05:00.000000Z"
+
+
+def _pin_close_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin ``close``'s clock: ``invoked_at``, then ``closed_at``, then *later*.
+
+    A constant stub would make the AC-1 equality vacuous — an implementation
+    that read the clock a second time for ``completed_at`` would still match the
+    close event's timestamp, so the drift the single reading exists to prevent
+    would go unguarded. Handing out a distinct value once the two the verb
+    legitimately takes are consumed is what makes both assertions bite.
+    """
+    readings = iter([FIXED_INVOKED_AT, FIXED_CLOSED_AT])
+    monkeypatch.setattr(
+        close_mod,
+        "iso_z",
+        lambda *_a, **_k: next(readings, LATER_CLOCK_READING),
+    )
+
 
 def _seed_open_run(
     db_path: Path,
     repo: Path,
     run_id: str = RUN_ID,
     ticket: str = "CAL-572",
+    started_at: str = SEEDED_STARTED_AT,
 ) -> str:
     """Insert an ``open`` runs row whose worktree_path == repo, return run_id."""
 
@@ -135,7 +174,7 @@ def _seed_open_run(
                     str(repo),
                     f"harness/{run_id}",
                     ticket,
-                    "2026-06-10T00:00:00Z",
+                    started_at,
                     1234,
                 ),
             )
@@ -215,6 +254,66 @@ async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...
 
 def fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
     return _sync(_fetch_close_events(db_path, run_id))
+
+
+async def _fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT id, data_json FROM events "
+            "WHERE run_id = ? AND event_type = 'close' "
+            f"AND COALESCE(json_extract(data_json, '{CLOSE_OUTCOME_PATH}'), ?) = ?",
+            (run_id, CLOSE_OUTCOME_OK, CLOSE_OUTCOME_OK),
+        ) as cur,
+    ):
+        return list(await cur.fetchall())
+
+
+def fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
+    """The ``close`` events for a run that actually **landed** (#263).
+
+    Before #263 a ``close`` event existed only on success, so "did this run
+    land?" was "is there a close event". Refusals now share the event type and
+    discriminate on ``outcome``, so the question moved to ``outcome='ok'`` — the
+    ``COALESCE`` keeping a pre-#263 row reading as the landed close it was.
+    """
+    return _sync(_fetch_landed_close_events(db_path, run_id))
+
+
+async def _fetch_run_completion(
+    db_path: Path, run_id: str
+) -> tuple[str | None, int | None]:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT completed_at, duration_ms FROM runs WHERE run_id = ?",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+        return (None, None) if row is None else (row[0], row[1])
+
+
+def fetch_run_completion(db_path: Path, run_id: str) -> tuple[str | None, int | None]:
+    """Return the run row's ``(completed_at, duration_ms)`` — #261's stamps."""
+    return _sync(_fetch_run_completion(db_path, run_id))
+
+
+async def _fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT timestamp FROM events "
+            "WHERE run_id = ? AND event_type = 'close'",
+            (run_id,),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+        return None if row is None else row[0]
+
+
+def fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
+    return _sync(_fetch_close_event_timestamp(db_path, run_id))
 
 
 def _install_close_event_failure_trigger(db_path: Path) -> None:
@@ -1004,9 +1103,12 @@ def test_close_transition_failure_after_merge_leaves_run_open(
     merge.assert_called_once()
     stub.transition_to_done.assert_called_once_with("CAL-572")
 
-    # Ledger stays consistent: run still open, no close event.
+    # Ledger stays consistent: run still open, and no *landed* close event.
+    # #263 records the failure itself as a close event carrying
+    # ``outcome='failed'`` and the merged SHA, so the invariant this asserts is
+    # "nothing reads as landed", not "nothing was written".
     assert fetch_run_status(db_path, run_id) == "open"
-    assert fetch_close_events(db_path, run_id) == []
+    assert fetch_landed_close_events(db_path, run_id) == []
 
 
 def test_close_transition_unconfirmed_after_merge_leaves_run_open(
@@ -1041,7 +1143,7 @@ def test_close_transition_unconfirmed_after_merge_leaves_run_open(
     # and branch are never torn down (teardown is reached only after a closed
     # ledger row).
     assert fetch_run_status(db_path, run_id) == "open"
-    assert fetch_close_events(db_path, run_id) == []
+    assert fetch_landed_close_events(db_path, run_id) == []  # #263: none landed
     assert path.exists()
     assert branch in _local_branches(repo)
 
@@ -1074,7 +1176,10 @@ def test_close_retry_after_unconfirmed_transition_completes_normally(
     assert payload["ticket_done"] is True
     merge.assert_called_once()
     assert fetch_run_status(db_path, run_id) == "closed"
-    assert len(fetch_close_events(db_path, run_id)) == 1
+    # #263: the ledger now holds the failed attempt *and* the landed one — the
+    # pair is the retry story. Exactly one of them reads as landed.
+    assert len(fetch_close_events(db_path, run_id)) == 2
+    assert len(fetch_landed_close_events(db_path, run_id)) == 1
 
 
 def test_close_event_write_failure_leaves_ledger_consistent(
@@ -1109,4 +1214,144 @@ def test_close_event_write_failure_leaves_ledger_consistent(
 
     # Atomic: the failed close-event write rolled the status flip back.
     assert fetch_run_status(db_path, run_id) == "open"
+    # Still *no* close event at all, not merely none that landed: the injected
+    # trigger aborts every ``close`` INSERT, so #263's best-effort observation
+    # write is suppressed and writes nothing either. This is the one place the
+    # two writers meet.
     assert fetch_close_events(db_path, run_id) == []
+
+    # #261: the completion stamps ride the same transaction, so the rollback
+    # leaves them unset exactly as it leaves ``status`` unflipped.
+    assert fetch_run_completion(db_path, run_id) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# #261: close stamps completed_at + duration_ms on the run row
+# ---------------------------------------------------------------------------
+
+
+def test_close_stamps_completed_at_equal_to_the_close_event_timestamp(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-1: the closed run's ``completed_at`` is the close event's timestamp.
+
+    ``close`` reads the clock **once** (``closed_at = iso_z()``) and uses it for
+    the event payload, the event's ``timestamp`` column, and — as of #261 — the
+    run row's ``completed_at``. Asserting equality with the event's own
+    timestamp, rather than merely non-null, is what pins the single reading: a
+    second ``iso_z()`` call for the run row would still be non-null and would
+    still look right, but the two columns would drift by the write latency.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    completed_at, _duration_ms = fetch_run_completion(db_path, run_id)
+    assert completed_at is not None
+    assert completed_at == fetch_close_event_timestamp(db_path, run_id)
+    assert completed_at == FIXED_CLOSED_AT
+
+
+def test_close_stamps_duration_ms_measured_from_started_at(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2: ``duration_ms`` is the exact elapsed milliseconds, not a range.
+
+    Both ends of the measurement are fixed — ``_seed_open_run`` writes
+    ``started_at`` as ``SEEDED_STARTED_AT`` and the clock is pinned to
+    ``FIXED_CLOSED_AT`` — so the assertion is a single integer. A tolerance
+    window here would pass just as happily on a duration computed from the
+    wrong origin (e.g. the review event) as on the right one.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    _completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert duration_ms == EXPECTED_DURATION_MS
+
+
+def test_close_measures_duration_from_the_production_started_at_shape(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The two stored shapes of ``started_at`` must yield the same number.
+
+    ``harness start`` writes a plain ``.isoformat()`` (``+00:00``) while the
+    close clock is the trailing-``Z`` form, so every other duration assertion in
+    this file runs on a shape **no production run row carries**. Seeding the
+    ``+00:00`` form is what proves the parse reads the live ledger, not just the
+    fixture.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo, started_at="2026-06-10T00:00:00+00:00")
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    _completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert duration_ms == EXPECTED_DURATION_MS
+
+
+@pytest.mark.parametrize(
+    "started_at",
+    [
+        pytest.param("not-a-timestamp", id="unparseable"),
+        pytest.param("2026-06-10T00:00:00", id="tz-naive"),
+    ],
+)
+def test_close_lands_with_a_null_duration_when_started_at_cannot_be_differenced(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch, started_at: str
+) -> None:
+    """A ``started_at`` the verb cannot difference costs the duration, not the close.
+
+    By the time the stamps are written the merge has landed and the ticket is
+    Done, and the only recovery is re-running ``close`` — which would re-read the
+    same bad cell and fail identically, stranding a merged run ``open`` forever.
+    So the derived value degrades to ``NULL`` (a state the column and both
+    readers already model) while ``completed_at``, which needs no input beyond
+    the clock reading the verb already holds, is stamped regardless.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo, started_at=started_at)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+
+    result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+    assert fetch_run_status(db_path, run_id) == "closed"
+
+    completed_at, duration_ms = fetch_run_completion(db_path, run_id)
+    assert completed_at == FIXED_CLOSED_AT
+    assert duration_ms is None
+
+
+def test_harness_runs_renders_the_duration_close_stamped(
+    repo: Path, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamped duration reaches the reader — the point of storing it.
+
+    ``harness runs`` already knew how to render ``duration_ms``; before #261 a
+    closed run had none, so the column read blank for every run the verb loop
+    ever finished. This is the only assertion that spans close → reader, rather
+    than seeding the column the reader is asked to print.
+    """
+    _pin_close_clock(monkeypatch)
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    close_result, _merge = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert close_result.exit_code == 0, close_result.output
+
+    listed = cli_runner.invoke(app, ["runs", "--db", str(db_path)])
+    assert listed.exit_code == 0, listed.output
+    assert f"{EXPECTED_DURATION_MS}ms" in listed.stdout

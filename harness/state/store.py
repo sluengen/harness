@@ -127,6 +127,13 @@ async def _migrate(db_path: Path) -> None:
     CAL-570: ``idx_runs_ticket_open`` partial unique index on ``(ticket)``
         WHERE ``status='open'`` — prevents two concurrent ``harness start``
         calls from inserting duplicate open rows for the same ticket.
+    #258: ``runs.resumed_from TEXT`` — the preserved WIP branch ``harness start
+        --resume`` actually recovered, or ``NULL`` for a clean start (including
+        a ``--resume`` that fell back). ADR 0008 gates design inheritance on
+        *how the run started*, and ``start`` computed that distinction and then
+        discarded it; this column makes it durable. Nullable by design: ``NULL``
+        is the clean-start signal, and every pre-migration run reads it, so
+        those runs keep re-designing exactly as before.
     """
     async with aiosqlite.connect(db_path) as conn:
         await conn.execute("PRAGMA journal_mode = WAL")
@@ -134,6 +141,7 @@ async def _migrate(db_path: Path) -> None:
         for ddl in (
             "ALTER TABLE runs ADD COLUMN ticket TEXT",
             "ALTER TABLE runs ADD COLUMN worktree_path TEXT",
+            "ALTER TABLE runs ADD COLUMN resumed_from TEXT",
         ):
             try:
                 await conn.execute(ddl)
