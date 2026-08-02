@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.18 -->
+<!-- guidance:harness@0.2.19 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -55,7 +55,7 @@ Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`).
 harness design --run-id <run_id>            # [--repo .] [--model <alias>]
 ```
 
-A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedicated context — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
+A dedicated **Opus** engine studies the worktree and the ticket in a fresh context — writing its design to one file outside the worktree, the only path it can write (#294) — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
 
 ```json
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
@@ -72,7 +72,7 @@ Adoption is deliberately hard to earn, so the engine still runs on most resumed 
 
 The stage is **unconditional** — it runs for every ticket, whatever its judged difficulty; the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005 semantics are untouched).
 
-**Failure degrades and records (ADR 0007 D4).** Every way the stage can fail to produce a design — a killed engine, an engine that cannot be spawned, no `SUBMIT` line, a malformed one, an unreadable ticket spec — records a `design` event with `status="failed"` and a stable `reason`, posts no comment, and exits **3**. That is not a stop: **proceed to implement without a design**. A design attempt that *failed* still **satisfies** `review`'s enforcement, so an infra flake costs the run its design but never its ability to ship. Do not re-run `design` in a loop chasing a green one — a re-run is legitimate (the latest event is authoritative, nothing is mutated), but the run is not blocked either way.
+**Failure degrades and records (ADR 0007 D4).** Every way the stage can fail to produce a design — a killed engine, an engine that cannot be spawned, a design delivered on neither output channel (`reason=no_design_output`), an unreadable ticket spec — records a `design` event with `status="failed"` and a stable `reason`, posts no comment, and exits **3**. That is not a stop: **proceed to implement without a design**. A design attempt that *failed* still **satisfies** `review`'s enforcement, so an infra flake costs the run its design but never its ability to ship. Do not re-run `design` in a loop chasing a green one — a re-run is legitimate (the latest event is authoritative, nothing is mutated), but the run is not blocked either way.
 
 **`review` refuses a run with no recorded design attempt** — exit `5`, `reason=no_design`, before any engine is invoked and with no verdict recorded. It mirrors `no_gate_evidence`: silence is not a pass. Skipping this step does not save a step; it buys a refusal at Step 3.
 

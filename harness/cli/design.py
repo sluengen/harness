@@ -2,8 +2,8 @@
 
 ADR 0007 adds a fourth verb between ``start`` and implement, making the run
 lifecycle ``start → design → implement → review → (fix → review)* → close``. A
-read-only **Opus** engine studies the run's worktree and its ticket in a fresh,
-dedicated context and produces the change spec's technical Design section; the
+dedicated **Opus** engine studies the run's worktree and its ticket in a fresh
+context and produces the change spec's technical Design section; the
 build session then implements against that, instead of designing by rejection
 across ``(fix → review)*`` cycles.
 
@@ -31,16 +31,25 @@ Flow (one ``asyncio.run`` event loop for all I/O):
 3. Fetch the ticket's title + description: they are the spec the design answers
    to, and ``start`` persists neither on the run row.
 4. Capture ``git rev-parse HEAD`` in the worktree as ``grounded_sha``.
-5. Run the read-only claude engine (``claude -p --permission-mode plan --model
-   opus``, built by :mod:`harness.cli.design_protocol`) under the configured
-   ``engine_timeout_seconds`` ceiling, and scan its stdout for the ``SUBMIT:``
-   line.
-6. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
+5. Allocate the run's output channel — a file in a fresh directory outside the
+   worktree — and run the claude engine (built by
+   :mod:`harness.cli.design_protocol`, granted write capability to that one
+   path) under the configured ``engine_timeout_seconds`` ceiling.
+6. Collect the design from that file, or from the stdout fallback if the write
+   did not take; remove the directory either way.
+7. Post the marked comment, append the ``design`` event, print ``DesignOutput``.
+
+**The channel is a file (#294).** It used to be a single final ``SUBMIT: <json>``
+line on stdout — ``review``'s contract, inherited by a verb whose payload is a
+14–17 KB Markdown document rather than a fixed 100-character verdict. That cost
+12.5% of design attempts on this repo's ledger against ``review``'s 0.24%, and
+one run lost 12m44s of Opus and a complete design to a single missing brace.
+See :mod:`harness.cli.design_protocol` for the contract and what replaced it.
 
 **Degrade and record (ADR 0007 D4).** The design stage must never wedge a run.
 Every way it can fail to produce a design — a killed engine, an engine that
-cannot be spawned, no ``SUBMIT`` line, a malformed one, or a ticket spec that
-cannot be read — appends a ``design`` event with ``status='failed'`` and a stable
+cannot be spawned, no design on either channel, or a ticket spec that cannot be
+read — appends a ``design`` event with ``status='failed'`` and a stable
 ``reason``, posts **no** comment, and exits :data:`EXIT_DESIGN_FAILED`. The
 recorded *attempt* is what the review verb's ``no_design`` enforcement (#212)
 checks, so a failure costs the run its design but never its ability to ship.
@@ -67,7 +76,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
 from pathlib import Path
+from tempfile import mkdtemp
 
 import typer
 from pydantic import BaseModel
@@ -81,12 +92,15 @@ from harness.cli._verb import VerbError, run_verb
 from harness.cli.design_adopt import AdoptedDesign, resolve_adoption
 from harness.cli.design_protocol import (
     DESIGN_MODEL_DEFAULT,
-    MALFORMED_SUBMIT_SENTINEL,
-    NO_SUBMIT_SENTINEL,
+    DESIGN_OUT_FILENAME,
+    DESIGN_TMP_PREFIX,
+    DesignChannel,
     build_design_cmd,
     build_design_prompt,
+    build_stdout_excerpt,
     design_content_hash,
-    parse_design_submit,
+    normalize_design,
+    parse_design_fallback,
 )
 from harness.cli.design_tracker import (
     TicketCommentFailedError,
@@ -96,11 +110,7 @@ from harness.cli.design_tracker import (
     read_run_ticket,
 )
 from harness.events.emitter import EventEmitter
-from harness.events.payloads import (
-    MALFORMED_SUBMIT_REASON,
-    NO_SUBMIT_REASON,
-    DesignEventData,
-)
+from harness.events.payloads import DesignEventData
 from harness.loop_budget import load_loop_budget
 from harness.state import store
 
@@ -143,20 +153,35 @@ EXIT_DESIGN_FAILED = 3
 ENGINE_TIMEOUT_REASON = "engine_timeout"
 ENGINE_ERROR_REASON = "engine_error"
 NO_TICKET_SPEC_REASON = "no_ticket_spec"
-# The two SUBMIT-protocol tags are NOT declared here: ``review`` classifies the
-# same failure the same way from #270, so they live in
-# :mod:`harness.events.payloads` beside the other shared telemetry literals and
-# are imported above. Re-exported under these names so every existing
-# ``design.NO_SUBMIT_REASON`` reference — and the verb's own error JSON — keeps
-# resolving to the identical string it always did.
 
-# Maps the design protocol's two failure sentinels onto their reason tags. The
-# protocol layer reports failures as human sentinels (it is pure and knows
-# nothing of exit codes); the verb owns the machine-readable contract.
-_SUBMIT_FAILURE_REASONS = {
-    NO_SUBMIT_SENTINEL: NO_SUBMIT_REASON,
-    MALFORMED_SUBMIT_SENTINEL: MALFORMED_SUBMIT_REASON,
-}
+# Neither channel delivered a design (#294). One tag covers both, because with a
+# file as the channel there is no longer a distinction to draw: the two tags this
+# replaced — ``no_submit`` and ``malformed_submit``, still used by ``review``,
+# whose SUBMIT contract fits its small payload and is untouched — split "never
+# reached the contract" from "reached it and emitted garbage", a distinction the
+# JSON wire format created. A file is written or it is not.
+#
+# A **new** tag rather than reuse of ``no_submit`` is deliberate and is what makes
+# this change measurable: ``stats_aggregate`` reads ``$.reason`` generically, so a
+# distinct name is exactly what lets one ``harness stats`` table separate failures
+# after the change from the 12.5% wire-format baseline before it, instead of
+# summing them into a rate that can only be read as a trend.
+NO_DESIGN_OUTPUT_REASON = "no_design_output"
+
+# Which channel delivered the design, recorded on the ``ok`` event. ``file`` is
+# the contract; ``stdout`` means the scoped write did not take and the fallback
+# caught it — see ``_run_engine_and_collect``.
+DESIGN_CHANNEL_FILE = "file"
+DESIGN_CHANNEL_STDOUT = "stdout"
+
+# The one wording of the fallback warning, so the stderr line and the ledger
+# cannot drift into two phrasings of the same fact.
+_FALLBACK_CHANNEL_WARNING = (
+    "warning: the design for run {run_id} arrived on the stdout fallback, not "
+    "the design file — the engine's scoped write capability did not take. The "
+    "design is usable, but the permission configuration in build_design_cmd "
+    "needs checking against the installed claude CLI"
+)
 
 # The one wording of the concurrent-invocation warning (#236), so the stderr
 # line and any future reader cannot drift into two phrasings of the same fact.
@@ -174,8 +199,13 @@ class DesignOutput(BaseModel):
     Unlike ``review`` — which prints only a bounded verdict and keeps the
     engine's output inside the verb — the design *is* the deliverable, so
     ``design_markdown`` is on the printed contract by design (ADR 0007). The
-    context-economy guarantee still holds: what escapes is the engine's parsed
-    ``SUBMIT`` payload, never its reasoning, tool calls, or file reads.
+    context-economy guarantee still holds: what escapes is the design the engine
+    delivered, never its reasoning, tool calls, or file reads.
+
+    Which channel delivered it is deliberately **not** here. It is ledger
+    telemetry about the engine, not something the orchestrator branches on — the
+    design is the same design either way — and this key set is a locked contract
+    (``test_verb_contract_locked.py``).
 
     ``concurrent_prior_at`` (#236) is set only when a stray overlapping
     ``design`` invocation is detected — see :func:`_record_design_event`.
@@ -283,10 +313,13 @@ def design_command(
 ) -> None:
     """Produce the run's Design section; record it on the ticket and the ledger.
 
-    The engine is a read-only ``claude -p --permission-mode plan`` subprocess
-    emitting the ``SUBMIT:`` contract — it designs, it does not implement. A run
-    whose design cannot be produced records the failed attempt and exits 3; the
-    build then proceeds without one rather than stalling (ADR 0007 D4).
+    The engine is a ``claude -p`` subprocess that writes its design to one file
+    outside the worktree, the only path it holds write capability for — it
+    designs, it does not implement. Since #294 it holds one scoped write
+    grant, so it is deliberately no longer described as read-only — that was the
+    overclaim #294 was filed against. A run whose design cannot be produced records
+    the failed attempt and exits 3; the build then proceeds without one rather
+    than stalling (ADR 0007 D4).
     """
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
@@ -388,6 +421,106 @@ async def _run_design(
         ) from exc
 
 
+async def _run_engine_and_collect(
+    *,
+    runner: Runner,
+    model: str,
+    worktree_path: Path,
+    title: str,
+    description: str,
+    timeout: float | None,
+    run_id: str,
+) -> tuple[str, str]:
+    """Run the engine over a freshly allocated channel; return the design and how it arrived.
+
+    The channel's directory is created here and removed in a ``finally`` on
+    every path — success, timeout, unspawnable engine, or neither channel
+    delivering — so no invocation leaves a design on disk. It lives outside the
+    worktree, which is what keeps ``close``'s ``dirty_worktree`` gate untouched
+    by anything this stage does.
+
+    Collection order is **file, then stdout fallback**, and which one answered is
+    returned so the ledger can record it. That ordering is not a preference
+    between two equal channels: the file is the contract, and a design arriving
+    on stdout means the scoped write did not take — a regression no test in this
+    suite can catch, since none spawns a real engine. Recording it (and warning
+    on stderr) is what turns that from a silent return to zero designs into a
+    measurable degradation.
+
+    Raises :class:`_DesignNotProducedError` when neither channel delivered, so
+    the caller's single handler records the failed attempt (ADR 0007 D4).
+    """
+    tmpdir = Path(await asyncio.to_thread(mkdtemp, prefix=DESIGN_TMP_PREFIX))
+    try:
+        channel = DesignChannel(
+            path=tmpdir / DESIGN_OUT_FILENAME,
+            nonce=tmpdir.name[len(DESIGN_TMP_PREFIX) :],
+        )
+        try:
+            result = await runner(
+                cmd=build_design_cmd(model=model, channel=channel),
+                stdin=build_design_prompt(title, description, channel=channel),
+                env=dict(os.environ),
+                cwd=worktree_path,
+                timeout=timeout,
+            )
+        except EngineTimeoutError as exc:
+            # A partial file a killed engine left behind is deliberately not
+            # adopted: an engine cut off mid-write produced an arbitrary prefix,
+            # and a silently truncated design becoming the run's contract is
+            # worse than none. (The fallback's tolerance of a missing end marker
+            # is a different case — there the engine finished and dropped a
+            # marker.) The tempdir goes with it in the ``finally`` below.
+            raise _DesignNotProducedError(
+                ENGINE_TIMEOUT_REASON,
+                f"the design engine exceeded its {exc.timeout:.0f}s timeout and was "
+                f"killed; raise engine_timeout_seconds in CONTEXT.md's loop: block if "
+                f"it legitimately needs longer",
+            ) from None
+        except Exception as exc:  # noqa: BLE001
+            raise _DesignNotProducedError(
+                ENGINE_ERROR_REASON, f"the design engine could not be run: {exc}"
+            ) from exc
+
+        from_file = normalize_design(await asyncio.to_thread(_read_design_file, channel.path))
+        if from_file is not None:
+            return from_file, DESIGN_CHANNEL_FILE
+
+        from_stdout = normalize_design(parse_design_fallback(result.stdout, channel.nonce))
+        if from_stdout is not None:
+            typer.echo(_FALLBACK_CHANNEL_WARNING.format(run_id=run_id), err=True)
+            return from_stdout, DESIGN_CHANNEL_STDOUT
+
+        # Neither channel delivered. The excerpt is the only evidence this
+        # attempt leaves: a degraded run posts no comment and prints no engine
+        # output, so what the engine said instead of delivering goes on the
+        # ledger (#277).
+        raise _DesignNotProducedError(
+            NO_DESIGN_OUTPUT_REASON,
+            f"the design engine wrote no design to {channel.path} and emitted no "
+            f"marked fallback block on stdout",
+            submit_excerpt=build_stdout_excerpt(result.stdout),
+            stdout_chars=len(result.stdout),
+        )
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _read_design_file(path: Path) -> str | None:
+    """Read the design the engine wrote, or ``None`` if it wrote none.
+
+    ``errors="replace"`` rather than a raise: an engine that emitted a stray
+    undecodable byte still designed, and turning that into an unexpected exit 1
+    would lose a produced design to a transcoding detail. A missing file — the
+    ordinary "the engine did not write" case — is likewise ``None``, not an
+    error, because the fallback is still to be tried.
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
 async def _produce_design(
     *,
     repo_root: Path,
@@ -435,42 +568,18 @@ async def _produce_design(
             f"failed to read HEAD for worktree {worktree_path}: {exc}", 1
         ) from exc
 
-    # 4. Run the read-only engine under the configured ceiling and parse its one
-    #    SUBMIT line. A hung engine is killed rather than hanging the verb.
+    # 4. Run the engine under the configured ceiling and collect what it wrote.
+    #    A hung engine is killed rather than hanging the verb.
     budget = load_loop_budget(repo_root)
-    try:
-        result = await runner(
-            cmd=build_design_cmd(model=model),
-            stdin=build_design_prompt(title, description),
-            env=dict(os.environ),
-            cwd=worktree_path,
-            timeout=budget.engine_timeout_seconds,
-        )
-    except EngineTimeoutError as exc:
-        raise _DesignNotProducedError(
-            ENGINE_TIMEOUT_REASON,
-            f"the design engine exceeded its {exc.timeout:.0f}s timeout and was "
-            f"killed; raise engine_timeout_seconds in CONTEXT.md's loop: block if "
-            f"it legitimately needs longer",
-        ) from None
-    except Exception as exc:  # noqa: BLE001
-        raise _DesignNotProducedError(
-            ENGINE_ERROR_REASON, f"the design engine could not be run: {exc}"
-        ) from exc
-
-    parsed = parse_design_submit(result.stdout)
-    if parsed.design_markdown is None:
-        sentinel = parsed.error or NO_SUBMIT_SENTINEL
-        # The sentinel says *that* the contract broke; the excerpt says how
-        # (#277). A degraded run posts no comment and prints no engine output,
-        # so the ledger event is the only evidence this attempt leaves.
-        raise _DesignNotProducedError(
-            _SUBMIT_FAILURE_REASONS.get(sentinel, NO_SUBMIT_REASON),
-            sentinel,
-            submit_excerpt=parsed.submit_excerpt,
-            stdout_chars=parsed.stdout_chars,
-        )
-    design_markdown = parsed.design_markdown
+    design_markdown, delivered_by = await _run_engine_and_collect(
+        runner=runner,
+        model=model,
+        worktree_path=worktree_path,
+        title=title,
+        description=description,
+        timeout=budget.engine_timeout_seconds,
+        run_id=run_id,
+    )
     design_hash = design_content_hash(design_markdown)
 
     # 5. Post the artifact, then record the event — the external effect first and
@@ -498,6 +607,8 @@ async def _produce_design(
             invoked_at=invoked_at,
             design_hash=design_hash,
             grounded_sha=grounded_sha,
+            channel=delivered_by,
+            design_chars=len(design_markdown),
         ),
     )
 

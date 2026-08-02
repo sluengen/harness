@@ -33,6 +33,18 @@ contract, `engine_timeout_seconds` ceiling, Claude-only in-container per ADR
 0002) against the run's worktree and ticket, and produces the change spec's
 technical design.
 
+> **Amended 2026-08-02 (#294) — the engine protocol, not the policy.** Two
+> clauses of that first sentence no longer hold. The engine's output channel is
+> a **file**, not the `SUBMIT:` contract: inheriting `review`'s wire format cost
+> `design` 12.5% of its attempts against `review`'s 0.24%, because the same
+> format was carrying a 14–17 KB document instead of a fixed 100-character
+> verdict. And it is no longer **read-only** — it holds write capability for
+> that one file and nothing else, which is a narrower and rule-enforced control
+> where plan mode was a broad cooperative one. Everything this ADR actually
+> decides — unconditional, Opus, the artifact is the change spec's Design
+> section, `review` enforces it, failure degrades and records — is untouched;
+> `specs/features/verb-model.md` carries the as-built protocol.
+
 Four resolved dimensions:
 
 - **Unconditional, not label-gated.** The design stage runs for **every**

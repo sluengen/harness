@@ -90,7 +90,7 @@ app.command(name="stats", help="Aggregate statistics over the run ledger (read-o
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
     start_command
 )
-app.command(name="design", help="Produce the run's Design section with a read-only Opus engine; record it on the ticket and the ledger.")(  # noqa: E501
+app.command(name="design", help="Produce the run's Design section with a dedicated Opus engine; record it on the ticket and the ledger.")(  # noqa: E501
     design_command
 )
 app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501

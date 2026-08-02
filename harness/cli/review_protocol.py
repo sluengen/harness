@@ -338,9 +338,11 @@ def scan_submit_line(stdout: str) -> _Parsed:
     sentinel issue **and** ``submit_failure`` set to that sentinel, which is how
     the verb tells "produced no verdict" from "rejected the diff" (#270).
 
-    Which sentinel mirrors :func:`~harness.cli.design_protocol.parse_design_submit`:
-    :data:`MALFORMED_SUBMIT_SENTINEL` when a ``SUBMIT:`` line was seen but none
-    parsed, else :data:`NO_SUBMIT_SENTINEL`.  Scanning does not stop at the first
+    Which sentinel: :data:`MALFORMED_SUBMIT_SENTINEL` when a ``SUBMIT:`` line
+    was seen but none parsed, else :data:`NO_SUBMIT_SENTINEL`. (``design``
+    classified this failure first and this parser mirrored it; since #294 gave
+    ``design`` a file as its output channel, this is the only ``SUBMIT`` parser
+    left and there is nothing left to mirror.)  Scanning does not stop at the first
     bad line — a stray ``SUBMIT:`` in the engine's reasoning must not mask the
     real submission at the end — so malformed is reported only when no valid line
     was found anywhere.
