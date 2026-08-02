@@ -1,7 +1,7 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-07-17
+last_updated: 2026-08-02
 linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
 ---
 
@@ -55,6 +55,8 @@ The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalle
 ### The review verdict and its reviewed SHA live on an event, not a column
 
 The gate's load-bearing datum — the SHA a passing review was bound to — is **not** a `runs` column. `harness review` appends a `review` event whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, engine, created_at, outcome }` (and optional `commit_message` / `deferred_brief` / `inherited_from` / `invoked_at` / `duration_ms`). `engine` records which review engine produced the verdict (`claude` | `codex`, CAL-701). When an explicit `--engine codex` run hits an exhausted tier, the verb falls back once to Claude (CAL-702): `engine` then reads `claude` and an optional `fallback_from: "codex"` records the substitution, so the gate stays *available* without the fallback ever being silent.
+
+An optional `model` (#293) records the alias the engine was actually invoked with, so a review's `duration_ms` is interpretable — `design` pins one model and records it, while #177 made review's a per-ticket tier the verb resolved and then dropped. It is present **iff** `engine` is `claude`: `engine` is already the engine that ran, so the pairing survives the fallback (the claude re-invocation's alias is what lands), and codex ignores `--model`, so recording one there would assert a model that was never in force. Nothing backfills, so an absent key means *unknown or not applicable* — never a default — and `engine` is what tells the two apart.
 
 #### Every terminal path is recorded, so the ledger has a denominator (#262)
 
