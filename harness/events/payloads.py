@@ -177,6 +177,34 @@ class ReviewEventData(BaseModel):
     the source's like every other field describing that review — an inherited
     pass runs no engine, so minting a fresh duration for it would record time
     nothing spent.
+
+    ``model`` (#293) is what makes that latency pair *interpretable*: #177 made
+    the claude engine's model a per-ticket tier, and the verb resolved one and
+    then dropped it, so a review duration could not be read against ``design``'s
+    (pinned to opus) or against itself across a tier change. It is the alias the
+    engine was actually invoked with — the same object handed to ``--model``,
+    never a re-derivation from the ticket's label, which a mid-review label edit
+    would answer differently from what ran.
+
+    It is present **iff** ``engine`` is ``claude``. ``engine`` is already
+    ``engine_used``, so that pairing holds across the usage-limit fallback for
+    free: the claude re-invocation's alias is what gets recorded. Codex ignores
+    ``--model`` entirely, so an alias recorded there would assert a model was in
+    force when none was. Nothing enforces the pairing in code — it is a
+    writer-site invariant pinned by test, exactly as ``fallback_from``'s
+    "present iff a hop happened" is.
+
+    A **missing** key is deliberately ambiguous between "codex, no model in
+    force" and "written before this field existed"; ``engine`` disambiguates
+    them, since a ``claude`` row with no ``model`` can only be pre-#293. Nothing
+    backfills (ADR 0009), matching how ``gate_ran`` handled the same situation.
+    A reader must therefore treat ``NULL`` as *unknown*, never ``COALESCE`` it
+    to a default — that would recreate the very confound this field removes.
+
+    The refusal shape carries no ``model``, an accepted gap: the terminal-refusal
+    writer is called from an outer handler where the resolved alias is not in
+    scope, and most refusals (a breaker, ``no_gate_evidence``, ``no_design``, a
+    red gate) ran no engine and would record nothing anyway.
     """
 
     run_id: str
@@ -197,6 +225,10 @@ class ReviewEventData(BaseModel):
     gate_reason: str | None = None
     gate_output_tail: str | None = None
     fallback_from: str | None = None
+    #: ``str``, not the tier ``Literal``: an explicit ``harness review --model``
+    #: passes through unconstrained, and the field records what was *passed*.
+    #: :class:`DesignEventData`'s ``model`` is ``str`` for the same reason.
+    model: str | None = None
     commit_message: str | None = None
     deferred_brief: str | None = None
     inherited_from: str | None = None

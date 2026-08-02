@@ -200,12 +200,15 @@ def _seed_source_review(
     run_id: str = _SOURCE_RUN_ID,
     seed_run_row: bool = True,
     inherited_from: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     """A closed predecessor run for the same ticket, carrying its review event.
 
     ``gate`` defaults to the green evidence a current ``harness review`` records;
     pass ``{}`` for the legacy payload with no ``gate_ran`` key, which is what an
-    un-evidenced source pass looks like on the ledger.
+    un-evidenced source pass looks like on the ledger. ``extra`` merges further
+    payload keys in, for the fields a source pass may or may not carry (#293's
+    ``model``, absent on any row written before that field existed).
     """
     if seed_run_row:
         _sync(_insert_run(db_path, run_id, "/gone", status="closed", resumed_from=None))
@@ -224,6 +227,7 @@ def _seed_source_review(
                 "design_context": True,
                 **({"inherited_from": inherited_from} if inherited_from else {}),
                 **(_SOURCE_GATE_EVIDENCE if gate is None else gate),
+                **(extra or {}),
             },
         )
     )
@@ -350,6 +354,47 @@ def test_inherits_the_prior_pass_field_by_field(repo: Path, db_path: Path) -> No
     assert data["issues"] == ["a finding the source review recorded"]
     # This run's own identity, not the source's.
     assert data["created_at"] != "2026-07-30T10:00:00Z"
+
+
+def test_inherit_carries_the_sources_model(repo: Path, db_path: Path) -> None:
+    """#293: ``model`` describes *the review*, so it rides along with ``engine``.
+
+    Nothing in the inherit path names the field — the payload is re-emitted
+    through ``model_copy`` — which is exactly why it is worth pinning: a future
+    switch to hand-built overrides, or to a dump without ``exclude_none=True``,
+    would silently drop it or invent it.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo)
+    _seed_source_review(db_path, head, extra={"engine": "claude", "model": "opus"})
+    engine = _EngineSpy()
+
+    result = _invoke(repo, db_path, engine)
+
+    assert result.exit_code == 0, result.output
+    data = review_events(db_path, _RUN_ID)[0]["data"]
+    assert data["engine"] == "claude"
+    assert data["model"] == "opus"
+
+
+def test_inherit_invents_no_model_for_a_source_that_carries_none(
+    repo: Path, db_path: Path
+) -> None:
+    """#293 AC-4 across the inherit path: a pre-field source stays keyless.
+
+    The source is the codex-engine default, so this is also the invariant
+    holding under inheritance — no ``model`` key on a non-claude review.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo)
+    _seed_source_review(db_path, head)
+    engine = _EngineSpy()
+
+    result = _invoke(repo, db_path, engine)
+
+    assert result.exit_code == 0, result.output
+    data = review_events(db_path, _RUN_ID)[0]["data"]
+    assert "model" not in data, data
 
 
 def test_inherit_spawns_no_engine_subprocess(repo: Path, db_path: Path) -> None:

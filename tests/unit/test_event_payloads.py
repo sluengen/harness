@@ -154,7 +154,7 @@ def test_review_event_data_omits_unset_optionals() -> None:
         gate_ran=True,
     ).model_dump(exclude_none=True)
 
-    for optional in ("fallback_from", "commit_message", "deferred_brief"):
+    for optional in ("fallback_from", "commit_message", "deferred_brief", "model"):
         assert optional not in dumped
     # The gate optionals behave the same way: unset stays absent, so a payload
     # never claims an exit code for a gate that reported none.
@@ -177,6 +177,7 @@ def test_review_event_data_includes_set_optionals() -> None:
         fallback_from="codex",
         commit_message="msg",
         deferred_brief="brief",
+        model="opus",
     ).model_dump(exclude_none=True)
 
     assert dumped["fallback_from"] == "codex"
@@ -184,6 +185,33 @@ def test_review_event_data_includes_set_optionals() -> None:
     assert dumped["deferred_brief"] == "brief"
     assert dumped["gate_command"] == "bash scripts/verify.sh"
     assert dumped["gate_exit_code"] == 0
+    assert dumped["model"] == "opus"
+
+
+def test_review_event_data_reads_a_pre_293_row_back_as_unknown_model() -> None:
+    """AC-4 (#293): no backfill, expressed as a test rather than as prose.
+
+    A row written before the field existed validates with ``model is None``, and
+    a re-dump reproduces it **without inventing the key** — so the absence keeps
+    reading as *unknown*, never as a default. That is the property that stops a
+    later analysis pass from ``COALESCE``-ing the very confound this field
+    exists to remove.
+    """
+    pre_existing = {
+        "run_id": "R1",
+        "reviewed_sha": "abc123",
+        "verdict": "pass",
+        "issues": [],
+        "engine": "claude",
+        "convergence_check_required": False,
+        "created_at": "2026-06-10T00:00:00Z",
+        "gate_ran": True,
+    }
+
+    parsed = ReviewEventData(**pre_existing)
+
+    assert parsed.model is None
+    assert "model" not in parsed.model_dump(exclude_none=True)
 
 
 def test_review_event_data_omits_design_context_reason_by_default() -> None:

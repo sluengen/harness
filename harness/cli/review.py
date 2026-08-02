@@ -937,6 +937,15 @@ async def _review_resolved_run(
         gate_reason=gate_reason,
         gate_output_tail=gate_output_tail,
         fallback_from=fallback_from,
+        # #293: the model the engine actually ran with, so review latency is
+        # readable against ``design``'s and across a tier change. Keyed off
+        # ``engine_used`` rather than the requested ``engine`` — the same
+        # distinction ``engine=engine_used`` + ``fallback_from`` already draws:
+        # a usage-limit fallback re-invokes claude with this same alias, and
+        # codex ignores --model, so recording one there would assert a model
+        # was in force when none was. ``resolved_model`` is the object passed
+        # to the engine above, not a re-resolution of the ticket's label.
+        model=resolved_model if engine_used == "claude" else None,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
         # #262: the latency pair. ``outcome`` is deliberately NOT passed — it is
