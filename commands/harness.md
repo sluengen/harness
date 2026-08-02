@@ -55,7 +55,7 @@ Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`).
 harness design --run-id <run_id>            # [--repo .] [--model <alias>]
 ```
 
-A read-only **Opus** engine studies the worktree and the ticket in a fresh, dedicated context — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
+A dedicated **Opus** engine studies the worktree and the ticket in a fresh context — writing its design to one file outside the worktree, the only path it can write (#294) — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
 
 ```json
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",

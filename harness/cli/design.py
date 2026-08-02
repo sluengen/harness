@@ -315,9 +315,9 @@ def design_command(
 
     The engine is a ``claude -p`` subprocess that writes its design to one file
     outside the worktree, the only path it holds write capability for — it
-    designs, it does not implement. Deliberately not described as *read-only*:
-    since #294 it holds one scoped write grant, and calling that read-only is
-    the overclaim #294 was filed against. A run whose design cannot be produced records
+    designs, it does not implement. Since #294 it holds one scoped write
+    grant, so it is deliberately no longer described as read-only — that was the
+    overclaim #294 was filed against. A run whose design cannot be produced records
     the failed attempt and exits 3; the build then proceeds without one rather
     than stalling (ADR 0007 D4).
     """
