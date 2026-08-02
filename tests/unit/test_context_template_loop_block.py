@@ -27,6 +27,27 @@ extend a list.
 The parse is single-sourced too: :data:`harness.loop_budget._KEY_PATTERN` is the
 runtime reader's own regex, imported rather than recopied, so a guard cannot
 pass against a pattern the engine does not use.
+
+A second relation lives here for the same reason — #292. The
+``engine_timeout_seconds`` comment did not only describe its own value; it
+asserted a *relation between the two engines the one ceiling covers*, claiming
+the design engine (studies a whole worktree) is systematically slower than the
+review engine (reads a diff) and calling the single knob a mis-fit to revisit.
+That claim was never measured — ADR 0009 records that review latency was
+unreconstructable until #264/#265, so the 600 → 720 retune saw only design's
+distribution. Once it could be measured it did not hold: design leads by 45s at
+the median and *trails* at both q3 and max, and the tail is the only part a
+timeout ceiling interacts with. ``specs/proposals/per-engine-timeout-ceiling.md``
+rejected the split on that evidence.
+
+So the prose is checked against the measurement the same way the knob prose is
+checked against the constants: the premise is **derived** from the proposal's
+committed latency table, and only then is the comment required not to contradict
+it and required to quote it. Neither half stands alone — a derivation nothing
+reads goes green while the prose rots, and a phrase pin goes green on a reword.
+The coupling runs both ways on purpose: a future re-measurement that inverts the
+tail fails this module, because ``CONTEXT.md`` and the rejection both rest on
+the premise it would overturn.
 """
 
 from __future__ import annotations
@@ -41,6 +62,7 @@ from tests.unit.test_review_discipline_watchlist_entry_currency import _sentence
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEMPLATE = _REPO_ROOT / "templates" / "CONTEXT.template.md"
 _CONTEXT = _REPO_ROOT / "CONTEXT.md"
+_PROPOSAL = _REPO_ROOT / "specs" / "proposals" / "per-engine-timeout-ceiling.md"
 
 # The knobs `LoopBudget` carries, in field order. The matching constant is
 # derived from the key, never written out beside it (see the module docstring).
@@ -59,6 +81,29 @@ _DIVERGENCE_MARKERS = (
     "diverges",
     "held apart",
     "rather than",
+)
+
+# The engines the one ceiling covers, as the proposal's table keys them.
+_ENGINES = ("design", "review")
+
+# The statistics a timeout ceiling actually interacts with. The median is
+# deliberately absent: design *does* lead there (366s vs 321s), and a predicate
+# that counted it would read the honest half of the record as a contradiction.
+_TAIL_STATISTICS = ("q3", "max")
+
+# Phrases that assert one engine is durably slower than the other, or that treat
+# the single ceiling as a defect awaiting a split. Applied only once the recorded
+# measurement has been shown not to support such an ordering, so — as with
+# `_DIVERGENCE_MARKERS` — the marker set never has to tell a true claim from a
+# false one; by the time it is consulted, any such claim is false.
+_ENGINE_SPEED_MARKERS = (
+    "systematically slower",
+    "systematically faster",
+    "slower than",
+    "faster than",
+    "mis-fit",
+    "misfit",
+    "revisit separately",
 )
 
 
@@ -87,6 +132,77 @@ def _comment(text: str, key: str) -> str:
     assert match is not None, f"{key} must appear in the file under test"
     _, _, comment = match.group(0).partition("#")
     return comment.strip()
+
+
+def _cells(line: str) -> list[str]:
+    """A Markdown table row's cells, backticks stripped (the table keys them)."""
+    return [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+
+
+def _latency_table(text: str) -> dict[str, dict[str, int]]:
+    """The proposal's measured per-engine duration table, parsed.
+
+    Selected by *shape*, not by line number: the header row is the one naming
+    every statistic in :data:`_TAIL_STATISTICS`, and the data rows are the ones
+    whose first cell is an engine name. The Open-decisions table further down
+    shares neither, so it cannot be picked up by accident.
+
+    Returns ``{}`` when no such table is found. Every caller asserts on the
+    parse first (:func:`test_measured_latency_table_parses`), so a proposal that
+    is renamed or reshaped fails loudly instead of letting the derivations below
+    range over an empty dict and pass vacuously.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        header = _cells(line)
+        if not set(_TAIL_STATISTICS) <= set(header):
+            continue
+        table: dict[str, dict[str, int]] = {}
+        for row in lines[index + 1 :]:
+            cells = _cells(row)
+            if len(cells) != len(header) or cells[0] not in _ENGINES:
+                if table:
+                    break
+                continue
+            table[cells[0]] = {
+                name: int(value.rstrip("s"))
+                for name, value in zip(header[1:], cells[1:], strict=True)
+                if re.fullmatch(r"\d+s?", value)
+            }
+        return table
+    return {}
+
+
+def _tail_favours_design(table: dict[str, dict[str, int]]) -> bool:
+    """Does the record show design out-running review where a ceiling bites?
+
+    True only when design's value exceeds review's at **every** tail statistic —
+    the shape of the claim ``CONTEXT.md`` used to make. One statistic going the
+    other way is enough to make "systematically slower" the wrong description,
+    which is exactly what the 2026-08-02 measurement found.
+    """
+    return all(
+        table["design"][statistic] > table["review"][statistic]
+        for statistic in _TAIL_STATISTICS
+    )
+
+
+def _frontmatter_status(text: str) -> str | None:
+    """``status:`` from a spec's leading ``---`` block, or ``None``."""
+    block = re.search(r"^---$(.*?)^---$", text, re.MULTILINE | re.DOTALL)
+    if block is None:
+        return None
+    status = re.search(r"^status:\s*(\S+)", block.group(1), re.MULTILINE)
+    return status.group(1) if status else None
+
+
+def _quotes_number(sentence: str, value: int) -> bool:
+    """Is ``value`` quoted in ``sentence`` as a whole number?
+
+    Digit-bounded rather than a plain substring test, so ``561`` does not match
+    inside ``5610`` while ``561s`` still counts.
+    """
+    return re.search(rf"(?<!\d){value}(?!\d)", sentence) is not None
 
 
 # --- AC-2: the template ships the block ---------------------------------------
@@ -265,4 +381,169 @@ def test_the_engine_ceiling_nests_inside_the_wall_clock() -> None:
     assert (
         loop_budget.DEFAULT_ENGINE_TIMEOUT_SECONDS
         < loop_budget.DEFAULT_WALL_CLOCK_BUDGET_MINUTES * 60
+    )
+
+
+# --- #292: the one ceiling's rationale, against the measurement ---------------
+
+
+def test_measured_latency_table_parses() -> None:
+    """The proposal's latency table is readable — the non-vacuity anchor.
+
+    Every derivation below ranges over this table, and
+    :func:`_latency_table` answers ``{}`` rather than raising when the proposal
+    is renamed or its table reshaped. Without this test that ``{}`` would make
+    the tail predicate trivially true and the guard silently stop measuring —
+    the same role ``named_anywhere`` plays in
+    :func:`test_context_prose_asserts_no_divergence_that_does_not_exist`.
+    """
+    table = _latency_table(_PROPOSAL.read_text(encoding="utf-8"))
+
+    assert set(table) == set(_ENGINES), (
+        f"{_PROPOSAL.relative_to(_REPO_ROOT)} must carry a per-engine latency "
+        f"table keyed `design` / `review`; parsed {sorted(table)}. It is the "
+        "record CONTEXT.md's engine_timeout_seconds rationale is checked "
+        "against — if it moved, point this guard at where it moved to."
+    )
+    for engine in _ENGINES:
+        missing = [s for s in _TAIL_STATISTICS if s not in table[engine]]
+        assert not missing, (
+            f"the `{engine}` row must report {sorted(missing)} — the tail is "
+            "the only part a timeout ceiling interacts with, so a table "
+            "without it cannot settle the claim the ceiling's prose makes."
+        )
+
+
+def test_tail_predicate_flags_a_table_where_design_dominates() -> None:
+    """Negative control — :func:`_tail_favours_design` is a measure, not ``False``.
+
+    Fed a synthetic table in which design leads at every tail statistic, the
+    predicate must say so. Without this, the derivation test below would pass
+    just as happily against a predicate hardcoded to ``False``, and the
+    "measured, not hand-checked" requirement would be unmet.
+    """
+    dominating = {
+        "design": {"q3": 500, "max": 700},
+        "review": {"q3": 400, "max": 600},
+    }
+
+    assert _tail_favours_design(dominating)
+    assert not _tail_favours_design(
+        {"design": {"q3": 500, "max": 500}, "review": {"q3": 400, "max": 600}}
+    )
+
+
+def test_the_recorded_measurement_does_not_show_design_dominating_the_tail() -> None:
+    """The derivation: the record does not support a design-is-slower claim.
+
+    This is the step that makes the correction *measured*. It is not a
+    restatement of today's numbers — it is the premise both ``CONTEXT.md:42``
+    and the proposal's rejection rest on, re-derived from the committed record
+    every run. A re-measurement that inverts the tail fails here, which is the
+    signal that the rejection and the prose both need revisiting rather than
+    that this guard needs relaxing.
+    """
+    table = _latency_table(_PROPOSAL.read_text(encoding="utf-8"))
+
+    assert not _tail_favours_design(table), (
+        "the recorded measurement now shows the design engine leading review at "
+        f"every tail statistic ({', '.join(_TAIL_STATISTICS)}): design "
+        f"{ {s: table['design'][s] for s in _TAIL_STATISTICS} } vs review "
+        f"{ {s: table['review'][s] for s in _TAIL_STATISTICS} }. That is the "
+        "premise the per-engine split was rejected for lacking — revisit "
+        f"{_PROPOSAL.relative_to(_REPO_ROOT)} and CONTEXT.md's "
+        "engine_timeout_seconds rationale together, rather than editing this "
+        "assertion."
+    )
+
+
+def test_context_engine_rationale_carries_no_refuted_speed_claim() -> None:
+    """The comment may not assert an ordering the measurement does not show (AC-1).
+
+    Two steps, as in the divergence guard above: the relation is derived from
+    the table first, and only then is the prose required not to contradict it.
+    Step one alone would go green while the sentence rotted; step two alone
+    would be a phrase pin that any reword slips past.
+
+    Honest residual: a false claim phrased without any of the markers — "design
+    takes appreciably longer, so one knob is a compromise" — still passes here.
+    It is caught, if at all, by
+    :func:`test_context_engine_rationale_quotes_a_measured_tail_pair`, which
+    requires the numbers that refute it to be on the same line. This covers the
+    class the ticket names, not all possible false prose.
+    """
+    table = _latency_table(_PROPOSAL.read_text(encoding="utf-8"))
+    assert not _tail_favours_design(table)
+
+    comment = _comment(_CONTEXT.read_text(encoding="utf-8"), "engine_timeout_seconds")
+
+    lowered = comment.lower()
+    marker = next((m for m in _ENGINE_SPEED_MARKERS if m in lowered), None)
+    assert marker is None, (
+        f"CONTEXT.md's engine_timeout_seconds comment says {marker!r}, but the "
+        "measurement it would have to rest on shows the opposite where a "
+        f"ceiling bites: design q3 {table['design']['q3']}s / max "
+        f"{table['design']['max']}s against review q3 {table['review']['q3']}s "
+        f"/ max {table['review']['max']}s. Reword the comment — the split was "
+        "rejected on exactly this evidence."
+    )
+
+
+def test_context_engine_rationale_quotes_a_measured_tail_pair() -> None:
+    """The comment cites the measurement rather than gesturing at it (AC-2).
+
+    Some one sentence must quote **both** engines' values for the same tail
+    statistic. The same-sentence rule is what stops the historical 600 → 720
+    clause from satisfying this by accident: it already contains ``561`` (design's
+    max) but says nothing about review's ``587``, so a half-pair drawn from two
+    unrelated clauses does not count as a citation.
+    """
+    table = _latency_table(_PROPOSAL.read_text(encoding="utf-8"))
+    comment = _comment(_CONTEXT.read_text(encoding="utf-8"), "engine_timeout_seconds")
+
+    cited = [
+        statistic
+        for statistic in _TAIL_STATISTICS
+        if any(
+            _quotes_number(sentence, table["design"][statistic])
+            and _quotes_number(sentence, table["review"][statistic])
+            for sentence in _sentences(comment)
+        )
+    ]
+
+    assert cited, (
+        "CONTEXT.md's engine_timeout_seconds comment must quote both engines' "
+        "measured values for at least one tail statistic in a single sentence "
+        "— e.g. "
+        + ", ".join(
+            f"{s} {table['design'][s]}s vs {table['review'][s]}s"
+            for s in _TAIL_STATISTICS
+        )
+        + f" — so the next reader finds the evidence in place rather than "
+        f"re-deriving it from {_PROPOSAL.relative_to(_REPO_ROOT)}."
+    )
+
+
+def test_context_engine_rationale_cites_the_rejected_proposal() -> None:
+    """The comment points at the record, and the record still says *rejected* (AC-2).
+
+    The path is required to resolve, so a moved or deleted proposal fails here
+    instead of leaving a dead reference in the file every agent reads first. The
+    status is checked because the sentence presents it as the record of a
+    rejection: were the split later accepted, this comment would be describing
+    a decision that no longer holds.
+    """
+    relative = _PROPOSAL.relative_to(_REPO_ROOT).as_posix()
+    comment = _comment(_CONTEXT.read_text(encoding="utf-8"), "engine_timeout_seconds")
+
+    assert relative in comment, (
+        "CONTEXT.md's engine_timeout_seconds comment must cite "
+        f"`{relative}` as the record of why one ceiling covers both engines."
+    )
+    assert _PROPOSAL.exists(), f"{relative} is cited by CONTEXT.md but does not exist"
+    status = _frontmatter_status(_PROPOSAL.read_text(encoding="utf-8"))
+    assert status == "rejected", (
+        f"{relative} now reads `status: {status}`, but CONTEXT.md cites it as "
+        "the record of a *rejected* split. Whichever moved, the other must "
+        "follow."
     )
