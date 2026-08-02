@@ -586,3 +586,107 @@ def test_guidance_stamps_bumped_everywhere() -> None:
         "registry.yaml's header self-version and its `meta:` entry must agree "
         "— the third place the stamp lives (#213)."
     )
+
+
+# ---------------------------------------------------------------------------
+# #294 — the design engine is no longer read-only, and no surface may say it is
+#
+# The change that gave the engine a file as its output channel replaced
+# ``--permission-mode plan`` with a scoped write grant. Six independent
+# surfaces described the engine as "read-only", and every one of them went
+# silently false at that moment — the module docstring, the ``--help`` text,
+# README, SPEC, and two feature specs. Five were caught in review rather than
+# by anything that measures, which is the defect class the ticket itself was
+# filed against ("it is not the sandbox the docstring implies").
+#
+# So the claim is derived and checked rather than fixed in six places and
+# trusted: any *live* surface describing the design engine must not call it
+# read-only. Scoped to sentences that are about the design engine, because
+# "read-only" is correct and load-bearing elsewhere in these same files — the
+# review engine genuinely is read-only, ``harness stats`` opens the ledger
+# ``mode=ro``, and a retired spec describes read-only ledger observability.
+# ---------------------------------------------------------------------------
+
+#: The surfaces that describe the design engine to a human or an agent. Paths,
+#: not a glob, because the claim is about *documentation of this engine* — a
+#: file that never mentions the design engine has nothing to get wrong.
+_DESIGN_ENGINE_SURFACES = (
+    "harness/cli/design.py",
+    "harness/cli/design_protocol.py",
+    "harness/cli/__init__.py",
+    "README.md",
+    "SPEC.md",
+    "specs/features/verb-model.md",
+    "specs/features/cli-surface.md",
+    "commands/harness.md",
+)
+
+_SENTENCE_BREAK = re.compile(r"(?<=[.;:!?])\s+|\n\n+")
+
+
+def _design_engine_sentences(text: str) -> list[str]:
+    """Sentences that are about the design engine specifically."""
+    # Case-insensitive deliberately. The ``--help`` string reads "Design section
+    # with a ... engine" and a case-sensitive selector skipped it — the exact
+    # surface the review caught, missed by the guard written to catch it.
+    return [
+        sentence
+        for sentence in _SENTENCE_BREAK.split(text)
+        if re.search(
+            r"\bdesign engine\b|\bharness design\b|`design`|\bdesign\b.{0,40}\bengine\b",
+            sentence,
+            re.IGNORECASE,
+        )
+    ]
+
+
+def test_no_live_surface_calls_the_design_engine_read_only() -> None:
+    """The engine holds one scoped write grant; every surface must agree (#294)."""
+    offenders: list[str] = []
+    examined = 0
+    for relpath in _DESIGN_ENGINE_SURFACES:
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        for sentence in _design_engine_sentences(text):
+            examined += 1
+            if re.search(r"read-only", sentence, re.IGNORECASE):
+                offenders.append(f"{relpath}: {' '.join(sentence.split())[:160]}")
+    assert examined, (
+        "no sentence about the design engine was found in any listed surface — "
+        "the guard is measuring nothing, so a renamed concept has slipped past it"
+    )
+    assert not offenders, (
+        "the design engine holds write capability for its output file since "
+        "#294, so no live surface may describe it as read-only:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_the_guard_would_catch_the_claim_it_forbids() -> None:
+    """The negative control: prove the detector fires on the retired wording.
+
+    Without this, a change to ``_design_engine_sentences`` that stopped matching
+    anything would leave the test above green *and* vacuous — and its
+    non-vacuity assert only proves some sentence was examined, not that a
+    violating one would be recognised.
+    """
+    retired = "`harness design` runs a read-only Opus engine over the worktree."
+    sentences = _design_engine_sentences(retired)
+    assert sentences, "the sentence selector no longer recognises a design-engine claim"
+    assert any(re.search(r"read-only", s, re.IGNORECASE) for s in sentences)
+
+
+def test_the_review_engine_may_still_be_called_read_only() -> None:
+    """Scope check: the sibling engine genuinely is read-only, and must stay sayable.
+
+    A guard keyed on the bare token anywhere in these files would forbid a true
+    statement about ``review`` (`claude -p --permission-mode plan`) sitting in
+    the same document — and the fix for that failure would be to weaken the
+    true claim, not the false one.
+    """
+    verb_model = (REPO_ROOT / "specs" / "features" / "verb-model.md").read_text(
+        encoding="utf-8"
+    )
+    assert re.search(r"read-only[^\n]*review engine|review engine[^\n]*read-only", verb_model), (
+        "verb-model.md no longer states the review engine is read-only; if that "
+        "changed, this guard's scoping rationale needs revisiting"
+    )

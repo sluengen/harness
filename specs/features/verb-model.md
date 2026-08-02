@@ -36,7 +36,7 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 ### `design` — produce the run's technical design
 
-`harness design --run-id <id> [--model <alias>]` runs a read-only **Opus** engine over the worktree and the ticket in a fresh, dedicated context — uncontaminated by the orchestrator's own state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). ADR [`0007`](../decisions/0007-design-verb.md) added it so top-tier thinking happens in a verb-owned subprocess and the session executes against its output, instead of designing by rejection across `(fix → review)*` cycles.
+`harness design --run-id <id> [--model <alias>]` runs a dedicated **Opus** engine over the worktree and the ticket in a fresh, dedicated context — uncontaminated by the orchestrator's own state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). ADR [`0007`](../decisions/0007-design-verb.md) added it so top-tier thinking happens in a verb-owned subprocess and the session executes against its output, instead of designing by rejection across `(fix → review)*` cycles.
 
 The verb records the design in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`.
 

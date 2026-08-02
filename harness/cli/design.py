@@ -2,8 +2,8 @@
 
 ADR 0007 adds a fourth verb between ``start`` and implement, making the run
 lifecycle ``start → design → implement → review → (fix → review)* → close``. A
-read-only **Opus** engine studies the run's worktree and its ticket in a fresh,
-dedicated context and produces the change spec's technical Design section; the
+dedicated **Opus** engine studies the run's worktree and its ticket in a fresh
+context and produces the change spec's technical Design section; the
 build session then implements against that, instead of designing by rejection
 across ``(fix → review)*`` cycles.
 
@@ -315,7 +315,9 @@ def design_command(
 
     The engine is a ``claude -p`` subprocess that writes its design to one file
     outside the worktree, the only path it holds write capability for — it
-    designs, it does not implement. A run whose design cannot be produced records
+    designs, it does not implement. Deliberately not described as *read-only*:
+    since #294 it holds one scoped write grant, and calling that read-only is
+    the overclaim #294 was filed against. A run whose design cannot be produced records
     the failed attempt and exits 3; the build then proceeds without one rather
     than stalling (ADR 0007 D4).
     """
