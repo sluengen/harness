@@ -679,6 +679,171 @@ def test_cal177_explicit_model_overrides_resolved_tier(repo: Path, db_path: Path
 
 
 # ---------------------------------------------------------------------------
+# #293 — the resolved model is recorded on the review event.
+#
+# #177 made the claude engine's model a per-ticket tier and the verb then threw
+# the resolved value away, so review latency was uninterpretable against
+# ``design``'s (which records ``model: opus`` on every event). The field is
+# present **iff** the engine that ran was claude — codex ignores ``--model``, so
+# an alias recorded there would assert a model that was never in force.
+# ---------------------------------------------------------------------------
+
+
+def test_293_claude_review_records_the_model_it_ran_with(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-1: the recorded value **is** the argv the engine ran with.
+
+    Asserted against ``captured["cmd"]`` rather than the literal ``"opus"``: a
+    re-derivation of the tier at event-build time (a second ``fetch_issue``,
+    which can answer differently from the first) would satisfy a literal
+    assertion while violating the AC.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["model"] == captured["cmd"][-1], (event, captured["cmd"])
+
+
+def test_293_default_tier_review_records_sonnet(repo: Path, db_path: Path) -> None:
+    """AC-1 on the default path: an unlabelled ticket records what ran, not nothing."""
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=[])
+
+    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][-2:] == ["--model", "sonnet"], captured["cmd"]
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["model"] == captured["cmd"][-1], (event, captured["cmd"])
+
+
+def test_293_explicit_model_override_is_what_gets_recorded(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-1: the recorded value follows the invocation, not the ticket's label."""
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:sonnet"])
+
+    result = _invoke(repo, db_path, run_id, runner, model="opus", tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["model"] == captured["cmd"][-1], (event, captured["cmd"])
+
+
+def test_293_codex_review_records_no_model_key(repo: Path, db_path: Path) -> None:
+    """AC-2: absent, not null and not empty — codex ran no model."""
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex", tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    assert "--model" not in captured["cmd"], captured["cmd"]
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["engine"] == "codex"
+    assert "model" not in event, event
+
+
+def test_293_codex_discards_an_explicit_model_and_records_none(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-2, the sharper case: the flag was *accepted* and then discarded.
+
+    ``--model opus`` reaches the verb, ``_build_cmd`` drops it for codex, and the
+    ledger records what ran rather than what was asked for.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=[])
+
+    result = _invoke(
+        repo, db_path, run_id, runner, engine="codex", model="opus", tracker_stub=stub
+    )
+    assert result.exit_code == 0, result.output
+
+    assert "--model" not in captured["cmd"], captured["cmd"]
+    event = fetch_review_events(db_path)[0]["data"]
+    assert "model" not in event, event
+
+
+def test_293_usage_limit_fallback_records_the_claude_reinvocations_model(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-3, the measuring test: the field keys off ``engine_used``, not ``engine``.
+
+    Its own test rather than an extension of the CAL-702 fallback test, so a
+    failure names the model contract. This is the case that separates the two
+    keys: an implementation reading the *requested* engine records no ``model``
+    here while passing every AC-1 and AC-2 test above.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    order: list[str] = []
+    cmds: list[list[str]] = []
+    runner = _make_engine_runner(
+        {
+            "codex": review_mod.RunResult(
+                stdout="", stderr=_REAL_CODEX_USAGE_LIMIT_STDERR, returncode=1
+            ),
+            "claude": review_mod.RunResult(stdout=_SUBMIT_PASS, stderr="", returncode=0),
+        },
+        order,
+        cmds=cmds,
+    )
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, engine="codex", tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert order == ["codex", "claude"]
+
+    claude_cmd = cmds[1]
+    assert claude_cmd[-2:] == ["--model", "opus"], claude_cmd
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["engine"] == "claude"
+    assert event["fallback_from"] == "codex"
+    assert event["model"] == claude_cmd[-1], (event, claude_cmd)
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_293_model_is_present_iff_the_engine_that_ran_was_claude(
+    repo: Path, db_path: Path, engine: str
+) -> None:
+    """The writer-site invariant as a property, not as three scenarios.
+
+    Nothing in the payload enforces it — like ``fallback_from``'s "present iff a
+    hop happened" — so it is pinned here, keyed off the event's own ``engine``
+    (which is ``engine_used``) so the fallback case is covered by the same
+    predicate rather than by a second rule.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+    stub = _make_tracker_stub(labels=["review:opus"])
+
+    result = _invoke(repo, db_path, run_id, runner, engine=engine, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+
+    event = fetch_review_events(db_path)[0]["data"]
+    assert ("model" in event) == (event["engine"] == "claude"), event
+
+
+# ---------------------------------------------------------------------------
 # CAL-702 — Codex→Claude usage-limit fallback.
 #
 # The real exhausted-tier signal, captured empirically 2026-06-15 by running
@@ -698,12 +863,17 @@ _REAL_CODEX_USAGE_LIMIT_STDERR = (
 
 
 def _make_engine_runner(
-    by_engine: dict[str, review_mod.RunResult], order: list[str]
+    by_engine: dict[str, review_mod.RunResult],
+    order: list[str],
+    *,
+    cmds: list[list[str]] | None = None,
 ) -> Any:
     """A fake runner that dispatches on the engine in ``cmd`` and records order.
 
     Lets a fallback test give Codex a usage-limit result and Claude a pass, then
-    assert which engines ran and in what sequence.
+    assert which engines ran and in what sequence. Pass ``cmds`` to also capture
+    each invocation's argv, so a test can bind an assertion to the command the
+    *second* hop actually ran (#293) rather than to a literal.
     """
 
     async def _runner(
@@ -716,6 +886,8 @@ def _make_engine_runner(
     ) -> review_mod.RunResult:
         engine = "codex" if cmd[0] == "codex" else "claude"
         order.append(engine)
+        if cmds is not None:
+            cmds.append(list(cmd))
         return by_engine[engine]
 
     return _runner
