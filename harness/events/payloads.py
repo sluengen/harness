@@ -57,14 +57,15 @@ REVIEW_OUTCOME_FAILED = "failed"
 #: together in the aggregate they exist to make readable.
 REVIEW_UNEXPECTED_REASON = "unexpected_error"
 
-#: The two ways **either** engine verb can fail to get a verdict out of its
-#: engine's ``SUBMIT`` contract. ``design`` had them first; ``review`` classifies
-#: the same failure the same way from #270, which makes this the second copy and
-#: therefore the moment to extract (``code-quality``'s extract-on-the-second-copy
-#: rule). They live here, beside the outcome discriminators, so the two verbs
-#: cannot drift into two spellings of one fact — the same reason
-#: :data:`REVIEW_UNEXPECTED_REASON` and :data:`CLOSE_UNEXPECTED_REASON` share a
-#: value rather than each declaring their own.
+#: The two ways ``review`` can fail to get a verdict out of its engine's
+#: ``SUBMIT`` contract. ``design`` had them first and ``review`` adopted them in
+#: #270, which is why they live here rather than in ``review_protocol``; since
+#: #294 gave ``design`` a file as its output channel, ``review`` is the only
+#: consumer and these tags describe its contract alone. They stay here — beside
+#: the other shared telemetry literals and the outcome discriminators — rather
+#: than moving back, because the aggregate readers of ``$.reason`` treat every
+#: verb's tags as one vocabulary, and churning a stable string's home buys
+#: nothing.
 #:
 #: They are kept **distinct from each other** because they mean different things
 #: to an operator reading the ledger: ``no_submit`` says the engine never reached
@@ -459,14 +460,26 @@ class DesignEventData(BaseModel):
     inherited design as a *failed* attempt and silently drop it.
 
     ``submit_excerpt`` and ``stdout_chars`` (#277) are additive to the
-    ``failed`` shape and appear only when ``reason`` is ``no_submit`` or
-    ``malformed_submit`` — the engine's own output, bounded, so a SUBMIT-parse
-    failure is diagnosable from the ledger rather than being one more tally
-    mark. The other failure reasons (``engine_timeout``, ``engine_error``,
-    ``no_ticket_spec``) have no engine stdout in hand to quote and must stay
-    absent rather than record an empty one. They are kept out of ``detail``
-    deliberately: that field is human remediation prose, this is bounded
-    evidence with a different reader.
+    ``failed`` shape and appear only when ``reason`` is ``no_design_output``
+    (before #294, ``no_submit`` / ``malformed_submit``) — the engine's own
+    output, bounded, so a failure to deliver is diagnosable from the ledger
+    rather than being one more tally mark. The other failure reasons
+    (``engine_timeout``, ``engine_error``, ``no_ticket_spec``) have no engine
+    stdout in hand to quote and must stay absent rather than record an empty
+    one. They are kept out of ``detail`` deliberately: that field is human
+    remediation prose, this is bounded evidence with a different reader.
+
+    ``channel`` and ``design_chars`` (#294) are additive to the ``ok`` shape and
+    set only when the engine actually ran, so an ADR 0008 adopted event
+    (``inherited_from``) carries neither — no engine, no channel. ``channel`` is
+    ``'file'`` when the design arrived on its contracted channel and ``'stdout'``
+    when only the fallback delivered it; the second value is the alarm, since no
+    test in the suite can prove the engine's scoped write capability still works
+    against the installed CLI, and without recording which channel answered a
+    permission regression would look exactly like normal operation.
+    ``design_chars`` is the design's length — the measuring instrument for
+    ``DESIGN_TARGET_CHARS``, since ``harness stats`` cannot show a distribution
+    nobody records.
 
     ``invoked_at`` and ``concurrent_prior_at`` (#236) are set on both shapes,
     the concurrent-invocation detector's evidence: ``invoked_at`` is when this
@@ -491,6 +504,8 @@ class DesignEventData(BaseModel):
     inherited_from: str | None = None
     submit_excerpt: str | None = None
     stdout_chars: int | None = None
+    channel: str | None = None
+    design_chars: int | None = None
 
 
 class ReleaseEventData(BaseModel):

@@ -1,7 +1,7 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-07-29
+last_updated: 2026-08-02
 linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244"]
 ---
 
@@ -38,12 +38,19 @@ The partial unique index `idx_runs_ticket_open` is the database-level backstop f
 
 `harness design --run-id <id> [--model <alias>]` runs a read-only **Opus** engine over the worktree and the ticket in a fresh, dedicated context — uncontaminated by the orchestrator's own state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). ADR [`0007`](../decisions/0007-design-verb.md) added it so top-tier thinking happens in a verb-owned subprocess and the session executes against its output, instead of designing by rejection across `(fix → review)*` cycles.
 
-The verb records the design in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty, and the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005's semantics are untouched).
+The verb records the design in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`.
+
+**The engine's output channel is a file** (#294). The verb allocates one file in a fresh directory **outside the worktree**, grants the engine write capability for that single path and nothing else, tells it to write the Design section there, and removes the directory on every path — so nothing the design stage does can leave an untracked file behind and trip `close`'s `dirty_worktree` gate. The `design` event records `channel` (`file`, or `stdout` when only the fallback below delivered) and `design_chars`.
+
+This replaced the `SUBMIT: <json>` line design had inherited from `review`. That contract fits `review` — a fixed shape under 100 characters — and does not fit a 14–17 KB Markdown document, which it forced onto one physical line with every newline escaped and no structural landmark anywhere in it. Measured on this repo's ledger before the change, `design` lost **12.5% of attempts** to the wire format against `review`'s **0.24%**; one run lost 12m44s of Opus and a complete design because a single closing brace never arrived. `review`'s contract is deliberately untouched.
+
+A **stdout fallback** — the design between two nonce-marked lines — is the second channel, and it is a detector as much as a fallback: no test can spawn a real `claude`, so a permission-config regression would otherwise take the stage from working to producing nothing, invisibly. With it, that degrades to a design on the wrong channel, recorded as `channel="stdout"` and warned about on stderr. The fallback also tolerates a **missing closing marker**, so an engine that finishes its design and drops the final line still delivers it — the salvage the JSON contract could not offer. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty, and the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005's semantics are untouched).
 
 - GIVEN an open run
 - WHEN the agent runs `harness design --run-id <id>`
 - THEN the verb records a `design` event with `status="ok"`, `design_hash`, and the `grounded_sha` it studied, posts the design as a marked ticket comment, and emits `DesignOutput` on stdout
-- AND GIVEN instead the engine is killed, cannot be spawned, emits no `SUBMIT` line or a malformed one, or the ticket spec cannot be read, THEN the verb records a `design` event with `status="failed"` and a stable `reason`, posts **no** comment, and exits `3` (decision **D4**: every failure mode degrades and records)
+- THEN the `design` event also carries `channel` (which of the two channels delivered) and `design_chars` (the design's length) — the second being the measuring instrument for the length target the prompt states
+- AND GIVEN instead the engine is killed, cannot be spawned, delivers a design on **neither** channel (`reason="no_design_output"`, which replaced `no_submit` / `malformed_submit` here — a file is written or it is not, so the distinction the JSON format created no longer exists), or the ticket spec cannot be read, THEN the verb records a `design` event with `status="failed"` and a stable `reason`, posts **no** comment, and exits `3` (decision **D4**: every failure mode degrades and records)
 - AND GIVEN a `failed` design event, WHEN the agent runs `harness review`, THEN review is **not** refused — the check is that a design was *attempted and recorded*, never that it succeeded, so an infra flake costs a run its design but never its ability to ship
 
 **A failed design is not a stop.** The orchestrator proceeds to implement without one rather than re-running the verb in a loop chasing a green result; a re-run is legitimate (the latest event is authoritative and nothing is mutated), but the run is not blocked either way. How `review` consumes the design — enforcement on the ledger, context via `--design-file` — is the "design stage is required" scenario under [`review`](#review--record-a-verdict-bound-to-the-reviewed-sha) below.

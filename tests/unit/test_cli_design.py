@@ -7,9 +7,21 @@ AC-2: engine failure and timeout each append a ``status="failed"`` design event
       with a reason, post no comment, and exit non-zero (degrade-and-record, D4).
 AC-3: no open run / unknown run-id refuses per the verb refusal conventions.
 AC-4: the comment marker is single-sourced (``test_design_marker.py``).
+AC-5: the design arrives on its file channel, the ledger records **which**
+      channel delivered it, and the channel directory outlives no invocation
+      (#294).
 
 No test spawns a real engine: every one injects a fake runner, so the protocol
-from #210 is exercised without the ``claude`` binary.
+is exercised without the ``claude`` binary. Since #294 that fake writes the
+design to a **file** whose path it reconstructs from the command it was handed
+(``_design_path``), because the engine's output channel is a file rather than a
+SUBMIT line on stdout.
+
+The limit that discipline imposes, stated so nobody reads more into a green run
+than is there: no test here can prove the engine's *scoped write capability*
+works, since that is a property of the ``claude`` binary. The stdout fallback and
+the recorded ``channel`` exist for exactly that blind spot — see
+``test_a_design_arriving_on_stdout_records_the_fallback_channel``.
 """
 
 # size: the design verb's acceptance suite (ADR 0007) — engine invocation, the
@@ -43,7 +55,9 @@ from harness.tracker_errors import TrackerNotFound, TrackerRequestError
 cli_runner = CliRunner()
 
 _RUN_ID = "01JRUNDESIGNXXXXXXXXXXXX01"
-_DESIGN = "### Data model\n\nNo change.\n\n### Test strategy\n\nUnit tests.\n"
+# No leading/trailing whitespace: ``normalize_design`` trims whatever either
+# channel delivers, so a fixture carrying any would not round-trip.
+_DESIGN = "### Data model\n\nNo change.\n\n### Test strategy\n\nUnit tests."
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +169,26 @@ def design_events(db_path: Path) -> list[dict[str, Any]]:
     return _sync(_fetch_design_events(db_path))
 
 
-def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
+def _design_path(cmd: list[str]) -> Path:
+    """The output file the built command grants the engine write capability for.
+
+    Reconstructed from the command rather than passed in, so a fake runner writes
+    to the same path the *real* engine would be told to — if the verb ever stopped
+    naming the directory it grants, every file-channel test here would fail rather
+    than quietly testing a path nothing uses.
+    """
+    return Path(cmd[cmd.index("--add-dir") + 1]) / design_protocol.DESIGN_OUT_FILENAME
+
+
+def _make_runner(
+    design: str | None = _DESIGN,
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    returncode: int = 0,
+) -> Any:
+    """A fake engine. ``design`` is written to the file channel; ``None`` writes none."""
+
     async def _runner(
         *,
         cmd: list[str],
@@ -164,12 +197,40 @@ def _make_runner(stdout: str, *, stderr: str = "", returncode: int = 0) -> Any:
         cwd: Path | None,
         timeout: float | None = None,
     ) -> design_mod.RunResult:
+        if design is not None:
+            _design_path(cmd).write_text(design, encoding="utf-8")
         return design_mod.RunResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
     return _runner
 
 
-def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
+def _make_fallback_runner(design: str = _DESIGN, *, chatter: str = "") -> Any:
+    """A fake engine whose scoped write did not take, so it uses the stdout fallback."""
+
+    async def _runner(
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
+    ) -> design_mod.RunResult:
+        nonce = _design_path(cmd).parent.name.removeprefix(
+            design_protocol.DESIGN_TMP_PREFIX
+        )
+        block = (
+            f"{design_protocol.FALLBACK_BEGIN_MARKER} {nonce}\n"
+            f"{design}\n"
+            f"{design_protocol.FALLBACK_END_MARKER} {nonce}\n"
+        )
+        return design_mod.RunResult(stdout=chatter + block, stderr="", returncode=0)
+
+    return _runner
+
+
+def _make_capturing_runner(
+    captured: dict[str, Any], design: str | None = _DESIGN
+) -> Any:
     """A fake runner recording the ``cmd``/``stdin``/``cwd`` it was handed."""
 
     async def _runner(
@@ -184,7 +245,10 @@ def _make_capturing_runner(stdout: str, captured: dict[str, Any]) -> Any:
         captured["stdin"] = stdin
         captured["cwd"] = cwd
         captured["timeout"] = timeout
-        return design_mod.RunResult(stdout=stdout, stderr="", returncode=0)
+        captured["design_path"] = _design_path(cmd)
+        if design is not None:
+            _design_path(cmd).write_text(design, encoding="utf-8")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
     return _runner
 
@@ -201,10 +265,6 @@ def _make_raising_runner(exc: BaseException) -> Any:
         raise exc
 
     return _runner
-
-
-def _submit(design: str = _DESIGN) -> str:
-    return "thinking about it\nSUBMIT: " + json.dumps({"design_markdown": design})
 
 
 def _tracker_stub(
@@ -253,7 +313,7 @@ def test_success_records_an_ok_event_bound_to_the_run(repo: Path, db_path: Path)
     _seed_open_run(db_path, repo)
     stub = _tracker_stub()
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=stub)
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=stub)
 
     assert result.exit_code == 0, result.output
     events = design_events(db_path)
@@ -273,7 +333,7 @@ def test_success_records_the_sha256_of_the_design(repo: Path, db_path: Path) -> 
     """``design_hash`` is the design's content hash — the measurable binding."""
     _seed_open_run(db_path, repo)
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     assert result.exit_code == 0, result.output
     expected = hashlib.sha256(_DESIGN.encode("utf-8")).hexdigest()
@@ -285,7 +345,7 @@ def test_success_posts_the_marked_comment_once(repo: Path, db_path: Path) -> Non
     _seed_open_run(db_path, repo)
     stub = _tracker_stub()
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=stub)
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=stub)
 
     assert result.exit_code == 0, result.output
     stub.post_comment.assert_awaited_once()
@@ -299,7 +359,7 @@ def test_success_emits_the_design_output_contract(repo: Path, db_path: Path) -> 
     """The printed JSON is exactly ``DesignOutput``'s documented keys."""
     _seed_open_run(db_path, repo)
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.strip().splitlines()[-1])
@@ -320,35 +380,42 @@ def test_printed_output_omits_the_engine_reasoning(repo: Path, db_path: Path) ->
     """Context economy: the engine's pre-SUBMIT chatter never escapes the verb."""
     _seed_open_run(db_path, repo)
     chatter = "let me enumerate every file in the repository first"
-    stdout = f"{chatter}\n{_submit()}"
 
-    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+    result = _invoke(
+        repo, db_path, _make_runner(stdout=chatter), tracker_stub=_tracker_stub()
+    )
 
     assert result.exit_code == 0, result.output
     assert chatter not in result.output
 
 
-def test_engine_runs_read_only_on_opus_in_the_worktree(
+def test_engine_runs_on_opus_in_the_worktree_writing_outside_it(
     repo: Path, db_path: Path
 ) -> None:
-    """The command is #210's builder output — plan mode, Opus, cwd = worktree."""
+    """The command is the protocol builder's output, run with cwd = worktree.
+
+    The wiring assertion that matters since #294 is the last one: the engine
+    designs *in* the worktree and writes *outside* it, which is what keeps
+    ``close``'s ``dirty_worktree`` gate untouched by the design stage.
+    """
     _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
 
     result = _invoke(
-        repo, db_path, _make_capturing_runner(_submit(), captured), tracker_stub=_tracker_stub()
+        repo, db_path, _make_capturing_runner(captured), tracker_stub=_tracker_stub()
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["cmd"] == [
-        "claude",
-        "-p",
-        "--permission-mode",
-        "plan",
-        "--model",
-        "opus",
-    ]
+    assert captured["cmd"] == design_protocol.build_design_cmd(
+        channel=design_protocol.DesignChannel(
+            path=captured["design_path"],
+            nonce=captured["design_path"].parent.name.removeprefix(
+                design_protocol.DESIGN_TMP_PREFIX
+            ),
+        )
+    )
     assert captured["cwd"] == repo
+    assert not captured["design_path"].is_relative_to(repo)
     # The fixture repo writes no CONTEXT.md, so this measures the *wiring* — that
     # the unconfigured ceiling reaching the runner is the one `load_loop_budget`
     # resolves — rather than pinning a literal a retune has to chase (#291).
@@ -362,7 +429,7 @@ def test_prompt_carries_the_fetched_ticket_spec(repo: Path, db_path: Path) -> No
     stub = _tracker_stub(title="A distinctive title", description="A distinctive body")
 
     result = _invoke(
-        repo, db_path, _make_capturing_runner(_submit(), captured), tracker_stub=stub
+        repo, db_path, _make_capturing_runner(captured), tracker_stub=stub
     )
 
     assert result.exit_code == 0, result.output
@@ -378,13 +445,13 @@ def test_model_flag_overrides_the_opus_default(repo: Path, db_path: Path) -> Non
     result = _invoke(
         repo,
         db_path,
-        _make_capturing_runner(_submit(), captured),
+        _make_capturing_runner(captured),
         model="sonnet",
         tracker_stub=_tracker_stub(),
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["cmd"][-2:] == ["--model", "sonnet"]
+    assert captured["cmd"][captured["cmd"].index("--model") + 1] == "sonnet"
     assert design_events(db_path)[0]["data"]["model"] == "sonnet"
 
 
@@ -393,9 +460,9 @@ def test_re_running_appends_a_second_event(repo: Path, db_path: Path) -> None:
     _seed_open_run(db_path, repo)
     stub = _tracker_stub()
 
-    first = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=stub)
+    first = _invoke(repo, db_path, _make_runner(), tracker_stub=stub)
     second = _invoke(
-        repo, db_path, _make_runner(_submit("### Data model\n\nRevised.\n")), tracker_stub=stub
+        repo, db_path, _make_runner("### Data model\n\nRevised.\n"), tracker_stub=stub
     )
 
     assert first.exit_code == 0 and second.exit_code == 0
@@ -435,9 +502,10 @@ def test_concurrent_invocation_flags_the_later_writer(repo: Path, db_path: Path)
             await conn.commit()
         return ts
 
-    async def _runner(**_: Any) -> design_mod.RunResult:
+    async def _runner(*, cmd: list[str], **_: Any) -> design_mod.RunResult:
         captured["injected_ts"] = await _insert_stray_event()
-        return design_mod.RunResult(stdout=_submit(), stderr="", returncode=0)
+        _design_path(cmd).write_text(_DESIGN, encoding="utf-8")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
     result = _invoke(repo, db_path, _runner, tracker_stub=stub)
 
@@ -454,7 +522,7 @@ def test_first_design_has_no_flag(repo: Path, db_path: Path) -> None:
     """No prior event at all: nothing to flag."""
     _seed_open_run(db_path, repo)
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     assert result.exit_code == 0, result.output
     assert "concurrent_prior_at" not in json.loads(result.output.strip().splitlines()[-1])
@@ -496,9 +564,10 @@ def test_a_concurrent_event_on_another_run_is_ignored(repo: Path, db_path: Path)
 
     _sync(_seed_other_run())
 
-    async def _runner(**_: Any) -> design_mod.RunResult:
+    async def _runner(*, cmd: list[str], **_: Any) -> design_mod.RunResult:
         await _insert_other_run_event()
-        return design_mod.RunResult(stdout=_submit(), stderr="", returncode=0)
+        _design_path(cmd).write_text(_DESIGN, encoding="utf-8")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
     result = _invoke(repo, db_path, _runner, tracker_stub=_tracker_stub())
 
@@ -548,7 +617,7 @@ def test_detection_failure_does_not_break_the_design(repo: Path, db_path: Path) 
     with mock.patch.object(
         design_mod, "_read_latest_design_timestamp", side_effect=RuntimeError("db locked")
     ):
-        result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+        result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     assert result.exit_code == 0, result.output
     assert "concurrent_prior_at" not in json.loads(result.output.strip().splitlines()[-1])
@@ -612,45 +681,69 @@ def test_microsecond_boundary_uses_parsed_not_string_comparison(
 
 
 @pytest.mark.parametrize(
-    ("stdout", "expected_reason"),
+    ("stdout", "label"),
     [
-        ("I have decided not to comply.", "no_submit"),
-        ("SUBMIT: {not json at all}", "malformed_submit"),
-        ('SUBMIT: {"design_markdown": "   "}', "malformed_submit"),
+        ("", "silence"),
+        ("I have decided not to comply.", "a refusal"),
+        ("### Data model\n\nHere is the design, unmarked.\n", "an unmarked design"),
+        ("HARNESS-DESIGN deadbeef\n### Data model\n", "a block with a stale nonce"),
     ],
 )
-def test_unusable_engine_output_degrades_and_records(
-    repo: Path, db_path: Path, stdout: str, expected_reason: str
+def test_neither_channel_delivering_degrades_and_records(
+    repo: Path, db_path: Path, stdout: str, label: str
 ) -> None:
-    """Each unusable-output shape records a distinguishable failed attempt."""
+    """No file and no marked block is one failure, however the engine phrased it.
+
+    #294 collapsed ``no_submit`` / ``malformed_submit`` into one tag here: those
+    two split "never reached the contract" from "reached it and emitted garbage",
+    a distinction the JSON wire format created. A file is written or it is not.
+    """
     _seed_open_run(db_path, repo)
     stub = _tracker_stub()
 
-    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=stub)
+    result = _invoke(repo, db_path, _make_runner(None, stdout=stdout), tracker_stub=stub)
 
-    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED, label
     events = design_events(db_path)
     assert len(events) == 1
     assert events[0]["data"]["status"] == "failed"
-    assert events[0]["data"]["reason"] == expected_reason
+    assert events[0]["data"]["reason"] == design_mod.NO_DESIGN_OUTPUT_REASON
     assert events[0]["data"]["detail"]
     assert "design_hash" not in events[0]["data"]
+    assert "channel" not in events[0]["data"], "a failure delivered on no channel"
     stub.post_comment.assert_not_awaited()
-    assert json.loads(result.output.strip().splitlines()[-1])["reason"] == expected_reason
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert payload["reason"] == design_mod.NO_DESIGN_OUTPUT_REASON
 
 
-def test_submit_failure_records_the_unparseable_payload(
+def test_a_whitespace_only_design_file_is_no_design_at_all(
     repo: Path, db_path: Path
 ) -> None:
+    """An engine that wrote blanks claimed success without designing anything."""
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+
+    result = _invoke(repo, db_path, _make_runner("   \n\t\n"), tracker_stub=stub)
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    assert design_events(db_path)[0]["data"]["reason"] == (
+        design_mod.NO_DESIGN_OUTPUT_REASON
+    )
+    stub.post_comment.assert_not_awaited()
+
+
+def test_failure_records_the_undelivered_output(repo: Path, db_path: Path) -> None:
     """#277: the event must diagnose, not just tally.
 
     The failure is silent by design (D4 degrades and the run ships), so this
     event is the only evidence a later reader gets.
     """
     _seed_open_run(db_path, repo)
-    stdout = 'SUBMIT: {"design_markdown": "### Data model\n'
+    stdout = "I read the ticket but could not write the file.\n"
 
-    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+    result = _invoke(
+        repo, db_path, _make_runner(None, stdout=stdout), tracker_stub=_tracker_stub()
+    )
 
     assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
     data = design_events(db_path)[0]["data"]
@@ -658,41 +751,228 @@ def test_submit_failure_records_the_unparseable_payload(
     assert data["stdout_chars"] == len(stdout)
 
 
-def test_submit_failure_excerpt_stays_bounded_in_the_ledger(
+def test_failure_excerpt_stays_bounded_in_the_ledger(
     repo: Path, db_path: Path
 ) -> None:
     """A 17 KB stdout must not land in the ledger whole (#271/#272/#273 sizes)."""
     _seed_open_run(db_path, repo)
-    stdout = "SUBMIT: {" + "x" * 17_000
+    stdout = "x" * 17_000
 
-    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+    result = _invoke(
+        repo, db_path, _make_runner(None, stdout=stdout), tracker_stub=_tracker_stub()
+    )
 
     assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
     data = design_events(db_path)[0]["data"]
     assert data["stdout_chars"] == len(stdout), "the true length is still recorded"
-    assert len(data["submit_excerpt"]) <= design_protocol.SUBMIT_EXCERPT_MAX_CHARS
+    assert len(data["submit_excerpt"]) <= design_protocol.STDOUT_EXCERPT_MAX_CHARS
 
 
 def test_the_excerpt_never_reaches_stdout(repo: Path, db_path: Path) -> None:
-    """DesignOutput promises only the parsed payload escapes, never reasoning.
+    """DesignOutput promises only the design escapes, never the engine's reasoning.
 
     The excerpt is exactly that reasoning; it is for an operator reading the
     ledger, not for the orchestrator's context.
     """
     _seed_open_run(db_path, repo)
-    stdout = "SUBMIT: {UNIQUEMARK"
 
-    result = _invoke(repo, db_path, _make_runner(stdout), tracker_stub=_tracker_stub())
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(None, stdout="UNIQUEMARK"),
+        tracker_stub=_tracker_stub(),
+    )
 
     assert "UNIQUEMARK" not in result.output
     assert "submit_excerpt" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# AC-5 — the output channel, and the record of which one delivered (#294)
+# ---------------------------------------------------------------------------
+
+
+def test_a_design_written_to_the_file_records_the_file_channel(
+    repo: Path, db_path: Path
+) -> None:
+    """The contracted channel: the design is read from the file, verbatim."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    data = design_events(db_path)[0]["data"]
+    assert data["channel"] == design_mod.DESIGN_CHANNEL_FILE
+    assert data["design_chars"] == len(_DESIGN)
+    assert json.loads(result.output.strip().splitlines()[-1])["design_markdown"] == _DESIGN
+
+
+def test_the_recorded_length_is_the_designs_own(repo: Path, db_path: Path) -> None:
+    """``design_chars`` measures the design, not the fixture — the instrument
+    for ``DESIGN_TARGET_CHARS`` is worthless if it reports a constant."""
+    _seed_open_run(db_path, repo)
+    long_design = "### Data model\n\n" + "x" * 5_000
+
+    result = _invoke(
+        repo, db_path, _make_runner(long_design), tracker_stub=_tracker_stub()
+    )
+
+    assert result.exit_code == 0, result.output
+    assert design_events(db_path)[0]["data"]["design_chars"] == len(long_design)
+
+
+def test_a_design_arriving_on_stdout_records_the_fallback_channel(
+    repo: Path, db_path: Path
+) -> None:
+    """The detector. A design on stdout means the scoped write did not take.
+
+    No test in this suite spawns a real ``claude``, so a permission-config
+    regression is structurally invisible here. Recording *which* channel
+    answered is what turns it from a silent collapse to zero designs into a
+    degradation an operator can read off the ledger.
+    """
+    _seed_open_run(db_path, repo)
+    stub = _tracker_stub()
+
+    result = _invoke(repo, db_path, _make_fallback_runner(), tracker_stub=stub)
+
+    assert result.exit_code == 0, result.output
+    data = design_events(db_path)[0]["data"]
+    assert data["channel"] == design_mod.DESIGN_CHANNEL_STDOUT
+    assert data["design_chars"] == len(_DESIGN)
+    # The design itself is indistinguishable to the orchestrator: same contract,
+    # same body, same posted comment. Only the ledger and stderr know.
+    assert json.loads(result.output.strip().splitlines()[-1])["design_markdown"] == _DESIGN
+    stub.post_comment.assert_awaited_once()
+
+
+def test_the_fallback_warns_on_stderr_naming_the_run(
+    repo: Path, db_path: Path
+) -> None:
+    """A ledger field nobody queries is not an alarm; the tick log carries it too."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(repo, db_path, _make_fallback_runner(), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert "warning:" in result.output
+    assert _RUN_ID in result.output
+
+
+def test_the_file_channel_wins_when_both_deliver(repo: Path, db_path: Path) -> None:
+    """The file is the contract; a stray marked block on stdout cannot override it."""
+    _seed_open_run(db_path, repo)
+    from_file = "### Data model\n\nFrom the file."
+
+    async def _runner(*, cmd: list[str], **_: Any) -> design_mod.RunResult:
+        _design_path(cmd).write_text(from_file, encoding="utf-8")
+        nonce = _design_path(cmd).parent.name.removeprefix(
+            design_protocol.DESIGN_TMP_PREFIX
+        )
+        return design_mod.RunResult(
+            stdout=(
+                f"{design_protocol.FALLBACK_BEGIN_MARKER} {nonce}\n"
+                "### Data model\n\nFrom stdout.\n"
+                f"{design_protocol.FALLBACK_END_MARKER} {nonce}\n"
+            ),
+            stderr="",
+            returncode=0,
+        )
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    data = design_events(db_path)[0]["data"]
+    assert data["channel"] == design_mod.DESIGN_CHANNEL_FILE
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert payload["design_markdown"] == from_file
+
+
+@pytest.mark.parametrize(
+    ("runner_factory", "expected_exit"),
+    [
+        (lambda: _make_runner(), 0),
+        (lambda: _make_fallback_runner(), 0),
+        (lambda: _make_runner(None), design_mod.EXIT_DESIGN_FAILED),
+    ],
+    ids=["file", "fallback", "neither"],
+)
+def test_the_channel_directory_never_outlives_the_invocation(
+    repo: Path, db_path: Path, runner_factory: Any, expected_exit: int
+) -> None:
+    """On every path — including the ones that fail — the design leaves no file.
+
+    Asserted against the path the verb actually allocated, captured from the
+    command it built, so this cannot pass by checking a directory that was never
+    created.
+    """
+    _seed_open_run(db_path, repo)
+    seen: dict[str, Any] = {}
+    inner = runner_factory()
+
+    async def _runner(*, cmd: list[str], **kwargs: Any) -> design_mod.RunResult:
+        seen["path"] = _design_path(cmd)
+        return await inner(cmd=cmd, **kwargs)
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == expected_exit, result.output
+    assert seen["path"].parent.name.startswith(design_protocol.DESIGN_TMP_PREFIX)
+    assert not seen["path"].parent.exists(), "the channel directory was left behind"
+
+
+@pytest.mark.parametrize(
+    ("runner_factory", "expected_exit"),
+    [
+        (lambda: _make_runner(), 0),
+        (lambda: _make_runner(None), design_mod.EXIT_DESIGN_FAILED),
+    ],
+    ids=["success", "failure"],
+)
+def test_the_design_stage_leaves_the_worktree_clean(
+    repo: Path, db_path: Path, runner_factory: Any, expected_exit: int
+) -> None:
+    """Nothing the design stage does can trip ``close``'s ``dirty_worktree`` gate.
+
+    This is why the channel lives outside the worktree rather than in it: an
+    untracked ``design.md`` under the run's tree would refuse the close that the
+    design exists to help reach.
+
+    Compared before against after rather than against ``""``: the fixture's own
+    ``.harness/`` ledger directory is untracked here (a real repo gitignores it),
+    and an assertion that tolerated *that* one entry by name would also tolerate
+    a ``design.md`` written beside it.
+    """
+    _seed_open_run(db_path, repo)
+    before = _git(repo, "status", "--porcelain").stdout
+
+    result = _invoke(repo, db_path, runner_factory(), tracker_stub=_tracker_stub())
+
+    assert result.exit_code == expected_exit, result.output
+    assert _git(repo, "status", "--porcelain").stdout == before
+
+
+def test_an_undecodable_byte_does_not_lose_a_produced_design(
+    repo: Path, db_path: Path
+) -> None:
+    """A transcoding detail must not turn a real design into an unexpected exit 1."""
+    _seed_open_run(db_path, repo)
+
+    async def _runner(*, cmd: list[str], **_: Any) -> design_mod.RunResult:
+        _design_path(cmd).write_bytes(b"### Data model\n\nCaf\xe9 latte.\n")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
+
+    result = _invoke(repo, db_path, _runner, tracker_stub=_tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert design_events(db_path)[0]["data"]["channel"] == design_mod.DESIGN_CHANNEL_FILE
 
 
 def test_a_successful_design_records_neither_field(repo: Path, db_path: Path) -> None:
     """exclude_none=True keeps the ok shape exactly as pinned since #211."""
     _seed_open_run(db_path, repo)
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     assert result.exit_code == 0
     data = design_events(db_path)[0]["data"]
@@ -762,7 +1042,7 @@ def test_unreadable_ticket_spec_degrades_without_running_the_engine(
 
     async def _runner(**_: Any) -> design_mod.RunResult:
         ran["called"] = True
-        return design_mod.RunResult(stdout=_submit(), stderr="", returncode=0)
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
     result = _invoke(repo, db_path, _runner)
 
@@ -780,7 +1060,12 @@ def test_a_recorded_failure_still_names_the_engine_and_model(
     """A failed attempt records what was attempted, so the ledger is readable."""
     _seed_open_run(db_path, repo)
 
-    result = _invoke(repo, db_path, _make_runner("no submit here"), tracker_stub=_tracker_stub())
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(None, stdout="nothing usable here"),
+        tracker_stub=_tracker_stub(),
+    )
 
     assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
     data = design_events(db_path)[0]["data"]
@@ -800,7 +1085,7 @@ def test_unknown_run_id_refuses_exit_2_without_an_event(
     _seed_open_run(db_path, repo)
 
     result = _invoke(
-        repo, db_path, _make_runner(_submit()), run_id="01JNOSUCHRUNXXXXXXXXXXXX01"
+        repo, db_path, _make_runner(), run_id="01JNOSUCHRUNXXXXXXXXXXXX01"
     )
 
     assert result.exit_code == 2
@@ -810,7 +1095,7 @@ def test_unknown_run_id_refuses_exit_2_without_an_event(
 
 def test_no_open_run_for_the_worktree_refuses_exit_2(repo: Path, db_path: Path) -> None:
     """With no run ever opened here there is nothing to design for."""
-    result = _invoke(repo, db_path, _make_runner(_submit()), run_id=None)
+    result = _invoke(repo, db_path, _make_runner(), run_id=None)
 
     assert result.exit_code == 2
     assert design_events(db_path) == []
@@ -829,7 +1114,7 @@ def test_a_closed_run_is_not_designable(repo: Path, db_path: Path) -> None:
 
     _sync(_close_it())
 
-    result = _invoke(repo, db_path, _make_runner(_submit()))
+    result = _invoke(repo, db_path, _make_runner())
 
     assert result.exit_code == 2
     assert design_events(db_path) == []
@@ -921,9 +1206,7 @@ def _recording_runner(ran: dict[str, bool], stdout: str = "") -> Any:
 
     async def _runner(**_: Any) -> design_mod.RunResult:
         ran["called"] = True
-        return design_mod.RunResult(
-            stdout=stdout or _submit(), stderr="", returncode=0
-        )
+        return design_mod.RunResult(stdout=stdout, stderr="", returncode=0)
 
     return _runner
 
@@ -1012,7 +1295,7 @@ def test_a_failed_comment_post_exits_1_and_records_nothing(
         side_effect=TrackerRequestError("tracker returned HTTP 502")
     )
 
-    result = _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=stub)
+    result = _invoke(repo, db_path, _make_runner(), tracker_stub=stub)
 
     # Explicitly *not* EXIT_DESIGN_FAILED: a design was produced, so this is a
     # publish failure, not a failure to design.
@@ -1060,7 +1343,7 @@ def test_design_records_its_duration_in_the_event_column(
     _seed_open_run(db_path, repo)
     with _pin_clock(1_500_000):
         result = _invoke(
-            repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub()
+            repo, db_path, _make_runner(), tracker_stub=_tracker_stub()
         )
     assert result.exit_code == 0, result.output
 
@@ -1078,7 +1361,7 @@ def test_design_payload_gains_no_duration_key(repo: Path, db_path: Path) -> None
     """
     _seed_open_run(db_path, repo)
     with _pin_clock(1_500_000):
-        _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+        _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     (event,) = design_events(db_path)
     assert "duration_ms" not in event["data"]
@@ -1118,7 +1401,7 @@ def test_design_latency_is_one_query_over_the_column(
     """
     _seed_open_run(db_path, repo)
     with _pin_clock(1_500_000):
-        _invoke(repo, db_path, _make_runner(_submit()), tracker_stub=_tracker_stub())
+        _invoke(repo, db_path, _make_runner(), tracker_stub=_tracker_stub())
 
     query = (
         "SELECT MAX(duration_ms) FROM events "

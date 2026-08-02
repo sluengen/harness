@@ -30,7 +30,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from harness.cli import app
+from harness.cli import app, design_protocol
 from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
 from harness.cli.design_protocol import design_content_hash
@@ -48,7 +48,9 @@ _PRIOR_DESIGN = "### Data model\n\nThe design the dead run produced.\n"
 _PRIOR_HASH = design_content_hash(_PRIOR_DESIGN)
 _PRIOR_GROUNDED_SHA = "a" * 40
 
-_FRESH_DESIGN = "### Data model\n\nA freshly engineered design.\n"
+# No trailing newline: a design collected from either channel is normalized
+# (trimmed), so a fixture carrying one would not round-trip to its own hash.
+_FRESH_DESIGN = "### Data model\n\nA freshly engineered design."
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +218,16 @@ class _EngineSpy:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def __call__(self, **kwargs: Any) -> design_mod.RunResult:
+    async def __call__(self, *, cmd: list[str], **kwargs: Any) -> design_mod.RunResult:
         self.calls += 1
-        return design_mod.RunResult(
-            stdout="SUBMIT: " + json.dumps({"design_markdown": _FRESH_DESIGN}),
-            stderr="",
-            returncode=0,
+        # The design leaves on the file channel since #294; writing it is what
+        # makes a *declined* adoption reach a normal ``ok`` event rather than
+        # degrading, so this spy tells "adopted" from "re-designed" by content.
+        out = (
+            Path(cmd[cmd.index("--add-dir") + 1]) / design_protocol.DESIGN_OUT_FILENAME
         )
+        out.write_text(_FRESH_DESIGN, encoding="utf-8")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
 
 def _tracker_stub(design_comment: str | None) -> Any:
@@ -465,6 +470,28 @@ def test_declines_when_the_run_did_not_resume(repo: Path, db_path: Path) -> None
     data = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID][0]["data"]
     assert "inherited_from" not in data
     assert data["design_hash"] == design_content_hash(_FRESH_DESIGN)
+
+
+def test_an_adopted_event_records_no_output_channel(
+    repo: Path, db_path: Path
+) -> None:
+    """No engine ran, so there is no channel to name (#294).
+
+    ``channel`` exists to say how *this* invocation's engine delivered its
+    design. An adoption ran none — it recovered the design from the ticket — so
+    recording ``'file'`` would assert a write that never happened, and recording
+    ``'stdout'`` would raise a permission alarm out of nothing.
+    """
+    _seed_resumed_run(db_path, repo)
+    _seed_source_design(db_path)
+
+    result = _invoke(repo, db_path, _EngineSpy(), _tracker_stub(_prior_comment()))
+
+    assert result.exit_code == 0, result.output
+    data = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID][0]["data"]
+    assert data["inherited_from"], "this test is only meaningful on the adopt path"
+    assert "channel" not in data
+    assert "design_chars" not in data
 
 
 def test_declines_when_the_ticket_carries_no_design_comment(
