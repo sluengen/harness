@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.7
+// guidance:hook-guidance-freshness@0.3.8
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -101,10 +101,11 @@ function main() {
     // commands/harness.md until CAL-764 registered it; the mechanism still guards
     // any genuinely repo-owned file.) Identify them without naming any repo fact:
     // a non-member that carries no `guidance:` header AND is not a `.json` is
-    // repo-owned, so skip it. The `.json` carve-out matters because settings
-    // JSON is the one *headerless* distributable type (the registry version is
-    // authoritative) — a new, unregistered settings file must still draw the
-    // register reminder. A non-member that carries a header is likewise a new
+    // repo-owned, so skip it. The `.json` carve-out matters because JSON is the
+    // *headerless* distributable type (the registry version is authoritative):
+    // `settings/*.json`, and since #302 `hooks/package.json` too — a new,
+    // unregistered file of either kind must still draw the register reminder.
+    // A non-member that carries a header is likewise a new
     // guidance file not yet registered — keep checking it. Meta files
     // (registry.yaml, BOOTSTRAP.md) are always checked (isDist is false for
     // them), so a malformed registry that drops its own meta entry can't silence
