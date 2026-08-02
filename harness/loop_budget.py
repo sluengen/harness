@@ -73,9 +73,15 @@ DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 110
 # bounded by neither until the next boundary. This ceiling closes that gap — it
 # caps a single ``claude -p`` / ``codex exec`` subprocess so a hung engine is
 # killed and surfaced as an infra failure rather than hanging the verb until an
-# external kill. Default 600s to match the documented ops kill; a repo overrides
+# external kill. Sit it at or below the documented ops kill so the clean exit
+# wins. Raised 600 → 720 on 2026-07-30: across 18 timed design runs the old
+# ceiling sat *inside* the working distribution (successes ran 213–561s), so it
+# was clipping the right tail rather than catching hung engines. The constant
+# moves with the configured value for the same reason the wall clock's does
+# (#260, #291) — a repo that never wrote a ``loop:`` block must run the ceiling
+# this one's evidence produced, not the one it replaced. A repo still overrides
 # it in the same ``loop:`` block.
-DEFAULT_ENGINE_TIMEOUT_SECONDS = 600
+DEFAULT_ENGINE_TIMEOUT_SECONDS = 720
 
 # Stable, machine-readable ``reason`` tags carried on a trip — mirrors the
 # ``{"error", "reason"}`` refusal shape of ``close`` / the review infra failure

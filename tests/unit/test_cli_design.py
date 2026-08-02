@@ -36,6 +36,7 @@ from harness.cli import app, design_protocol
 from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
 from harness.design_marker import DESIGN_MARKER
+from harness.loop_budget import DEFAULT_ENGINE_TIMEOUT_SECONDS
 from harness.state import store
 from harness.tracker_errors import TrackerNotFound, TrackerRequestError
 
@@ -348,7 +349,10 @@ def test_engine_runs_read_only_on_opus_in_the_worktree(
         "opus",
     ]
     assert captured["cwd"] == repo
-    assert captured["timeout"] == 600
+    # The fixture repo writes no CONTEXT.md, so this measures the *wiring* — that
+    # the unconfigured ceiling reaching the runner is the one `load_loop_budget`
+    # resolves — rather than pinning a literal a retune has to chase (#291).
+    assert captured["timeout"] == DEFAULT_ENGINE_TIMEOUT_SECONDS
 
 
 def test_prompt_carries_the_fetched_ticket_spec(repo: Path, db_path: Path) -> None:
