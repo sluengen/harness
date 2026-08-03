@@ -78,6 +78,15 @@ _NONE_273 = (
     "- Body explaining why.\n"
 )
 
+#: #287 — the ticket-less exemption class. Built from the module's own constant
+#: rather than the literal, so renaming the prefix cannot leave these green
+#: against a guard that no longer accepts them.
+_NO_TICKET = f"{cf.NO_TICKET_PREFIX}assess-2026-08-01-code"
+_NONE_NO_TICKET = (
+    f"### None — an advisory assessment report, no shipped behaviour ({_NO_TICKET})\n"
+    "- The findings live in the tracker; nothing in the product changed.\n"
+)
+
 _UNRELEASED_HEAD = "# Changelog\n\nSee `CHANGELOG-archive/2026.md`.\n\n## [Unreleased]\n\n"
 
 
@@ -369,6 +378,86 @@ def test_require_passes_a_change_carrying_an_exemption(tmp_path: Path) -> None:
     assert cf.require(repo, base="dev").exit_code == 0
 
 
+def _feature_branch_touching(repo: Path, relpaths: list[str]) -> None:
+    """A branch off ``dev`` whose commit touches exactly ``relpaths``."""
+    _git(repo, "checkout", "-q", "-b", "run-ticketless", "dev")
+    for relpath in relpaths:
+        target = repo / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("body\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "a change with no ticket")
+
+
+@pytest.mark.parametrize(
+    "paths",
+    [
+        pytest.param(
+            ["assessments/2026-08-01-code.md", "assessments/LOG.md"],
+            id="assess-report",
+        ),
+        pytest.param(
+            [
+                "specs/proposals/persistent-runtime-host.md",
+                "specs/decisions/0012-persistent-runtime-host.md",
+            ],
+            id="propose-output",
+        ),
+    ],
+)
+def test_require_states_the_exemption_for_a_ticketless_change(
+    tmp_path: Path, paths: list[str]
+) -> None:
+    """#287 — a commit class with no ticket by design gets a *stated* path.
+
+    Both observed instances, one test. The `/assess` report is the one the
+    ticket was filed for; the `/propose` output is the second instance, and it
+    is the reason the fix is stem-shaped rather than scoped to ``assessments/``
+    — nothing here is keyed on a directory.
+
+    Both guards are exercised, in the order ``scripts/verify.sh`` runs them
+    (``check`` then ``require``), because the two fail this class in different
+    places and neither alone reproduces it. ``check`` is the one that actually
+    blocks an author who *does* write the file — it rejects the filename — while
+    ``require``'s presence test is path-shape-only and has always accepted a
+    ``no-ticket-*.md`` without validating the stem. So a green ``require`` here
+    proves nothing on its own; the gate still fails one line earlier.
+
+    The assertion that carries the rest of the ticket is ``not result.abstained``.
+    Before this change the only way either arm reached exit 0 was the empty-diff
+    abstention — i.e. by being gated at a moment where the guard could see
+    nothing — which is precisely the accident #287 exists to replace.
+    """
+    repo = _repo_with_base(tmp_path)
+    _feature_branch_touching(repo, paths)
+    (repo / cf.FRAGMENT_DIRNAME / f"{_NO_TICKET}.md").write_text(
+        _NONE_NO_TICKET, encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "no-ticket exemption")
+
+    assert cf.check(repo) == [], (
+        "`check` runs first in scripts/verify.sh, so it is what actually blocks "
+        "an author who writes the no-ticket fragment — a green `require` behind "
+        "a red `check` still leaves the gate red"
+    )
+
+    result = cf.require(repo, base="dev")
+
+    assert result.exit_code == 0, (
+        "a ticket-less change carrying a no-ticket exemption must pass the gate "
+        f"before it is pushed; got {result.message!r}"
+    )
+    assert not result.abstained, (
+        "it must pass by a stated reason, not by the empty-diff abstention — "
+        "an abstention here is the accidental path the ticket exists to remove"
+    )
+    assert _NO_TICKET in result.message, (
+        "the stated reason must name the fragment that earned it, so a reviewer "
+        f"can find the claim; got {result.message!r}"
+    )
+
+
 def test_require_passes_a_release_fold_that_edits_the_changelog(
     tmp_path: Path,
 ) -> None:
@@ -463,6 +552,44 @@ _GOOD = _ADDED_270
         ),
         pytest.param("CAL-1204.md", _GOOD.replace("#270", "CAL-1204"), None,
                      id="valid-legacy-linear-key"),
+        # --- #287, the no-ticket exemption class -----------------------------
+        pytest.param(
+            f"{_NO_TICKET}.md", _NONE_NO_TICKET, None, id="valid-no-ticket-control"
+        ),
+        pytest.param(
+            f"{_NO_TICKET}.md",
+            f"### Added — a releasable entry on a no-ticket stem ({_NO_TICKET})\n"
+            "- Body.\n",
+            # Not the bare word "only": the *filename* message also contains it
+            # ("carrying only '### None'"), so a loose needle would pass on the
+            # wrong violation and prove nothing about the category rule.
+            "may carry only",
+            id="no-ticket-may-not-carry-a-releasable-category",
+        ),
+        pytest.param(
+            f"{_NO_TICKET}.md",
+            _NONE_NO_TICKET.replace(f"({_NO_TICKET})", f"(#{_NO_TICKET})"),
+            "without '#'",
+            id="no-ticket-heading-id-may-not-name-an-issue",
+        ),
+        pytest.param(
+            f"{cf.NO_TICKET_PREFIX}Assess.md",
+            _NONE_NO_TICKET.replace(_NO_TICKET, f"{cf.NO_TICKET_PREFIX}Assess"),
+            "filename",
+            id="no-ticket-slug-must-be-lowercase",
+        ),
+        # AC-3 — widening the stem class must not loosen the ticket class. Both
+        # are near-misses of a *valid* stem above, so a guard that had silently
+        # started accepting anything would fail here rather than pass quietly.
+        pytest.param(
+            "27O.md", _GOOD.replace("#270", "27O"), "filename", id="ticket-typo-letter-O"
+        ),
+        pytest.param(
+            "cal-1204.md",
+            _GOOD.replace("#270", "cal-1204"),
+            "filename",
+            id="ticket-key-must-stay-uppercase",
+        ),
     ],
 )
 def test_check_validates_fragment_structure(
