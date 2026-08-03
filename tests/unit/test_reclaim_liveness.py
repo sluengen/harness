@@ -39,6 +39,7 @@ from unittest.mock import patch
 
 from harness.cli import reclaim_liveness
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
 from tests._reclaim import (
     fetch_events,
@@ -46,7 +47,6 @@ from tests._reclaim import (
     invoke,
     iso_minutes_ago,
     make_sweep_stub,
-    run_sync,
     seed_checkpoint,
     seed_run,
     seed_worktree,

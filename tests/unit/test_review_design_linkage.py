@@ -46,7 +46,6 @@ like ``test_review_verify_gate.py``.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import subprocess
@@ -65,6 +64,7 @@ from harness.cli.review_protocol import build_review_prompt, resolve_design_gate
 from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY, DesignEventData
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -103,14 +103,6 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) -> str:
     async def _insert() -> None:
         await store.init_db(db_path)
@@ -138,7 +130,7 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return _RUN_ID
 
 
@@ -162,7 +154,7 @@ def _seed_reviews(db_path: Path, count: int) -> None:
                 )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _capturing_runner(stdout: str, prompts: list[str]) -> Any:
@@ -213,7 +205,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 # ---------------------------------------------------------------------------

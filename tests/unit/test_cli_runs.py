@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +9,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from tests._asyncutil import run_sync
 
 runner = CliRunner()
 
@@ -60,20 +60,12 @@ async def _seed_run_async(
         await conn.commit()
 
 
-def _run_sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_run(db_path: Path, **kwargs: Any) -> None:
-    _run_sync(_seed_run_async(db_path, **kwargs))
+    run_sync(_seed_run_async(db_path, **kwargs))
 
 
 def _init_db(db_path: Path) -> None:
-    _run_sync(store.init_db(db_path))
+    run_sync(store.init_db(db_path))
 
 
 # ---------------------------------------------------------------------------

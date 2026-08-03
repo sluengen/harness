@@ -57,6 +57,7 @@ import pytest
 from harness.cli import app, reclaim
 from harness.loop_budget import evaluate_breakers, load_loop_budget
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._reclaim import (
     cli_runner,
     count_open_for_ticket,
@@ -66,7 +67,6 @@ from tests._reclaim import (
     invoke,
     iso_minutes_ago,
     make_sweep_stub,
-    run_sync,
     seed_checkpoint,
     seed_run,
 )

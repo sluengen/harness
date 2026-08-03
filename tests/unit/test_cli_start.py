@@ -20,7 +20,6 @@ AC-transport-rollback: a transport failure (e.g. timeout) leaves zero side effec
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -33,6 +32,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -135,16 +135,8 @@ async def _fetch_all_runs(db_path: Path) -> list[dict[str, Any]]:
     return [dict(zip(cols, row, strict=True)) for row in rows]
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def fetch_runs(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_all_runs(db_path))
+    return run_sync(_fetch_all_runs(db_path))
 
 
 async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
@@ -159,7 +151,7 @@ async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def fetch_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_all_events(db_path))
+    return run_sync(_fetch_all_events(db_path))
 
 
 # ---------------------------------------------------------------------------
@@ -1216,7 +1208,7 @@ def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
             row = await cur.fetchone()
         return row[0] if row is not None else "no-row"
 
-    assert _sync(_fetch_pid()) is None
+    assert run_sync(_fetch_pid()) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1779,7 +1771,7 @@ def test_find_open_run_surfaces_db_read_failure(repo: Path, db_path: Path) -> No
     boom = aiosqlite.OperationalError("database is locked")
     with patch("harness.cli.start.store.connect", side_effect=boom):  # noqa: SIM117
         with pytest.raises(_StartError) as excinfo:
-            _sync(_find_open_run(db_path, "CAL-570"))
+            run_sync(_find_open_run(db_path, "CAL-570"))
 
     assert "database is locked" in str(excinfo.value), (
         "the underlying DB error must be carried in the surfaced message"
@@ -1805,9 +1797,9 @@ def test_find_open_run_returns_none_for_uninitialized_db(
             await conn.execute("CREATE TABLE unrelated (x)")
             await conn.commit()
 
-    _sync(_make_db_without_runs_table())
+    run_sync(_make_db_without_runs_table())
 
-    assert _sync(_find_open_run(db_path, "CAL-570")) is None
+    assert run_sync(_find_open_run(db_path, "CAL-570")) is None
 
 
 def test_delete_run_row_warns_when_rollback_fails(
@@ -1832,7 +1824,7 @@ def test_delete_run_row_warns_when_rollback_fails(
         patch("harness.cli.start.typer.echo") as mock_echo,
     ):
         # Best-effort: a failed rollback must NOT propagate.
-        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+        run_sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
 
     mock_echo.assert_called_once()
     args, kwargs = mock_echo.call_args
@@ -1868,10 +1860,10 @@ def test_delete_run_row_silent_on_successful_rollback(
             await conn.commit()
 
     _seed_open_run_result = _seed_open_run()
-    _sync(_seed_open_run_result)
+    run_sync(_seed_open_run_result)
 
     with patch("harness.cli.start.typer.echo") as mock_echo:
-        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+        run_sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
 
     mock_echo.assert_not_called()
     assert fetch_runs(db_path) == [], "the row must be deleted on a clean rollback"

@@ -37,7 +37,6 @@ They inject a fake engine runner and seed the ledger directly, exactly like
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -59,6 +58,7 @@ from harness.gate import (
 )
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -94,14 +94,6 @@ def repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _write_context(repo: Path, verify: str | None) -> None:
@@ -146,7 +138,7 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     # #212: the design check now runs *before* this module's gate check, so the
     # gate refusals under test are only reachable once a design is on record.
     # Seeding it here is what keeps these tests testing the gate.
@@ -171,7 +163,7 @@ def _seed_reviews(db_path: Path, count: int) -> None:
                 )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _tracking_runner(stdout: str, calls: list[int]) -> Any:
@@ -216,7 +208,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _no_verdict_was_recorded(db_path: Path, reason: str) -> bool:

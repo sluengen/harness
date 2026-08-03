@@ -12,24 +12,15 @@ directly, so the rule cannot drift between the two verbs.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from harness.cli._runs import LedgerNotFoundError, resolve_open_run
 from harness.state import store
+from tests._asyncutil import run_sync
 
 RUN_ID = "01JRUNRESOLVEXXXXXXXXXXX01"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _seed_run(
@@ -67,7 +58,7 @@ def _seed_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return run_id
 
 
@@ -77,7 +68,7 @@ def test_resolves_open_run_by_explicit_run_id(tmp_path: Path) -> None:
     repo.mkdir()
     run_id = _seed_run(db_path, repo)
 
-    resolved = _sync(resolve_open_run(db_path, repo, run_id))
+    resolved = run_sync(resolve_open_run(db_path, repo, run_id))
 
     assert resolved == (run_id, str(repo), "dev", f"harness/{run_id}")
 
@@ -88,7 +79,7 @@ def test_resolves_open_run_by_worktree_path_when_no_run_id(tmp_path: Path) -> No
     repo.mkdir()
     run_id = _seed_run(db_path, repo)
 
-    resolved = _sync(resolve_open_run(db_path, repo, None))
+    resolved = run_sync(resolve_open_run(db_path, repo, None))
 
     assert resolved == (run_id, str(repo), "dev", f"harness/{run_id}")
 
@@ -100,8 +91,8 @@ def test_closed_run_is_not_resolved(tmp_path: Path) -> None:
     run_id = _seed_run(db_path, repo, status="closed")
 
     # Neither dispatch path may return a non-open run: the gate trusts this filter.
-    assert _sync(resolve_open_run(db_path, repo, run_id)) is None
-    assert _sync(resolve_open_run(db_path, repo, None)) is None
+    assert run_sync(resolve_open_run(db_path, repo, run_id)) is None
+    assert run_sync(resolve_open_run(db_path, repo, None)) is None
 
 
 def test_no_matching_run_returns_none(tmp_path: Path) -> None:
@@ -110,10 +101,10 @@ def test_no_matching_run_returns_none(tmp_path: Path) -> None:
     repo.mkdir()
     _seed_run(db_path, repo)
 
-    assert _sync(resolve_open_run(db_path, repo, "01JOTHERRUNIDXXXXXXXXXXX99")) is None
+    assert run_sync(resolve_open_run(db_path, repo, "01JOTHERRUNIDXXXXXXXXXXX99")) is None
     other_repo = tmp_path / "elsewhere"
     other_repo.mkdir()
-    assert _sync(resolve_open_run(db_path, other_repo, None)) is None
+    assert run_sync(resolve_open_run(db_path, other_repo, None)) is None
 
 
 def test_missing_ledger_raises_ledger_not_found(tmp_path: Path) -> None:
@@ -124,7 +115,7 @@ def test_missing_ledger_raises_ledger_not_found(tmp_path: Path) -> None:
     repo.mkdir()
 
     with pytest.raises(LedgerNotFoundError) as exc:
-        _sync(resolve_open_run(db_path, repo, None))
+        run_sync(resolve_open_run(db_path, repo, None))
 
     assert exc.value.reason == "no_ledger"
     assert exc.value.code == 2
@@ -140,6 +131,6 @@ def test_missing_ledger_creates_no_files(tmp_path: Path) -> None:
     repo.mkdir()
 
     with pytest.raises(LedgerNotFoundError):
-        _sync(resolve_open_run(db_path, repo, None))
+        run_sync(resolve_open_run(db_path, repo, None))
 
     assert not (tmp_path / ".harness").exists()

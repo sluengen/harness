@@ -13,7 +13,6 @@ exactly like ``test_cli_review.py``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -31,6 +30,7 @@ from harness.loop_budget import (
     WALL_CLOCK_BUDGET_REASON,
 )
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -66,14 +66,6 @@ def repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 _RUN_ID = "01JRUNBREAKERXXXXXXXXXXXX01"
@@ -124,7 +116,7 @@ def _seed_run(
                 )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     # #212: review requires a recorded design attempt. These tests are about the
     # spend breakers, which refuse *before* that check — seeding it keeps the
     # non-tripping cases reaching the engine as they always did.
@@ -172,7 +164,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +188,7 @@ def test_sixth_cycle_refuses_without_running_the_engine(repo: Path, db_path: Pat
     events = _review_events(db_path)
     assert len([e for e in events if "verdict" in e]) == 5, events
     assert events[-1]["reason"] == REVIEW_CYCLE_CEILING_REASON
-    assert _sync(review_mod._count_review_events(db_path, _RUN_ID)) == 5
+    assert run_sync(review_mod._count_review_events(db_path, _RUN_ID)) == 5
 
 
 def test_breaker_trip_leaves_ticket_state_untouched(repo: Path, db_path: Path) -> None:

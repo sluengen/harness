@@ -27,7 +27,6 @@ patches the Linear client and ``test_cli_review.py`` injects the runner.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -43,6 +42,7 @@ from harness.events.emitter import EventEmitter
 from harness.events.payloads import CLOSE_OUTCOME_OK, CLOSE_OUTCOME_PATH
 from harness.linear import LinearConfigError
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -100,14 +100,6 @@ def db_path(repo: Path) -> Path:
 
 def _head_sha(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 RUN_ID = "01JRUNCLOSEXXXXXXXXXXXXX01"
@@ -180,7 +172,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return run_id
 
 
@@ -224,7 +216,7 @@ def _emit_review(
             },
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 async def _fetch_run_status(db_path: Path, run_id: str) -> str | None:
@@ -237,7 +229,7 @@ async def _fetch_run_status(db_path: Path, run_id: str) -> str | None:
 
 
 def fetch_run_status(db_path: Path, run_id: str) -> str | None:
-    return _sync(_fetch_run_status(db_path, run_id))
+    return run_sync(_fetch_run_status(db_path, run_id))
 
 
 async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
@@ -253,7 +245,7 @@ async def _fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...
 
 
 def fetch_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
-    return _sync(_fetch_close_events(db_path, run_id))
+    return run_sync(_fetch_close_events(db_path, run_id))
 
 
 async def _fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...]]:
@@ -277,7 +269,7 @@ def fetch_landed_close_events(db_path: Path, run_id: str) -> list[tuple[Any, ...
     discriminate on ``outcome``, so the question moved to ``outcome='ok'`` — the
     ``COALESCE`` keeping a pre-#263 row reading as the landed close it was.
     """
-    return _sync(_fetch_landed_close_events(db_path, run_id))
+    return run_sync(_fetch_landed_close_events(db_path, run_id))
 
 
 async def _fetch_run_completion(
@@ -296,7 +288,7 @@ async def _fetch_run_completion(
 
 def fetch_run_completion(db_path: Path, run_id: str) -> tuple[str | None, int | None]:
     """Return the run row's ``(completed_at, duration_ms)`` — #261's stamps."""
-    return _sync(_fetch_run_completion(db_path, run_id))
+    return run_sync(_fetch_run_completion(db_path, run_id))
 
 
 async def _fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
@@ -313,7 +305,7 @@ async def _fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None
 
 
 def fetch_close_event_timestamp(db_path: Path, run_id: str) -> str | None:
-    return _sync(_fetch_close_event_timestamp(db_path, run_id))
+    return run_sync(_fetch_close_event_timestamp(db_path, run_id))
 
 
 def _install_close_event_failure_trigger(db_path: Path) -> None:
@@ -335,7 +327,7 @@ def _install_close_event_failure_trigger(db_path: Path) -> None:
             )
             await conn.commit()
 
-    _sync(_install())
+    run_sync(_install())
 
 
 def _make_linear_stub(raise_on_transition: Exception | None = None) -> MagicMock:
@@ -604,7 +596,7 @@ def test_pass_with_green_gate_evidence_closes(repo: Path, db_path: Path) -> None
 
 
 def test_ac4_no_open_run(repo: Path, db_path: Path) -> None:
-    _sync(store.init_db(db_path))  # empty DB, no runs
+    run_sync(store.init_db(db_path))  # empty DB, no runs
     stub = _make_linear_stub()
 
     result, merge = _invoke(repo, db_path, "01JNONEXISTENTRUNIDXXXXXX0", stub)
@@ -997,7 +989,7 @@ def _seed_run_with_worktree(db_path: Path, repo: Path) -> tuple[str, Path, str]:
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return WT_RUN_ID, path, branch
 
 

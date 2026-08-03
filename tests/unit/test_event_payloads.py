@@ -20,9 +20,7 @@ tests pin the two guarantees the ticket's acceptance criteria state:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -53,15 +51,7 @@ from harness.events.payloads import (
     _field_path,
 )
 from harness.state import store
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
+from tests._asyncutil import run_sync
 
 # ---------------------------------------------------------------------------
 # The models reproduce the exact payloads the verbs emit today.
@@ -505,7 +495,7 @@ def _seed_run(db_path: Path, run_id: str) -> None:
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _emit_review_via_model(
@@ -528,7 +518,7 @@ def _emit_review_via_model(
             run_id=run_id, event_type="review", data=data
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
@@ -537,7 +527,7 @@ def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "pass")
 
-    assert _sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
+    assert run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
 
 
 def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
@@ -546,7 +536,7 @@ def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "fail")
 
-    result = _sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
+    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
     assert result is not None and result[0] == "no_passing_review"
 
 
@@ -556,7 +546,7 @@ def test_close_gate_stale_when_sha_moved(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "oldsha", "pass")
 
-    result = _sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
+    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
     assert result is not None and result[0] == "stale_review"
 
 

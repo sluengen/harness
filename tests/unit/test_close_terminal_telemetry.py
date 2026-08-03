@@ -45,7 +45,6 @@ are faked, and the ledger is seeded directly.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -69,6 +68,7 @@ from harness.events.payloads import (
     CLOSE_UNEXPECTED_REASON,
 )
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -112,14 +112,6 @@ def repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _head_sha(repo: Path) -> str:
@@ -174,7 +166,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return run_id
 
 
@@ -206,7 +198,7 @@ def _emit_review(
             },
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 async def _fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, Any]]:
@@ -222,7 +214,7 @@ async def _fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, An
 
 
 def fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, Any]]:
-    return _sync(_fetch_close_payloads(db_path, run_id))
+    return run_sync(_fetch_close_payloads(db_path, run_id))
 
 
 def _make_tracker_stub(raise_on_transition: Exception | None = None) -> MagicMock:
@@ -397,7 +389,7 @@ def test_ac2_no_run_refusal_writes_no_event(repo: Path, db_path: Path) -> None:
     deliberate rather than becoming accidental, and so a later reader does not
     "fix" it. It is the one hole in the denominator: the measured rate is per
     *resolved-run* close attempt."""
-    _sync(store.init_db(db_path))
+    run_sync(store.init_db(db_path))
 
     result, merge, _stub = _invoke(repo, db_path, RUN_ID)
 
@@ -407,7 +399,7 @@ def test_ac2_no_run_refusal_writes_no_event(repo: Path, db_path: Path) -> None:
     assert set(payload) == {"error", "reason"}, "refusal JSON unchanged"
     merge.assert_not_called()
 
-    assert _sync(_count_all_close_events(db_path)) == 0
+    assert run_sync(_count_all_close_events(db_path)) == 0
 
 
 async def _count_all_close_events(db_path: Path) -> int:
@@ -508,7 +500,7 @@ def test_ac3_post_merge_failure_is_not_counted_as_a_blocked_close(
             rows = await cur.fetchall()
         return [row[0] for row in rows]
 
-    assert _sync(_refused_run_ids()) == [blocked]
+    assert run_sync(_refused_run_ids()) == [blocked]
 
 
 def test_outcome_for_exit_code_maps_the_verbs_documented_codes() -> None:
@@ -622,7 +614,7 @@ def test_ac5_stale_review_rate_is_one_sql_query(repo: Path, db_path: Path) -> No
             row = await cur.fetchone()
         return int(row[0]), int(row[1] or 0)
 
-    assert _sync(_rate()) == (3, 2)
+    assert run_sync(_rate()) == (3, 2)
 
 
 def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
@@ -645,7 +637,7 @@ def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
             },
         )
 
-    _sync(_seed_legacy())
+    run_sync(_seed_legacy())
 
     async def _count_ok() -> int:
         async with (
@@ -659,7 +651,7 @@ def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
             row = await cur.fetchone()
         return int(row[0])
 
-    assert _sync(_count_ok()) == 1
+    assert run_sync(_count_ok()) == 1
 
 
 # ---------------------------------------------------------------------------

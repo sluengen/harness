@@ -24,7 +24,6 @@ Contract under test:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -38,6 +37,7 @@ from harness._time import iso_z
 from harness.cli import app
 from harness.cli import checkpoint as checkpoint_mod
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -98,14 +98,6 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_open_run(
     db_path: Path,
     repo: Path,
@@ -132,7 +124,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return run_id
 
 
@@ -147,7 +139,7 @@ def _checkpoint_events(db_path: Path, run_id: str) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_select())
+    return run_sync(_select())
 
 
 def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
@@ -169,7 +161,7 @@ def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
             rows = await cur.fetchall()
         return [None if r[0] is None else int(r[0]) for r in rows]
 
-    return _sync(_select())
+    return run_sync(_select())
 
 
 def _pin_clock(monkeypatch: pytest.MonkeyPatch, elapsed_ms: int) -> None:
@@ -391,7 +383,7 @@ def test_checkpoint_lease_refuses_when_origin_has_unseen_commit(
 
 def test_checkpoint_no_open_run_refused(repo: Path, db_path: Path) -> None:
     """No open run for the worktree → exit 2 (mirrors review/close)."""
-    _sync(store.init_db(db_path))  # empty ledger
+    run_sync(store.init_db(db_path))  # empty ledger
     result = cli_runner.invoke(
         app, ["checkpoint", "--repo", str(repo), "--db", str(db_path)]
     )
@@ -442,7 +434,7 @@ def test_checkpoint_does_not_emit_a_review_or_close_event(
             )
             return {r[0] for r in await cur.fetchall()}
 
-    assert _sync(_types()) == {"checkpoint"}
+    assert run_sync(_types()) == {"checkpoint"}
 
 
 # ===========================================================================
