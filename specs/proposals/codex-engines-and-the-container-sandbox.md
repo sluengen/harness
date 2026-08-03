@@ -80,13 +80,13 @@ A sixth question is adjacent and worth settling in the same pass, because it dis
 
 Each is shippable alone. 1 and 2 stand without any engine work; 3–7 depend on 1.
 
-1. **Targeted seccomp profile** — vendor `docker/seccomp-codex.json` (Docker's default + `pivot_root` + unconditional `unshare`/`clone`), wrapper passes `--security-opt`, no capability added. The acceptance criterion is behavioural: bwrap starts in-container, and a control syscall the profile does not grant stays blocked. Asserting the flag is present would prove nothing.
-2. **Amend ADR 0002** — record the measurement, correct the cost claim, and point at ADR 0013 for the decision the corrected premise produced.
-3. **`doctor` reports the in-container Codex verdict from a probe, not a constant** — `harness/cli/doctor.py:259` currently encodes ADR 0002's conclusion in its remediation text, so it will keep reporting the engine unusable after it becomes usable.
-4. **`/harness run --codex`** — the flag, its passthrough to both engine verbs as `--engine codex`, and a guard that the routine command can carry it. `review` needs no verb change; keep `is_sandbox_blocked_defer` armed, since it is the right response if the profile ever regresses.
-5. **`design` engine union** — `Engine` type, `--engine` flag, Codex command builder, per-engine channel expectation. The ledger needs no schema change: the design event already carries generic `engine` and `model` fields (`harness/events/payloads.py:440`).
-6. **Amend ADR 0007** — "Claude only" becomes engine-selectable; restate what "Opus unconditionally" means when the engine is not Claude, and state the design stage's behaviour when a Codex design fails with no fallback engine.
-7. **Measure whether diversity bought anything** — a ledger query comparing verdict distribution and issue categories by engine. Without it, "cross-model review" stays an assumption; ADR 0005 and `specs/proposals/per-engine-timeout-ceiling.md` both set the precedent that these claims get measured before they are believed.
+1. [#314] **Targeted seccomp profile** — vendor `docker/seccomp-codex.json` (Docker's default + `pivot_root` + unconditional `unshare`/`clone`), wrapper passes `--security-opt`, no capability added. The acceptance criterion is behavioural: bwrap starts in-container, and a control syscall the profile does not grant stays blocked. Asserting the flag is present would prove nothing.
+2. [#315] **Amend ADR 0002** — record the measurement, correct the cost claim, and point at ADR 0013 for the decision the corrected premise produced.
+3. [#316] **`doctor` reports the in-container Codex verdict from a probe, not a constant** — `harness/cli/doctor.py:259` currently encodes ADR 0002's conclusion in its remediation text, so it will keep reporting the engine unusable after it becomes usable.
+4. [#317] **`/harness run --codex`** — the flag, its passthrough to both engine verbs as `--engine codex`, and a guard that the routine command can carry it. `review` needs no verb change; keep `is_sandbox_blocked_defer` armed, since it is the right response if the profile ever regresses.
+5. [#318] **`design` engine union** — `Engine` type, `--engine` flag, Codex command builder, per-engine channel expectation. The ledger needs no schema change: the design event already carries generic `engine` and `model` fields (`harness/events/payloads.py:440`).
+6. [#319] **Amend ADR 0007** — "Claude only" becomes engine-selectable; restate what "Opus unconditionally" means when the engine is not Claude, and state the design stage's behaviour when a Codex design fails with no fallback engine.
+7. [#320] **Measure whether diversity bought anything** — a ledger query comparing verdict distribution and issue categories by engine. Without it, "cross-model review" stays an assumption; ADR 0005 and `specs/proposals/per-engine-timeout-ceiling.md` both set the precedent that these claims get measured before they are believed.
 
 ## Risks / unknowns
 
