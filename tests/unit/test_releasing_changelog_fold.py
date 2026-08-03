@@ -180,6 +180,32 @@ def test_section_documents_the_exemption_form() -> None:
     )
 
 
+def test_section_documents_the_no_ticket_exemption_form() -> None:
+    """#287 — the ticket-less class needs a documented filename, not a workaround.
+
+    The prefix is read from the module rather than typed here, so renaming it
+    fails this test instead of leaving the runbook quietly describing a form
+    the guard no longer accepts.
+    """
+    import sys
+
+    sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+    import changelog_fragments as cf
+
+    section = _fold_section()
+    assert f"{cf.NO_TICKET_PREFIX}<slug>" in section, (
+        f"RELEASING.md '{_SECTION}' must give the ticket-less form verbatim "
+        f"('{cf.NO_TICKET_PREFIX}<slug>.md'). It is the only honest way past the "
+        "gate for an /assess report or a /propose output, and an author who "
+        "cannot find it will borrow someone else's ticket number instead."
+    )
+    assert "may carry **only**" in section and f"### {cf.NONE_CATEGORY}" in section, (
+        f"RELEASING.md '{_SECTION}' must state the None-only rule — it is what "
+        "keeps the class out of released history, so an author who writes a "
+        "releasable entry on a no-ticket stem learns why it is refused."
+    )
+
+
 # ---------------------------------------------------------------------------
 # The section documents the fold, and the release step owns the re-baseline.
 # ---------------------------------------------------------------------------
