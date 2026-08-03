@@ -73,6 +73,26 @@ NONE_CATEGORY = "None"
 #: A GitHub issue number (``270``) or a legacy Linear key (``CAL-1204``).
 _TICKET = re.compile(r"^(?:\d+|[A-Z]{2,5}-\d+)$")
 
+#: The reserved stem prefix for a change that has **no ticket by design** (#287).
+#: Two such classes are known — an ``/assess`` report, whose no-merge-gate rule
+#: ``commands/assess.md`` step 3 already states, and a ``/propose`` output. Both
+#: previously reached exit 0 only via the empty-diff abstention, i.e. by being
+#: gated at a moment the guard could see nothing; that is an accident, not a path.
+NO_TICKET_PREFIX = "no-ticket-"
+
+#: ``no-ticket-<slug>``: a lowercase slug, so the class is **disjoint** from
+#: :data:`_TICKET` by construction — that admits only digits or an uppercase
+#: Linear key. A malformed ticket stem (``27O.md``, ``cal-1204.md``) therefore
+#: still matches neither and is still rejected. The charset admits no ``/``,
+#: ``.`` or ``..``, so widening the stem class cannot smuggle a path into the
+#: set :func:`fold` deletes.
+_NO_TICKET_STEM = re.compile(rf"^{NO_TICKET_PREFIX}[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def is_no_ticket_stem(stem: str) -> bool:
+    """Is ``stem`` the reserved no-ticket exemption form (#287)?"""
+    return _NO_TICKET_STEM.match(stem) is not None
+
 #: ``### <Category> — <summary> (<#270|CAL-1204>)``. The em dash is the
 #: separator the existing entries already use.
 _HEADING = re.compile(r"^### (?P<category>\w+) — (?P<summary>.*?)\s*\((?P<id>#?[\w-]+)\)\s*$")
@@ -136,10 +156,13 @@ def _parse(path: Path) -> tuple[Fragment | None, list[str]]:
     """Parse one fragment, or explain every way it is malformed."""
     problems: list[str] = []
     stem = path.stem
-    if not _TICKET.match(stem):
+    no_ticket = is_no_ticket_stem(stem)
+    if not _TICKET.match(stem) and not no_ticket:
         problems.append(
             f"{path.name}: filename must be <ticket>.md — a GitHub issue number "
-            "(270.md) or a legacy Linear key (CAL-1204.md)."
+            "(270.md) or a legacy Linear key (CAL-1204.md) — or, for a change "
+            f"with no ticket by design, {NO_TICKET_PREFIX}<slug>.md carrying "
+            "only '### None'."
         )
 
     text = path.read_text(encoding="utf-8")
@@ -165,8 +188,28 @@ def _parse(path: Path) -> tuple[Fragment | None, list[str]]:
             f"{path.name}: category {category!r} is not one of "
             f"{', '.join((*CATEGORIES, NONE_CATEGORY))}."
         )
+    elif no_ticket and category != NONE_CATEGORY:
+        # The invariant that keeps this class out of released history, and the
+        # reason `fold` needs no change: a no-ticket fragment is never
+        # `releasable`, so `_sort_key`'s `int(...)` never sees a non-numeric
+        # stem and no entry is ever emitted naming an id that is not an issue.
+        problems.append(
+            f"{path.name}: {NO_TICKET_PREFIX}*.md may carry only "
+            f"'### {NONE_CATEGORY} — <why>'; a releasable entry needs a "
+            "ticket-named fragment."
+        )
 
-    heading_id = match.group("id").lstrip("#")
+    raw_id = match.group("id")
+    if no_ticket and raw_id.startswith("#"):
+        # `#` means "GitHub issue". A no-ticket fragment names none, so writing
+        # `(#no-ticket-…)` would invent an issue reference; the id goes bare,
+        # exactly as a legacy `(CAL-1204)` does.
+        problems.append(
+            f"{path.name}: heading id {raw_id!r} — a {NO_TICKET_PREFIX}fragment "
+            "names no issue; write the id without '#'."
+        )
+
+    heading_id = raw_id.lstrip("#")
     if heading_id != stem:
         problems.append(
             f"{path.name}: heading names ticket {heading_id!r} but the filename "
@@ -351,8 +394,26 @@ def require(repo_root: Path, *, base: str | None = None) -> RequireResult:
             abstained=True,
         )
 
-    if any(p.startswith(f"{FRAGMENT_DIRNAME}/") and p.endswith(".md") and
-           not p.endswith(f"/{README_NAME}") for p in changed):
+    carried = [
+        p
+        for p in changed
+        if p.startswith(f"{FRAGMENT_DIRNAME}/")
+        and p.endswith(".md")
+        and not p.endswith(f"/{README_NAME}")
+    ]
+    if carried:
+        # Presence detection is unchanged — only the stated *reason* is new
+        # (#287). A ticket-shaped stem is the stronger claim, so a diff carrying
+        # both says the plain thing; the ticket-less wording is reserved for the
+        # case that previously had no honest way past this guard at all.
+        no_ticket = [p for p in carried if is_no_ticket_stem(Path(p).stem)]
+        if no_ticket and len(no_ticket) == len(carried):
+            names = ", ".join(sorted(Path(p).name for p in no_ticket))
+            return RequireResult(
+                0,
+                f"changelog fragment present: {names} — a ticket-less change, "
+                "exempt by the no-ticket fragment it carries.",
+            )
         return RequireResult(0, "changelog fragment present.")
     if "CHANGELOG.md" in changed:
         # The release fold is itself the record.
@@ -364,8 +425,11 @@ def require(repo_root: Path, *, base: str | None = None) -> RequireResult:
         f"fragment. Add {FRAGMENT_DIRNAME}/<ticket>.md carrying "
         "'### <Category> — <summary> (#<ticket>)' and a body. If the change "
         f"genuinely warrants no entry, record that as "
-        f"'### None — <why> (#<ticket>)' in the same place — the exemption is a "
-        "file in the diff so a reviewer sees the claim.",
+        f"'### {NONE_CATEGORY} — <why> (#<ticket>)' in the same place — the "
+        "exemption is a file in the diff so a reviewer sees the claim. If it "
+        "has no ticket at all — an /assess report, a /propose output — name the "
+        f"file {FRAGMENT_DIRNAME}/{NO_TICKET_PREFIX}<slug>.md and give it the "
+        f"same '### {NONE_CATEGORY} — <why> ({NO_TICKET_PREFIX}<slug>)' heading.",
     )
 
 
