@@ -32,7 +32,6 @@ wrongly inheriting opens the close gate on a tree nothing verified.
 from __future__ import annotations
 
 import ast
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -48,6 +47,7 @@ from harness.cli import review as review_mod
 from harness.cli import review_inherit as review_inherit_mod
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -113,14 +113,6 @@ def _head_sha(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 async def _insert_run(
     db_path: Path,
     run_id: str,
@@ -167,7 +159,7 @@ def _seed_resumed_run(
     which the same check gates. ``design=False`` drops it, for the test that
     asserts the ``no_design`` refusal still fires.
     """
-    _sync(
+    run_sync(
         _insert_run(
             db_path,
             _RUN_ID,
@@ -211,8 +203,8 @@ def _seed_source_review(
     ``model``, absent on any row written before that field existed).
     """
     if seed_run_row:
-        _sync(_insert_run(db_path, run_id, "/gone", status="closed", resumed_from=None))
-    _sync(
+        run_sync(_insert_run(db_path, run_id, "/gone", status="closed", resumed_from=None))
+    run_sync(
         _insert_review_event(
             db_path,
             run_id,
@@ -245,7 +237,7 @@ async def _fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def review_events(db_path: Path, run_id: str | None = None) -> list[dict[str, Any]]:
-    events = _sync(_fetch_review_events(db_path))
+    events = run_sync(_fetch_review_events(db_path))
     return [e for e in events if run_id is None or e["run_id"] == run_id]
 
 
@@ -500,7 +492,7 @@ def test_inherit_evaluates_no_breaker_at_the_cycle_ceiling(repo: Path, db_path: 
     _seed_resumed_run(db_path, repo)
     _seed_source_review(db_path, head)
     for _ in range(6):
-        _sync(
+        run_sync(
             _insert_review_event(
                 db_path,
                 _RUN_ID,
@@ -525,19 +517,19 @@ def test_inherit_consumes_no_review_cycle(repo: Path, db_path: Path) -> None:
     head = _head_sha(repo)
     _seed_resumed_run(db_path, repo)
     _seed_source_review(db_path, head)
-    _sync(
+    run_sync(
         _insert_review_event(
             db_path,
             _RUN_ID,
             {"verdict": "fail", "reviewed_sha": "deadbeef", "run_id": _RUN_ID},
         )
     )
-    before = _sync(review_mod._count_review_events(db_path, _RUN_ID))
+    before = run_sync(review_mod._count_review_events(db_path, _RUN_ID))
 
     result = _invoke(repo, db_path, _EngineSpy())
 
     assert result.exit_code == 0, result.output
-    after = _sync(review_mod._count_review_events(db_path, _RUN_ID))
+    after = run_sync(review_mod._count_review_events(db_path, _RUN_ID))
     assert after == before == 1
     # The event itself *was* appended — it is the certification close reads.
     assert len(review_events(db_path, _RUN_ID)) == 2
@@ -711,8 +703,8 @@ def test_declines_when_the_source_payload_will_not_parse(repo: Path, db_path: Pa
     _seed_resumed_run(db_path, repo)
     # Selected by the SQL (verdict + SHA match) but not constructible: no
     # ``gate_ran``, no ``engine``, no ``created_at``.
-    _sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
-    _sync(
+    run_sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
+    run_sync(
         _insert_review_event(
             db_path,
             _SOURCE_RUN_ID,
@@ -739,8 +731,8 @@ def test_declines_when_the_source_engine_is_outside_the_printed_literal(
     """
     head = _head_sha(repo)
     _seed_resumed_run(db_path, repo)
-    _sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
-    _sync(
+    run_sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
+    run_sync(
         _insert_review_event(
             db_path,
             _SOURCE_RUN_ID,
@@ -900,7 +892,7 @@ def test_declines_when_the_pass_belongs_to_another_ticket(repo: Path, db_path: P
     """
     head = _head_sha(repo)
     _seed_resumed_run(db_path, repo)
-    _sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
+    run_sync(_insert_run(db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None))
     _retarget_run_ticket(db_path, _SOURCE_RUN_ID, "999")
     _seed_source_review(db_path, head, seed_run_row=False)
     engine = _EngineSpy()
@@ -917,7 +909,7 @@ def _retarget_run_ticket(db_path: Path, run_id: str, ticket: str) -> None:
             await conn.execute("UPDATE runs SET ticket = ? WHERE run_id = ?", (ticket, run_id))
             await conn.commit()
 
-    _sync(_update())
+    run_sync(_update())
 
 
 # ---------------------------------------------------------------------------
@@ -1063,7 +1055,7 @@ def test_cycle_count_excludes_inherited_events_only(repo: Path, db_path: Path) -
     """
     _seed_resumed_run(db_path, repo)
     for verdict in ("fail", "fail", "pass"):
-        _sync(
+        run_sync(
             _insert_review_event(
                 db_path,
                 _RUN_ID,
@@ -1071,7 +1063,7 @@ def test_cycle_count_excludes_inherited_events_only(repo: Path, db_path: Path) -
             )
         )
     for source in ("01JA", "01JB"):
-        _sync(
+        run_sync(
             _insert_review_event(
                 db_path,
                 _RUN_ID,
@@ -1084,7 +1076,7 @@ def test_cycle_count_excludes_inherited_events_only(repo: Path, db_path: Path) -
             )
         )
 
-    assert _sync(review_mod._count_review_events(db_path, _RUN_ID)) == 3
+    assert run_sync(review_mod._count_review_events(db_path, _RUN_ID)) == 3
 
 
 def test_second_review_at_the_same_head_inherits_again(repo: Path, db_path: Path) -> None:
@@ -1106,7 +1098,7 @@ def test_second_review_at_the_same_head_inherits_again(repo: Path, db_path: Path
     events = review_events(db_path, _RUN_ID)
     assert len(events) == 2
     assert {e["data"]["inherited_from"] for e in events} == {_SOURCE_RUN_ID}
-    assert _sync(review_mod._count_review_events(db_path, _RUN_ID)) == 0
+    assert run_sync(review_mod._count_review_events(db_path, _RUN_ID)) == 0
 
 
 def test_a_non_inheriting_run_keeps_todays_refusal_order(repo: Path, db_path: Path) -> None:
@@ -1137,7 +1129,7 @@ def test_a_non_inheriting_run_keeps_todays_refusal_order(repo: Path, db_path: Pa
 
     # And the breaker outranks both.
     for _ in range(6):
-        _sync(
+        run_sync(
             _insert_review_event(
                 db_path,
                 _RUN_ID,

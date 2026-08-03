@@ -30,7 +30,6 @@ undo arm's own wrapper) for that reason.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import subprocess
@@ -44,6 +43,7 @@ from typer.testing import CliRunner
 from harness._time import iso_z
 from harness.cli import app
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
@@ -58,14 +58,6 @@ def iso_minutes_ago(minutes: int) -> str:
 # ---------------------------------------------------------------------------
 # DB seeding / inspection helpers
 # ---------------------------------------------------------------------------
-
-
-def run_sync(coro: object) -> object:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
 
 
 def seed_run(
@@ -178,7 +170,7 @@ def fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
             return None
         return {"status": row[0], "completed_at": row[1]}
 
-    return run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str, Any]]:
@@ -191,7 +183,7 @@ def fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str, 
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def count_open_for_ticket(db_path: Path, ticket: str) -> int:
@@ -204,7 +196,7 @@ def count_open_for_ticket(db_path: Path, ticket: str) -> int:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    return run_sync(_count())  # type: ignore[return-value]
+    return run_sync(_count())
 
 
 def insert_fresh_open(db_path: Path, *, run_id: str, ticket: str) -> bool:
@@ -229,7 +221,7 @@ def insert_fresh_open(db_path: Path, *, run_id: str, ticket: str) -> bool:
         except Exception:
             return False
 
-    return run_sync(_insert())  # type: ignore[return-value]
+    return run_sync(_insert())
 
 
 def make_sweep_stub(active: list[dict[str, str]]) -> MagicMock:

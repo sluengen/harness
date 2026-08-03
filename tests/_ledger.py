@@ -18,22 +18,13 @@ explicitly (``status="failed"``, or no call at all for the refusal itself), in
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 from harness.events.payloads import DesignEventData
 from harness.state import store
+from tests._asyncutil import run_sync
 
 DEFAULT_DESIGNED_AT = "2026-07-26T00:00:00Z"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def seed_design_event(
@@ -89,4 +80,4 @@ def seed_design_event(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())

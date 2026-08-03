@@ -24,7 +24,6 @@ Contract under test:
 
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -38,6 +37,7 @@ from harness.cli import app
 from harness.cli import defer as defer_mod
 from harness.state import store
 from harness.tracker_queue import QueueMembership
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -47,14 +47,6 @@ _BUILD_PROJECT = "Harness v3"
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
-
-
-def _run_sync(coro: object) -> object:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
 
 
 def _write_context(
@@ -249,7 +241,7 @@ def _fetch_defer_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 # ===========================================================================
@@ -671,7 +663,7 @@ def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
             rows = await cur.fetchall()
         return [None if r[0] is None else int(r[0]) for r in rows]
 
-    return _run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def _pin_clock(monkeypatch: Any, elapsed_ms: int) -> None:

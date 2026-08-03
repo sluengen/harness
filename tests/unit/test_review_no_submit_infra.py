@@ -38,7 +38,6 @@ They inject a fake engine runner and seed the ledger directly, exactly like
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -65,6 +64,7 @@ from harness.events.payloads import (
     REVIEW_OUTCOME_PATH,
 )
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -114,14 +114,6 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _write_context(repo: Path) -> None:
     (repo / "CONTEXT.md").write_text(
         '```yaml\nrepo:\n  name: t\nverify: "bash scripts/verify.sh"\n```\n'
@@ -155,7 +147,7 @@ def _seed_run(db_path: Path, repo: Path) -> str:
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     seed_design_event(db_path, _RUN_ID)
     return _RUN_ID
 
@@ -207,11 +199,11 @@ def _events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _cycles(db_path: Path) -> int:
-    return int(_sync(review_mod._count_review_events(db_path, _RUN_ID)))
+    return int(run_sync(review_mod._count_review_events(db_path, _RUN_ID)))
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +300,7 @@ def test_no_submit_refusal_cannot_open_the_close_gate(repo: Path, db_path: Path)
     _invoke(repo, db_path, "no submit line here\n")
 
     head = _git(repo, "rev-parse", "HEAD").stdout.strip()
-    certification = _sync(certify_head(db_path, _RUN_ID, head))
+    certification = run_sync(certify_head(db_path, _RUN_ID, head))
     assert certification.verdict != "certified"
 
 
@@ -384,7 +376,7 @@ def test_a_pass_is_untouched(repo: Path, db_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     head = _git(repo, "rev-parse", "HEAD").stdout.strip()
-    assert _sync(certify_head(db_path, _RUN_ID, head)).verdict == "certified"
+    assert run_sync(certify_head(db_path, _RUN_ID, head)).verdict == "certified"
 
 
 # ---------------------------------------------------------------------------

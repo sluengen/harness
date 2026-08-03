@@ -34,6 +34,7 @@ from harness.cli import app, reclaim_undo
 from harness.reclaim_marker import UNRECLAIM_MARKER
 from harness.state import store
 from harness.tracker_errors import TrackerRequestError
+from tests._asyncutil import run_sync
 from tests._reclaim import (
     cli_runner,
     count_open_for_ticket,
@@ -43,7 +44,6 @@ from tests._reclaim import (
     invoke,
     iso_minutes_ago,
     make_sweep_stub,
-    run_sync,
     seed_run,
 )
 

@@ -36,7 +36,6 @@ They inject a fake engine runner and seed the ledger directly, exactly like
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -63,6 +62,7 @@ from harness.events.payloads import (
 )
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -99,14 +99,6 @@ def repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _write_context(repo: Path, verify: str | None = "bash scripts/verify.sh") -> None:
@@ -162,7 +154,7 @@ def _seed_run(
                 )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     if design:
         seed_design_event(db_path, _RUN_ID)
     return _RUN_ID
@@ -209,7 +201,7 @@ def _events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _green(repo: Path) -> tuple[str, ...]:
@@ -415,7 +407,7 @@ def test_refusal_events_do_not_open_the_close_gate(repo: Path, db_path: Path) ->
     assert len(events) == 2, events
     assert all("verdict" not in e for e in events)
 
-    certification = _sync(certify_head(db_path, _RUN_ID, head))
+    certification = run_sync(certify_head(db_path, _RUN_ID, head))
     assert certification.verdict == "no_passing_review"
     assert not certification.certified
 
@@ -439,7 +431,7 @@ def test_refusal_events_do_not_consume_a_review_cycle(repo: Path, db_path: Path)
         assert _invoke(repo, db_path).exit_code == review_mod.EXIT_GATE_FAILED
     assert len(_events(db_path)) == 5
 
-    counted = _sync(review_mod._count_review_events(db_path, _RUN_ID))
+    counted = run_sync(review_mod._count_review_events(db_path, _RUN_ID))
     assert counted == 0
 
     # The next real review runs the engine rather than tripping the breaker.
@@ -540,7 +532,7 @@ def test_success_rate_is_one_query_over_the_outcome_field(repo: Path, db_path: P
             row = await cur.fetchone()
         return int(row[0]), int(row[1])
 
-    total, ok = _sync(_rate())
+    total, ok = run_sync(_rate())
     assert (total, ok) == (3, 1)
 
 

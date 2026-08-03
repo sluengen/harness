@@ -19,7 +19,6 @@ call, wrongly adopting hands the session a design for code that is not there.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -36,6 +35,7 @@ from harness.cli import design_tracker as design_tracker_mod
 from harness.cli.design_protocol import design_content_hash
 from harness.design_marker import format_design_comment
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -87,14 +87,6 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 async def _insert_run(
     db_path: Path,
     run_id: str,
@@ -126,7 +118,7 @@ async def _insert_run(
 
 def _seed_resumed_run(db_path: Path, repo: Path, *, resumed_from: str | None = _WIP_BRANCH) -> None:
     """The run under test: open, worktree == repo, resumed (or not) as given."""
-    _sync(_insert_run(db_path, _RUN_ID, str(repo), status="open", resumed_from=resumed_from))
+    run_sync(_insert_run(db_path, _RUN_ID, str(repo), status="open", resumed_from=resumed_from))
 
 
 async def _insert_design_event(db_path: Path, run_id: str, data: dict[str, Any]) -> None:
@@ -146,7 +138,7 @@ def _seed_source_design(
     design_hash: str | None = _PRIOR_HASH,
 ) -> None:
     """A closed predecessor run for the same ticket, carrying its design event."""
-    _sync(
+    run_sync(
         _insert_run(
             db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None
         )
@@ -168,7 +160,7 @@ def _seed_source_design(
     if status != "ok":
         data["reason"] = "engine_timeout"
         data["detail"] = "killed"
-    _sync(_insert_design_event(db_path, _SOURCE_RUN_ID, data))
+    run_sync(_insert_design_event(db_path, _SOURCE_RUN_ID, data))
 
 
 async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
@@ -193,7 +185,7 @@ async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def design_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_design_events(db_path))
+    return run_sync(_fetch_design_events(db_path))
 
 
 def _prior_comment(design: str = _PRIOR_DESIGN, *, design_hash: str = _PRIOR_HASH) -> str:
@@ -378,7 +370,7 @@ def test_adoption_records_only_a_design_event_leaving_the_budget_untouched(
     """
     _seed_resumed_run(db_path, repo)
     _seed_source_design(db_path)
-    _sync(
+    run_sync(
         _insert_review_event(db_path, _SOURCE_RUN_ID)
     )  # the predecessor had burnt a cycle
 
@@ -412,7 +404,7 @@ def _event_types(db_path: Path, run_id: str) -> list[str]:
         ):
             return [str(r[0]) for r in await cur.fetchall()]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _review_events(db_path: Path) -> list[dict[str, Any]]:
@@ -427,7 +419,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _invoke_review(repo: Path, db_path: Path, design_file: Path) -> Any:
@@ -582,7 +574,7 @@ def test_adoption_never_inherits_from_another_ticket(repo: Path, db_path: Path) 
     ticket is not an adoption source — inheritance follows the change spec."""
     _seed_resumed_run(db_path, repo)
     _seed_source_design(db_path)
-    _sync(_reassign_ticket(db_path, _SOURCE_RUN_ID, "999"))
+    run_sync(_reassign_ticket(db_path, _SOURCE_RUN_ID, "999"))
     engine = _EngineSpy()
 
     result = _invoke(repo, db_path, engine, _tracker_stub(_prior_comment()))

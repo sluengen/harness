@@ -31,7 +31,6 @@ the recorded ``channel`` exist for exactly that blind spot — see
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import subprocess
@@ -51,6 +50,7 @@ from harness.design_marker import DESIGN_MARKER
 from harness.loop_budget import DEFAULT_ENGINE_TIMEOUT_SECONDS
 from harness.state import store
 from harness.tracker_errors import TrackerNotFound, TrackerRequestError
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -99,14 +99,6 @@ def _head_sha(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_open_run(db_path: Path, repo: Path, *, ticket: str | None = "211") -> str:
     """Insert an ``open`` runs row whose worktree_path == repo; return run_id."""
 
@@ -136,7 +128,7 @@ def _seed_open_run(db_path: Path, repo: Path, *, ticket: str | None = "211") -> 
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return _RUN_ID
 
 
@@ -166,7 +158,7 @@ async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def design_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_design_events(db_path))
+    return run_sync(_fetch_design_events(db_path))
 
 
 def _design_path(cmd: list[str]) -> Path:
@@ -562,7 +554,7 @@ def test_a_concurrent_event_on_another_run_is_ignored(repo: Path, db_path: Path)
             )
             await conn.commit()
 
-    _sync(_seed_other_run())
+    run_sync(_seed_other_run())
 
     async def _runner(*, cmd: list[str], **_: Any) -> design_mod.RunResult:
         await _insert_other_run_event()
@@ -652,7 +644,7 @@ def test_microsecond_boundary_uses_parsed_not_string_comparison(
             )
             await conn.commit()
 
-    _sync(_seed_prior_event())
+    run_sync(_seed_prior_event())
 
     data = design_mod.DesignEventData(
         run_id=_RUN_ID,
@@ -665,7 +657,7 @@ def test_microsecond_boundary_uses_parsed_not_string_comparison(
         grounded_sha="def456",
     )
 
-    recorded = _sync(design_mod._record_design_event(db_path, data))
+    recorded = run_sync(design_mod._record_design_event(db_path, data))
 
     assert recorded.concurrent_prior_at is None, (
         "the prior event (00:00:00, no microseconds) is chronologically "
@@ -1112,7 +1104,7 @@ def test_a_closed_run_is_not_designable(repo: Path, db_path: Path) -> None:
             )
             await conn.commit()
 
-    _sync(_close_it())
+    run_sync(_close_it())
 
     result = _invoke(repo, db_path, _make_runner())
 
@@ -1414,4 +1406,4 @@ def test_design_latency_is_one_query_over_the_column(
             row = await cur.fetchone()
         return None if row is None or row[0] is None else int(row[0])
 
-    assert _sync(_worst()) == 1_500_000
+    assert run_sync(_worst()) == 1_500_000

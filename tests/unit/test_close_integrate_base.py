@@ -28,7 +28,6 @@ AC-1: a close leaves the main checkout byte-identical even when it is dirty —
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -41,6 +40,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.events.emitter import EventEmitter
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -166,14 +166,6 @@ RUN_ID = "01JRUNINTEGRATEBASE0000001"
 # ---------------------------------------------------------------------------
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_open_run(
     db_path: Path,
     worktree_path: Path,
@@ -197,7 +189,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _emit_pass(db_path: Path, run_id: str, reviewed_sha: str) -> None:
@@ -220,7 +212,7 @@ def _emit_pass(db_path: Path, run_id: str, reviewed_sha: str) -> None:
             },
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 def _run_status(db_path: Path, run_id: str) -> str | None:
@@ -232,7 +224,7 @@ def _run_status(db_path: Path, run_id: str) -> str | None:
             row = await cur.fetchone()
         return None if row is None else str(row[0])
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _make_linear_stub() -> MagicMock:

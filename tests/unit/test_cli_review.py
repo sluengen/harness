@@ -37,6 +37,7 @@ from harness.cli import app
 from harness.cli import review as review_mod
 from harness.events.payloads import MALFORMED_SUBMIT_REASON, NO_SUBMIT_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -129,17 +130,9 @@ def _seed_open_run(db_path: Path, repo: Path, run_id: str = "01JRUNREVIEWXXXXXXX
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     seed_design_event(db_path, run_id)
     return run_id
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 async def _fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
@@ -161,7 +154,7 @@ async def _fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def fetch_review_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_review_events(db_path))
+    return run_sync(_fetch_review_events(db_path))
 
 
 def assert_no_verdict_recorded(db_path: Path, reason: str) -> None:
@@ -479,7 +472,7 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
 
 def test_no_open_run_for_repo_is_invocation_error(repo: Path, db_path: Path) -> None:
     """No matching open run → exit 2, no review event written."""
-    _sync(store.init_db(db_path))  # empty DB, no runs
+    run_sync(store.init_db(db_path))  # empty DB, no runs
     runner = _make_runner('SUBMIT: {"verdict": "pass", "issues": []}\n')
 
     result = _invoke(repo, db_path, "01JNONEXISTENTRUNIDXXXXXX0", runner)

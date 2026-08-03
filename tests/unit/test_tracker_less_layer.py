@@ -37,7 +37,6 @@ nothing is stubbed into succeeding.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from datetime import UTC, datetime
@@ -54,6 +53,7 @@ from harness.cli import review as review_mod
 from harness.cli.review import _park_ticket
 from harness.events.emitter import EventEmitter
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -146,14 +146,6 @@ def _exploding_client() -> MagicMock:
     )
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _head_sha(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
@@ -171,7 +163,7 @@ def _fetch_runs(db_path: Path) -> list[dict[str, Any]]:
                 rows = await cur.fetchall()
         return [dict(zip(cols, row, strict=True)) for row in rows]
 
-    return _sync(_q())
+    return run_sync(_q())
 
 
 def _seed_open_run(
@@ -218,7 +210,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return RUN_ID
 
 
@@ -238,7 +230,7 @@ def _events_of_type(db_path: Path, event_type: str) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(row[0]) for row in rows]
 
-    return _sync(_q())
+    return run_sync(_q())
 
 
 def _emit_green_review(db_path: Path, run_id: str, sha: str) -> None:
@@ -260,7 +252,7 @@ def _emit_green_review(db_path: Path, run_id: str, sha: str) -> None:
             },
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +615,7 @@ def test_ac2_reclaim_preserves_the_branch_tracker_less(
             data={"run_id": run_id, "branch": f"harness/{RUN_ID}", "pushed": True},
         )
 
-    _sync(_emit_checkpoint())
+    run_sync(_emit_checkpoint())
 
     with patch("harness.tracker.LinearClient", _exploding_client()):
         result = cli_runner.invoke(
@@ -842,5 +834,5 @@ def test_review_transition_tolerates_github_tracker(repo_github: Path) -> None:
     be lost to a tracker problem), so ``_park_ticket`` is a silent no-op — it
     returns without raising and never constructs a client."""
     with patch("harness.tracker.LinearClient", _exploding_client()):
-        result = _sync(_park_ticket(repo_github, "GH-1", to="in_review"))
+        result = run_sync(_park_ticket(repo_github, "GH-1", to="in_review"))
     assert result is None

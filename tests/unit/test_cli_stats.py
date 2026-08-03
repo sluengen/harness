@@ -16,7 +16,6 @@ population is the only way an aggregate can be asserted at all (AC-1).
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli.stats_aggregate import StatsReport
 from harness.state import store
+from tests._asyncutil import run_sync
 
 runner = CliRunner()
 
@@ -34,14 +34,6 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 # Seeders
 # ---------------------------------------------------------------------------
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 async def _seed_run_async(
@@ -67,7 +59,7 @@ async def _seed_run_async(
 
 def seed_run(db_path: Path, run_id: str, **kw: Any) -> None:
     """One ``runs`` row. ``workflow_name=''`` is what ``harness start`` writes."""
-    _sync(_seed_run_async(db_path, run_id, **kw))
+    run_sync(_seed_run_async(db_path, run_id, **kw))
 
 
 async def _seed_event_async(
@@ -96,7 +88,7 @@ def seed_event(db_path: Path, run_id: str, event_type: str, **kw: Any) -> None:
     these tests must seed the retired-engine types a real historical ledger
     carries (the legacy-rows allowance in ``harness.events.schema``).
     """
-    _sync(_seed_event_async(db_path, run_id, event_type, **kw))
+    run_sync(_seed_event_async(db_path, run_id, event_type, **kw))
 
 
 def _stats(db_path: Path, *args: str) -> StatsReport:
@@ -656,7 +648,7 @@ def test_an_empty_ledger_reports_zero_without_dividing_by_zero(
     tmp_path: Path,
 ) -> None:
     db = tmp_path / "harness.db"
-    _sync(store.init_db(db))
+    run_sync(store.init_db(db))
 
     report = _stats(db)
 
@@ -780,7 +772,7 @@ def test_the_connection_itself_refuses_writes(tmp_path: Path) -> None:
                                "started_at) VALUES ('x', '', 1, 'open', '{}', '{}', 'now')")
 
     with pytest.raises(aiosqlite.OperationalError):
-        _sync(_try_write())
+        run_sync(_try_write())
 
 
 def test_stats_does_not_create_a_missing_ledger(tmp_path: Path) -> None:
