@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# guidance:generate-codex-artifacts@0.1.0
+# guidance:generate-codex-artifacts@0.2.0
 """Generate Codex-local guidance artifacts from the canonical repo guidance."""
 
 from __future__ import annotations
@@ -12,13 +12,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = REPO_ROOT / "agents"
+COMMANDS_DIR = REPO_ROOT / "commands"
+SKILLS_DIR = REPO_ROOT / "skills"
 CODEX_DIR = REPO_ROOT / ".codex"
 CODEX_AGENTS_DIR = CODEX_DIR / "agents"
-
-SYMLINKS = {
-    "skills": Path("../skills"),
-    "commands": Path("../commands"),
-}
+CODEX_SKILLS_DIR = CODEX_DIR / "skills"
+CODEX_COMMANDS = CODEX_DIR / "commands"
 
 
 @dataclass(frozen=True)
@@ -80,8 +79,7 @@ def _expected_agent_files() -> dict[Path, str]:
     return expected
 
 
-def _ensure_symlink(name: str, target: Path, *, check: bool) -> list[str]:
-    link = CODEX_DIR / name
+def _ensure_symlink(link: Path, target: Path, *, check: bool) -> list[str]:
     if link.is_symlink() and link.readlink() == target:
         return []
 
@@ -96,12 +94,125 @@ def _ensure_symlink(name: str, target: Path, *, check: bool) -> list[str]:
     return []
 
 
+def _skill_ids() -> list[str]:
+    return sorted(path.parent.name for path in SKILLS_DIR.glob("*/SKILL.md"))
+
+
+def _command_skill_name(command: Path) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", command.stem.lower()).strip("-")
+    return f"command-{slug}"
+
+
+def _command_invocations(command: Path) -> list[str]:
+    if command.stem == "harness":
+        return ["/harness", "/harness run", "/harness ingest", "/harness routine"]
+    return [f"/{command.stem}"]
+
+
+def _render_command_skill(command: Path) -> str:
+    name = _command_skill_name(command)
+    invocations = ", ".join(f"`{item}`" for item in _command_invocations(command))
+    relative_command = command.relative_to(REPO_ROOT).as_posix()
+    description = (
+        f"Codex-native adapter for the repo command in `{relative_command}`. "
+        f"Use when the user invokes {invocations} or asks to run that command workflow; "
+        "read and follow the command file completely before acting."
+    )
+    return (
+        "---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        "---\n"
+        f"# /{command.stem} Command\n\n"
+        f"Read `{relative_command}` completely before taking action. Follow it as the "
+        "canonical command contract for this request.\n\n"
+        "This generated skill exists because Codex discovers repo-local skills, not "
+        "repo-local slash commands. The canonical command remains the markdown file "
+        "above; do not edit this adapter by hand.\n"
+    )
+
+
+def _expected_command_skills() -> dict[Path, str]:
+    expected: dict[Path, str] = {}
+    for command in sorted(COMMANDS_DIR.glob("*.md")):
+        expected[CODEX_SKILLS_DIR / _command_skill_name(command) / "SKILL.md"] = (
+            _render_command_skill(command)
+        )
+    return expected
+
+
+def _ensure_codex_skills(*, check: bool) -> list[str]:
+    errors: list[str] = []
+
+    if CODEX_SKILLS_DIR.is_symlink() or (
+        CODEX_SKILLS_DIR.exists() and not CODEX_SKILLS_DIR.is_dir()
+    ):
+        if check:
+            return [f"{CODEX_SKILLS_DIR}: expected generated skills directory"]
+        CODEX_SKILLS_DIR.unlink()
+
+    if not check:
+        CODEX_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+
+    expected_skill_links = {
+        CODEX_SKILLS_DIR / skill_id: Path("../../skills") / skill_id
+        for skill_id in _skill_ids()
+    }
+    expected_command_skills = _expected_command_skills()
+
+    if check and not CODEX_SKILLS_DIR.exists():
+        errors.append(f"{CODEX_SKILLS_DIR}: missing")
+        return errors
+
+    for link, target in expected_skill_links.items():
+        errors.extend(_ensure_symlink(link, target, check=check))
+
+    actual_command_skill_dirs = (
+        {path for path in CODEX_SKILLS_DIR.glob("command-*") if path.is_dir()}
+        if CODEX_SKILLS_DIR.exists()
+        else set()
+    )
+    expected_command_skill_dirs = {path.parent for path in expected_command_skills}
+
+    if check:
+        for path, expected_text in expected_command_skills.items():
+            if not path.exists():
+                errors.append(f"{path}: missing")
+                continue
+            if path.read_text() != expected_text:
+                errors.append(f"{path}: stale generated content")
+        for stale in sorted(actual_command_skill_dirs - expected_command_skill_dirs):
+            errors.append(f"{stale}: stale generated command skill")
+        return errors
+
+    for stale in sorted(actual_command_skill_dirs - expected_command_skill_dirs):
+        skill_file = stale / "SKILL.md"
+        if skill_file.exists():
+            skill_file.unlink()
+        stale.rmdir()
+    for path, expected_text in expected_command_skills.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(expected_text)
+    return errors
+
+
+def _remove_unsupported_codex_commands(*, check: bool) -> list[str]:
+    if not CODEX_COMMANDS.exists() and not CODEX_COMMANDS.is_symlink():
+        return []
+    if check:
+        return [f"{CODEX_COMMANDS}: Codex does not discover repo-local slash commands"]
+    if CODEX_COMMANDS.is_dir() and not CODEX_COMMANDS.is_symlink():
+        raise IsADirectoryError(f"{CODEX_COMMANDS}: refusing to remove a real directory")
+    CODEX_COMMANDS.unlink()
+    return []
+
+
 def _write_or_check(*, check: bool) -> list[str]:
     errors: list[str] = []
     CODEX_DIR.mkdir(exist_ok=True)
 
-    for name, target in SYMLINKS.items():
-        errors.extend(_ensure_symlink(name, target, check=check))
+    errors.extend(_ensure_codex_skills(check=check))
+    errors.extend(_remove_unsupported_codex_commands(check=check))
 
     expected = _expected_agent_files()
     actual_paths = set(CODEX_AGENTS_DIR.glob("*.toml")) if CODEX_AGENTS_DIR.exists() else set()
@@ -141,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             print(error, file=sys.stderr)
         return 1
     if not args.check:
-        print("codex artifacts: generated .codex agents, skills, and commands")
+        print("codex artifacts: generated .codex agents and skills")
     return 0
 
 

@@ -11,7 +11,6 @@ BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 CODEX_AGENT_DIR = REPO_ROOT / ".codex" / "agents"
 CODEX_SKILLS = REPO_ROOT / ".codex" / "skills"
-CODEX_COMMANDS = REPO_ROOT / ".codex" / "commands"
 CODEX_GENERATOR = REPO_ROOT / "templates" / "generate_codex_artifacts.py"
 BUILD_COMMAND = REPO_ROOT / "commands" / "build.md"
 HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
@@ -28,11 +27,12 @@ def test_bootstrap_derives_codex_native_artifacts() -> None:
     text = _text(BOOTSTRAP)
 
     assert ".codex/agents/*.toml" in text
-    assert ".codex/skills -> ../skills" in text
-    assert ".codex/commands -> ../commands" in text
+    assert ".codex/skills/<id> -> ../../skills/<id>" in text
+    assert ".codex/skills/command-<id>/SKILL.md" in text
     assert "Codex-native" in text
     assert "agents/*.md" in text
     assert "skills/<id>/SKILL.md" in text
+    assert "commands/*.md" in text
 
 
 def test_update_guidance_rederives_codex_native_artifacts() -> None:
@@ -41,22 +41,44 @@ def test_update_guidance_rederives_codex_native_artifacts() -> None:
     text = _text(UPDATE_GUIDANCE)
 
     assert ".codex/agents/*.toml" in text
-    assert "skills symlink" in text
-    assert "commands symlink" in text
+    assert "generated Codex command-skills" in text
+    assert "skills directory" in text
     assert "Codex-native" in text
     assert "stale Codex agent config" in text
 
 
-def test_codex_local_discovery_symlinks_match_claude_shape() -> None:
-    """Codex should see the same repo-local skills and commands Claude sees."""
+def test_codex_local_discovery_skills_include_repo_skills_and_commands() -> None:
+    """Codex should see repo skills and command adapters through skills."""
 
-    assert CODEX_SKILLS.is_symlink()
-    assert CODEX_SKILLS.readlink() == Path("../skills")
-    assert (CODEX_SKILLS / "code-quality" / "SKILL.md").exists()
+    assert CODEX_SKILLS.is_dir()
+    assert not CODEX_SKILLS.is_symlink()
 
-    assert CODEX_COMMANDS.is_symlink()
-    assert CODEX_COMMANDS.readlink() == Path("../commands")
-    assert (CODEX_COMMANDS / "harness.md").exists()
+    code_quality = CODEX_SKILLS / "code-quality"
+    assert code_quality.is_symlink()
+    assert code_quality.readlink() == Path("../../skills/code-quality")
+    assert (code_quality / "SKILL.md").exists()
+
+    command_files = sorted((REPO_ROOT / "commands").glob("*.md"))
+    expected_command_skills = {f"command-{path.stem}" for path in command_files}
+    generated_command_skills = {
+        path.name for path in CODEX_SKILLS.glob("command-*") if path.is_dir()
+    }
+
+    assert generated_command_skills == expected_command_skills
+    assert not (REPO_ROOT / ".codex" / "commands").exists()
+
+    build_skill = _text(CODEX_SKILLS / "command-build" / "SKILL.md")
+    harness_skill = _text(CODEX_SKILLS / "command-harness" / "SKILL.md")
+
+    assert "name: command-build" in build_skill
+    assert "`/build`" in build_skill
+    assert "commands/build.md" in build_skill
+    assert "read and follow the command file completely before acting" in build_skill
+
+    assert "name: command-harness" in harness_skill
+    assert "`/harness run`" in harness_skill
+    assert "`/harness routine`" in harness_skill
+    assert "commands/harness.md" in harness_skill
 
 
 def test_codex_agent_tomls_are_generated_for_all_repo_agents() -> None:
