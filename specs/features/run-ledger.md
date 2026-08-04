@@ -2,7 +2,7 @@
 feature: run-ledger
 status: implemented
 last_updated: 2026-08-04
-linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
+linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295"]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -205,7 +205,8 @@ Run statuses are typed as `RunStatus = Literal["open", "closed", "pending", "run
 ## Known limitations
 
 - WAL mode permits concurrent reads (`harness status` while a run is in progress) but the DB is single-writer; the verbs serialise lifecycle writes.
-- Retired-engine columns (`workflow_name`, `workflow_version`, `state_json`, `inputs_json`, `pid`) are retained as dormant columns to avoid a destructive migration on existing DBs; they carry no live meaning under the verb model.
+- Retired-engine columns (`workflow_name`, `workflow_version`, `state_json`, `pid`) are retained as dormant columns to avoid a destructive migration on existing DBs; they carry no live meaning under the verb model.
+- `inputs_json` was one of them until #295. It now carries exactly one live key — `attended`, the run's declared attendance mode ([ADR 0011](../decisions/0011-attended-run-spend-scope.md)) — written once by `start` and never mutated. An absent key means unattended, which is what every row written before #295 already meant, so the column was re-used rather than migrated and no backfill was needed. The read rule lives with the writer in `harness/cli/_runs.py` (`attendance_inputs_json` / `resolve_attended`).
 
 ## Decisions
 

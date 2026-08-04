@@ -102,7 +102,18 @@ _ORCH: dict[str, str] = {
 #: interface" principle. Update this snapshot only alongside that deliberate
 #: version decision.
 EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
-    "start": {"run_id", "ticket", "worktree_path", "worktree_branch", "base_branch"},
+    # ``attended`` added with #295 (ADR 0011) — the run's declared attendance
+    # mode, emitted on both the new-run and existing-run path. Additive and
+    # always present (never omitted when false), so a consumer reads the mode
+    # from a field rather than inferring it from absence.
+    "start": {
+        "run_id",
+        "ticket",
+        "worktree_path",
+        "worktree_branch",
+        "base_branch",
+        "attended",
+    },
     # ``convergence_check_required`` added with the CAL-906 spend breakers — a
     # bounded advisory bool prompting the build agent to assess convergence on a
     # fail past the unconditional review→fix cycles (a deliberate, additive

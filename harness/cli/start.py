@@ -69,6 +69,7 @@ from harness._git import (
     teardown_worktree,
 )
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._runs import attendance_inputs_json, resolve_attended
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
 from harness.identity import worktree_branch as _branch_for
@@ -122,6 +123,11 @@ class StartOutput(BaseModel):
     worktree_path: str
     worktree_branch: str
     base_branch: str
+    #: The run's declared attendance mode (#295, ADR 0011). On the existing-run
+    #: path this is the *recorded* mode, not the flag passed on this
+    #: invocation — attendance is fixed at ``start``. Defaults to ``False`` so
+    #: the model stays back-compatible for any caller constructing it.
+    attended: bool = False
 
 
 class _StartError(VerbError):
@@ -147,6 +153,13 @@ def start_command(
         "--resume",
         help="Resume a reclaimed ticket from its preserved WIP branch when one "
         "exists (fetch + continue); fall back to a clean start otherwise.",
+    ),
+    attended: bool = typer.Option(  # noqa: B008
+        False,
+        "--attended",
+        help="Declare this run attended — an operator is present. Unattended "
+        "(the default) is bounded by the wall clock; do not pass this from an "
+        "unattended routine (ADR 0011).",
     ),
     repo: Path = typer.Option(  # noqa: B008
         Path("."),
@@ -178,6 +191,7 @@ def start_command(
                 ticket=ticket,
                 base=resolved_base,
                 resume=resume,
+                attended=attended,
                 repo_root=repo_root,
                 db_path=db_path,
             )
@@ -201,6 +215,7 @@ async def _run_start(
     ticket: str,
     base: str,
     resume: bool = False,
+    attended: bool = False,
     repo_root: Path,
     db_path: Path,
 ) -> StartOutput:
@@ -311,6 +326,7 @@ async def _run_start(
             worktree_branch=worktree_branch,
             started_at=started_at,
             resumed_from=resumed.branch if resumed is not None else None,
+            attended=attended,
         )
     except aiosqlite.IntegrityError:
         # A concurrent start process won the race — the unique partial index on
@@ -350,6 +366,7 @@ async def _run_start(
         worktree_path=worktree_path,
         worktree_branch=worktree_branch,
         base_branch=base,
+        attended=attended,
     )
 
 
@@ -485,7 +502,7 @@ async def _find_open_run(
             store.connect(db_path) as conn,
             conn.execute(
                 "SELECT run_id, ticket, base_branch, worktree_path, worktree_branch, "
-                "started_at FROM runs WHERE ticket = ? AND status = 'open'",
+                "started_at, inputs_json FROM runs WHERE ticket = ? AND status = 'open'",
                 (ticket,),
             ) as cur,
         ):
@@ -504,7 +521,7 @@ async def _find_open_run(
     if row is None:
         return None
 
-    run_id, _ticket, base_branch, wt_path, wt_branch, _started_at = row
+    run_id, _ticket, base_branch, wt_path, wt_branch, _started_at, inputs_json = row
     ticket_ctx = _compact_ticket(ticket_data) if ticket_data else TicketContext(identifier=ticket)
     return StartOutput(
         run_id=run_id,
@@ -512,6 +529,10 @@ async def _find_open_run(
         worktree_path=wt_path,
         worktree_branch=wt_branch,
         base_branch=base_branch,
+        # The *recorded* mode, never this invocation's flag: attendance is fixed
+        # at start (ADR 0011), so a repeat `start --attended` against a run
+        # opened without it reports false rather than upgrading it in place.
+        attended=resolve_attended(inputs_json),
     )
 
 
@@ -525,12 +546,17 @@ async def _insert_open_run(
     worktree_branch: str,
     started_at: str,
     resumed_from: str | None = None,
+    attended: bool = False,
 ) -> None:
     """Insert a ``status='open'`` row into ``runs``.
 
     ``resumed_from`` is the preserved WIP branch a ``--resume`` recovered, and
     ``None`` for every other start — a clean one, or a ``--resume`` that found
     no durable WIP. ADR 0008's adopt path reads it as F2's signal.
+
+    ``attended`` is the declared mode (#295, ADR 0011), and this insert is its
+    only writer — there is no mutation path, which is what makes attendance
+    fixed at ``start``.
     """
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -546,7 +572,8 @@ async def _insert_open_run(
                 0,           # workflow_version — not yet known
                 "open",
                 "{}",        # state_json — empty until a workflow runs
-                "{}",        # inputs_json — populated when workflow starts
+                # inputs_json — the declared attendance mode; "{}" == unattended
+                attendance_inputs_json(attended),
                 base_branch,
                 worktree_path,
                 worktree_branch,

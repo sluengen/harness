@@ -31,6 +31,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from harness.cli.start import StartOutput
 from harness.state import store
 from tests._asyncutil import run_sync
 
@@ -128,7 +129,7 @@ async def _fetch_all_runs(db_path: Path) -> list[dict[str, Any]]:
         conn.row_factory = None  # raw tuples
         async with conn.execute(
             "SELECT run_id, ticket, status, base_branch, worktree_path, "
-            "worktree_branch, started_at, resumed_from FROM runs"
+            "worktree_branch, started_at, resumed_from, inputs_json FROM runs"
         ) as cur:
             cols = [d[0] for d in cur.description]  # type: ignore[union-attr]
             rows = await cur.fetchall()
@@ -1867,3 +1868,126 @@ def test_delete_run_row_silent_on_successful_rollback(
 
     mock_echo.assert_not_called()
     assert fetch_runs(db_path) == [], "the row must be deleted on a clean rollback"
+
+
+# ---------------------------------------------------------------------------
+# Declared attendance — #295 / ADR 0011
+#
+# `start` carries the mode; nothing reads it yet (#296 review's breaker, #297
+# the --stale sweep). These lock the carrier so those two land against a
+# contract that cannot have drifted underneath them.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_start_attended_records_the_declared_mode(repo: Path, db_path: Path) -> None:
+    """AC-1: ``--attended`` is recorded on the run row.
+
+    Read back through the shared resolver rather than by string comparison, so
+    this asserts the contract #296 / #297 will consume — not the byte shape,
+    which is `attendance_inputs_json`'s own business.
+    """
+    from harness.cli._runs import resolve_attended
+
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--attended", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert resolve_attended(fetch_runs(db_path)[0]["inputs_json"]) is True
+
+
+@pytest.mark.slow
+def test_plain_start_records_todays_exact_inputs_json(repo: Path, db_path: Path) -> None:
+    """AC-2: no flag writes the byte-identical value ``start`` wrote before #295.
+
+    A **pin**, not a test written after the fact: it passed before the change
+    and its whole job is to fail if the edit that added the flag altered the
+    default path. Asserted on the raw stored string — the parsed form would
+    still pass if the column started carrying ``{"attended": false}``, which is
+    exactly the drift this forbids (absent key, not an explicit false, is what
+    every pre-existing row means).
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db_path)[0]["inputs_json"] == "{}"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("declared", [True, False])
+def test_json_output_names_the_resolved_mode(
+    repo: Path, db_path: Path, declared: bool
+) -> None:
+    """AC-4: the machine surface carries ``attended`` on both paths.
+
+    Present rather than omitted when false — the orchestrator confirms the
+    recorded mode by reading a field, never by inferring it from absence.
+    """
+    stub = _make_linear_stub()
+    argv = ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"]
+    if declared:
+        argv.append("--attended")
+
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["attended"] is declared
+    # The schema assertion travels with it (the AC-5 pattern above).
+    assert StartOutput.model_validate(payload).attended is declared
+
+
+@pytest.mark.slow
+def test_attended_cannot_be_declared_onto_an_already_open_run(
+    repo: Path, db_path: Path
+) -> None:
+    """ADR 0011: attendance is fixed at ``start``.
+
+    A repeat ``start --attended`` against a run opened without it surfaces the
+    existing run reporting the **recorded** mode, and writes nothing. This is
+    the case most likely to be implemented as "flag wins" by accident — which
+    would let an unattended run be upgraded out of the spend ceiling by a second
+    invocation, with no new row to show for it.
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        first = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert first.exit_code == 0, first.output
+
+        second = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--attended", "--json"],
+        )
+
+    assert second.exit_code == 0, second.output
+    rows = fetch_runs(db_path)
+    assert len(rows) == 1, "a repeat start must not open a second run"
+    assert rows[0]["inputs_json"] == "{}", "the stored mode must not be upgraded in place"
+    assert json.loads(second.output)["attended"] is False
