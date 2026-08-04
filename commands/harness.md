@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.3.0 -->
+<!-- guidance:harness@0.3.1 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -173,7 +173,7 @@ If `close` refuses, it exits non-zero with `{"error": ..., "reason": ...}`. The 
 - **`stale_review`** — there is a passing review, but HEAD moved after it (you committed more work). The passing verdict no longer covers what would merge. **Re-run `harness review`** on the current HEAD to re-establish a fresh `pass`, then close again.
 - **`no_gate_evidence`** — a `pass` covers HEAD, but it carries no evidence that the repo's verify gate ran (it was recorded by a harness predating the gate). **Re-run `harness review`** to record a pass backed by a green gate, then close again.
 
-There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal, so no `reason` key). Both are retryable: for a conflict, merge `origin/<base>` into the run branch, commit the resolution, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
+There is no `dirty_base_checkout` refusal: `close` merges in a throwaway worktree and never touches the main checkout, so the state of the main checkout — clean, dirty, or even mid-merge — cannot block a close. A **merge conflict** with what landed on `origin/<base>` during the run, or a **push rejected non-fast-forward** because a concurrent close won the race, is an exit-1 error (not a gate refusal) carrying the `reason` tag `merge_conflict` or `push_rejected` respectively (#300) — so the two are machine-readable apart, which matters because their recoveries differ. Neither carries a `merged` key: these fire before the merge lands, which is what tells them apart from the exit-1 ticket-transition failures below, where `merged: true`. Both are retryable: for a conflict, merge `origin/<base>` into the run branch, commit the resolution, re-review, and close again; for a rejected push, simply close again — it re-fetches the winner's tip.
 
 #### Base movement needs no rebase
 

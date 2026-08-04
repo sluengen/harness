@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-08-04
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329"]
+last_updated: 2026-08-05
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300"]
 ---
 
 # Verb model — start / design / review / close
@@ -140,7 +140,16 @@ This is the enforcement of the one canonical stop policy, which `skills/review-d
 - GIVEN an open run that passed review, and `origin/<base>` has advanced since `start` with non-conflicting work (a concurrent run landed a ticket)
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
 - THEN the verb fetches `origin/<base>` and bases the throwaway merge worktree on that current tip **before** merging, so the push lands rather than being rejected non-fast-forward (CAL-777); the HEAD-bound gate is preserved — the reviewed SHA is the merge's second parent, so only the reviewed commit's content rides in
-- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb tears the throwaway worktree down wholesale and exits 1 with a clear message (not a raw git conflict dump), leaving the run open and resumable — rebase the run branch on the updated base, re-review, and close again
+- AND GIVEN instead the run branch conflicts with what landed on `origin/<base>`, the verb tears the throwaway worktree down wholesale and exits 1 with a clear message (not a raw git conflict dump) **carrying `reason: merge_conflict`**, leaving the run open and resumable — merge `origin/<base>` into the run branch, commit the resolution, re-review, and close again
+
+#### Scenario: the merge or push fails
+
+- GIVEN an open run whose gate is satisfied
+- WHEN `close`'s step-6 merge/push fails in a way `harness.close_merge` classifies
+- THEN the verb exits **1** carrying that module's own `reason` — `merge_conflict` (needs work on the run branch), `push_rejected` (a concurrent close won the race; a plain retry), `git_status_failed`, `fetch_failed`, `network_timeout`, `merge_failed`, or `worktree_create_failed` — and **no** `merged` key, because the merge did not land; the run row stays `open`, the ticket is not transitioned, and the ledger's `close` event records the same reason instead of collapsing into the unexpected-error tag (#300)
+- AND the reason is **propagated, not translated**: `close_merge` owns the strings and `close` passes them through, so a reason added there arrives tagged rather than as an untagged error — pinned by a totality test that derives the expected set from the module source by AST rather than hand-listing it
+- AND GIVEN instead the failure is one `close_merge` did **not** classify (an OS or thread error), the verb keeps the historical untagged `{"error": ...}` shape — there is no reason to invent
+- AND the merge vocabulary is **disjoint** from the ticket-transition vocabulary below, which is what lets a caller read "did the merge land?" off the tag alone rather than by parsing the human message
 
 #### Scenario: a gate refusal
 

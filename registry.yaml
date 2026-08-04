@@ -47,7 +47,7 @@ files:
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.20.0, profiles: [harness] }
   skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.8.2, profiles: [harness] }
-  skills/architecture/SKILL.md: { id: architecture,             version: 0.7.1, profiles: [harness] }
+  skills/architecture/SKILL.md: { id: architecture,             version: 0.7.2, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
   skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.1, profiles: [harness] }
@@ -101,7 +101,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.3.0, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.3.1, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project

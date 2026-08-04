@@ -322,8 +322,15 @@ def test_close_refuses_on_conflict_and_leaves_run_open(
     payload = json.loads(result.output)
     assert "error" in payload
     assert "conflict" in payload["error"].lower()
-    # Not a gate refusal — no machine reason key, contract unchanged.
-    assert "reason" not in payload
+    # Still not a gate refusal (exit 1, not 2) — but since #300 it carries the
+    # reason `close_merge` computed, so a caller can tell this apart from a lost
+    # push race without parsing the message above. This is the end-to-end proof
+    # of that propagation: a genuine git conflict against a real advanced
+    # origin, with nothing about the merge stubbed.
+    assert payload["reason"] == "merge_conflict"
+    # The merge did not land, so no `merged` key — that is what separates this
+    # exit-1 family from the post-merge ticket-transition one.
+    assert "merged" not in payload
 
     # The run is resumable: still open, ticket never transitioned, checkout clean.
     stub.transition_to_done.assert_not_called()

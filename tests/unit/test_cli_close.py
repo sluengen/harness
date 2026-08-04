@@ -27,15 +27,17 @@ patches the Linear client and ``test_cli_review.py`` injects the runner.
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+from harness import close_merge
 from harness.cli import app
 from harness.cli import close as close_mod
 from harness.events.emitter import EventEmitter
@@ -708,6 +710,77 @@ def test_close_docstring_exit_codes_match_contract() -> None:
         "ticket_transition_unconfirmed is an exit-1 reason (the merge already "
         "landed); it must not appear in the exit-2 gate-refusal entry"
     )
+    assert "merge_conflict" in one_entry, (
+        "exit 1 also covers a merge/push failure carrying the reason "
+        "close_merge computed (#300); document its tag in the exit-1 entry"
+    )
+    assert "merge_conflict" not in two_entry, (
+        "merge_conflict is an exit-1 reason, not a gate refusal; it must not "
+        "appear in the exit-2 entry"
+    )
+
+
+_COMMAND_DOC = Path(__file__).parent.parent.parent / "commands" / "harness.md"
+#: The paragraph in `commands/harness.md`'s gate-refusal section that classifies
+#: a step-6 failure. Sliced by the stable sentence it opens with, because the
+#: two recovery paragraphs *below* it already name `merge_conflict` and
+#: `push_rejected` for unrelated reasons — a section-wide containment check
+#: would pass on a paragraph that had dropped the tags entirely.
+_STEP_SIX_PARAGRAPH_OPENER = "There is no `dirty_base_checkout` refusal:"
+
+
+def _step_six_classification_paragraph() -> str:
+    text = _COMMAND_DOC.read_text()
+    assert _STEP_SIX_PARAGRAPH_OPENER in text, (
+        "commands/harness.md's gate-refusal section must still carry the "
+        "paragraph classifying a merge conflict / rejected push"
+    )
+    start = text.index(_STEP_SIX_PARAGRAPH_OPENER)
+    end = text.index("\n\n", start)
+    return text[start:end]
+
+
+def test_command_doc_states_step_six_failures_carry_a_reason() -> None:
+    """`commands/harness.md` no longer claims a step-6 failure has no reason (#300 AC-6).
+
+    The doc is the orchestrating session's operating instruction: while it said
+    a conflict and a lost push race carry "no `reason` key", an agent reading it
+    had no cause to branch on the tag it now gets.
+    """
+    paragraph = _step_six_classification_paragraph()
+
+    assert "no `reason` key" not in paragraph, (
+        "the retired claim that a merge conflict / rejected push carries no "
+        "`reason` key is false since #300; remove it from the paragraph"
+    )
+    for tag in ("merge_conflict", "push_rejected"):
+        assert tag in paragraph, (
+            f"the paragraph must name `{tag}` as the reason tag an exit-1 "
+            f"step-6 failure carries, so an agent knows what to branch on"
+        )
+    assert "exit-1" in paragraph or "exit 1" in paragraph, (
+        "the exit code must stay stated — #300 changed what the failure "
+        "reports, not how it is classified"
+    )
+
+
+def test_the_step_six_paragraph_check_is_scoped_not_whole_file() -> None:
+    """Control for the guard above: the tags it looks for are NOT unique to the
+    paragraph, so the slice is what makes the assertion mean anything.
+
+    The recovery paragraphs below the slice name both tags for their own
+    reasons. If the slice ever widened to the whole file, the guard would pass
+    on a classification paragraph that had dropped them — which is the exact
+    failure it exists to catch.
+    """
+    paragraph = _step_six_classification_paragraph()
+    outside = _COMMAND_DOC.read_text().replace(paragraph, "")
+
+    for tag in ("merge_conflict", "push_rejected"):
+        assert tag in outside, (
+            f"`{tag}` still appears outside the sliced paragraph (the recovery "
+            f"paragraphs), so a whole-file containment check would be vacuous"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1065,6 +1138,214 @@ def test_close_records_close_event_on_success(repo: Path, db_path: Path) -> None
     assert data["run_id"] == run_id
     assert data["ticket"] == "CAL-572"
     assert data["merged_sha"] == head
+
+
+# ---------------------------------------------------------------------------
+# #300: a step-6 merge/push failure carries the reason ``close_merge`` computed
+# ---------------------------------------------------------------------------
+
+_CLOSE_MERGE_SOURCE = Path(close_merge.__file__)
+
+
+def _raised_reasons(source: Path) -> set[str]:
+    """Every ``reason`` a ``CloseMergeError`` is constructed with in ``source``.
+
+    Derived from the module text by AST, never hand-listed (#300 AC-5): a reason
+    added to ``close_merge`` later must fail the tests below, not silently
+    bypass them. A non-literal ``reason=`` would make this derivation
+    *under-count* — and so make the totality assertion vacuously easier — so it
+    is refused outright rather than skipped.
+
+    This is the single derivation the totality assertion, both propagation
+    parametrizations, and the non-vacuity floor all call. They must share it:
+    a floor that re-implements the scan it protects cannot detect the scan
+    breaking, which is the whole failure it exists to catch.
+    """
+    tree = ast.parse(source.read_text())
+    kwargs = [
+        kw
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "CloseMergeError"
+        for kw in node.keywords
+        if kw.arg == "reason"
+    ]
+    non_literal = [kw for kw in kwargs if not isinstance(kw.value, ast.Constant)]
+    assert not non_literal, (
+        f"every CloseMergeError(reason=...) in {source.name} must be a string "
+        f"literal, or this derivation under-counts and the totality check below "
+        f"passes on an incomplete set ({len(non_literal)} computed reason(s) found)"
+    )
+    return {kw.value.value for kw in kwargs}
+
+
+def test_the_reason_derivation_is_not_vacuous() -> None:
+    """Floor under the derived totality + propagation tests (#300).
+
+    Those tests are parametrized over :func:`_raised_reasons`. An empty or
+    broken derivation would collect **zero** cases and report green, so this
+    asserts the scan actually reaches the raise sites — calling the same
+    function they do, not its own copy of the walk.
+    """
+    derived = _raised_reasons(_CLOSE_MERGE_SOURCE)
+
+    assert len(derived) >= 7, (
+        f"the AST scan of {_CLOSE_MERGE_SOURCE.name} found only {len(derived)} "
+        f"reason(s) ({sorted(derived)}); it reached at least 7 when written, so "
+        f"a smaller set means the derivation broke, not that the module shrank"
+    )
+    # Two anchors confirmed present at the raise sites, and the two an
+    # orchestrating agent actually branches on.
+    assert {"merge_conflict", "push_rejected"} <= derived, (
+        f"the derivation must reach merge_run_branch's own raise sites; got {sorted(derived)}"
+    )
+
+
+def test_the_derivation_reads_the_source_not_the_declared_vocabulary(tmp_path: Path) -> None:
+    """Control: :func:`_raised_reasons` parses source text, not ``CloseMergeReason``.
+
+    Without this, the totality assertion below is satisfiable by a derivation
+    that simply returns the declared vocabulary — a tautology that would pass
+    while a reason added to ``close_merge`` and never declared slipped through
+    untagged, which is precisely what AC-5 exists to prevent. Proven on a
+    synthetic module carrying a reason **no** literal declares, so an
+    implementation reading the type cannot produce this answer.
+    """
+    invented = "a_reason_no_literal_declares"
+    assert invented not in get_args(close_merge.CloseMergeReason), (
+        "the control's reason must be absent from the declared vocabulary, or "
+        "it cannot tell a source-reading derivation from a type-reading one"
+    )
+    synthetic = tmp_path / "synthetic_close_merge.py"
+    synthetic.write_text(
+        "def f() -> None:\n"
+        f'    raise CloseMergeError("boom", reason="{invented}")\n'
+    )
+
+    assert _raised_reasons(synthetic) == {invented}
+
+
+def test_the_derivation_refuses_a_computed_reason(tmp_path: Path) -> None:
+    """A non-literal ``reason=`` is refused, not skipped.
+
+    Skipping it would make the derived set *smaller*, so the totality assertion
+    would pass on an incomplete set — the failure mode is silent under-counting,
+    which is why this is an error rather than a tolerated case.
+    """
+    synthetic = tmp_path / "computed_close_merge.py"
+    synthetic.write_text(
+        "def f(tag: str) -> None:\n    raise CloseMergeError('boom', reason=tag)\n"
+    )
+
+    with pytest.raises(AssertionError, match="string literal"):
+        _raised_reasons(synthetic)
+
+
+def test_every_raised_reason_is_declared_in_the_vocabulary() -> None:
+    """``CloseMergeReason`` covers every raise site, and declares nothing dead.
+
+    Asserted in both directions, so adding a reason without declaring it fails
+    here, and declaring one nothing raises fails here too (#300 AC-5).
+    """
+    assert _raised_reasons(_CLOSE_MERGE_SOURCE) == set(get_args(close_merge.CloseMergeReason))
+
+
+@pytest.mark.parametrize("reason", sorted(_raised_reasons(_CLOSE_MERGE_SOURCE)))
+def test_every_reason_propagates_from_the_merge_step(
+    repo: Path, db_path: Path, reason: str
+) -> None:
+    """Step 6 propagates whatever reason ``close_merge`` raised (#300 AC-5).
+
+    Parametrized over the derived set rather than a hand-written table, so a new
+    reason is covered automatically. Propagation is asserted as a property of
+    the *boundary* — ``close`` passes the reason through — which is why every
+    reason is exercised here regardless of which helper raises it in production.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    merge = MagicMock(side_effect=close_merge.CloseMergeError("boom", reason=reason))
+
+    result, _ = _invoke(repo, db_path, run_id, _make_linear_stub(), merge_push=merge)
+
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output)["reason"] == reason
+
+
+@pytest.mark.parametrize("reason", sorted(_raised_reasons(_CLOSE_MERGE_SOURCE)))
+def test_every_reason_propagates_from_the_status_step(
+    repo: Path, db_path: Path, reason: str
+) -> None:
+    """Step 3's ``worktree_porcelain`` boundary propagates too (#300 AC-5).
+
+    The ticket names step 6, but ``git_status_failed`` is raised by
+    ``worktree_porcelain`` and is reachable from ``close`` **only** here — so
+    totality over the module's reasons is unmet without this second boundary.
+    A status read that succeeds and reports edits is a different branch and
+    still exits 2 (``dirty_worktree``); see the tests above.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    porcelain = MagicMock(side_effect=close_merge.CloseMergeError("boom", reason=reason))
+
+    with patch("harness.close_merge.worktree_porcelain", porcelain):
+        result, _ = _invoke(repo, db_path, run_id, _make_linear_stub())
+
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output)["reason"] == reason
+
+
+def test_the_two_exit_one_families_stay_disjoint() -> None:
+    """A merge reason means the merge did **not** land; a ticket reason means it did.
+
+    The ticket's technical note calls out this asymmetry as the thing to
+    preserve. Overlapping vocabularies would make it unreadable from the wire.
+    """
+    merge_reasons = set(get_args(close_mod.MergeFailureReason))
+    ticket_reasons = set(get_args(close_mod.TicketFailureReason))
+
+    assert merge_reasons and ticket_reasons
+    assert not (merge_reasons & ticket_reasons)
+    flattened = {v for lit in get_args(close_mod.FailureReason) for v in get_args(lit)}
+    assert flattened == merge_reasons | ticket_reasons
+    # AC-3: no exit-2 refusal gains or loses a reason.
+    assert not (set(get_args(close_mod.RefusalReason)) & (merge_reasons | ticket_reasons))
+
+
+@pytest.mark.parametrize("reason", ["merge_conflict", "push_rejected"])
+def test_close_merge_failure_carries_its_reason(
+    repo: Path, db_path: Path, reason: str
+) -> None:
+    """A step-6 failure reports the ``reason`` ``close_merge`` already computed (#300).
+
+    ``merge_conflict`` needs human work (merge the base, commit, re-review);
+    ``push_rejected`` is a lost race and is a plain retry. Both were exit 1 with
+    no ``reason`` key, so an orchestrating agent had to parse the human message
+    or guess. Exit stays **1** — this changes what the failure reports, not how
+    it is classified against the gate.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    head = _head_sha(repo)
+    _emit_review(db_path, run_id, head, "pass")
+    stub = _make_linear_stub()
+    merge = MagicMock(
+        side_effect=close_merge.CloseMergeError(
+            "boom", reason=reason, conflict=reason == "merge_conflict"
+        )
+    )
+
+    result, _ = _invoke(repo, db_path, run_id, stub, merge_push=merge)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == reason, (
+        f"a step-6 {reason} must surface the reason close_merge computed, so a "
+        f"caller can tell a conflict from a lost push race"
+    )
+    # The merge did not land, so nothing downstream may have run (AC-3).
+    assert "merged" not in payload
+    assert fetch_run_status(db_path, run_id) == "open"
+    stub.transition_to_done.assert_not_called()
 
 
 def test_close_transition_failure_after_merge_leaves_run_open(

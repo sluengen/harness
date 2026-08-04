@@ -43,6 +43,12 @@ Fixtures mirror ``test_cli_close.py``: the tracker client and the git merge/push
 are faked, and the ledger is seeded directly.
 """
 
+# size: one terminal-outcome contract, exercised once per way a close can end.
+# Every case asserts the same invariant — exactly one `close` observation, with
+# the outcome and reason that terminal path owes — and the suite's value is that
+# the whole matrix of endings is readable together; splitting it by ending would
+# hide which endings are covered, which is the one thing this file is for.
+
 from __future__ import annotations
 
 import json
@@ -54,6 +60,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from harness import close_merge
 from harness.cli import app
 from harness.cli import close as close_mod
 from harness.cli.close_telemetry import outcome_for_exit_code
@@ -571,6 +578,38 @@ def test_ac4_unexpected_error_without_a_reason_is_still_recorded(
     assert len(payloads) == 1
     assert payloads[0]["reason"] == CLOSE_UNEXPECTED_REASON
     assert payloads[0]["outcome"] == CLOSE_OUTCOME_FAILED
+    assert "merged_sha" not in payloads[0]
+
+
+def test_a_classified_merge_failure_records_its_own_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """A step-6 failure ``close_merge`` classified records **that** reason (#300).
+
+    Before the propagation fix every merge/push failure collapsed into
+    :data:`CLOSE_UNEXPECTED_REASON` in the ledger as well as in the printed
+    JSON, so the aggregate could not count genuine conflicts against lost push
+    races. The sibling test above is the control: an *unclassified* error still
+    records :data:`CLOSE_UNEXPECTED_REASON`, so this is a real discrimination
+    and not the tag having simply been renamed.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo))
+    rejected = MagicMock(
+        side_effect=close_merge.CloseMergeError("lost the race", reason="push_rejected")
+    )
+
+    result, _merge, _stub = _invoke(repo, db_path, run_id, merge_push=rejected)
+
+    assert result.exit_code == 1, result.output
+
+    payloads = fetch_close_payloads(db_path, run_id)
+    assert len(payloads) == 1
+    assert payloads[0]["reason"] == "push_rejected"
+    assert payloads[0]["reason"] != CLOSE_UNEXPECTED_REASON
+    assert payloads[0]["outcome"] == CLOSE_OUTCOME_FAILED
+    # The merge did not land, so the un-merged family stays honest in the
+    # ledger as well as on the wire.
     assert "merged_sha" not in payloads[0]
 
 

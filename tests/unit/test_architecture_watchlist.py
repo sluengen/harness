@@ -92,6 +92,26 @@ def test_watchlist_section_lives_in_exactly_one_skill() -> None:
     )
 
 
+# --- #284: a repeated extraction arms a newly revealed gravity well -----------
+
+
+def test_second_seam_extraction_adds_non_watchlisted_module_to_watchlist() -> None:
+    """A second extraction makes the module a gravity well in the same change."""
+    block = _section(ARCHITECTURE.read_text(), WATCHLIST_SECTION).lower()
+    required_tokens = (
+        "second seam extraction",
+        "non-watchlisted module",
+        "descriptive comment",
+    )
+    missing = [token for token in required_tokens if token not in block]
+    assert not missing, (
+        "the Architecture watchlist section must require a second seam extraction "
+        "to add the non-watchlisted module to CONTEXT.md's "
+        "architecture_watchlist.files with its descriptive comment (#284); "
+        f"missing: {missing}."
+    )
+
+
 # --- AC-5: the actual-diff comparison names the integration branch + fallback --
 
 
