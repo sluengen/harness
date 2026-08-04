@@ -35,6 +35,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, matching ci.yml and the publish-image job below: this
+          # job runs the same verify gate, whose feature-spec currency guard
+          # reads a shallow clone's graft boundary as every spec's last commit
+          # (#280/#326). Pinned by tests/unit/test_ci_workflow_full_history.py.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3

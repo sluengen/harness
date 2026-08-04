@@ -39,6 +39,13 @@ the guard required the key to exist and never read its value, so every date
 froze while the file changed underneath it. Answering "when did this file last
 actually change?" needs the *author* date of the last commit touching that path,
 which is the one date a writer can know at the moment they type the value.
+
+That answer is only as good as the fetched history. In a shallow clone git
+reports the **graft boundary** for a path whose real last commit was never
+fetched — a truncated answer that looks exactly like a real one — so
+:func:`last_commit_date` refuses it with :class:`ShallowHistoryError` rather than
+returning it (#326). #280 returned it, which is how CI (``actions/checkout``
+defaults to ``fetch-depth: 1``) read every feature spec as touched at HEAD.
 """
 
 from __future__ import annotations
@@ -104,6 +111,47 @@ def tracked_files_under(
     }
 
 
+class ShallowHistoryError(RuntimeError):
+    """Git's answer for a path resolves to a shallow clone's graft boundary.
+
+    A distinct type rather than a bare :class:`RuntimeError` so a caller that
+    legitimately wants to tolerate truncated history can catch exactly this. No
+    caller does today, deliberately: the feature-spec currency guard must go red
+    and named on a truncated tree, not skip (#326).
+    """
+
+
+def _graft_boundaries(repo_root: Path) -> frozenset[str]:
+    """The root commits of a shallow clone — empty when history is complete.
+
+    In a shallow clone the fetch boundary is grafted to look parentless, so
+    ``rev-list --max-parents=0`` names exactly the commits whose history is
+    truncated. Gated on ``--is-shallow-repository`` first, so a genuine root
+    commit in a complete clone is never mistaken for a boundary.
+
+    Both probes use ``check=True``: a git failure here must raise, not degrade
+    to "not shallow", which would silently restore the swallow this exists to
+    remove.
+    """
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.stdout.strip() != "true":
+        return frozenset()
+    roots = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return frozenset(roots.stdout.split())
+
+
 def last_commit_date(
     path: str | Path,
     *,
@@ -112,10 +160,17 @@ def last_commit_date(
     """Return the author date of the last commit touching ``path``, or ``None``.
 
     ``path`` is a pathspec relative to ``repo_root``. ``None`` means git reports
-    no commit for that path — a file staged but never committed, or a shallow
-    clone whose fetched history does not reach one. Callers must distinguish
-    that from a real date rather than coercing it, because the two answer
-    different questions ("never committed" vs "committed on day D").
+    no commit for that path — a file staged but never committed. Callers must
+    distinguish that from a real date rather than coercing it, because the two
+    answer different questions ("never committed" vs "committed on day D").
+
+    Raises :class:`ShallowHistoryError` when git's answer resolves to a shallow
+    clone's graft boundary: the real last commit lies outside the fetched
+    history, and from inside the clone a truncated answer is indistinguishable
+    from a real one (#326). The imprecision is one-directional and deliberate —
+    a path whose genuine last commit *is* the boundary is refused rather than
+    answered. Refusing an answer that happens to be right is safe; returning one
+    that is wrong is what #280 shipped.
 
     The **author** date, not the committer date. Author date is the day the
     writer commits and survives the merge that lands it; committer date is
@@ -133,14 +188,28 @@ def last_commit_date(
     has no commit", never "this repo has none".
     """
     completed = subprocess.run(
-        ["git", "log", "-1", "--format=%ad", "--date=short", "--", str(path)],
+        ["git", "log", "-1", "--format=%H%x09%ad", "--date=short", "--", str(path)],
         cwd=repo_root,
         check=True,
         capture_output=True,
         text=True,
     )
-    stamp = completed.stdout.strip()
-    return date.fromisoformat(stamp) if stamp else None
+    line = completed.stdout.strip()
+    if not line:
+        return None
+    sha, _, stamp = line.partition("\t")
+    # The log runs first, so a non-repository or a repository with no commits
+    # still raises CalledProcessError from the same command as before — the
+    # boundary probe never gets to reinterpret a git-level failure.
+    if sha in _graft_boundaries(repo_root):
+        raise ShallowHistoryError(
+            f"git reports {sha} as the last commit touching {path}, but that is "
+            f"a shallow graft boundary in {repo_root} — the real last commit is "
+            "outside the fetched history. Fetch full history (actions/checkout "
+            "fetch-depth: 0, or git fetch --unshallow); do not read this date as "
+            "real (#326)."
+        )
+    return date.fromisoformat(stamp)
 
 
 def tracked_py_sources(

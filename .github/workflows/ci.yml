@@ -29,6 +29,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default depth-1. The feature-spec currency
+          # guard (#280) asks git for the last commit touching each
+          # specs/features/*.md; in a shallow clone git answers with the graft
+          # boundary, so every spec reads as touched at HEAD and the run goes
+          # red on whichever specs were not edited that day (#326). Pinned by
+          # tests/unit/test_ci_workflow_full_history.py.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
