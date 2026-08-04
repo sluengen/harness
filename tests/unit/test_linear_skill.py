@@ -36,6 +36,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LINEAR_SKILL = REPO_ROOT / "skills" / "linear" / "SKILL.md"
+#: #327 split the backend-neutral policy out of this skill into `tracker`. The
+#: rules below (CAL-910, CAL-1165) are unchanged — they are pinned against the
+#: file that now owns them, which is where a consumer will read them.
+TRACKER_SKILL = REPO_ROOT / "skills" / "tracker" / "SKILL.md"
 OLD_SKILL_DIR = REPO_ROOT / "skills" / "linear-sync"
 COMMANDS_DIR = REPO_ROOT / "commands"
 
@@ -220,16 +224,16 @@ def test_skill_warns_pr_id_auto_transition_on_merge() -> None:
     Linear behaviour, so this trap must live there, not only in session memory
     (CAL-910).
     """
-    text = LINEAR_SKILL.read_text().lower()
+    text = TRACKER_SKILL.read_text().lower()
 
     # the integration behaviour: id in a PR surface -> auto-Done on merge
     assert "merge" in text and ("auto" in text) and "done" in text, (
-        "the linear skill must document that a *merged* PR *auto*-transitions a "
+        "the tracker skill must document that a *merged* PR *auto*-transitions a "
         "linked ticket to *Done* (CAL-910)."
     )
     # the actionable rule turns on whether the PR completes vs only spawns the ticket
     assert "spawn" in text and ("complete" in text), (
-        "the linear skill must state the spawn-vs-complete rule: a ticket id goes in "
+        "the tracker skill must state the spawn-vs-complete rule: a ticket id goes in "
         "the PR only when the PR completes that ticket; a PR that merely spawns / "
         "references tickets must keep their ids out (CAL-910)."
     )
@@ -237,7 +241,7 @@ def test_skill_warns_pr_id_auto_transition_on_merge() -> None:
     surfaces = ("branch", "title", "body", "commit")
     present = [s for s in surfaces if s in text]
     assert len(present) >= 3, (
-        "the linear skill must name the PR surfaces that link an id to a PR — at "
+        "the tracker skill must name the PR surfaces that link an id to a PR — at "
         f"least three of branch / title / body / commit; found {present} (CAL-910)."
     )
 
@@ -251,17 +255,17 @@ def test_skill_warns_pr_id_auto_transition_on_merge() -> None:
 
 def test_skill_documents_todo_backlog_filing_semantics() -> None:
     """Todo = confirmed work, Backlog = existence-uncertain; blocked-on-detail stays Todo (AC-1)."""
-    text = LINEAR_SKILL.read_text()
+    text = TRACKER_SKILL.read_text()
     low = text.lower()
     assert "confirmed work" in low, (
-        "the skill must state Todo receives confirmed work (review follow-ups and "
+        "the tracker skill must state Todo receives confirmed work (review follow-ups and "
         "findings file straight there) (CAL-1165 AC-1)."
     )
     assert "existence" in low and "uncertain" in low, (
-        "the skill must state Backlog holds existence-uncertain work (CAL-1165 AC-1)."
+        "the tracker skill must state Backlog holds existence-uncertain work (CAL-1165 AC-1)."
     )
     assert "stays in todo" in low or "stay in todo" in low, (
-        "the skill must replace 'blocked → Backlog' with: a ticket blocked on a "
+        "the tracker skill must replace 'blocked → Backlog' with: a ticket blocked on a "
         "detail of confirmed work stays in Todo, assigned + labelled (CAL-1165 AC-1)."
     )
     assert "**Blocked → Backlog with the question.**" not in text, (
@@ -289,34 +293,34 @@ def test_issue_create_recipe_carries_project_and_assignee() -> None:
 
 def test_skill_documents_assignment_protocol() -> None:
     """Assignment is the skip signal; In Review assigned/unassigned disambiguated (AC-3)."""
-    low = LINEAR_SKILL.read_text().lower()
+    low = TRACKER_SKILL.read_text().lower()
     assert "assigned to a human" in low, (
-        "the skill must state a ticket assigned to a human is held by that human "
+        "the tracker skill must state a ticket assigned to a human is held by that human "
         "(the unattended loop's skip signal) (CAL-1165 AC-3)."
     )
     assert "never pick" in low, (
-        "the skill must state the unattended loop never picks a human-assigned "
+        "the tracker skill must state the unattended loop never picks a human-assigned "
         "ticket, in any state (CAL-1165 AC-3)."
     )
     assert "in review" in low and "unassigned" in low, (
-        "the skill must disambiguate In Review: assigned = human/visual review of a "
+        "the tracker skill must disambiguate In Review: assigned = human/visual review of a "
         "closed run; unassigned = agent review inside a live run (CAL-1165 AC-3)."
     )
 
 
 def test_label_table_includes_operator_label() -> None:
     """The label table adds `operator` with the decision/operator distinction (AC-4)."""
-    text = LINEAR_SKILL.read_text()
+    text = TRACKER_SKILL.read_text()
     low = text.lower()
     assert "`operator`" in text, (
         "the label table must include the `operator` label beside `decision` "
         "(CAL-1165 AC-4)."
     )
     assert "interactive" in low, (
-        "the skill must define `operator` as needing an interactive/hands-on "
+        "the tracker skill must define `operator` as needing an interactive/hands-on "
         "session (CAL-1165 AC-4)."
     )
     assert "decision" in low and ("judgment" in low or "judgement" in low), (
-        "the skill must define `decision` as needing a judgment call, distinct "
+        "the tracker skill must define `decision` as needing a judgment call, distinct "
         "from `operator` (CAL-1165 AC-4)."
     )

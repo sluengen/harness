@@ -49,7 +49,7 @@ _EXPECTED_FEATURES = (
 )
 
 #: Frontmatter keys required by ``templates/feature.md``.
-_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated", "linear")
+_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated", "tickets")
 
 
 def _feature_path(slug: str) -> Path:
@@ -206,7 +206,7 @@ def test_an_uncustomized_template_date_fails_with_a_readable_message(
     spec = tmp_path / "placeholder.md"
     spec.write_text(
         "---\nfeature: x\nstatus: implemented\nlast_updated: YYYY-MM-DD\n"
-        "linear: [CAL-1]\n---\n\n## Behaviour\n",
+        "tickets: [CAL-1]\n---\n\n## Behaviour\n",
         encoding="utf-8",
     )
     with pytest.raises(AssertionError, match="not an ISO-8601"):
@@ -219,7 +219,7 @@ def test_a_missing_last_updated_key_fails_with_a_readable_message(
     """A frontmatter block with no ``last_updated:`` line names the missing key."""
     spec = tmp_path / "keyless.md"
     spec.write_text(
-        "---\nfeature: x\nstatus: implemented\nlinear: [CAL-1]\n---\n\n"
+        "---\nfeature: x\nstatus: implemented\ntickets: [CAL-1]\n---\n\n"
         "## Behaviour\n",
         encoding="utf-8",
     )

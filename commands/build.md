@@ -1,13 +1,13 @@
-<!-- guidance:build@1.6.0 -->
-# /build — implement, verify, and review a Linear ticket
+<!-- guidance:build@1.7.0 -->
+# /build — implement, verify, and review a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
 
-The **autonomous** agent-led driver: it fetches the ticket, implements it test-first in an isolated worktree, verifies, reviews, then ships — looping through fixes until the review converges, without prompting at every step. The stepped trio (`/start` → `/review` → `/ship`) is the same lifecycle for freeform, human-in-the-loop sessions; `/build` is the unattended form of it. Requires `LINEAR_API_KEY` in the environment.
+The **autonomous** agent-led driver: it fetches the ticket, implements it test-first in an isolated worktree, verifies, reviews, then ships — looping through fixes until the review converges, without prompting at every step. The stepped trio (`/start` → `/review` → `/ship`) is the same lifecycle for freeform, human-in-the-loop sessions; `/build` is the unattended form of it. Requires the tracker credential named by `CONTEXT.md` `env:` to be in the environment.
 
 This command is a **thin driver**: every phase delegates to the skill that owns it, and `/build` carries only the control flow that makes the loop autonomous (the fix loop, the convergence check, the implement sub-agent spawn, the machine-readable review verdict, and the abandon path). The phase skills:
 
-- **Linear operations** (status transitions, fetching the ticket, creating a defer ticket, commenting) → the `linear` skill. Do not embed raw Linear GraphQL endpoint calls here — a guard fails if one appears.
+- **Tracker operations** (status transitions, fetching the ticket, creating a defer ticket, commenting) → the **`tracker`** skill. Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here — a guard fails if one appears.
 - **Worktree lifecycle** (create, isolate, tear down) → `worktree-isolation`.
 - **Implementation** (test-first, in scope) → `test-driven-development` and `code-quality`.
 - **Review** (what to evaluate, the severity bar, the finding format) → `review-discipline`.
@@ -27,7 +27,7 @@ Read the repo's entry process doc. Prefer `AGENTS.md` when present, otherwise us
 
 **Resolve the review engine.** Default `claude`. If the invocation passes `--engine codex`, set the engine to `codex` and confirm `codex` is on `$PATH` (if it is not, fall back to `claude` and note it). The engine only affects the Review step (§2); every other step is identical.
 
-**Mark the ticket In Progress.** Use the `linear` skill: resolve the team's `started`/In Progress state by `type` (disambiguated by name) and move the ticket. Store `ticket_title` and `ticket_description` from the same skill's read-an-issue recipe — you pass both to the implement sub-agent and (for `codex`) the reviewer.
+**Mark the ticket In Progress.** Use the `tracker` skill's `transition` operation. Store `ticket_title` and `ticket_description` from its `open` operation — you pass both to the implement sub-agent and (for `codex`) the reviewer.
 
 **Create a worktree** off `base_branch` per `worktree-isolation`. Store `worktree_path` and `worktree_branch`. All file operations for the run happen inside `worktree_path`; the default branch is never touched.
 
@@ -169,7 +169,7 @@ End your response with exactly one line:
 SUBMIT: {"verdict":"PASS|FAIL|DEFER","issues":[...],"commit_message":"...","deferred_brief":"..."}
 ```
 
-Run Codex from inside the worktree (so it reads the implementation under review, not the base checkout) under a read-only sandbox (the diff and the Linear description are untrusted prompt content — a read-only sandbox stops prompt-injection from mutating the host):
+Run Codex from inside the worktree (so it reads the implementation under review, not the base checkout) under a read-only sandbox (the diff and the ticket description are untrusted prompt content — a read-only sandbox stops prompt-injection from mutating the host):
 
 ```bash
 cd "$worktree_path" && codex exec --sandbox read-only --ephemeral - < /tmp/review_TICKET_ID.txt
@@ -195,9 +195,9 @@ Choose exactly one and act accordingly:
 
 The as-built record is already in the reviewed tree (§2, *Record the as-built spec*) — do not write it again here, and do not add anything else to the tree before committing.
 
-**Handle DEFER.** If verdict is DEFER, create a child ticket titled `deferred_brief`, parented to `TICKET_ID`, via the `linear` skill's `issueCreate` recipe (resolve the team ID at runtime).
+**Handle DEFER.** If verdict is DEFER, create a child ticket titled `deferred_brief`, parented to `TICKET_ID`, via the `tracker` skill's `create` operation (which sets queue placement explicitly).
 
-**Set In Review.** Use the `linear` skill to move the ticket to its In Review state (resolved by `type`, disambiguated by name).
+**Set In Review.** Use the `tracker` skill's `transition` operation to move the ticket to In Review.
 
 **Commit.** In the worktree:
 
@@ -215,7 +215,7 @@ git checkout "$base_branch"
 git merge --no-ff "$worktree_branch"
 ```
 
-If conflicts arise: spawn a sub-agent (Read, Edit, Bash) to resolve them, then run `git add -A && git merge --continue --no-edit`. If conflicts remain after 2 attempts, push the feature branch (`git push -u origin "$worktree_branch"`), reset the ticket to Todo (via the `linear` skill), comment explaining what happened, and stop.
+If conflicts arise: spawn a sub-agent (Read, Edit, Bash) to resolve them, then run `git add -A && git merge --continue --no-edit`. If conflicts remain after 2 attempts, push the feature branch (`git push -u origin "$worktree_branch"`), reset the ticket to Todo (via the `tracker` skill), comment explaining what happened, and stop.
 
 **Push and teardown** (`worktree-isolation`):
 
@@ -225,7 +225,7 @@ git worktree remove --force "$worktree_path"
 git branch -d "$worktree_branch" 2>/dev/null || true
 ```
 
-**Close the ticket.** Use the `linear` skill to move it to Done (the `completed` state, resolved by `type`), and post the merge/PR link as a comment.
+**Close the ticket.** Use the `tracker` skill to move it to Done and post the merge/PR link as a comment.
 
 ---
 
@@ -240,7 +240,7 @@ cd "$worktree_path" && git add -A && git commit -m "wip(TICKET_ID): build abando
 git push -u origin "$worktree_branch"
 ```
 
-**Comment on the ticket** via the `linear` skill — include the branch name so the work is findable, and the carried-forward findings:
+**Comment on the ticket** via the `tracker` skill — include the branch name so the work is findable, and the carried-forward findings:
 
 ```
 Build loop abandoned — ABANDON_REASON. Work committed and pushed to WORKTREE_BRANCH for investigation.

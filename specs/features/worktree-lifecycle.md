@@ -2,7 +2,7 @@
 feature: worktree-lifecycle
 status: implemented
 last_updated: 2026-08-04
-linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
+tickets: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
 ---
 
 # Worktree lifecycle — isolated branch per run

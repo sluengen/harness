@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.15 -->
+<!-- guidance:template-context@0.1.16 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -66,7 +66,7 @@ loop:
 conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
-  linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"
+  linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"   # tracker: linear only
   # Custom/renamed-state UUID overrides live here; the linear skill resolves standard states by type at runtime
 paths:
   source: {e.g. app/}
@@ -87,8 +87,8 @@ architecture_watchlist:               # optional — omit entirely if this repo 
     - {e.g. app/screens/BigScreen.tsx}
     - {e.g. src/orchestrator/*.py}
 env:
-  file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
-  linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if tracker: none
+  file: {e.g. .env}            # file to source before tracker/tooling calls; MUST be gitignored, never committed
+  linear_token: LINEAR_API_KEY # tracker: linear only — the var holding the Linear API token; read from the environment/.env, never from CONTEXT.md; omit unless tracker: linear
   github_token: GITHUB_TOKEN   # tracker: github only — the var holding the GitHub token (repo + project scopes); read from the environment/.env, never from CONTEXT.md; omit unless tracker: github
 ```
 

@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.9.2 -->
+<!-- guidance:spec-authoring@0.9.3 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -12,10 +12,10 @@ How to write a spec that is actionable, consistent, and complete — including t
 | Spec | Answers | Lives in | When |
 |---|---|---|---|
 | **Proposal spec** | "Should we do this, and how big is it?" | `specs/proposals/<slug>.md` | Before it is confirmed work — needs a decision, carries real unknowns, or is too large to be one change |
-| **Change spec** | "What exactly will this one piece of work do?" | The Linear issue | While the work is in flight |
+| **Change spec** | "What exactly will this one piece of work do?" | The tracker issue | While the work is in flight |
 | **Feature spec** | "What does the product do today?" | `specs/features/<feature>.md` | Permanent, as-built record |
 
-They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (Linear issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
+They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (tracker issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
 
 ## Reference specs — standing documentation
 
@@ -56,7 +56,7 @@ A proposal's outcome is explicit: **accepted** (spawns change specs; records its
 
 ## Change spec
 
-A single, concrete piece of work. The Linear issue is its home (`linear`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
+A single, concrete piece of work. The tracker issue is its home (`tracker`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
 
 **The capture on-ramp.** A bug or tweak noticed in actual use does not start here from a blank change spec — `/bug` / `/tweak` capture it straight into `templates/adjustment.md`, a capture-optimized change spec pre-framed for the moment of noticing (As-built / Desired / From actual use / Acceptance criteria). `/start` extends it with Grounding and the full Design section above at build time; it is an on-ramp to this form, not a competing artifact.
 
@@ -72,7 +72,7 @@ A single, concrete piece of work. The Linear issue is its home (`linear`). Secti
 
 **File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`code-quality` Part C — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
 
-**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the Linear issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
+**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
 
 ## Feature spec
 

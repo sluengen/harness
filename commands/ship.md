@@ -1,4 +1,6 @@
-<!-- guidance:ship@0.2.0 -->
+<!-- guidance:ship@0.3.0 -->
+
+**Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /ship — integrate and close
 
 Usage: `/ship` (ships the current review-passed branch)
@@ -27,8 +29,8 @@ Read `branches` in `CONTEXT.md`. Repos differ: some fast-forward feature branche
 ### 2. Integrate
 Per the repo's model, either fast-forward the integration branch, or open the PR. Never force-push. Never push directly to a protected release branch unless `CONTEXT.md` says that is the path.
 
-### 3. Close the Linear issue
-Move it to Done (`linear` status mapping). Post the merge/PR link as a comment. The change spec stays on the issue as history; there is no `manifest.yaml` to clean.
+### 3. Close the issue
+Move it to Done and post the merge/PR link as a comment, both through the `tracker` skill. Under `tracker: none` this step is a no-op — report it as skipped and carry on; a missing tracker never suppresses steps 4–5. The change spec stays on the issue as history; there is no `manifest.yaml` to clean.
 
 ### 4. Confirm the durable record
 The record is already inside the certified tree — the HEAD check above is what confirms it, since the reviewer committed it before the verdict. Nothing further to add here: the tree you integrated is the tree that was reviewed, and its `specs/features/` content is the canonical record going forward.
@@ -37,4 +39,4 @@ The record is already inside the certified tree — the HEAD check above is what
 Remove the task worktree and prune (`worktree-isolation`). Commit or discard any stragglers first.
 
 ## Report
-Print what shipped: the Linear issue, the integration target, the merge/PR link, and confirmation the worktree is cleaned up.
+Print what shipped: the issue, the integration target, the merge/PR link, and confirmation the worktree is cleaned up.

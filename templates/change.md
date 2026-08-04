@@ -1,7 +1,7 @@
-<!-- guidance:template-change@0.2.0 -->
+<!-- guidance:template-change@0.3.0 -->
 # Change spec
 
-The structure for a single piece of work. This is the body of the **Linear issue** (`linear`) — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
+The structure for a single piece of work. This is the body of the **tracker issue** (`tracker`) — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
 
 ---
 
