@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-04
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329"]
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329"]
 ---
 
 # Verb model — start / design / review / close

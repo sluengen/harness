@@ -2,7 +2,7 @@
 feature: cli-surface
 status: implemented
 last_updated: 2026-08-04
-linear: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297"]
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297"]
 ---
 
 # CLI surface — the fixed verb contract
