@@ -1,8 +1,8 @@
-<!-- guidance:template-feature@0.2.0 -->
+<!-- guidance:template-feature@0.2.1 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
-last_updated: YYYY-MM-DD
+last_updated: YYYY-MM-DD    # day of the last commit that changed this file — bump it on every content edit
 linear: [CAL-NNN]          # Linear issues that shaped this feature
 ---
 

@@ -1,6 +1,6 @@
 """Shared test git helpers.
 
-Three of them, all about not hand-rolling git in test modules.
+Four of them, all about not hand-rolling git in test modules.
 
 :func:`init_repo` makes a throw-away directory a real repository. Since #214 the
 verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
@@ -30,11 +30,21 @@ exclusion for a nested git worktree, so two abandoned worktrees left inside
 seven tests with no regression behind them (#215). The projection lives here,
 next to the tracked set it is built from, so the answer to "which files are
 living sources" has one home rather than four.
+
+:func:`last_commit_date` reports the day of the last commit that touched a path.
+
+A doc that declares its own currency — a feature spec's ``last_updated``
+frontmatter — asserts something only git can check, and until #280 nothing did:
+the guard required the key to exist and never read its value, so every date
+froze while the file changed underneath it. Answering "when did this file last
+actually change?" needs the *author* date of the last commit touching that path,
+which is the one date a writer can know at the moment they type the value.
 """
 
 from __future__ import annotations
 
 import subprocess
+from datetime import date
 from pathlib import Path
 
 # ``tests/_gitutil.py`` → ``parents[1]`` is the repo (or worktree) root.
@@ -92,6 +102,45 @@ def tracked_files_under(
         for rel in completed.stdout.split("\0")
         if rel
     }
+
+
+def last_commit_date(
+    path: str | Path,
+    *,
+    repo_root: Path = _DEFAULT_REPO_ROOT,
+) -> date | None:
+    """Return the author date of the last commit touching ``path``, or ``None``.
+
+    ``path`` is a pathspec relative to ``repo_root``. ``None`` means git reports
+    no commit for that path — a file staged but never committed, or a shallow
+    clone whose fetched history does not reach one. Callers must distinguish
+    that from a real date rather than coercing it, because the two answer
+    different questions ("never committed" vs "committed on day D").
+
+    The **author** date, not the committer date. Author date is the day the
+    writer commits and survives the merge that lands it; committer date is
+    rewritten by a rebase or merge the writer cannot predict at the moment they
+    type a ``last_updated`` value, which would make such a field impossible to
+    write correctly. The choice is about which date a human can *know*.
+
+    Judges the **committed** tree, matching this module's purpose: an
+    uncommitted working-tree edit is invisible here by construction. A git-level
+    failure raises rather than degrading to ``None``, so a broken invocation can
+    never read as "no history" (``engineering-principles``: errors are never
+    swallowed). That covers not being a repository, git being missing, and a
+    repository holding no commits at all — git refuses the last outright rather
+    than reporting it as an empty result, so ``None`` always means "this path
+    has no commit", never "this repo has none".
+    """
+    completed = subprocess.run(
+        ["git", "log", "-1", "--format=%ad", "--date=short", "--", str(path)],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    stamp = completed.stdout.strip()
+    return date.fromisoformat(stamp) if stamp else None
 
 
 def tracked_py_sources(
