@@ -71,7 +71,7 @@ The contract this governs is not just command names (the CLI-surface-lock, CAL-6
 
 ## Cross-cutting decisions
 
-Decisions whose scope crosses features live here as Decision blocks (`templates/decision.md`), recorded in place rather than as standalone files. Each states context, decision, alternatives rejected, and consequences; superseding updates it inline with a dated note.
+This repo declares `paths.decisions`, so it keeps two homes and the boundary between them is the bar, not the topic. A cross-cutting decision that is also **consequential and expensive to reverse** — branch topology, tracker architecture, security posture, a certification invariant — is filed as a numbered ADR under `specs/decisions/` and indexed from `CONTEXT.md`; superseding one amends it **in place** with a dated note, and the specs that cite it carry the link, not the reasoning. Everything below that bar stays here as a Decision block (`templates/decision.md`), recorded in place rather than as a standalone file: context, decision, alternatives rejected, consequences, superseded inline with a dated note. The two blocks below predate the ADR set and stay where they are — they are decisions about the guidance system itself, not the architecture invariants the ADRs hold.
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 

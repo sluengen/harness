@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.16 -->
+<!-- guidance:template-context@0.1.17 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -75,6 +75,7 @@ paths:
   feature_specs: specs/features/    # canonical, as-built feature specs (decisions embedded inline)
   infrastructure: {e.g. specs/infrastructure.md — or omit}   # reference spec
   architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here)
+  decisions: {e.g. specs/decisions/ — or omit}               # optional, repo-relative: a directory of architecture decision records. Declaring it IS the switch — there is no strategy setting. Declare it only for decisions that are cross-cutting, consequential and expensive to reverse (branch topology, tracker architecture, security posture, certification invariants); omit it and every decision is embedded in the spec it governs, which is the default. The architecture index above owns placement, numbering and supersession for it
   design_system: {path or external repo — or omit}
 # Optional. Gravity-well files where state/branching/rendering accumulate — when a
 # planned or actual diff touches one, the change spec and the review carry a

@@ -1,4 +1,4 @@
-<!-- guidance:template-feature@0.4.0 -->
+<!-- guidance:template-feature@0.5.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
@@ -41,6 +41,8 @@ What the feature deliberately does not do, and edge cases known to be unhandled.
 ## Decisions
 
 Consequential decisions that shaped this feature, recorded inline (`templates/decision.md`): context, decision, alternatives rejected, consequences. Superseded decisions are updated in place with a dated note. Omit if the feature carries none.
+
+A cross-cutting decision the repo filed in its configured `paths.decisions` directory is **linked** here, never copied — one canonical record, so superseding it leaves this spec correct (`spec-authoring`).
 
 ## Cross-references
 
