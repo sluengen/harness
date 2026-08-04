@@ -1,4 +1,4 @@
-<!-- guidance:propose@0.2.0 -->
+<!-- guidance:propose@0.2.1 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /propose — work an idea before it becomes work
@@ -19,7 +19,7 @@ Fill the proposal following `spec-authoring`:
 - Problem / motivation — why now.
 - Options with trade-offs — real alternatives, not one inevitable answer.
 - Recommendation — the proposed direction, tied to `engineering-principles`.
-- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec (`architecture`).
+- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec, or in the repo's configured `paths.decisions` directory when it clears that bar (`spec-authoring`, `architecture`).
 - Breakdown — the change specs this would spawn, each shippable on its own.
 - Risks / unknowns.
 

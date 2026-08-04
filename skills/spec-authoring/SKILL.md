@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.9.3 -->
+<!-- guidance:spec-authoring@0.10.0 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -34,12 +34,18 @@ Some specs are not tied to a task. They document a stable part of the system and
 
 ## Decisions live in the spec they govern
 
-**There is no separate `decisions/` folder and no standalone ADRs.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
+**Embedded is the default.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
 
-- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences).
+- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences). This holds everywhere: a decision that governs one feature stays in that feature's spec, whatever else the repo configures.
 - A **cross-cutting** decision (governs many features) → recorded in the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
 
-Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding a decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice. (See `architecture` for when a choice is decision-worthy.)
+Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding an embedded decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice; where a repo declares `paths.decisions`, its own architecture index owns supersession for the records filed there. (See `architecture` for when a choice is decision-worthy.)
+
+**A repo may configure a decision directory, and that configuration is the only switch.** Where a repo declares `paths.decisions` in its `CONTEXT.md`, that directory is the home for its architecture decision records; a repo that declares none has no `decisions/` folder and no standalone ADRs — embedded, exclusively. There is no separate strategy setting to keep in step: the optional path is the whole signal.
+
+A configured directory holds only decisions that are **cross-cutting, consequential, and expensive to reverse** — branch topology, tracker architecture, security posture, certification invariants. A decision that merely touches **several files** does not clear that bar, and one that governs a single feature never does; both stay embedded. Each qualifying decision has **one canonical record**: the feature specs it affects link to it and must not restate its reasoning, so superseding the record leaves them correct.
+
+Placement, numbering, and supersession *inside* that directory are the repo's own convention — defer to its **architecture index** (the architecture-principles spec, or the decisions index in `CONTEXT.md`) rather than assuming one. Universal guidance names the `paths.decisions` key and stops there.
 
 ## Proposal spec
 
