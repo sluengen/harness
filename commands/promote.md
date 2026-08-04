@@ -89,7 +89,7 @@ resolver is what changes, not the command.
        target from deterministic facts, records pr_opened. Stop — success, a
        human merges it.
 5. harness promote escalate --promotion-id <id>
-     → files/updates a Linear ticket with the evidence, records escalated.
+     → files/updates a tracker ticket with the evidence, records escalated.
        Stop — a human owns it now.
 ```
 
@@ -114,7 +114,7 @@ do not retry a `needs_ticket`/`blocked` promotion by re-running `start`.
 | `harness promote continue --promotion-id <id> [--gate-exit <c> --gate-log <p>]` | Resume a promotion: complete an `agent_may_fix` repair (**one** bounded attempt) or a `gate_pending` merge, then classify the caller's supplied gate evidence — green → `pr_ready`, red → `needs_ticket`. |
 | `harness promote status --promotion-id <id> --json` | Read-only: report the promotion's current lifecycle state. |
 | `harness promote pr --promotion-id <id>` | Success finalizer (refused unless the promotion is `pr_ready` with fresh gate evidence). The hop selects the mechanism: `--to staging` advances staging to the gated SHA with no PR (`promoted`); `--to main` pushes the promotion branch and opens the release PR (`pr_opened`). |
-| `harness promote escalate --promotion-id <id>` | Non-success terminal: file/update a Linear ticket with the evidence and mark the promotion `escalated`. |
+| `harness promote escalate --promotion-id <id>` | Non-success terminal: file/update a ticket on the configured tracker with the evidence and mark the promotion `escalated`. Refuses `no_tracker` (carrying the evidence in the payload) when the repo runs `tracker: none`. |
 
 ## Lifecycle states
 

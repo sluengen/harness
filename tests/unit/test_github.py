@@ -686,7 +686,15 @@ def test_assign_to_viewer_no_viewer_raises() -> None:
         _run(client.assign_to_viewer("1"))
 
 
-def test_create_issue_creates_and_adds_to_board() -> None:
+def test_create_issue_creates_and_lands_on_the_board_as_todo() -> None:
+    """The new issue is added to the board **and** its Status is set to Todo (#328).
+
+    Adding a Projects v2 item leaves its Status empty, and every Todo-scoped reader
+    (``work-discovery``, ``fetch_reclaimable_issues``) skips an item with no Status
+    — so add-only would file a ticket nobody is queued to act on. Asserting the
+    ``SetStatus`` option id is what distinguishes this from the add-only behaviour
+    it replaced; ``assert "AddItem" in ops`` alone stayed green through that bug.
+    """
     client = _client(
         {
             "RepoId": {"data": {"repository": {"id": "R_1"}}},
@@ -703,21 +711,30 @@ def test_create_issue_creates_and_adds_to_board() -> None:
             },
             "OwnerKind": _OWNER_USER,
             "ProjectMeta": _PROJECT_META,
+            "IssueItems": {
+                "data": {
+                    "repository": {
+                        "issue": {"id": "I_new", "projectItems": {"nodes": []}}
+                    }
+                }
+            },
             "AddItem": {"data": {"addProjectV2ItemById": {"item": {"id": "IT_new"}}}},
+            "SetStatus": _confirmed_set_status("IT_new"),
         }
     )
-    out = _run(
-        client.create_issue(team_key="CAL", project_name=None, title="T", description="B")
-    )
+    out = _run(client.create_issue(project=None, title="T", description="B"))
     assert out == {"identifier": "99", "url": "https://github.com/acme/widgets/issues/99"}
     ops = [op for op, _ in client.calls]  # type: ignore[attr-defined]
     assert "AddItem" in ops  # the new issue lands on the board (the queue)
+    set_vars = next(v for op, v in client.calls if op == "SetStatus")  # type: ignore[attr-defined]
+    assert set_vars["optionId"] == "opt_todo"
+    assert set_vars["itemId"] == "IT_new"
 
 
 def test_create_issue_missing_repo_raises_not_found() -> None:
     client = _client({"RepoId": {"data": {"repository": None}}})
     with pytest.raises(GitHubNotFound, match="repository"):
-        _run(client.create_issue(team_key="CAL", project_name=None, title="T", description="B"))
+        _run(client.create_issue(project=None, title="T", description="B"))
 
 
 # ---------------------------------------------------------------------------
@@ -1099,7 +1116,7 @@ def test_create_issue_no_issue_raises() -> None:
         }
     )
     with pytest.raises(GitHubRequestError, match="createIssue"):
-        _run(client.create_issue(team_key="C", project_name=None, title="T", description="B"))
+        _run(client.create_issue(project=None, title="T", description="B"))
 
 
 def test_assign_missing_issue_raises_not_found() -> None:

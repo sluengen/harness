@@ -288,7 +288,7 @@ harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open
 harness promote continue  [--promotion-id <id>] [--repo <p>] [--json]   # resume an agent_may_fix promotion after one bounded repair
 harness promote status    [--promotion-id <id>] [--repo <p>] [--json]   # read a promotion by id: typed ledger view
 harness promote pr        [--promotion-id <id>] [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR (gated)
-harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
+harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a tracker ticket
 ```
 
 There is no `harness promote verify` in v1: the gate runs inside `start` / `continue`, never a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).

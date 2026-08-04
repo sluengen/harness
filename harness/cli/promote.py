@@ -50,13 +50,20 @@ The command keeps the name ``pr`` (the locked v1 surface; there is deliberately 
 mechanism.
 
 CAL-1118 now wires ``escalate`` — the non-success terminal path. It files (or, when
-the promotion is already linked, comments on) a Linear ticket carrying the promotion
+the promotion is already linked, comments on) a tracker ticket carrying the promotion
 evidence — id, endpoints, branch/worktree, conflict files, gate summary, next action
 (the content is rendered by the sibling :mod:`harness.promotion_escalation`; the
-Linear I/O is :meth:`harness.linear.LinearClient.create_issue` / ``post_comment``) —
-then records the escalation ticket id and the terminal ``escalated`` state. Missing
-Linear credentials return a structured ``blocked`` result rather than a raw failure.
-The whole ``promote`` surface is now wired; no subcommand remains a stub.
+tracker I/O goes through the :class:`~harness.tracker.Tracker` seam) — then records
+the escalation ticket id and the terminal ``escalated`` state. Tracker configuration
+that prevents escalation returns a structured ``blocked`` result rather than a raw
+failure, and a tracker-less repo returns ``no_tracker`` carrying the evidence it
+cannot file. The whole ``promote`` surface is now wired; no subcommand remains a stub.
+
+Since #328 the backend is resolved **only** through
+:func:`~harness.tracker.tracker_client`, like every other writing verb: this module
+constructs no backend client and catches no backend-specific error, so escalation
+works on whichever backend ``CONTEXT.md`` → ``tracker:`` selects instead of on
+Linear alone. That contract is guarded by ``test_promote_no_direct_tracker_client``.
 
 The five subcommands are the real orchestrator **pause points**:
 
@@ -99,13 +106,6 @@ from harness._time import iso_z
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id
-from harness.linear import (
-    LinearClient,
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-    linear_api_key,
-)
 from harness.promotion_escalation import build_escalation_body, build_escalation_title
 from harness.promotion_gate import classify_gate_failure, evidence_from_report
 from harness.promotion_pr import (
@@ -119,6 +119,12 @@ from harness.promotion_pr import (
 )
 from harness.state import promotions
 from harness.state.promotions import Promotion, PromotionStatus
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 #: The ``harness promote pr`` gate-refusal reasons — the machine-readable enum an
 #: orchestrator branches on when a PR is refused. ``gate_not_satisfied``: the
@@ -710,11 +716,10 @@ def escalate_command(
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repo root of the promotion."
     ),
-    team: str | None = typer.Option(
-        None, "--team", help="Linear team key (default: CONTEXT.md repo.linear)."
-    ),
     project: str | None = typer.Option(
-        None, "--project", help="Linear project name (default: CONTEXT.md repo.project)."
+        None,
+        "--project",
+        help="Tracker project scope (default: CONTEXT.md repo.project; may be unset).",
     ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
@@ -723,19 +728,40 @@ def escalate_command(
         True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Escalate a blocked promotion: file or update a Linear ticket, mark it
+    """Escalate a blocked promotion: file or update a tracker ticket, mark it
     ``escalated`` (CAL-1118). Idempotent — a promotion already linked to an
-    escalation ticket is commented on, not duplicated (AC-2)."""
+    escalation ticket is commented on, not duplicated (AC-2).
+
+    The tracker is resolved through :func:`~harness.tracker.tracker_client`, the
+    same seam every other writing verb uses, so the terminal works on whichever
+    backend ``CONTEXT.md`` → ``tracker:`` names (#328). This verb never constructs
+    a backend client and never catches a backend-specific error.
+    """
     promotion = _read_or_not_found("escalate", promotion_id, repo, db)
     repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    # AC-4: missing Linear credentials → a structured `blocked` result (never a
-    # raw traceback). The promotion row is left untouched — escalation did not
-    # happen, so its state must not advance to `escalated`.
+    # The scope is nullable (#174/#248): the flag overrides CONTEXT.md's
+    # repo.project, and unset means the backend's natural queue rather than an
+    # error. There is no team to resolve here — that is a Linear-only fact, and it
+    # now lives inside the Linear client as config (#328).
+    project_name = project or repo_config.repo_project(repo_root)
+
+    # The body is rendered before the client is resolved, so the `no_tracker`
+    # refusal below can carry the evidence it cannot file anywhere.
+    title = build_escalation_title(promotion)
+    body = build_escalation_body(
+        promotion, conflict_files=_promotion_conflict_files(promotion)
+    )
+
+    # AC-4: tracker configuration that prevents escalation → a structured
+    # `blocked` result (never a raw traceback), on either backend: a missing
+    # credential, an absent `github:` block, or a Linear client with no team. The
+    # promotion row is left untouched — escalation did not happen, so its state
+    # must not advance to `escalated`.
     try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
+        client = tracker_client(repo_root)
+    except TrackerConfigError as exc:
         _refuse(
             "blocked",
             str(exc),
@@ -744,34 +770,31 @@ def escalate_command(
             status=promotion.status,
         )
 
-    # Resolve the escalation target — the flags override CONTEXT.md's
-    # repo.linear / repo.project defaults (the Grounding: team/project come from
-    # CONTEXT.md). A project is optional (the issue still files without one); a
-    # team is required, since `issueCreate` cannot place an issue without it.
-    team_key = team or repo_config.repo_linear_team(repo_root)
-    project_name = project or repo_config.repo_project(repo_root)
-    if team_key is None:
+    if client is None:
+        # `tracker: none` — there is nowhere to file. The refusal carries the
+        # rendered evidence because nothing else will: the promotion row does not
+        # store it, and with no tracker the operator *is* the escalation target.
+        # Recording the terminal `escalated` with a null ticket is the wrong
+        # alternative — `escalated` means a ticket is waiting for a human.
         _refuse(
-            "unresolved_target",
-            "no Linear team to escalate into — pass --team or set repo.linear in "
-            "CONTEXT.md",
+            "no_tracker",
+            "this repo runs tracker-less (CONTEXT.md tracker: none) — there is no "
+            "tracker to escalate into; the evidence is in this payload",
             command="promote escalate",
             promotion_id=promotion_id,
+            status=promotion.status,
+            escalation_title=title,
+            escalation_body=body,
         )
 
-    body = build_escalation_body(
-        promotion, conflict_files=_promotion_conflict_files(promotion)
-    )
-    client = LinearClient(api_key=api_key)
     try:
         if promotion.escalation_ticket is None:
             # AC-1: first escalation — file a Todo issue carrying the evidence.
             created = asyncio.run(
                 client.create_issue(
-                    team_key=team_key,
-                    project_name=project_name,
-                    title=build_escalation_title(promotion),
+                    title=title,
                     description=body,
+                    project=project_name,
                 )
             )
             ticket_id = created["identifier"]
@@ -780,12 +803,10 @@ def escalate_command(
         else:
             # AC-2: already linked — comment on the existing ticket, no duplicate.
             ticket_id = promotion.escalation_ticket
-            asyncio.run(
-                client.post_comment(ticket_id, _reescalation_comment(body))
-            )
+            asyncio.run(client.post_comment(ticket_id, _reescalation_comment(body)))
             escalation_url = None
             action = "updated"
-    except (LinearNotFound, LinearRequestError) as exc:
+    except (TrackerNotFound, TrackerRequestError) as exc:
         _refuse(
             "escalation_failed",
             str(exc),
