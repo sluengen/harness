@@ -701,22 +701,32 @@ mutation UpdateIssueBody($id: ID!, $body: String!) {
     async def create_issue(
         self,
         *,
-        team_key: str,
-        project_name: str | None,
         title: str,
         description: str,
+        project: str | None,
     ) -> dict[str, str]:
-        """Create an issue in the repo, add it to the board; return ``{identifier, url}``.
+        """Create an issue, put it on the board **as Todo**; return ``{identifier, url}``.
 
         The GitHub mirror of the Linear client's ``create_issue`` (the primitive
-        behind ``harness ingest`` / escalation). ``team_key`` and ``project_name``
-        are Linear addressing and are ignored — GitHub's repo and board come from
-        config; the new issue is added to the configured board so it lands on the
-        queue. ``identifier`` is the new issue number.
+        behind ``harness ingest`` / escalation). ``project`` is the seam's nullable
+        scope and is unused here — for GitHub the board *is* the queue and comes
+        from config, whereas Linear has a project to file into (#328).
+        ``identifier`` is the new issue number.
+
+        The Status is set explicitly rather than left to ``_add_to_board``: adding
+        an item to a Projects v2 board leaves its Status **empty**, and a Todo-scoped
+        reader (``work-discovery``, ``fetch_reclaimable_issues``) does not see an
+        item with no Status — so an escalation would file a ticket nobody is queued
+        to act on, which is the failure this primitive exists to avoid. ``_set_status``
+        adds the issue to the board itself when it is not on it yet, so this is one
+        call rather than an add followed by an update.
 
         Raises:
             GitHubNotFound: the configured repository does not exist.
-            GitHubRequestError: the API errored or ``createIssue`` returned no issue.
+            GitHubRequestError: the API errored, ``createIssue`` returned no issue,
+                or the board has no *Todo* status option.
+            TrackerTransitionUnconfirmed: the item was created but its post-write
+                Status is not *Todo*.
         """
         repo_query = """
 query RepoId($owner: String!, $name: String!) {
@@ -748,8 +758,9 @@ mutation CreateIssue($repoId: ID!, $title: String!, $body: String!) {
                 f"GitHub createIssue returned no issue for {self._owner}/{self._name}; "
                 f"response: {result!r}"
             )
-        await self._add_to_board(issue["id"])
-        return {"identifier": str(issue["number"]), "url": str(issue["url"])}
+        number = str(issue["number"])
+        await self._set_status(number, "todo")
+        return {"identifier": number, "url": str(issue["url"])}
 
     # ------------------------------------------------------------------
     # Internal — Projects v2 status mechanics
