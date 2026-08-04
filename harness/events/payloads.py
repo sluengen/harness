@@ -341,6 +341,16 @@ class CloseEventData(BaseModel):
     the **verb's** own latency and is not ``runs.duration_ms`` (#261), which
     measures the whole run's life from ``started_at``: one answers "how long
     does closing take", the other "how long did this ticket take".
+
+    ``retries`` and ``retried_reasons`` (#301) record what ``close``'s bounded
+    retry absorbed. ``retries`` defaults to ``0`` and is always written, so it is
+    a scalar a stats reader can ``json_extract`` and aggregate — including over
+    rows predating the field, which retried nothing because nothing retried.
+    ``retried_reasons`` is the ordered log behind that count and is omitted
+    entirely when empty (``exclude_none=True``), keeping the common close's
+    payload the shape it already had. The count alone would not separate a flaky
+    push race from a degrading tracker, which is the observation the pair exists
+    to support.
     """
 
     run_id: str
@@ -350,6 +360,8 @@ class CloseEventData(BaseModel):
     outcome: str = CLOSE_OUTCOME_OK
     invoked_at: str | None = None
     duration_ms: int | None = None
+    retries: int = 0
+    retried_reasons: list[str] | None = None
 
 
 class CloseFailureEventData(BaseModel):
@@ -399,6 +411,12 @@ class CloseFailureEventData(BaseModel):
     to; ADR 0009 accepts the gap rather than paying for it with synthetic
     ``runs`` rows. It is the one hole in the denominator, so the measured rate is
     *per resolved-run close attempt*.
+
+    ``retries`` / ``retried_reasons`` (#301) carry the same meaning they do on
+    :class:`CloseEventData`, and matter most here: a failure that exhausted the
+    retry spent three attempts on the same wall of a degrading tracker, and
+    without the count it would be indistinguishable from a single clean refusal.
+    A gate refusal is upstream of the retry, so its rows always read ``0``.
     """
 
     run_id: str
@@ -412,6 +430,8 @@ class CloseFailureEventData(BaseModel):
     merged_sha: str | None = None
     invoked_at: str | None = None
     duration_ms: int | None = None
+    retries: int = 0
+    retried_reasons: list[str] | None = None
 
 
 class DeferEventData(BaseModel):

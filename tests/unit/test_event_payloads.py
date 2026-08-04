@@ -365,6 +365,11 @@ def test_close_event_data_keys() -> None:
         "merged_sha": "s",
         "closed_at": "t",
         "outcome": CLOSE_OUTCOME_OK,
+        # #301: always written, so a stats reader can aggregate it as a scalar
+        # — including over rows predating the field, which retried nothing.
+        # ``retried_reasons`` stays absent while empty, keeping the common
+        # close's payload the shape it already had.
+        "retries": 0,
     }
 
 
@@ -386,6 +391,11 @@ def test_close_failure_event_data_keys() -> None:
         "reason": "stale_review",
         "detail": "passing review is stale",
         "created_at": "t",
+        # #301: a gate refusal is upstream of the retry, so its rows always
+        # read zero — the field is present regardless, so "nothing retried" and
+        # "written before the field existed" are the same row rather than a
+        # NULL a reader has to interpret.
+        "retries": 0,
     }
 
 
