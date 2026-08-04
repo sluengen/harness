@@ -42,11 +42,11 @@ profiles:
 files:
   # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.4.0, profiles: [harness] }
-  skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.5.1, profiles: [harness] }
+  skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.9.2, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.20.0, profiles: [harness] }
-  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.7.0, profiles: [harness] }
+  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.8.0, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.7.0, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
@@ -72,18 +72,18 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.0, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.10, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.2.0, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.2.0, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.2.1, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.1.1, profiles: [harness] }
   commands/start.md:                  { id: start,                    version: 0.3.0, profiles: [harness] }
-  commands/review.md:                 { id: review,                   version: 0.1.5, profiles: [harness] }
-  commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
+  commands/review.md:                 { id: review,                   version: 0.2.0, profiles: [harness] }
+  commands/ship.md:                   { id: ship,                     version: 0.2.0, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.6.4, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.5.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.6.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
   # same invocation drives any repo's own branch names (#189).
@@ -99,7 +99,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.23, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.3.0, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project
@@ -125,7 +125,7 @@ files:
   templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.15, profiles: [harness] }
   # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
   # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
-  templates/feature.md:               { id: template-feature,         version: 0.2.1, profiles: [harness] }
+  templates/feature.md:               { id: template-feature,         version: 0.3.0, profiles: [harness] }
   # Reference implementation of the size-marker guard, distributed so a consuming
   # repo can adopt the mechanical check with its own globs/limit/exemptions. The
   # rule lives in skills/code-quality; this is the ~30-line walker that enforces it.
@@ -150,7 +150,7 @@ files:
   hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.3.8, profiles: [harness] }
 
   # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---
-  process/harness.md:                 { id: process-harness,          version: 0.4.9, profiles: [harness] }
+  process/harness.md:                 { id: process-harness,          version: 0.5.0, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
   settings/harness.json:              { id: settings-harness,         version: 0.6.0, profiles: [harness] }

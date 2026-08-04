@@ -2,7 +2,7 @@
 name: spec-driven-development
 description: Use at the start of a tracked task to follow the spec-driven flow from idea to shipped-and-recorded with minimal ceremony — when each spec (proposal, change, feature) is produced and what handoff means. The spine the other skills hang off.
 ---
-<!-- guidance:spec-driven-development@0.5.1 -->
+<!-- guidance:spec-driven-development@0.6.0 -->
 # Spec-Driven Development
 
 How a task flows from "idea" to "shipped and recorded" with the least ceremony that still guarantees quality. This is the spine the other skills hang off. How to *write* each spec is in `spec-authoring`; this is *when* each one is produced.
@@ -33,7 +33,7 @@ The builder does **not** edit `specs/features/`. If a builder touches the featur
 5. **Build test-first, in scope.** Follow `test-driven-development` for behaviour and `code-quality` for how to build without overreach. Design against `engineering-principles`.
 6. **If scope shifts, update the change spec.** Silent divergence between the spec and the work is a process violation. Edit the change spec in place the moment the plan changes.
 7. **Hand off to review.** Set the issue **In Review**. The reviewer checks output *and* process (`review-discipline`).
-8. **On PASS, the reviewer records reality.** The reviewer updates `specs/features/<feature>.md` to match what shipped, as the last commit before merge. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it — a feature spec in `specs/features/` where `feature_specs` is on, otherwise the section of the design doc / `SPEC.md` that governs the surface. A surface is not permitted to accumulate more than one shipped ticket without an as-built record; the record is where a gap between tickets becomes visible, and it cannot do that job retroactively.
+8. **On PASS, the reviewer records reality.** The reviewer updates `specs/features/<feature>.md` to match what shipped, committed **into the candidate before the certifying gate and the verdict** — the tree the verdict covers is the tree that merges (`review-discipline`'s *final-evidence ordering* rule). When a surface's as-built record does not exist yet, the first ticket touching that surface creates it — a feature spec in `specs/features/` where `feature_specs` is on, otherwise the section of the design doc / `SPEC.md` that governs the surface. A surface is not permitted to accumulate more than one shipped ticket without an as-built record; the record is where a gap between tickets becomes visible, and it cannot do that job retroactively.
 9. **Ship and close.** Integrate per the repo's branch model (see the `/ship` command and `CONTEXT.md`), set the issue **Done**. The change spec stays on the Linear issue as history; the durable record is now in `specs/features/`.
 
 ## No claim without evidence

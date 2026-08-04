@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.4.9 -->
+<!-- guidance:process-harness@0.5.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -26,7 +26,7 @@ Work is spec-driven with minimal ceremony. Three specs serve three moments (`spe
 2. Read the relevant as-built record before changing behaviour — the feature spec, or `SPEC.md` / `specs/` for an infra repo. It is the contract.
 3. Write a change spec into the issue: problem, approach, **design** (data model / interface / scenarios), acceptance criteria, out of scope (`spec-authoring`).
 4. Branch into a worktree (`worktree-isolation`) — never build on the default branch. Build test-first (`test-driven-development`), in scope (`code-quality`), against the principles (`engineering-principles`).
-5. Hand to review. The reviewer checks output and process (`review-discipline`), runs the verification gate independently, and — on PASS — records what shipped (to `specs/features/` when `feature_specs` is on, otherwise updates the design spec).
+5. Hand to review. The reviewer checks output and process (`review-discipline`), records what shipped (to `specs/features/` when `feature_specs` is on, otherwise updates the design spec) **into the candidate**, and only then runs the verification gate independently and decides — the tree the verdict covers is the tree that merges (`review-discipline`'s *final-evidence ordering* rule).
 6. Ship per the repo's branch model (`CONTEXT.md`), close the Linear issue.
 
 The load-bearing rules throughout — non-negotiable, and written out here so they bind even if no skill file gets opened:

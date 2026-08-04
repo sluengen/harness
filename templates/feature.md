@@ -1,4 +1,4 @@
-<!-- guidance:template-feature@0.2.1 -->
+<!-- guidance:template-feature@0.3.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
@@ -48,4 +48,4 @@ Consequential decisions that shaped this feature, recorded inline (`templates/de
 
 ---
 
-**Editing rule.** This file is written by the **reviewer**, not the builder, when a Linear issue touching the feature lands — based on what the diff actually does, as the last commit before merge. The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (`spec-driven-development`).
+**Editing rule.** This file is written by the **reviewer**, not the builder, when a Linear issue touching the feature lands — based on what the diff actually does, and committed into the candidate *before* the certifying gate and the verdict, so the review covers it (`review-discipline`'s *final-evidence ordering* rule). The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (`spec-driven-development`).
