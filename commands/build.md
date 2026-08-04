@@ -1,4 +1,4 @@
-<!-- guidance:build@1.4.1 -->
+<!-- guidance:build@1.5.0 -->
 # /build — implement, verify, and review a Linear ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -37,9 +37,13 @@ Read the repo's entry process doc. Prefer `AGENTS.md` when present, otherwise us
 
 Track `issues` (list, starts empty) and `verdict`. On each iteration: implement → verify → review. Exit the loop when verdict is PASS or DEFER.
 
-The first 3 iterations run unconditionally. If the 3rd review still returns FAIL, do **not** abandon by default — solving issues often exposes new ones, and a run that looks stuck at round 3 frequently lands at round 4 or 5. Instead, run the **convergence check** below before each further iteration, and again before every iteration after that. Keep going while the loop is converging; go to **§4 Abandoned** the moment it is not.
+How many iterations this loop may run is **not decided here**: `review-discipline`'s *On a FAIL* section owns the stop rule for every entry point, and reads its numbers from `CONTEXT.md` → `loop:` so a consuming repo tunes its own budget. Open it and follow it. In this command's terms it lands as three things:
 
-### Convergence check — before every iteration past the 3rd
+- an **unconditional window** of leading iterations that need no justification — do **not** abandon by default inside it, since solving issues often exposes new ones and a run that looks stuck early frequently lands a round or two later;
+- a **judged window** after that, where the convergence check below runs before each further iteration — keep going while the loop is converging, and go to **§4 Abandoned** the moment it is not;
+- **exhaustion** when the budget is spent without a PASS — go to **§4 Abandoned** regardless of how converging the last read looked.
+
+### Convergence check — before every iteration in the judged window
 
 Compare the latest review's findings against the prior rounds and decide:
 
@@ -215,7 +219,7 @@ git branch -d "$worktree_branch" 2>/dev/null || true
 
 ## 4. Abandoned
 
-The convergence check determined the loop is stuck. The work so far is still worth investigating — why a run fails is a signal, and the partial implementation may be salvageable. **Preserve it: do not tear down the worktree.**
+Reached either way the fix loop can end without a PASS: the convergence check determined the loop is stuck, or the cycle budget is exhausted. Say which in the ticket comment — a loop that stopped because it was going in circles and one that ran out of budget while still improving call for different decisions from the human. The work so far is still worth investigating — why a run fails is a signal, and the partial implementation may be salvageable. **Preserve it: do not tear down the worktree.**
 
 **Commit the work to the run branch and push it** so it survives and can be picked up elsewhere:
 
@@ -227,10 +231,10 @@ git push -u origin "$worktree_branch"
 **Comment on the ticket** via the `linear` skill — include the branch name so the work is findable, and the carried-forward findings:
 
 ```
-Build loop abandoned — not converging. Work committed and pushed to WORKTREE_BRANCH for investigation.
+Build loop abandoned — ABANDON_REASON. Work committed and pushed to WORKTREE_BRANCH for investigation.
 
 Findings:
 ISSUES
 ```
 
-Reset the ticket to Todo (the `linear` skill, `unstarted` state by `type`). **Leave the worktree and branch in place.** Report the findings and the branch name to the user.
+**Put the ticket on operator hold — do not reset it to Todo.** A Todo ticket is what the unattended Build loop picks up next tick, which would hand the same unconverged work a fresh budget and no human ever sees it. Apply the operator-hold label **and assign the ticket to the operator**, per `review-discipline`'s *On a FAIL* section: assignment is what `work-discovery` skips on. Where the harness app is available that is `harness defer <TICKET> --needs operator`; elsewhere reach the same end state through the repo's tracker. **Leave the worktree and branch in place.** Report the findings and the branch name to the user.

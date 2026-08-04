@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.6.10 -->
+<!-- guidance:review-discipline@0.7.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -95,6 +95,18 @@ Critical and High block. Medium and Low do not, **but fix them in the same pass 
 - **Record reality on PASS — the as-built-record gate.** When the diff touches a **user-facing surface** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does as the last commit before merge. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it; a surface is not permitted to accumulate more than one shipped ticket without one — the record is where a gap between tickets becomes visible, and it cannot do that job retroactively (`spec-driven-development`).
 - **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings by severity with the four parts each, the verification output, and a final PASS / FAIL.
 
-## On a FAIL
+## On a FAIL — the review→fix stop rule
 
-Return the blocking findings to the builder and re-review. A second consecutive FAIL is a stop: escalate to the user rather than looping further.
+Return the blocking findings to the builder and re-review. How many times that may happen is **one policy, owned here**. Every other agent and command points at this section rather than restating it; the numbers it names live in `CONTEXT.md` → `loop:` so a repo tunes its own budget without forking the rule.
+
+A run may spend `loop.max_review_cycles` review→fix cycles in total. Three windows:
+
+- **The unconditional window** — the first `loop.unconditional_review_cycles`. A FAIL here is normal iteration: fix the root cause and re-review, no justification owed. Most work that converges converges inside it.
+- **The judged window** — every cycle after that, up to the budget. Before spending one, make a convergence judgment and **write it down**: name which findings are new and which are carried over, and continue only when the findings are peeling back layers and the work is materially approaching PASS. Stop early when the pattern says the problem is the design, the requirements, or the implementation approach rather than the remaining defects — more cycles do not fix any of those. The judgment is recorded so it stays honest rather than optimistic; an unwritten one is reliably a rationalisation for another cycle.
+- **Exhausted** — the budget is spent and the last cycle did not PASS. **Stop regardless of how converging it looked.** A run that still reads as converging on its last allowed cycle is exactly the case the budget exists to bound: the read has been wrong every cycle so far.
+
+**An exhausted ticket goes on operator hold — it does not go back to the queue.** Preserve the work (push the branch), then put the ticket in a state the unattended loop will not pick up: apply the operator-hold label **and assign the ticket to the operator**. Assignment is the load-bearing half — `work-discovery` skips an assigned ticket, so this is what stops the next tick re-picking the work and starting a fresh budget on it. A human decides what happens next: re-scope it, split it, or authorise a continuation. Nothing automated may clear the hold or reset the budget, because "start again with five more cycles" is the one outcome that turns a bounded loop back into an unbounded one.
+
+Where the harness app is available, that is `harness checkpoint` followed by `harness defer <TICKET> --needs operator` — the verb posts the comment, applies the label, assigns the operator, and records the hold in the ledger. Elsewhere, reach the same end state through the repo's tracker. Either way the reason posted with it is written by you, from the cycle count and the branch — not a paste of the review engine's own prose, which is derived from an untrusted diff.
+
+The harness enforces the budget deterministically at the `review` boundary, so an orchestrator that ignores the rule is refused rather than merely wrong (`commands/harness.md` has the verb-level mechanics: the exit code, the `reason` tag, and the two advisory fields that let a run stop *before* the refusal). The refusal is the backstop; this section is the policy.
