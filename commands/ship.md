@@ -1,4 +1,4 @@
-<!-- guidance:ship@0.1.2 -->
+<!-- guidance:ship@0.2.0 -->
 # /ship — integrate and close
 
 Usage: `/ship` (ships the current review-passed branch)
@@ -7,8 +7,14 @@ Integrates a branch the reviewer has PASSed, closes the ticket, and clears the i
 
 ## Preconditions
 
-- `/review` returned PASS on this branch.
-- The reviewer has recorded the shipped behaviour to `specs/features/` (the last commit on the branch).
+- `/review` returned PASS on this branch, and reported the `reviewed_sha` it bound to.
+- **HEAD is still that tree.** The reviewer committed the as-built record into the candidate *before* certifying it (`review-discipline`'s *final-evidence ordering* rule), so the passing verdict already covers the record:
+
+  ```bash
+  git rev-parse HEAD    # must equal the reviewed_sha /review reported
+  ```
+
+  Mismatch means something landed after the verdict, so what you would ship was never reviewed or verified. **Stop and re-run `/review`** to bind a fresh pass to the current HEAD. This is the agent-led twin of the harness's `stale_review` refusal, and it has the same remedy — never a manual merge.
 - The verification gate is green (`code-quality` Part C).
 
 If any is missing, stop — do not ship unreviewed or unverified work.
@@ -25,7 +31,7 @@ Per the repo's model, either fast-forward the integration branch, or open the PR
 Move it to Done (`linear` status mapping). Post the merge/PR link as a comment. The change spec stays on the issue as history; there is no `manifest.yaml` to clean.
 
 ### 4. Confirm the durable record
-The reviewer recorded what shipped to `specs/features/` on PASS (the last commit before merge). Confirm that commit is present in what you are integrating — it is the canonical record going forward.
+The record is already inside the certified tree — the HEAD check above is what confirms it, since the reviewer committed it before the verdict. Nothing further to add here: the tree you integrated is the tree that was reviewed, and its `specs/features/` content is the canonical record going forward.
 
 ### 5. Clean up the worktree
 Remove the task worktree and prune (`worktree-isolation`). Commit or discard any stragglers first.

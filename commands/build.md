@@ -1,4 +1,4 @@
-<!-- guidance:build@1.5.0 -->
+<!-- guidance:build@1.6.0 -->
 # /build — implement, verify, and review a Linear ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -92,6 +92,12 @@ Spawn a sub-agent through the host sub-agent mechanism. Its working directory is
 
 Wait for the sub-agent to complete before continuing.
 
+### Record the as-built spec
+
+Before you verify, fold the durable as-built record into the candidate — `review-discipline`'s *final-evidence ordering* rule: the tree you verify and review is the tree that merges, so the record goes in first, not after the verdict. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the current diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) **You** write it, not the implement sub-agent.
+
+It is ordinary tree content from here on: the gate below runs over it — a record edit can trip a link, generated-doc, or drift guard — and the review below reads it as part of the diff. On an iteration that ends in FAIL the record is simply redrafted from the next diff; a record written against a superseded diff never merges.
+
 ### Verify
 
 Run the verify command inside the worktree:
@@ -108,7 +114,10 @@ Capture the diff. The implement agent does not commit, so the patch lives in the
 
 ```bash
 cd "$worktree_path" && git add -A && git diff --cached HEAD 2>/dev/null
+cd "$worktree_path" && git write-tree    # capture as reviewed_tree — the identity of what you are about to review
 ```
+
+Keep `reviewed_tree`. This flow reviews a staged tree and commits only after the verdict, so it has no pre-review SHA to bind to; the tree hash is the exact statement of the same property, and §3 checks the committed tree against it.
 
 Now review the diff with the resolved engine. Both engines judge the same thing, and the standard is `review-discipline` — **Stage 1** (does the diff meet the ticket's acceptance criteria and design, with a test per criterion), then **Stage 2** (correctness, security, principles, structure, over-engineering), findings carrying the four-part shape (what / where / why / how). The engine differs only in *who* applies that standard; both end in exactly one verdict (see **Verdict**).
 
@@ -184,7 +193,7 @@ Choose exactly one and act accordingly:
 
 ## 3. Ship
 
-**Record the as-built spec.** The reviewed diff is the source of truth; now record what actually shipped — the durable as-built record. Inside the worktree, update the repo's feature spec — `specs/features/<feature>.md` for the feature this ticket touches, created if the feature is new — so it describes the delivered behaviour, written from the diff and not from the implement agent's claims. (If the repo keeps no feature specs per its spec model in `CONTEXT.md`, record the as-built behaviour wherever that repo's durable record lives.) The edit is included in the commit below.
+The as-built record is already in the reviewed tree (§2, *Record the as-built spec*) — do not write it again here, and do not add anything else to the tree before committing.
 
 **Handle DEFER.** If verdict is DEFER, create a child ticket titled `deferred_brief`, parented to `TICKET_ID`, via the `linear` skill's `issueCreate` recipe (resolve the team ID at runtime).
 
@@ -194,7 +203,10 @@ Choose exactly one and act accordingly:
 
 ```bash
 cd "$worktree_path" && git add -A && git commit -m "COMMIT_MESSAGE"
+cd "$worktree_path" && git rev-parse "HEAD^{tree}"   # must equal reviewed_tree from §2
 ```
+
+If it does not equal `reviewed_tree`, something entered the tree after the verdict and what you would integrate was never reviewed or verified. **Do not integrate** — go back to the fix loop and review again.
 
 **Integrate** per the repo's branch model (`CONTEXT.md` `branches`, mirroring `/ship`). Typically, from the main checkout, merge the run branch into `base_branch`:
 

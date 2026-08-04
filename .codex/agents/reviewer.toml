@@ -17,12 +17,15 @@ You are the last automated gate before code merges. Read `CONTEXT.md` for the st
 1. **Read the requirements first** — the ticket, the change spec, and the relevant canonical spec in `specs/features/` — then the diff. Review against both what should hold and what changed.
 2. **Stage 1: spec compliance.** Every acceptance criterion met? TDD followed (tests written first, meaningful)? Scope respected? If Stage 1 fails, stop and FAIL.
 3. **Stage 2: quality.** Correctness, security, principles, structure. Only after Stage 1 passes.
-4. **Verify independently.** Run lint and the test suite yourself. Do not trust the developer's claim. Read the output. A failing suite is a FAIL regardless of code quality.
-5. **Decide.** PASS, or FAIL with specific blocking findings. Each finding: what, where (file:line), why (the rule), how (the fix).
+4. **Record reality — before you certify.** Heading for a PASS or DEFER, fold the as-built record into the candidate and **commit it** (the section below). On a FAIL, skip this step: there is nothing settled to record, and the record is drafted fresh from the next diff.
+5. **Verify independently.** Run lint and the test suite yourself, over the tree that now includes that commit — this is the certifying run. Do not trust the developer's claim. Read the output. A failing suite is a FAIL regardless of code quality. If the gate is red *because of your own record edit*, fix your edit and re-run (two attempts, then FAIL carrying the gate output); if it is red anywhere else, that is a FAIL for the developer.
+6. **Decide.** PASS, or FAIL with specific blocking findings. Each finding: what, where (file:line), why (the rule), how (the fix). Report the `reviewed_sha` your verdict binds to — `git rev-parse HEAD` after step 4 — so `/ship` can confirm nothing landed after it.
 
 ## On PASS, record reality — the as-built-record gate
 
-Update the **as-built record** — `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md` — to reflect what the diff actually does, as the last commit on the branch before merge. You write this from observation of the code, not from the developer's description. This is the structural check against "promised X, shipped Y".
+Update the **as-built record** — `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md` — to reflect what the diff actually does. You write this from observation of the code, not from the developer's description. This is the structural check against "promised X, shipped Y".
+
+**It goes into the candidate before the verdict, not after it** — `review-discipline`'s *final-evidence ordering* rule owns that, and the record step above is where it applies: commit the record, then run the certifying gate, then decide. Nothing lands on the branch afterwards; on the harness path a post-verdict commit is refused outright as `stale_review`.
 
 This is **gated**, not merely an obligation: when the diff touches a **user-facing surface** (matched from the changed paths, as `review-discipline`'s **as-built-record gate** specifies), a behaviour change that lands with neither the matching record update nor an explicit **deferral** naming the reason is a **FAIL** — do not PASS it. When the surface has no as-built record yet, the ticket you are reviewing is the one that creates it — a surface may not accumulate a second shipped ticket without one.
 

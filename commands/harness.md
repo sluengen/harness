@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.23 -->
+<!-- guidance:harness@0.3.0 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -79,6 +79,8 @@ The stage is **unconditional** — it runs for every ticket, whatever its judged
 **`review` refuses a run with no recorded design attempt** — exit `5`, `reason=no_design`, before any engine is invoked and with no verdict recorded. It mirrors `no_gate_evidence`: silence is not a pass. Skipping this step does not save a step; it buys a refusal at Step 3.
 
 **Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's entry process doc (`AGENTS.md`, or the host-specific mirror such as `CLAUDE.md` / `GEMINI.md`): write the failing test, watch it fail for the right reason, then make it pass. Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
+
+**Record the as-built record before you review, not after.** The review engine is read-only, so on this path the orchestrating session authors the as-built record — a feature spec in `specs/features/` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`. Write it from what the diff actually does, run the verify gate over the tree that now includes it, and **commit** — all before Step 3's `harness review`. The rule is `review-discipline`'s *final-evidence ordering*; follow it there. Here it is not advice but the gate: `review` binds its verdict to a SHA, so a record committed *after* a pass is precisely what `close` refuses as `stale_review`, costing a full re-review cycle against the budget for a commit that could have been inside the reviewed tree. The independent-certification argument survives the session authoring it — the engine reads the record inside the reviewed diff and can FAIL it.
 
 **Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
 
