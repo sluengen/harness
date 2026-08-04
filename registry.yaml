@@ -99,7 +99,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.21, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.2.22, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project
@@ -122,7 +122,7 @@ files:
   templates/decision.md:              { id: template-decision,        version: 0.1.0, profiles: [harness] }
   templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
   templates/architecture.md:          { id: template-architecture,    version: 0.1.0, profiles: [harness] }
-  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.14, profiles: [harness] }
+  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.15, profiles: [harness] }
   # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
   # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
   templates/feature.md:               { id: template-feature,         version: 0.2.1, profiles: [harness] }

@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-04
-linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#297"]
+linear: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299"]
 ---
 
 # Verb model — start / design / review / close
@@ -24,7 +24,7 @@ The harness is **not** a pipeline that drives agents. A single Claude session or
 - THEN the verb fetches and canonicalises the ticket, generates a ULID `run_id`, creates an isolated git worktree off the base branch (default `dev`, see [worktree lifecycle](worktree-lifecycle.md)), inserts the `open` `runs` ledger row, and **transitions the ticket to In Progress last**
 - AND it emits a `StartOutput` JSON object (`run_id`, ticket context, `worktree_path`, `worktree_branch`, `base_branch`, `attended`)
 
-`--attended` declares that an operator is present ([ADR 0011](../decisions/0011-attended-run-spend-scope.md), #295). The mode is recorded in the run row's `inputs_json` and echoed as `attended` so the orchestrator confirms what was stored. Unattended is the default and the failure default: an undeclared run writes the byte-identical `"{}"` it always has, and only the literal JSON `true` reads back as attended — declaring it opts a run out of the wall clock, the only ceiling on autonomous spend, so every ambiguous value fails toward the bound. Attendance is **fixed at `start`**; nothing mutates it afterwards. Since #296 `review` reads it, scoping the wall-clock breaker to unattended runs; `reclaim --stale` (#297) is the remaining reader.
+`--attended` declares that an operator is present ([ADR 0011](../decisions/0011-attended-run-spend-scope.md), #295). The mode is recorded in the run row's `inputs_json` and echoed as `attended` so the orchestrator confirms what was stored. Unattended is the default and the failure default: an undeclared run writes the byte-identical `"{}"` it always has, and only the literal JSON `true` reads back as attended — declaring it opts a run out of the wall clock, the only ceiling on autonomous spend, so every ambiguous value fails toward the bound. Attendance is **fixed at `start`**; nothing mutates it afterwards. Both readers have shipped: `review` reads it to scope the wall-clock breaker to unattended runs (#296), and `reclaim --stale` reads it to select which staleness threshold to measure the run against (#297). `/harness run` is the one caller that declares the flag, and no routine path passes it (#298) — the erosion guard ADR 0011 names as the mechanism's only enforcement.
 
 The Linear transition is the only non-local side effect, and it runs **last**: if the worktree creation or the ledger insert fails, nothing has touched Linear. The rollback ordering is locked by `test_cli_start.py::test_worktree_failure_leaves_no_db_row_and_no_transition` and `::test_db_failure_removes_worktree_and_no_transition`. The open run is recorded as the `runs` row, not as an event.
 

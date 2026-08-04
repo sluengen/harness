@@ -57,6 +57,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from harness import loop_budget
 from harness.loop_budget import load_loop_budget
 from tests.unit.test_review_discipline_watchlist_entry_currency import _sentences
@@ -553,4 +555,115 @@ def test_context_engine_rationale_cites_the_rejected_proposal() -> None:
         f"{relative} now reads `status: {status}`, but CONTEXT.md cites it as "
         "the record of a *rejected* split. Whichever moved, the other must "
         "follow."
+    )
+
+
+# --- #299: the wall clock's own comment states the mode it bounds -------------
+#
+# ADR 0011 narrowed `wall_clock_budget_minutes` to unattended runs, but the
+# comment that *defines* the knob still opened universal — "THE single source of
+# truth for the longest a legitimate run may take, read by BOTH consumers" — with
+# the qualifier appended several sentences later. A reader who stops at the
+# defining sentence learns the rule ADR 0011 retired, and the template (the copy
+# every self-hosting repo actually receives) carried no qualifier at all.
+#
+# The predicate is **positional**, not a containment test over the whole comment.
+# A whole-comment test passes today on `CONTEXT.md` — the word is present in the
+# appended tail — so it would certify the exact defect this guards against.
+
+#: The knob ADR 0011 scoped, and the knob carrying the other half of the rule.
+#: Both are asserted to be real loop knobs below, so a rename cannot leave this
+#: guard pointing at a key `LoopBudget` no longer has.
+_SCOPED_KEY = "wall_clock_budget_minutes"
+_ATTENDED_KEY = "attended_idle_minutes"
+
+#: The mode the wall clock bounds, since ADR 0011.
+_MODE = "unattended"
+
+#: Both places the block lives — this repo's own, and the copy a bootstrapped
+#: repo receives. The template is not optional here: the ticket's Problem names
+#: the inheritance, and a repo installing the template inherits the prose too.
+_LOOP_BLOCK_FILES = (_CONTEXT, _TEMPLATE)
+
+
+def _first_sentence(comment: str) -> str:
+    """The comment's defining sentence — the one a reader reaches first."""
+    sentences = _sentences(comment)
+    assert sentences, (
+        "the knob's inline comment must carry prose to scope; an empty comment "
+        "would let every assertion below pass on nothing"
+    )
+    return sentences[0]
+
+
+def test_the_scoped_keys_are_real_loop_knobs() -> None:
+    """Floor: both names this guard reasons about are knobs `LoopBudget` carries.
+
+    Without it a rename empties the subject of every assertion below — `_comment`
+    would fail, but on a message about a missing key rather than about the scope
+    rule going unenforced, and a future edit could "fix" that by dropping the
+    guard rather than the rename.
+    """
+    assert {_SCOPED_KEY, _ATTENDED_KEY} <= set(_KEYS), (
+        f"{_SCOPED_KEY!r} and {_ATTENDED_KEY!r} must both be knobs in `_KEYS` "
+        f"(derived from `LoopBudget`); got {_KEYS}"
+    )
+
+
+def test_the_scope_predicate_can_fail() -> None:
+    """Positive control: the predicate rejects an unscoped defining sentence.
+
+    The pre-#299 `CONTEXT.md` wording, verbatim in shape — universal head clause,
+    qualifier appended after. It must be judged *unscoped*, or the two guards
+    below prove nothing about where the qualifier sits.
+    """
+    unscoped = (
+        "THE single source of truth for the longest a legitimate run may take "
+        "— read by BOTH consumers. Scope, since ADR 0011: this bounds "
+        "unattended runs."
+    )
+    assert _MODE not in _first_sentence(unscoped), (
+        "the positional predicate must reject a comment whose defining sentence "
+        "is universal even when the qualifier appears later — otherwise it is "
+        "just a containment test over the whole comment"
+    )
+    assert _MODE in unscoped, (
+        "and the same text must contain the word overall, which is precisely "
+        "why a whole-comment containment test would certify the defect"
+    )
+
+
+@pytest.mark.parametrize("path", _LOOP_BLOCK_FILES, ids=lambda p: p.name)
+def test_the_wall_clock_comment_scopes_itself_in_its_defining_sentence(
+    path: Path,
+) -> None:
+    """The sentence that defines the wall clock says which runs it bounds (AC-2)."""
+    comment = _comment(path.read_text(encoding="utf-8"), _SCOPED_KEY)
+    defining = _first_sentence(comment)
+
+    assert _MODE in defining, (
+        f"{path.relative_to(_REPO_ROOT)}'s `{_SCOPED_KEY}` comment must scope "
+        f"itself to {_MODE} runs in its *first* sentence, not in a qualifier "
+        "appended after a universal head clause (ADR 0011). A reader who stops "
+        f"at the definition otherwise learns the rule ADR 0011 retired. Got: "
+        f"{defining!r}"
+    )
+
+
+@pytest.mark.parametrize("path", _LOOP_BLOCK_FILES, ids=lambda p: p.name)
+def test_the_wall_clock_comment_names_where_the_attended_rule_lives(
+    path: Path,
+) -> None:
+    """Scoping a rule to one mode obliges saying where the other one lives (AC-2).
+
+    Otherwise the correction trades a wrong rule for an incomplete one: the
+    reader learns the clock does not bound their attended run and is told
+    nothing about what does.
+    """
+    comment = _comment(path.read_text(encoding="utf-8"), _SCOPED_KEY)
+
+    assert _ATTENDED_KEY in comment, (
+        f"{path.relative_to(_REPO_ROOT)}'s `{_SCOPED_KEY}` comment must name "
+        f"`{_ATTENDED_KEY}` — the knob that bounds the mode it just excluded — "
+        "so the scope correction points somewhere instead of leaving a gap."
     )
