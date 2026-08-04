@@ -179,12 +179,14 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# AC-1: the 6th review→fix cycle stops + escalates, and runs no engine
+# AC-1: the call after the cycle budget stops + escalates, and runs no engine
 # ---------------------------------------------------------------------------
 
 
-def test_sixth_cycle_refuses_without_running_the_engine(repo: Path, db_path: Path) -> None:
-    """5 prior reviews → the 6th invocation trips, exits non-zero, runs no engine."""
+def test_the_call_after_the_budget_refuses_without_running_the_engine(
+    repo: Path, db_path: Path
+) -> None:
+    """5 prior reviews spend the whole budget → the next call trips, no engine."""
     _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=5)
     calls: list[int] = []
     result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, calls))
@@ -230,13 +232,19 @@ def test_fifth_cycle_still_runs(repo: Path, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-2: cycles 1–3 unconditional; the post-3 convergence path is surfaced
+# AC-2: the judged window is surfaced as an advisory (retuned by #329)
 # ---------------------------------------------------------------------------
 
 
 def test_unconditional_cycle_has_no_convergence_advisory(repo: Path, db_path: Path) -> None:
-    """The 3rd cycle (2 prior) is unconditional — no convergence advisory."""
-    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=2)
+    """The 2nd cycle (1 prior) is followed by another unconditional one (#329).
+
+    The advisory speaks about the cycle the agent would spend *next*, so it is
+    silent only while that next cycle is still unconditional. At the shipped 3/5
+    that is cycles 1 and 2; the 3rd is covered by the sibling below, because the
+    cycle it precedes is judged.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=1)
     result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, []))
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -246,12 +254,67 @@ def test_unconditional_cycle_has_no_convergence_advisory(repo: Path, db_path: Pa
 def test_post_unconditional_fail_surfaces_convergence_advisory(
     repo: Path, db_path: Path
 ) -> None:
-    """The 4th cycle (3 prior) returns a fail flagged for convergence assessment (AC-2)."""
+    """A fail preceding a judged cycle is flagged for convergence assessment (AC-2).
+
+    3 prior reviews → this is cycle 4, whose fail precedes cycle 5 — the last
+    the budget allows and the second the canonical rule requires a recorded
+    judgment before.
+    """
     _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=3)
     result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, []))
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["convergence_check_required"] is True
+
+
+# ---------------------------------------------------------------------------
+# #329: a fail on the last allowed cycle is surfaced as exhaustion
+# ---------------------------------------------------------------------------
+
+
+def test_a_fail_on_the_last_allowed_cycle_surfaces_exhaustion(
+    repo: Path, db_path: Path
+) -> None:
+    """The 5th cycle's fail carries ``cycles_exhausted`` on verdict *and* ledger.
+
+    This is what makes the stop land where the canonical rule says it lands. Its
+    absence is not merely a missing field: the orchestrator would read an
+    ordinary flagged fail, implement once more, and only learn the budget was
+    gone from the exit-4 refusal of a call it should never have made.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=4)
+    result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, []))
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["cycles_exhausted"] is True
+    assert payload["convergence_check_required"] is False, (
+        "an exhausted run is not being asked to judge whether to spend another"
+    )
+    recorded = [e for e in _review_events(db_path) if "verdict" in e]
+    assert recorded[-1]["cycles_exhausted"] is True
+
+
+def test_a_fail_inside_the_budget_is_not_exhaustion(repo: Path, db_path: Path) -> None:
+    """The 4th cycle still has one to spend, so it advises rather than ends."""
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=3)
+    result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, []))
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["cycles_exhausted"] is False
+    assert payload["convergence_check_required"] is True
+
+
+def test_a_pass_on_the_last_allowed_cycle_is_not_exhaustion(
+    repo: Path, db_path: Path
+) -> None:
+    """Spending the last cycle on a pass is a finished run heading to ``close``."""
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=4)
+    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["cycles_exhausted"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -360,11 +423,16 @@ def test_a_non_literal_true_does_not_buy_the_exemption(
 
 
 def test_context_md_tightens_the_cycle_ceiling(repo: Path, db_path: Path) -> None:
-    """A CONTEXT.md ceiling of 2 trips at the 2nd cycle, proving the verb reads it."""
+    """A CONTEXT.md budget of 2 spends 2 cycles and refuses the 3rd call.
+
+    The verb reads the configured budget, not a literal — and reads it with the
+    #329 meaning: ``max_review_cycles`` is the count of cycles the run may
+    spend, so a budget of 2 is exhausted by 2 prior reviews.
+    """
     (repo / "CONTEXT.md").write_text(
         "```yaml\nloop:\n  max_review_cycles: 2\n  wall_clock_budget_minutes: 90\n```\n"
     )
-    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=1)
+    _seed_run(db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=2)
     calls: list[int] = []
     result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, calls))
 

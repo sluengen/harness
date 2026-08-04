@@ -406,6 +406,31 @@ def test_inherit_spawns_no_engine_subprocess(repo: Path, db_path: Path) -> None:
     assert payload["run_id"] == _RUN_ID
 
 
+def test_inherit_consumes_no_cycle_and_sets_neither_flag(
+    repo: Path, db_path: Path
+) -> None:
+    """An inherited pass spends nothing, so it claims nothing about the budget (#329).
+
+    Both flags are computed from a cycle count the inherit path never reaches —
+    it returns before the breakers precisely because it buys no engine time. That
+    makes ``False`` the correct value and not merely the default, and pins it:
+    were the inherit path ever refactored back through the breaker block, an
+    inherited pass could start reporting a cycle it did not spend, and
+    ``cycles_exhausted`` would tell an orchestrator to stop a run that had used
+    none of its budget.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo)
+    _seed_source_review(db_path, head)
+
+    result = _invoke(repo, db_path, _EngineSpy())
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["cycles_exhausted"] is False
+    assert payload["convergence_check_required"] is False
+
+
 def test_inherit_reaches_no_subprocess_driver(repo: Path, db_path: Path) -> None:
     """AC-2, one layer lower: the shared spawn driver is never entered.
 

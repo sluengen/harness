@@ -46,7 +46,7 @@ files:
   skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.9.2, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.20.0, profiles: [harness] }
-  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.6.10, profiles: [harness] }
+  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.7.0, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.7.0, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
@@ -72,18 +72,18 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.0, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.9, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.1.10, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.2.0, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.2.1, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.1.1, profiles: [harness] }
   commands/start.md:                  { id: start,                    version: 0.3.0, profiles: [harness] }
-  commands/review.md:                 { id: review,                   version: 0.1.4, profiles: [harness] }
+  commands/review.md:                 { id: review,                   version: 0.1.5, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.1.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.7.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.6.4, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.4.1, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.5.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
   # same invocation drives any repo's own branch names (#189).
@@ -99,7 +99,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.2.22, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.2.23, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project

@@ -7,11 +7,17 @@ deterministically, is the ledger: how many ``review`` events a run has recorded
 and when the run started. This module turns those two observable facts into two
 **circuit breakers** that bound the behaviours that burn tokens:
 
-* a **hard ceiling** on review→fix cycles per run — the run stops and escalates
-  on *reaching* the ceiling-th cycle (default 6). Cycles 1..N/2 run
-  unconditionally; the cycles after that and below the ceiling carry a
-  convergence-assessment advisory (the build agent decides whether the fixes are
-  converging before spending another cycle);
+* a **hard ceiling** on review→fix cycles per run — ``max_review_cycles`` is the
+  count of cycles a run may *spend* (default 5), so the run stops once they are
+  used up and the review after them is refused. The first
+  ``unconditional_review_cycles`` (default 3) run with no judgment required; the
+  cycles after those and inside the budget carry a convergence-assessment
+  advisory (the build agent decides whether the fixes are converging before
+  spending another cycle), and a fail on the last one carries
+  :func:`cycles_exhausted` so the run stops where the policy says it stops
+  rather than one wasted implement pass later. The policy itself is single-homed
+  in ``skills/review-discipline/SKILL.md`` (#329); this module is its
+  enforcement, and ``CONTEXT.md`` is the only home for the numbers;
 * a **per-run wall-clock budget** in minutes (default 110). It is not merely
   *aligned* with the stale-run reclamation staleness threshold — since #260 it
   **is** that threshold: ``reclaim --stale`` resolves the same
@@ -47,6 +53,7 @@ __all__ = [
     "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
     "DEFAULT_MAX_REVIEW_CYCLES",
+    "DEFAULT_UNCONDITIONAL_REVIEW_CYCLES",
     "DEFAULT_WALL_CLOCK_BUDGET_MINUTES",
     "REVIEW_CYCLE_CEILING_REASON",
     "WALL_CLOCK_BUDGET_REASON",
@@ -55,12 +62,21 @@ __all__ = [
     "load_loop_budget",
     "evaluate_breakers",
     "convergence_check_required",
+    "cycles_exhausted",
 ]
 
 # The breaker values set by proposal ``harden-loop-layer`` (D1). They are the
 # fallback when CONTEXT.md does not configure them; a repo overrides them in its
 # CONTEXT.md ``loop:`` block.
-DEFAULT_MAX_REVIEW_CYCLES = 6
+DEFAULT_MAX_REVIEW_CYCLES = 5
+# How many of those cycles run with no convergence judgment required. The two
+# are **independent keys**, not one derived from the other (#329). The old
+# ``max_review_cycles // 2`` derivation only ever produced the canonical 3
+# because the ceiling happened to be 6; at the canonical budget of 5 it yields 2
+# and silently contradicts the rule it is supposed to implement. Stating both
+# makes the relationship configured rather than coincidental, and lets a repo
+# tune the unconditional window without moving the budget.
+DEFAULT_UNCONDITIONAL_REVIEW_CYCLES = 3
 # The longest a legitimate run may take. Read by **two** consumers, not one
 # (#260): ``review``'s wall-clock breaker enforces it prospectively (stop
 # spending on a run past it) and ``reclaim --stale`` applies it retrospectively
@@ -126,22 +142,21 @@ class LoopBudget(NamedTuple):
     ``attended_idle_minutes`` is neither: it is ``reclaim --stale``'s staleness
     threshold for a run that declared itself attended (#297), the retrospective
     half of a mode that has no prospective clock at all.
+    ``unconditional_review_cycles`` shapes the first breaker rather than adding
+    one: it splits the budget into the window that needs no judgment and the
+    window that does.
+
+    ``unconditional_review_cycles`` is **appended last** so every existing
+    positional construction — including ``load_loop_budget``'s ``OSError``
+    fallback — keeps its meaning, the same rule ``attended_idle_minutes``
+    followed when it was added (#297).
     """
 
     max_review_cycles: int
     wall_clock_budget_minutes: int
     engine_timeout_seconds: int = DEFAULT_ENGINE_TIMEOUT_SECONDS
     attended_idle_minutes: int = DEFAULT_ATTENDED_IDLE_MINUTES
-
-    @property
-    def unconditional_review_cycles(self) -> int:
-        """Cycles 1..this run unconditionally; later cycles assess convergence.
-
-        Derived as half the ceiling: proposal ``harden-loop-layer`` sets the
-        ceiling at "double the unconditional 3", so the two move together from
-        one configured knob rather than drifting as two independent numbers.
-        """
-        return self.max_review_cycles // 2
+    unconditional_review_cycles: int = DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
 
 
 class BreakerTrip(NamedTuple):
@@ -192,10 +207,19 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
             DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
             DEFAULT_ENGINE_TIMEOUT_SECONDS,
         )
+    # Both cycle keys are clamped rather than validated: this loader degrades,
+    # it does not raise — a repo must never be unable to run a verb because its
+    # CONTEXT.md holds a nonsensical integer. ``max`` floors at 1 because a
+    # budget of 0 would refuse the *first* review and wedge every run at its
+    # first boundary; ``unconditional`` is held inside [1, max] because a window
+    # larger than the budget can never be left, and one of 0 would demand a
+    # convergence judgment before the very first cycle.
+    max_cycles = max(1, _read_int_key(text, "max_review_cycles", DEFAULT_MAX_REVIEW_CYCLES))
+    unconditional = _read_int_key(
+        text, "unconditional_review_cycles", DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
+    )
     return LoopBudget(
-        max_review_cycles=_read_int_key(
-            text, "max_review_cycles", DEFAULT_MAX_REVIEW_CYCLES
-        ),
+        max_review_cycles=max_cycles,
         wall_clock_budget_minutes=_read_int_key(
             text, "wall_clock_budget_minutes", DEFAULT_WALL_CLOCK_BUDGET_MINUTES
         ),
@@ -205,6 +229,7 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         attended_idle_minutes=_read_int_key(
             text, "attended_idle_minutes", DEFAULT_ATTENDED_IDLE_MINUTES
         ),
+        unconditional_review_cycles=min(max(1, unconditional), max_cycles),
     )
 
 
@@ -229,10 +254,11 @@ def evaluate_breakers(
     Checks, in order (the cycle ceiling first so a fast runaway reports the loop
     bound deterministically even when it has also blown the clock):
 
-    1. **Cycle ceiling.** The run stops on reaching the ceiling-th cycle — i.e.
-       when the upcoming cycle ``>= max_review_cycles``. With the default 6 that
-       refuses the 6th review (cycles 1–5 ran).  **Unconditional** — it bounds
-       the fix loop itself, which an operator's presence does not make cheaper.
+    1. **Cycle ceiling.** ``max_review_cycles`` counts the cycles a run may
+       *spend*, so the refusal lands once they are used up — i.e. when
+       ``prior_review_count >= max_review_cycles``. With the default 5 that runs
+       cycles 1–5 and refuses the 6th call.  **Unconditional** — it bounds the
+       fix loop itself, which an operator's presence does not make cheaper.
     2. **Wall-clock**, *unattended runs only* (#296, ADR 0011). The run has
        *exceeded* (strictly) the wall-clock budget.  The clock stands in for
        autonomous spend; in an attended run its elapsed time also counts however
@@ -245,12 +271,13 @@ def evaluate_breakers(
     exemption must be asked for; it is never acquired by omission.
     """
     upcoming_cycle = prior_review_count + 1
-    if upcoming_cycle >= budget.max_review_cycles:
+    if prior_review_count >= budget.max_review_cycles:
         return BreakerTrip(
             REVIEW_CYCLE_CEILING_REASON,
-            f"review→fix cycle ceiling reached: this would be cycle "
-            f"{upcoming_cycle} of a maximum {budget.max_review_cycles}. The run "
-            f"stops and escalates to the user rather than spinning further.",
+            f"review→fix cycle budget exhausted: the {budget.max_review_cycles} "
+            f"review→fix cycles this run may spend are used up, so cycle "
+            f"{upcoming_cycle} is refused. The run stops and the ticket goes on "
+            f"operator hold rather than spinning further.",
         )
 
     # Strictly below the ceiling's return, so the ordering above is unaffected:
@@ -274,19 +301,48 @@ def convergence_check_required(
     verdict: str,
     budget: LoopBudget,
 ) -> bool:
-    """Whether this fail lands past the unconditional window and below the ceiling.
+    """Whether this fail is the last one inside the unconditional window or later.
 
-    ``cycles_completed`` includes the review just run. A ``fail`` on a cycle
-    *strictly after* the unconditional window (``> unconditional_review_cycles``)
-    and below the ceiling means the build agent must assess whether the fixes are
-    converging before spending another cycle — cycles 1..N/2 ran unconditionally,
-    so only fails past them are flagged. A ``pass`` heads to ``close`` — never an
-    advisory.
+    ``cycles_completed`` includes the review just run, and the advisory is about
+    the cycle the agent is deciding whether to spend *next*. So a ``fail`` on the
+    **last unconditional cycle** already owes a judgment — the next cycle is the
+    first judged one — which is why the low bound is ``<=`` and not ``<`` (#329).
+    The old strict bound fired one cycle late: at the canonical 3-unconditional
+    window it first advised after cycle 4, when the rule demands the judgment
+    *before* cycle 4. The upper bound stays strict — a fail on the last cycle the
+    budget allows is not an invitation to assess convergence, it is
+    :func:`cycles_exhausted`. A ``pass`` heads to ``close`` — never an advisory.
     """
     if verdict != "fail":
         return False
     return (
         budget.unconditional_review_cycles
-        < cycles_completed
+        <= cycles_completed
         < budget.max_review_cycles
     )
+
+
+def cycles_exhausted(
+    *,
+    cycles_completed: int,
+    verdict: str,
+    budget: LoopBudget,
+) -> bool:
+    """Whether this fail consumed the last review→fix cycle the run may spend.
+
+    The terminal half of the advisory pair (#329). ``convergence_check_required``
+    says *judge before spending another*; this says *there is no other to spend*
+    — stop, preserve the WIP, and put the ticket on operator hold.
+
+    It exists so the stop lands where the canonical rule says it lands: at the
+    **completion** of the last allowed cycle. The exit-4 refusal in
+    :func:`evaluate_breakers` is the deterministic backstop for an orchestrator
+    that ignores this flag, but by the time it fires the run has already spent a
+    whole implement pass on work it was never allowed to review.
+
+    Fail-only, like the advisory: a ``pass`` or ``defer`` on the last cycle is a
+    finished run heading to ``close``, not an exhausted one.
+    """
+    if verdict != "fail":
+        return False
+    return cycles_completed >= budget.max_review_cycles

@@ -75,6 +75,10 @@ _KEYS = (
     "wall_clock_budget_minutes",
     "engine_timeout_seconds",
     "attended_idle_minutes",
+    # Appended last because ``LoopBudget`` appends it last (#329) —
+    # ``test_template_parses_with_the_runtime_reader`` constructs the tuple
+    # positionally from this order, so the two must not drift.
+    "unconditional_review_cycles",
 )
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")

@@ -136,6 +136,7 @@ from harness.events.payloads import (
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     convergence_check_required,
+    cycles_exhausted,
     evaluate_breakers,
     load_loop_budget,
 )
@@ -226,10 +227,18 @@ class ReviewOutput(BaseModel):
     surface to hold the printed JSON to the minimal verdict the agent needs.
 
     ``convergence_check_required`` is a bounded advisory (CAL-906): ``True`` when
-    this fail lands past the unconditional review→fix cycles and below the
-    ceiling, so the build agent must assess whether the fixes are converging
+    this fail precedes a cycle outside the unconditional window and inside the
+    budget, so the build agent must assess whether the fixes are converging
     before spending another cycle. It is a single bool — no engine reasoning —
     so it does not breach the context-economy guarantee.
+
+    ``cycles_exhausted`` (#329) is its terminal counterpart: ``True`` when this
+    fail consumed the last review→fix cycle the run may spend. The two partition
+    the fails — one asks for a judgment, the other says there is nothing left to
+    judge — so the orchestrator stops here, preserves the WIP, and puts the
+    ticket on operator hold rather than spending an implement pass on a cycle the
+    verb will refuse. The exit-4 refusal remains the deterministic backstop for
+    an orchestrator that ignores it.
     """
 
     verdict: Verdict
@@ -238,6 +247,7 @@ class ReviewOutput(BaseModel):
     run_id: str
     engine: Engine
     convergence_check_required: bool = False
+    cycles_exhausted: bool = False
 
 
 class _ReviewError(VerbError):
@@ -922,6 +932,14 @@ async def _review_resolved_run(
         verdict=parsed.verdict,
         budget=budget,
     )
+    # 4d. The terminal signal (#329): this fail spent the last cycle the run may
+    #     spend. Computed from the same cycle count, so the pair cannot disagree
+    #     about which cycle this is.
+    budget_exhausted = cycles_exhausted(
+        cycles_completed=prior_review_count + 1,
+        verdict=parsed.verdict,
+        budget=budget,
+    )
 
     # 5. Append the review event — the full audited record (includes optional
     #    commit_message / deferred_brief which the printed verdict omits).
@@ -938,6 +956,7 @@ async def _review_resolved_run(
         issues=parsed.issues,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
+        cycles_exhausted=budget_exhausted,
         created_at=created_at,
         gate_ran=gate_ran,
         design_context=design_gate.design_markdown is not None,
@@ -997,6 +1016,7 @@ async def _review_resolved_run(
         run_id=resolved_run_id,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
+        cycles_exhausted=budget_exhausted,
     )
 
 

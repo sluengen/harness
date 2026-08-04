@@ -87,6 +87,7 @@ def test_review_event_data_required_keys() -> None:
         "issues": [],
         "engine": "claude",
         "convergence_check_required": False,
+        "cycles_exhausted": False,
         "created_at": "2026-06-10T00:00:00Z",
         "gate_ran": False,
         "design_context": False,
@@ -202,6 +203,32 @@ def test_review_event_data_reads_a_pre_293_row_back_as_unknown_model() -> None:
 
     assert parsed.model is None
     assert "model" not in parsed.model_dump(exclude_none=True)
+
+
+def test_review_event_data_reads_a_pre_329_row_back_as_not_exhausted() -> None:
+    """#329: the historical rows validate, and read as what was true of them.
+
+    ``cycles_exhausted`` carries a default where its sibling advisory does not,
+    because rows predating it exist. ``False`` is not a convenient guess: under
+    the pre-#329 semantics the refusal fired *before* the last allowed cycle
+    could record a verdict, so no historical ``review`` row was ever written on
+    an exhausted budget. Unlike ``model``'s absence, this one is not ambiguous,
+    which is why it takes a default rather than staying optional.
+    """
+    pre_existing = {
+        "run_id": "R1",
+        "reviewed_sha": "abc123",
+        "verdict": "fail",
+        "issues": ["x"],
+        "engine": "claude",
+        "convergence_check_required": True,
+        "created_at": "2026-06-10T00:00:00Z",
+        "gate_ran": True,
+    }
+
+    parsed = ReviewEventData(**pre_existing)
+
+    assert parsed.cycles_exhausted is False
 
 
 def test_review_event_data_omits_design_context_reason_by_default() -> None:
