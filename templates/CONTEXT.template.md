@@ -74,7 +74,7 @@ paths:
   proposals: specs/proposals/       # proposal specs (pre-Linear, unconfirmed/large ideas)
   feature_specs: specs/features/    # canonical, as-built feature specs (decisions embedded inline)
   infrastructure: {e.g. specs/infrastructure.md — or omit}   # reference spec
-  architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here)
+  architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here, unless one clears the bar stated on `decisions:` below)
   decisions: {e.g. specs/decisions/ — or omit}               # optional, repo-relative: a directory of architecture decision records. Declaring it IS the switch — there is no strategy setting. Declare it only for decisions that are cross-cutting, consequential and expensive to reverse (branch topology, tracker architecture, security posture, certification invariants); omit it and every decision is embedded in the spec it governs, which is the default. The architecture index above owns placement, numbering and supersession for it
   design_system: {path or external repo — or omit}
 # Optional. Gravity-well files where state/branching/rendering accumulate — when a

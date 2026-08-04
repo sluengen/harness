@@ -19,7 +19,7 @@ What is pinned, and why each check has the shape it has:
   survive the rewrite, which is why this module asserts the *content* of the rule
   and never re-asserts who owns it.
 * **The prohibition sweep is line-scoped with a same-line qualifier**, not
-  whole-file containment. Four registered files legitimately keep a prohibition
+  whole-file containment. Five registered files legitimately keep a prohibition
   phrase *inside* a conditional ("no ``decisions/`` folder **unless** the repo
   configures one"), so a file-level ban would forbid the very sentences that fix
   the finding. :func:`_unconditional_ban` is the single named predicate; the
@@ -53,12 +53,20 @@ _PROHIBITION = (
     r"standalone ADRs?",
     r"`decisions/` folder",
     r"standalone files?",
+    # Supersession-shaped: a record filed in a configured directory is superseded
+    # by the repo's own convention, so universal prose may not rule out a new
+    # file *there* either. Both phrases are deliberately narrow — a bare
+    # ``separate file`` would flag ``templates/change.md``'s unrelated (and
+    # correct) "the change spec is the tracker issue — there is no separate
+    # file", which is the negative control below.
+    r"new numbered file",
+    r"chain of separate files",
 )
 
 #: Tokens that make such a line *conditional* on the repo's own configuration.
 _QUALIFIER = r"paths\.decisions|unless|configur|declar"
 
-#: The four files edited by #330 that keep a prohibition phrase inside a
+#: The five files edited by #330 that keep a prohibition phrase inside a
 #: conditional — the sweep must actually see them, or it is measuring nothing.
 _CONDITIONAL_FILES = (
     "skills/spec-authoring/SKILL.md",
@@ -125,10 +133,18 @@ def test_spec_authoring_conditionalises_adr_storage() -> None:
 
 
 def test_spec_authoring_states_the_threshold_and_its_negative_case() -> None:
-    """Both halves of the bar: what qualifies, and what explicitly does not."""
+    """Both halves of the bar: what qualifies, and what explicitly does not.
+
+    The bar is a **conjunction** of three properties, so it is asserted as the
+    written phrase rather than as three free-floating tokens: ``cross-cutting``
+    and ``consequential`` each appear in the section's *unchanged* bullets, so
+    keying on them separately would let a rule stating only one third of the bar
+    pass against prose that predates this change.
+    """
     section = _decision_section().lower()
-    for token in ("cross-cutting", "consequential", "expensive to reverse"):
-        assert token in section, f"threshold token missing from the rule: {token!r}"
+    assert re.search(
+        r"cross-cutting,\s*consequential,?\s*and\s*expensive to reverse", section
+    ), "the rule must state the bar as the conjunction of all three properties"
     assert "several files" in section, (
         "the negative case must be stated — a decision that merely touches "
         "several files does not clear the bar (#330 resolution)."
@@ -183,9 +199,10 @@ def test_no_universal_prose_bans_a_configured_decision_directory() -> None:
 def test_the_ban_predicate_discriminates() -> None:
     """Positive and negative controls, both through :func:`_unconditional_ban`.
 
-    The positive control is the real pre-#330 prose, verbatim: each line must be
-    judged an unconditional ban, or the sweep above would have passed against the
-    exact defect. The negative control is the conditional form — it carries the
+    The positive control is the real pre-#330 prose, trimmed to the clause under
+    test: each line must be judged an unconditional ban, or the sweep above would
+    have passed against the exact defect. The negative control is the
+    conditional form — it carries the
     *same* prohibition phrase, which is why a whole-file containment check would
     condemn the fix and this line-scoped one does not.
     """
@@ -210,6 +227,9 @@ def test_the_ban_predicate_discriminates() -> None:
         "and no standalone ADRs — embedded, exclusively.",
         "never a standalone ADR or a `decisions/` folder unless the repo "
         "configures one (`paths.decisions`).",
+        "Superseding an embedded decision means updating it in-place — not a "
+        "new numbered file — and where a repo declares `paths.decisions`, its "
+        "architecture index owns supersession for the records filed there.",
     )
     for line in post_change:
         assert _states_prohibition(line), (
@@ -217,6 +237,18 @@ def test_the_ban_predicate_discriminates() -> None:
             f"why containment alone would condemn it: {line!r}"
         )
         assert not _unconditional_ban(line), f"predicate flags the fix: {line!r}"
+
+    # The phrase set must DISCRIMINATE as well as match. A bare ``separate
+    # file`` would flag this real, unrelated and correct sentence from
+    # ``templates/change.md``, which says nothing about decision storage.
+    unrelated = (
+        "This is the body of the **tracker issue** (`tracker`) — there is no "
+        "separate file."
+    )
+    assert not _states_prohibition(unrelated), (
+        "the prohibition set is too broad: it flags prose about where a change "
+        f"spec lives, which is not a decision-storage claim: {unrelated!r}"
+    )
 
 
 def test_the_sweep_corpus_and_its_comparison_set_are_non_vacuous() -> None:
@@ -318,10 +350,17 @@ def test_no_feature_spec_duplicates_an_adr_decision() -> None:
     titles = {}
     for adr in sorted((_REPO_ROOT / m.group("value")).glob("*.md")):
         head = adr.read_text().splitlines()[0]
-        t = re.sub(r"^#\s*ADR\s*\d+\s*[—-]\s*", "", head).strip()
-        if t:
-            titles[t.lower()] = adr.name
+        # The strip must *fire*: ``re.sub`` returns the heading unchanged when it
+        # misses, which leaves ``titles`` non-empty (so a bare emptiness floor
+        # passes) while every key is unmatchable and the check measures nothing.
+        parsed = re.match(r"^#\s*ADR\s*\d+\s*[—-]\s*(?P<title>.+)$", head)
+        assert parsed, f"{adr.name}: unrecognised ADR heading {head!r}"
+        titles[parsed.group("title").strip().lower()] = adr.name
     assert titles, "no ADR titles parsed; the duplication check would be vacuous"
+    assert all(t and not t.startswith("#") for t in titles), (
+        "a parsed ADR title is empty or still carries its heading markup, so no "
+        f"Decision heading could ever match it: {sorted(titles)}"
+    )
 
     duplicated: list[str] = []
     for spec in sorted((_REPO_ROOT / f.group("value")).glob("*.md")):

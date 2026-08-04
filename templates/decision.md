@@ -22,4 +22,4 @@ Where a repo *has* configured a decision directory, these same four parts are th
 
 ---
 
-**Superseding.** When this decision changes, update it in place: replace the decision text and add a dated note — *"Superseded {date}: previously X; changed to Y because Z."* Then update any code/specs that relied on the old choice. The spec shows the current decision with its history inline, not a chain of separate files.
+**Superseding.** When this decision changes, update it in place: replace the decision text and add a dated note — *"Superseded {date}: previously X; changed to Y because Z."* Then update any code/specs that relied on the old choice. The spec shows the current decision with its history inline, not a chain of separate files — and where the repo declares `paths.decisions`, its architecture index owns supersession for the records filed there.
