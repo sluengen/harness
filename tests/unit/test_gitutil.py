@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import (
+    ShallowHistoryError,
     last_commit_date,
     tracked_files_under,
     tracked_py_sources,
@@ -325,6 +326,120 @@ def test_last_commit_date_raises_on_a_git_level_failure(tmp_path: Path) -> None:
     _init_repo(empty_repo)
     with pytest.raises(subprocess.CalledProcessError):
         last_commit_date("spec.md", repo_root=empty_repo)
+
+
+def _origin_with_three_commits(tmp_path: Path) -> Path:
+    """An origin repo whose history is ``spec.md`` once, then ``other.md`` twice.
+
+    ``spec.md``'s only commit is the **root**, so a shallow clone that fetches
+    fewer than three commits cannot reach it — which is what makes it the
+    subject of the boundary cases below.
+    """
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    (origin / "spec.md").write_text("spec\n")
+    (origin / "other.md").write_text("other\n")
+    _git(origin, "add", "spec.md", "other.md")
+    _commit_on(origin, "spec.md", "2026-03-04T12:00:00+00:00", "add spec and other")
+    (origin / "other.md").write_text("other v2\n")
+    _commit_on(origin, "other.md", "2026-04-09T12:00:00+00:00", "edit other")
+    (origin / "other.md").write_text("other v3\n")
+    _commit_on(origin, "other.md", "2026-05-01T12:00:00+00:00", "edit other again")
+    return origin
+
+
+def _shallow_clone(origin: Path, dest: Path, depth: int) -> Path:
+    """Clone *origin* to *dest* at ``--depth``.
+
+    The ``file://`` URL is mandatory: a plain local-path clone hardlinks the
+    object store and silently **ignores** ``--depth``, which would leave the
+    clone deep and let the assertions below pass vacuously.
+    """
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", str(depth), f"file://{origin}", str(dest)],
+        check=True,
+        capture_output=True,
+    )
+    return dest
+
+
+def test_last_commit_date_refuses_a_shallow_boundary_answer(tmp_path: Path) -> None:
+    """A date resolving to a graft boundary is refused, not returned (#326).
+
+    ``git log -1 -- <path>`` in a depth-1 clone reports the boundary commit for
+    **every** path — a grafted commit has no known parents, so history
+    simplification reads it as introducing the whole tree. #280 returned that
+    date as if it were real, which is why CI (``actions/checkout`` defaults to
+    ``fetch-depth: 1``) reported every feature spec as touched at HEAD.
+    """
+    origin = _origin_with_three_commits(tmp_path)
+    clone = _shallow_clone(origin, tmp_path / "shallow", depth=1)
+
+    # Setup assertions first: an environment that ignored --depth would make the
+    # contract below pass without ever exercising it.
+    is_shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert is_shallow == "true", "the clone is not shallow — --depth was ignored"
+    count = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert count == "1", f"expected a depth-1 clone, got {count} commits"
+
+    # The trap is real: git's raw answer for spec.md is not spec.md's real date.
+    raw = subprocess.run(
+        ["git", "log", "-1", "--format=%ad", "--date=short", "--", "spec.md"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert raw != "2026-03-04", (
+        "git reported spec.md's true date in a depth-1 clone — the truncation "
+        "this test exists to pin did not happen"
+    )
+
+    with pytest.raises(ShallowHistoryError):
+        last_commit_date("spec.md", repo_root=clone)
+
+
+def test_last_commit_date_trusts_a_non_boundary_answer_in_a_shallow_clone(
+    tmp_path: Path,
+) -> None:
+    """Only boundary-resolving answers are refused — the flag alone is not enough.
+
+    The harness's own checkout is shallow-*flagged* while carrying ~1200
+    commits, so refusing on ``--is-shallow-repository`` alone would red the
+    local gate for every spec. The refusal is scoped to answers that actually
+    resolve to a graft boundary, which is the smallest correct rule.
+    """
+    origin = _origin_with_three_commits(tmp_path)
+    clone = _shallow_clone(origin, tmp_path / "shallow2", depth=2)
+
+    is_shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert is_shallow == "true", "the clone is not shallow — the test proves nothing"
+
+    # other.md's last commit is HEAD, well inside the fetched window.
+    assert last_commit_date("other.md", repo_root=clone) == date(2026, 5, 1)
+
+    # spec.md's answer still resolves to the grafted commit, so it is refused.
+    with pytest.raises(ShallowHistoryError):
+        last_commit_date("spec.md", repo_root=clone)
 
 
 #: The guards whose file set must come from ``tracked_py_sources``. Each walked

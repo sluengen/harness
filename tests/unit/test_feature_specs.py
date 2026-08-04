@@ -162,8 +162,10 @@ def test_feature_spec_last_updated_is_not_behind_its_last_commit(
     if committed is None:
         pytest.skip(
             f"git reports no commit for {path.name} — a staged-but-uncommitted "
-            "spec, or a shallow clone whose history does not reach one. "
-            "Nothing to compare a declared date against."
+            "spec. Nothing to compare a declared date against. A truncated "
+            "history is *not* this case: it raises ShallowHistoryError, so a "
+            "shallow tree goes red and named rather than silently skipping "
+            "(#326)."
         )
     declared = _declared_last_updated(path)
     assert declared >= committed, (
