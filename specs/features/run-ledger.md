@@ -1,7 +1,7 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-08-02
+last_updated: 2026-08-04
 linear: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114]
 ---
 
@@ -74,7 +74,7 @@ Three properties make the addition safe, and each is pinned by test rather than 
 
 `invoked_at` / `duration_ms` are the latency pair, computed by the shared [`harness/_time.py`](../../harness/_time.py) `elapsed_ms` — shared because `close`'s run-row duration (#261) was its first caller and this is the second, and a duration that rounded differently per verb would make the ledger's own latency numbers incomparable. On an **inherited** event both are the source's, like every other field describing that review: an inherited pass runs no engine, so minting a fresh duration would record time nothing spent.
 
-Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — `ReviewEventData`, `ReviewRefusalEventData`, `CheckpointEventData`, `WorkflowFailedEventData`, `CloseEventData`, `DeferEventData`, `DesignEventData`, `ReleaseEventData`. The emitting verb builds the model (field names checked statically); a reader imports the field-derived constant from that one module rather than spelling the key itself. The constant's **shape follows its consumer** (#217): a `*_PATH` constant is the `$.<field>` form for a reader that `json_extract`s in SQL (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters); a `*_KEY` constant is the bare field name for a reader that indexes an already-parsed payload `dict` (`harness status`'s `WORKFLOW_FAILED_REASON_KEY`, the design gate's `DESIGN_STATUS_KEY` / `DESIGN_HASH_KEY`). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review` — or, for the design linkage, silently dropping the design context from every review.
+Each event payload's shape is a **typed contract** in [`harness/events/payloads.py`](../../harness/events/payloads.py) (CAL-1012) — that module is the set of payload models, and this spec names no subset of it (#282). The emitting verb builds the model (field names checked statically); a reader imports the field-derived constant from that one module rather than spelling the key itself. The constant's **shape follows its consumer** (#217): a `*_PATH` constant is the `$.<field>` form for a reader that `json_extract`s in SQL (the close gate's `$.reviewed_sha` / `$.verdict` are `REVIEW_REVIEWED_SHA_PATH` / `REVIEW_VERDICT_PATH`, passed as bound parameters); a `*_KEY` constant is the bare field name for a reader that indexes an already-parsed payload `dict` (`harness status`'s `WORKFLOW_FAILED_REASON_KEY`, the design gate's `DESIGN_STATUS_KEY` / `DESIGN_HASH_KEY`). So a key rename breaks at the model/constant level rather than silently degrading the gate to `no_passing_review` — or, for the design linkage, silently dropping the design context from every review.
 
 #### Scenario: the close gate query
 
