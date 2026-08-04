@@ -1,6 +1,6 @@
 # ADR 0011 — The wall clock bounds unattended runs; an attended run declares itself and is bounded by the operator
 
-- **Status:** Accepted
+- **Status:** Accepted — shipped in #295 (`start` records the mode), #296 (`review`'s breaker reads it), #297 (`reclaim --stale` selects its threshold by it), #298 (`/harness run` declares it; no routine path does) and #299 (this record and the configuration)
 - **Date:** 2026-08-02
 - **Source:** `specs/proposals/attended-runs-and-the-wall-clock.md`
 

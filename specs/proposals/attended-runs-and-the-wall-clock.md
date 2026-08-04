@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: attended-runs-and-the-wall-clock
-status: accepted            # draft | under-decision | accepted | shipped | rejected | split
+status: shipped             # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-02
 related: [specs/decisions/0011-attended-run-spend-scope.md, specs/proposals/harden-loop-layer.md, specs/proposals/stale-run-reclamation.md, specs/decisions/0006-hold-kinds.md, specs/features/run-ledger.md]
 ---
