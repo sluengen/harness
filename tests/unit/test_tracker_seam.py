@@ -86,6 +86,60 @@ def test_reclaimable_scope_is_nullable_across_the_seam() -> None:
         assert sig.parameters["project"].annotation == "str | None", obj.__name__
 
 
+def _seam_method_params() -> dict[str, list[str]]:
+    """Every ``Tracker`` seam method mapped to its parameter names.
+
+    The single subject both the vocabulary guard and its anti-vacuity floor read.
+    Deriving from the protocol's own members means a method added later is covered
+    without editing the guard — and routing *both* tests through this one function
+    is what makes the floor a real floor: a floor carrying its own copy of the scan
+    goes on passing while the guard it protects is degraded to a no-op, which is
+    precisely the failure it exists to catch.
+    """
+    import inspect
+
+    return {
+        name: list(inspect.signature(getattr(Tracker, name)).parameters)
+        for name in dir(Tracker)
+        if not name.startswith("_") and callable(getattr(Tracker, name))
+    }
+
+
+def test_no_seam_method_names_a_backend_concept() -> None:
+    """INV-1 (#328): no ``Tracker`` method takes a ``team`` parameter.
+
+    A team is Linear's addressing and GitHub can never honour it, so a seam method
+    that asks for one forces every caller to know which backend it holds — which is
+    exactly how ``promote escalate`` came to construct a ``LinearClient`` directly
+    while the repo ran ``tracker: github``. ``create_issue`` carried ``team_key``
+    until #328 moved it into ``LinearClient`` as config; this keeps it, or any
+    sibling backend concept spelled ``team``, from coming back.
+    """
+    offenders = [
+        f"Tracker.{name}({param})"
+        for name, params in _seam_method_params().items()
+        for param in params
+        if "team" in param
+    ]
+    assert not offenders, (
+        "no Tracker seam method may name a backend concept — a team is Linear "
+        f"addressing GitHub cannot honour (#328); found: {offenders}"
+    )
+
+
+def test_the_seam_vocabulary_scan_reaches_the_methods_it_claims_to() -> None:
+    """Anti-vacuity floor for the guard above, over the **same** ``_seam_method_params``.
+
+    ``dir(Protocol)`` returns typing machinery alongside the seam's own members, so
+    a filter that quietly matched nothing would leave that guard green forever while
+    asserting nothing at all. Reading the identical mapping the guard reads is what
+    makes this catch that: degrade the scan and this fails too.
+    """
+    scanned = _seam_method_params()
+    assert {"create_issue", "post_comment", "fetch_reclaimable_issues"} <= scanned.keys()
+    assert "project" in scanned["create_issue"]
+
+
 def test_tracker_client_returns_a_github_client_for_configured_github(
     tmp_path: Path,
 ) -> None:

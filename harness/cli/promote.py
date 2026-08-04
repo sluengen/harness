@@ -75,7 +75,7 @@ The five subcommands are the real orchestrator **pause points**:
 * ``pr``       — the success finalizer: push the promotion branch and open the PR
   from deterministic facts (gated — refused unless the promotion is ``pr_ready``
   with fresh gate evidence), then record ``pr_opened``.
-* ``escalate`` — the non-success terminal path: file/update a Linear ticket with
+* ``escalate`` — the non-success terminal path: file/update a tracker ticket with
   the evidence and mark the promotion ``escalated``.
 
 There is deliberately **no ``verify`` command**: the gate is not a harness verb at
@@ -707,7 +707,7 @@ def _reescalation_comment(body: str) -> str:
 
 
 @promote_app.command(
-    "escalate", help="File/update a Linear ticket and mark the promotion escalated."
+    "escalate", help="File/update a tracker ticket and mark the promotion escalated."
 )
 def escalate_command(
     promotion_id: str = typer.Option(
@@ -806,6 +806,19 @@ def escalate_command(
             asyncio.run(client.post_comment(ticket_id, _reescalation_comment(body)))
             escalation_url = None
             action = "updated"
+    except TrackerConfigError as exc:
+        # A config gap can surface here as well as at the factory: a backend owns
+        # facts a neutral verb must not pre-check, so it raises when it first needs
+        # one — `LinearClient.create_issue` does exactly this for a client with no
+        # team. Both points are the same `blocked` terminal; catching only the
+        # factory left this one exiting 1 with a raw traceback.
+        _refuse(
+            "blocked",
+            str(exc),
+            command="promote escalate",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
     except (TrackerNotFound, TrackerRequestError) as exc:
         _refuse(
             "escalation_failed",

@@ -311,6 +311,35 @@ def test_missing_tracker_configuration_returns_blocked(
     assert stored.escalation_ticket is None
 
 
+def test_a_config_error_raised_lazily_by_the_client_is_still_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``TrackerConfigError`` raised from ``create_issue`` — not from the
+    factory — is still the ``blocked`` refusal, not a raw traceback.
+
+    ``LinearClient.create_issue`` raises lazily when the client carries no team
+    (``repo.linear`` unset), because that is a backend fact the client owns and a
+    neutral verb must not pre-check. So the config error can surface at *either*
+    of two points, and only wrapping the factory call left this one crashing with
+    exit 1 — which the seam-stubbed cases above could not see, since a stub that
+    raises from the factory never exercises the second path.
+    """
+    db = _seed(tmp_path, _promotion())
+    _install_fake_tracker(
+        monkeypatch,
+        raise_on_create=LinearConfigError("no Linear team configured"),
+    )
+
+    result = _invoke(tmp_path, monkeypatch, db)
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == "blocked"
+
+    stored = _read(db, "p1")
+    assert stored is not None
+    assert stored.status == "needs_ticket"
+    assert stored.escalation_ticket is None
+
+
 def test_tracker_less_repo_refuses_and_carries_the_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

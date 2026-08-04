@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from harness.linear import LinearClient, LinearNotFound, LinearRequestError
+from harness.linear import (
+    LinearClient,
+    LinearConfigError,
+    LinearNotFound,
+    LinearRequestError,
+)
 
 _TEAM_NODE = {
     "id": "team-uuid",
@@ -136,3 +141,28 @@ async def test_create_issue_unsuccessful_mutation_raises_request_error(
         await client.create_issue(
             project=None, title="T", description="D"
         )
+
+
+async def test_create_issue_without_a_configured_team_raises_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A client built with no team (``repo.linear`` unset) refuses before any request.
+
+    Since #328 the team is client config rather than a call argument, so this is
+    where a missing one surfaces — a ``LinearConfigError`` (⊂ ``TrackerConfigError``)
+    raised *lazily*, from inside ``create_issue``. That is what a neutral caller
+    must map to its ``blocked`` refusal; the pin also asserts **no request was
+    fired**, since a config gap must not reach the network.
+    """
+    requested: list[str] = []
+
+    async def fake_request(query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        requested.append(query)
+        return {}
+
+    client = LinearClient(api_key="fake-key")  # no team
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    with pytest.raises(LinearConfigError, match="repo.linear"):
+        await client.create_issue(project=None, title="T", description="D")
+    assert requested == []
