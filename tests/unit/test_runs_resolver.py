@@ -134,3 +134,90 @@ def test_missing_ledger_creates_no_files(tmp_path: Path) -> None:
         run_sync(resolve_open_run(db_path, repo, None))
 
     assert not (tmp_path / ".harness").exists()
+
+
+# ---------------------------------------------------------------------------
+# Declared attendance — the shared run-row rule (#295, ADR 0011)
+#
+# ``attendance_inputs_json`` (start's only writer) and ``resolve_attended``
+# (every reader) sit together in ``_runs`` for the reason its module docstring
+# already gives for ``read_run_resumed_from``: "a second copy is how two paths
+# start disagreeing". The two future readers are #296 (``review``'s wall-clock
+# breaker) and #297 (``reclaim --stale``'s threshold selection).
+#
+# The asymmetry these tests lock: declaring attendance opts a run out of the
+# only ceiling on autonomous spend, so ONLY the literal JSON ``true`` declares
+# it. Every other value — including a truthy-looking one — resolves unattended,
+# because the bounded mode is both the default and the failure default.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The one declaring value.
+        ('{"attended": true}', True),
+        ('{"attended": true, "other": 1}', True),
+        # Today's stored value, on every row ever written (AC-3).
+        ("{}", False),
+        # Absent key.
+        ('{"other": 1}', False),
+        # Explicit opt-out.
+        ('{"attended": false}', False),
+        # Truthy-but-not-the-boolean: a string, an int, a list. None of these
+        # may buy an exemption from the spend ceiling.
+        ('{"attended": "true"}', False),
+        ('{"attended": 1}', False),
+        ('{"attended": ["yes"]}', False),
+        # Unparseable (AC-3).
+        ("not json", False),
+        ("{oops", False),
+        # Valid JSON that is not an object.
+        ("[]", False),
+        ("null", False),
+        ('"attended"', False),
+        # Empty / absent column.
+        ("", False),
+        (None, False),
+    ],
+)
+def test_resolve_attended_only_the_literal_true_declares_attendance(
+    raw: str | None, expected: bool
+) -> None:
+    """AC-3: the reader is total and fails safe toward the bounded mode.
+
+    One assertion per case rather than a single compound one, so a regression
+    names the exact value that started resolving the wrong way.
+    """
+    from harness.cli._runs import resolve_attended
+
+    assert resolve_attended(raw) is expected
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_attendance_round_trips_through_the_writer(declared: bool) -> None:
+    """The writer/reader contract in one line — what ``start`` stores is what
+    ``review`` / ``reclaim`` will read back. Locks the pair against a rename or
+    a re-spelling of the key on either side."""
+    from harness.cli._runs import attendance_inputs_json, resolve_attended
+
+    assert resolve_attended(attendance_inputs_json(declared)) is declared
+
+
+def test_unattended_writes_todays_exact_value() -> None:
+    """AC-2 at the source: the undeclared mode is byte-identical to the literal
+    ``start`` has always inserted, so no existing row changes meaning and no
+    backfill is needed."""
+    from harness.cli._runs import attendance_inputs_json
+
+    assert attendance_inputs_json(False) == "{}"
+
+
+def test_attended_writes_a_parseable_object_carrying_the_key() -> None:
+    """The declared value is real JSON (not a sentinel string) — ``harness
+    status --json`` already parses this column and surfaces it as ``inputs``."""
+    import json
+
+    from harness.cli._runs import ATTENDED_KEY, attendance_inputs_json
+
+    assert json.loads(attendance_inputs_json(True)) == {ATTENDED_KEY: True}

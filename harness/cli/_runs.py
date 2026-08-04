@@ -32,10 +32,21 @@ either verb's private one. It arrived with the design verb and moved here when t
 second reader appeared; a review-path module reaching into ``design_tracker`` for
 it would read as coupling that is not there, and a second copy is how two paths
 start disagreeing about what *resumed* means.
+
+:func:`attendance_inputs_json` / :func:`resolve_attended` sit here for that same
+reason, one step earlier (#295, ADR 0011). "Is this run attended?" is a shared
+run-row rule with two readers already specified — ``review``'s wall-clock
+breaker (#296) and ``reclaim --stale``'s threshold selection (#297) — and the
+writer (``start``'s insert) lives with them so the key's spelling cannot drift
+between the side that records the mode and the sides that act on it. They are a
+*pure* pair over the column's value rather than a DB reader, because both
+consumers already project run rows for their own reasons and need the rule, not
+another query.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from harness.cli._verb import VerbError
@@ -45,6 +56,15 @@ from harness.state import store
 #: found`` case keeps its own per-verb reason (or none), so this tag can never
 #: collide with it (#244 AC-3).
 LEDGER_NOT_FOUND_REASON = "no_ledger"
+
+#: The one key ``inputs_json`` carries under the verb model (#295, ADR 0011).
+#: Spelled once, next to both the writer and the reader, so the two cannot drift.
+ATTENDED_KEY = "attended"
+
+#: What ``start`` has always inserted, and still inserts for an undeclared run.
+#: Byte-identical is the point: every row written before #295 already means
+#: *unattended*, so there is no backfill and ``"{}"`` gains no second meaning.
+UNATTENDED_INPUTS_JSON = "{}"
 
 
 class LedgerNotFoundError(VerbError):
@@ -105,6 +125,44 @@ async def resolve_open_run(
     if row is None:
         return None
     return str(row[0]), str(row[1]), str(row[2]), str(row[3])
+
+
+def attendance_inputs_json(attended: bool) -> str:
+    """The ``inputs_json`` value for a declared attendance mode (#295).
+
+    ``start``'s only writer. Pairs with :func:`resolve_attended` — keeping the
+    two together is why they live here rather than in ``start``: the readers
+    (#296 ``review``, #297 ``reclaim --stale``) must agree with the writer about
+    the key's spelling, and a second copy is how that agreement breaks.
+    """
+    return json.dumps({ATTENDED_KEY: True}) if attended else UNATTENDED_INPUTS_JSON
+
+
+def resolve_attended(inputs_json: str | None) -> bool:
+    """Whether a run row declared itself attended (#295, ADR 0011).
+
+    Total by construction — it never raises, and *unattended* is both the
+    default and the failure default. Only the literal JSON ``true`` declares
+    attendance: a string ``"true"``, a ``1``, a non-object document, unparseable
+    text and an absent column all resolve unattended.
+
+    That strictness is deliberate rather than defensive. Declaring attendance
+    opts a run out of the wall clock, which is the only ceiling on autonomous
+    spend, so every ambiguous value must fail *toward* the bound. A corrupted or
+    hand-edited ledger can then only ever make a run more bounded, never less.
+
+    The parse failure is swallowed on purpose, and this is the honest trade: the
+    alternative is ``review`` and the ``--stale`` sweep raising over a column
+    that carried no meaning until #295, wedging a verb (and, in the sweep, a
+    whole tick) on a value nothing has ever validated. It is not hidden either —
+    ``harness status --json`` already parses this column and surfaces it as
+    ``inputs``, so a malformed value is visible where a human would look.
+    """
+    try:
+        data = json.loads(inputs_json) if inputs_json else None
+    except (TypeError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get(ATTENDED_KEY) is True
 
 
 async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
