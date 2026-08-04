@@ -659,3 +659,76 @@ def test_stale_sweep_does_not_probe_when_there_is_no_open_run(tmp_path: Path) ->
         )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("314")
+
+
+# ===========================================================================
+# #297: the declared mode rides on the same row as the three clocks
+# ===========================================================================
+
+
+def _liveness(db: Path, ticket: str) -> reclaim_liveness.RunLiveness | None:
+    """``open_run_liveness`` driven directly — the projection under test."""
+    return run_sync(reclaim_liveness.open_run_liveness(db, ticket))
+
+
+def test_the_projection_reads_a_declared_attended_row(tmp_path: Path) -> None:
+    """An attended run's mode reaches the sweep off the *same* row as its clocks.
+
+    Unit-level on ``open_run_liveness`` rather than only through the verb: a
+    wiring mistake — projecting the wrong column, or forgetting the parse — is
+    localised here instead of surfacing three layers up as a mysterious
+    reclamation.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-ATT", status="open", ticket="ATT-1", attended=True)
+
+    liveness = _liveness(db, "ATT-1")
+
+    assert liveness is not None
+    assert liveness.attended is True
+    assert liveness.run_id == "R-ATT"
+
+
+def test_the_projection_reads_an_undeclared_row_as_unattended(tmp_path: Path) -> None:
+    """The ``"{}"`` every pre-#295 row holds means unattended, as it always did."""
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-UNATT", status="open", ticket="UNATT-1")
+
+    liveness = _liveness(db, "UNATT-1")
+
+    assert liveness is not None
+    assert liveness.attended is False
+
+
+def test_the_projection_reads_a_hand_edited_row_as_unattended(tmp_path: Path) -> None:
+    """A corrupted or hand-edited ``inputs_json`` fails *toward* the bound.
+
+    Declaring attendance is what buys the longer threshold, so every ambiguous
+    value must resolve unattended — the strictness ``resolve_attended`` owns
+    (#295), exercised here at the seam that now consumes it. A ``bool()``-style
+    parse would read ``"true"`` as a declaration.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-BAD", status="open", ticket="BAD-1")
+
+    async def _corrupt() -> None:
+        async with store.connect(db) as conn:
+            await conn.execute(
+                "UPDATE runs SET inputs_json = ? WHERE run_id = ?", ('"true"', "R-BAD")
+            )
+            await conn.commit()
+
+    run_sync(_corrupt())
+
+    liveness = _liveness(db, "BAD-1")
+
+    assert liveness is not None
+    assert liveness.attended is False
+
+
+def test_the_projection_has_no_opinion_without_an_open_run(tmp_path: Path) -> None:
+    """No open row → ``None``, so there is no mode to inherit (AC-5's seam)."""
+    db = tmp_path / "harness.db"
+    run_sync(store.init_db(db))
+
+    assert _liveness(db, "ABSENT-1") is None

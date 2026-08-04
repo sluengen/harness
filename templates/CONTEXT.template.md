@@ -60,6 +60,7 @@ branches:
 loop:
   max_review_cycles: 6           # hard ceiling — the run stops and escalates on REACHING this review→fix cycle (the first half run unconditionally; the rest assess convergence first)
   wall_clock_budget_minutes: 110 # the longest a legitimate run may take. ALSO `harness reclaim --stale`'s default staleness threshold — one quantity seen from two directions (a run refused at review but spared reclamation would be alive on the board and unable to finish), so this single line moves both.
+  attended_idle_minutes: 480     # `harness reclaim --stale`'s staleness threshold for a run started `--attended`. A longer threshold, not an exemption: a session paused on a question to the operator touches none of the liveness clocks, so the wall clock above would revert its ticket underneath them — while a session abandoned overnight is still reclaimed by morning. Keep it at or above `wall_clock_budget_minutes`.
   engine_timeout_seconds: 720    # per-subprocess ceiling for BOTH engines, review and design — a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Raise it if a legitimately slow design is being killed; sit it at or below any external ops kill so the clean exit wins.
 conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"

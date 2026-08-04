@@ -55,6 +55,7 @@ from pathlib import Path
 
 from harness._git import run_git, worktree_toplevel_matches
 from harness._time import parse_iso_z
+from harness.cli._runs import resolve_attended
 from harness.state import store
 
 __all__ = [
@@ -87,11 +88,20 @@ class RunLiveness:
     makes the predicate unreachable for a ticket whose liveness lookup returned
     ``None`` — no ledger, or no open run. That is condition 1 of the predicate
     enforced by construction instead of by a repeated ``if``.
+
+    ``attended`` (#297) rides here for the same structural reason. It is not a
+    fourth liveness signal — it selects the *threshold* the three clocks above
+    are compared against — but it must describe the same run they do, and taking
+    it off this row is what makes describing a different one unrepresentable. It
+    is also unreachable exactly when there is no open run, which is precisely the
+    case ADR 0011 requires to resolve *unattended*: unknown falls to the bounded
+    default by construction rather than by an ``if``.
     """
 
     last_activity: datetime
     worktree_path: Path | None
     run_id: str
+    attended: bool
 
 
 async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
@@ -106,12 +116,19 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
     ``started_at`` is load-bearing rather than a belt-and-braces extra — ``start``
     emits no event, so it is the **only** liveness signal a run has before its
     first ``design`` / ``checkpoint``.
+
+    ``inputs_json`` is projected on the same row rather than fetched by a second
+    query (#297): one connection per tracker-stale candidate on a path the Build
+    routine runs every tick, and — the structural half — two queries can return
+    two different rows, so the mode could end up describing a run the clocks do
+    not.
     """
     if not db_path.exists():
         return None
     async with store.connect(db_path) as conn:
         cur = await conn.execute(
-            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path, r.run_id "
+            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path, r.run_id, "
+            "r.inputs_json "
             "FROM runs r "
             "LEFT JOIN events e ON e.run_id = r.run_id "
             "WHERE r.ticket = ? AND r.status = 'open'",
@@ -130,6 +147,10 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
         last_activity=max(stamps),
         worktree_path=Path(str(raw_path)) if raw_path else None,
         run_id=str(row[3]),
+        # ``resolve_attended`` is total and strict — only the JSON literal
+        # ``true`` declares attendance — so this cannot raise and every
+        # ambiguous value fails toward the wall clock, never away from it.
+        attended=resolve_attended(None if row[4] is None else str(row[4])),
     )
 
 

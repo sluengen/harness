@@ -202,6 +202,12 @@ class SweepOutput(BaseModel):
     mode: Literal["stale-sweep"] = "stale-sweep"
     project: str | None
     older_than: str
+    #: The threshold applied to a run that declared itself **attended** (#297).
+    #: Reported beside ``older_than`` because otherwise the sweep would state one
+    #: threshold while having classified some tickets against another, and the
+    #: resolution would stop being observable in ``--json`` — which is how the
+    #: #260 resolution is proven today.
+    attended_older_than: str
     scanned: int
     reclaimed: list[ReclaimedEntry]
     skipped: list[str]
@@ -402,6 +408,8 @@ async def _run_stale_sweep(
     project: str | None,
     older_than: str,
     threshold: timedelta,
+    attended_older_than: str,
+    attended_threshold: timedelta,
     tracker: bool = True,
 ) -> SweepOutput:
     """Enumerate the active tickets in scope and reclaim each idle past
@@ -435,6 +443,14 @@ async def _run_stale_sweep(
     have kept — a ticket is reclaimed iff it is tracker-stale **and** the ledger
     is absent or stale **and** the worktree is unreachable or stale.
 
+    Since #297 the *value* those three clocks are compared against is selected by
+    the run's declared mode (ADR 0011): ``attended_threshold`` for a run started
+    with ``--attended``, ``threshold`` otherwise. The rule above is unchanged —
+    the mode is not a fourth signal, and because the attended threshold is the
+    longer of the two it can only ever spare, never condemn. A ticket with no
+    resolvable run row has no mode to read and falls to ``threshold``, the
+    bounded default.
+
     Tracker-less (``tracker: none``, CAL-1104/CAL-1197) the sweep is a **clean
     no-op**: enumeration is the tracker's job (proposal D2), so with no tracker
     there is no active ticket state to enumerate and
@@ -446,6 +462,7 @@ async def _run_stale_sweep(
         return SweepOutput(
             project=project,
             older_than=older_than,
+            attended_older_than=attended_older_than,
             scanned=0,
             reclaimed=[],
             skipped=[],
@@ -472,7 +489,11 @@ async def _run_stale_sweep(
     # Staleness keys on time only (proposal D2): a ticket idle longer than the
     # threshold is presumed abandoned. ``updatedAt`` is parsed through the
     # ``_time`` seam; both sides of the comparison are aware-UTC.
-    cutoff = datetime.now(UTC) - threshold
+    now = datetime.now(UTC)
+    cutoff = now - threshold
+    # Further in the past, so "at or after it" is a weaker demand — which is what
+    # makes the attended mode spare-only.
+    attended_cutoff = now - attended_threshold
 
     reclaimed: list[ReclaimedEntry] = []
     skipped: list[str] = []
@@ -491,7 +512,18 @@ async def _run_stale_sweep(
         # mtime among the run's worktree's tracked files, which is the only signal
         # that sees a session working without committing or invoking a verb.
         liveness = await open_run_liveness(db_path, identifier)
-        if liveness is not None and await locally_live(liveness, cutoff):
+        # The declared mode selects the value every clock is measured against
+        # (#297) — including the tracker's, which is re-tested below. Selecting
+        # it only for the local signals would reclaim an attended run whose
+        # *newest* clock is the tracker's, i.e. the mode would condemn on a
+        # clock rather than spare on one. No ``liveness is None`` branch is
+        # needed: an unresolvable mode leaves ``effective`` at ``cutoff``.
+        effective = (
+            attended_cutoff if liveness is not None and liveness.attended else cutoff
+        )
+        if liveness is not None and (
+            updated >= effective or await locally_live(liveness, effective)
+        ):
             skipped.append(identifier)
             continue
         # Dead by every clock — but a run that passed review and then lost its
@@ -521,6 +553,7 @@ async def _run_stale_sweep(
     return SweepOutput(
         project=project,
         older_than=older_than,
+        attended_older_than=attended_older_than,
         scanned=len(issues),
         reclaimed=reclaimed,
         skipped=skipped,
@@ -533,7 +566,8 @@ def _print_sweep(result: SweepOutput) -> None:
     scope = repr(result.project) if result.project is not None else "the whole tracker queue"
     typer.echo(
         f"Swept {result.scanned} active ticket(s) in {scope} "
-        f"(threshold {result.older_than}): {len(result.reclaimed)} reclaimed, "
+        f"(threshold {result.older_than}, attended {result.attended_older_than}): "
+        f"{len(result.reclaimed)} reclaimed, "
         f"{len(result.skipped)} left in-flight, {len(result.closable)} closable."
     )
     for entry in result.reclaimed:
@@ -577,9 +611,10 @@ def reclaim_command(
     older_than: str | None = typer.Option(
         None,
         "--older-than",
-        help="Staleness threshold for --stale (e.g. 110m, 12h, 7d). Omit to use "
-        "CONTEXT.md's loop.wall_clock_budget_minutes — the single source of truth "
-        "this mirrors.",
+        help="Staleness threshold for --stale (e.g. 110m, 12h, 7d), applied to "
+        "attended and unattended runs alike. Omit to use CONTEXT.md's "
+        "loop.wall_clock_budget_minutes — the single source of truth this "
+        "mirrors — and loop.attended_idle_minutes for a run started --attended.",
     ),
     undo: bool = typer.Option(
         False,
@@ -634,18 +669,27 @@ def reclaim_command(
             # Defaulting to a string built from the config would merely move the
             # literal rather than delete it. CWD-anchored like the tracker read
             # above — ``reclaim`` has no ``--repo`` (CAL-1104).
-            resolved_older_than = (
-                older_than
-                if older_than is not None
-                else f"{load_loop_budget(Path.cwd()).wall_clock_budget_minutes}m"
-            )
+            # Two thresholds since #297, selected per ticket by the run's
+            # declared mode (ADR 0011). An explicit ``--older-than`` overrides
+            # *both* in one assignment rather than a second branch: a one-off
+            # sweep means what it says, and the operator asking for 20m must not
+            # silently get 8h on some tickets.
+            if older_than is not None:
+                resolved_older_than = resolved_attended_older_than = older_than
+            else:
+                budget = load_loop_budget(Path.cwd())
+                resolved_older_than = f"{budget.wall_clock_budget_minutes}m"
+                resolved_attended_older_than = f"{budget.attended_idle_minutes}m"
             threshold = _parse_duration(resolved_older_than)
+            attended_threshold = _parse_duration(resolved_attended_older_than)
             return asyncio.run(
                 _run_stale_sweep(
                     db_path,
                     project=project,
                     older_than=resolved_older_than,
                     threshold=threshold,
+                    attended_older_than=resolved_attended_older_than,
+                    attended_threshold=attended_threshold,
                     tracker=tracker,
                 )
             )

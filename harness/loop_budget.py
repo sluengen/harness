@@ -19,9 +19,10 @@ and when the run started. This module turns those two observable facts into two
   breaker reads it prospectively (stop spending on a run past it), reclamation
   retrospectively (a run past it is presumed dead); one value means they cannot
   drift, so nobody has to "keep the two in step". Since #296 the breaker applies
-  that value to **unattended runs only** (ADR 0011) — the shared quantity is
-  unchanged, what differs is which runs it is measured against, and aligning the
-  sweep's scope to match is #297.
+  that value to **unattended runs only** (ADR 0011), and since #297 so does the
+  sweep — an attended run is measured against ``attended_idle_minutes`` instead.
+  The shared quantity is unchanged; what differs is which runs it is measured
+  against, and the two consumers now agree about that too.
 
 Both thresholds are **read from CONTEXT.md** (the ``loop:`` block), not hardcoded,
 so each self-hosting repo configures its own bounds. The decision functions are
@@ -43,6 +44,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 __all__ = [
+    "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
     "DEFAULT_MAX_REVIEW_CYCLES",
     "DEFAULT_WALL_CLOCK_BUDGET_MINUTES",
@@ -86,6 +88,26 @@ DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 110
 # it in the same ``loop:`` block.
 DEFAULT_ENGINE_TIMEOUT_SECONDS = 720
 
+# How long a run that *declared itself attended* may sit idle before
+# ``reclaim --stale`` presumes it abandoned (#297, ADR 0011). A longer
+# threshold, not an exemption: the operator is regularly asked a question
+# mid-run, and a human thinking touches none of the three liveness clocks the
+# sweep reads — so a paused session is indistinguishable from a dead
+# orchestrator and the wall clock reverts the ticket underneath them. 480 (8h)
+# covers a working day's worth of thinking while still reclaiming a session
+# abandoned overnight, so the board self-heals and worktrees do not accumulate.
+# It must not fall below DEFAULT_WALL_CLOCK_BUDGET_MINUTES: below it, declaring
+# attendance would make a run *more* reclaimable, which is neither mode's
+# intent.
+#
+# Unlike the wall clock this is read by **one** consumer. ``review``'s breaker
+# does not apply to an attended run at all (#296), so there is no second
+# direction for this value to be seen from and no equality to keep — the
+# #260 invariant it would otherwise have to satisfy cannot be violated because
+# the window it forbids (refused at review, spared reclamation) has no
+# review-side clock to open it.
+DEFAULT_ATTENDED_IDLE_MINUTES = 480
+
 # Stable, machine-readable ``reason`` tags carried on a trip — mirrors the
 # ``{"error", "reason"}`` refusal shape of ``close`` / the review infra failure
 # (CAL-866) so the orchestrator branches on the *kind* of trip without parsing
@@ -101,11 +123,15 @@ class LoopBudget(NamedTuple):
     boundaries (:func:`evaluate_breakers`). ``engine_timeout_seconds`` is the
     mid-verb complement: the per-subprocess ceiling a hung review engine is
     killed at, consumed by ``review``'s runner rather than the boundary check.
+    ``attended_idle_minutes`` is neither: it is ``reclaim --stale``'s staleness
+    threshold for a run that declared itself attended (#297), the retrospective
+    half of a mode that has no prospective clock at all.
     """
 
     max_review_cycles: int
     wall_clock_budget_minutes: int
     engine_timeout_seconds: int = DEFAULT_ENGINE_TIMEOUT_SECONDS
+    attended_idle_minutes: int = DEFAULT_ATTENDED_IDLE_MINUTES
 
     @property
     def unconditional_review_cycles(self) -> int:
@@ -175,6 +201,9 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         ),
         engine_timeout_seconds=_read_int_key(
             text, "engine_timeout_seconds", DEFAULT_ENGINE_TIMEOUT_SECONDS
+        ),
+        attended_idle_minutes=_read_int_key(
+            text, "attended_idle_minutes", DEFAULT_ATTENDED_IDLE_MINUTES
         ),
     )
 

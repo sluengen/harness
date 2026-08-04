@@ -1,11 +1,11 @@
-"""The three loop knobs carry one value in three places, and the prose says so — #291.
+"""Every loop knob carries one value in three places, and the prose says so — #291.
 
-``harness/loop_budget.py`` reads three integers out of a ``loop:`` block:
-``max_review_cycles``, ``wall_clock_budget_minutes`` and
-``engine_timeout_seconds``. Each has a code-level constant used when the key —
-or the whole ``CONTEXT.md`` — is absent, so each value exists in three places:
-the constant, this repo's own ``CONTEXT.md``, and the block a bootstrapped repo
-receives in ``templates/CONTEXT.template.md``.
+``harness/loop_budget.py`` reads a set of integers out of a ``loop:`` block —
+``max_review_cycles``, ``wall_clock_budget_minutes``, ``engine_timeout_seconds``
+and, since #297, ``attended_idle_minutes``. Each has a code-level constant used
+when the key — or the whole ``CONTEXT.md`` — is absent, so each value exists in
+three places: the constant, this repo's own ``CONTEXT.md``, and the block a
+bootstrapped repo receives in ``templates/CONTEXT.template.md``.
 
 Two of those three places were unguarded. The template shipped **no** ``loop:``
 block at all, so every bootstrapped repo ran on the constants with nowhere to
@@ -20,9 +20,11 @@ These guards pin all three places against **the constants**, which are the
 source: ``load_loop_budget`` never reads the template (an installed repo has no
 template), so the template and ``CONTEXT.md`` are copies that must not drift.
 The knob table is *derived* rather than restated — the constant's name is
-``DEFAULT_`` + the key upper-cased — so a fourth knob added to ``LoopBudget`` is
+``DEFAULT_`` + the key upper-cased — so a knob added to ``LoopBudget`` is
 covered here the day it is added rather than the day someone remembers to
-extend a list.
+extend a list. #297's ``attended_idle_minutes`` is the first knob that arrived
+that way: adding the field without adding the key to both files fails this
+module, which is the whole design.
 
 The parse is single-sourced too: :data:`harness.loop_budget._KEY_PATTERN` is the
 runtime reader's own regex, imported rather than recopied, so a guard cannot
@@ -66,7 +68,12 @@ _PROPOSAL = _REPO_ROOT / "specs" / "proposals" / "per-engine-timeout-ceiling.md"
 
 # The knobs `LoopBudget` carries, in field order. The matching constant is
 # derived from the key, never written out beside it (see the module docstring).
-_KEYS = ("max_review_cycles", "wall_clock_budget_minutes", "engine_timeout_seconds")
+_KEYS = (
+    "max_review_cycles",
+    "wall_clock_budget_minutes",
+    "engine_timeout_seconds",
+    "attended_idle_minutes",
+)
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")
 
@@ -209,7 +216,7 @@ def _quotes_number(sentence: str, value: int) -> bool:
 
 
 def test_template_declares_every_loop_key() -> None:
-    """The bootstrap template carries all three knobs as bare integers (AC-2).
+    """The bootstrap template carries every knob as a bare integer (AC-2).
 
     Presence is asserted *directly* rather than through
     :func:`load_loop_budget`, because a missing key falls back to its constant —
@@ -288,7 +295,7 @@ def test_the_parse_finds_nothing_when_the_block_is_missing(tmp_path: Path) -> No
         )
     (tmp_path / "CONTEXT.md").write_text(text, encoding="utf-8")
 
-    assert [_configured(text, key) for key in _KEYS] == [None, None, None]
+    assert [_configured(text, key) for key in _KEYS] == [None] * len(_KEYS)
     assert load_loop_budget(tmp_path) == loop_budget.LoopBudget(
         *(_constant(key) for key in _KEYS)
     )

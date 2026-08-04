@@ -42,6 +42,7 @@ from typer.testing import CliRunner
 
 from harness._time import iso_z
 from harness.cli import app
+from harness.cli._runs import attendance_inputs_json
 from harness.state import store
 from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
@@ -69,6 +70,7 @@ def seed_run(
     worktree_branch: str | None = "harness/cal-735",
     worktree_path: str | None = None,
     started_at: str = "2026-01-01T00:00:00+00:00",
+    attended: bool = False,
 ) -> None:
     """Seed a run row with the ticket + branch fields reclaim reads.
 
@@ -76,6 +78,12 @@ def seed_run(
     reads as dead — which is what those tests mean. Since #216 the sweep treats
     ``started_at`` as a liveness signal (``start`` emits no event, so it is the
     only one a pre-``design`` run has), so a test about a *live* run sets it.
+
+    ``attended`` writes the declared mode through the **production** writer
+    (``attendance_inputs_json``, #295) rather than a literal, so the key's
+    spelling cannot drift between ``start``, the sweep and these fixtures. The
+    ``False`` default is byte-identical to the ``"{}"`` this always wrote, so
+    every existing caller's row means exactly what it meant before (#297).
     """
 
     async def _insert() -> None:
@@ -92,7 +100,7 @@ def seed_run(
                     1,
                     status,
                     "{}",
-                    "{}",
+                    attendance_inputs_json(attended),
                     "dev",
                     worktree_branch,
                     worktree_path,
