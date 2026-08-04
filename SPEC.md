@@ -399,9 +399,9 @@ Explicit list of things this project does **not** do, even on request:
 - Full DAG engine. v1 is linear + loop. DAG comes only when a real workflow needs it and a YAML hack would be uglier than parallel-step support.
 - Web UI / dashboard. CLI + JSON output is enough.
 - Workflow visual builder.
-- Long-running daemon / server. The CLI runs, completes, exits. State persists in SQLite.
+- Long-running daemon / server. The CLI runs, completes, exits. State persists in SQLite. **Bounded exception — ADR [0012](specs/decisions/0012-persistent-runtime-host.md):** a persistent host-side process brokers credentials, keeps the image fresh, and constructs verb containers. It holds **no run state** — it is a credential broker, a spawner, and a timer, nothing more; anything that outlives a request and describes a run has exceeded the carve-out and belongs in the ledger. Every verb is still a one-shot container that runs, completes, and exits, which is what bounds the exception.
 - Multi-tenancy / multi-project state in one DB. One DB per project mount.
-- Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them.
+- Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them. **Bounded exception — ADR [0012](specs/decisions/0012-persistent-runtime-host.md):** the same runtime host runs the harness's *own* periodic maintenance (`reclaim --stale`, `worktrees cleanup`) on a timer. It runs no user-defined work, and each sweep is an ordinary one-shot verb invocation recorded in the ledger like any other.
 - LLM-driven workflow generation.
 - General-purpose agent framework. The harness is a set of deterministic verbs an agent calls, not a framework that runs agents. If a use case wants an autonomous agent that spawns its own work, this isn't the tool.
 
