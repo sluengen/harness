@@ -25,6 +25,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.cli import review as review_mod
+from harness.cli._runs import attendance_inputs_json
 from harness.loop_budget import (
     REVIEW_CYCLE_CEILING_REASON,
     WALL_CLOCK_BUDGET_REASON,
@@ -77,8 +78,16 @@ def _seed_run(
     *,
     started_at: datetime,
     prior_fail_reviews: int = 0,
+    attended: bool = False,
+    inputs_json: str | None = None,
 ) -> str:
-    """Seed an open run plus ``prior_fail_reviews`` recorded fail ``review`` events."""
+    """Seed an open run plus ``prior_fail_reviews`` recorded fail ``review`` events.
+
+    ``attended`` writes the row through :func:`attendance_inputs_json` — the same
+    writer ``start`` uses — so a seeded row can never disagree with production
+    about how the key is spelled. ``inputs_json`` overrides it with a raw string,
+    for the malformed-value case only.
+    """
 
     async def _insert() -> None:
         await store.init_db(db_path)
@@ -95,7 +104,9 @@ def _seed_run(
                     0,
                     "open",
                     "{}",
-                    "{}",
+                    inputs_json
+                    if inputs_json is not None
+                    else attendance_inputs_json(attended),
                     "dev",
                     str(repo),
                     f"harness/{_RUN_ID}",
@@ -272,6 +283,75 @@ def test_wall_clock_within_budget_runs(repo: Path, db_path: Path) -> None:
     _seed_run(db_path, repo, started_at=recent, prior_fail_reviews=0)
     result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, []))
     assert result.exit_code == 0, result.output
+
+
+# ---------------------------------------------------------------------------
+# #296 (ADR 0011): the wall clock is scoped to unattended runs
+#
+# The elapsed value below is the same 111 minutes
+# ``test_wall_clock_exceeded_trips_at_review_boundary`` uses — that test is this
+# pair's unattended half, end to end, and is deliberately left as written.
+# ---------------------------------------------------------------------------
+
+_PAST_BUDGET_MINUTES = 111
+
+
+def test_attended_run_past_the_wall_clock_reaches_the_engine(
+    repo: Path, db_path: Path
+) -> None:
+    """AC-5: an attended run past the budget reviews normally, engine and all.
+
+    Asserting the engine *ran* and the verdict *landed* is stronger than
+    asserting "not exit 4": it proves the run reached the engine rather than
+    dying somewhere else on the way there.
+    """
+    old = datetime.now(UTC) - timedelta(minutes=_PAST_BUDGET_MINUTES)
+    _seed_run(db_path, repo, started_at=old, prior_fail_reviews=0, attended=True)
+    calls: list[int] = []
+    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
+
+    assert result.exit_code == 0, result.output
+    assert calls == [1], "the attended run must reach the engine"
+    verdicts = [e for e in _review_events(db_path) if "verdict" in e]
+    assert [e["verdict"] for e in verdicts] == ["pass"], verdicts
+
+
+def test_attended_run_still_trips_the_cycle_ceiling(repo: Path, db_path: Path) -> None:
+    """The ceiling is unconditional — attendance exempts the clock only."""
+    _seed_run(
+        db_path, repo, started_at=datetime.now(UTC), prior_fail_reviews=5, attended=True
+    )
+    calls: list[int] = []
+    result = _invoke(repo, db_path, _tracking_runner(_FAIL_LINE, calls))
+
+    assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
+    assert json.loads(result.output)["reason"] == REVIEW_CYCLE_CEILING_REASON
+    assert calls == []
+
+
+def test_a_non_literal_true_does_not_buy_the_exemption(
+    repo: Path, db_path: Path
+) -> None:
+    """The verb routes ``inputs_json`` through ``resolve_attended``, not truthiness.
+
+    A truthy-but-not-``true`` value is exactly what a hand-edited or corrupted
+    ledger produces, and it must fail *toward* the bound. This pins the wiring;
+    ``resolve_attended``'s own strictness table is #295's and is not restated.
+    """
+    old = datetime.now(UTC) - timedelta(minutes=_PAST_BUDGET_MINUTES)
+    _seed_run(
+        db_path,
+        repo,
+        started_at=old,
+        prior_fail_reviews=0,
+        inputs_json='{"attended": "true"}',
+    )
+    calls: list[int] = []
+    result = _invoke(repo, db_path, _tracking_runner(_PASS_LINE, calls))
+
+    assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
+    assert json.loads(result.output)["reason"] == WALL_CLOCK_BUDGET_REASON
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
