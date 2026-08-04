@@ -444,7 +444,9 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
 
     payload = json.loads(result.output)
     # Only the bounded verdict fields are present (engine is provenance, CAL-701;
-    # convergence_check_required is the bounded CAL-906 advisory bool).
+    # convergence_check_required is the bounded CAL-906 advisory bool, and
+    # cycles_exhausted its #329 terminal counterpart — both single bools carrying
+    # no engine reasoning).
     assert set(payload.keys()) <= {
         "verdict",
         "issues",
@@ -452,6 +454,7 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
         "run_id",
         "engine",
         "convergence_check_required",
+        "cycles_exhausted",
     }
     assert payload["verdict"] == "fail"
     assert payload["issues"] == ["one issue"]

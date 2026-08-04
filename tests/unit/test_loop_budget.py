@@ -4,9 +4,11 @@ The autonomous Build loop and the review→fix→re-review cycle had no per-run
 budget and no hard retry ceiling. ``harness/loop_budget.py`` is the pure home of
 the two deterministic breakers the harness *can* observe from the ledger:
 
-* a **hard ceiling** on review→fix cycles per run — the run stops and escalates
-  on reaching the ceiling-th cycle (default 6; cycles 1–3 unconditional, 4–5
-  assess convergence);
+* a **hard ceiling** on review→fix cycles per run — ``max_review_cycles`` counts
+  the cycles a run may *spend* (default 5), the first
+  ``unconditional_review_cycles`` of them (default 3) needing no convergence
+  judgment. Both are independent configured keys since #329; the policy they
+  enforce is single-homed in ``skills/review-discipline/SKILL.md``;
 * a **per-run wall-clock budget** in minutes (default 110, the single source
   the stale-run reclamation staleness threshold).
 
@@ -30,11 +32,13 @@ from harness.loop_budget import (
     DEFAULT_ATTENDED_IDLE_MINUTES,
     DEFAULT_ENGINE_TIMEOUT_SECONDS,
     DEFAULT_MAX_REVIEW_CYCLES,
+    DEFAULT_UNCONDITIONAL_REVIEW_CYCLES,
     DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
     REVIEW_CYCLE_CEILING_REASON,
     WALL_CLOCK_BUDGET_REASON,
     LoopBudget,
     convergence_check_required,
+    cycles_exhausted,
     evaluate_breakers,
     load_loop_budget,
 )
@@ -43,9 +47,13 @@ from harness.loop_budget import (
 _T0 = datetime(2026, 6, 30, 12, 0, 0, tzinfo=UTC)
 
 
-def _budget(max_cycles: int = 6, wall_clock: int = 110) -> LoopBudget:
+def _budget(
+    max_cycles: int = 5, wall_clock: int = 110, unconditional: int = 3
+) -> LoopBudget:
     return LoopBudget(
-        max_review_cycles=max_cycles, wall_clock_budget_minutes=wall_clock
+        max_review_cycles=max_cycles,
+        wall_clock_budget_minutes=wall_clock,
+        unconditional_review_cycles=unconditional,
     )
 
 
@@ -84,9 +92,9 @@ def test_load_reads_thresholds_from_context(tmp_path: Path) -> None:
 
 
 def test_load_defaults_when_no_context(tmp_path: Path) -> None:
-    """A repo with no CONTEXT.md falls back to the documented defaults (6 / 110)."""
+    """A repo with no CONTEXT.md falls back to the documented defaults (5 / 110)."""
     budget = load_loop_budget(tmp_path)
-    assert budget.max_review_cycles == DEFAULT_MAX_REVIEW_CYCLES == 6
+    assert budget.max_review_cycles == DEFAULT_MAX_REVIEW_CYCLES == 5
     assert budget.wall_clock_budget_minutes == DEFAULT_WALL_CLOCK_BUDGET_MINUTES == 110
 
 
@@ -164,7 +172,7 @@ def test_load_defaults_when_loop_block_absent(tmp_path: Path) -> None:
     """A CONTEXT.md without a ``loop:`` block falls back to the defaults."""
     (tmp_path / "CONTEXT.md").write_text("```yaml\nprofile: harness\n```\n")
     budget = load_loop_budget(tmp_path)
-    assert budget.max_review_cycles == 6
+    assert budget.max_review_cycles == 5
     assert budget.wall_clock_budget_minutes == 110
 
 
@@ -179,7 +187,7 @@ def test_load_partial_loop_block_defaults_the_missing_key(tmp_path: Path) -> Non
 
 
 # ---------------------------------------------------------------------------
-# evaluate_breakers — the 6-cycle ceiling (AC-1)
+# evaluate_breakers — the review→fix cycle budget (AC-1)
 # ---------------------------------------------------------------------------
 
 
@@ -192,27 +200,57 @@ def test_cycles_one_to_five_do_not_trip_the_ceiling() -> None:
         assert trip is None, f"cycle {prior + 1} must not trip the ceiling"
 
 
-def test_sixth_cycle_trips_and_escalates() -> None:
-    """Reaching the 6th review→fix cycle (5 prior reviews) stops + escalates (AC-1)."""
+def test_the_call_after_the_budget_trips_and_escalates() -> None:
+    """The review after the budget is spent stops + escalates (AC-1).
+
+    The message names the **budget**, not the ordinal of the refused call: the
+    number a reader has to act on is how many cycles the run was allowed, which
+    is the one ``CONTEXT.md`` configures.
+    """
     trip = evaluate_breakers(
         prior_review_count=5, started_at=_T0, now=_T0, budget=_budget()
     )
     assert trip is not None
     assert trip.reason == REVIEW_CYCLE_CEILING_REASON
-    assert "6" in trip.message  # names the ceiling
+    assert "5" in trip.message
+
+
+def test_fifth_cycle_is_the_last_allowed() -> None:
+    """#329 — ``max_review_cycles`` counts the cycles a run may *spend*.
+
+    The canonical stop policy allows five review→fix cycles in total, so at the
+    shipped budget the 5th review runs and the 6th is refused. Before #329 the
+    key named the ordinal that trips (``prior + 1 >= max``), so a budget of 5
+    refused the 5th cycle and only four ever ran — the same number meaning two
+    different things depending on which document you read, which is the drift
+    this ticket removes.
+    """
+    budget = _budget(max_cycles=5)
+    assert (
+        evaluate_breakers(
+            prior_review_count=4, started_at=_T0, now=_T0, budget=budget
+        )
+        is None
+    ), "the 5th review is inside a 5-cycle budget and must run"
+
+    trip = evaluate_breakers(
+        prior_review_count=5, started_at=_T0, now=_T0, budget=budget
+    )
+    assert trip is not None
+    assert trip.reason == REVIEW_CYCLE_CEILING_REASON
 
 
 def test_ceiling_is_read_from_budget_not_hardcoded() -> None:
-    """A CONTEXT.md ceiling of 4 trips at the 4th cycle, proving it is configured."""
-    # cycles 1..3 (prior 0..2) clear; cycle 4 (prior 3) trips.
+    """A CONTEXT.md budget of 4 spends 4 cycles and refuses the 5th call."""
+    # cycles 1..4 (prior 0..3) clear; the 5th call (prior 4) trips.
     assert (
         evaluate_breakers(
-            prior_review_count=2, started_at=_T0, now=_T0, budget=_budget(max_cycles=4)
+            prior_review_count=3, started_at=_T0, now=_T0, budget=_budget(max_cycles=4)
         )
         is None
     )
     trip = evaluate_breakers(
-        prior_review_count=3, started_at=_T0, now=_T0, budget=_budget(max_cycles=4)
+        prior_review_count=4, started_at=_T0, now=_T0, budget=_budget(max_cycles=4)
     )
     assert trip is not None and trip.reason == REVIEW_CYCLE_CEILING_REASON
 
@@ -329,7 +367,7 @@ def test_omitting_the_mode_leaves_the_run_bounded() -> None:
 def test_attended_run_still_trips_the_cycle_ceiling() -> None:
     """AC-3: the ceiling is unconditional — attendance exempts the clock only."""
     trip = evaluate_breakers(
-        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles - 1,
+        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles,
         started_at=_T0,
         now=_T0,
         budget=_ATTENDANCE_BUDGET,
@@ -348,7 +386,7 @@ def test_ceiling_still_wins_over_the_clock_in_both_modes(attended: bool) -> None
     the clock has also blown — is unchanged by this ticket.
     """
     trip = evaluate_breakers(
-        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles - 1,
+        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles,
         started_at=_T0,
         now=_PAST_BUDGET,
         budget=_ATTENDANCE_BUDGET,
@@ -359,13 +397,19 @@ def test_ceiling_still_wins_over_the_clock_in_both_modes(attended: bool) -> None
 
 
 # ---------------------------------------------------------------------------
-# convergence_check_required — cycles 1–3 unconditional, 4–5 advise (AC-2)
+# convergence_check_required — the judged window (AC-2; retuned by #329)
 # ---------------------------------------------------------------------------
 
 
 def test_unconditional_cycles_do_not_require_convergence_check() -> None:
-    """Cycles 1–3 run unconditionally — no convergence advisory on their fails (AC-2)."""
-    for completed in (1, 2, 3):
+    """A fail before the last unconditional cycle owes no judgment yet (AC-2).
+
+    The advisory is about the cycle the agent is deciding to spend *next*, so it
+    is silent only while the next cycle is still inside the unconditional
+    window. At the shipped 3/5 that is cycles 1 and 2 — a fail on cycle 3 is
+    covered by the sibling test below, because the cycle it precedes is judged.
+    """
+    for completed in (1, 2):
         assert (
             convergence_check_required(
                 cycles_completed=completed, verdict="fail", budget=_budget()
@@ -375,8 +419,15 @@ def test_unconditional_cycles_do_not_require_convergence_check() -> None:
 
 
 def test_post_unconditional_fail_requires_convergence_check() -> None:
-    """After the 3 unconditional cycles, a FAIL flags the convergence path (AC-2)."""
-    for completed in (4, 5):
+    """A fail preceding a judged cycle flags the convergence path (AC-2, #329).
+
+    The canonical rule demands a recorded judgment *before* cycles 4 and 5, so
+    the advisory must fire on the fails that precede them — cycles 3 and 4. The
+    pre-#329 strict low bound fired at 4 and 5, one cycle late, which left the
+    judgment before cycle 4 unprompted by the very signal that exists to prompt
+    it.
+    """
+    for completed in (3, 4):
         assert (
             convergence_check_required(
                 cycles_completed=completed, verdict="fail", budget=_budget()
@@ -395,7 +446,139 @@ def test_pass_never_requires_convergence_check() -> None:
     )
 
 
-def test_unconditional_window_is_half_the_ceiling() -> None:
-    """The unconditional window is derived as half the ceiling (proposal: 6 = double 3)."""
-    assert _budget(max_cycles=6).unconditional_review_cycles == 3
-    assert _budget(max_cycles=4).unconditional_review_cycles == 2
+def test_the_unconditional_window_is_configured_not_derived() -> None:
+    """The window is its own key — it does not move when the budget moves (#329).
+
+    It used to be ``max_review_cycles // 2``, which returned the canonical 3
+    only because the budget happened to be 6. Holding the budget's two possible
+    values against one fixed window is what distinguishes a real key from a
+    derivation that coincides with it: under the old property these would read 3
+    and 2.
+    """
+    assert _budget(max_cycles=6, unconditional=3).unconditional_review_cycles == 3
+    assert _budget(max_cycles=4, unconditional=3).unconditional_review_cycles == 3
+    assert DEFAULT_UNCONDITIONAL_REVIEW_CYCLES == 3
+
+
+# ---------------------------------------------------------------------------
+# cycles_exhausted — the terminal half of the pair (#329)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("completed", [1, 2, 3, 4])
+def test_a_fail_inside_the_budget_is_not_exhaustion(completed: int) -> None:
+    """Every cycle the run may still follow with another leaves the flag false."""
+    assert (
+        cycles_exhausted(
+            cycles_completed=completed, verdict="fail", budget=_budget()
+        )
+        is False
+    ), f"cycle {completed} is inside a 5-cycle budget"
+
+
+def test_a_fail_on_the_last_allowed_cycle_is_exhaustion() -> None:
+    """A fail that consumed the last cycle stops the run where the policy says.
+
+    This is the signal that makes the stop land at the *completion* of the last
+    allowed cycle rather than one wasted implement pass later, when the refused
+    call finally reports ``review_cycle_ceiling``.
+    """
+    assert (
+        cycles_exhausted(cycles_completed=5, verdict="fail", budget=_budget()) is True
+    )
+
+
+@pytest.mark.parametrize("verdict", ["pass", "defer"])
+def test_only_a_fail_exhausts_the_budget(verdict: str) -> None:
+    """A pass or defer on the last cycle is a finished run, not an exhausted one."""
+    assert (
+        cycles_exhausted(cycles_completed=5, verdict=verdict, budget=_budget()) is False
+    )
+
+
+def test_exhaustion_and_the_advisory_are_mutually_exclusive() -> None:
+    """The two flags partition the fails — one asks for a judgment, one ends it.
+
+    An orchestrator that saw both set would have no defined action: the advisory
+    says *decide whether to spend another cycle*, exhaustion says *there is none
+    to spend*. The bounds are what keep that unrepresentable, so assert it over
+    the whole range rather than trusting the two definitions to stay aligned.
+    """
+    for completed in range(1, 8):
+        both = convergence_check_required(
+            cycles_completed=completed, verdict="fail", budget=_budget()
+        ) and cycles_exhausted(
+            cycles_completed=completed, verdict="fail", budget=_budget()
+        )
+        assert not both, f"cycle {completed} set both flags"
+
+
+def test_exhaustion_is_read_from_the_budget_not_hardcoded() -> None:
+    """A configured budget of 3 exhausts at cycle 3, not at the shipped 5."""
+    assert (
+        cycles_exhausted(
+            cycles_completed=3, verdict="fail", budget=_budget(max_cycles=3)
+        )
+        is True
+    )
+    assert (
+        cycles_exhausted(
+            cycles_completed=2, verdict="fail", budget=_budget(max_cycles=3)
+        )
+        is False
+    )
+
+
+# ---------------------------------------------------------------------------
+# unconditional_review_cycles — the new configured key (#329)
+# ---------------------------------------------------------------------------
+
+
+def test_load_reads_the_unconditional_window_from_context(tmp_path: Path) -> None:
+    """The window is configured per repo, through the same key regex as the rest.
+
+    2 is chosen because it is neither the 3 default nor any other knob's value,
+    so neither the fallback nor a mis-wiring to a sibling key satisfies it.
+    """
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  unconditional_review_cycles: 2\n```\n"
+    )
+    assert load_loop_budget(tmp_path).unconditional_review_cycles == 2
+
+
+def test_load_defaults_the_unconditional_window_when_absent(tmp_path: Path) -> None:
+    """A ``loop:`` block without the key inherits the canonical 3."""
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  max_review_cycles: 5\n```\n"
+    )
+    budget = load_loop_budget(tmp_path)
+    assert budget.unconditional_review_cycles == DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
+
+
+def test_a_window_wider_than_the_budget_clamps_to_it(tmp_path: Path) -> None:
+    """A window larger than the budget could never be left — clamp, never raise.
+
+    The loader degrades rather than erroring, so a nonsensical integer costs a
+    repo the judged window, not the ability to run a verb at all.
+    """
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  max_review_cycles: 5\n  unconditional_review_cycles: 9\n```\n"
+    )
+    budget = load_loop_budget(tmp_path)
+    assert budget.unconditional_review_cycles == 5
+
+
+def test_a_zero_budget_clamps_to_one_runnable_cycle(tmp_path: Path) -> None:
+    """``max_review_cycles: 0`` would refuse the *first* review and wedge the run."""
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  max_review_cycles: 0\n```\n"
+    )
+    budget = load_loop_budget(tmp_path)
+    assert budget.max_review_cycles == 1
+    assert budget.unconditional_review_cycles == 1
+    assert (
+        evaluate_breakers(
+            prior_review_count=0, started_at=_T0, now=_T0, budget=budget
+        )
+        is None
+    ), "the first review must still run under a clamped budget"

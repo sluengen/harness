@@ -202,6 +202,17 @@ class ReviewEventData(BaseModel):
     A reader must therefore treat ``NULL`` as *unknown*, never ``COALESCE`` it
     to a default — that would recreate the very confound this field removes.
 
+    ``cycles_exhausted`` (#329) records that this fail consumed the last
+    review→fix cycle the run may spend — the terminal counterpart to
+    ``convergence_check_required``, computed from the same cycle count so the two
+    can never disagree about which cycle the event describes. It carries a
+    default, unlike its sibling, because ~900 historical ``review`` rows were
+    written before the field existed; reading one back as ``False`` states what
+    was in fact true of it, since under the pre-#329 semantics no event was ever
+    written on an exhausted budget — the refusal came first and recorded no
+    verdict. Nothing gates on it (audit and orchestration, like
+    ``convergence_check_required``); the exit-4 refusal remains the enforcement.
+
     The refusal shape carries no ``model``, an accepted gap: the terminal-refusal
     writer is called from an outer handler where the resolved alias is not in
     scope, and most refusals (a breaker, ``no_gate_evidence``, ``no_design``, a
@@ -216,6 +227,7 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    cycles_exhausted: bool = False
     outcome: str = REVIEW_OUTCOME_OK
     invoked_at: str | None = None
     duration_ms: int | None = None
