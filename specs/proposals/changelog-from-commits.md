@@ -1,0 +1,113 @@
+<!-- guidance:template-proposal@0.1.2 -->
+---
+proposal: changelog-from-commits
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+date: 2026-08-04
+decided: 2026-08-04      # operator; Option B. Decisions recorded in specs/decisions/0014-changelog-from-commits.md
+related:
+  - specs/proposals/rebase-stable-certification.md
+  - specs/decisions/0010-rebased-tree-recertification.md
+---
+
+# Proposal: the changelog derives from commits; the fragment system is deleted
+
+> 1,874 lines of enforcement have produced zero released changelog entries, and a fifth of the files it compels say "no entry warranted". The conflict fix underneath it was earned; the ceremony on top of it was not.
+
+> **Decided 2026-08-04 — Option B.** The drafted recommendation was Option D (commits by default, fragment as an optional override). The operator's answer to the audience question — "nobody yet, realistically" — removed the override's only justification. Both are kept below: the options as drafted, and the reasoning as decided.
+
+## Problem / motivation
+
+The changelog machinery has three layers welded together, and only one of them is carrying its weight.
+
+**What is earned.** ADR 0010 / #267 moved `CHANGELOG.md`'s `[Unreleased]` block to per-change `changelog.d/` fragments because two concurrent runs conflicted at a shared insertion point **by construction** — on a file whose correct merge semantics are "keep both lines". That cost run `01KYR7T7B5E3QDC3WP7ZGYHTGV` two full rebase → gate → re-review → close rounds and went on to refuse a close on two further ticks. `merge=union` was rejected on direct evidence from the same run. That reasoning holds and any replacement must preserve its property: **no shared append point.**
+
+**What is not.** On top of that sits a presence guard (`require`) compelling every change to produce a fragment or an explicit exemption, plus a structural guard, a per-fragment byte budget, a fragment-count bound, a reserved no-ticket stem class (#287, shipped 2026-08-04), and a doc-guard suite asserting `RELEASING.md` describes all of it. Measured on 2026-08-04:
+
+| | |
+|---|---|
+| Machinery | 486 lines of guard, 1,388 lines of test, a 107-line runbook |
+| Tests | 47 across three modules |
+| **Released entries produced by it** | **0** |
+| Pending fragments | 24, of which **5 (21%) are `### None`** exemptions |
+| Fragment vs. its own commit body | ~2.5 KB each, **44–54% vocabulary overlap** (#281, #291) |
+| Releases ever | **1** (`v1.0.0`, 2026-05-27 — three months *before* the fragment system existed) |
+
+`CHANGELOG.md` contains exactly one `## ` heading — `[Unreleased]` — holding 12 entries that predate #267 and are frozen there by the may-not-grow ratchet. **The fold has never run.** Every bound the system enforces — the per-fragment byte budget, the count ceiling, the file's byte and line ratchets — is calibrated against zero observed releases.
+
+In fairness, #267 shipped on 2026-08-01, three days ago. "Has produced no output" is partly youth, not only waste. What it is *not* partly is this: the enforcement was built ahead of any evidence about what the output should look like, and has since grown two more layers (the byte budget, then #287's stem class) without that evidence arriving.
+
+**The duplication is already documented in the system's own error message.** The per-fragment byte guard fails with: *"Reasoning longer than that belongs in the change spec, the commit body, or the review record — where it already lives in full, and where nobody pays a context tax to skip it."* It correctly identified that the fragment duplicates the commit and responded with a cap on the duplicate rather than asking why there are two.
+
+**Why the duplication is structural, not a discipline problem.** The argument for write-time fragments is a good one in general: capture the *user-facing* entry while context is fresh, in the reader's language rather than the implementer's. This repo does not realize it, because the same agent writes the fragment and the commit body in a single pass with no change of audience. The #287 fragment shipped today talks about `_sort_key`'s `int(...)` and `merge-base..HEAD`. That is implementer language in both files.
+
+**The convention that could replace it already holds.** All **80 of the last 80** non-merge commits on `dev` carry a valid `type` (`feat` / `fix` / `chore` / `docs` / `refactor` / `test` / `spec`), and 77 carry a scope as well. `harness/cli/release.py` contains **zero** references to the changelog, so nothing in the release verb depends on the fragment format.
+
+Doing nothing is defensible on the grounds that the system is three days old. The cost of doing nothing is that the next edge case gets another layer, as #287 just did.
+
+## Options
+
+**Option A — Keep it, and wait for a release before judging.** The system is young; one fold would produce the evidence every bound was set without. · Costs nothing today and is the honest scientific answer. But it leaves the 21% exemption rate, the duplication, and the #287 stem class in place, and each further edge case adds a layer that a later simplification must then unwind.
+
+**Option B — Derive the changelog from commits at release; delete the fragment system entirely.** `git log <last-tag>..HEAD --no-merges`, grouped by `type`, edited once by a human at release. · Deletes ~1,800 lines and ~40 tests. Solves #267's conflict *more* completely than fragments — there is no shared file and no second file to forget. Loses the ability to write an entry in different words from the commit, and makes commit subjects load-bearing (they already are, at 80/80).
+
+**Option C — Delete the presence guard only; keep fragments as an optional artifact.** `require` goes; `check` and `fold` stay. An author writes a fragment when there is something worth saying and writes nothing when there is not. · Removes the ceremony and the whole exemption concept — absence *is* the exemption — while keeping the curated-prose escape hatch. But with no backstop, an entry that should have been written is simply lost, and nothing notices.
+
+**Option D — Commits are the default source; a fragment is an optional override.** The release assembles from commits, and where a `changelog.d/<ticket>.md` exists it **replaces** the derived entry for that ticket. `require` and the exemption concept are deleted; `check` stays for the fragments that do exist. · Keeps every property that was earned and drops every one that was not. More moving parts than B — two sources to merge at fold time — and the merge rule has to be unambiguous.
+
+## Recommendation
+
+> **Decided 2026-08-04: Option B**, with breakdown item 1 gating the rest. This section records the reasoning as accepted; the drafted recommendation was Option D, and the paragraph below explains why the operator's answer to the audience question makes B the better call.
+
+**Option B — derive from commits, delete the fragment system entirely.**
+
+The audience question settled it. The drafted recommendation was Option D, whose entire justification is the *fragment as an optional override*: a place to write an entry in the reader's language when the commit subject will not serve. **That value is conditional on there being a reader.** With the audience answered as "nobody yet, realistically", the override preserves an escape hatch for an audience that does not exist, and pays for it with two sources, a merge rule, and the `check` guard that keeps the format honest. Option D would be right the moment a real external reader appears; today it is machinery held in reserve.
+
+What B keeps, and why each piece survives:
+
+- **No shared append point** — the property ADR 0010 bought with two rebase → review → close rounds — holds *more* strongly than under fragments. Commits never conflict, and there is no second file to forget, mis-name, or exempt.
+- **The record still exists.** A changelog is cheap when derived: `git log <tag>..HEAD --no-merges`, grouped by `type`, edited once by a human at release. Cheap enough to keep for the reader who may yet arrive, which is the right posture for an unverified audience — versus the current posture, which pays a per-change tax against the same uncertainty.
+- **The exemption disappears entirely.** Not every commit becomes an entry; the release editor drops what does not matter. That is what 5 of the 24 pending fragments are laboriously saying in prose.
+
+Stating the cost plainly rather than burying it: **I built #287 today, and this decision makes it dead code.** That is not an argument against the decision — it is the strongest evidence for it. A guard that needs a reserved filename class to accommodate its own process outputs has stopped serving the thing it was built for. #287 was a correct fix and it unblocked real commits; it should not have been necessary, and its necessity is the symptom being acted on. Discount any defence of the current system from its author accordingly.
+
+This follows *smallest change that fully solves the problem* only if the problem is stated correctly. The problem is not "changes lack changelog entries" — it is "the record of a change is written twice, and the second copy is compelled". B deletes the compulsion and the second copy while keeping the record.
+
+**Sequencing, decided: item 1 gates the rest.** Nothing ships before the fold has run and its output has been read. ADR 0009's precedent applies — measure before the fix the measurement is meant to justify — and #267 itself rejected `merge=union` on measured evidence rather than reasoning. With B chosen the gate's *purpose* shifts: it is no longer "does the fragment system produce good output" (it is being deleted either way) but **"what is the pending window holding, and does any of it need preserving before the machinery that reads it goes?"** It retains the standing to stop the proposal — if the folded section reads better than anything `git log` could produce, that is evidence for Option A and this decision should be revisited.
+
+## Open decisions
+
+Four were settled by the operator on 2026-08-04; one is dissolved by that outcome and one remains.
+
+| Decision | Who decides | Outcome | Recorded in |
+|---|---|---|---|
+| **Who reads this changelog?** The repo has one release, an AGPL/MIT split, and unverified self-hosters. | user | **Settled — "nobody yet, realistically."** This is the decision that drives the rest: it removes the only justification for keeping a curated-prose override, and so converts the recommendation from D to B. | ADR 0014 + `RELEASING.md` |
+| Default source: D, B, C, or A? | user | **Settled — Option B.** Derive from commits; delete the fragment system entirely. | ADR 0014 + `RELEASING.md` |
+| Does the `### None` exemption concept survive? | user | **Settled — no.** It is deleted with the rest. Absence of an entry is the exemption; the release editor drops what does not matter. | ADR 0014 |
+| Does #287's `no-ticket-<slug>` stem class get reverted or kept? | architect | **Dissolved by Option B** — the module it lives in is deleted, so there is nothing to revert separately. Its reasoning is preserved in the deleting change's commit body. | the deleting change spec |
+| Does item 1 gate the rest? | user | **Settled — yes.** Nothing ships until the fold has run and been read. | this proposal, updated in place |
+| Where does the folded pending window land, given `CHANGELOG.md` has **4 lines and 577 bytes** of headroom against its ratchet and the window holds 24 fragments? | architect | Open — settled inside item 1. `CHANGELOG-archive/2026.md` is the likely home, following the existing archive convention. | item 1's change spec |
+
+## Breakdown
+
+Four items, ordered. Item 1 **gates** items 2–4 and may stop them.
+
+1. [#322] **Drain the pending window: fold the 24 fragments, read the output, land it.** No new code. Produces the released section the system has never produced, decides where it lands (the `CHANGELOG.md` ratchet has 4 lines of headroom, so almost certainly `CHANGELOG-archive/2026.md`), and re-baselines the ratchet. **Gate:** if the folded section is materially better than what `git log` over the same window would yield, that is evidence for Option A and this proposal is revisited before item 2 starts. Record the comparison either way — it is the evidence every existing bound was set without.
+2. [#323] **Build the commit-derived assembler** — `git log <tag>..HEAD --no-merges`, `type` → Keep-a-Changelog category, ticket id parsed from the subject. Output only, alongside the existing system; nothing is deleted yet, so the two can be compared on the same window.
+3. [#324] **Delete the fragment system** — `scripts/changelog_fragments.py` (`check` / `require` / `fold`), `changelog.d/`, the three test modules, the per-fragment byte budget, the fragment-count bound, and #287's no-ticket stem class. Roughly 1,800 lines and 40 tests. The commit body carries why each guard existed, so the reasoning survives its mechanism.
+4. [#325] **Rewrite `RELEASING.md`'s changelog section and its 14 doc guards** — the runbook describes a mechanism that will no longer exist, and those guards enforce the description. Ships with or immediately after item 3, never before.
+
+Explicitly **not** in this breakdown: reconciling the three places history is recorded (`README.md`'s era summary, `CHANGELOG.md`, `CHANGELOG-archive/2026.md`). See the risks below — with the audience answered as "nobody yet", that may be the more valuable change, and it deserves its own proposal rather than being smuggled in here.
+
+## Risks / unknowns
+
+**The evidence for the whole proposal is three days old, and so is the thing it criticises.** #267 shipped 2026-08-01. A system that has not survived one release cycle is being judged on not having produced release output. Item 1 exists precisely so this is settled by looking rather than by argument, and if the fold's output is good, Option A is the right answer and this proposal should be rejected on its own terms.
+
+**Commit subjects become load-bearing.** They already are at 80/80, but that is a *current* rate under a convention nothing enforces mechanically. If derived entries become the record, a sloppy subject becomes a sloppy changelog line — where today it is invisible. Whether that warrants a subject-format guard is a question for item 2, and adding one would recreate a compulsion this proposal exists to remove; the honest answer may be that the release editor fixes it by hand.
+
+**A derived entry is written for the wrong audience by default.** The commit subject is implementer language. The claim that a human editing pass at release fixes this is untested here, because no release has happened under any of these systems. Item 1 partially probes it.
+
+**Three places already record history** — `README.md`'s era summary, `CHANGELOG.md` (12 frozen entries), and `CHANGELOG-archive/2026.md` (74 entries). This proposal touches only how the pending window is produced, and deliberately does not reconcile the three. If the audience question above resolves to "nobody", that reconciliation is the more valuable change and this one should be reconsidered against it.
+
+**The audience answer cuts deeper than this proposal acts on.** "Nobody yet, realistically" is a reason to make the changelog cheap, which is what B does. It is also a reason to ask whether *three* records of history are warranted at all — `README.md`'s era summary, `CHANGELOG.md`'s 12 frozen entries, and `CHANGELOG-archive/2026.md`'s 74. B reduces the cost of producing one of them and reconciles none of them. That is a deliberate boundary, not an oversight: consolidating the three is a larger question with a different blast radius, and folding it in here would repeat the mistake this proposal is correcting — solving an unmeasured problem with machinery. It should be its own proposal, informed by item 1's output.
+
+**What would invalidate the decision.** Item 1 producing a release section materially better than `git log` over the same window. That would show the system works and is merely young, making Option A correct — and it is the reason item 1 gates the rest rather than merely preceding them. A weaker signal pointing the same way: if writing the assembler in item 2 turns out to need a subject-format guard to produce usable output, the compulsion has simply moved from the fragment to the commit subject, and the saving is smaller than claimed.
