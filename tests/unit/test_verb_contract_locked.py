@@ -40,7 +40,13 @@ from pydantic import BaseModel
 from typer.testing import CliRunner
 
 from harness.cli import app
-from harness.cli.close import CloseOutput, FailureReason, RefusalReason
+from harness.cli.close import (
+    CloseOutput,
+    FailureReason,
+    MergeFailureReason,
+    RefusalReason,
+    TicketFailureReason,
+)
 from harness.cli.review import Engine, ReviewOutput, Verdict
 from harness.cli.start import StartOutput, TicketContext
 from harness.state import store
@@ -220,12 +226,59 @@ EXPECTED_CLOSE_FAILURE_REASONS = {
     "ticket_transition_unconfirmed",
 }
 
+#: The structured ``close`` **merge/push** failure reasons (#300) — also exit 1,
+#: and also a separate locked set, because they mean the opposite thing about
+#: the merge: a member here means the merge did **not** land, while a member of
+#: ``EXPECTED_CLOSE_FAILURE_REASONS`` means it did and only the ticket lagged.
+#: ``close_merge`` owns the strings; ``close`` propagates them unchanged, so
+#: this snapshot is what makes a new reason a deliberate contract event rather
+#: than a silent one.
+EXPECTED_CLOSE_MERGE_FAILURE_REASONS = {
+    "git_status_failed",
+    "network_timeout",
+    "fetch_failed",
+    "merge_conflict",
+    "merge_failed",
+    "push_rejected",
+    "worktree_create_failed",
+}
+
+
+def _flattened(union: object) -> set[str]:
+    """The string members of a union of ``Literal``s.
+
+    ``get_args`` on such a union yields the member ``Literal`` *types*, not the
+    strings, so the values need one more unwrap.
+    """
+    return {value for literal in get_args(union) for value in get_args(literal)}
+
 
 def test_close_failure_reason_enum_matches_the_locked_contract() -> None:
     """The ``close`` ticket-transition failure-reason type holds exactly the
     locked members — the exit-1 counterpart to the exit-2 refusal-reason lock
     above. Fails on any added / dropped / renamed reason."""
-    assert set(get_args(FailureReason)) == EXPECTED_CLOSE_FAILURE_REASONS
+    assert set(get_args(TicketFailureReason)) == EXPECTED_CLOSE_FAILURE_REASONS
+
+
+def test_close_merge_failure_reason_enum_matches_the_locked_contract() -> None:
+    """The ``close`` merge/push failure-reason type holds exactly the locked
+    members (#300). Fails on any added / dropped / renamed reason — the same
+    major-level event as its two sibling locks."""
+    assert set(get_args(MergeFailureReason)) == EXPECTED_CLOSE_MERGE_FAILURE_REASONS
+
+
+def test_the_exit_one_vocabulary_is_exactly_its_two_families() -> None:
+    """``FailureReason`` — the exit-1 vocabulary as a whole — is the disjoint
+    union of the two locked families, and neither overlaps the exit-2 refusals.
+
+    A reason that landed in both families, or in a refusal *and* a failure,
+    would make "which side of the merge am I on?" unanswerable from the wire.
+    """
+    assert _flattened(FailureReason) == (
+        EXPECTED_CLOSE_FAILURE_REASONS | EXPECTED_CLOSE_MERGE_FAILURE_REASONS
+    )
+    assert not (EXPECTED_CLOSE_FAILURE_REASONS & EXPECTED_CLOSE_MERGE_FAILURE_REASONS)
+    assert not (EXPECTED_REFUSAL_REASONS & _flattened(FailureReason))
 
 
 #: The ``review`` verdict values (``harness/cli/review.py``). An orchestrating
