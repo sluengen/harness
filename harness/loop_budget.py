@@ -18,7 +18,10 @@ and when the run started. This module turns those two observable facts into two
   ``loop.wall_clock_budget_minutes`` when ``--older-than`` is omitted. The
   breaker reads it prospectively (stop spending on a run past it), reclamation
   retrospectively (a run past it is presumed dead); one value means they cannot
-  drift, so nobody has to "keep the two in step".
+  drift, so nobody has to "keep the two in step". Since #296 the breaker applies
+  that value to **unattended runs only** (ADR 0011) — the shared quantity is
+  unchanged, what differs is which runs it is measured against, and aligning the
+  sweep's scope to match is #297.
 
 Both thresholds are **read from CONTEXT.md** (the ``loop:`` block), not hardcoded,
 so each self-hosting repo configures its own bounds. The decision functions are
@@ -187,6 +190,7 @@ def evaluate_breakers(
     started_at: datetime,
     now: datetime,
     budget: LoopBudget,
+    attended: bool = False,
 ) -> BreakerTrip | None:
     """Decide whether the *upcoming* review must be refused. ``None`` = proceed.
 
@@ -198,8 +202,18 @@ def evaluate_breakers(
 
     1. **Cycle ceiling.** The run stops on reaching the ceiling-th cycle — i.e.
        when the upcoming cycle ``>= max_review_cycles``. With the default 6 that
-       refuses the 6th review (cycles 1–5 ran).
-    2. **Wall-clock.** The run has *exceeded* (strictly) the wall-clock budget.
+       refuses the 6th review (cycles 1–5 ran).  **Unconditional** — it bounds
+       the fix loop itself, which an operator's presence does not make cheaper.
+    2. **Wall-clock**, *unattended runs only* (#296, ADR 0011). The run has
+       *exceeded* (strictly) the wall-clock budget.  The clock stands in for
+       autonomous spend; in an attended run its elapsed time also counts however
+       long the operator took to answer, during which the run spent nothing, so
+       measuring it would refuse finished work for time that cost nothing.
+
+    ``attended`` defaults to :data:`False` deliberately rather than being
+    required: unattended is both the default and the failure default (ADR 0011),
+    so a caller with no view of the mode inherits the *bounded* behaviour. The
+    exemption must be asked for; it is never acquired by omission.
     """
     upcoming_cycle = prior_review_count + 1
     if upcoming_cycle >= budget.max_review_cycles:
@@ -210,14 +224,17 @@ def evaluate_breakers(
             f"stops and escalates to the user rather than spinning further.",
         )
 
-    elapsed_minutes = (now - started_at).total_seconds() / 60.0
-    if elapsed_minutes > budget.wall_clock_budget_minutes:
-        return BreakerTrip(
-            WALL_CLOCK_BUDGET_REASON,
-            f"per-run wall-clock budget exceeded: {elapsed_minutes:.1f} min "
-            f"elapsed against a {budget.wall_clock_budget_minutes}-minute budget. "
-            f"The run is flagged for escalation at this verb boundary.",
-        )
+    # Strictly below the ceiling's return, so the ordering above is unaffected:
+    # a run eligible for both breakers still reports the ceiling, in either mode.
+    if not attended:
+        elapsed_minutes = (now - started_at).total_seconds() / 60.0
+        if elapsed_minutes > budget.wall_clock_budget_minutes:
+            return BreakerTrip(
+                WALL_CLOCK_BUDGET_REASON,
+                f"per-run wall-clock budget exceeded: {elapsed_minutes:.1f} min "
+                f"elapsed against a {budget.wall_clock_budget_minutes}-minute "
+                f"budget. The run is flagged for escalation at this verb boundary.",
+            )
 
     return None
 

@@ -24,6 +24,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from harness.loop_budget import (
     DEFAULT_ENGINE_TIMEOUT_SECONDS,
     DEFAULT_MAX_REVIEW_CYCLES,
@@ -216,6 +218,99 @@ def test_ceiling_takes_precedence_over_wall_clock() -> None:
         prior_review_count=5, started_at=_T0, now=now, budget=_budget()
     )
     assert trip is not None and trip.reason == REVIEW_CYCLE_CEILING_REASON
+
+
+# ---------------------------------------------------------------------------
+# evaluate_breakers — the wall clock is scoped to unattended runs (#296, ADR 0011)
+# ---------------------------------------------------------------------------
+#
+# Every case below shares one budget and one elapsed value, strictly greater
+# than that budget, so the *only* variable across the pair is the mode. The
+# elapsed value is derived from the budget rather than restating 111, so it
+# stays past the bound if the configured value ever moves.
+_ATTENDANCE_BUDGET = _budget()
+_PAST_BUDGET = _T0 + timedelta(minutes=_ATTENDANCE_BUDGET.wall_clock_budget_minutes + 1)
+
+
+def test_attended_run_past_the_budget_does_not_trip() -> None:
+    """AC-1: an attended run's elapsed time buys no refusal.
+
+    The clock measures autonomous spend; in an attended session it also counts
+    however long the operator took to answer, during which the run spent
+    nothing (ADR 0011).
+    """
+    assert (
+        evaluate_breakers(
+            prior_review_count=0,
+            started_at=_T0,
+            now=_PAST_BUDGET,
+            budget=_ATTENDANCE_BUDGET,
+            attended=True,
+        )
+        is None
+    )
+
+
+def test_unattended_run_at_the_same_elapsed_value_still_trips() -> None:
+    """AC-2: identical arithmetic, opposite verdict.
+
+    Same budget, same ``started_at``, same ``now`` as the attended case above —
+    so what changed is the mode, not the bound.
+    """
+    trip = evaluate_breakers(
+        prior_review_count=0,
+        started_at=_T0,
+        now=_PAST_BUDGET,
+        budget=_ATTENDANCE_BUDGET,
+        attended=False,
+    )
+    assert trip is not None
+    assert trip.reason == WALL_CLOCK_BUDGET_REASON
+
+
+def test_omitting_the_mode_leaves_the_run_bounded() -> None:
+    """Unattended is the *default*, so a caller with no view of the mode fails
+    toward the bound rather than inheriting the exemption by omission."""
+    trip = evaluate_breakers(
+        prior_review_count=0,
+        started_at=_T0,
+        now=_PAST_BUDGET,
+        budget=_ATTENDANCE_BUDGET,
+    )
+    assert trip is not None
+    assert trip.reason == WALL_CLOCK_BUDGET_REASON
+
+
+def test_attended_run_still_trips_the_cycle_ceiling() -> None:
+    """AC-3: the ceiling is unconditional — attendance exempts the clock only."""
+    trip = evaluate_breakers(
+        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles - 1,
+        started_at=_T0,
+        now=_T0,
+        budget=_ATTENDANCE_BUDGET,
+        attended=True,
+    )
+    assert trip is not None
+    assert trip.reason == REVIEW_CYCLE_CEILING_REASON
+
+
+@pytest.mark.parametrize("attended", [True, False])
+def test_ceiling_still_wins_over_the_clock_in_both_modes(attended: bool) -> None:
+    """AC-4: with both breakers eligible the ceiling is reported, in either mode.
+
+    The mode guard sits strictly below the ceiling's ``return``, so the ordering
+    a fast runaway depends on — name the loop bound deterministically even when
+    the clock has also blown — is unchanged by this ticket.
+    """
+    trip = evaluate_breakers(
+        prior_review_count=_ATTENDANCE_BUDGET.max_review_cycles - 1,
+        started_at=_T0,
+        now=_PAST_BUDGET,
+        budget=_ATTENDANCE_BUDGET,
+        attended=attended,
+    )
+    assert trip is not None
+    assert trip.reason == REVIEW_CYCLE_CEILING_REASON
 
 
 # ---------------------------------------------------------------------------

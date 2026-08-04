@@ -93,7 +93,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 import typer
 from pydantic import BaseModel
@@ -102,7 +102,7 @@ from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
-from harness.cli._runs import resolve_open_run
+from harness.cli._runs import resolve_attended, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_protocol import (
@@ -155,7 +155,9 @@ _REVIEW_TIER_DIMENSION = "review"
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
-# wall-clock; CAL-906), the verify-gate evidence check (CAL-1082), HEAD-bound SHA
+# wall-clock, the latter unattended-only since #296, whose mode input this verb
+# reads off the run row alongside started_at; CAL-906), the verify-gate evidence
+# check (CAL-1082), HEAD-bound SHA
 # capture, the usage-limit → Claude fallback (CAL-702), event emission, and the
 # best-effort In-Review / In-Progress tracker transitions (CAL-1103).  The pure
 # engine-protocol layer — the prompt, the SUBMIT scanner, the per-engine command
@@ -178,6 +180,13 @@ _REVIEW_TIER_DIMENSION = "review"
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
 # would fragment the verb, not clarify it.
+# Extraction considered and DEFERRED at #296: that ticket threads one keyword
+# argument through the existing breaker call site and adds one column to one
+# private single-row read (_read_breaker_inputs) — no new concept in the file.
+# The only candidate seam, "the run facts the breaker block reads", would move
+# ~20 lines into a module with exactly one importer; it becomes a seam when a
+# second verb needs the same projection, and `reclaim --stale` (#297) projects
+# its own rows for its own reasons.
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -663,13 +672,14 @@ async def _review_resolved_run(
     #     orchestrator stops and escalates rather than spinning the fix loop.
     budget = load_loop_budget(repo_root)
     prior_review_count = await _count_review_events(db_path, resolved_run_id)
-    started_at = await _read_started_at(db_path, resolved_run_id)
-    if started_at is not None:
+    breaker_inputs = await _read_breaker_inputs(db_path, resolved_run_id)
+    if breaker_inputs.started_at is not None:
         trip = evaluate_breakers(
             prior_review_count=prior_review_count,
-            started_at=started_at,
+            started_at=breaker_inputs.started_at,
             now=datetime.now(UTC),
             budget=budget,
+            attended=breaker_inputs.attended,
         )
         if trip is not None:
             raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
@@ -1142,31 +1152,47 @@ def _read_design_file(design_file: Path | None) -> str | None:
         return ""
 
 
-async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:
-    """Read the run's ``started_at`` as an aware datetime, or ``None``.
+class _BreakerInputs(NamedTuple):
+    """The two run-row facts :func:`evaluate_breakers` needs from this verb."""
+
+    started_at: datetime | None
+    attended: bool
+
+
+async def _read_breaker_inputs(db_path: Path, run_id: str) -> _BreakerInputs:
+    """Read the run's ``started_at`` and declared attendance mode.
 
     ``runs.started_at`` is written with a plain ``.isoformat()`` (offset form, no
     trailing ``Z``); ``datetime.fromisoformat`` round-trips it (and also accepts
     the trailing-``Z`` form historical/seeded rows may carry, on Python 3.11+).
     A missing row or an unparseable value yields ``None`` so the wall-clock
     breaker degrades to "do not trip" rather than erroring the verb.
+
+    ``attended`` comes from the same row's ``inputs_json`` (#296, ADR 0011),
+    resolved through the shared :func:`~harness.cli._runs.resolve_attended` —
+    never by testing the column's truthiness here. That helper is where the
+    value is validated, and it fails closed on every ambiguity, so a corrupt or
+    hand-edited ledger can only ever make a run *more* bounded. Both facts come
+    off one row in one read: a second query would be a second copy of the
+    row-missing degrade rule to keep in step with this one.
     """
     if not db_path.exists():
-        return None
+        return _BreakerInputs(None, False)
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT started_at FROM runs WHERE run_id = ?",
+            "SELECT started_at, inputs_json FROM runs WHERE run_id = ?",
             (run_id,),
         ) as cur,
     ):
         row = await cur.fetchone()
     if row is None or row[0] is None:
-        return None
+        return _BreakerInputs(None, False)
+    attended = resolve_attended(row[1])
     try:
-        return datetime.fromisoformat(str(row[0]))
+        return _BreakerInputs(datetime.fromisoformat(str(row[0])), attended)
     except ValueError:
-        return None
+        return _BreakerInputs(None, attended)
 
 
 # ---------------------------------------------------------------------------
