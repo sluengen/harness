@@ -1,7 +1,7 @@
 ---
 feature: worktree-lifecycle
 status: implemented
-last_updated: 2026-07-04
+last_updated: 2026-08-04
 linear: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
 ---
 
