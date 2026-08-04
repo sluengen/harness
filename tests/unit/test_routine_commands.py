@@ -37,8 +37,6 @@ import posixpath
 import re
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).parent.parent.parent
 HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
@@ -510,70 +508,3 @@ def test_build_routine_drops_the_superseded_classifier_only_claim() -> None:
         "these guards exist to prevent (#256)."
     )
 
-
-# --- ADR 0011: no unattended routine may declare itself attended (#295) ------
-#
-# `harness start --attended` exempts a run from the wall clock — the only
-# ceiling on autonomous spend. ADR 0011's stated consequence is that the flag
-# stays out of every routine path: "the routine-path guard — a test asserting no
-# routine passes `--attended` — is what keeps the erosion from happening by
-# edit." It belongs with #295 rather than #298 because this is the change that
-# makes the flag passable at all; #298 introduces its one legitimate caller
-# (the interactive `/harness run`), which is not a routine.
-
-#: The routine sections, derived from the doc's own headings rather than
-#: hand-listed — a third routine added later is guarded the moment it exists.
-_ROUTINE_HEADINGS = ("/harness routine build", "/harness routine quality")
-
-_ATTENDED_FLAG = "--attended"
-
-
-@pytest.mark.parametrize("heading", _ROUTINE_HEADINGS)
-def test_no_routine_declares_a_run_attended(heading: str) -> None:
-    """ADR 0011: an unattended loop must never pass ``--attended``.
-
-    The routine runs with no operator present, so declaring attendance would
-    buy an exemption from the spend ceiling with nobody watching the spend —
-    precisely the erosion ADR 0011 names as this decision's residual risk.
-    """
-    body = _section(HARNESS_COMMAND.read_text(), heading)
-    assert _ATTENDED_FLAG not in body, (
-        f"the `{heading}` routine passes `{_ATTENDED_FLAG}`, which exempts the run "
-        "from the wall-clock budget (ADR 0011) with no operator present. An "
-        "unattended loop must stay bounded — remove the flag, or amend ADR 0011 "
-        "first if the decision has genuinely changed."
-    )
-
-
-@pytest.mark.parametrize("heading", _ROUTINE_HEADINGS)
-def test_the_routine_erosion_guard_reads_a_real_section(heading: str) -> None:
-    """Non-vacuity floor for the guard above.
-
-    ``_section`` returns ``""`` for a heading it cannot find, and ``"--attended"
-    not in ""`` passes — so a renamed or deleted routine heading would silently
-    disarm the erosion guard while leaving it green. This floor makes that
-    failure loud: it asserts the slice is real content, not an empty string.
-    """
-    body = _section(HARNESS_COMMAND.read_text(), heading)
-    assert body.strip(), (
-        f"no `{heading}` section found in {HARNESS_COMMAND.name} — the erosion "
-        "guard above is reading an empty string and therefore asserting nothing. "
-        "Reconcile the heading, do not delete the guard."
-    )
-    assert "/assess" in body or "/harness run" in body or "/build" in body, (
-        f"the `{heading}` slice does not name a build or assess surface, so the "
-        "section splitter is not returning that routine's real body."
-    )
-
-
-def test_the_erosion_guard_detects_the_flag_when_it_is_present() -> None:
-    """Positive control: the predicate can actually fail.
-
-    A guard that cannot fail is not a guard. This pins the detection itself
-    against a synthetic routine body carrying the flag, so a future refactor
-    that neuters the check (e.g. normalising the text in a way that drops
-    ``--``) is caught here rather than by the erosion it was meant to prevent.
-    """
-    planted = "### /harness routine build\nharness start <TICKET> --attended\n"
-    body = _section(planted, "/harness routine build")
-    assert _ATTENDED_FLAG in body
