@@ -48,7 +48,7 @@ __all__ = [
 #: where the raise sites are, so ``close`` can propagate a reason rather than
 #: recompute one (#300). Every ``reason=`` on a :class:`CloseMergeError`
 #: construction in this module must be a literal member: mypy strict enforces it
-#: for the package, and ``test_close_merge_reason_propagation.py`` enforces it
+#: for the package, and ``test_cli_close.py``'s totality guard enforces it
 #: against the source text, so a computed reason cannot slip past unnoticed.
 #:
 #: The set is deliberately disjoint from ``close``'s ticket-transition reasons.

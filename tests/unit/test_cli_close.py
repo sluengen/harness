@@ -1202,6 +1202,46 @@ def test_the_reason_derivation_is_not_vacuous() -> None:
     )
 
 
+def test_the_derivation_reads_the_source_not_the_declared_vocabulary(tmp_path: Path) -> None:
+    """Control: :func:`_raised_reasons` parses source text, not ``CloseMergeReason``.
+
+    Without this, the totality assertion below is satisfiable by a derivation
+    that simply returns the declared vocabulary — a tautology that would pass
+    while a reason added to ``close_merge`` and never declared slipped through
+    untagged, which is precisely what AC-5 exists to prevent. Proven on a
+    synthetic module carrying a reason **no** literal declares, so an
+    implementation reading the type cannot produce this answer.
+    """
+    invented = "a_reason_no_literal_declares"
+    assert invented not in get_args(close_merge.CloseMergeReason), (
+        "the control's reason must be absent from the declared vocabulary, or "
+        "it cannot tell a source-reading derivation from a type-reading one"
+    )
+    synthetic = tmp_path / "synthetic_close_merge.py"
+    synthetic.write_text(
+        "def f() -> None:\n"
+        f'    raise CloseMergeError("boom", reason="{invented}")\n'
+    )
+
+    assert _raised_reasons(synthetic) == {invented}
+
+
+def test_the_derivation_refuses_a_computed_reason(tmp_path: Path) -> None:
+    """A non-literal ``reason=`` is refused, not skipped.
+
+    Skipping it would make the derived set *smaller*, so the totality assertion
+    would pass on an incomplete set — the failure mode is silent under-counting,
+    which is why this is an error rather than a tolerated case.
+    """
+    synthetic = tmp_path / "computed_close_merge.py"
+    synthetic.write_text(
+        "def f(tag: str) -> None:\n    raise CloseMergeError('boom', reason=tag)\n"
+    )
+
+    with pytest.raises(AssertionError, match="string literal"):
+        _raised_reasons(synthetic)
+
+
 def test_every_raised_reason_is_declared_in_the_vocabulary() -> None:
     """``CloseMergeReason`` covers every raise site, and declares nothing dead.
 

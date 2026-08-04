@@ -60,7 +60,9 @@ On a gate failure the verb exits non-zero with a structured refusal carrying a
 There is no ``dirty_base_checkout`` refusal: the merge never mutates the main
 checkout, so there is no base checkout to validate (CAL-1154 retired the
 CAL-1151 precondition and its restore). A merge conflict or a rejected push is
-an exit-1 error (retryable), not a gate refusal.
+an exit-1 error (retryable), not a gate refusal — each carrying the ``reason``
+:mod:`harness.close_merge` computed (``merge_conflict`` / ``push_rejected``,
+#300), so the two are told apart by tag rather than by message.
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
