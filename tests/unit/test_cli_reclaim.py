@@ -50,6 +50,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -713,12 +714,17 @@ def test_reclaim_carries_no_default_duration_literal_of_its_own() -> None:
     the loop budget. A literal reintroduced here — even one that happens to read
     ``110m`` today — restores exactly the two-places-to-edit drift this removed,
     so the *absence* is the thing worth pinning.
+
+    Since #297 the same holds for the attended threshold: it is a second value
+    resolved from the same loader, and ``"480m"`` written here would be the
+    identical mistake made twice.
     """
     import inspect
 
     source = inspect.getsource(reclaim.reclaim_command)
     assert '"90m"' not in source
     assert '"110m"' not in source
+    assert '"480m"' not in source
     # The resolution goes through the shared loader, not a private copy.
     assert reclaim.load_loop_budget is load_loop_budget
 
@@ -796,3 +802,213 @@ def test_stale_sweep_falls_back_to_the_shared_default_without_context(
         load_loop_budget(tmp_path).wall_clock_budget_minutes
         == DEFAULT_WALL_CLOCK_BUDGET_MINUTES
     )
+
+
+# ===========================================================================
+# #297 — the sweep selects its threshold by declared mode (ADR 0011)
+# ===========================================================================
+
+#: A ``loop:`` block naming both thresholds, so a test that writes it measures
+#: the two configured numbers rather than whichever constants happen to ship.
+_BOTH_THRESHOLDS = (
+    "```yaml\nloop:\n  wall_clock_budget_minutes: 110\n"
+    "  attended_idle_minutes: 480\n```\n"
+)
+
+
+def _sweep_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ticket: str,
+    idle_minutes: int,
+    attended: bool,
+    tracker_idle_minutes: int | None = None,
+    extra_args: list[str] | None = None,
+) -> tuple[dict[str, Any], MagicMock]:
+    """Sweep one seeded run and return ``(payload, stub)``.
+
+    ``idle_minutes`` ages *every* clock the sweep reads — the run's
+    ``started_at`` and, unless ``tracker_idle_minutes`` overrides it, the
+    tracker's ``updatedAt``. Splitting them is how the tracker-clock scenario is
+    expressed: local signals ancient, tracker recent.
+    """
+    (tmp_path / "CONTEXT.md").write_text(_BOTH_THRESHOLDS)
+    db = tmp_path / "harness.db"
+    seed_run(
+        db,
+        run_id=f"R{ticket}",
+        status="open",
+        ticket=ticket,
+        started_at=iso_minutes_ago(idle_minutes),
+        attended=attended,
+    )
+    tracker_idle = idle_minutes if tracker_idle_minutes is None else tracker_idle_minutes
+    stub = make_sweep_stub(
+        [{"identifier": ticket, "updated_at": iso_minutes_ago(tracker_idle)}]
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = invoke(
+        ["reclaim", "--stale", "--json", "--db", str(db), *(extra_args or [])], stub
+    )
+
+    assert result.exit_code == 0, result.output
+    return json.loads(result.stdout), stub
+
+
+def test_an_attended_run_between_the_two_thresholds_is_spared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-1 — attended, idle 300 min: past the 110 wall clock, inside the 480
+    attended threshold, so the sweep leaves it alone.
+
+    Both numbers are configured in the fixture and the idle sits strictly
+    between them, so this measures the thresholds rather than asserting that
+    some structure exists. 300 is bracketed well away from either boundary for
+    the reason the 109/111 test gives: the sweep reads ``datetime.now(UTC)`` at
+    execution time.
+
+    The operator is mid-question here. Reverting the ticket underneath them is
+    the failure ADR 0011 names as unfixable by measurement — a human thinking
+    touches none of the three liveness clocks.
+    """
+    payload, stub = _sweep_one(
+        tmp_path, monkeypatch, ticket="ATT-300", idle_minutes=300, attended=True
+    )
+
+    assert payload["skipped"] == ["ATT-300"]
+    assert payload["reclaimed"] == []
+    stub.transition_to_unstarted.assert_not_awaited()
+    stub.apply_label.assert_not_awaited()
+    assert fetch_row(tmp_path / "harness.db", "RATT-300")["status"] == "open"
+
+
+def test_an_unattended_run_at_the_same_idle_is_reclaimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-3 — the identical fixture with the mode flipped is reclaimed.
+
+    Same three clocks, same two configured numbers, same 300-minute idle,
+    opposite outcome. This pair is what proves the *mode* is the variable: a
+    change that merely raised the one threshold for everybody would pass AC-1
+    and fail here.
+    """
+    payload, stub = _sweep_one(
+        tmp_path, monkeypatch, ticket="UNATT-300", idle_minutes=300, attended=False
+    )
+
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["UNATT-300"]
+    assert payload["skipped"] == []
+    stub.transition_to_unstarted.assert_awaited_once_with("UNATT-300")
+
+
+def test_an_attended_run_past_the_attended_threshold_is_reclaimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2 — a longer threshold, not an exemption.
+
+    At 500 minutes idle the attended run is past 480 on every clock and is
+    reclaimed exactly as an unattended one: reverted to Todo, labelled, and the
+    ledger row flipped. Without this the change would be indistinguishable from
+    exempting attended runs, which ADR 0011 rejected — an abandoned attended
+    session would leak an open row, a worktree and an In-Progress ticket
+    indefinitely.
+    """
+    payload, stub = _sweep_one(
+        tmp_path, monkeypatch, ticket="ATT-500", idle_minutes=500, attended=True
+    )
+
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["ATT-500"]
+    stub.transition_to_unstarted.assert_awaited_once_with("ATT-500")
+    stub.apply_label.assert_awaited()
+    assert fetch_row(tmp_path / "harness.db", "RATT-500")["status"] == "cancelled"
+
+
+def test_the_tracker_clock_is_compared_against_the_attended_cutoff_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mode selects the value *every* clock is measured against, not just the
+    local two.
+
+    Local signals ancient (``started_at`` 600 min, no events, no worktree), the
+    tracker's ``updatedAt`` 300 min — so the newest of the three is the tracker's
+    and it sits inside the attended threshold. An implementation that selects the
+    looser cutoff only for ``locally_live`` reclaims this run, and nothing else
+    in this family catches it: the mode would then *condemn* on a clock, which is
+    the one thing the sweep's additive-in-one-direction invariant forbids.
+    """
+    payload, stub = _sweep_one(
+        tmp_path,
+        monkeypatch,
+        ticket="ATT-TRACKER",
+        idle_minutes=600,
+        attended=True,
+        tracker_idle_minutes=300,
+    )
+
+    assert payload["skipped"] == ["ATT-TRACKER"]
+    stub.transition_to_unstarted.assert_not_awaited()
+
+
+def test_a_ticket_with_no_run_row_is_bounded_by_the_wall_clock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-5 — an unresolvable mode is unattended, the bounded default.
+
+    The cloud regime: the ledger exists but holds no ``open`` row for the ticket,
+    so ``open_run_liveness`` has no opinion and there is no mode to read. At 300
+    minutes idle — inside 480, past 110 — the ticket is reclaimed, i.e. it did
+    **not** inherit the attended threshold. Unknown fails toward the bound, the
+    same direction ``resolve_attended`` itself fails in.
+    """
+    (tmp_path / "CONTEXT.md").write_text(_BOTH_THRESHOLDS)
+    db = tmp_path / "harness.db"
+    run_sync(store.init_db(db))  # ledger present, no run for this ticket
+    stub = make_sweep_stub([{"identifier": "NOROW-300", "updated_at": iso_minutes_ago(300)}])
+    monkeypatch.chdir(tmp_path)
+
+    result = invoke(["reclaim", "--stale", "--json", "--db", str(db)], stub)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["NOROW-300"]
+    assert payload["older_than"] == "110m"
+    assert payload["attended_older_than"] == "480m"
+
+
+def test_explicit_older_than_overrides_both_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A one-off sweep means what it says — for an attended run too.
+
+    ``--older-than 20m`` against a 30-minute-idle attended run reclaims it: the
+    supplied value replaces *both* resolved thresholds, so the operator asking
+    for a 20-minute sweep does not silently get an 8-hour one on some tickets.
+    """
+    payload, stub = _sweep_one(
+        tmp_path,
+        monkeypatch,
+        ticket="ATT-30",
+        idle_minutes=30,
+        attended=True,
+        extra_args=["--older-than", "20m"],
+    )
+
+    assert [r["ticket"] for r in payload["reclaimed"]] == ["ATT-30"]
+    stub.transition_to_unstarted.assert_awaited_once_with("ATT-30")
+    assert payload["older_than"] == payload["attended_older_than"] == "20m"
+
+
+def test_shipped_context_configures_the_attended_threshold_the_code_defaults_to() -> None:
+    """This repo's ``attended_idle_minutes`` and the constant agree (AC-4).
+
+    The same anti-drift pairing ``test_shipped_context_configures_the_same_value_
+    the_code_defaults_to`` keeps for the wall clock: a consuming repo with no
+    ``loop:`` block must run the value this repo runs, not a different one.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    assert load_loop_budget(repo_root).attended_idle_minutes == 480
+    from harness.loop_budget import DEFAULT_ATTENDED_IDLE_MINUTES
+
+    assert DEFAULT_ATTENDED_IDLE_MINUTES == 480

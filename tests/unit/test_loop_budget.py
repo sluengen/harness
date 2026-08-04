@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from harness.loop_budget import (
+    DEFAULT_ATTENDED_IDLE_MINUTES,
     DEFAULT_ENGINE_TIMEOUT_SECONDS,
     DEFAULT_MAX_REVIEW_CYCLES,
     DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
@@ -113,6 +114,50 @@ def test_load_defaults_engine_timeout_when_no_context(tmp_path: Path) -> None:
     """No CONTEXT.md at all → the documented engine-timeout default."""
     budget = load_loop_budget(tmp_path)
     assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 720
+
+
+# ---------------------------------------------------------------------------
+# attended_idle_minutes — the reclamation threshold for a declared-attended run
+# (#297, ADR 0011)
+# ---------------------------------------------------------------------------
+
+
+def test_load_defaults_attended_idle_when_no_context(tmp_path: Path) -> None:
+    """AC-4 — no CONTEXT.md at all still yields the *decided* 480, not a missing
+    or unbounded value.
+
+    The #291 precedent: a repo that never wrote a ``loop:`` block inherits the
+    threshold this repo runs, so ``reclaim --stale`` has a defined attended
+    threshold everywhere rather than only where someone configured one.
+    """
+    budget = load_loop_budget(tmp_path)
+    assert budget.attended_idle_minutes == DEFAULT_ATTENDED_IDLE_MINUTES == 480
+
+
+def test_load_reads_attended_idle_from_context(tmp_path: Path) -> None:
+    """AC-4 — a configured value is read, through the same key regex as the rest.
+
+    200 is chosen because it is neither the 480 default nor any other knob's
+    value, so neither the fallback nor a mis-wiring to a sibling key satisfies
+    it.
+    """
+    (tmp_path / "CONTEXT.md").write_text(
+        "```yaml\nloop:\n  attended_idle_minutes: 200\n```\n"
+    )
+    budget = load_loop_budget(tmp_path)
+    assert budget.attended_idle_minutes == 200
+
+
+def test_the_attended_threshold_is_not_shorter_than_the_wall_clock() -> None:
+    """The shipped defaults keep attendance a *longer* threshold, not a shorter one.
+
+    ADR 0011's distinction between "a longer threshold" and "an exemption" only
+    holds in one direction: were the attended value below the wall clock,
+    declaring attendance would make a run *more* reclaimable, which is neither
+    mode's intent. Pinned as an ordering rather than as numbers, in the spirit of
+    ``test_the_engine_ceiling_nests_inside_the_wall_clock``.
+    """
+    assert DEFAULT_ATTENDED_IDLE_MINUTES >= DEFAULT_WALL_CLOCK_BUDGET_MINUTES
 
 
 def test_load_defaults_when_loop_block_absent(tmp_path: Path) -> None:
