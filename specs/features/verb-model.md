@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-05
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300"]
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301"]
 ---
 
 # Verb model — start / design / review / close
@@ -151,6 +151,18 @@ This is the enforcement of the one canonical stop policy, which `skills/review-d
 - AND GIVEN instead the failure is one `close_merge` did **not** classify (an OS or thread error), the verb keeps the historical untagged `{"error": ...}` shape — there is no reason to invent
 - AND the merge vocabulary is **disjoint** from the ticket-transition vocabulary below, which is what lets a caller read "did the merge land?" off the tag alone rather than by parsing the human message
 
+#### Scenario: a transient failure is absorbed before the caller ever sees it
+
+- GIVEN an open run whose gate is satisfied, and a step-6 or step-7 failure whose classification is transient — `network_timeout`, `fetch_failed` or `push_rejected` from the merge; a transition that raised a request error (401, 5xx) or reported success without a confirming post-write state
+- WHEN the agent runs `harness close`
+- THEN the verb re-attempts that step itself, up to **3 attempts total** (initial + 2 retries) with 2s then 8s of backoff, and reports success if any attempt lands — so the orchestrating agent's decision tree is `exit 0 → done; non-zero → escalate`, with no refusal-table lookup and no compensating action (#301)
+- AND the retry is **step-local**: a step-7 retry re-issues only the transition, never re-entering the merge, and the terminal `close` event is still recorded exactly once (#263)
+- AND a deterministic failure is attempted **exactly once** — `merge_conflict`, `merge_failed`, `git_status_failed`, `worktree_create_failed`, a ticket the tracker reports as not found, and every exit-2 gate refusal (which is upstream of the retry and so cannot reach it)
+- AND on exhausting the attempts the verb exits with the **same** code and `reason` it would have without the retry: the last exception is re-raised untouched into the existing handlers, so retry changes latency and the ledger, never the contract
+- AND what was absorbed is recorded on the `close` event as `retries` (a count, always present) and `retried_reasons` (the ordered labels, omitted when empty), so a degrading tracker is observable rather than silently ridden out — the labels distinguish `ticket_transition_request_error` from `ticket_transition_unconfirmed`, a discrimination the exit-1 wire vocabulary deliberately does not make
+- AND the caps are module constants in `harness/cli/close_retry.py`, not `CONTEXT.md` config: the `loop:` knobs bound *spend policy*, which is a per-repo choice, whereas a transient-blip retry is mechanics
+- AND the retry sits **above the tracker seam** — it keys on `TicketNotDone.kind`, the backend-neutral three-way discrimination (`unconfirmed` / `not_found` / `request_error`) every backend's failures map onto, so neither tracker can acquire retry behaviour the other lacks
+
 #### Scenario: a gate refusal
 
 - GIVEN an open run that does not satisfy the gate
@@ -161,7 +173,7 @@ This is the enforcement of the one canonical stop policy, which `skills/review-d
 
 - GIVEN the merge has already landed, and the tracker's transition mutation either raises or reports success without a post-write state matching the one requested (#233)
 - WHEN the agent runs `harness close`
-- THEN the verb exits **1** — not a gate refusal, because the merge already landed — with `merged: true` and one of two `reason`s: `ticket_transition_failed` (the tracker raised) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the state never took); the run row stays `open` and no `close` event is written, so re-running `harness close` is the recovery once the tracker is healthy (the merge/push step is idempotent for an already-landed run branch)
+- THEN the verb exits **1** — not a gate refusal, because the merge already landed — with `merged: true` and one of two `reason`s: `ticket_transition_failed` (the tracker raised) or `ticket_transition_unconfirmed` (the mutation reported success, but its own response shows the state never took); the run row stays `open` and no *landed* `close` event is written. Both reasons are reported only **after** the verb re-issued the transition up to its retry bound (#301) — a not-found ticket excepted, being deterministic — so a transition failure that reaches the caller has already outlasted the retry and is an escalation, not a re-run
 
 #### Scenario: the merge never touches the main checkout
 

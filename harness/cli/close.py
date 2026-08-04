@@ -37,6 +37,16 @@ guarantee):
    reading the post-write state back off that same mutation's response (#233)
    — a self-reported ``success`` is not proof the state changed, so
    ``ticket_done: true`` means the tracker was *observed* Done.
+
+Steps 1 and 2 are each wrapped in a **bounded transient retry** (#301,
+:mod:`harness.cli.close_retry`): a lost push race, a network blip, or a
+transition the tracker could not confirm is re-attempted up to 3 times with 2s
+then 8s of backoff, instead of being handed to the caller as a "run it again" it
+would have to look up. Deterministic failures — a merge conflict, a ticket the
+tracker says does not exist — are never retried. The retry changes latency and
+what the ledger records (``retries`` / ``retried_reasons`` on the ``close``
+event); it changes no exit code, no ``reason``, and no printed key, so an
+exhausted retry reports exactly what a single attempt used to.
 3. Flip the ``runs`` row to ``status='closed'`` and record a ``close`` event in
    one transaction (CAL-1002), so a failed ledger write never strands a terminal
    run with no close event.
@@ -109,6 +119,7 @@ from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
+from harness.cli.close_retry import call_with_retry, merge_retry_tag, ticket_retry_tag
 from harness.cli.close_telemetry import CloseAttempt, record_terminal_close
 from harness.cli.close_tracker import TicketNotDone, transition_ticket_done
 from harness.events.payloads import CloseEventData
@@ -300,6 +311,7 @@ async def _run_close(
             detail=str(exc),
             merged_sha=attempt.merged_sha,
             invoked_at=attempt.invoked_at,
+            absorbed=attempt.absorbed,
         )
         raise
 
@@ -371,14 +383,25 @@ async def _close_resolved_run(
     # 6. Merge + push in a throwaway worktree (sync git, offloaded to a thread) —
     #    the git half lives in ``harness.close_merge`` (CAL-1154). The main
     #    checkout is never touched. A conflict or a rejected push is an exit-1
-    #    error (retryable); output is captured inside the verb, never printed.
+    #    error; output is captured inside the verb, never printed. The transient
+    #    arm of that vocabulary — a lost push race, a network blip — is absorbed
+    #    here by a bounded retry (#301) rather than handed to the caller as a
+    #    "run it again" it would have to look up. A retry re-runs the whole
+    #    mechanic, which is safe because ``merge_run_branch`` tears its throwaway
+    #    worktree down in a ``finally`` on every path and reclaims a leftover one
+    #    if a previous teardown failed, so attempt 2 cannot fail against attempt
+    #    1's debris.
     try:
-        await asyncio.to_thread(
-            close_merge.merge_run_branch,
-            repo_root=repo_root,
-            run_id=resolved_run_id,
-            base_branch=base_branch,
-            worktree_branch=worktree_branch,
+        await call_with_retry(
+            lambda: asyncio.to_thread(
+                close_merge.merge_run_branch,
+                repo_root=repo_root,
+                run_id=resolved_run_id,
+                base_branch=base_branch,
+                worktree_branch=worktree_branch,
+            ),
+            classify=merge_retry_tag,
+            absorbed=attempt.absorbed,
         )
     except close_merge.CloseMergeError as exc:
         # Pass the reason through unchanged (#300) rather than translating it: a
@@ -400,13 +423,28 @@ async def _close_resolved_run(
     #    re-running close recovers (merge/push is idempotent). The tracker's
     #    failure-shape mapping lives in ``close_tracker`` (#251); this verb maps
     #    its ``TicketNotDone.unconfirmed`` flag to the exit-1 ``reason`` tag.
+    #    Its transient arms — an unconfirmed write, a 401/5xx — are absorbed by
+    #    the same bounded retry (#301), wrapped **here** rather than at any outer
+    #    boundary: re-entering step 6 would push a second merge for a close that
+    #    already landed one, and re-entering ``_run_close`` would record the
+    #    terminal close event twice (#263).
     ticket_done = False
     if client is not None:
         try:
-            await transition_ticket_done(client, ticket)
+            await call_with_retry(
+                lambda: transition_ticket_done(client, ticket),
+                classify=ticket_retry_tag,
+                absorbed=attempt.absorbed,
+            )
         except TicketNotDone as exc:
+            # Three kinds, two tags: ``not_found`` and ``request_error`` mean the
+            # same thing to an operator (the tracker refused; escalate), so the
+            # wire vocabulary is unchanged by AC-1's widening — the third
+            # discrimination exists for the retry and is visible in the ledger.
             reason: FailureReason = (
-                "ticket_transition_unconfirmed" if exc.unconfirmed else "ticket_transition_failed"
+                "ticket_transition_unconfirmed"
+                if exc.kind == "unconfirmed"
+                else "ticket_transition_failed"
             )
             raise _CloseError(
                 f"{exc.detail}; the merge landed",
@@ -430,6 +468,8 @@ async def _close_resolved_run(
                 closed_at=closed_at,
                 invoked_at=attempt.invoked_at,
                 duration_ms=elapsed_ms(attempt.invoked_at, closed_at),
+                retries=len(attempt.absorbed),
+                retried_reasons=list(attempt.absorbed) or None,
             ).model_dump(exclude_none=True),
             event_ts=closed_at,
         )

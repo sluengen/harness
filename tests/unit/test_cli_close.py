@@ -38,12 +38,18 @@ import pytest
 from typer.testing import CliRunner
 
 from harness import close_merge
-from harness.cli import app
+from harness.cli import app, close_retry
 from harness.cli import close as close_mod
+from harness.cli.close_tracker import TicketFailureKind
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import CLOSE_OUTCOME_OK, CLOSE_OUTCOME_PATH
 from harness.linear import LinearConfigError
 from harness.state import store
+from harness.tracker_errors import (
+    TrackerNotFound,
+    TrackerRequestError,
+    TrackerTransitionUnconfirmed,
+)
 from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
@@ -72,6 +78,25 @@ def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     ``tmp_path``; without a configured root the gate fails closed.
     """
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def retry_delays(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record the retry's sleeps instead of paying them (#301).
+
+    Autouse because the retry is now on the step-6 and step-7 paths several
+    pre-existing tests already exercise (a ``push_rejected`` merge, a raising
+    tracker): unpatched, each would really sleep 2s + 8s. Tests that assert the
+    bound request the fixture by name and read the recorded delays; the rest are
+    simply spared the wall time.
+    """
+    recorded: list[float] = []
+
+    async def _record(seconds: float) -> None:
+        recorded.append(seconds)
+
+    monkeypatch.setattr(close_retry, "_sleep", _record)
+    return recorded
 
 
 @pytest.fixture
@@ -1373,8 +1398,13 @@ def test_close_transition_failure_after_merge_leaves_run_open(
     assert payload["run_id"] == run_id
 
     # Merge+push happened before the failure; the Done transition was attempted.
+    # Three times, not once (#301): a request error is the transient arm, so the
+    # verb absorbs it up to the bound before reporting the same failure it
+    # always reported. The merge count is what stays at one — a transition retry
+    # never re-enters step 6.
     merge.assert_called_once()
-    stub.transition_to_done.assert_called_once_with("CAL-572")
+    assert stub.transition_to_done.call_count == 3
+    stub.transition_to_done.assert_called_with("CAL-572")
 
     # Ledger stays consistent: run still open, and no *landed* close event.
     # #263 records the failure itself as a close event carrying
@@ -1409,8 +1439,11 @@ def test_close_transition_unconfirmed_after_merge_leaves_run_open(
     assert payload["merged"] is True
     assert payload["run_id"] == run_id
 
+    # As above (#301): the unconfirmed arm is retried to the bound, the merge is
+    # not re-entered, and the reported failure is unchanged.
     merge.assert_called_once()
-    stub.transition_to_done.assert_called_once_with("CAL-572")
+    assert stub.transition_to_done.call_count == 3
+    stub.transition_to_done.assert_called_with("CAL-572")
 
     # Ledger stays consistent, and — unlike a successful close — the worktree
     # and branch are never torn down (teardown is reached only after a closed
@@ -1628,3 +1661,377 @@ def test_harness_runs_renders_the_duration_close_stamped(
     listed = cli_runner.invoke(app, ["runs", "--db", str(db_path)])
     assert listed.exit_code == 0, listed.output
     assert f"{EXPECTED_DURATION_MS}ms" in listed.stdout
+
+
+# ---------------------------------------------------------------------------
+# #301: transient merge/transition failures are absorbed by a bounded retry
+# ---------------------------------------------------------------------------
+
+
+def _landed_close_payload(db_path: Path, run_id: str) -> dict[str, Any]:
+    """The landed ``close`` event's payload — where the retry record lands."""
+    events = fetch_landed_close_events(db_path, run_id)
+    assert len(events) == 1, f"expected exactly one landed close event, got {len(events)}"
+    return dict(json.loads(events[0][1]))
+
+
+def _failed_close_payload(db_path: Path, run_id: str) -> dict[str, Any]:
+    """The terminal ``close`` event a failed close records — exactly one (#263)."""
+    events = fetch_close_events(db_path, run_id)
+    assert len(events) == 1, (
+        f"a retried failure must still record exactly ONE terminal close event; "
+        f"got {len(events)} — a retry that re-entered the recording boundary "
+        f"would double-count the refusal denominator (#263)"
+    )
+    return dict(json.loads(events[0][1]))
+
+
+@pytest.mark.parametrize("reason", sorted(close_retry.RETRYABLE_MERGE_REASONS))
+def test_a_transient_merge_failure_is_attempted_exactly_three_times(
+    repo: Path, db_path: Path, retry_delays: list[float], reason: str
+) -> None:
+    """AC-6: the bound is counted through the verb, not inferred.
+
+    Parametrized over the retry set itself, so a reason moved into that set
+    without the verb actually retrying it fails here.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    merge = MagicMock(side_effect=close_merge.CloseMergeError("boom", reason=reason))
+
+    result, _ = _invoke(repo, db_path, run_id, _make_linear_stub(), merge_push=merge)
+
+    assert merge.call_count == 3, (
+        f"a {reason} must be attempted 3 times (initial + 2 retries); "
+        f"got {merge.call_count}"
+    )
+    assert retry_delays == [2.0, 8.0]
+    # AC-9: exhausting the retry reports exactly what it reported before.
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == reason
+    assert "merged" not in payload
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+@pytest.mark.parametrize(
+    "reason",
+    sorted(set(get_args(close_merge.CloseMergeReason)) - close_retry.RETRYABLE_MERGE_REASONS),
+)
+def test_a_deterministic_merge_failure_is_attempted_exactly_once(
+    repo: Path, db_path: Path, retry_delays: list[float], reason: str
+) -> None:
+    """AC-3: everything outside the retry set keeps its single-attempt behaviour.
+
+    The subject set is *derived* — the whole declared vocabulary minus what the
+    retry claims — so a reason added to ``close_merge`` lands here automatically
+    rather than being silently uncovered. ``merge_conflict`` is the one the
+    ticket names explicitly: retrying it in any form is out of scope, because a
+    second attempt conflicts identically.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    merge = MagicMock(side_effect=close_merge.CloseMergeError("boom", reason=reason))
+
+    result, _ = _invoke(repo, db_path, run_id, _make_linear_stub(), merge_push=merge)
+
+    assert merge.call_count == 1, (
+        f"{reason} needs work on the run branch or the machine — retrying it "
+        f"burns the budget and delays the escalation; got {merge.call_count} attempts"
+    )
+    assert retry_delays == []
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output)["reason"] == reason
+
+
+def test_a_merge_that_recovers_on_the_second_attempt_lands_and_records_it(
+    repo: Path, db_path: Path, retry_delays: list[float]
+) -> None:
+    """The case the whole ticket exists for: a lost push race closes in one turn."""
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    merge = MagicMock(
+        side_effect=[close_merge.CloseMergeError("lost the race", reason="push_rejected"), None]
+    )
+
+    result, _ = _invoke(repo, db_path, run_id, _make_linear_stub(), merge_push=merge)
+
+    assert result.exit_code == 0, result.output
+    assert merge.call_count == 2
+    assert retry_delays == [2.0]
+    # AC-10: the absorbed failure is observable in the ledger, not silently hidden.
+    payload = _landed_close_payload(db_path, run_id)
+    assert payload["retries"] == 1
+    assert payload["retried_reasons"] == ["push_rejected"]
+
+
+def test_a_close_with_nothing_to_absorb_records_a_zero_retry_count(
+    repo: Path, db_path: Path
+) -> None:
+    """The common path stays legible: ``retries: 0`` and no reason list at all.
+
+    A scalar always present is what makes ``retries`` aggregatable; omitting the
+    list when it is empty keeps the payload the same shape it had.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+
+    result, _ = _invoke(repo, db_path, run_id, _make_linear_stub())
+    assert result.exit_code == 0, result.output
+
+    payload = _landed_close_payload(db_path, run_id)
+    assert payload["retries"] == 0
+    assert "retried_reasons" not in payload
+
+
+@pytest.mark.parametrize(
+    ("raised", "kind"),
+    [
+        (TrackerTransitionUnconfirmed("post-write state is In Review"), "unconfirmed"),
+        (TrackerRequestError("503 from the tracker"), "request_error"),
+    ],
+)
+def test_a_transient_transition_failure_is_attempted_exactly_three_times(
+    repo: Path, db_path: Path, retry_delays: list[float], raised: Exception, kind: str
+) -> None:
+    """AC-6 for step 7, and AC-7: the retry re-attempts *only* the transition.
+
+    The merge assertion is the load-bearing half. Retrying at any outer boundary
+    would re-enter step 6 and push a second merge for a close that already
+    landed one.
+    """
+    assert kind in close_retry.RETRYABLE_TICKET_KINDS
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    stub = _make_linear_stub(raise_on_transition=raised)
+
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert stub.transition_to_done.call_count == 3
+    assert merge.call_count == 1, (
+        "a step-7 retry must not re-enter step 6 — the merge already landed"
+    )
+    assert retry_delays == [2.0, 8.0]
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["merged"] is True
+    assert fetch_run_status(db_path, run_id) == "open"
+
+
+def test_a_missing_ticket_is_attempted_exactly_once(
+    repo: Path, db_path: Path, retry_delays: list[float]
+) -> None:
+    """AC-3: the not-found arm is deterministic, so it escalates immediately.
+
+    Its sibling arm — a request error — is retried, and both exit as
+    ``ticket_transition_failed``. Only the attempt count can tell them apart
+    from outside, which is what makes this test the one that proves AC-1's
+    widening is actually load-bearing rather than decorative.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    stub = _make_linear_stub(raise_on_transition=TrackerNotFound("no such issue"))
+
+    result, _merge = _invoke(repo, db_path, run_id, stub)
+
+    assert stub.transition_to_done.call_count == 1
+    assert retry_delays == []
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["reason"] == "ticket_transition_failed"
+    assert payload["merged"] is True
+
+
+def test_an_exhausted_transition_retry_records_one_event_carrying_the_count(
+    repo: Path, db_path: Path, retry_delays: list[float]
+) -> None:
+    """AC-10 + AC-7: one terminal event, carrying what the retry absorbed.
+
+    A degrading tracker is the thing the count exists to surface — absorbed
+    silently, it would look like a healthy close that merely took 10s longer.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+    stub = _make_linear_stub(raise_on_transition=TrackerRequestError("503"))
+
+    result, _merge = _invoke(repo, db_path, run_id, stub)
+    assert result.exit_code == 1, result.output
+
+    payload = _failed_close_payload(db_path, run_id)
+    assert payload["reason"] == "ticket_transition_failed"
+    assert payload["retries"] == 2
+    assert payload["retried_reasons"] == [
+        "ticket_transition_request_error",
+        "ticket_transition_request_error",
+    ]
+    # The merge landed before step 7, and the record must still say so.
+    assert payload["merged_sha"] == _head_sha(repo)
+
+
+@pytest.mark.parametrize(
+    ("seed", "expected_reason"),
+    [
+        ("stale", "stale_review"),
+        ("none", "no_passing_review"),
+    ],
+)
+def test_a_gate_refusal_reaches_no_retry_at_all(
+    repo: Path, db_path: Path, retry_delays: list[float], seed: str, expected_reason: str
+) -> None:
+    """AC-3: every exit-2 refusal is upstream of the retry, so it cannot retry.
+
+    Asserted on the observable — nothing was attempted and nothing slept —
+    rather than on the code's ordering, which a later edit could change without
+    touching this test.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    if seed == "stale":
+        _emit_review(db_path, run_id, "0" * 40, "pass")
+
+    stub = _make_linear_stub()
+    result, merge = _invoke(repo, db_path, run_id, stub)
+
+    assert result.exit_code == 2, result.output
+    assert json.loads(result.output)["reason"] == expected_reason
+    assert merge.call_count == 0
+    assert stub.transition_to_done.call_count == 0
+    assert retry_delays == []
+
+
+def test_a_tracker_less_repo_enters_no_retry_path(
+    repo: Path, db_path: Path, retry_delays: list[float]
+) -> None:
+    """AC-5: with no tracker there is no transition, so there is nothing to retry.
+
+    The close still lands; ``ticket_done`` stays ``False`` exactly as before.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo), "pass")
+
+    with patch.object(close_mod, "tracker_client", return_value=None):
+        merge = MagicMock(return_value=None)
+        with patch("harness.close_merge.merge_run_branch", merge):
+            result = cli_runner.invoke(
+                app,
+                ["close", "CAL-572", "--repo", str(repo), "--db", str(db_path),
+                 "--run-id", run_id, "--json"],
+            )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ticket_done"] is False
+    assert payload["merged"] is True
+    assert retry_delays == []
+    assert _landed_close_payload(db_path, run_id)["retries"] == 0
+
+
+def test_the_verb_retries_exactly_the_kinds_the_retry_table_declares() -> None:
+    """The verb-level cases above are parametrized from the table; this pins the table.
+
+    Without it, moving ``not_found`` into ``RETRYABLE_TICKET_KINDS`` would flip
+    the parametrization and the single-attempt case would simply stop being
+    generated — a test disappearing rather than failing.
+    """
+    assert set(get_args(TicketFailureKind)) - close_retry.RETRYABLE_TICKET_KINDS == {
+        "not_found"
+    }
+    assert (
+        set(get_args(close_merge.CloseMergeReason)) - close_retry.RETRYABLE_MERGE_REASONS
+    ) == {"merge_conflict", "merge_failed", "git_status_failed", "worktree_create_failed"}
+
+
+_STEP_FOUR_RETRY_SENTENCE = "**Run it once. Exit 0 → done; non-zero → escalate.**"
+
+
+def _step_four_retry_paragraph() -> str:
+    """The step-4 paragraph stating the agent's post-#301 decision tree.
+
+    Sliced like the step-6 classification paragraph above and for the same
+    reason: the words "escalate" and "close" are everywhere in this document, so
+    a whole-file containment check would say nothing about whether *this*
+    instruction survived.
+    """
+    text = _COMMAND_DOC.read_text()
+    assert _STEP_FOUR_RETRY_SENTENCE in text, (
+        "commands/harness.md step 4 must state the collapsed decision tree "
+        "(#301 AC-11): the agent runs close once and escalates on non-zero"
+    )
+    start = text.index(_STEP_FOUR_RETRY_SENTENCE)
+    end = text.index("\n\n", start)
+    return text[start:end]
+
+
+def test_command_doc_tells_the_agent_to_run_close_once(retry_delays: list[float]) -> None:
+    """AC-11: the doc is the orchestrating session's operating instruction.
+
+    While it told the agent to re-run `close` for a rejected push or an unhealthy
+    tracker, an agent following it would loop on failures the verb has already
+    retried — spending a turn against full build context to redo what just
+    failed three times.
+    """
+    paragraph = _step_four_retry_paragraph()
+
+    assert "bounded retry" in paragraph, (
+        "the paragraph must say why re-running is now pointless — the verb "
+        "already retried — not merely that the agent should not do it"
+    )
+    assert "Do not re-run `close` in a loop" in paragraph, (
+        "the retired instruction is an agent looping on close; the doc must "
+        "say plainly not to"
+    )
+
+
+#: The instructions #301 retires — verbatim as `commands/harness.md` carried them
+#: before this change. Each told the orchestrating agent to re-run `close` for a
+#: failure the verb now retries internally, which would send it to redo what has
+#: already failed three times.
+_RETIRED_RERUN_INSTRUCTIONS = (
+    "for a rejected push, simply close again",
+    "Re-run `harness close` once the tracker is healthy",
+)
+
+
+def _surviving_rerun_instructions(text: str) -> list[str]:
+    """Which retired re-run instructions ``text`` still carries."""
+    return [phrase for phrase in _RETIRED_RERUN_INSTRUCTIONS if phrase in text]
+
+
+def test_the_doc_no_longer_tells_the_agent_to_re_run_a_retried_failure() -> None:
+    """The retired recoveries are gone from the whole document, not just step 4.
+
+    Scoped the opposite way to the step-4 guard on purpose: these are claims
+    that must not survive **anywhere**, because an agent reads whichever
+    paragraph its failure led it to. Both were live instructions before #301.
+    """
+    assert _surviving_rerun_instructions(_COMMAND_DOC.read_text()) == [], (
+        "a retired instruction telling the agent to re-run close for a "
+        "transient failure survives; the verb retries those itself now, so "
+        "following it means looping on an escalation"
+    )
+
+
+def test_the_retired_instruction_check_would_catch_the_instructions_coming_back() -> None:
+    """Positive control: the predicate is exercised, not re-implemented.
+
+    The assertion above is a *negative* — it passes when a phrase is absent, and
+    a phrase that was never in this document is absent for free. Anchoring the
+    control on surviving vocabulary would not fix that: a rewrite is entitled to
+    drop a word, and the check would then fail for a reason unrelated to whether
+    it can still catch a regression. So the control runs the real predicate over
+    synthetic prose that reinstates both instructions, and requires it to find
+    both.
+    """
+    reinstated = (
+        "A **`push_rejected`** failure is a plain retry: "
+        "for a rejected push, simply close again — it re-fetches the tip.\n\n"
+        "Re-run `harness close` once the tracker is healthy — the merge/push "
+        "step is idempotent for an already-landed run branch."
+    )
+
+    assert _surviving_rerun_instructions(reinstated) == list(
+        _RETIRED_RERUN_INSTRUCTIONS
+    ), (
+        "the predicate did not detect the retired instructions in prose that "
+        "plainly contains them, so the guard above cannot be relied on to catch "
+        "them reappearing in the real document"
+    )

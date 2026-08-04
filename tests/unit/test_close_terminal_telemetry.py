@@ -61,7 +61,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness import close_merge
-from harness.cli import app
+from harness.cli import app, close_retry
 from harness.cli import close as close_mod
 from harness.cli.close_telemetry import outcome_for_exit_code
 from harness.events import observation as observation_mod
@@ -100,6 +100,24 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 @pytest.fixture(autouse=True)
 def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def retry_delays(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record the bounded retry's sleeps instead of paying them (#301).
+
+    Several cases here drive a retryable step-6 or step-7 failure to record the
+    terminal event it produces. Each now costs the full 2s + 8s backoff before
+    that event is written, so without this the suite would sleep on the
+    telemetry it is measuring rather than measuring it.
+    """
+    recorded: list[float] = []
+
+    async def _record(seconds: float) -> None:
+        recorded.append(seconds)
+
+    monkeypatch.setattr(close_retry, "_sleep", _record)
+    return recorded
 
 
 @pytest.fixture
