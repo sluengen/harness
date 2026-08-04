@@ -186,10 +186,14 @@ class _CloseError(VerbError):
     """``close``'s control-flow exception — a :class:`VerbError` (CAL-1013).
 
     ``close`` *sets* ``reason`` for gate refusals (a :data:`RefusalReason`, exit
-    2) and for the two ticket-transition failures (a :data:`FailureReason`,
-    exit 1, #233 — the merge already landed, so exit 2's "refused, nothing
-    happened" contract would misreport them); every other exit-1 error leaves
-    ``reason`` unset. Every raise site passes ``reason=`` by keyword.
+    2) and for both exit-1 :data:`FailureReason` families: the two
+    ticket-transition failures (:data:`TicketFailureReason`, #233 — the merge
+    already landed, so exit 2's "refused, nothing happened" contract would
+    misreport them) and the merge/push failures ``close_merge`` classified
+    (:data:`MergeFailureReason`, #300 — propagated, not recomputed). An exit-1
+    error that *nothing* classified — a DB failure, or an exception
+    ``close_merge`` does not model — leaves ``reason`` unset. Every raise site
+    passes ``reason=`` by keyword.
     """
 
 
