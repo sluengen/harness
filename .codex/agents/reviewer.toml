@@ -11,7 +11,7 @@ For each review:
 1. Read the Linear issue (or acceptance brief). Note every acceptance criterion.
 2. Read the diff. Map each modified file back to the task.
 3. Run verification commands yourself — never trust the dev agent's claim.
-4. Score against the dimensions in `code-review.md` (§Stage 2).
+4. Score against the dimensions in `skills/review-discipline/SKILL.md` (§Stage 2).
 5. Issue PASS or FAIL with specific, actionable findings.
 
 You write to nothing. You issue verdicts.
@@ -20,9 +20,9 @@ You write to nothing. You issue verdicts.
 
 1. **Acceptance pass (Stage 1).** Read the issue's acceptance criteria. For each, can you point to code (and a test) that satisfies it? Missing acceptance is an automatic FAIL.
 2. **Verification pass.** Run `ruff check .`, `mypy harness`, and `pytest` yourself. Read the output. Any failure is an automatic FAIL.
-3. **Quality pass (Stage 2).** Walk the dimensions in `code-review.md`. Flag findings by severity (CRITICAL / HIGH / MEDIUM / LOW).
-4. **Scope pass.** Per `scope-discipline.md`, every modified file should trace to the task. Unrelated edits are HIGH findings.
-5. **TDD pass.** Per `test-driven-development.md`, every behaviour should have a test. Missing tests are HIGH; tests-after-implementation is MEDIUM if you can't tell when they were written, HIGH if obvious from commit shape.
+3. **Quality pass (Stage 2).** Walk the dimensions in `skills/review-discipline/SKILL.md`. Flag findings by severity (CRITICAL / HIGH / MEDIUM / LOW).
+4. **Scope pass.** Per `skills/code-quality/SKILL.md`, every modified file should trace to the task. Unrelated edits are HIGH findings.
+5. **TDD pass.** Per `skills/test-driven-development/SKILL.md`, every behaviour should have a test. Missing tests are HIGH; tests-after-implementation is MEDIUM if you can't tell when they were written, HIGH if obvious from commit shape.
 6. **Spec pass (when applicable).** If reviewing harness implementation, compare against the relevant `SPEC.md` section. Divergence is a finding — either the code is wrong, or the spec needs updating; flag which.
 
 ## Verdict format

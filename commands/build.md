@@ -1,4 +1,4 @@
-<!-- guidance:build@1.4.0 -->
+<!-- guidance:build@1.4.1 -->
 # /build — implement, verify, and review a Linear ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -23,7 +23,7 @@ The review step takes an **engine** argument, mirroring the `harness review` ver
 
 Read `CONTEXT.md`. Note the integration branch (`base_branch`) and the verify/test command (`verify_command`). If either is absent, stop and tell the user what is missing.
 
-Read `CLAUDE.md`. Store its full content as `claude_md` — you will pass it verbatim to the implement sub-agent.
+Read the repo's entry process doc. Prefer `AGENTS.md` when present, otherwise use the host-specific mirror (`CLAUDE.md` or `GEMINI.md`). Store its full content as `project_process_doc` — you will pass it verbatim to the implement sub-agent as `PROJECT_PROCESS_DOC`.
 
 **Resolve the review engine.** Default `claude`. If the invocation passes `--engine codex`, set the engine to `codex` and confirm `codex` is on `$PATH` (if it is not, fall back to `claude` and note it). The engine only affects the Review step (§2); every other step is identical.
 
@@ -50,7 +50,7 @@ Write one line of reasoning for the verdict each time, naming which findings are
 
 ### Implement
 
-Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has Read, Write, Edit, Bash, Grep, Glob. It must not create git commits. The sub-agent builds **test-first** under `test-driven-development` and in scope under `code-quality` — name those skills in its prompt and have it open them before writing code. Give it this prompt — fill all values before sending:
+Spawn a sub-agent through the host sub-agent mechanism. Its working directory is `worktree_path`. Give it the host's normal read, edit, and shell tools. It must not create git commits. The sub-agent builds **test-first** under `test-driven-development` and in scope under `code-quality` — name those skills in its prompt and have it open them before writing code. Give it this prompt — fill all values before sending:
 
 ---
 
@@ -73,9 +73,9 @@ Spawn a sub-agent (Agent tool). Its working directory is `worktree_path`. It has
 
 *Build test-first: open `skills/test-driven-development/SKILL.md` and `skills/code-quality/SKILL.md` and follow them — write the failing test first, watch it fail for the right reason, then the minimal code to pass. Stay in scope; every changed file must trace to this ticket.*
 
-*Follow the conventions in this project's CLAUDE.md:*
+*Follow the conventions in this project's entry process doc:*
 
-*CLAUDE_MD*
+*PROJECT_PROCESS_DOC*
 
 *Before finishing:*
 *- Update any spec or documentation that refers to code you just changed — except the feature/as-built spec (`specs/features/`), which the reviewer records, not you*
@@ -121,7 +121,7 @@ TICKET_DESCRIPTION
 
 ## Project conventions
 
-CLAUDE_MD
+PROJECT_PROCESS_DOC
 
 ## Verification
 

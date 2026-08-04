@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.2.19 -->
+<!-- guidance:harness@0.2.20 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -9,7 +9,7 @@ Commands for driving the **harness pipeline itself**. `/harness run` is the cano
 
 Drive a Linear ticket end-to-end by orchestrating the four harness verbs: **start → design → implement → review → (fix → review)\* → close**.
 
-This is **not** a wrapper that hands the ticket to a black-box workflow. *You* — the orchestrating Claude session — run the loop: you call each verb, you write the code and tests inline in the worktree, you read each verdict and act on it. The verbs own every git and tracker mutation; you own the implementation and the control flow between them.
+This is **not** a wrapper that hands the ticket to a black-box workflow. *You* — the orchestrating agent session — run the loop: you call each verb, you write the code and tests inline in the worktree, you read each verdict and act on it. The verbs own every git and tracker mutation; you own the implementation and the control flow between them.
 
 **Why the verbs, and nothing else, touch state (D5):** each verb appends to a single `runs` ledger — `start` opens the row, `design` records the design attempt and the SHA it grounded against, `review` records a verdict bound to the reviewed SHA, `close` enforces the gate and finalizes. That ledger is the whole audit trail. If you hand-roll a `git merge`, a `git push`, or a Linear GraphQL mutation to move state yourself, the ledger no longer reflects reality and the gate can no longer protect the merge. So: **never** run raw git state-transitions or Linear CURL for the lifecycle in this loop — route every mutation through a verb.
 
@@ -76,7 +76,7 @@ The stage is **unconditional** — it runs for every ticket, whatever its judged
 
 **`review` refuses a run with no recorded design attempt** — exit `5`, `reason=no_design`, before any engine is invoked and with no verdict recorded. It mirrors `no_gate_evidence`: silence is not a pass. Skipping this step does not save a step; it buys a refusal at Step 3.
 
-**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's `CLAUDE.md` (write the failing test, watch it fail for the right reason, then make it pass). Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
+**Step 2 — implement.** Write the code and tests in the worktree, **test-first** per this repo's entry process doc (`AGENTS.md`, or the host-specific mirror such as `CLAUDE.md` / `GEMINI.md`): write the failing test, watch it fail for the right reason, then make it pass. Stay in scope — every changed file must trace to the ticket. Run the repo's verify gate (`CONTEXT.md` → `verify:`) in the worktree as you go: **you** run the gate — `review` refuses to review a tree you cannot show is green (Step 3), so this is not optional.
 
 **Checkpoint your WIP so it survives the container dying.** After each green local verify — i.e. each committed increment — push the run branch:
 
@@ -194,7 +194,7 @@ A gate refusal is the gate doing its job. **Do not work around it** — do not h
 The plan you are following lives only in this session's context — the ledger and the worktree are the durable record. If context is lost or compacted mid-run:
 
 - **Re-orient via the ledger.** Run `harness status <run-id> [--json]` to get the run's terminal-state summary, and inspect the worktree (`git status`, `git log`, the diff) to see what is already implemented. The ledger + worktree are the source of truth — trust them over a half-remembered plan.
-- **Checkpoint intent before you risk losing it.** Commit WIP in the worktree and/or write the remaining plan into the ticket or a scratch note, so the one thing that lives only in context survives a compaction. (A `CLAUDE.md` "Compact Instructions" section is an optional refinement, not required.)
+- **Checkpoint intent before you risk losing it.** Commit WIP in the worktree and/or write the remaining plan into the ticket or a scratch note, so the one thing that lives only in context survives a compaction. (A "Compact Instructions" section in the entry process doc is an optional refinement, not required.)
 
 #### Proactive context-rollover handoff
 
@@ -234,7 +234,7 @@ Two loops are versioned here: `build` (the hourly work-pull) and `quality` (idle
 
 The hourly work-pull: take the next logical ticket off the tracker's Todo queue and drive it to Done, or — when the queue holds nothing actionable — fall through to the quality loop.
 
-**Primary surface:** `/harness run <TICKET>` (the audited verb loop). **Fallback:** `/build <TICKET>` (agent-orchestrated) when the harness tool is unavailable. In the harness repo itself, the primary is always `/harness run` (per `CLAUDE.md`, the harness drives its own tickets through the verb loop, not `/build`); the fallback is for a consuming repo that lacks the harness app.
+**Primary surface:** `/harness run <TICKET>` (the audited verb loop). **Fallback:** `/build <TICKET>` (agent-orchestrated) when the harness tool is unavailable. In the harness repo itself, the primary is always `/harness run` (per the entry process doc, the harness drives its own tickets through the verb loop, not `/build`); the fallback is for a consuming repo that lacks the harness app.
 
 **Scope (resolve from `CONTEXT.md` at runtime).** Read `repo.project`. When it is **set**, every step below is scoped to that one project — the reclaim pre-flight passes `--project "<repo.project>"` and the pick considers only that project's Todo queue. When it is **unset**, the loop works the **whole** tracker queue — the reclaim pre-flight runs `harness reclaim --stale` with **no** `--project`, and the pick ranks across the whole queue (a `tracker: linear` team, or a `tracker: github` board). The steps below show the scoped (`repo.project` set) path; for the unscoped path, drop `--project` and read `<repo.project>` as "the whole queue".
 

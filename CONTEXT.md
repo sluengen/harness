@@ -63,7 +63,7 @@ env:
 
 ## What this repo is
 
-A set of **deterministic, audited verbs an agent calls** to drive a Linear ticket end-to-end — not an engine that drives agents. A single Claude session orchestrates *and* implements (reads the ticket, writes the code and tests, decides how to fix a review finding, when to re-review); the harness owns only the **durable record and the gate**. It has no product UI and no end-users — it is infrastructure other repos self-host. (The earlier deterministic YAML workflow engine was retired in CAL-574; `README.md` and `SPEC.md` §1–2 describe the current verb model.)
+A set of **deterministic, audited verbs an agent calls** to drive a Linear ticket end-to-end — not an engine that drives agents. A single orchestrating agent session orchestrates *and* implements (reads the ticket, writes the code and tests, decides how to fix a review finding, when to re-review); the harness owns only the **durable record and the gate**. It has no product UI and no end-users — it is infrastructure other repos self-host. (The earlier deterministic YAML workflow engine was retired in CAL-574; `README.md` and `SPEC.md` §1–2 describe the current verb model.)
 
 ## Architecture
 
@@ -116,14 +116,14 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 ## Gotchas
 
 - **Primary invocation is `~/bin/harness` (Docker wrapper).** `cd` to any repo and call a verb — `harness start <ISSUE-ID>`, then `review` and `close`. The wrapper mounts CWD as `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, extracts the Claude OAuth token from the macOS Keychain, and mounts `~/.codex` for Codex subscription auth. See `docker/README.md` for the full wrapper script and installation steps.
-- **Drive the loop with `/harness run <ISSUE-ID>`.** The orchestrating Claude session calls each verb in turn (`start → design → implement → review → (fix → review)* → close`); the verbs own every git and ticket mutation. The contract and gate-refusal handling are in `commands/harness.md`. The agent never runs *inside* a verb container — each verb is a one-shot `docker run` spawned by the wrapper.
+- **Drive the loop with `/harness run <ISSUE-ID>`.** The orchestrating agent session calls each verb in turn (`start → design → implement → review → (fix → review)* → close`); the verbs own every git and ticket mutation. The contract and gate-refusal handling are in `commands/harness.md`. The agent never runs *inside* a verb container — each verb is a one-shot `docker run` spawned by the wrapper.
 - **`bin/harness` is dev-time only.** It hard-codes `.venv/bin/python` relative to the harness repo root and only works inside the harness checkout. Use it when iterating on harness source itself; use `~/bin/harness` for everything else.
 - **Cross-repo execution** — `cd` to the target repo and run the verbs there. No `--repo` flag needed with the Docker wrapper; CWD is mounted automatically. (`--repo` and `--base` are accepted when invoking the verbs directly outside the wrapper.)
 - **Native install path** (alternative to Docker): `uv tool install .` from the repo root installs the `harness` console script on PATH. Use when Docker is not available. Credentials and env vars must be set manually.
 - **No Linear CLI is installed.** All Linear interaction is via the GraphQL API (`curl` / `urllib.request`). Do not search for a `linear` binary or `npx linear`.
 - **`mypy` scope is `harness`** — tests are excluded from the type check. Test-file mypy errors are a known backlog, not a gate failure.
 - **Slow/integration tests have markers** — run `pytest -m 'not slow and not integration'` locally to skip them. CI runs all.
-- **Verification output can come back empty** in the Claude Code Bash tool (it auto-backgrounds long commands). Redirect to `/tmp/<file>.txt` and `tail` it.
+- **Verification output can come back empty** in host shell tools that auto-background long commands. Redirect to `/tmp/<file>.txt` and `tail` it.
 
 ## Python conventions
 
