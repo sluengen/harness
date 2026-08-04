@@ -64,12 +64,20 @@ an exit-1 error (retryable), not a gate refusal.
 
 Exit codes (mirroring ``harness start`` / ``harness review``):
 * 0 — close succeeded; the compact result JSON is printed.
-* 1 — unexpected error (git failure, push failure, or a DB error); or a
-  post-merge ticket-transition failure, tagged with a :data:`FailureReason` —
-  ``ticket_transition_failed`` (the tracker raised) or
-  ``ticket_transition_unconfirmed`` (success reported, but the post-write
-  state wasn't the one requested, #233). Not a gate refusal — the merge
-  already landed; re-run ``harness close`` once the tracker is healthy.
+* 1 — a merge/push or git failure, tagged with the :data:`MergeFailureReason`
+  ``close_merge`` computed (#300) — ``merge_conflict`` (real work: merge the
+  base, commit, re-review) and ``push_rejected`` (a lost race: just re-run) are
+  the two an agent branches on; ``git_status_failed``, ``fetch_failed``,
+  ``network_timeout``, ``merge_failed`` and ``worktree_create_failed`` are the
+  rest. An error ``close_merge`` did not classify, or a DB error, stays
+  untagged. Or a post-merge ticket-transition failure, tagged with a
+  :data:`TicketFailureReason` — ``ticket_transition_failed`` (the tracker
+  raised) or ``ticket_transition_unconfirmed`` (success reported, but the
+  post-write state wasn't the one requested, #233). Not a gate refusal. The
+  two families are disjoint and mean opposite things about the merge: a merge
+  reason fires **before** it lands, a ticket reason **after** — the latter also
+  carries ``merged: true``, so re-run ``harness close`` once the tracker is
+  healthy.
 * 2 — gate refusal (``no_run`` / ``dirty_worktree`` / ``no_passing_review`` /
   ``stale_review``), or Linear is unconfigured (a missing ``LINEAR_API_KEY``);
   the latter carries no ``reason`` and is checked before any side effect.
@@ -128,7 +136,21 @@ RefusalReason = Literal[
 # The structured ticket-transition failure reasons (exit 1, #233) — separate
 # from RefusalReason because the merge already landed by the time either
 # fires, unlike a gate refusal's "nothing happened".
-FailureReason = Literal["ticket_transition_failed", "ticket_transition_unconfirmed"]
+TicketFailureReason = Literal["ticket_transition_failed", "ticket_transition_unconfirmed"]
+
+# The structured merge/push failure reasons (exit 1, #300). ``close_merge`` owns
+# these strings — it is where they are raised — and ``close`` propagates them
+# rather than recomputing or renaming them, so a reason added there cannot
+# silently arrive here as an untagged error.
+MergeFailureReason = close_merge.CloseMergeReason
+
+# The exit-1 vocabulary as a whole. Kept as two named families rather than one
+# flat list because the boundary between them is the contract: a
+# ``TicketFailureReason`` means the merge **landed** (and the ticket did not
+# follow), while a ``MergeFailureReason`` means it did **not**. The two sets are
+# disjoint, so a consumer can ask which family it holds by membership rather
+# than by parsing the human message.
+FailureReason = TicketFailureReason | MergeFailureReason
 
 #: The audit event a successful close appends. A member of ``EVENT_TYPES``; the
 #: assert guards against a rename drifting the inlined INSERT away from the
@@ -306,8 +328,12 @@ async def _close_resolved_run(
     try:
         dirty = await asyncio.to_thread(close_merge.worktree_porcelain, Path(worktree_path))
     except close_merge.CloseMergeError as exc:
+        # Propagate the reason the module already computed (#300) — this is the
+        # only path from which ``git_status_failed`` is reachable.
         raise _CloseError(
-            f"failed to read git status for worktree {worktree_path}: {exc}", 1
+            f"failed to read git status for worktree {worktree_path}: {exc}",
+            1,
+            reason=exc.reason,
         ) from exc
     if dirty:
         raise _CloseError(
@@ -349,8 +375,14 @@ async def _close_resolved_run(
             worktree_branch=worktree_branch,
         )
     except close_merge.CloseMergeError as exc:
-        raise _CloseError(str(exc), 1) from exc
+        # Pass the reason through unchanged (#300) rather than translating it: a
+        # translation table here would be a second list that drifts, and a reason
+        # added to ``close_merge`` would map to nothing and reproduce the very
+        # bug this fixes. Propagation is structural instead.
+        raise _CloseError(str(exc), 1, reason=exc.reason) from exc
     except Exception as exc:  # noqa: BLE001
+        # An error ``close_merge`` did not classify keeps its historical
+        # untagged shape — there is no reason to invent.
         raise _CloseError(f"merge/push failed: {exc}", 1) from exc
     # Recorded before anything that can still fail, so every later failure
     # records as the post-merge failure it is, not as a blocked close (#263).

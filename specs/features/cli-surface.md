@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-04
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328"]
+last_updated: 2026-08-05
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -80,7 +80,7 @@ There is **no separate `verify` command** in v1, by design. Gate execution runs 
 | Code | Meaning |
 |------|---------|
 | 0 | Command succeeded (including a recorded review `fail` — a *successful* review) |
-| 1 | Unexpected error (git failure, DB error, tracker error); `close`'s two ticket-transition failure reasons (`ticket_transition_failed`, `ticket_transition_unconfirmed`) also land here — the merge already landed, so each carries `reason` + `merged: true` rather than the exit-2 gate-refusal shape (#233) |
+| 1 | Unexpected error (git failure, DB error, tracker error); `close`'s two ticket-transition failure reasons (`ticket_transition_failed`, `ticket_transition_unconfirmed`) also land here — the merge already landed, so each carries `reason` + `merged: true` rather than the exit-2 gate-refusal shape (#233). `close`'s **merge/push** failures land here too, carrying the `reason` `close_merge` computed (`merge_conflict`, `push_rejected`, `git_status_failed`, `fetch_failed`, `network_timeout`, `merge_failed`, `worktree_create_failed`) and **no** `merged` key — the merge did not land (#300). The two exit-1 vocabularies are disjoint, so which side of the merge a failure sits on is readable from the tag alone; an error `close_merge` did not classify stays untagged |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
 | 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
