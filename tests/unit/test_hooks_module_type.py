@@ -35,7 +35,7 @@ Acceptance criteria:
   fixture copies the **real** tree, so this is what binds the assertion to the
   shipped file rather than to a hand-authored stand-in.
   :func:`test_removing_the_manifest_breaks_every_hook` and
-  :func:`test_removing_the_manifest_silently_disarms_prompt_guard`.
+  :func:`test_removing_the_manifest_disarms_prompt_guard_but_says_so`.
 * **AC-3** — ``hooks/package.json`` is a ``registry.yaml`` ``files:`` entry in
   the ``harness`` profile, so the installer copies it into a consuming repo, and
   it actually declares CommonJS.
@@ -89,8 +89,8 @@ def _esm_fixture(tmp_path: Path) -> Path:
     return fixture
 
 
-def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, str]:
-    """Run ``hook`` from inside ``fixture``; return (returncode, stdout).
+def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, str, str]:
+    """Run ``hook`` from inside ``fixture``; return (returncode, stdout, stderr).
 
     ``TMPDIR`` is redirected into an isolated directory because the advisory
     hooks write debounce markers there — without this a second probe in the same
@@ -108,7 +108,7 @@ def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, 
         cwd=fixture,
         env={"PATH": "/usr/bin:/bin:/usr/local/bin", "TMPDIR": str(marker_dir)},
     )
-    return proc.returncode, proc.stdout
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def _advisory_context(stdout: str) -> str:
@@ -121,7 +121,7 @@ def _advisory_context(stdout: str) -> str:
 
 def _probe_prompt_guard(fixture: Path, tmp_path: Path) -> bool:
     """Designed behaviour: flag content matching a known injection pattern."""
-    _, out = _run(
+    _, out, _ = _run(
         "prompt-guard.js",
         {
             "tool_name": "Write",
@@ -138,7 +138,7 @@ def _probe_prompt_guard(fixture: Path, tmp_path: Path) -> bool:
 
 def _probe_git_push_guard(fixture: Path, tmp_path: Path) -> bool:
     """Designed behaviour: deny a force push."""
-    _, out = _run(
+    _, out, _ = _run(
         "git-push-guard.js",
         {"tool_name": "Bash", "tool_input": {"command": "git push --force origin dev"}},
         fixture,
@@ -159,7 +159,7 @@ def _probe_workflow_guard(fixture: Path, tmp_path: Path) -> bool:
         ["git", "config", "user.name", "t"],
     ):
         subprocess.run(cmd, cwd=fixture, capture_output=True, check=True)
-    _, out = _run(
+    _, out, _ = _run(
         "workflow-guard.js",
         {"tool_name": "Write", "tool_input": {"file_path": "src/app.ts"}},
         fixture,
@@ -172,7 +172,7 @@ def _probe_context_monitor(fixture: Path, tmp_path: Path) -> bool:
     """Designed behaviour: warn once the transcript passes the critical fraction."""
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text("x" * _CRITICAL_TRANSCRIPT_CHARS)
-    _, out = _run(
+    _, out, _ = _run(
         "context-monitor.js",
         {"transcript_path": str(transcript)},
         fixture,
@@ -185,7 +185,7 @@ def _probe_guidance_freshness(fixture: Path, tmp_path: Path) -> bool:
     """Designed behaviour: flag the derived entry files drifting apart."""
     (fixture / "AGENTS.md").write_text("# process\n")
     (fixture / "CLAUDE.md").write_text("# process, but edited\n")
-    _, out = _run(
+    _, out, _ = _run(
         "guidance-freshness.js",
         {"tool_name": "Write", "tool_input": {"file_path": str(fixture / "CLAUDE.md")}},
         fixture,
@@ -265,17 +265,22 @@ def test_removing_the_manifest_breaks_every_hook(hook: str, tmp_path: Path) -> N
     )
 
 
-def test_removing_the_manifest_silently_disarms_prompt_guard(tmp_path: Path) -> None:
-    """The asymmetry, pinned: prompt-guard fails *quietly*, unlike the other four.
+def test_removing_the_manifest_disarms_prompt_guard_but_says_so(tmp_path: Path) -> None:
+    """The asymmetry, pinned: prompt-guard falls open where the other four crash.
 
     Four hooks crash with a non-zero exit under ESM. ``prompt-guard.js`` exits 0
     and emits a well-formed approving payload, which is why AC-1 cannot be an
     exit-status assertion. Stated as its own test so the distinction survives a
     future refactor of the shared predicate.
+
+    Since #303 it is no longer *silent* about it: the stdout payload and the exit
+    status are unchanged, and the fall-open is announced on stderr. The name and
+    docstring moved with the behaviour — the old ones asserted a silence that no
+    longer exists.
     """
     fixture = _esm_fixture(tmp_path)
     (fixture / "hooks" / "package.json").unlink()
-    rc, out = _run(
+    rc, out, err = _run(
         "prompt-guard.js",
         {
             "tool_name": "Write",
@@ -287,11 +292,35 @@ def test_removing_the_manifest_silently_disarms_prompt_guard(tmp_path: Path) -> 
         fixture,
         tmp_path,
     )
-    assert rc == 0, "expected the silent-failure mode, not a crash"
+    assert rc == 0, "expected the fail-open mode, not a crash"
     assert json.loads(out) == {"continue": True}, (
-        "prompt-guard.js should fail silently open under ESM — an approving "
-        "payload with no additionalContext. If this changed, the security "
-        "argument in the module docstring needs revisiting."
+        "prompt-guard.js should still fail open under ESM — an approving payload "
+        "with no additionalContext. #303 changed the diagnostic, not the decision."
+    )
+    assert "[PROMPT-GUARD] fail-open:" in err, (
+        "prompt-guard.js fell open under ESM without saying so, which is exactly "
+        f"the blindness that hid #302 for an unknown length of time. stderr: {err!r}"
+    )
+
+
+@pytest.mark.parametrize("hook", sorted(_PROBES))
+def test_removing_the_manifest_is_loud_on_stderr(hook: str, tmp_path: Path) -> None:
+    """#303 AC-3: the #302 regression is observable for **every** hook.
+
+    The four that crash under ESM are loud by Node's own uncaught
+    ``ReferenceError``; ``prompt-guard.js`` is loud because #303 gave it a
+    diagnostic. This asserts the property that matters to a session — nothing goes
+    wrong in silence — and leaves *how* each hook is loud to the two mechanisms.
+    Reuses the fixture this module already owns rather than re-authoring it.
+    """
+    fixture = _esm_fixture(tmp_path)
+    (fixture / "hooks" / "package.json").unlink()
+    _, _, err = _run(
+        hook, {"tool_name": "Write", "tool_input": {"file_path": "x.ts"}}, fixture, tmp_path
+    )
+    assert err.strip(), (
+        f"{hook} broke under an ESM root and wrote nothing to stderr, so the "
+        "install record would still say it was working — the #303 defect."
     )
 
 
