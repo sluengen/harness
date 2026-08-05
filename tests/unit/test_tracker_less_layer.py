@@ -299,7 +299,7 @@ def test_ac1_start_degrades_ticket_context_to_the_identifier(
         )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
 
     assert payload["ticket"]["identifier"] == "my-feature-42"
     assert payload["ticket"]["title"] is None
@@ -322,7 +322,7 @@ def test_ac1_start_creates_the_worktree_tracker_less(
         )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     worktree = Path(payload["worktree_path"])
     assert worktree.is_dir()
     assert (worktree / "README.md").exists()
@@ -348,7 +348,7 @@ def test_ac1_duplicate_start_still_refused_tracker_less(
 
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
-    assert json.loads(first.output)["run_id"] == json.loads(second.output)["run_id"]
+    assert json.loads(first.stdout)["run_id"] == json.loads(second.stdout)["run_id"]
     assert len(_fetch_runs(db_path)) == 1
 
 
@@ -385,7 +385,7 @@ def test_ac1_close_merges_without_a_tracker(repo: Path, db_path: Path) -> None:
     assert result.exit_code == 0, result.output
     merge.assert_called_once()
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["merged"] is True
     assert payload["status"] == "closed"
 
@@ -422,7 +422,7 @@ def test_ac1_close_reports_ticket_done_false_tracker_less(
         )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["ticket_done"] is False
+    assert json.loads(result.stdout)["ticket_done"] is False
 
 
 def test_ac1_close_still_enforces_the_review_gate_tracker_less(
@@ -456,7 +456,7 @@ def test_ac1_close_still_enforces_the_review_gate_tracker_less(
         )
 
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "no_passing_review"
+    assert json.loads(result.stdout)["reason"] == "no_passing_review"
     merge.assert_not_called()
 
 
@@ -593,7 +593,7 @@ def test_ac2_reclaim_clears_the_ledger_without_a_tracker(
         )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "reclaimed"
     assert payload["ticket"] == "RUN-1"
 
@@ -623,7 +623,7 @@ def test_ac2_reclaim_preserves_the_branch_tracker_less(
         )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["branch_preserved"] == f"harness/{RUN_ID}"
+    assert json.loads(result.stdout)["branch_preserved"] == f"harness/{RUN_ID}"
 
 
 def test_ac2_stale_sweep_is_a_clean_noop_tracker_less(
@@ -653,7 +653,7 @@ def test_ac2_stale_sweep_is_a_clean_noop_tracker_less(
         )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["scanned"] == 0
 
@@ -811,7 +811,7 @@ def test_defer_github_tracker_fails_loud(
     assert "github" in result.output.lower()
     assert "skipped_no_tracker" not in result.output
     # A config gap surfaces as the machine-readable tracker_config reason.
-    assert json.loads(result.output)["reason"] == "tracker_config"
+    assert json.loads(result.stdout)["reason"] == "tracker_config"
 
 
 def test_reclaim_stale_github_tracker_fails_loud(

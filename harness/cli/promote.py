@@ -103,7 +103,11 @@ from harness import promotion as mechanics
 from harness import repo_config
 from harness._git import teardown_worktree
 from harness._time import iso_z
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._repo import (
+    REPO_OPTION_HELP,
+    resolve_repo_argument,
+    resolve_verb_db_path,
+)
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id
 from harness.promotion_escalation import build_escalation_body, build_escalation_title
@@ -151,7 +155,7 @@ _STUB_EXIT = 2
 
 
 def _read_or_not_found(
-    command: str, promotion_id: str, repo: Path, db: Path | None
+    command: str, promotion_id: str, repo: Path | None, db: Path | None
 ) -> promotions.Promotion:
     """Read a promotion by id from the ledger, or exit 2 with a ``not_found`` marker.
 
@@ -161,7 +165,7 @@ def _read_or_not_found(
     orchestrator can tell apart from a real error, exiting with the stub/refusal
     code. Returns the promotion on success.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
     if promotion is None:
@@ -270,8 +274,8 @@ def _classify_gate(
 
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
 def start_command(
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root to promote within."
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
     ),
     from_branch: str = typer.Option(
         "dev", "--from", help="Source branch to promote from (default: dev)."
@@ -299,7 +303,7 @@ def start_command(
     ),
 ) -> None:
     """Open a promotion: create the worktree/branch, attempt the merge, classify (CAL-1115)."""
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     # 1. Refresh the remote refs and validate the pair BEFORE any state — an
@@ -381,8 +385,8 @@ def continue_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to resume."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the open promotion."
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
     ),
     gate_exit: int | None = typer.Option(
         None,
@@ -412,7 +416,7 @@ def continue_command(
     Either way the gate runs host-side and is reported via ``--gate-exit`` /
     ``--gate-log`` (the ``review`` boundary), never executed by the verb.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
     if promotion is None:
@@ -497,8 +501,8 @@ def status_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to read."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
     ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
@@ -517,8 +521,8 @@ def pr_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to open a PR for."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
     ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
@@ -553,7 +557,7 @@ def pr_command(
     # evidence is stale — refuse rather than push an ungated commit. An
     # unresolvable branch (already cleaned up) is not treated as stale here; the
     # push itself (CAL-1117) will handle a missing branch.
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     live_head = (
         mechanics.branch_head(repo_root, promotion.promotion_branch)
         if promotion.promotion_branch
@@ -713,8 +717,8 @@ def escalate_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to escalate."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
     ),
     project: str | None = typer.Option(
         None,
@@ -738,7 +742,7 @@ def escalate_command(
     a backend client and never catches a backend-specific error.
     """
     promotion = _read_or_not_found("escalate", promotion_id, repo, db)
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     # The scope is nullable (#174/#248): the flag overrides CONTEXT.md's

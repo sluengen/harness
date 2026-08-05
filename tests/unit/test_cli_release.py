@@ -150,7 +150,7 @@ def test_release_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) 
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "released"
     assert payload["project"] is None
     stub.update_issue_body.assert_awaited_once()
@@ -176,7 +176,7 @@ def test_release_unscoped_refuses_a_ticket_off_the_queue(
     )
 
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_on_build_queue"
+    assert json.loads(result.stdout)["reason"] == "not_on_build_queue"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
     stub.unassign_viewer.assert_not_awaited()
@@ -227,7 +227,7 @@ def test_release_unscoped_records_the_tickets_own_project(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == "Design System"
+    assert json.loads(result.stdout)["project"] == "Design System"
     assert _fetch_release_events(db)[0]["project"] == "Design System"
 
 
@@ -244,7 +244,7 @@ def test_release_scoped_records_the_configured_project_not_the_tickets(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == _BUILD_PROJECT
+    assert json.loads(result.stdout)["project"] == _BUILD_PROJECT
     assert _fetch_release_events(db)[0]["project"] == _BUILD_PROJECT
 
 
@@ -298,7 +298,7 @@ def test_release_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["ticket"] == "CAL-193"
     assert payload["outcome"] == "released"
     assert payload["project"] == _BUILD_PROJECT
@@ -382,7 +382,7 @@ def test_release_refuses_ticket_not_found(tmp_path: Path, monkeypatch: Any) -> N
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "ticket_not_found"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
@@ -401,7 +401,7 @@ def test_release_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: 
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "not_on_build_queue"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()

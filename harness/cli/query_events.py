@@ -34,6 +34,7 @@ from harness.cli._query_common import (
     _resolve_run_id,
     _safe_json_loads,
 )
+from harness.cli._repo import REPO_OPTION_HELP
 
 # A run is "in progress" while its status sits in this set, so ``logs --follow``
 # keeps tailing; any other status is terminal and the loop exits on the next
@@ -127,6 +128,9 @@ def events_command(
     run_id: str | None = typer.Argument(
         None, help="Run identifier (ULID). May also be given as --run-id."
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -151,7 +155,7 @@ def events_command(
 ) -> None:
     """Print events for a run."""
     run_id = _resolve_run_id(run_id, run_id_option)
-    db_path = _resolve_db_path(db)
+    db_path = _resolve_db_path(db, repo)
     if not asyncio.run(_run_exists(db_path, run_id)):
         typer.echo(f"no run with run_id={run_id!r}", err=True)
         raise typer.Exit(code=2)
@@ -173,6 +177,9 @@ def logs_command(
     run_id: str | None = typer.Argument(
         None, help="Run identifier (ULID). May also be given as --run-id."
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -188,7 +195,7 @@ def logs_command(
 ) -> None:
     """Print a human-readable timeline of events for a run."""
     run_id = _resolve_run_id(run_id, run_id_option)
-    db_path = _resolve_db_path(db)
+    db_path = _resolve_db_path(db, repo)
     if not asyncio.run(_run_exists(db_path, run_id)):
         typer.echo(f"no run with run_id={run_id!r}", err=True)
         raise typer.Exit(code=2)

@@ -97,6 +97,7 @@ from harness.cli._abandon import CANCELLABLE_STATUSES, AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION_HELP, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.reclaim_closable import closable_run
 from harness.cli.reclaim_liveness import locally_live, open_run_liveness
@@ -288,11 +289,13 @@ async def _resolve_target(
     return run_id, "open", ticket_arg, resumable
 
 
-async def _revert_ticket(ticket: str, run_id: str | None, branch: str | None) -> None:
+async def _revert_ticket(
+    ticket: str, run_id: str | None, branch: str | None, *, repo_root: Path
+) -> None:
     """Revert ``ticket`` to Todo + ``reclaimed`` label + a comment (the load-bearing
     side effect — done before the local reconcile)."""
     try:
-        client = tracker_client(Path.cwd())
+        client = tracker_client(repo_root)
     except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
@@ -323,6 +326,7 @@ async def _run_reclaim(
     run_id_arg: str | None,
     ticket_arg: str | None,
     *,
+    repo_root: Path,
     tracker: bool = True,
 ) -> ReclaimOutput:
     """Reclaim the resolved target; raise :class:`_ReclaimError` on refusal/error.
@@ -373,7 +377,7 @@ async def _run_reclaim(
     #    tracker-less: there is no ticket state for the next run to read, so the
     #    ordering the revert-first rule protects does not arise.
     if tracker:
-        await _revert_ticket(ticket, run_id, branch)
+        await _revert_ticket(ticket, run_id, branch, repo_root=repo_root)
 
     # 2. Reconcile the local ledger SECOND (secondary cleanup), only when there
     #    is an in-flight run to flip. The branch/worktree are left intact (D4).
@@ -410,6 +414,7 @@ async def _run_stale_sweep(
     threshold: timedelta,
     attended_older_than: str,
     attended_threshold: timedelta,
+    repo_root: Path,
     tracker: bool = True,
 ) -> SweepOutput:
     """Enumerate the active tickets in scope and reclaim each idle past
@@ -470,7 +475,7 @@ async def _run_stale_sweep(
         )
 
     try:
-        client = tracker_client(Path.cwd())
+        client = tracker_client(repo_root)
     except TrackerConfigError as exc:
         raise _ReclaimError(str(exc), 2) from exc
 
@@ -541,7 +546,9 @@ async def _run_stale_sweep(
                     )
                 )
                 continue
-        result = await _run_reclaim(db_path, None, identifier)
+        result = await _run_reclaim(
+            db_path, None, identifier, repo_root=repo_root
+        )
         reclaimed.append(
             ReclaimedEntry(
                 ticket=identifier,
@@ -590,6 +597,9 @@ def reclaim_command(
         "--ticket",
         help="Linear ticket identifier (e.g. CAL-735) — reclaim the open run for it.",
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -625,14 +635,14 @@ def reclaim_command(
     ),
 ) -> None:
     """Reclaim a stranded run — revert its ticket to Todo and reconcile the ledger."""
-    db_path = _resolve_db_path(db)
-    # ``reclaim`` has no ``--repo`` flag: like its read-side siblings it is
-    # anchored on the CWD (the same place ``_resolve_db_path`` defaults the
-    # ledger to), so the layer is read from the CWD's CONTEXT.md (CAL-1104).
+    repo_root = repo_arg_or_cwd(repo)
+    db_path = _resolve_db_path(db, repo_root)
+    # The layer is read from the named repo's CONTEXT.md — since #306 that is the
+    # explicit ``--repo``, falling back to the CWD for one deprecated release.
     # A tracker is present for linear *and* github (only ``none`` is tracker-less);
     # github then fails loudly when the seam resolves the client, rather than
     # silently taking the tracker-less no-op path.
-    tracker = tracker_backend(Path.cwd()) != "none"
+    tracker = tracker_backend(repo_root) != "none"
 
     def _do() -> SweepOutput | ReclaimOutput | ReclaimUndoOutput:
         if undo:
@@ -645,7 +655,11 @@ def reclaim_command(
                     2,
                     reason="ambiguous_mode",
                 )
-            return asyncio.run(run_undo(db_path, run_id, ticket, tracker=tracker))
+            return asyncio.run(
+                run_undo(
+                    db_path, run_id, ticket, repo_root=repo_root, tracker=tracker
+                )
+            )
         if stale:
             # Sweep mode owns the scope; a single-target selector is ambiguous.
             if run_id is not None or ticket is not None:
@@ -667,8 +681,7 @@ def reclaim_command(
             # quantity read from two directions, so an omitted flag resolves from
             # the same ``loop.wall_clock_budget_minutes`` the breaker reads (#260).
             # Defaulting to a string built from the config would merely move the
-            # literal rather than delete it. CWD-anchored like the tracker read
-            # above — ``reclaim`` has no ``--repo`` (CAL-1104).
+            # Read from the same resolved repo root as the tracker read above.
             # Two thresholds since #297, selected per ticket by the run's
             # declared mode (ADR 0011). An explicit ``--older-than`` overrides
             # *both* in one assignment rather than a second branch: a one-off
@@ -677,7 +690,7 @@ def reclaim_command(
             if older_than is not None:
                 resolved_older_than = resolved_attended_older_than = older_than
             else:
-                budget = load_loop_budget(Path.cwd())
+                budget = load_loop_budget(repo_root)
                 resolved_older_than = f"{budget.wall_clock_budget_minutes}m"
                 resolved_attended_older_than = f"{budget.attended_idle_minutes}m"
             threshold = _parse_duration(resolved_older_than)
@@ -690,13 +703,16 @@ def reclaim_command(
                     threshold=threshold,
                     attended_older_than=resolved_attended_older_than,
                     attended_threshold=attended_threshold,
+                    repo_root=repo_root,
                     tracker=tracker,
                 )
             )
         # Exactly one selector: a bare run-id or --ticket, never both or neither.
         if (run_id is None) == (ticket is None):
             raise _ReclaimError("provide exactly one of <run-id> or --ticket <ID>", 2)
-        return asyncio.run(_run_reclaim(db_path, run_id, ticket, tracker=tracker))
+        return asyncio.run(
+            _run_reclaim(db_path, run_id, ticket, repo_root=repo_root, tracker=tracker)
+        )
 
     result = run_verb(_do, json_output=json_output)
 

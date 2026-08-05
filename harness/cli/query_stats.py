@@ -27,6 +27,7 @@ import typer
 
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION_HELP
 from harness.cli.stats_aggregate import LatencyReport, StatsReport, collect
 
 
@@ -103,6 +104,9 @@ def stats_command(
         "--since",
         help="Only count rows newer than this (e.g. 30m, 12h, 7d). Default: all time.",
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -111,7 +115,7 @@ def stats_command(
     ),
 ) -> None:
     """Aggregate statistics over the run ledger."""
-    db_path = _resolve_db_path(db)
+    db_path = _resolve_db_path(db, repo)
     cutoff = datetime.now(UTC) - _parse_duration(since) if since is not None else None
 
     report = asyncio.run(collect(db_path, since=since, cutoff=cutoff))

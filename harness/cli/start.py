@@ -68,7 +68,7 @@ from harness._git import (
     run_git,
     teardown_worktree,
 )
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._repo import REPO_OPTION_HELP, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._runs import attendance_inputs_json, resolve_attended
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
@@ -161,10 +161,10 @@ def start_command(
         "(the default) is bounded by the wall clock; do not pass this from an "
         "unattended routine (ADR 0011).",
     ),
-    repo: Path = typer.Option(  # noqa: B008
-        Path("."),
+    repo: Path | None = typer.Option(  # noqa: B008
+        None,
         "--repo",
-        help="Repo root for git worktree operations. Defaults to CWD.",
+        help=REPO_OPTION_HELP,
     ),
     db: Path | None = typer.Option(  # noqa: B008
         None,
@@ -178,7 +178,7 @@ def start_command(
     ),
 ) -> None:
     """Open a run: validate ticket, transition to In Progress, create worktree, record ledger."""
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     # Resolve the base branch: an explicit --base wins, else the repo's configured
     # integration branch, else its origin default, else "dev" (CAL-1106). Done here

@@ -115,7 +115,7 @@ from pydantic import BaseModel
 from harness import close_merge
 from harness._git import rev_parse_head, teardown_worktree
 from harness._time import elapsed_ms, iso_z
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._repo import REPO_OPTION_HELP, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
@@ -210,10 +210,10 @@ class _CloseError(VerbError):
 
 def close_command(
     ticket: str = typer.Argument(..., help="Linear ticket identifier (e.g. CAL-572)."),
-    repo: Path = typer.Option(  # noqa: B008
-        Path("."),
+    repo: Path | None = typer.Option(  # noqa: B008
+        None,
         "--repo",
-        help="Worktree root to close (resolves the open run by worktree_path). Defaults to CWD.",
+        help=REPO_OPTION_HELP,
     ),
     run_id: str | None = typer.Option(
         None,
@@ -232,7 +232,7 @@ def close_command(
     ),
 ) -> None:
     """Enforce the gate, then merge/push the run, transition the ticket Done, close the run."""
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     output = run_verb(

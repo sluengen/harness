@@ -116,7 +116,7 @@ def test_defer_unscoped_refuses_a_ticket_off_the_queue(
     )
 
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_on_build_queue"
+    assert json.loads(result.stdout)["reason"] == "not_on_build_queue"
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
     stub.assign_to_viewer.assert_not_awaited()
@@ -170,7 +170,7 @@ def test_defer_unscoped_records_the_tickets_own_project(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == "Design System"
+    assert json.loads(result.stdout)["project"] == "Design System"
     assert _fetch_defer_events(db)[0]["project"] == "Design System"
 
 
@@ -191,7 +191,7 @@ def test_defer_scoped_records_the_configured_project_not_the_tickets(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == _BUILD_PROJECT
+    assert json.loads(result.stdout)["project"] == _BUILD_PROJECT
     assert _fetch_defer_events(db)[0]["project"] == _BUILD_PROJECT
 
 
@@ -279,7 +279,7 @@ def test_defer_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) ->
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "deferred"
     assert payload["project"] is None
     stub.post_comment.assert_awaited_once()
@@ -334,7 +334,7 @@ def test_defer_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["ticket"] == "CAL-999"
     assert payload["outcome"] == "deferred"
     assert payload["project"] == _BUILD_PROJECT
@@ -546,7 +546,7 @@ def test_defer_refuses_ticket_not_found(tmp_path: Path, monkeypatch: Any) -> Non
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "ticket_not_found"
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()
@@ -566,7 +566,7 @@ def test_defer_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: An
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "not_on_build_queue"
     stub.post_comment.assert_not_awaited()
     stub.apply_label.assert_not_awaited()

@@ -46,6 +46,7 @@ from harness._time import iso_z
 from harness.cli._abandon import AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION_HELP
 from harness.cli._verb import run_verb
 from harness.state import store
 
@@ -81,6 +82,9 @@ async def _run_cancel(db_path: Path, run_id: str) -> None:
 
 def cancel_command(
     run_id: str = typer.Argument(..., help="Run identifier (ULID)."),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -91,7 +95,7 @@ def cancel_command(
     ),
 ) -> None:
     """Abandon an in-flight run — mark it cancelled and record the abandonment."""
-    db_path = _resolve_db_path(db)
+    db_path = _resolve_db_path(db, repo)
 
     run_verb(
         lambda: asyncio.run(_run_cancel(db_path, run_id)),

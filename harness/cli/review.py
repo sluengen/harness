@@ -101,7 +101,7 @@ from pydantic import BaseModel
 from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._repo import REPO_OPTION_HELP, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._runs import resolve_attended, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
@@ -449,10 +449,10 @@ async def _resolve_review_model(
 
 
 def review_command(
-    repo: Path = typer.Option(  # noqa: B008
-        Path("."),
+    repo: Path | None = typer.Option(  # noqa: B008
+        None,
         "--repo",
-        help="Worktree root to review (resolves the open run by worktree_path). Defaults to CWD.",
+        help=REPO_OPTION_HELP,
     ),
     run_id: str | None = typer.Option(
         None,
@@ -517,7 +517,7 @@ def review_command(
     fresh green evidence — see :mod:`harness.gate` for why the gate runs on your
     side and not in here.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     output = run_verb(

@@ -64,6 +64,7 @@ from pydantic import BaseModel
 
 from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION_HELP, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import DeferEventData
@@ -320,6 +321,9 @@ def defer_command(
         "`input` (the operator must supply something the run cannot), or "
         "`operator` (an interactive session). Selects the label applied.",
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -329,11 +333,8 @@ def defer_command(
 ) -> None:
     """Defer a not-yet-actionable ticket — comment + the ``decision``/``input``/
     ``operator`` label + assign the operator + a ledger event."""
-    db_path = _resolve_db_path(db)
-    # Anchored on the CWD, like ``reclaim``: the routine invokes verbs with CWD =
-    # the target repo root, so the layer + ``repo.project`` are read from that
-    # repo's CONTEXT.md.
-    repo_root = Path.cwd()
+    repo_root = repo_arg_or_cwd(repo)
+    db_path = _resolve_db_path(db, repo_root)
 
     def _do() -> DeferOutput:
         body = _resolve_reason(reason, reason_file)

@@ -21,6 +21,7 @@ import aiosqlite
 import typer
 
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION_HELP
 
 
 async def _fetch_recent_runs(
@@ -45,12 +46,15 @@ def runs_command(
     limit: int = typer.Option(
         20, "--limit", help="Maximum number of runs to list (default 20)."
     ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help=REPO_OPTION_HELP
+    ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
 ) -> None:
     """List recent runs."""
-    db_path = _resolve_db_path(db)
+    db_path = _resolve_db_path(db, repo)
 
     rows = asyncio.run(_fetch_recent_runs(db_path, limit=limit))
     if not rows:
