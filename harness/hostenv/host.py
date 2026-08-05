@@ -19,9 +19,9 @@ import re
 import subprocess
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from harness.hostenv.credentials import (
     _DEFAULT_GIT_EMAIL,
@@ -119,7 +119,10 @@ class HostPlatform(ABC):
         """
         run_env = dict(self.env if env is None else env)
         try:
-            return subprocess.run(
+            # S603: argv is a caller-supplied list and `shell=False` is explicit, so
+            # nothing here is re-parsed by a shell. That is the property this method
+            # exists to guarantee — see `test_bounded_run_never_uses_a_shell`.
+            return subprocess.run(  # noqa: S603
                 argv,
                 capture_output=True,
                 text=True,
@@ -207,7 +210,8 @@ class HostPlatform(ABC):
         result = self.bounded_run(["git", "config", "--global", key], seconds=10)
         return result.stdout.strip() if result.returncode == 0 else ""
 
-    def _now_ms(self) -> int:
+    def now_ms(self) -> int:
+        """Wall-clock milliseconds; overridable in a test that pins the clock."""
         return int(time.time() * 1000)
 
 

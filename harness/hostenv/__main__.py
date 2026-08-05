@@ -23,6 +23,9 @@ import argparse
 import sys
 from pathlib import Path
 
+from harness.hostenv.credentials import AgentCredential
+from harness.hostenv.host import HostPlatform, UnsupportedHost, detect_host
+
 MINIMUM_PYTHON = (3, 11)
 
 EXIT_OK = 0
@@ -63,12 +66,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # Imported here, after the version gate: a syntax or typing construct newer
-    # than the running interpreter must surface as the named exit 3 above rather
-    # than as an unreadable traceback at import time.
-    from harness.hostenv.credentials import AgentCredential
-    from harness.hostenv.host import UnsupportedHost, detect_host
-
     try:
         host = detect_host(platform=sys.platform)
     except UnsupportedHost as unsupported:
@@ -105,21 +102,21 @@ def main(argv: list[str] | None = None) -> int:
     return EXIT_OK
 
 
-def _resolve_agent_credential(host: object) -> "AgentCredential | None":  # noqa: F821
+def _resolve_agent_credential(host: HostPlatform) -> AgentCredential | None:
     """Read the credential, refreshing it first if it is at or inside the window.
 
     A refresh that fails leaves the stale-but-present token in play — the
     container's own 401 is where that belongs, and refusing to start would break
     a deployment whose token is merely close to expiry.
     """
-    credential = host.agent_credential()  # type: ignore[attr-defined]
+    credential = host.agent_credential()
     if credential is None:
         return None
-    if not credential.is_stale(host._now_ms()):  # type: ignore[attr-defined]
+    if not credential.is_stale(host.now_ms()):
         return credential
 
-    host.refresh_agent_credential()  # type: ignore[attr-defined]
-    return host.agent_credential() or credential  # type: ignore[attr-defined]
+    host.refresh_agent_credential()
+    return host.agent_credential() or credential
 
 
 if __name__ == "__main__":  # pragma: no cover — exercised as a subprocess

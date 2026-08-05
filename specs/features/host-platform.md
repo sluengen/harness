@@ -1,9 +1,8 @@
-<!-- guidance:template-feature@0.5.0 -->
 ---
 feature: host-platform
 status: partial
 last_updated: 2026-08-05
-tickets: [305]
+tickets: ["#305"]
 ---
 
 # Host platform abstraction
