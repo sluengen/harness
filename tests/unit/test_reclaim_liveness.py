@@ -91,7 +91,7 @@ def test_stale_sweep_spares_a_run_whose_ledger_is_fresh(tmp_path: Path) -> None:
     stub.apply_label.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     assert fetch_row(db, "R216")["status"] == "open"  # type: ignore[index]
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["skipped"] == ["216"]
 
@@ -119,7 +119,7 @@ def test_stale_sweep_spares_a_freshly_started_run_with_no_events(
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_not_awaited()
     assert fetch_row(db, "RFRESH")["status"] == "open"  # type: ignore[index]
-    assert json.loads(result.output)["skipped"] == ["217"]
+    assert json.loads(result.stdout)["skipped"] == ["217"]
 
 
 def test_stale_sweep_still_reclaims_when_the_ledger_is_also_stale(
@@ -143,7 +143,7 @@ def test_stale_sweep_still_reclaims_when_the_ledger_is_also_stale(
     stub.transition_to_unstarted.assert_awaited_once_with("218")
     assert fetch_row(db, "RDEAD")["status"] == "cancelled"  # type: ignore[index]
     assert fetch_events(db, "RDEAD", "workflow_failed")[0]["reason"] == "reclaimed"
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "218"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "218"
 
 
 def test_stale_sweep_reclaims_when_ledger_has_no_open_run_for_the_ticket(
@@ -166,7 +166,7 @@ def test_stale_sweep_reclaims_when_ledger_has_no_open_run_for_the_ticket(
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("219")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "219"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "219"
 
 
 def test_stale_sweep_reclaims_when_no_ledger_exists(tmp_path: Path) -> None:
@@ -180,7 +180,7 @@ def test_stale_sweep_reclaims_when_no_ledger_exists(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("220")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "220"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "220"
 
 
 def test_stale_sweep_ledger_liveness_respects_a_custom_threshold(
@@ -210,7 +210,7 @@ def test_stale_sweep_ledger_liveness_respects_a_custom_threshold(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["skipped"] == ["221"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["222"]
 
@@ -238,7 +238,7 @@ def test_stale_sweep_partitions_tracker_stale_tickets_by_ledger(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["scanned"] == 2
     assert payload["skipped"] == ["223"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["224"]
@@ -263,7 +263,7 @@ def test_stale_sweep_does_not_consult_the_ledger_for_a_fresh_ticket(
         stub,
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["225"]
+    assert json.loads(result.stdout)["skipped"] == ["225"]
 
 
 # ===========================================================================
@@ -310,7 +310,7 @@ def test_stale_sweep_spares_a_run_whose_worktree_is_fresh(tmp_path: Path) -> Non
     stub.apply_label.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     assert fetch_row(db, "R254")["status"] == "open"  # type: ignore[index]
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["skipped"] == ["254"]
 
@@ -331,7 +331,7 @@ def test_stale_sweep_reclaims_when_the_worktree_is_also_stale(tmp_path: Path) ->
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("301")
     assert fetch_row(db, "RWDEAD")["status"] == "cancelled"  # type: ignore[index]
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "301"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "301"
 
 
 def test_stale_sweep_reclaims_when_the_run_recorded_no_worktree_path(
@@ -354,7 +354,7 @@ def test_stale_sweep_reclaims_when_the_run_recorded_no_worktree_path(
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("302")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "302"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "302"
 
 
 def test_stale_sweep_reclaims_when_the_worktree_path_is_absent(tmp_path: Path) -> None:
@@ -436,7 +436,7 @@ def test_stale_sweep_is_not_fooled_by_an_enclosing_repository(tmp_path: Path) ->
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("305")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "305"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "305"
 
 
 def test_stale_sweep_reclaims_when_the_worktree_index_is_empty(tmp_path: Path) -> None:
@@ -588,7 +588,7 @@ def test_stale_sweep_worktree_liveness_respects_a_custom_threshold(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["scanned"] == 2
     assert payload["skipped"] == ["310"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["311"]
@@ -617,7 +617,7 @@ def test_stale_sweep_does_not_probe_a_tracker_fresh_ticket(tmp_path: Path) -> No
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["312"]
+    assert json.loads(result.stdout)["skipped"] == ["312"]
 
 
 def test_stale_sweep_does_not_probe_when_the_ledger_is_already_fresh(
@@ -640,7 +640,7 @@ def test_stale_sweep_does_not_probe_when_the_ledger_is_already_fresh(
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["313"]
+    assert json.loads(result.stdout)["skipped"] == ["313"]
 
 
 def test_stale_sweep_does_not_probe_when_there_is_no_open_run(tmp_path: Path) -> None:

@@ -210,7 +210,7 @@ def test_undo_restores_the_ticket_and_reopens_the_run(tmp_path: Path) -> None:
     assert len(undone) == 1
     assert undone[0]["ticket"] == "401"
     assert fetch_events(db, "RUNDO", "workflow_failed")[0]["reason"] == "reclaimed"
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "undone"
     assert payload["run_id"] == "RUNDO"
 
@@ -255,7 +255,7 @@ def test_undo_refuses_when_the_ticket_already_has_another_open_run(
         ["reclaim", "--undo", "RLOSER", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "ticket_has_open_run"
     assert "RWINNER" in payload["error"]
     stub.transition_to_in_progress.assert_not_awaited()
@@ -274,7 +274,7 @@ def test_undo_refuses_a_deliberately_cancelled_run(tmp_path: Path) -> None:
         ["reclaim", "--undo", "RCANCEL", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    assert json.loads(result.stdout)["reason"] == "not_reclaimed"
     stub.transition_to_in_progress.assert_not_awaited()
     assert fetch_row(db, "RCANCEL")["status"] == "cancelled"  # type: ignore[index]
 
@@ -291,7 +291,7 @@ def test_undo_refuses_a_cancelled_run_with_no_abandon_event(tmp_path: Path) -> N
         ["reclaim", "--undo", "RNOEVENT", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    assert json.loads(result.stdout)["reason"] == "not_reclaimed"
     stub.transition_to_in_progress.assert_not_awaited()
 
 
@@ -313,7 +313,7 @@ def test_undo_refuses_an_open_run_that_was_never_reclaimed(tmp_path: Path) -> No
         ["reclaim", "--undo", "RLIVE", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    assert json.loads(result.stdout)["reason"] == "not_reclaimed"
     stub.transition_to_in_progress.assert_not_awaited()
 
 
@@ -332,7 +332,7 @@ def test_undo_is_an_idempotent_noop_on_an_already_undone_run(tmp_path: Path) -> 
         ["reclaim", "--undo", "RTWICE", "--json", "--db", str(db)], stub
     )
     assert second.exit_code == 0, second.output
-    assert json.loads(second.output)["outcome"] == "already_undone"
+    assert json.loads(second.stdout)["outcome"] == "already_undone"
     stub.transition_to_in_progress.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     assert len(fetch_events(db, "RTWICE", "reclaim_undone")) == 1
@@ -360,7 +360,7 @@ def test_undo_works_again_on_a_run_reclaimed_after_a_prior_undo(
         ["reclaim", "--undo", "RAGAIN", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["outcome"] == "undone"
+    assert json.loads(result.stdout)["outcome"] == "undone"
     assert fetch_row(db, "RAGAIN")["status"] == "open"  # type: ignore[index]
     assert len(fetch_events(db, "RAGAIN", "reclaim_undone")) == 2
 
@@ -378,7 +378,7 @@ def test_undo_by_ticket_with_no_local_run_restores_the_tracker_only(
     assert result.exit_code == 0, result.output
     stub.transition_to_in_progress.assert_awaited_once_with("409")
     stub.remove_label.assert_awaited_once_with("409", "reclaimed")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "unreverted"
     assert payload["run_id"] is None
 
@@ -396,7 +396,7 @@ def test_undo_by_ticket_targets_the_most_recent_reclaimed_run(tmp_path: Path) ->
         _make_undo_stub(),
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["run_id"] == "RNEW"
+    assert json.loads(result.stdout)["run_id"] == "RNEW"
     assert fetch_row(db, "RNEW")["status"] == "open"  # type: ignore[index]
     assert fetch_row(db, "ROLD")["status"] == "cancelled"  # type: ignore[index]
 
@@ -418,7 +418,7 @@ def test_undo_tracker_failure_leaves_the_run_cancelled(tmp_path: Path) -> None:
         ["reclaim", "--undo", "RTFAIL", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "tracker_error"
+    assert json.loads(result.stdout)["reason"] == "tracker_error"
     assert fetch_row(db, "RTFAIL")["status"] == "cancelled"  # type: ignore[index]
     assert fetch_events(db, "RTFAIL", "reclaim_undone") == []
 
@@ -447,7 +447,7 @@ def test_undo_refuses_an_unknown_run_id(tmp_path: Path) -> None:
         ["reclaim", "--undo", "RNOPE", "--json", "--db", str(db)], _make_undo_stub()
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "unknown_run"
+    assert json.loads(result.stdout)["reason"] == "unknown_run"
 
 
 def test_undo_refuses_combination_with_stale(tmp_path: Path) -> None:
@@ -457,7 +457,7 @@ def test_undo_refuses_combination_with_stale(tmp_path: Path) -> None:
         ["reclaim", "--undo", "--stale", "--json", "--db", str(db)], _make_undo_stub()
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "ambiguous_mode"
+    assert json.loads(result.stdout)["reason"] == "ambiguous_mode"
 
 
 def test_undo_requires_exactly_one_selector(tmp_path: Path) -> None:
@@ -467,14 +467,14 @@ def test_undo_requires_exactly_one_selector(tmp_path: Path) -> None:
         ["reclaim", "--undo", "--json", "--db", str(db)], _make_undo_stub()
     )
     assert neither.exit_code == 2, neither.output
-    assert json.loads(neither.output)["reason"] == "ambiguous_selector"
+    assert json.loads(neither.stdout)["reason"] == "ambiguous_selector"
 
     both = _invoke_undo(
         ["reclaim", "--undo", "R1", "--ticket", "413", "--json", "--db", str(db)],
         _make_undo_stub(),
     )
     assert both.exit_code == 2, both.output
-    assert json.loads(both.output)["reason"] == "ambiguous_selector"
+    assert json.loads(both.stdout)["reason"] == "ambiguous_selector"
 
 
 def test_a_sweep_after_an_undo_spares_the_restored_ticket(tmp_path: Path) -> None:
@@ -501,7 +501,7 @@ def test_a_sweep_after_an_undo_spares_the_restored_ticket(tmp_path: Path) -> Non
     )
     assert result.exit_code == 0, result.output
     sweep_stub.transition_to_unstarted.assert_not_awaited()
-    assert json.loads(result.output)["skipped"] == ["414"]
+    assert json.loads(result.stdout)["skipped"] == ["414"]
     assert fetch_row(db, "RLOOP")["status"] == "open"  # type: ignore[index]
 
 
@@ -520,7 +520,7 @@ def test_undo_refuses_a_run_id_when_there_is_no_ledger_at_all(tmp_path: Path) ->
         ["reclaim", "--undo", "RGHOST", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "unknown_run"
+    assert json.loads(result.stdout)["reason"] == "unknown_run"
     stub.transition_to_in_progress.assert_not_awaited()
 
 
@@ -545,7 +545,7 @@ def test_undo_refuses_a_run_cancelled_after_a_prior_undo(tmp_path: Path) -> None
         ["reclaim", "--undo", "RTHENCANCEL", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    assert json.loads(result.stdout)["reason"] == "not_reclaimed"
     stub.transition_to_in_progress.assert_not_awaited()
     assert fetch_row(db, "RTHENCANCEL")["status"] == "cancelled"  # type: ignore[index]
 
@@ -575,7 +575,7 @@ def test_undo_refuses_when_a_competing_run_appears_after_the_precheck(
             _make_undo_stub(),
         )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "ticket_has_open_run"
+    assert json.loads(result.stdout)["reason"] == "ticket_has_open_run"
     assert fetch_row(db, "RRACE")["status"] == "cancelled"  # type: ignore[index]
     assert fetch_events(db, "RRACE", "reclaim_undone") == []
 
@@ -603,7 +603,7 @@ def test_undo_does_not_reopen_a_run_that_became_terminal_after_the_precheck(
             _make_undo_stub(),
         )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "ticket_has_open_run"
+    assert json.loads(result.stdout)["reason"] == "ticket_has_open_run"
     assert fetch_row(db, "RCLOSED")["status"] == "closed"  # type: ignore[index]
     assert fetch_events(db, "RCLOSED", "reclaim_undone") == []
 
@@ -633,7 +633,7 @@ def test_undo_by_ticket_refuses_when_the_newest_cancellation_was_deliberate(
         ["reclaim", "--undo", "--ticket", "418", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_reclaimed"
+    assert json.loads(result.stdout)["reason"] == "not_reclaimed"
     stub.transition_to_in_progress.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
     assert fetch_row(db, "RTICKETCANCEL")["status"] == "cancelled"  # type: ignore[index]

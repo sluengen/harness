@@ -217,10 +217,12 @@ async def _resolve_by_ticket(conn: aiosqlite.Connection, ticket: str) -> _Target
     return await _resolve_by_run_id(conn, str(row[0]))
 
 
-async def _restore_ticket(ticket: str, run_id: str | None) -> None:
+async def _restore_ticket(
+    ticket: str, run_id: str | None, *, repo_root: Path
+) -> None:
     """Ticket → In Progress, drop the ``reclaimed`` label, post the correction."""
     try:
-        client = tracker_client(Path.cwd())
+        client = tracker_client(repo_root)
     except TrackerConfigError as exc:
         raise _UndoError(str(exc), 2, reason="tracker_config") from exc
 
@@ -304,6 +306,7 @@ async def run_undo(
     run_id_arg: str | None,
     ticket_arg: str | None,
     *,
+    repo_root: Path,
     tracker: bool = True,
 ) -> ReclaimUndoOutput:
     """Reverse the resolved reclaim; raise :class:`_UndoError` on refusal/error.
@@ -355,7 +358,7 @@ async def run_undo(
 
     # --- 1. Restore the ticket FIRST (see the module docstring).
     if tracker:
-        await _restore_ticket(target.ticket, target.run_id)
+        await _restore_ticket(target.ticket, target.run_id, repo_root=repo_root)
 
     # --- 2. Re-open the run row SECOND, when there is one to re-open.
     if target.run_id is None:
