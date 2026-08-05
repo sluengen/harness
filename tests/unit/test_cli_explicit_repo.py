@@ -49,6 +49,7 @@ import typer.main
 from typer.testing import CliRunner
 
 from harness.cli._repo import IMPLICIT_REPO_WARNING_PREFIX
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo, tracked_py_sources
 
 cli_runner = CliRunner()
@@ -207,6 +208,10 @@ def test_the_cwd_default_derivation_sees_a_novel_flag_name() -> None:
 # AC-2 / AC-3 — the behaviour, through the real CLI
 # ---------------------------------------------------------------------------
 
+#: The promotion the ``repo`` fixture seeds, so the promotion subcommands below
+#: execute their real bodies instead of exiting at the not-found branch.
+_SEEDED_PROMOTION = "seeded-p1"
+
 #: One runnable invocation per repo-acting leaf, minus ``--repo``/``--db``.
 #: Every entry refuses deterministically against an empty ledger, before any
 #: tracker or network call — the assertion is about the repo argument and
@@ -230,10 +235,10 @@ _MINIMAL_ARGV: dict[str, list[str]] = {
     "worktrees list": ["worktrees", "list"],
     "worktrees cleanup": ["worktrees", "cleanup"],
     "promote start": ["promote", "start"],
-    "promote continue": ["promote", "continue", "--promotion-id", "p1"],
-    "promote status": ["promote", "status", "--promotion-id", "p1"],
-    "promote pr": ["promote", "pr", "--promotion-id", "p1"],
-    "promote escalate": ["promote", "escalate", "--promotion-id", "p1"],
+    "promote continue": ["promote", "continue", "--promotion-id", _SEEDED_PROMOTION],
+    "promote status": ["promote", "status", "--promotion-id", _SEEDED_PROMOTION],
+    "promote pr": ["promote", "pr", "--promotion-id", _SEEDED_PROMOTION],
+    "promote escalate": ["promote", "escalate", "--promotion-id", _SEEDED_PROMOTION],
 }
 
 
@@ -244,10 +249,52 @@ def test_every_repo_acting_leaf_has_a_behavioural_case() -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A repo whose *default* ledger already holds the promotion ``_MINIMAL_ARGV``
+    names, so the promotion subcommands run their real bodies.
+
+    Seeding is load-bearing, not setup convenience. With an empty ledger,
+    ``promote pr`` and ``promote escalate`` exit at ``_read_or_not_found``'s
+    not-found branch — *before* the code that resolves the repo a second time.
+    A double deprecation warning shipped behind exactly that: the AC-2 cases
+    passed while the invocation they were meant to cover never reached the line
+    that broke the invariant. The ledger goes at the default path, with no
+    ``--db`` in the argv, because the resolution under test is the default one.
+    """
     root = tmp_path / "repo"
     init_repo(root)
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
+
+    from harness.state import promotions
+
+    run_sync(
+        promotions.insert_promotion(
+            promotions.Promotion(
+                promotion_id=_SEEDED_PROMOTION,
+                repo=str(root),
+                from_branch="dev",
+                to_branch="staging",
+                status="needs_ticket",
+                created_at="2026-08-05T00:00:00+00:00",
+                updated_at="2026-08-05T00:00:00+00:00",
+                promotion_branch="promote/2026-08-05-dev-to-staging",
+            ),
+            db_path=root / ".harness" / "harness.db",
+        )
+    )
     return root
+
+
+def test_the_seeded_promotion_is_actually_reachable(repo: Path) -> None:
+    """Floor for the fixture above: prove the promotion subcommands get *past*
+    the not-found branch.
+
+    Without this, a fixture that silently stopped seeding — a renamed id, a
+    moved default ledger path — would return the AC-2 cases to the state that
+    hid the double-warning bug, and every one of them would still pass.
+    """
+    result = _invoke_from(repo, _MINIMAL_ARGV["promote status"])
+
+    assert '"error": "not_found"' not in result.stdout, result.stdout
 
 
 def _invoke_from(cwd: Path, argv: list[str]) -> click.testing.Result:

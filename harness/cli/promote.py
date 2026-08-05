@@ -155,17 +155,24 @@ _STUB_EXIT = 2
 
 
 def _read_or_not_found(
-    command: str, promotion_id: str, repo: Path | None, db: Path | None
+    command: str, promotion_id: str, repo_root: Path, db: Path | None
 ) -> promotions.Promotion:
     """Read a promotion by id from the ledger, or exit 2 with a ``not_found`` marker.
 
     The shared read prologue for the ledger-backed subcommands (``status`` /
-    ``pr``): resolve ``--repo``/``--db`` the way the verbs do, read the promotion,
-    and — when there is no such promotion — emit a structured ``not_found`` an
-    orchestrator can tell apart from a real error, exiting with the stub/refusal
-    code. Returns the promotion on success.
+    ``pr`` / ``escalate``): read the promotion, and — when there is no such
+    promotion — emit a structured ``not_found`` an orchestrator can tell apart
+    from a real error, exiting with the stub/refusal code. Returns the promotion
+    on success.
+
+    Takes an **already-resolved** ``repo_root`` rather than the raw ``--repo``
+    (#306). Resolving here would put the repo seam inside a shared helper that
+    two of its three callers *also* enter directly for their own ``repo_root``,
+    so an omitted ``--repo`` emitted the deprecation warning twice for one
+    invocation. "Exactly one warning" is a property of the call graph, and this
+    signature is what holds it: the seam belongs to the command function, which
+    hands the result down.
     """
-    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
     if promotion is None:
@@ -506,7 +513,8 @@ def status_command(
     ),
 ) -> None:
     """Report a promotion's lifecycle state by id — the typed ledger view (CAL-1114)."""
-    promotion = _read_or_not_found("status", promotion_id, repo, db)
+    repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("status", promotion_id, repo_root, db)
     typer.echo(promotion.model_dump_json())
 
 
@@ -524,7 +532,8 @@ def pr_command(
     ),
 ) -> None:
     """Open the promotion PR — gated (CAL-1114), then push + create the PR (CAL-1117)."""
-    promotion = _read_or_not_found("pr", promotion_id, repo, db)
+    repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("pr", promotion_id, repo_root, db)
 
     # AC-4: PR creation is refused unless the promotion is pr_ready with a gated
     # SHA. The refusal is CAL-1114's; only the push past it is CAL-1117's.
@@ -548,8 +557,8 @@ def pr_command(
     # pushed. If the promotion branch tip has moved past the gated SHA, the
     # evidence is stale — refuse rather than push an ungated commit. An
     # unresolvable branch (already cleaned up) is not treated as stale here; the
-    # push itself (CAL-1117) will handle a missing branch.
-    repo_root = resolve_repo_argument(repo)
+    # push itself (CAL-1117) will handle a missing branch. ``repo_root`` is the
+    # one resolved above, never a second resolve — see _read_or_not_found (#306).
     live_head = (
         mechanics.branch_head(repo_root, promotion.promotion_branch)
         if promotion.promotion_branch
@@ -731,8 +740,8 @@ def escalate_command(
     backend ``CONTEXT.md`` → ``tracker:`` names (#328). This verb never constructs
     a backend client and never catches a backend-specific error.
     """
-    promotion = _read_or_not_found("escalate", promotion_id, repo, db)
     repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("escalate", promotion_id, repo_root, db)
     db_path = resolve_verb_db_path(db, repo_root)
 
     # The scope is nullable (#174/#248): the flag overrides CONTEXT.md's
