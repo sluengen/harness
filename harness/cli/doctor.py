@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import typer
 
-from harness.cli._repo import REPO_OPTION_HELP
+from harness.cli._repo import REPO_OPTION
 
 # size: one cohesive health-check module — each `check_*` function is a small,
 # independent, injectable probe (auth, git, engines, gh, ...) plus the single
@@ -492,9 +492,7 @@ def check_wrapper(
 
 
 def doctor_command(
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),

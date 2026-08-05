@@ -115,7 +115,7 @@ from pydantic import BaseModel
 from harness import close_merge
 from harness._git import rev_parse_head, teardown_worktree
 from harness._time import elapsed_ms, iso_z
-from harness.cli._repo import REPO_OPTION_HELP, resolve_repo_argument, resolve_verb_db_path
+from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._review_gate import certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
@@ -210,11 +210,7 @@ class _CloseError(VerbError):
 
 def close_command(
     ticket: str = typer.Argument(..., help="Linear ticket identifier (e.g. CAL-572)."),
-    repo: Path | None = typer.Option(  # noqa: B008
-        None,
-        "--repo",
-        help=REPO_OPTION_HELP,
-    ),
+    repo: Path | None = REPO_OPTION,
     run_id: str | None = typer.Option(
         None,
         "--run-id",

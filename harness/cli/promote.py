@@ -104,7 +104,7 @@ from harness import repo_config
 from harness._git import teardown_worktree
 from harness._time import iso_z
 from harness.cli._repo import (
-    REPO_OPTION_HELP,
+    REPO_OPTION,
     resolve_repo_argument,
     resolve_verb_db_path,
 )
@@ -274,9 +274,7 @@ def _classify_gate(
 
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
 def start_command(
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     from_branch: str = typer.Option(
         "dev", "--from", help="Source branch to promote from (default: dev)."
     ),
@@ -385,9 +383,7 @@ def continue_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to resume."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     gate_exit: int | None = typer.Option(
         None,
         "--gate-exit",
@@ -501,9 +497,7 @@ def status_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to read."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
     ),
@@ -521,9 +515,7 @@ def pr_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to open a PR for."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
     ),
@@ -717,9 +709,7 @@ def escalate_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to escalate."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     project: str | None = typer.Option(
         None,
         "--project",

@@ -99,21 +99,30 @@ can fix them:
 **How to check one:** fire the task once and read stderr. A deprecation line
 means that caller is still implicit. Silence means it is done.
 
-### The wrapper — a repo-side prerequisite
+### The wrapper — a repo-side prerequisite (#351)
 
 `docker/harness-wrapper.sh` cannot forward an explicit `--repo` yet. It mounts
 `$(pwd)` at `/workspace` and pins `HARNESS_WORKSPACE_ROOTS=/workspace`, so a
-*host* path handed to `--repo` resolves outside the container's allowlist and is
-refused. Until the wrapper translates the argument — resolve the host path,
-mount it at `/workspace`, rewrite the argv element, and take `.env` from the
-same path — every invocation through `~/bin/harness` (which is all of them, in
-this repo's own loop) must stay implicit and will keep warning. That is why the
-in-repo callers in `commands/harness.md` are deliberately **not** updated to
-pass `--repo`: documenting an invocation the primary entry point rejects would
-be worse than the warning.
+*host* path handed to the flag resolves outside the container's allowlist and is
+refused. Until the wrapper **translates** the argument — resolve the host path,
+mount it at `/workspace`, rewrite the argv element, and take `.env` from the same
+path — every invocation through `~/bin/harness` (which is all of them in this
+repo's own loop) must stay implicit and will keep warning.
 
-Order of operations: wrapper translation → in-repo callers → the two operator
-triggers above → remove the implicit form.
+That work is [#351](https://github.com/sluengen/harness/issues/351), split out of
+#306 on a measurement rather than a preference: the bash costs ~32 executable
+lines and takes the wrapper from 158 to 190 against the 165-line ratchet in
+`tests/unit/test_wrapper_delegates.py`, whose rule is *lower this bound, never
+raise it*. It lands either after the wrapper's baseline is reduced, or on the
+persistent runtime host (#307), which replaces the `docker run` construction
+outright.
+
+This is also why the in-repo callers in `commands/harness.md` are deliberately
+**not** updated to pass `--repo`: documenting an invocation the primary entry
+point rejects would be worse than the warning.
+
+Order of operations: #351 → the in-repo callers → the two operator triggers
+above → remove the implicit form.
 
 ---
 

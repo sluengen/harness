@@ -97,7 +97,7 @@ from harness.cli._abandon import CANCELLABLE_STATUSES, AbandonError
 from harness.cli._abandon import abandon_run_in_ledger as _abandon_in_ledger
 from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
-from harness.cli._repo import REPO_OPTION_HELP, repo_arg_or_cwd
+from harness.cli._repo import REPO_OPTION, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.reclaim_closable import closable_run
 from harness.cli.reclaim_liveness import locally_live, open_run_liveness
@@ -597,9 +597,7 @@ def reclaim_command(
         "--ticket",
         help="Linear ticket identifier (e.g. CAL-735) — reclaim the open run for it.",
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),

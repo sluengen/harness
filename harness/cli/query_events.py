@@ -34,7 +34,7 @@ from harness.cli._query_common import (
     _resolve_run_id,
     _safe_json_loads,
 )
-from harness.cli._repo import REPO_OPTION_HELP
+from harness.cli._repo import REPO_OPTION
 
 # A run is "in progress" while its status sits in this set, so ``logs --follow``
 # keeps tailing; any other status is terminal and the loop exits on the next
@@ -128,9 +128,7 @@ def events_command(
     run_id: str | None = typer.Argument(
         None, help="Run identifier (ULID). May also be given as --run-id."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -177,9 +175,7 @@ def logs_command(
     run_id: str | None = typer.Argument(
         None, help="Run identifier (ULID). May also be given as --run-id."
     ),
-    repo: Path | None = typer.Option(
-        None, "--repo", help=REPO_OPTION_HELP
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),

@@ -56,11 +56,23 @@ IMPLICIT_REPO_DEPRECATION = (
     "--repo <path> explicitly (ADR 0012)."
 )
 
-#: Help text shared by every command's ``--repo`` declaration.
+#: Help text shared by every command's ``--repo`` declaration. Exported
+#: separately from :data:`REPO_OPTION` for the one command that cannot reuse the
+#: shared instance: ``worktrees`` declares a second option name on the same
+#: parameter (``--repo-root``, retained so existing callers are undisturbed), so
+#: it builds its own ``typer.Option`` and takes only the text.
 REPO_OPTION_HELP = (
     "Repo root to act on. Defaults to the current working directory, which is "
     "deprecated and will be removed (ADR 0012)."
 )
+
+#: The one ``--repo`` declaration. Every command references this instance rather
+#: than repeating the call, so the flag's name, default and help exist once and
+#: cannot drift command to command — and retiring the implicit form later is a
+#: change here, not an audit of twenty signatures. A ``typer.OptionInfo`` is
+#: inert metadata read at registration, so sharing one instance across commands
+#: is safe.
+REPO_OPTION = typer.Option(None, "--repo", help=REPO_OPTION_HELP)
 
 
 def repo_arg_or_cwd(repo: Path | None) -> Path:

@@ -68,7 +68,7 @@ from harness._git import (
     run_git,
     teardown_worktree,
 )
-from harness.cli._repo import REPO_OPTION_HELP, resolve_repo_argument, resolve_verb_db_path
+from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._runs import attendance_inputs_json, resolve_attended
 from harness.cli._verb import VerbError, run_verb
 from harness.identity import generate_run_id
@@ -161,11 +161,7 @@ def start_command(
         "(the default) is bounded by the wall clock; do not pass this from an "
         "unattended routine (ADR 0011).",
     ),
-    repo: Path | None = typer.Option(  # noqa: B008
-        None,
-        "--repo",
-        help=REPO_OPTION_HELP,
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(  # noqa: B008
         None,
         "--db",
