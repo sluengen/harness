@@ -38,11 +38,21 @@ def test_feature_spec_guard_tokens_were_absent_before_this_change() -> None:
     )
 
 
-def test_spec_authoring_patch_version_matches_registry() -> None:
+def test_spec_authoring_version_agrees_with_the_registry() -> None:
+    """The skill's stamp and its registry entry move together.
+
+    This pinned both to the literal ``0.10.1`` until #321 — the version #285
+    happened to land at. That literal was not the invariant: a *correct* later
+    edit to the skill, which must bump both, failed this test, and the only way
+    to pass was to retype the new version here, re-arming the trap for the next
+    edit. What is durable is the **agreement**: a stamp that drifts from the
+    registry entry is how a consuming repo pulls a file whose version says it
+    already has it.
+    """
     header = re.search(r"guidance:spec-authoring@([\d.]+)", SKILL.read_text())
     entry = re.search(
         r"skills/spec-authoring/SKILL\.md:\s*\{[^}]*version:\s*([\d.]+)",
         REGISTRY.read_text(),
     )
     assert header and entry
-    assert header.group(1) == entry.group(1) == "0.10.1"
+    assert header.group(1) == entry.group(1)

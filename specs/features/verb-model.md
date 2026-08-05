@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-05
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315"]
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321"]
 ---
 
 # Verb model — start / design / review / close
@@ -46,7 +46,7 @@ The verb records the design in three places: the ticket, as a marked comment; th
 
 This replaced the `SUBMIT: <json>` line design had inherited from `review`. That contract fits `review` — a fixed shape under 100 characters — and does not fit a 14–17 KB Markdown document, which it forced onto one physical line with every newline escaped and no structural landmark anywhere in it. Measured on this repo's ledger before the change, `design` lost **12.5% of attempts** to the wire format against `review`'s **0.24%**; one run lost 12m44s of Opus and a complete design because a single closing brace never arrived. `review`'s contract is deliberately untouched.
 
-A **stdout fallback** — the design between two nonce-marked lines — is the second channel, and it is a detector as much as a fallback: no test can spawn a real `claude`, so a permission-config regression would otherwise take the stage from working to producing nothing, invisibly. With it, that degrades to a design on the wrong channel, recorded as `channel="stdout"` and warned about on stderr. The fallback also tolerates a **missing closing marker**, so an engine that finishes its design and drops the final line still delivers it — the salvage the JSON contract could not offer. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty, and the `build:<tier>` / `review:<tier>` labels do not gate it (ADR 0005's semantics are untouched).
+A **stdout fallback** — the design between two nonce-marked lines — is the second channel, and it is a detector as much as a fallback: no test can spawn a real `claude`, so a permission-config regression would otherwise take the stage from working to producing nothing, invisibly. With it, that degrades to a design on the wrong channel, recorded as `channel="stdout"` and warned about on stderr. The fallback also tolerates a **missing closing marker**, so an engine that finishes its design and drops the final line still delivers it — the salvage the JSON contract could not offer. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty. Nothing on the ticket gates it; ADR 0005's per-ticket labels, which never gated it either, were retired by #321.
 
 - GIVEN an open run
 - WHEN the agent runs `harness design --run-id <id>`
@@ -63,7 +63,11 @@ A **stdout fallback** — the design between two nonce-marked lines — is the s
 
 **The in-container review engine is Claude; `--engine codex` is host-only** (ADR [0002](../decisions/0002-in-container-review-engine.md), CAL-925). Codex's read-only sandbox wraps each command in `bwrap`, which cannot create a user namespace in the unprivileged `harness:dev` container (`CLONE_NEWUSER` blocked, CAL-866), so a real `--engine codex` review degrades there. Rather than loosen the container's privileges — it reviews untrusted diffs — the decision keeps the container's engine Claude and treats `--engine codex` as a host-only cross-model option, where `bwrap` and `~/.codex` auth are available. So inside `~/bin/harness` and the `/harness run` verb loop, review runs on Claude. ADR [0013](../decisions/0013-codex-engines-in-container.md) amends that reason: the gate is the seccomp profile alone — `CAP_SYS_ADMIN` is neither sufficient nor required — and it chooses a targeted profile instead. The host-only status here stands until that profile ships.
 
-**The claude engine's model is resolved per-ticket from a `review:<tier>` label** (ADR [0005](../decisions/0005-per-ticket-model-tiering.md), #177). Before invoking the engine, the verb calls `tracker_client().fetch_issue(ticket)` and resolves the ticket's `review` dimension via the pure `resolve_model_tier(labels, dimension)` (`harness/cli/review_protocol.py`): a `review:opus` label resolves `opus`, an absent or unrecognized label defaults `sonnet`. The resolved alias is appended to the claude command as `--model <alias>` (`_build_cmd`); the codex command is unaffected regardless of the ticket's labels — the tier is a claude-only control signal. An explicit `harness review --model <alias>` overrides the resolved tier outright, for host/testing use. A sibling `build:<tier>` label carries the same shape but drives no verb — it is a recorded judgement only, since the orchestrating session is the builder and has no deterministic per-ticket model seam.
+**The claude engine's model is one configured value, the same for every ticket** (#321). It is `CONTEXT.md`'s `loop.review_model` (default `sonnet`, `harness/loop_budget.py`), read off the `LoopBudget` the verb has already loaded for its spend breakers — so resolving it costs no file read and no network call. The alias is appended to the claude command as `--model <alias>` (`_build_cmd`); the codex command is unaffected, since codex ignores `--model`. An explicit `harness review --model <alias>` overrides the configured value outright, for host/testing use.
+
+The value is a **plain string**, not a two-value enum: a third alias is a one-line `CONTEXT.md` edit rather than a code change, and an unrecognized alias reaches the claude CLI and fails there instead of being silently coerced to the default — a review that quietly ran a different model from the one configured is the failure this shape refuses to hide. The loader admits only a bare token (`[A-Za-z0-9._-]+`), so a value carrying whitespace or a shell metacharacter falls back to the default rather than reaching an argv.
+
+This replaced ADR [0005](../decisions/0005-per-ticket-model-tiering.md)'s per-ticket `review:<tier>` / `build:<tier>` labels, which #321 retired: the review dimension was a real control signal that was never once set, and reading it cost a tracker `fetch_issue` round-trip and five degradation branches on every review. A label of that shape still sitting on an issue is inert — nothing reads it.
 
 #### Scenario: a review pass
 
@@ -247,6 +251,14 @@ Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb
 - The orchestration *between* verbs is deliberately not reproducible: it varies with the agent, which buys full context retention and graceful degradation to manual driving on a verb failure (decision D1). Reproducibility applies to the verbs, not the end-to-end run.
 - A run can be abandoned without merging via `harness cancel` (close-without-merge); see [cli-surface.md](cli-surface.md).
 - A run whose orchestrator died mid-flight is recovered via `harness reclaim` — it reverts the stranded Linear ticket to Todo (so dependents unblock) and reuses `cancel`'s ledger transaction to clear the `open` row, while preserving the worktree/branch. See [run-ledger.md](run-ledger.md) and the accepted proposal [`stale-run-reclamation`](../proposals/stale-run-reclamation.md). Tracker-less (`tracker: none`) only the local half runs, and the time-keyed `--stale` sweep has no tracker state to read — so recovering a dead run there is a manual `reclaim <run-id>`, not an automatic sweep.
+
+### What #321 deliberately did not do
+
+Three departures from that change's own design, recorded here rather than argued in a commit body:
+
+- **`skills/spec-authoring/SKILL.md`'s tiering paragraph was not deleted whole**, as the design specified. That paragraph was also the only place in the skill naming `harness design` as the owner of the design stage, which `test_spec_authoring_notes_the_design_stage` requires (#213 AC-3) — deleting it whole made that guard fail. What replaced it carries the design-stage half and drops the tier instruction, which is what the design was actually after.
+- **Two guards belonging to other tickets were edited**, which the design did not anticipate. `test_spec_authoring_notes_the_design_stage` asserted the skill still carried the `build` / `review` tier semantics "which this change does not touch" — #321 does touch them, so an assertion pinning them now pins a false claim and was removed with its reasoning left in place. `test_spec_authoring_as_built_sets.py` pinned the skill's version to the literal `0.10.1`; that literal fails on any correct later bump and its only fix is to retype the new number, so it was reduced to the durable half (the stamp agrees with the registry entry).
+- **The `build:opus` / `review:opus` GitHub labels are deleted as an ops step after the merge, not by this change.** Nothing reads them once the code lands, so they are inert either way; deleting them *before* the merge would silently move #314 and #318 off the tier they still resolve. No test can assert a label's absence from a remote tracker, so the code path is what is guarded (AC-1).
 
 ## Decisions
 

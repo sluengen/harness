@@ -140,12 +140,15 @@ If **Option B**: two changes —
   proven identical".
 - **A model confound sits underneath, unrecorded.** `design` events record
   `model: opus`; `review` events record **no model at all** (the payload has no
-  `model` key), and per-ticket model tiering (#177) means review may not run a
-  fixed tier. So the comparison is between two verbs whose models may differ, and
-  the ledger cannot say how. If review has been running a cheaper tier and later
-  moves to opus, its distribution could shift and this measurement would need
-  re-running. That is an argument for recording review's model, not for splitting
-  the timeout.
+  `model` key), and per-ticket model tiering (#177) meant review may not have run
+  a fixed model. So the comparison is between two verbs whose models may differ,
+  and the ledger cannot say how. If review has been running a cheaper model and
+  later moves to opus, its distribution could shift and this measurement would
+  need re-running. That is an argument for recording review's model, not for
+  splitting the timeout. *(Both halves of this confound have since closed: #293
+  records `model` on the review event, and #321 retired the per-ticket mechanism
+  for one configured value — so a re-run of this measurement would now be able to
+  say which model each side ran. The recommendation it supports is unchanged.)*
 - **The censored point.** Design's one `engine_timeout` at 721s is a right-censored
   observation: the true duration is unknown and unbounded. Design's tail is
   therefore slightly understated relative to review's. It is one event, and it

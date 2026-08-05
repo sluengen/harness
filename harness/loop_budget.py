@@ -53,6 +53,7 @@ __all__ = [
     "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
     "DEFAULT_MAX_REVIEW_CYCLES",
+    "DEFAULT_REVIEW_MODEL",
     "DEFAULT_UNCONDITIONAL_REVIEW_CYCLES",
     "DEFAULT_WALL_CLOCK_BUDGET_MINUTES",
     "REVIEW_CYCLE_CEILING_REASON",
@@ -124,6 +125,21 @@ DEFAULT_ENGINE_TIMEOUT_SECONDS = 720
 # review-side clock to open it.
 DEFAULT_ATTENDED_IDLE_MINUTES = 480
 
+# The alias the claude review engine runs on (#321). It replaces ADR 0005's
+# per-ticket ``review:<tier>`` label, which was a real control signal that was
+# never once set: every review in the ledger resolved to this same fallback,
+# while the mechanism cost a tracker ``fetch_issue`` round-trip and five
+# degradation branches on the review path to read a label nobody wrote.
+#
+# A **plain token string, not an enum.** A ``Literal["sonnet", "opus"]`` is the
+# same premature constraint being retired: it makes a third alias a code change,
+# and it coerces a typo to the default — hiding an operator's mistake behind a
+# review that quietly ran a different model from the one configured. An
+# unrecognized alias instead reaches the claude CLI and fails there, loudly.
+# ``sonnet`` is the value every recorded review has actually run, so this change
+# retires the mechanism without also moving the behaviour.
+DEFAULT_REVIEW_MODEL = "sonnet"
+
 # Stable, machine-readable ``reason`` tags carried on a trip — mirrors the
 # ``{"error", "reason"}`` refusal shape of ``close`` / the review infra failure
 # (CAL-866) so the orchestrator branches on the *kind* of trip without parsing
@@ -146,10 +162,15 @@ class LoopBudget(NamedTuple):
     one: it splits the budget into the window that needs no judgment and the
     window that does.
 
-    ``unconditional_review_cycles`` is **appended last** so every existing
-    positional construction — including ``load_loop_budget``'s ``OSError``
-    fallback — keeps its meaning, the same rule ``attended_idle_minutes``
-    followed when it was added (#297).
+    ``review_model`` is none of those: it is not a bound at all but the alias the
+    claude review engine is invoked with (#321). It rides here because it is
+    configured in the same ``loop:`` block and read on the same path, so the verb
+    resolves one object rather than two.
+
+    Each new field is **appended last** so every existing positional
+    construction — including ``load_loop_budget``'s ``OSError`` fallback — keeps
+    its meaning, the rule ``attended_idle_minutes`` (#297) and
+    ``unconditional_review_cycles`` (#329) each followed in turn.
     """
 
     max_review_cycles: int
@@ -157,6 +178,7 @@ class LoopBudget(NamedTuple):
     engine_timeout_seconds: int = DEFAULT_ENGINE_TIMEOUT_SECONDS
     attended_idle_minutes: int = DEFAULT_ATTENDED_IDLE_MINUTES
     unconditional_review_cycles: int = DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
+    review_model: str = DEFAULT_REVIEW_MODEL
 
 
 class BreakerTrip(NamedTuple):
@@ -176,12 +198,26 @@ class BreakerTrip(NamedTuple):
 # smallest change).  A missing or unparseable key falls back to its default.
 _KEY_PATTERN = r"^\s*{key}:\s*(\d+)\s*(?:#.*)?$"
 
+# The sibling for a token-valued key (#321). The character class is deliberately
+# narrow: the one such key is a model alias that becomes an ``--model <alias>``
+# argv element, so a value carrying whitespace, a quote or a shell metacharacter
+# does not match and the loader falls back to the default rather than forwarding
+# it to a subprocess.
+_STR_KEY_PATTERN = r"^\s*{key}:\s*([A-Za-z0-9._-]+)\s*(?:#.*)?$"
+
 
 def _read_int_key(text: str, key: str, default: int) -> int:
     match = re.search(_KEY_PATTERN.format(key=re.escape(key)), text, re.MULTILINE)
     if match is None:
         return default
     return int(match.group(1))
+
+
+def _read_str_key(text: str, key: str, default: str) -> str:
+    match = re.search(_STR_KEY_PATTERN.format(key=re.escape(key)), text, re.MULTILINE)
+    if match is None:
+        return default
+    return match.group(1)
 
 
 def load_loop_budget(repo_root: Path) -> LoopBudget:
@@ -230,6 +266,7 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
             text, "attended_idle_minutes", DEFAULT_ATTENDED_IDLE_MINUTES
         ),
         unconditional_review_cycles=min(max(1, unconditional), max_cycles),
+        review_model=_read_str_key(text, "review_model", DEFAULT_REVIEW_MODEL),
     )
 
 

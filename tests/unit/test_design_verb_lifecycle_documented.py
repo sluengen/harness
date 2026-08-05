@@ -538,12 +538,16 @@ def test_spec_authoring_notes_the_design_stage() -> None:
     )
     assert re.search(r"unconditional", text), (
         "spec-authoring must record that the design stage is unconditional — "
-        "it runs for every ticket, unlike the tier labels (#213 AC-3)."
+        "it runs for every ticket, gated by nothing on the ticket (#213 AC-3)."
     )
-    assert "`build`" in text and "`review`" in text, (
-        "spec-authoring must keep the build/review tier-label semantics, which "
-        "this change does not touch (#213 AC-3)."
-    )
+    # A third assertion stood here until #321: that spec-authoring still carried
+    # the `build` / `review` tier-label semantics, which #213 "does not touch".
+    # #321 retired those labels, so the assertion now pins a claim that is false
+    # — and a guard whose subject has been deleted is not evidence of anything.
+    # What #213 actually cares about survives above: that the design stage is
+    # named, owned by the verb, and unconditional. That it is unconditional was
+    # originally worth saying *because* it contrasted with the tier labels; it is
+    # worth saying now because nothing on a ticket gates it at all.
 
 
 # --- AC-4: the CHANGELOG entry ---------------------------------------------

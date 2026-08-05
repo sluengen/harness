@@ -242,14 +242,22 @@ def test_the_grant_follows_the_channel_it_is_given() -> None:
     assert f"Edit(/{CHANNEL.path})" not in allow
 
 
-def test_no_label_tier_resolution_is_wired() -> None:
-    """ADR 0007: a ``design:<tier>`` label is an anticipated seam, not built."""
+def test_the_design_model_is_not_resolved_from_the_ticket() -> None:
+    """The design model is a constant, not a per-ticket value (ADR 0007).
+
+    What this asserted until #321 was that ``design_protocol`` had not imported
+    ``review_protocol``'s per-ticket tier resolver. That resolver no longer
+    exists anywhere, so the ``hasattr`` half would now pass for a reason with
+    nothing to do with design — a vacuous guard, worse than none. What still has
+    content is the command builder's own signature: it takes no ticket and no
+    labels, so there is no channel by which a ticket could select the model.
+    """
     import inspect
 
     from harness.cli import design_protocol
 
-    assert not hasattr(design_protocol, "resolve_model_tier")
-    assert "labels" not in inspect.signature(design_protocol.build_design_cmd).parameters
+    parameters = inspect.signature(design_protocol.build_design_cmd).parameters
+    assert not {"labels", "ticket", "issue"} & set(parameters), parameters
 
 
 # ---------------------------------------------------------------------------
