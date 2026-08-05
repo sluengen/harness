@@ -52,3 +52,35 @@ jobs:
         # uncached image build (CAL-1110). The job-level timeout-minutes is a
         # secondary backstop and must stay above both.
         run: bash scripts/verify.sh
+
+  release-cadence:
+    # The staging → main PR *is* the release (RELEASING.md), so this is where a
+    # cadence breach blocks — and only here. Its own job, not a step in
+    # lint-and-test, because #350 is precisely that the two verdicts must be
+    # separable: as a distinct status the cadence result stays legible when the
+    # correctness job is red, and a breach never halts an unrelated change.
+    # Pinned by tests/unit/test_ci_workflow_release_cadence.py.
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The cadence check reads files, not history, so it does not need this
+          # itself. tests/unit/test_ci_workflow_full_history.py scopes its rule
+          # to the workflow *file*, deliberately conservatively, so every
+          # checkout here declares it rather than the guard growing a per-job
+          # exemption for one job that would not benefit from one.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Check release cadence
+        run: uv run python scripts/cadence.py check

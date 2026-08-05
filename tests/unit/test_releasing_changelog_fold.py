@@ -16,14 +16,16 @@ for it.
 Two mechanisms are kept verbatim from the retired version, and they are the
 reason this guard cannot go stale:
 
-* **The bound values are imported from the enforcing test and formatted here**,
-  never retyped — so re-baselining the ratchet fails this guard until the
+* **The bound values are imported from the enforcing registry and formatted
+  here**, never retyped — so re-baselining a ratchet fails this guard until the
   runbook is updated with it.
-* **The ceiling-test set is derived** by introspecting
-  :mod:`tests.unit.test_changelog_rotation` for ``test_root_changelog_*``
-  rather than listed (``code-quality`` Part C, "a guard derives its subjects; it
-  does not list them", #220) — so a ceiling added or renamed later fails here
-  until the runbook names it.
+* **The bound set is derived** from ``scripts/cadence.py``'s ``BOUNDS`` rather
+  than listed (``code-quality`` Part C, "a guard derives its subjects; it does
+  not list them", #220) — so a bound added or renamed later fails here until the
+  runbook names it. Since #350 that registry, not
+  :mod:`tests.unit.test_changelog_rotation`, is where the cadence bounds live;
+  what stays in the rotation module is the per-change window guard, whose
+  failure message this file still pins.
 
 These tests are the executable form of AC-6:
 
@@ -46,11 +48,16 @@ from __future__ import annotations
 
 import inspect
 import re
+import sys
 from pathlib import Path
 
 from tests.unit import test_changelog_rotation as rotation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+
+import cadence  # noqa: E402
+
 _RELEASING = _REPO_ROOT / "RELEASING.md"
 
 #: The fragment section's H2 heading. Both ratchet tests name it verbatim in
@@ -103,17 +110,14 @@ def _paragraph(lead: str) -> str:
     return section[start:] if end == -1 else section[start:end]
 
 
-def _ceiling_tests() -> list[str]:
-    """Every ``test_root_changelog_*`` test — the ceilings the doc must name.
+def _cadence_bounds() -> tuple[cadence.CadenceBound, ...]:
+    """Every registered cadence bound — the subjects the runbook must name.
 
-    Derived from the rotation module rather than listed here, so a ceiling
-    added later fails this guard until the runbook documents it.
+    Derived from the registry rather than listed here, so a bound added later
+    fails this guard until the runbook documents how to clear it (#350 moved the
+    bounds out of ``tests.unit.test_changelog_rotation`` into that registry).
     """
-    return sorted(
-        name
-        for name, obj in vars(rotation).items()
-        if name.startswith("test_root_changelog_") and inspect.isfunction(obj)
-    )
+    return cadence.BOUNDS
 
 
 # ---------------------------------------------------------------------------
@@ -235,55 +239,79 @@ def test_release_step_names_the_fold_invocation() -> None:
 
 
 def test_release_step_owns_the_ratchet_rebaseline() -> None:
-    """Exactly one place may move a ratchet constant, and it says so."""
+    """Exactly one place may move a cadence constant, and it says so."""
     release = _section(_RELEASE_SECTION)
-    assert "_ROOT_BYTE_BOUND" in release and "_ROOT_LINE_BOUND" in release, (
-        f"RELEASING.md '{_RELEASE_SECTION}' must name both ratchet constants. "
-        "The fold is the one step allowed to move them, so the instruction to "
-        "re-baseline belongs with it — otherwise the next release trips a gate "
-        "with no documented way through."
+    assert "scripts/cadence.py" in release, (
+        f"RELEASING.md '{_RELEASE_SECTION}' must name scripts/cadence.py, which "
+        "holds the ratchet constants since #350. The fold is the one step "
+        "allowed to move them, so the instruction to re-baseline belongs with "
+        "it — otherwise the next release trips a check with no documented way "
+        "through."
+    )
+
+
+def test_release_step_verifies_cadence_before_promoting() -> None:
+    """The fold's own work is verified before the promotion is driven.
+
+    The cadence bounds no longer fail the gate (#350), so the release step is
+    where an unfolded window must be caught. Without this, a release could be
+    driven with the window still over the bound and nothing would object.
+    """
+    release = _section(_RELEASE_SECTION)
+    assert "scripts/cadence.py check" in release, (
+        f"RELEASING.md '{_RELEASE_SECTION}' must run `scripts/cadence.py check` "
+        "after the fold and before driving the promotion. `report` never fails, "
+        "so naming it here would verify nothing."
     )
 
 
 # ---------------------------------------------------------------------------
-# The ratchet — values imported from the enforcing test, tests derived.
+# The cadence bounds — values imported from the registry, subjects derived.
 # ---------------------------------------------------------------------------
 
 
-def test_section_names_both_ratchet_bounds_with_current_values() -> None:
-    """The section carries every bound's current value, formatted from the test."""
+def test_section_names_every_cadence_bound_with_its_current_value() -> None:
+    """The section carries every bound's current value, formatted from the registry.
+
+    The subject set is derived, not listed, so a bound added to ``cadence.BOUNDS``
+    later fails this guard until the runbook tells an author how to clear it.
+    """
+    bounds = _cadence_bounds()
+    assert len(bounds) >= 3, (
+        "Derived fewer than 3 cadence bounds from scripts/cadence.py — the "
+        f"registry read {[b.name for b in bounds]}. A short or empty subject set "
+        "makes the loop below pass trivially; fix the derivation rather than the "
+        "expectation."
+    )
     section = _fold_section()
-    for label, value in (
-        ("byte ratchet", f"{rotation._ROOT_BYTE_BOUND:,} bytes"),
-        ("line ratchet", f"{rotation._ROOT_LINE_BOUND} lines"),
-    ):
+    for entry in bounds:
+        value = f"{entry.bound:,} {entry.unit}"
         assert value in section, (
-            f"RELEASING.md '{_SECTION}' does not name the {label} ({value}). The "
-            "section must state every bound tests/unit/test_changelog_rotation.py "
-            "enforces, in the unit-qualified comma form — an author whose gate "
-            "just tripped needs to know which ceiling they are against, and a "
-            "bare digit could be any figure the prose happens to quote."
+            f"RELEASING.md '{_SECTION}' does not name the {entry.name} bound "
+            f"({value}). The section must state every bound scripts/cadence.py "
+            "enforces, in the unit-qualified comma form — an author whose "
+            "release check just failed needs to know which ceiling they are "
+            "against, and a bare digit could be any figure the prose quotes."
         )
 
 
-def test_section_names_every_ceiling_test() -> None:
-    """Each ``test_root_changelog_*`` test is named in the section.
+def test_section_names_the_enforcing_script_not_the_gate() -> None:
+    """The runbook points at the release-path check, not at the gate.
 
-    The subject set is derived, not listed, so adding a third ceiling test fails
-    here until the runbook tells an author how to clear it.
+    The regression: prose that still tells an author their *gate* enforces these
+    bounds sends them to fix the wrong thing, and invites the next person to put
+    the bound back in the gate.
     """
-    names = _ceiling_tests()
-    assert len(names) >= 2, (
-        "Derived no ceiling tests from tests.unit.test_changelog_rotation — the "
-        f"introspection found {names}. An empty subject set makes the loop below "
-        "pass trivially; fix the derivation rather than the expectation."
-    )
     section = _fold_section()
-    missing = [name for name in names if name not in section]
+    assert "scripts/cadence.py" in section, (
+        f"RELEASING.md '{_SECTION}' must name scripts/cadence.py as the home of "
+        "the cadence bounds (#350)."
+    )
+    missing = [entry.name for entry in _cadence_bounds() if entry.name not in section]
     assert not missing, (
-        f"RELEASING.md '{_SECTION}' does not name these ceiling tests: {missing}. "
-        "Each bound the gate enforces must be named alongside the test that "
-        "enforces it, so a failure message leads straight to its procedure."
+        f"RELEASING.md '{_SECTION}' does not name these cadence bounds: {missing}. "
+        "Each bound must be named alongside the check that enforces it, so a "
+        "failure message leads straight to its procedure."
     )
 
 
@@ -343,28 +371,40 @@ def test_section_sets_a_per_entry_budget() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_ratchet_failure_messages_point_at_the_fragment_section() -> None:
-    """Both ratchet tests name the section that tells an author what to do.
+def test_gate_guard_failure_message_points_at_the_fragment_section() -> None:
+    """The per-change guard names the section that tells an author what to do.
 
-    Their messages used to prescribe the two-pass fold — the procedure #267
+    Its predecessors' messages prescribed the two-pass fold — the procedure #267
     retired. A gate that trips must send the author to the mechanism that
     actually exists, or it sends them to rewrite a file they should not touch.
     """
-    for test in (
-        rotation.test_root_changelog_is_byte_bounded,
-        rotation.test_root_changelog_is_line_bounded,
-    ):
-        source = inspect.getsource(test)
-        assert "Changelog fragments" in source, (
-            f"{test.__name__}'s failure message must name RELEASING.md's "
-            "'Changelog fragments' section. Folding cannot clear these bounds — "
-            "since #267 the way past them is to write a fragment instead of "
-            "editing CHANGELOG.md."
-        )
-        assert "changelog.d" in source or "_FRAGMENT_DIRNAME" in source, (
-            f"{test.__name__}'s failure message must name the fragment directory, "
-            "so the fix is a path away rather than a doc search. Either the "
-            "literal or the interpolated _FRAGMENT_DIRNAME constant satisfies "
-            "this — the constant is the better form, since it single-sources the "
-            "directory name with the enumeration that reads it."
-        )
+    source = inspect.getsource(rotation.test_unreleased_window_carries_no_new_entries)
+    assert "Changelog fragments" in source, (
+        "test_unreleased_window_carries_no_new_entries' failure message must "
+        "name RELEASING.md's 'Changelog fragments' section. Folding cannot clear "
+        "this bound — since #267 the way past it is to write a fragment instead "
+        "of editing CHANGELOG.md."
+    )
+    assert "changelog.d" in source or "_FRAGMENT_DIRNAME" in source, (
+        "its failure message must name the fragment directory, so the fix is a "
+        "path away rather than a doc search. Either the literal or the "
+        "interpolated _FRAGMENT_DIRNAME constant satisfies this — the constant "
+        "is the better form, since it single-sources the directory name with "
+        "the enumeration that reads it."
+    )
+
+
+def test_every_cadence_remedy_points_at_the_release_procedure() -> None:
+    """A cadence breach names the procedure that clears it, not just the number.
+
+    The bounds moved off the gate (#350), so their message is now the *only*
+    thing an author sees — a bare "41/40" with no remedy would leave them to
+    guess, or worse, to raise the bound.
+    """
+    remedyless = [
+        entry.name for entry in _cadence_bounds() if "RELEASING.md" not in entry.remedy
+    ]
+    assert not remedyless, (
+        f"these cadence bounds' remedies do not name RELEASING.md: {remedyless}. "
+        "A breach must lead straight to the procedure that clears it."
+    )
