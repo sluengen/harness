@@ -12,7 +12,7 @@ related: [design-verb, verb-model, run-ledger, 0007-design-verb, issue-332]
 
 ## Problem / motivation
 
-Every harness run currently invokes the design engine, and `review` accepts a failed design attempt as satisfying the design gate. The stage therefore proves invocation rather than a usable outcome. Small changes pay for an Opus call they do not need, while complex changes can proceed after the design stage produced nothing.
+Every run currently invokes the design engine, and `review` accepts a failed design attempt as satisfying the design gate. The stage therefore proves invocation rather than a usable outcome. Small changes pay for an Opus call they do not need, while complex changes can proceed after the design stage produced nothing.
 
 Issue #332 settled the intended lifecycle policy but combined the policy core, a new close-gate certification path, diff classification, every filing surface, dependent-ticket rewrites, and later measurement in one assessment ticket. An unattended build cannot choose those contracts safely or know when the programme is complete.
 
