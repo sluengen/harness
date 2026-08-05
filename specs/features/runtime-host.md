@@ -1,3 +1,10 @@
+---
+feature: runtime-host
+status: implemented
+last_updated: 2026-08-05
+tickets: ["#307"]
+---
+
 # Runtime host (live)
 
 The as-built record of `harness serve` — the persistent host-side process that
@@ -118,6 +125,31 @@ per repo rather than global because a `status` on one repo must not queue behind
 a twelve-minute `review` on another — and the test asserting different repos
 *do* overlap is the non-vacuity floor for the serialization test, which a server
 that simply never ran anything in parallel would otherwise satisfy.
+
+### The measurement, and its result
+
+ADR 0012 required parallel-writer behaviour against a bind-mounted ledger to be
+measured before concurrency is enabled. It was measured for #307 and the result
+is **negative**, which is why serialization ships rather than merely being
+proposed.
+
+Six `harness start` containers were run concurrently against one bind-mounted
+repo on macOS, bypassing the per-repo lock (going through it would report a clean
+result on every possible filesystem). Across three runs, 0–3 of 6 writers
+succeeded, and the failures were not lock contention — no writer ever reported
+`database is locked`. They were worse:
+
+- `table runs has no column named resumed_from` — two containers raced to
+  initialize the schema and one observed a **half-migrated** database;
+- `unable to open database file`;
+- exit 135 (SIGBUS), the signature of SQLite's mmap over a bind mount.
+
+So the failure mode is concurrent *schema initialization and mmap*, not row-level
+write contention, and it is silent enough that a writer can exit 0 with a run id
+whose row is not on the ledger. Enabling concurrency is therefore blocked on more
+than a lock-timeout setting. The measurement lives in the ticket rather than in
+the suite: it is a one-time result, and as a permanent test it would be slow and
+inherently flaky.
 
 ## Security boundary
 
