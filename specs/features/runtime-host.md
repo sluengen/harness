@@ -165,6 +165,16 @@ Validation order, every step before `docker` is executed: single-message size ca
 `repo` → `--repo` agreement. Secrets are resolved by the host and injected **by
 name** (`-e NAME`), so no value ever lands in an argv or in `ps` output.
 
+**One line per request is the audit trail**, written to stderr by default and
+redirectable by the host: timestamp, resolved verb, resolved repo, and the
+outcome (`exit=<n>` or `refused=<reason>`). A refusal is the security-interesting
+event, so it is logged rather than being the one thing that goes unrecorded. The
+line carries the resolved **verb** and nothing else from argv — a ticket title, a
+`--reason` body, or a token-shaped argument must not be able to land in a log an
+operator may paste elsewhere. This is the only record of who asked for what, so
+its absence would leave operator-equivalent authority unattributable after the
+fact.
+
 The allowlist applies at the socket, not to the client's local fallback: that
 path runs with the invoking operator's own authority over their own argv, exactly
 as the wrapper does today, so there is no boundary to check. The container's own

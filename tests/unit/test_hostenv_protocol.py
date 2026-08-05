@@ -208,3 +208,30 @@ def test_every_reason_has_an_exit_mapping() -> None:
     for reason in protocol.Reason:
         response = protocol.decode_response(protocol.encode_refusal(reason, "…"))
         assert protocol.exit_code_for(response) in (1, 2)
+
+
+# ---------------------------------------------------------------------------
+# A malformed *response* is a refusal too (#307 review, cycle 1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"protocol": 1, "ok": false}',                       # no reason
+        '{"protocol": 1, "ok": false, "reason": "nonesuch"}',  # unknown reason
+        '{"protocol": 1, "ok": true, "exit_code": "three"}',   # non-int exit code
+        '[]',
+    ],
+)
+def test_a_malformed_response_raises_the_catchable_error(raw: str) -> None:
+    """Every decode failure must surface as :class:`BadRequest`.
+
+    The client guards this call with ``except protocol.BadRequest``. A bare
+    ``KeyError`` or ``ValueError`` escaping here would crash the client with a
+    traceback *after* the request was already delivered — the one situation
+    where it must instead report that the verb may have run and name the ledger
+    as the record.
+    """
+    with pytest.raises(protocol.BadRequest):
+        protocol.decode_response(raw)

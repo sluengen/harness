@@ -46,6 +46,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -130,43 +131,58 @@ class _Handler(socketserver.BaseRequestHandler):
                     os.close(fd)
 
     def _dispatch(self, conn: socket.socket, payload: bytes, fds: list[int]) -> None:
+        # The verb and the repo are resolved progressively, so the log line is
+        # built from whatever is known when the outcome is reached — a request
+        # refused at the schema has no verb to name, and saying so is the honest
+        # record.
+        state: dict[str, str] = {"verb": "?", "repo": "?"}
+
+        def record(outcome: str) -> None:
+            # Deliberately NOT the argv: only the resolved verb. A ticket title,
+            # a `--reason` body, or a token-shaped argument must not be able to
+            # land in a log the operator may paste elsewhere.
+            self.server.log(
+                f"{_utc_now()} verb={state['verb']} repo={state['repo']} {outcome}"
+            )
+
         def answer(frame: str) -> None:
             with contextlib.suppress(OSError):
                 conn.sendall(frame.encode())
+
+        def refuse(reason: protocol.Reason, message: str) -> None:
+            record(f"refused={reason.value}")
+            answer(protocol.encode_refusal(reason, message))
 
         # 1. Schema. Refusing an unknown key is what makes a mount, an image, a
         #    privilege or an env inexpressible rather than merely ignored.
         try:
             request = protocol.decode_request(payload)
         except protocol.BadRequest as exc:
-            answer(protocol.encode_refusal(protocol.Reason.BAD_REQUEST, str(exc)))
+            refuse(protocol.Reason.BAD_REQUEST, str(exc))
             return
 
         # 2. The verb must be one the CLI actually registers.
+        state["repo"] = str(request.repo)
         verb = resolve_verb(request.argv, operation_surface())
         if verb is None:
-            answer(
-                protocol.encode_refusal(
-                    protocol.Reason.UNKNOWN_VERB,
-                    f"{' '.join(request.argv[:2]) or '(empty)'} is not a harness verb",
-                )
+            refuse(
+                protocol.Reason.UNKNOWN_VERB,
+                f"{' '.join(request.argv[:2]) or '(empty)'} is not a harness verb",
             )
             return
+        state["verb"] = verb
 
         # 3. The repo must be inside the allowlist, and expressible as a mount.
         try:
             repo = resolve_within_allowlist(request.repo, self.server.roots)
         except WorkspaceNotAllowed as exc:
-            answer(
-                protocol.encode_refusal(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
-            )
+            refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
             return
+        state["repo"] = str(repo)
         if ":" in str(repo):
-            answer(
-                protocol.encode_refusal(
-                    protocol.Reason.REPO_NOT_ALLOWED,
-                    f"repo path {repo} contains ':', the docker -v field separator",
-                )
+            refuse(
+                protocol.Reason.REPO_NOT_ALLOWED,
+                f"repo path {repo} contains ':', the docker -v field separator",
             )
             return
 
@@ -174,16 +190,17 @@ class _Handler(socketserver.BaseRequestHandler):
         try:
             argv = spawn.rewrite_repo_argument(request.argv, repo)
         except (spawn.RepoMismatch, spawn.UnsafeRepoPath) as exc:
-            answer(protocol.encode_refusal(protocol.Reason.REPO_MISMATCH, str(exc)))
+            refuse(protocol.Reason.REPO_MISMATCH, str(exc))
             return
 
         # Only now is docker touched. Every refusal above spawned nothing.
         try:
             exit_code = self.server.spawn(repo=repo, argv=argv, fds=fds)
         except OSError as exc:
-            answer(protocol.encode_refusal(protocol.Reason.SPAWN_FAILED, str(exc)))
+            refuse(protocol.Reason.SPAWN_FAILED, str(exc))
             return
 
+        record(f"exit={exit_code}")
         answer(protocol.encode_success(exit_code=exit_code))
 
 
@@ -229,6 +246,13 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         self._repo_locks: dict[str, threading.Lock] = {}
         self._registry_lock = threading.Lock()
 
+        #: One line per request — the socket's only audit trail. It grants
+        #: operator-equivalent authority to anyone who can connect, so a request
+        #: that left no record would be unattributable after the fact. Overridable
+        #: so a host can route it somewhere durable; the default is stderr, where
+        #: a foreground process's operator already is.
+        self.log = _log_to_stderr
+
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(self.socket_path.parent, 0o700)
         # A socket left by a killed server is a path nothing listens on; the
@@ -272,6 +296,15 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
                 check=False,
             )
         return completed.returncode
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _log_to_stderr(line: str) -> None:
+    sys.stderr.write(f"{line}\n")
+    sys.stderr.flush()
 
 
 def _forwarded_env_names() -> tuple[str, ...]:

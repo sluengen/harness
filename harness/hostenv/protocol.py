@@ -211,13 +211,21 @@ def decode_response(raw: str | bytes) -> Response:
     if not isinstance(payload, dict):
         raise BadRequest("response must be a JSON object")
 
-    if payload.get("ok"):
-        return Response(ok=True, exit_code=int(payload.get("exit_code", 0)))
-    return Response(
-        ok=False,
-        reason=Reason(payload["reason"]),
-        error=payload.get("error"),
-    )
+    # Every failure to make sense of a response must surface as BadRequest: the
+    # client guards this call with `except BadRequest`, and a bare KeyError or
+    # ValueError escaping here would crash it with a traceback *after* the
+    # request was delivered — precisely the case where it must instead report
+    # that the verb may have run and name the ledger as the record.
+    try:
+        if payload.get("ok"):
+            return Response(ok=True, exit_code=int(payload["exit_code"]))
+        return Response(
+            ok=False,
+            reason=Reason(payload["reason"]),
+            error=payload.get("error"),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BadRequest(f"malformed response frame: {exc}") from exc
 
 
 def exit_code_for(response: Response) -> int:

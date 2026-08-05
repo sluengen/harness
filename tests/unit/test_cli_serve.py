@@ -430,3 +430,64 @@ def test_serve_is_registered_on_the_cli() -> None:
     from tests._cliutil import registered_command_surface
 
     assert "serve" in registered_command_surface(app)
+
+
+# ---------------------------------------------------------------------------
+# The audit log (#307 design, Security; added after review cycle 1)
+# ---------------------------------------------------------------------------
+
+
+def test_each_request_is_logged_with_its_verb_repo_and_exit_code(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """The socket grants operator-equivalent authority and has no other audit
+    trail, so one line per request is the whole of it."""
+    records: list[str] = []
+    running_server.log = records.append  # type: ignore[method-assign]
+
+    _verb(running_server, repo, ["start", "307"])
+
+    assert len(records) == 1, f"expected one log line, got {records}"
+    line = records[0]
+    assert "start" in line
+    assert str(repo.resolve()) in line
+    assert "exit=0" in line
+
+
+def test_a_refused_request_is_logged_with_its_reason(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """A refusal is the security-interesting event, so it must not be the one
+    thing that goes unrecorded."""
+    records: list[str] = []
+    running_server.log = records.append  # type: ignore[method-assign]
+
+    _verb(running_server, repo, ["exec", "sh"])
+
+    assert len(records) == 1
+    assert "unknown_verb" in records[0]
+
+
+def test_the_log_never_carries_argv_beyond_the_verb(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """A ticket title, a `--reason` body or a token-shaped argument must not be
+    able to land in a log file the operator may paste elsewhere.
+
+    The verb itself is logged; nothing after it is. Asserted with a sentinel that
+    could only arrive via argv.
+    """
+    records: list[str] = []
+    running_server.log = records.append  # type: ignore[method-assign]
+
+    _verb(
+        running_server,
+        repo,
+        ["defer", "307", "--reason", "SECRETSENTINEL-do-not-log"],
+    )
+
+    assert records, "nothing was logged, so the ban below is vacuous"
+    assert "defer" in records[0], "the verb itself must be logged"
+    assert "SECRETSENTINEL" not in records[0], (
+        f"an argv value reached the audit log: {records[0]!r}"
+    )
