@@ -63,7 +63,9 @@ Since #328 the backend is resolved **only** through
 :func:`~harness.tracker.tracker_client`, like every other writing verb: this module
 constructs no backend client and catches no backend-specific error, so escalation
 works on whichever backend ``CONTEXT.md`` → ``tracker:`` selects instead of on
-Linear alone. That contract is guarded by ``test_promote_no_direct_tracker_client``.
+Linear alone. That contract is guarded by
+``test_promote_reaches_the_tracker_through_the_seam``, the named pin beside the
+tree-wide backend-neutrality scan every ``harness/cli/`` module now faces (#339).
 
 The five subcommands are the real orchestrator **pause points**:
 

@@ -17,11 +17,17 @@ of only on Linear. These exercise that contract against real CLI stdout, with th
 The backend-parametrized cases are the point of #328: the same command, the same
 assertions, under a Linear-shaped and a GitHub-shaped identifier. A regression to a
 direct ``LinearClient`` shows up as the GitHub cases failing.
+
+The **structural** half of that contract moved to
+``tests/unit/test_cli_module_boundaries.py`` in #339, where the same rule is
+enforced over every module under ``harness/cli/`` rather than over this one file.
+Two detectors of one rule drift, and the weaker one goes green while the stronger
+is degraded; the named ``promote`` pin lives there now, beside the tree-wide scan.
+What stays here is behaviour.
 """
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import inspect
 import json
@@ -471,87 +477,6 @@ def test_an_unset_scope_is_not_a_refusal(
     result = _invoke(tmp_path, monkeypatch, db, extra=[])  # no flags, no CONTEXT.md
     assert result.exit_code == 0, result.output
     assert calls["create"][0]["project"] is None
-
-
-#: The backend client modules a tracker-neutral verb may not reach into. The seam
-#: (``harness.tracker``) and the shared error vocabulary (``harness.tracker_errors``)
-#: are deliberately absent — those are what the verb is *supposed* to import.
-_BACKEND_MODULES = ("harness.linear", "harness.github")
-
-
-def _backend_imports(source: str) -> list[str]:
-    """Backend-client imports in ``source``, read from the AST.
-
-    AST rather than text, for the reason ``test_import_layering.py`` gives: a grep
-    fires on the legitimate docstring cross-references a module makes to backends
-    it describes but does not import — and this module's docstring names both.
-    """
-    found: list[str] = []
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.ImportFrom):
-            if node.module in _BACKEND_MODULES:
-                found.extend(f"{node.module}.{alias.name}" for alias in node.names)
-        elif isinstance(node, ast.Import):
-            found.extend(
-                alias.name for alias in node.names if alias.name in _BACKEND_MODULES
-            )
-    return found
-
-
-def test_promote_no_direct_tracker_client() -> None:
-    """``promote.py`` names no backend — the architecture contract #328 restores.
-
-    Backend selection has one source of truth (``CONTEXT.md`` → ``tracker:``, read
-    by the factory). A direct ``LinearClient`` here is what made the escalation
-    terminal unreachable on the backend this repo actually dogfoods, so the
-    regression is worth a structural pin rather than only behavioural cases.
-    """
-    source = (
-        Path(__file__).resolve().parents[2] / "harness" / "cli" / "promote.py"
-    ).read_text(encoding="utf-8")
-    assert _backend_imports(source) == [], (
-        "harness/cli/promote.py must reach its tracker through "
-        "harness.tracker.tracker_client, never a backend client directly (#328); "
-        f"found: {_backend_imports(source)}"
-    )
-
-
-@pytest.mark.parametrize(
-    ("source", "expected"),
-    [
-        pytest.param(
-            "from harness.linear import LinearClient\n",
-            ["harness.linear.LinearClient"],
-            id="from-linear",
-        ),
-        pytest.param(
-            "from harness.github import GitHubClient\n",
-            ["harness.github.GitHubClient"],
-            id="from-github",
-        ),
-        pytest.param("import harness.linear\n", ["harness.linear"], id="import-linear"),
-        pytest.param(
-            "from harness.tracker import tracker_client\n", [], id="seam-is-allowed"
-        ),
-        pytest.param(
-            '"""Mentions harness.linear.LinearClient in prose only."""\n',
-            [],
-            id="docstring-mention-is-not-an-import",
-        ),
-    ],
-)
-def test_the_backend_import_detector_discriminates(
-    source: str, expected: list[str]
-) -> None:
-    """Control for the guard above, exercising **the same** ``_backend_imports``.
-
-    A control carrying its own inline copy of the predicate proves nothing — it
-    goes on passing while the real detector is degraded to a no-op. Routing both
-    through one function is what makes this a control rather than a second guard.
-    The last two cases are the negative controls: the seam import the verb *must*
-    make, and the prose mention that is why this reads the AST and not the text.
-    """
-    assert _backend_imports(source) == expected
 
 
 @pytest.mark.parametrize("method", ["create_issue", "post_comment"])
