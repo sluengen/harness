@@ -146,6 +146,21 @@ DEFAULT_REVIEW_MODEL = "sonnet"
 # the human message.
 REVIEW_CYCLE_CEILING_REASON = "review_cycle_ceiling"
 WALL_CLOCK_BUDGET_REASON = "wall_clock_budget"
+REPEAT_ENGINE_TIMEOUT_REASON = "repeat_engine_timeout"
+
+# How many engine attempts one unchanged tree is worth (#347). The second
+# identical outcome against a byte-identical tree *is* the evidence: run
+# 01KZ67FRV3HZRZ8CMAHBYBP4QT spent four ~725s attempts at one SHA for four
+# identical answers — ~44% of the unattended wall-clock budget — and finished
+# only because the tree then changed.
+#
+# Deliberately NOT a CONTEXT.md ``loop:`` key or a :class:`LoopBudget` field.
+# Every number there is a tuning dial with an observed distribution behind it;
+# this is a logical bound, and there is no repo for which buying a fifth
+# identical answer is the right call. It is a defaulted parameter of
+# :func:`evaluate_repeat_timeout`, so a key can be threaded in later without
+# moving the call site.
+ENGINE_TIMEOUT_ATTEMPT_LIMIT = 2
 
 
 class LoopBudget(NamedTuple):
@@ -330,6 +345,47 @@ def evaluate_breakers(
             )
 
     return None
+
+
+def evaluate_repeat_timeout(
+    *,
+    timeouts_at_sha: int,
+    reviewed_sha: str,
+    budget: LoopBudget,
+    limit: int = ENGINE_TIMEOUT_ATTEMPT_LIMIT,
+) -> BreakerTrip | None:
+    """Decide whether an engine that already hung at *this tree* gets another go.
+
+    The third breaker, and the only one keyed on the tree rather than on the run:
+    ``timeouts_at_sha`` is how many ``engine_timeout`` refusals the ledger already
+    records at ``reviewed_sha``, so the attempt about to run is number
+    ``timeouts_at_sha + 1``. ``None`` = proceed.
+
+    It trips at ``limit`` because repetition against a byte-identical tree is not
+    evidence-gathering — the answer is already known, and each re-buy costs
+    another ``engine_timeout_seconds`` of the run's wall clock. A *changed* tree
+    resets it to zero by construction (a different SHA is a different count), so
+    the retry that actually has a chance of a new answer is never refused.
+
+    Counting is per-SHA and fail-open: a caller that cannot read the ledger
+    passes zero and the engine runs. This breaker protects **budget, not
+    integrity** — a false refusal costs a ticket, so it must never fire on
+    absent evidence.
+    """
+    if timeouts_at_sha < limit:
+        return None
+    return BreakerTrip(
+        REPEAT_ENGINE_TIMEOUT_REASON,
+        f"repeated review-engine timeout at an unchanged tree: {timeouts_at_sha} "
+        f"attempt(s) against {reviewed_sha[:12]} were each killed at the "
+        f"{budget.engine_timeout_seconds}s ceiling, so this attempt is refused "
+        f"before any engine runs — a further retry re-buys a known answer for "
+        f"another ~{budget.engine_timeout_seconds}s of the run's wall-clock "
+        f"budget. Checkpoint the WIP and put the ticket on operator hold; a new "
+        f"commit (a different HEAD) gets a fresh full attempt. Raising "
+        f"engine_timeout_seconds is not the remedy here — it would spend more "
+        f"per dead attempt, not fewer.",
+    )
 
 
 def convergence_check_required(

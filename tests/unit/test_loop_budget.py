@@ -35,12 +35,15 @@ from harness.loop_budget import (
     DEFAULT_REVIEW_MODEL,
     DEFAULT_UNCONDITIONAL_REVIEW_CYCLES,
     DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
+    ENGINE_TIMEOUT_ATTEMPT_LIMIT,
+    REPEAT_ENGINE_TIMEOUT_REASON,
     REVIEW_CYCLE_CEILING_REASON,
     WALL_CLOCK_BUDGET_REASON,
     LoopBudget,
     convergence_check_required,
     cycles_exhausted,
     evaluate_breakers,
+    evaluate_repeat_timeout,
     load_loop_budget,
 )
 
@@ -641,3 +644,84 @@ def test_a_zero_budget_clamps_to_one_runnable_cycle(tmp_path: Path) -> None:
         )
         is None
     ), "the first review must still run under a clamped budget"
+
+
+# ---------------------------------------------------------------------------
+# evaluate_repeat_timeout — the third breaker, keyed on the tree (#347)
+#
+# Run 01KZ67FRV3HZRZ8CMAHBYBP4QT recorded four consecutive ``engine_timeout``
+# refusals at one SHA, ~725s each: ~44% of the unattended wall-clock budget spent
+# re-buying an identical answer. The decision is pure here for the same reason
+# the other two are — the numeric bound stays measurable in a unit test.
+# ---------------------------------------------------------------------------
+
+_SHA = "1dff096187a00450711e5b9abb983036417f80af"
+
+
+@pytest.mark.parametrize("timeouts", [0, 1])
+def test_a_tree_under_the_limit_still_gets_its_attempt(timeouts: int) -> None:
+    """One hang is worth a re-run; the bound is two attempts spent, then stop."""
+    assert (
+        evaluate_repeat_timeout(
+            timeouts_at_sha=timeouts, reviewed_sha=_SHA, budget=_budget()
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("timeouts", [2, 3, 4])
+def test_a_tree_at_or_past_the_limit_trips(timeouts: int) -> None:
+    """At the limit and beyond — so a run that refused once refuses again.
+
+    Idempotence matters because the refusal itself is recorded: a decision that
+    only fired at *exactly* the limit would let an over-count (a hand-edited
+    ledger, a retried write) reopen the retry loop.
+    """
+    trip = evaluate_repeat_timeout(
+        timeouts_at_sha=timeouts, reviewed_sha=_SHA, budget=_budget()
+    )
+    assert trip is not None
+    assert trip.reason == REPEAT_ENGINE_TIMEOUT_REASON
+
+
+def test_the_trip_message_names_the_tree_and_the_ceiling_it_burned() -> None:
+    """The message must let a reader act without opening the ledger."""
+    budget = _budget()
+    trip = evaluate_repeat_timeout(
+        timeouts_at_sha=ENGINE_TIMEOUT_ATTEMPT_LIMIT, reviewed_sha=_SHA, budget=budget
+    )
+    assert trip is not None
+    assert _SHA[:12] in trip.message
+    assert str(budget.engine_timeout_seconds) in trip.message
+
+
+def test_raising_the_ceiling_is_named_as_the_wrong_remedy() -> None:
+    """AC-4's claim, on the breaker's own message.
+
+    The ``engine_timeout`` detail this replaces told the reader to raise
+    ``engine_timeout_seconds`` — the one change that makes a hang *worse*, since
+    it spends more per dead attempt and brings the wall-clock breaker forward.
+    A message that stops the loop while still pointing at that lever would hand
+    the next reader the same wrong move.
+    """
+    trip = evaluate_repeat_timeout(
+        timeouts_at_sha=ENGINE_TIMEOUT_ATTEMPT_LIMIT, reviewed_sha=_SHA, budget=_budget()
+    )
+    assert trip is not None
+    assert "engine_timeout_seconds is not the remedy here" in trip.message
+
+
+def test_the_limit_is_a_parameter_so_a_repo_key_can_arrive_later() -> None:
+    """The bound is defaulted, not baked into the comparison."""
+    assert (
+        evaluate_repeat_timeout(
+            timeouts_at_sha=1, reviewed_sha=_SHA, budget=_budget(), limit=1
+        )
+        is not None
+    )
+    assert (
+        evaluate_repeat_timeout(
+            timeouts_at_sha=2, reviewed_sha=_SHA, budget=_budget(), limit=3
+        )
+        is None
+    )

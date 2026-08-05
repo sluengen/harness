@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-05
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321"]
+last_updated: 2026-08-06
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#347"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -94,7 +94,7 @@ There is **no separate `verify` command** in v1, by design. Gate execution runs 
 | 1 | Unexpected error (git failure, DB error, tracker error); `close`'s two ticket-transition failure reasons (`ticket_transition_failed`, `ticket_transition_unconfirmed`) also land here — the merge already landed, so each carries `reason` + `merged: true` rather than the exit-2 gate-refusal shape (#233). `close`'s **merge/push** failures land here too, carrying the `reason` `close_merge` computed (`merge_conflict`, `push_rejected`, `git_status_failed`, `fetch_failed`, `network_timeout`, `merge_failed`, `worktree_create_failed`) and **no** `merged` key — the merge did not land (#300). The two exit-1 vocabularies are disjoint, so which side of the merge a failure sits on is readable from the tag alone; an error `close_merge` did not classify stays untagged. Both vocabularies are **unchanged** by #301's bounded retry: a transient failure is re-attempted inside the verb and only the exhausted result is reported, so exit 1 means retrying has already been tried |
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
-| 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget`) |
+| 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget` / `repeat_engine_timeout`). The third is the only one keyed on the **tree** rather than the run (#347): the engine already hung twice at this exact HEAD, so a further attempt re-buys a known answer at `engine_timeout_seconds` each. It therefore does *not* take the other two's cancel-and-resume recovery — that opens a fresh budget window and walks straight back into the same hang; a **new commit** is what earns a fresh full attempt |
 | 5 | `review`: the verify gate cannot certify the tree — red evidence (`gate_failed`) or none supplied (`no_gate_evidence`); no engine ran, no verdict was recorded |
 | 130 | SIGINT (user cancelled) |
 

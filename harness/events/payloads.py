@@ -260,13 +260,26 @@ class ReviewRefusalEventData(BaseModel):
     ``review`` and discriminates on ``outcome``, exactly as ``design`` does on
     ``status``. What differs from ``design`` is the *shape* of the split:
     ``design``'s two shapes fit one model because only two optional fields vary,
-    whereas the fields a refusal cannot have — ``reviewed_sha``, ``verdict``,
-    ``issues``, ``engine``, ``gate_ran`` — are precisely the ones the close gate
-    and the inherit resolver read. Loosening those to ``str | None`` on
+    whereas the fields a refusal cannot have — ``verdict``, ``issues``,
+    ``engine``, ``gate_ran`` — are precisely the ones the close gate and the
+    inherit resolver read. Loosening those to ``str | None`` on
     :class:`ReviewEventData` to accommodate a shape that never carries them would
     re-open the CAL-1012 hazard the typed contract exists to close: nothing would
     then catch a *success* written without the SHA the gate binds to. So the
     required fields stay required, and the refusal shape lives here.
+
+    ``reviewed_sha`` is the **one** of those fields a refusal can carry, and
+    since #347 does: optional here, still required on :class:`ReviewEventData`,
+    so the hazard above is untouched. It is present iff the refusal was raised at
+    or after ``review``'s HEAD capture — the engine timeout, the sandbox wall,
+    the two SUBMIT-protocol failures — and absent on every pre-HEAD refusal (both
+    spend breakers, ``no_design``, ``no_gate_evidence``, ``gate_failed``), whose
+    recorded bytes are unchanged because ``exclude_none=True`` drops the key. It
+    exists so a *repeated* engine timeout is answerable from the ledger: without
+    a SHA on the row, "has this engine already hung at this exact tree?" cannot be
+    asked, and the loop re-buys an identical ~720s answer indefinitely. Carrying
+    it does not widen the close gate, which keys on ``$.verdict`` — a key this
+    shape still omits.
 
     Carrying **no ``verdict`` key** is what keeps the close gate exactly as wide
     as it was: :func:`~harness.cli._review_gate.certify_head` filters
@@ -293,6 +306,7 @@ class ReviewRefusalEventData(BaseModel):
     created_at: str
     invoked_at: str | None = None
     duration_ms: int | None = None
+    reviewed_sha: str | None = None
 
 
 class CheckpointEventData(BaseModel):
@@ -623,6 +637,23 @@ if REVIEW_OUTCOME_PATH != _REVIEW_REFUSAL_OUTCOME_PATH:  # pragma: no cover - im
     raise ValueError(
         "the review success and refusal payloads must discriminate on the same "
         f"field: {REVIEW_OUTCOME_PATH} != {_REVIEW_REFUSAL_OUTCOME_PATH}"
+    )
+
+#: The ``reason`` tag on the refusal shape (#347). :class:`ReviewEventData` has
+#: no ``reason`` field at all, so a query matching this path already excludes
+#: every verdict row without needing an ``outcome`` predicate — the same reason
+#: :data:`CLOSE_REASON_PATH` is derived from the failure shape alone.
+REVIEW_REFUSAL_REASON_PATH = _field_path(ReviewRefusalEventData, "reason")
+
+#: ``reviewed_sha`` is written by both review shapes (#347), so — like the
+#: ``outcome`` discriminator above — the path is derived from one and
+#: cross-asserted against the other. A drift here would make the repeated-timeout
+#: guard silently count zero and re-open the retry loop it exists to close.
+_REVIEW_REFUSAL_REVIEWED_SHA_PATH = _field_path(ReviewRefusalEventData, "reviewed_sha")
+if REVIEW_REVIEWED_SHA_PATH != _REVIEW_REFUSAL_REVIEWED_SHA_PATH:  # pragma: no cover - import guard
+    raise ValueError(
+        "the review success and refusal payloads must name the reviewed SHA with "
+        f"the same field: {REVIEW_REVIEWED_SHA_PATH} != {_REVIEW_REFUSAL_REVIEWED_SHA_PATH}"
     )
 
 #: The ``outcome`` discriminator (#263) on the ``close`` payloads, derived and
