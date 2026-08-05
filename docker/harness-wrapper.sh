@@ -201,8 +201,11 @@ print(int(datetime.datetime.fromisoformat(s).timestamp()))
 
 # Only guard the default tag. An explicit HARNESS_IMAGE is the caller's to
 # manage: rebuilding a deliberately-pinned tag off this tree would clobber it.
+# Resolved unconditionally: the host-environment helper below needs it to locate
+# the harness package even when an explicit HARNESS_IMAGE skips the guard.
+_source_root=$(_wrapper_source_root)
+
 if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
-  _source_root=$(_wrapper_source_root)
   # Advance the checkout BEFORE measuring it, so the comparison below reads the
   # ref the loop actually ships to (#286). `|| true` is load-bearing under
   # `set -euo pipefail`: no sync outcome may abort the wrapper.
@@ -237,40 +240,6 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   fi
 fi
 
-# Pull LINEAR_API_KEY from the shell or a local .env file. The trailing `|| true`
-# is load-bearing under `set -euo pipefail` (issue #171): when .env exists but has
-# no matching line, `grep` exits 1 and the pipeline would abort the whole wrapper
-# — so a repo whose .env omits this key (e.g. a github-only repo) could not run any
-# verb. Guarded, a no-match yields an empty value and the container's own error (if
-# the credential is genuinely required) reports it cleanly instead.
-if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
-  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
-  export LINEAR_API_KEY
-fi
-
-# Pull GITHUB_TOKEN (the GitHub tracker backend's credential, CAL-1105) the same
-# way — shell first, else a local .env — so a `tracker: github` repo authenticates
-# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY. The
-# `|| true` is essential here (issue #171): removing the static token from .env
-# (the intended #170 state) leaves .env with no GITHUB_TOKEN line, so an unguarded
-# grep would abort the wrapper before the `gh auth token` fallback below runs.
-if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
-  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
-  export GITHUB_TOKEN
-fi
-
-# Fresh-token fallback (issue #170). A `gh` OAuth token rotates (~8h) and `gh`
-# auto-refreshes it from the keyring, so a *static* GITHUB_TOKEN (a `.env` snapshot
-# or a stale exported value) goes stale — which silently breaks the UNATTENDED
-# Build loop, where no human is present to refresh it. When the token is still
-# unset and `gh` is logged in on the host, fetch a fresh one each invocation, the
-# same way the Claude OAuth token is pulled from the Keychain above. Precedence is
-# env → .env → gh, so a consuming repo's long-lived PAT in `.env` still wins.
-if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
-  GITHUB_TOKEN=$(gh auth token 2>/dev/null || true)
-  export GITHUB_TOKEN
-fi
-
 # Workspace allowlist (CAL-584): the verbs reject any --repo outside
 # HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
 # mounts CWD as /workspace, so /workspace is the only valid root *inside the
@@ -278,33 +247,54 @@ fi
 # HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
 # container and would reject the mounted repo, breaking cross-repo runs. Pin it.
 
-# Pull the Claude OAuth token from the macOS Keychain (containers can't read the
-# Keychain directly). The stored access token is short-lived (a few hours), so
-# passing it verbatim long after `claude /login` makes every in-container `claude`
-# call 401 — which surfaces as a false `review` failure (CAL-941). So read the
-# token AND its expiry, and if the token is missing or within 5 min of expiring,
-# trigger the Claude CLI's own refresh host-side (`claude -p ok` makes the CLI
-# exchange the stored refreshToken and write a fresh token back to the Keychain),
-# then re-read. Both are forwarded (CLAUDE_CODE_OAUTH_EXPIRES_AT too) so
-# `harness doctor` can flag a stale token instead of failing silently in review.
-if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  _read_claude_token() {
-    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-      | python3 -c "import sys,json;d=json.load(sys.stdin)['claudeAiOauth'];t=d.get('accessToken') or '';print(t, int(d.get('expiresAt') or 0)) if t else None" 2>/dev/null
-  }
-  read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
-  _now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
-  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || "${CLAUDE_CODE_OAUTH_EXPIRES_AT:-0}" -le "$((_now_ms + 300000))" ]]; then
-    if command -v claude >/dev/null 2>&1; then
-      # macOS ships no `timeout`; use it (or coreutils `gtimeout`) when present.
-      if command -v timeout >/dev/null 2>&1; then _t=(timeout 60)
-      elif command -v gtimeout >/dev/null 2>&1; then _t=(gtimeout 60)
-      else _t=(); fi
-      ${_t[@]+"${_t[@]}"} claude -p ok >/dev/null 2>&1 || true
-      read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
-    fi
+# Host environment resolution (#305, ADR 0012). Credential resolution, the
+# subprocess-timeout probe and git-identity resolution used to live here as
+# macOS-shaped bash — unreachable from the native `uv tool install` entry point,
+# and unable to express Windows-via-WSL at all. They now live in the tested,
+# stdlib-only `harness.hostenv` package; this block is the delegating shim.
+#
+# What stays in shell, deliberately: the image-freshness guard and the
+# source-checkout sync above. Their whole job includes detecting "this wrapper has
+# no checkout behind it" (the detached-copy deployment, CAL-1153) — which is
+# exactly the state in which checkout-resident Python cannot be imported. A guard
+# that cannot fire in the deployment it was written for is not a guard.
+#
+# Interpreter ladder: an explicit override, then the checkout's own venv, then a
+# bare `python3` pointed at the checkout. The venv step is load-bearing rather
+# than defensive — macOS system `python3` is frequently 3.9, below what the
+# package needs.
+_HOST_PY=()
+if [[ -n "${HARNESS_HOST_PYTHON:-}" ]]; then
+  _HOST_PY=("$HARNESS_HOST_PYTHON")
+elif [[ -n "${_source_root:-}" && -x "${_source_root:-}/.venv/bin/python" ]]; then
+  _HOST_PY=("$_source_root/.venv/bin/python")
+elif command -v python3 >/dev/null 2>&1; then
+  _HOST_PY=(python3)
+fi
+
+if [[ ${#_HOST_PY[@]} -gt 0 ]]; then
+  # A temp file, not process substitution: the helper's exit code is load-bearing
+  # (an unsupported host must stop the wrapper before a blank credential reaches
+  # the container and surfaces much later as a 401).
+  _env_out=$(mktemp)
+  _env_rc=0
+  PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
+    "${_HOST_PY[@]}" -m harness.hostenv env --workdir "$(pwd)" >"$_env_out" || _env_rc=$?
+  if [[ "$_env_rc" -eq 2 || "$_env_rc" -eq 3 ]]; then
+    rm -f "$_env_out"
+    exit "$_env_rc"
   fi
-  export CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT
+  if [[ "$_env_rc" -eq 0 ]]; then
+    # `export "$_kv"` rather than `eval`: a credential containing `;` or `$(...)`
+    # must never be re-parsed by the shell. Records are NUL-terminated because a
+    # token may legitimately contain a newline.
+    while IFS= read -r -d '' _kv; do export "${_kv?}"; done <"$_env_out"
+  else
+    echo "harness: host environment helper exited $_env_rc — continuing with the environment already set." >&2
+  fi
+  rm -f "$_env_out"
+else
+  echo "harness: no usable host Python found, so credentials and git identity were not resolved here — continuing with the environment already set. Set HARNESS_HOST_PYTHON to an interpreter with the harness package importable." >&2
 fi
 
 # Forward the host ssh-agent for `git push` over SSH (the close verb).
@@ -372,9 +362,9 @@ exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
   -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
-  -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
-  -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
-  -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
-  -e "GIT_COMMITTER_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
+  -e "GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Harness}" \
+  -e "GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-harness@local}" \
+  -e "GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME:-Harness}" \
+  -e "GIT_COMMITTER_EMAIL=${GIT_COMMITTER_EMAIL:-harness@local}" \
   "$IMAGE" \
   "$@"
