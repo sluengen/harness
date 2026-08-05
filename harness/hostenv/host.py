@@ -49,6 +49,9 @@ LINUX_CREDENTIALS_RELPATH = Path(".claude/.credentials.json")
 #: Env var an operator sets to point the file-store provider at the real path.
 CREDENTIALS_FILE_ENV = "HARNESS_CLAUDE_CREDENTIALS_FILE"
 
+#: Bound on the Claude CLI's own refresh, carried over from the wrapper's ``timeout 60``.
+REFRESH_TIMEOUT_SECONDS = 60
+
 #: Markers that identify WSL. ``sys.platform`` cannot: WSL reports ``linux``.
 _WSL_MARKERS = re.compile(r"microsoft|wsl", re.IGNORECASE)
 _WSL_ENV_MARKER = "WSL_DISTRO_NAME"
@@ -134,7 +137,7 @@ class HostPlatform(ABC):
             self.diagnostics.append(f"{argv[0]}: could not be run ({error.strerror or error})")
             return subprocess.CompletedProcess(argv, returncode=127, stdout="", stderr=str(error))
 
-    def refresh_agent_credential(self) -> None:
+    def refresh_agent_credential(self, timeout_seconds: int | None = None) -> None:
         """Trigger the Claude CLI's own token refresh, best-effort.
 
         ``claude -p ok`` makes the CLI exchange its stored refresh token and write a
@@ -143,8 +146,13 @@ class HostPlatform(ABC):
         exactly as the wrapper's ``|| true`` did: a refresh that cannot run leaves
         the stale-but-present token in play, and the container's own 401 reports it.
         Turning this into a hard failure would break a working deployment offline.
+
+        ``timeout_seconds`` overrides the bound. It exists so a test can prove the
+        hung-refresh path without spending the production bound on every gate run;
+        production always takes the default.
         """
-        self.bounded_run(["claude", "-p", "ok"], seconds=60)
+        bound = REFRESH_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        self.bounded_run(["claude", "-p", "ok"], seconds=bound)
 
     def tracker_credentials(self, workdir: Path) -> TrackerCredentials:
         """Resolve the tracker credentials, precedence env → ``.env`` → ``gh``.
