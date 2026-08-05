@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-08-04
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295"]
+last_updated: 2026-08-05
+tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#321"]
 ---
 
 # Run ledger — the SQLite audit trail
