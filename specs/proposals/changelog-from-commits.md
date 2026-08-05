@@ -91,20 +91,13 @@ re-baselined *down* (160 → 11 lines, 46,500 → 965 bytes).
 range the fragment era exactly. **84 non-merge commits** (`docs` 26, `fix` 19, `test` 13,
 `feat` 12, `spec` 8, `chore` 4, `refactor` 2).
 
-### The two forms
-
-The folded section is **not inlined here**: at 76,021 bytes it is 10× this proposal. It is
-referenced at its committed location above. The derived form is 2,159 bytes and fits
-below in full. **That asymmetry is a finding, not an editorial convenience** — a changelog
-a reader will not scroll is one they will not read.
-
 ### Verdict against the pre-stated rubric
 
 | # | Question | Result | Winner |
 |---|---|---|---|
 | 1 | **Coverage** — does each of the 39 fragments have an attributable commit? | **38/39.** The one miss, `267`, is a known false negative: its commit `921a888` established the `(#nnn)` convention and so predates it. | **Tie** |
 | 2 | **Signal-to-noise** — editing needed to reach a releasable set | 84 commits → 31 derived entries → 39 curated. Derived needs ~53 drops; curated needs none. | Fold (does not clear the bar alone) |
-| 3 | **Audience** — user-facing or implementer language? | Both implementer language, as this proposal already concedes. | **Tie** |
+| 3 | **Audience** — user-facing or implementer language? | Both implementer language, as this proposal already concedes. Five matched pairs below are the evidence. | **Tie** |
 | 4 | **Uniquely-present information** | **4 of 39** fragments (10%) carry reasoning absent from a commit body ≥400 B; only **2** (`283`, `285`) are sole carriers. 73/84 commits carry bodies, median **1,365 B**. | Fold, but narrowly |
 
 **Two corrections made while measuring, both recorded because they change the numbers.**
@@ -132,9 +125,103 @@ commit subject nor the issue can hold that, because the issue predates the rever
 assembler cannot fix this, but the release editor can be told to look for it — a
 one-line addition to #323's runbook, not a reason to keep 1,800 lines of machinery.
 
-### The derived form in full (84 commits → 31 entries)
+### Five matched pairs, shown both ways
 
-#### Added
+Chosen to span the range rather than to flatter either form — the fold's best case first,
+its worst last. These are the evidence for rubric question 3 (audience); read them before
+accepting the "Tie".
+
+**#305** — **The fold's best case.** The commit body is empty and the issue proposes the *opposite* of what shipped, so the carve-out rationale exists nowhere else.
+
+*Fragment (1427 B):*
+
+> ### Changed — host-platform abstraction and credential port out of the wrapper (#305)
+>
+> Credential resolution, subprocess bounding and git-identity resolution move out of `docker/harness-wrapper.sh` into `harness/hostenv/`, a stdlib-only package behind a `HostPlatform` seam with macOS (Keychain) and Linux/WSL (file store) providers. The wrapper becomes a delegating shim: one `python3 -m harness.hostenv env` call whose NUL-terminated records it imports with `export`, never `eval`. The logic is now …
+
+*Derived, from 5 commit subject(s):*
+
+> - fix(specs): frontmatter must start at byte zero (#305)
+> - docs(hostenv): as-built record and changelog fragment (#305)
+> - feat(wrapper): delegate credential and identity resolution to harness.hostenv (#305)
+> - test(hostenv): behavioural cover for staleness, refresh and tracker precedence (#305)
+> - feat(hostenv): host-platform seam with macOS and Linux/WSL credential providers (#305)
+
+---
+
+**#283** — **A sole carrier.** Every commit for this ticket has an empty body.
+
+*Fragment (186 B):*
+
+> ### Changed — Require reviewers to refresh an edited as-built record's currency stamp (#283)
+>
+> The review guidance now treats a stale `last_updated` frontmatter value as a Medium finding.
+
+*Derived, from 1 commit subject(s):*
+
+> - docs(review): require refreshed as-built record stamps (#283)
+
+---
+
+**#300** — **The typical case.** The commit body already carries the reasoning; the fragment restates it.
+
+*Fragment (1460 B):*
+
+> ### Fixed — `close` reports the merge/push failure reason it already computed (#300)
+>
+> `harness close` classified its own step-6 failures precisely — `close_merge` raises seven distinct reasons — and then discarded every one of them, so a merge conflict (needs work on the run branch) and a lost push race (a plain retry) both surfaced as a bare exit 1 with no `reason` key. An orchestrating agent had to parse the human message or guess. The reason is now propagated rather than translated: `close_merge` …
+
+*Derived, from 3 commit subject(s):*
+
+> - docs(close): correct _CloseError's account of which raise sites tag a reason (#300)
+> - test(close): make the reason derivation prove it reads source (#300)
+> - fix(close): propagate the merge/push failure reason close_merge computed (#300)
+
+---
+
+**#350** — **Derived wins on brevity.** One subject says what the entry says.
+
+*Fragment (715 B):*
+
+> ### Fixed — release-cadence bounds no longer halt the build queue (#350)
+>
+> The `changelog.d/` count bound and `CHANGELOG.md`'s size ratchets moved from the pytest stage of `scripts/verify.sh` to `scripts/cadence.py`, which the release path enforces (`check`) and the gate only reports (`report`, always exit 0). A breach describes accumulated repo state that no single change caused or can fix; inside the gate it made `verify.sh` red on `origin/dev` independent of any diff, so `review` …
+
+*Derived, from 1 commit subject(s):*
+
+> - fix(gate): move release-cadence bounds out of the correctness gate (#350)
+
+---
+
+**#327** — **A multi-commit ticket.** Three subjects collapse to one curated entry.
+
+*Fragment (2635 B):*
+
+> ### Changed — the universal lifecycle is tracker-neutral, dispatching on `tracker:` (#327)
+>
+> `CONTEXT.md`'s top-level `tracker:` is now the only guidance-level tracker switch. The process doc, `spec-driven-development`, `spec-authoring`, `review-discipline`, `/start`, `/build`, `/ship`, `/propose`, `/assess` and the change/proposal/feature templates no longer require Linear: each routes tracker operations through the new **`tracker`** skill, which reads `tracker:` and dispatches to a provider recipe. A …
+
+*Derived, from 1 commit subject(s):*
+
+> - feat(guidance): the universal lifecycle is tracker-neutral (#327)
+
+---
+Question 3 reads **Tie** on these five: both forms are implementer language. The fragment
+is more complete; neither is written for a non-contributor. That is what this proposal
+already concedes, and these pairs are the check on that concession rather than a restatement
+of it.
+
+### The derived form — all 84 subjects
+
+Listed in full, kept **and** dropped, because the coverage and signal-to-noise claims above
+are only auditable if a reader can see what a derivation would discard. The folded section
+is not inlined: at 76,021 bytes it is 10× this proposal, and it is committed in
+[`CHANGELOG-archive/2026.md`](../../CHANGELOG-archive/2026.md). **That asymmetry — 5.7 KB of
+subjects against 76 KB of entries — is itself a finding**, not an editorial convenience.
+
+**Kept — the 31 entries a type-filtered derivation emits.**
+
+*Added*
 
 - delegate credential and identity resolution to harness.hostenv (#305)
 - host-platform seam with macOS and Linux/WSL credential providers (#305)
@@ -149,7 +236,7 @@ one-line addition to #323's runbook, not a reason to keep 1,800 lines of machine
 - record a bounded excerpt of an unparseable SUBMIT payload (#277)
 - per-change changelog.d/ fragments remove the conflict class
 
-#### Fixed
+*Fixed*
 
 - frontmatter must start at byte zero (#305)
 - move release-cadence bounds out of the correctness gate (#350)
@@ -171,13 +258,77 @@ one-line addition to #323's runbook, not a reason to keep 1,800 lines of machine
 - a watchlist note may not contradict the file it describes (#272)
 - classify a no-SUBMIT-line reviewer as infra, not a fail verdict (#270)
 
-#### Dropped by the type filter (53 commits)
+**Dropped by the type filter — the other 53, listed individually (not counted), because a reader auditing coverage needs to see what a derivation would discard.**
 
-- `chore` — 4
-- `docs` — 26
-- `refactor` — 2
-- `spec` — 8
-- `test` — 13
+*`chore:` — 4*
+
+- arm the architecture watchlist on reclaim.py (#281)
+- gitignore the design run artifact, guard both
+- code assessment 2026-08-01 (pm) — one finding, two insights; retention fold
+- code assessment 2026-08-01 — one finding, one insight; retention fold
+
+*`docs:` — 26*
+
+- as-built record and changelog fragment (#305)
+- guard code-owned prose sets (#285)
+- require refreshed as-built record stamps (#283)
+- watchlist repeated seam extractions (#284)
+- correct _CloseError's account of which raise sites tag a reason (#300)
+- record #328 on the as-built spec's ticket list
+- decision storage is repo-configurable, embedded-first (#330)
+- single-home the review stop policy in review-discipline (#329)
+- record the attended-run spend scope where it is read (#299)
+- deep repo health assessment
+- surface commands as Codex skills
+- generate local Codex surface
+- record the persistent-runtime-host carve-out and its bound in §16 (#304)
+- derive Codex-native artifacts
+- cover the Windows junction workaround and the header-less set (#302)
+- derive the read-only claim instead of listing where it was made (#294)
+- stop calling the design engine read-only, and guard the claim (#294)
+- the one-ceiling rationale cites the measurement, not a refuted premise (#292)
+- record the review event's model field (#293)
+- 2026-08-01 code assessment (evening) — four findings, three insights
+- a seam extraction must also say where the extracted module's tests went
+- the guard's own docstring must not go stale about its scope (#275)
+- a seam extraction must refresh the watchlist entry it invalidates
+- record the design departure behind the AC-2 guard (#272)
+- re-home §15 / §17 / §18 to specs/retired/spec-engine.md (#271)
+- record rebase-stable-certification and retire item 3 unbuilt (#268)
+
+*`refactor:` — 2*
+
+- the async runner has one home, guarded against copy 27 (#279)
+- record the SUBMIT excerpt as typed evidence, not prose (#277)
+
+*`spec:` — 8*
+
+- derive the changelog from commits and delete the fragment system — ADR 0014
+- link the codex-engine breakdown to its filed tickets (#314–#320)
+- codex as an in-container engine for design and review — proposal accepted, ADR 0013
+- record the changelog exemption for the ADR 0012 spec commit
+- a persistent runtime host for the verbs — proposal accepted, ADR 0012
+- scope the wall clock to unattended runs — proposal + ADR 0011
+- reject the per-engine timeout split — the ledger refutes its premise
+- land the stranded ADR 0009 / 0010 decision records
+
+*`test:` — 13*
+
+- behavioural cover for staleness, refresh and tracker precedence (#305)
+- make the reason derivation prove it reads source (#300)
+- guard the exhaustion recipe and the inherit path's flags (#329)
+- cover the refused-fast-forward and docker-only-delta branches
+- split the real-git source-sync tests into their own module
+- move the closable arm out; refresh the size record (#274)
+- move the liveness arms to tests/unit/test_reclaim_liveness.py (#274)
+- move the --undo arm to tests/unit/test_reclaim_undo.py (#274)
+- extract the shared reclaim fixtures to tests/_reclaim.py (#274)
+- scope the size-marker guard to every tracked Python tree (#275)
+- measure the currency map AC-3 only asserted in prose (#271)
+- bind the record guard to the claim, not a substring of it (#268)
+- pin the fold's symlink containment refusal
+
+<!-- total subjects listed: 84 -->
 
 ## Open decisions
 
