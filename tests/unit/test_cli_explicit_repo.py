@@ -63,8 +63,12 @@ RUNBOOK = REPO_ROOT / "RUNBOOK.md"
 CANONICAL_REPO_OPTION = "--repo"
 
 #: Leaves that legitimately take no repo argument. ``version`` prints the
-#: package version and touches no repo, ledger, or CONTEXT.md.
-_NO_REPO = frozenset({"version"})
+#: package version and touches no repo, ledger, or CONTEXT.md. ``serve`` (#307)
+#: is exempt for the opposite reason: it acts on *no single* repo but on every
+#: repo in ``HARNESS_WORKSPACE_ROOTS``, resolving each request's target from the
+#: request itself — a ``--repo`` on the host process would name one repo it then
+#: had to ignore, which is the ambient-target confusion this guard exists to end.
+_NO_REPO = frozenset({"version", "serve"})
 
 
 # ---------------------------------------------------------------------------
