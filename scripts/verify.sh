@@ -58,5 +58,15 @@ echo "=== changelog fragment guard ==="
 uv run --extra dev python scripts/changelog_fragments.py check
 uv run --extra dev python scripts/changelog_fragments.py require
 
+echo "=== release cadence (report only) ==="
+# Cadence bounds describe accumulated repo state, not this change: no change
+# here caused a breach and none can fix one, so a breach must never be this
+# gate's verdict (#350 — it wedged the build queue for five ticks). `report`
+# exits 0 regardless and is deliberately the LAST stage, so the breach line
+# lands inside the bounded gate-log tail `review` and `promote` already record.
+# The enforcing half is `cadence.py check`, run by the release-cadence CI job on
+# a PR into main and by RELEASING.md step 3.
+uv run --extra dev python scripts/cadence.py report
+
 echo ""
 echo "All checks passed."
