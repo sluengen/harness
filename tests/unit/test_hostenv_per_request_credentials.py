@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 
 from harness.cli import serve as serve_module
-from harness.hostenv import client
+from harness.hostenv import client, container_env
 from harness.hostenv import host as host_module
 from harness.hostenv.credentials import AgentCredential, TrackerCredentials
 from harness.hostenv.host import GitIdentity, HostPlatform
@@ -459,12 +459,12 @@ def test_the_agent_socket_is_forwarded_only_when_the_host_agent_is_live(
     rotating.env["SSH_AUTH_SOCK"] = "/tmp/agent.sock"
 
     rotating.agent_is_live = False
-    assert host_module.resolve_container_env(repo, host=rotating).ssh_agent is None, (
+    assert container_env.resolve_container_env(repo, host=rotating).ssh_agent is None, (
         "a socket whose agent holds no key was forwarded anyway"
     )
 
     rotating.agent_is_live = True
-    forwarded = host_module.resolve_container_env(repo, host=rotating).ssh_agent
+    forwarded = container_env.resolve_container_env(repo, host=rotating).ssh_agent
     assert forwarded is not None, "a live agent was not forwarded"
     assert forwarded.probed == "/tmp/agent.sock", (
         "the probed socket must be the host's own — it is the liveness signal"
@@ -479,7 +479,7 @@ def test_no_agent_socket_is_forwarded_when_the_variable_is_unset(
     rotating.env.pop("SSH_AUTH_SOCK", None)
     rotating.agent_is_live = True
 
-    resolved = host_module.resolve_container_env(repo, host=rotating)
+    resolved = container_env.resolve_container_env(repo, host=rotating)
 
     assert resolved.ssh_agent is None
     assert rotating.liveness_probes == 0, (

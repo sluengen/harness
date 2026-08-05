@@ -33,7 +33,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.hostenv import host, protocol, spawn
+from harness.hostenv import container_env, host, protocol, spawn
 
 __all__ = [
     "DEFAULT_IMAGE",
@@ -114,7 +114,7 @@ def _spawn_directly(
     credential-less container on the days the socket is broken.
     """
     try:
-        resolved = host.resolve_container_env(repo)
+        resolved = container_env.resolve_container_env(repo)
     except host.UnsupportedHost as unsupported:
         # Exit 2 before anything is spawned, inheriting `python3 -m harness.hostenv
         # env`'s contract: an unsupported host must stop here, where the message

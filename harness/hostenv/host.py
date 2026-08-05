@@ -5,19 +5,28 @@ express that: it reaches straight for ``security find-generic-password``, which
 exists only on macOS. This module puts an interface between the harness and the
 host so the *store* can vary while the rest does not.
 
-**Only ``agent_credential`` actually varies today.** Tracker-credential resolution,
-git identity and bounded execution are identical on every host, so they live once
-on the ABC rather than being duplicated per provider. Duplicating them against no
-evidence of divergence would also let the WSL provider's unverified status
-contaminate logic that is not platform-dependent at all.
+**Three things vary, and no more.** ``agent_credential`` (the store), and since
+#308 ``ssh_agent_forwarding`` and ``workspace_mount`` (the two spawn concerns).
+Tracker-credential resolution, git identity and bounded execution are identical on
+every host, so they live once on the ABC — duplicating them against no evidence of
+divergence would let the WSL provider's unverified status contaminate logic that is
+not platform-dependent at all. Per-request assembly on top of these providers is
+:mod:`harness.hostenv.container_env`, one layer up.
 """
+
+# size: one cohesive seam — an ABC and the three providers that implement it, plus
+# the detection that selects among them. #308 pushed this over the ceiling and paid
+# it back by extracting the layer above (per-request assembly → container_env.py,
+# 101 lines), which is the only split here that does not separate a class from the
+# interface it implements. What remains sits ~3 lines over and is deliberately not
+# cut further: splitting `WslHost` out would need `detect_host` to import it back,
+# and a lazy import to break that cycle buys nothing but a lower number.
 
 from __future__ import annotations
 
 import os
 import re
 import subprocess
-import sys
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
@@ -482,107 +491,6 @@ def detect_host(
 
     raise UnsupportedHost(platform=platform, needed="credential-store")
 
-
-@dataclass(frozen=True)
-class ContainerEnv:
-    """Everything the host resolves for one verb container, for one request.
-
-    ``values`` are credential and identity values destined for the spawned
-    ``docker`` process's own environment, from which docker forwards the
-    credentials **by name** (``-e NAME``) — so no value ever appears in an argv,
-    and therefore never in ``ps``. ``git_identity`` is separated out because it is
-    pinned *by value* on the docker command line rather than forwarded by name,
-    exactly as the wrapper pinned it.
-    """
-
-    values: dict[str, str]
-    git_identity: dict[str, str]
-    diagnostics: tuple[str, ...]
-    #: How this host forwards its agent, but **only** when one is actually live —
-    #: ``None`` otherwise, so a stale ``SSH_AUTH_SOCK`` never mounts a dead socket.
-    #: Provider-produced since #308: which socket is *mounted* is platform-specific
-    #: even though which socket is *probed* is not.
-    ssh_agent: SshAgentForwarding | None = None
-    #: The repo bind mount the provider allows for this request. ``None`` only in
-    #: the resolver's own tests; production callers always carry the provider's.
-    workspace_mount: WorkspaceMount | None = None
-
-
-def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
-    """Resolve one request's credentials and commit identity through the providers.
-
-    **Called per request, never cached** (#307 design, *Interface / contract*).
-    The caching version of this function is correct for an hour: a Claude OAuth
-    token expires, and a persistent ``harness serve`` outlives many of them. It is
-    also the reason resolution cannot be lifted to process start — a server binds
-    once and serves for days, so bind time is the one moment whose environment is
-    guaranteed to be stale later.
-
-    ``workdir`` is the **requested repo**, not the caller's cwd: ``.env`` lives in
-    the target repo, and a persistent server's cwd is whatever shell started it.
-
-    Raises :class:`UnsupportedHost` — deliberately, rather than returning empty
-    values. A blank credential does not fail where it is produced; it fails much
-    later as an in-container 401 that reads as a review failure (CAL-941).
-    """
-    host = detect_host(platform=sys.platform) if host is None else host
-
-    values: dict[str, str] = {}
-
-    tracker = host.tracker_credentials(Path(workdir))
-    if tracker.linear_api_key:
-        values["LINEAR_API_KEY"] = tracker.linear_api_key
-    if tracker.github_token:
-        values["GITHUB_TOKEN"] = tracker.github_token
-
-    # An already-exported token short-circuits the whole agent-credential path: no
-    # store read, no `claude -p ok`. This is the wrapper's `if [[ -z ... ]]` guard
-    # preserved, and it is what lets the wrapper's own tests run without touching a
-    # real Keychain.
-    if not host.env.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        credential = resolve_agent_credential(host)
-        if credential is not None:
-            values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
-            values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
-
-    # Both spawn concerns are the provider's since #308. The liveness gate is
-    # unchanged — it now lives inside `ssh_agent_forwarding`, so the gate and the
-    # mount source are one decision rather than two that can disagree.
-    #
-    # `workspace_mount` can refuse (WorkspaceNotEquivalent), which propagates: a
-    # repo that cannot be mounted equivalently must stop here, where the message
-    # names the path and the remedy, rather than running against a directory that
-    # does not mean what the caller thinks.
-    identity = host.git_identity()
-    return ContainerEnv(
-        values=values,
-        ssh_agent=host.ssh_agent_forwarding(),
-        workspace_mount=host.workspace_mount(Path(workdir)),
-        git_identity={
-            "GIT_AUTHOR_NAME": identity.name,
-            "GIT_AUTHOR_EMAIL": identity.email,
-            "GIT_COMMITTER_NAME": identity.name,
-            "GIT_COMMITTER_EMAIL": identity.email,
-        },
-        diagnostics=tuple(host.diagnostics),
-    )
-
-
-def resolve_agent_credential(host: HostPlatform) -> AgentCredential | None:
-    """Read the credential, refreshing it first if it is at or inside the window.
-
-    A refresh that fails leaves the stale-but-present token in play — the
-    container's own 401 is where that belongs, and refusing to start would break a
-    deployment whose token is merely close to expiry.
-    """
-    credential = host.agent_credential()
-    if credential is None:
-        return None
-    if not credential.is_stale(host.now_ms()):
-        return credential
-
-    host.refresh_agent_credential()
-    return host.agent_credential() or credential
 
 
 def _linux_flavour(osrelease_path: Path, env: Mapping[str, str]) -> str:

@@ -21,6 +21,16 @@ Windows-via-WSL, which ADR 0012 makes a supported platform.
 They now live in `harness/hostenv/`, a **stdlib-only** package. The wrapper calls it
 once and imports the result.
 
+### The layering
+
+`host.py` answers *what does this platform do*; `container_env.py` answers *what does
+this request need*, driving the providers once per verb invocation. #308 introduced that
+boundary — the resolver moved up a layer when the two spawn concerns moved down into the
+providers. The import edge runs one way, and both callers of the resolver (the `serve`
+socket path and the client's fallback) want the whole layer and none of the provider
+internals. `detect_host` is reached *through* the module rather than bound at import, so
+it stays the substitutable seam every provider test uses.
+
 ### The provider seam
 
 `detect_host(platform, osrelease_path, env)` returns a `HostPlatform`. Every input is
@@ -211,7 +221,8 @@ both are earned.
 - `tests/unit/test_hostenv_credentials.py` — the staleness boundary, the refresh flow,
   tracker precedence, `.env` parsing including the embedded-`=` case.
 - `tests/unit/test_hostenv_stdlib_only.py` — the package imports with site-packages off
-  the path; the banned-dependency set is derived from `pyproject.toml`, not listed.
+  the path; the banned-dependency set is derived from `pyproject.toml`, not listed. It
+  covers `container_env.py` automatically, because the set is derived over the package.
 - `tests/unit/test_wrapper_delegates.py` — AC-2, with a negative control proving the
   predicate distinguishes a live call from a comment describing one.
 - `tests/unit/test_wrapper_image_staleness.py`, `tests/unit/test_wrapper_source_sync.py` —

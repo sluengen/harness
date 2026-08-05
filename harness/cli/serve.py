@@ -52,7 +52,7 @@ from typing import Annotated, Any
 
 import typer
 
-from harness.hostenv import host, protocol, spawn
+from harness.hostenv import container_env, host, protocol, spawn
 from harness.workspace import (
     WorkspaceNotAllowed,
     resolve_within_allowlist,
@@ -289,7 +289,7 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         # `resolved` dies with the call, which is what keeps ADR 0012's "no run
         # state" true of credentials too.
         try:
-            resolved = host.resolve_container_env(repo)
+            resolved = container_env.resolve_container_env(repo)
         except host.UnsupportedHost as unsupported:
             _log_to_stderr(f"credential resolution failed: {unsupported}")
             return 2

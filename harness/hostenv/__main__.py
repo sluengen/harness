@@ -3,7 +3,7 @@
 Everything the harness needs to resolve *before* a container exists — credentials
 and commit identity — is resolved on the host, in tested Python rather than in
 macOS-shaped bash. This module is the CLI over that resolution; the resolution
-itself is :func:`harness.hostenv.host.resolve_container_env`, which is also what
+itself is :func:`harness.hostenv.container_env.resolve_container_env`, which is also what
 both container-spawn paths call.
 
 **The wrapper is no longer the caller (#307).** It shelled out to this once and
@@ -31,7 +31,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from harness.hostenv.host import UnsupportedHost, detect_host, resolve_container_env
+from harness.hostenv.container_env import resolve_container_env
+from harness.hostenv.host import UnsupportedHost, detect_host
 
 MINIMUM_PYTHON = (3, 11)
 

@@ -269,7 +269,7 @@ def test_both_paths_construct_the_same_container(
     resolving it here rather than pinning a literal keeps the comparison about
     drift between the two callers instead of about this machine's git config.
     """
-    from harness.hostenv import host, spawn
+    from harness.hostenv import container_env, spawn
 
     client.run(repo=repo, argv=["start", "307"], env=_env(tmp_path, socket_path), stdio=stdio)
     fallback = _spawns(stub_docker)[0]
@@ -287,7 +287,7 @@ def test_both_paths_construct_the_same_container(
             # because the resolver's field name and the builder's parameter name
             # differ for the mount — a `for key in (...)` comprehension would have
             # skipped it with a TypeError that reads as a signature problem.
-            parameter: getattr(host.resolve_container_env(repo.resolve()), field)
+            parameter: getattr(container_env.resolve_container_env(repo.resolve()), field)
             for field, parameter in (
                 ("git_identity", "git_identity"),
                 ("ssh_agent", "ssh_agent"),
@@ -417,14 +417,14 @@ def test_a_repo_the_provider_refuses_stops_before_docker_is_touched(
     does not mean what the caller thinks, so "docker was never invoked" is the
     assertion; the code is secondary.
     """
-    from harness.hostenv import host, spawn
+    from harness.hostenv import container_env, spawn
 
     def _refuse(workdir: Path, *, host: object = None) -> object:
         raise spawn.WorkspaceNotEquivalent(
             workdir, "it is on a Windows filesystem (drvfs) ... (#313)", "clone it inside WSL."
         )
 
-    monkeypatch.setattr(host, "resolve_container_env", _refuse)
+    monkeypatch.setattr(container_env, "resolve_container_env", _refuse)
 
     code = client.run(
         repo=repo, argv=["start", "308"], env=_env(tmp_path, socket_path), stdio=stdio
