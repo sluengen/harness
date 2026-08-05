@@ -35,7 +35,6 @@ from pathlib import Path
 
 import pytest
 
-from tests._cliutil import registered_command_surface
 from tests._gitutil import tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -46,13 +45,21 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # ---------------------------------------------------------------------------
 
 #: The retired scaffolding modules — the host-launcher control socket
-#: (``launcher`` / ``launcher_client`` / the ``serve`` command) and the
-#: autonomous-dispatch ``trigger`` stand-in. None may be importable.
+#: (``launcher`` / ``launcher_client``) and the autonomous-dispatch ``trigger``
+#: stand-in. None may be importable.
+#:
+#: ``harness.cli.serve`` **left this list in #307** (ADR 0012), and that is the
+#: convention holding rather than an exception to it. What CAL-712 deleted was
+#: scaffolding for a *hypothetical* Hermes dispatcher — inert code with no
+#: consumer. ADR 0012 is explicit that it "supersedes nothing, and revives no
+#: deferred consumer": the new process is justified by the wrapper's own measured
+#: defects, and the deleted code is prior art, not a restoration target. The rule
+#: still binds it, one assertion below: the new module must have a **non-test
+#: caller**, which is precisely what the retired one lacked.
 _RETIRED_MODULES = [
     "harness.launcher",
     "harness.launcher_client",
     "harness.trigger",
-    "harness.cli.serve",
 ]
 
 #: Source + dedicated test files removed with the subsystem. Asserted over the
@@ -62,10 +69,8 @@ _REMOVED_PATHS = [
     "harness/launcher.py",
     "harness/launcher_client.py",
     "harness/trigger.py",
-    "harness/cli/serve.py",
     "tests/unit/test_launcher.py",
     "tests/unit/test_launcher_client.py",
-    "tests/unit/test_cli_serve.py",
     "tests/unit/test_trigger.py",
     "tests/integration/test_launcher_socket.py",
     "tests/integration/test_launcher_client.py",
@@ -88,17 +93,23 @@ def test_launcher_subsystem_files_removed(relpath: str) -> None:
     )
 
 
-def test_serve_command_not_registered() -> None:
-    """The ``serve`` command (the launcher control socket) is unregistered.
+def test_serve_has_a_live_non_test_caller() -> None:
+    """``harness serve`` is held to the convention, not exempted from it (#307).
 
-    Reads the full surface, not the ``registered_commands`` half it used to: a
-    ``serve`` re-introduced as a sub-app group would otherwise pass this guard.
+    This replaces ``test_serve_command_not_registered``. The rule CAL-712 encoded
+    is *not* "there is no serve command" — it is "scaffolding for a consumer that
+    does not exist stays out of the tree" (AC-5). A ``serve`` whose only callers
+    were tests would violate that rule just as the deleted one did. So the
+    assertion moves from *absent* to *actually wired*, which is the property that
+    made the original deletion correct in the first place.
     """
-    from harness.cli import app
-
-    names = registered_command_surface(app)
-    assert "serve" not in names, (
-        "harness serve runs the retired launcher control socket — unregister it (CAL-712)."
+    assert _has_nontest_caller("harness.cli.serve"), (
+        "harness.cli.serve has no non-test caller — that is the inert-scaffolding "
+        "shape CAL-712 deleted. Register it, or delete it again (#307, AC-6)."
+    )
+    assert _has_nontest_caller("harness.hostenv.client"), (
+        "the control-socket client has no non-test caller, so the socket serves "
+        "nobody — the same defect one layer down (#307, AC-6)."
     )
 
 

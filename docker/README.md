@@ -326,6 +326,21 @@ directory with no flags or env-var setup.
   it.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
+- **Container construction is Python, not bash** ([#307](https://github.com/sluengen/harness/issues/307)).
+  Everything above still happens; the wrapper simply no longer builds the
+  `docker run` itself. Its tail is `exec … -m harness.hostenv.client "$(pwd)" --
+  "$@"`, which routes the verb through a running `harness serve` when one is
+  listening and spawns the identical container itself when none is — one
+  construction (`harness.hostenv.spawn`) shared by both, so the fallback cannot
+  drift into a laxer posture on the days the socket is broken. Credentials are
+  resolved per request by the host providers and handed to `docker` through the
+  subprocess environment, so no credential value passes through the shell.
+  **A host Python 3.11+ with the harness package importable is therefore
+  required**, and a missing one is now a hard error naming `HARNESS_HOST_PYTHON`
+  rather than a warning — before #307 it cost only credential resolution, but the
+  client is now the runtime. The image-freshness guard and source-checkout sync
+  below deliberately stay in bash: they must work when no checkout-resident
+  Python is importable.
 
 ### Installation
 

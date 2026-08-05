@@ -174,6 +174,8 @@ EXPECTED_SURFACE = {
     "version",
     "worktrees",
     "promote",  # the promotion lifecycle group (CAL-1113, ADR 0003)
+    "serve",  # the persistent runtime host (#307, ADR 0012) — a host process, not
+    # a run-bound verb: it holds no run state and spawns each verb one-shot
 }
 
 #: The v1 ``harness promote`` subcommand set (ADR 0003). These are the real

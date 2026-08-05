@@ -143,27 +143,30 @@ def test_wrapper_is_bash_syntax_clean() -> None:
     )
 
 
-def test_wrapper_builds_tty_flags_without_command_substitution() -> None:
-    """AC1/AC2 (CAL-1150): the ``-it`` flags are assembled via a bash array —
-    the shellcheck-clean idiom the file already uses for ``SSH_AGENT_ARGS`` —
-    not an unquoted ``$(...)`` command substitution (SC2046). This guards the fix
-    on hosts where shellcheck itself is unavailable (the always-on host): ``bash
-    -n`` does not catch SC2046, so without this a future edit could silently
-    reintroduce the warning. The array preserves the TTY behaviour: ``-it`` is
-    passed when stdin is a terminal and omitted otherwise."""
-    wrapper = _wrapper()
-    assert '$([[ -t 0 ]] && echo' not in wrapper, (
-        "the SC2046-prone `$([[ -t 0 ]] && echo \"-it\")` command substitution must "
-        "be gone — it word-splits unquoted (shellcheck SC2046)"
+def test_the_tty_flag_is_conditional_and_never_an_empty_argument() -> None:
+    """CAL-1150's property, retargeted by #307 to where the flags are now built.
+
+    The original shape was bash-specific: an unquoted ``$([[ -t 0 ]] && echo
+    "-it")`` word-splits (shellcheck SC2046), so the wrapper assembled a
+    ``TTY_ARGS`` array with the set-or-empty-safe expansion instead. Construction
+    moved into ``harness.hostenv.spawn``, where that hazard cannot exist — a list
+    has no word-splitting — so what survives is the **behaviour** the array
+    protected: ``-it`` when stdin is a terminal, and *no* argument at all
+    otherwise. An empty-string argument would reach docker as a bogus positional.
+    """
+    interactive = _verb_container_argv(tty=True)
+    piped = _verb_container_argv(tty=False)
+
+    assert "-it" in interactive
+    assert "-it" not in piped
+    assert "" not in piped, (
+        "an empty argument reached the docker argv — the empty case must pass "
+        "nothing, not a blank string"
     )
-    assert "TTY_ARGS=(" in wrapper, (
-        "the wrapper must build the -it flags in a TTY_ARGS array, mirroring "
-        "SSH_AGENT_ARGS"
+    assert len(interactive) == len(piped) + 1, (
+        "the two invocations differ by more than the tty flag"
     )
-    assert '${TTY_ARGS[@]+"${TTY_ARGS[@]}"}' in wrapper, (
-        "TTY_ARGS must expand with the set-or-empty-safe array idiom "
-        '${TTY_ARGS[@]+\"${TTY_ARGS[@]}\"}, so an empty array passes no argument'
-    )
+
 
 
 def test_shellcheck_skip_is_visible_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,14 +230,41 @@ def test_readme_references_wrapper_and_does_not_embed_it() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _verb_container_argv(**overrides: object) -> list[str]:
+    """The real ``docker run`` argv for a verb container.
+
+    **Retargeted by #307.** These properties were asserted as text in
+    ``docker/harness-wrapper.sh`` until the wrapper stopped constructing its own
+    container; construction now lives in ``harness.hostenv.spawn``, shared by the
+    socket path and the client's fallback. Reading the built argv is the stronger
+    form of the same assertion — it exercises the construction rather than
+    searching a file for a spelling.
+    """
+    from harness.hostenv import spawn
+
+    kwargs: dict[str, object] = {
+        "repo": Path("/work/repo"),
+        "argv": ["status", "R1"],
+        "image": "harness:dev",
+        "env_names": ("GITHUB_TOKEN",),
+        "home": Path("/home/op"),
+        "ssh_auth_sock": "/tmp/agent.sock",
+    }
+    kwargs.update(overrides)
+    return spawn.build_docker_argv(**kwargs)  # type: ignore[arg-type]
+
+
 def test_wrapper_mounts_ssh_under_nonroot_home() -> None:
     """``~/.ssh`` is mounted under /home/harness (reachable by the non-root user)."""
-    assert '"$HOME/.ssh":/home/harness/.ssh:ro' in _wrapper()
+    assert "/home/op/.ssh:/home/harness/.ssh:ro" in _verb_container_argv()
 
 
 def test_wrapper_ssh_known_hosts_path_matches_user_home() -> None:
     """GIT_SSH_COMMAND points known_hosts at the non-root user's ~/.ssh."""
-    assert "UserKnownHostsFile=/home/harness/.ssh/known_hosts" in _wrapper()
+    assert any(
+        "UserKnownHostsFile=/home/harness/.ssh/known_hosts" in arg
+        for arg in _verb_container_argv()
+    )
 
 
 def test_no_secret_is_mounted_under_root_home() -> None:
@@ -247,26 +277,24 @@ def test_no_secret_is_mounted_under_root_home() -> None:
         )
 
 
-def _ssh_forwarding_block(wrapper: str) -> str:
-    """Return the populated ``SSH_AGENT_ARGS=( ... )`` array literal (the one that
-    forwards the agent socket), or "" if absent."""
-    for block in re.findall(r"SSH_AGENT_ARGS=\((.*?)\)", wrapper, re.DOTALL):
-        if "/ssh-auth.sock:/ssh-agent" in block:
-            return block
-    return ""
-
-
 def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
     """Docker Desktop forwards the agent socket as ``srw-rw---- root root``; the
     container runs uid 1000 (non-root, CAL-1008), so it can only ``connect()`` to
-    the group-rw socket via group 0. The forwarding block must add ``--group-add
-    0`` next to the socket mount — without it every ``git push`` over SSH (close /
-    checkpoint) fails ``Permission denied (publickey)`` on a healthy host agent."""
-    block = _ssh_forwarding_block(_wrapper())
-    assert block, "no populated SSH_AGENT_ARGS block found in docker/harness-wrapper.sh"
-    assert "--group-add 0" in block, (
-        "the ssh-agent forwarding block must include '--group-add 0' so the "
-        "non-root container user can reach the root-owned, group-rw agent socket"
+    the group-rw socket via group 0. Forwarding the socket must add ``--group-add
+    0`` — without it every ``git push`` over SSH (close / checkpoint) fails
+    ``Permission denied (publickey)`` on a healthy host agent."""
+    forwarding = _verb_container_argv()
+    assert "/run/host-services/ssh-auth.sock:/ssh-agent" in forwarding, (
+        "the agent socket was not mounted"
+    )
+    assert "--group-add" in forwarding and "0" in forwarding, (
+        "forwarding the ssh-agent must add '--group-add 0' so the non-root "
+        "container user can reach the root-owned, group-rw agent socket"
+    )
+
+    assert "--group-add" not in _verb_container_argv(ssh_auth_sock=None), (
+        "group 0 was joined with no agent socket to reach — the grant must be "
+        "scoped to the case that needs it"
     )
 
 
@@ -278,7 +306,7 @@ def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
 def test_wrapper_mounts_codex_readonly() -> None:
     """``~/.codex`` is mounted :ro — nothing in-container writes it (Claude is the
     in-container engine; codex is host-only, ADR 0002), so read-only is safe."""
-    assert '"$HOME/.codex":/home/harness/.codex:ro' in _wrapper()
+    assert "/home/op/.codex:/home/harness/.codex:ro" in _verb_container_argv()
 
 
 # ---------------------------------------------------------------------------
@@ -344,13 +372,55 @@ def _mounting_seams() -> dict[str, str]:
     }
 
 
-def test_the_seam_derivation_finds_both_known_mounting_seams() -> None:
+def test_the_seam_derivation_still_finds_the_declarative_seam() -> None:
     """The derived guard below is only as good as its subject set: a derivation
-    that silently matched nothing would pass while enforcing nothing."""
+    that silently matched nothing would pass while enforcing nothing.
+
+    **The wrapper left this set in #307** and its absence is now correct rather
+    than a regression: it no longer builds a container, so it mounts nothing. That
+    makes this floor thinner than it was, which is why the *programmatic* seam has
+    its own behavioural guard immediately below — the two together still cover
+    every way a host tree reaches ``/workspace``.
+    """
     seams = _mounting_seams()
-    assert {"harness-wrapper.sh", "docker-compose.yml"} <= set(seams), (
-        "the /workspace-mount derivation no longer finds both known invocation "
-        f"seams (found {sorted(seams)}) — fix the derivation, not the assertion"
+    assert "docker-compose.yml" in seams, (
+        "the /workspace-mount derivation no longer finds the compose seam "
+        f"(found {sorted(seams)}) — fix the derivation, not the assertion"
+    )
+    assert "harness-wrapper.sh" not in seams, (
+        "the wrapper mounts a host tree again — construction belongs to "
+        "harness.hostenv.spawn, which both spawn paths share"
+    )
+
+
+def test_the_programmatic_seam_mounts_at_workspace_and_pins_bytecode() -> None:
+    """The seam the text derivation cannot see, asserted behaviourally.
+
+    ``harness.hostenv.spawn`` builds its mount from constants, so no substring
+    search of the source would find ``:/workspace`` — and a guard that cannot see
+    the live seam is a guard over nothing. Reading the constructed argv is the
+    honest instrument, and it covers **both** spawn paths at once, since they
+    share this construction.
+    """
+    argv = _verb_container_argv()
+
+    assert any(arg.endswith(":/workspace") for arg in argv), (
+        "the spawner no longer mounts the repo at /workspace — that mount is what "
+        "makes the verbs repo-agnostic (CAL-675)"
+    )
+    assert "PYTHONDONTWRITEBYTECODE=1" in argv, (
+        "the spawner mounts a host tree but does not pin PYTHONDONTWRITEBYTECODE=1, "
+        "so container-authored bytecode lands in the mount and false-reddens the "
+        "next host gate run (#278)"
+    )
+    assert "PYTHONDONTWRITEBYTECODE" not in argv, (
+        "the bare form forwards the *host's* value, and a host exporting it empty "
+        "silently disables the protection — CPython treats only a non-empty value "
+        "as on. Pin the literal."
+    )
+    assert "HARNESS_WORKSPACE_ROOTS=/workspace" in argv, (
+        "the in-container allowlist must be pinned to the mount point, never "
+        "forwarded from a host-side value that is meaningless in the container"
     )
 
 

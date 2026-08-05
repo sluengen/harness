@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
@@ -196,6 +197,22 @@ class HostPlatform(ABC):
             sources=sources,
         )
 
+    def ssh_agent_is_live(self) -> bool:
+        """Does ``SSH_AUTH_SOCK`` name an agent that actually holds a key?
+
+        The variable routinely outlives the agent it names, so its presence is not
+        evidence. Forwarding a dead socket mounts it and joins group 0, and every
+        ``git push`` over SSH then fails against an agent holding nothing rather
+        than falling back to tokenized https.
+
+        Gating on the *in-VM* path Docker Desktop provides
+        (``/run/host-services/ssh-auth.sock``) is the inverse mistake: that path
+        never exists host-side, so the test was always false and forwarding was
+        silently off on every close. Gate on the host's own agent; let Docker
+        supply the socket at mount time.
+        """
+        return self.bounded_run(["ssh-add", "-l"], seconds=10).returncode == 0
+
     def git_identity(self) -> GitIdentity:
         """Resolve the commit identity from global git config, with defaults.
 
@@ -315,6 +332,100 @@ def detect_host(
         return LinuxHost(name=_linux_flavour(osrelease_path, resolved_env), env=resolved_env)
 
     raise UnsupportedHost(platform=platform, needed="credential-store")
+
+
+@dataclass(frozen=True)
+class ContainerEnv:
+    """Everything the host resolves for one verb container, for one request.
+
+    ``values`` are credential and identity values destined for the spawned
+    ``docker`` process's own environment, from which docker forwards the
+    credentials **by name** (``-e NAME``) — so no value ever appears in an argv,
+    and therefore never in ``ps``. ``git_identity`` is separated out because it is
+    pinned *by value* on the docker command line rather than forwarded by name,
+    exactly as the wrapper pinned it.
+    """
+
+    values: dict[str, str]
+    git_identity: dict[str, str]
+    diagnostics: tuple[str, ...]
+    #: The host's ssh-agent socket, but **only** when an agent is actually live —
+    #: ``None`` otherwise, so a stale ``SSH_AUTH_SOCK`` never mounts a dead socket.
+    ssh_auth_sock: str | None = None
+
+
+def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
+    """Resolve one request's credentials and commit identity through the providers.
+
+    **Called per request, never cached** (#307 design, *Interface / contract*).
+    The caching version of this function is correct for an hour: a Claude OAuth
+    token expires, and a persistent ``harness serve`` outlives many of them. It is
+    also the reason resolution cannot be lifted to process start — a server binds
+    once and serves for days, so bind time is the one moment whose environment is
+    guaranteed to be stale later.
+
+    ``workdir`` is the **requested repo**, not the caller's cwd: ``.env`` lives in
+    the target repo, and a persistent server's cwd is whatever shell started it.
+
+    Raises :class:`UnsupportedHost` — deliberately, rather than returning empty
+    values. A blank credential does not fail where it is produced; it fails much
+    later as an in-container 401 that reads as a review failure (CAL-941).
+    """
+    host = detect_host(platform=sys.platform) if host is None else host
+
+    values: dict[str, str] = {}
+
+    tracker = host.tracker_credentials(Path(workdir))
+    if tracker.linear_api_key:
+        values["LINEAR_API_KEY"] = tracker.linear_api_key
+    if tracker.github_token:
+        values["GITHUB_TOKEN"] = tracker.github_token
+
+    # An already-exported token short-circuits the whole agent-credential path: no
+    # store read, no `claude -p ok`. This is the wrapper's `if [[ -z ... ]]` guard
+    # preserved, and it is what lets the wrapper's own tests run without touching a
+    # real Keychain.
+    if not host.env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        credential = resolve_agent_credential(host)
+        if credential is not None:
+            values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
+            values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
+
+    # Liveness is probed only when there is something to forward: the probe is a
+    # subprocess, and running it with no socket buys nothing per request.
+    socket_path = host.env.get("SSH_AUTH_SOCK") or None
+    if socket_path is not None and not host.ssh_agent_is_live():
+        socket_path = None
+
+    identity = host.git_identity()
+    return ContainerEnv(
+        values=values,
+        ssh_auth_sock=socket_path,
+        git_identity={
+            "GIT_AUTHOR_NAME": identity.name,
+            "GIT_AUTHOR_EMAIL": identity.email,
+            "GIT_COMMITTER_NAME": identity.name,
+            "GIT_COMMITTER_EMAIL": identity.email,
+        },
+        diagnostics=tuple(host.diagnostics),
+    )
+
+
+def resolve_agent_credential(host: HostPlatform) -> AgentCredential | None:
+    """Read the credential, refreshing it first if it is at or inside the window.
+
+    A refresh that fails leaves the stale-but-present token in play — the
+    container's own 401 is where that belongs, and refusing to start would break a
+    deployment whose token is merely close to expiry.
+    """
+    credential = host.agent_credential()
+    if credential is None:
+        return None
+    if not credential.is_stale(host.now_ms()):
+        return credential
+
+    host.refresh_agent_credential()
+    return host.agent_credential() or credential
 
 
 def _linux_flavour(osrelease_path: Path, env: Mapping[str, str]) -> str:

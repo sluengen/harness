@@ -101,21 +101,26 @@ means that caller is still implicit. Silence means it is done.
 
 ### The wrapper — a repo-side prerequisite (#351)
 
-`docker/harness-wrapper.sh` cannot forward an explicit `--repo` yet. It mounts
-`$(pwd)` at `/workspace` and pins `HARNESS_WORKSPACE_ROOTS=/workspace`, so a
-*host* path handed to the flag resolves outside the container's allowlist and is
-refused. Until the wrapper **translates** the argument — resolve the host path,
-mount it at `/workspace`, rewrite the argv element, and take `.env` from the same
-path — every invocation through `~/bin/harness` (which is all of them in this
-repo's own loop) must stay implicit and will keep warning.
+**Half of this is now done.** #307 rewired `docker/harness-wrapper.sh`'s tail onto
+`harness.hostenv.client`, so container construction is Python
+(`harness.hostenv.spawn`) rather than hand-rolled bash. Two consequences:
 
-That work is [#351](https://github.com/sluengen/harness/issues/351), split out of
-#306 on a measurement rather than a preference: the bash costs ~32 executable
-lines and takes the wrapper from 158 to 190 against the 165-line ratchet in
-`tests/unit/test_wrapper_delegates.py`, whose rule is *lower this bound, never
-raise it*. It lands either after the wrapper's baseline is reduced, or on the
-persistent runtime host (#307), which replaces the `docker run` construction
-outright.
+- **The argv half is discharged.** `spawn.rewrite_repo_argument` resolves an
+  explicit `--repo`, rewrites it to `/workspace` when it names the mounted repo,
+  and refuses it (`repo_mismatch`) when it names another — so the flag no longer
+  resolves outside the allowlist, and the same translation applies on both the
+  socket and fallback paths.
+- **The line-ratchet blocker is gone.** The wrapper dropped from 158 to 116
+  executable lines and the ratchet in `tests/unit/test_wrapper_delegates.py` was
+  re-baselined 165 → 120. The remaining work is Python, which that ratchet does
+  not bound at all.
+
+What is **not** done, and is what [#351](https://github.com/sluengen/harness/issues/351)
+still is: the mount still follows `$(pwd)`, not the `--repo` value. The client is
+invoked as `… client "$(pwd)" -- "$@"`, so naming a *different* repo is refused
+rather than mounted, and `.env` is still read from the invoking directory.
+Invocations through `~/bin/harness` therefore stay implicit and keep warning until
+the mount half lands.
 
 This is also why the in-repo callers in `commands/harness.md` are deliberately
 **not** updated to pass `--repo`: documenting an invocation the primary entry

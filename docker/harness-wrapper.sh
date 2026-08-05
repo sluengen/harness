@@ -240,18 +240,19 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   fi
 fi
 
-# Workspace allowlist (CAL-584): the verbs reject any --repo outside
-# HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
-# mounts CWD as /workspace, so /workspace is the only valid root *inside the
-# container*. Do NOT forward a host-side value: a host path (e.g. an exported
-# HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
-# container and would reject the mounted repo, breaking cross-repo runs. Pin it.
-
-# Host environment resolution (#305, ADR 0012). Credential resolution, the
-# subprocess-timeout probe and git-identity resolution used to live here as
-# macOS-shaped bash — unreachable from the native `uv tool install` entry point,
-# and unable to express Windows-via-WSL at all. They now live in the tested,
-# stdlib-only `harness.hostenv` package; this block is the delegating shim.
+# Everything below here used to be this wrapper's real work: resolving
+# credentials and git identity, then hand-rolling a `docker run` with a dozen
+# mounts and `-e` flags. #307 moved both into `harness.hostenv`, which the
+# control-socket client drives:
+#
+#   * `harness.hostenv.spawn` is the one home for container construction, shared
+#     by `harness serve` and by the client's own fallback — two copies would be
+#     two security postures, and the fallback runs on exactly the days the socket
+#     is broken.
+#   * Credentials are resolved per request by the host providers and handed to
+#     docker through the subprocess `env=`. No credential value passes through
+#     this shell any more, so the quoting, temp-file and NUL-record handling that
+#     the `hostenv env` import needed is gone rather than made safe.
 #
 # What stays in shell, deliberately: the image-freshness guard and the
 # source-checkout sync above. Their whole job includes detecting "this wrapper has
@@ -272,99 +273,35 @@ elif command -v python3 >/dev/null 2>&1; then
   _HOST_PY=(python3)
 fi
 
-if [[ ${#_HOST_PY[@]} -gt 0 ]]; then
-  # A temp file, not process substitution: the helper's exit code is load-bearing
-  # (an unsupported host must stop the wrapper before a blank credential reaches
-  # the container and surfaces much later as a 401).
-  _env_out=$(mktemp)
-  _env_rc=0
-  PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
-    "${_HOST_PY[@]}" -m harness.hostenv env --workdir "$(pwd)" >"$_env_out" || _env_rc=$?
-  if [[ "$_env_rc" -eq 2 || "$_env_rc" -eq 3 ]]; then
-    rm -f "$_env_out"
-    exit "$_env_rc"
-  fi
-  if [[ "$_env_rc" -eq 0 ]]; then
-    # `export "$_kv"` rather than `eval`: a credential containing `;` or `$(...)`
-    # must never be re-parsed by the shell. Records are NUL-terminated because a
-    # token may legitimately contain a newline.
-    while IFS= read -r -d '' _kv; do export "${_kv?}"; done <"$_env_out"
-  else
-    echo "harness: host environment helper exited $_env_rc — continuing with the environment already set." >&2
-  fi
-  rm -f "$_env_out"
-else
-  echo "harness: no usable host Python found, so credentials and git identity were not resolved here — continuing with the environment already set. Set HARNESS_HOST_PYTHON to an interpreter with the harness package importable." >&2
-fi
-
-# Forward the host ssh-agent for `git push` over SSH (the close verb).
-# Docker Desktop bridges the host agent into the container at the fixed in-VM
-# path /run/host-services/ssh-auth.sock. That path exists ONLY inside the Docker
-# VM — it is never present on the macOS host — so we must NOT test for it here:
-# the old `[[ -S /run/host-services/ssh-auth.sock ]]` gate ran host-side, was
-# always false, and silently disabled forwarding (forcing the tokenized-https
-# fallback on every close). Gate on the host actually having a reachable agent
-# holding a key, and let Docker Desktop supply the socket at mount time. Falls
-# back to no-agent on hosts without one.
+# A hard stop, not a warning. Before #307 a missing interpreter cost only
+# credential resolution and the wrapper still ran its own `docker run`; now the
+# client *is* the runtime, so continuing would mean re-implementing container
+# construction here — the second posture this rewire exists to delete. Failing
+# with the fix in the message is the honest answer.
 #
-# The forwarded socket is `srw-rw---- root root` inside the container. The image
-# runs as `harness` (uid 1000, CAL-1008), which is not root and not in group
-# root, so it cannot connect() to it: every `git push` over SSH fails
-# `Permission denied (publickey)` with an otherwise healthy host agent. The
-# socket is group-rw, so join group 0 to reach it. This does NOT weaken CAL-1008:
-# /root stays mode 700, no mounted credential is group-root, and the only
-# group-0-writable paths are /tmp, /var/tmp and /run/lock, already 1777.
-# Mounting the key instead is a dead end — on macOS it is passphrase-protected in
-# the Keychain and unusable from the mounted file (see "SSH credentials" above).
-SSH_AGENT_ARGS=()
-if [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
-  SSH_AGENT_ARGS=(
-    -v /run/host-services/ssh-auth.sock:/ssh-agent
-    -e SSH_AUTH_SOCK=/ssh-agent
-    --group-add 0
-  )
+# Both failures are checked, because they are different deployments with the same
+# remedy: no interpreter at all, and an interpreter that cannot import the package
+# (the detached-copy install, CAL-1153, where there is no checkout to import from
+# and no native `uv tool install` either). Left to `exec`, the second arrives as a
+# bare ModuleNotFoundError naming neither the cause nor the fix.
+_PY_HINT="set HARNESS_HOST_PYTHON to a Python 3.11+ interpreter with the harness package importable, or symlink this wrapper into its checkout (see docker/README.md)."
+if [[ ${#_HOST_PY[@]} -eq 0 ]]; then
+  echo "harness: no usable host Python found, and one is now required — the wrapper delegates to harness.hostenv.client, which builds and runs the verb container." >&2
+  echo "harness: $_PY_HINT" >&2
+  exit 1
+fi
+if ! PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
+  "${_HOST_PY[@]}" -c 'import harness.hostenv.client' 2>/dev/null; then
+  echo "harness: ${_HOST_PY[*]} cannot import harness.hostenv.client, which the wrapper now delegates to." >&2
+  echo "harness: $_PY_HINT" >&2
+  exit 1
 fi
 
-# Allocate a TTY only for an interactive stdin. Built as an array so the empty
-# case passes NO argument (an unquoted `$(…)` command substitution would word-split
-# — shellcheck SC2046 — and a quoted "" would pass a bogus empty argument to
-# `docker run`). Mirrors the SSH_AGENT_ARGS idiom above.
-TTY_ARGS=()
-if [[ -t 0 ]]; then
-  TTY_ARGS=(-it)
-fi
+# The status string is computed here because it describes *this wrapper* — whether
+# it is a symlink into a checkout or a detached copy — which is knowable only from
+# the shell that resolved it. The client reads it from the environment and pins it
+# into the container by value.
+export HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
 
-# PYTHONDONTWRITEBYTECODE=1 below is load-bearing, not hygiene (#278). The repo
-# is bind-mounted read-write at /workspace, so any Python the container runs
-# leaves `__pycache__/*.pyc` in the HOST tree whose embedded source paths are the
-# container's. CPython validates a cache entry against the source's mtime and
-# size, not its content, so the next host-side gate run loads those entries and
-# anything using `inspect.getsource` / `linecache` fails with "could not get
-# source code" — a false red on the gate that certifies a review. Pinned to the
-# literal `1`, never forwarded as a bare `-e PYTHONDONTWRITEBYTECODE`: CPython
-# treats only a NON-EMPTY value as on, so a host exporting it empty would
-# silently disable the protection (the same reason HARNESS_WORKSPACE_ROOTS is
-# pinned). It is set here rather than as a Dockerfile `ENV` because the staleness
-# guard above compares the image against `git log -1 --format=%ct -- harness/` —
-# a path a docker/-only change never touches — so an image-level default would
-# not take effect until something unrelated forced a rebuild.
-exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
-  -v "$(pwd)":/workspace \
-  -w /workspace \
-  -v "$HOME/.ssh":/home/harness/.ssh:ro \
-  -v "$HOME/.codex":/home/harness/.codex:ro \
-  ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
-  -e LINEAR_API_KEY \
-  -e GITHUB_TOKEN \
-  -e HARNESS_WORKSPACE_ROOTS=/workspace \
-  -e PYTHONDONTWRITEBYTECODE=1 \
-  -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
-  -e CLAUDE_CODE_OAUTH_TOKEN \
-  -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
-  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
-  -e "GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Harness}" \
-  -e "GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-harness@local}" \
-  -e "GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME:-Harness}" \
-  -e "GIT_COMMITTER_EMAIL=${GIT_COMMITTER_EMAIL:-harness@local}" \
-  "$IMAGE" \
-  "$@"
+exec env PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
+  "${_HOST_PY[@]}" -m harness.hostenv.client "$(pwd)" -- "$@"

@@ -17,8 +17,13 @@ Where each assertion went:
 - the ``gh auth token`` fallback → ``test_hostenv_credentials.py::test_gh_is_the_last_resort_*``
 - the ``|| true`` grep guard (#171) →
   ``test_hostenv_credentials.py::test_a_dotenv_missing_the_key_yields_an_empty_value_not_an_abort``
-- ``-e CLAUDE_CODE_OAUTH_EXPIRES_AT`` and ``-e GITHUB_TOKEN`` → **stay here**: the shim
-  still owns the ``docker run`` argv.
+- ``-e CLAUDE_CODE_OAUTH_EXPIRES_AT`` and ``-e GITHUB_TOKEN`` → **stay here**, but
+  retargeted again by #307: the shim no longer owns the ``docker run`` argv either.
+  It execs ``harness.hostenv.client``, and the argv is built by
+  ``harness.hostenv.spawn.build_docker_argv``. So these tests now assert over the
+  **constructed argv** rather than over shell text — a behavioural assertion where
+  there used to be a substring search, which is strictly the stronger form. The
+  properties are unchanged; only the thing they are read off has moved.
 
 **What was genuinely lost, named rather than quietly dropped:** the old
 ``test_env_credential_grep_is_guarded_against_a_missing_key`` executed a guarded and
@@ -28,13 +33,17 @@ protected — a ``.env`` missing a key must not stop resolution — is now struc
 the parser and is covered behaviourally above, but the adversarial *shell* proof has
 no successor and is not claimed to have one.
 
-What remains here is the half the wrapper still owns: forwarding into the container.
+What remains here is the credential-forwarding contract itself, wherever it is
+implemented — the one thing that must hold across both ports.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from harness.hostenv import spawn
+from harness.hostenv.client import FORWARDED_ENV_NAMES
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DOCKER_WRAPPER = PROJECT_ROOT / "docker" / "harness-wrapper.sh"
@@ -45,9 +54,22 @@ def _wrapper() -> str:
 
 
 def _docker_run_block() -> str:
-    """The ``exec docker run`` invocation, which is still the shim's own contract."""
-    text = _wrapper()
-    return text[text.index("exec docker run") :]
+    """The verb container's real ``docker run`` argv, rendered for substring reads.
+
+    Built rather than parsed out of the wrapper (#307): construction moved into
+    ``harness.hostenv.spawn``, so this reads the argv the container is actually
+    given. ``FORWARDED_ENV_NAMES`` is passed rather than a literal list, so a
+    credential silently dropped from the forwarding set fails here too.
+    """
+    argv = spawn.build_docker_argv(
+        repo=Path("/work/repo"),
+        argv=["status", "R1"],
+        image="harness:dev",
+        env_names=FORWARDED_ENV_NAMES,
+        home=Path("/home/op"),
+        git_identity={},
+    )
+    return " ".join(argv)
 
 
 def test_wrapper_forwards_the_token_and_its_expiry_into_the_container() -> None:
@@ -89,12 +111,13 @@ def test_the_commit_identity_still_reaches_the_container() -> None:
     """Resolution moved to ``harness.hostenv``; forwarding did not.
 
     These values are non-secret, so the ``-e K=V`` form is correct here — and it also
-    keeps a default in reach for the degraded path where the helper could not run.
+    keeps a default in reach for the degraded path where no identity was resolved,
+    which is what the empty ``git_identity`` above exercises.
     """
     block = _docker_run_block()
 
     for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
-        assert f'-e "{key}=' in block, f"{key} must still be forwarded"
+        assert f"-e {key}=" in block, f"{key} must still be forwarded"
 
     assert "Harness" in block and "harness@local" in block, (
         "the degraded path must still forward a usable identity default"

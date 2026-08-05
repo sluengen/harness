@@ -1,9 +1,17 @@
-"""``python3 -m harness.hostenv env`` — the wrapper's delegation target (#305).
+"""``python3 -m harness.hostenv env`` — the resolver's command-line surface (#305).
 
-The wrapper shells out to this once and imports the ``KEY=value`` records it
-prints. Everything the harness needs to resolve *before* a container exists —
-credentials and commit identity — is resolved here, on the host, in tested Python
-rather than in macOS-shaped bash.
+Everything the harness needs to resolve *before* a container exists — credentials
+and commit identity — is resolved on the host, in tested Python rather than in
+macOS-shaped bash. This module is the CLI over that resolution; the resolution
+itself is :func:`harness.hostenv.host.resolve_container_env`, which is also what
+both container-spawn paths call.
+
+**The wrapper is no longer the caller (#307).** It shelled out to this once and
+imported the ``KEY=value`` records back into bash; it now execs
+``harness.hostenv.client``, which resolves in-process and hands the values to
+docker through the subprocess environment. The record contract below is unchanged
+and still exercised — an operator or a native install can call this directly — but
+it no longer sits on the wrapper's path.
 
 **Contract.** stdout carries NUL-terminated ``KEY=value`` records and nothing
 else; every diagnostic goes to stderr. NUL-termination rather than newlines
@@ -23,8 +31,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from harness.hostenv.credentials import AgentCredential
-from harness.hostenv.host import HostPlatform, UnsupportedHost, detect_host
+from harness.hostenv.host import UnsupportedHost, detect_host, resolve_container_env
 
 MINIMUM_PYTHON = (3, 11)
 
@@ -72,51 +79,12 @@ def main(argv: list[str] | None = None) -> int:
         _warn(str(unsupported))
         return EXIT_UNSUPPORTED_HOST
 
-    records: dict[str, str] = {}
+    resolved = resolve_container_env(args.workdir, host=host)
 
-    tracker = host.tracker_credentials(args.workdir)
-    if tracker.linear_api_key:
-        records["LINEAR_API_KEY"] = tracker.linear_api_key
-    if tracker.github_token:
-        records["GITHUB_TOKEN"] = tracker.github_token
-
-    # An already-exported token short-circuits the whole agent-credential path:
-    # no store read, no `claude -p ok`. This is the wrapper's `if [[ -z ... ]]`
-    # guard preserved, and it is what lets the wrapper's own tests run without
-    # touching a real Keychain.
-    if not host.env.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        credential = _resolve_agent_credential(host)
-        if credential is not None:
-            records["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
-            records["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
-
-    identity = host.git_identity()
-    records["GIT_AUTHOR_NAME"] = identity.name
-    records["GIT_AUTHOR_EMAIL"] = identity.email
-    records["GIT_COMMITTER_NAME"] = identity.name
-    records["GIT_COMMITTER_EMAIL"] = identity.email
-
-    _emit(records)
-    for note in host.diagnostics:
+    _emit({**resolved.values, **resolved.git_identity})
+    for note in resolved.diagnostics:
         _warn(note)
     return EXIT_OK
-
-
-def _resolve_agent_credential(host: HostPlatform) -> AgentCredential | None:
-    """Read the credential, refreshing it first if it is at or inside the window.
-
-    A refresh that fails leaves the stale-but-present token in play — the
-    container's own 401 is where that belongs, and refusing to start would break
-    a deployment whose token is merely close to expiry.
-    """
-    credential = host.agent_credential()
-    if credential is None:
-        return None
-    if not credential.is_stale(host.now_ms()):
-        return credential
-
-    host.refresh_agent_credential()
-    return host.agent_credential() or credential
 
 
 if __name__ == "__main__":  # pragma: no cover — exercised as a subprocess
