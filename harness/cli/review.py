@@ -120,7 +120,6 @@ from harness.cli.review_protocol import (
     is_sandbox_blocked_defer,
     is_sandbox_init_failure,
     resolve_design_gate,
-    resolve_model_tier,
     scan_submit_line,
 )
 from harness.cli.review_telemetry import record_terminal_refusal
@@ -148,11 +147,6 @@ from harness.tracker_errors import (
     TrackerRequestError,
 )
 from harness.workspace import WorkspaceNotAllowed, allowed_roots, resolve_within_allowlist
-
-# The dimension resolve_model_tier reads for this verb (#177) — the review-tier
-# label family (``review:<tier>``), independent of the build-tier family the
-# ticket also carries as recorded judgement, which no verb consumes.
-_REVIEW_TIER_DIMENSION = "review"
 
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
@@ -410,37 +404,6 @@ async def _invoke_engine(
         raise
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
-
-
-async def _resolve_review_model(
-    repo_root: Path, ticket: str | None, explicit_model: str | None
-) -> str:
-    """Resolve the claude-engine ``--model`` alias for this review (#177).
-
-    An explicit ``--model`` wins outright. Otherwise, resolve the ticket's
-    ``review:<tier>`` label via :func:`resolve_model_tier` (default
-    ``sonnet``). Best-effort: a tracker-less run, an unresolvable tracker
-    config, or a fetch failure all degrade to the default rather than blocking
-    the review — the tier is an optimization the review can run without, not
-    part of the recorded verdict (mirroring ``_park_ticket``'s tolerance for
-    tracker hiccups).
-    """
-    if explicit_model is not None:
-        return explicit_model
-    if ticket is None:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    try:
-        client = tracker_client(repo_root)
-    except TrackerConfigError:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    if client is None:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    try:
-        issue = await client.fetch_issue(ticket)
-    except (TrackerNotFound, TrackerRequestError):
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    labels = issue.get("labels") or []
-    return resolve_model_tier(labels, _REVIEW_TIER_DIMENSION)
 
 
 # ---------------------------------------------------------------------------
@@ -804,10 +767,12 @@ async def _review_resolved_run(
     #     the review (the verdict is the record; the transition is bookkeeping).
     await _park_ticket(repo_root, ticket, to="in_review")
 
-    # 2c. Resolve the claude-engine model tier (#177): an explicit --model
-    #     wins, else the ticket's review:<tier> label, default sonnet. Codex
-    #     ignores it — see _invoke_engine / _build_cmd.
-    resolved_model = await _resolve_review_model(repo_root, ticket, model)
+    # 2c. Resolve the claude-engine model (#321): an explicit --model wins, else
+    #     CONTEXT.md's loop.review_model (default sonnet). Codex ignores it —
+    #     see _invoke_engine / _build_cmd. ``budget`` is already loaded for the
+    #     breakers above, so this reads no file and makes no network call; the
+    #     retired per-ticket tier (ADR 0005) made a tracker round-trip here.
+    resolved_model = model if model is not None else budget.review_model
 
     # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
     #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted

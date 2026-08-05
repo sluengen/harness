@@ -32,6 +32,7 @@ from harness.loop_budget import (
     DEFAULT_ATTENDED_IDLE_MINUTES,
     DEFAULT_ENGINE_TIMEOUT_SECONDS,
     DEFAULT_MAX_REVIEW_CYCLES,
+    DEFAULT_REVIEW_MODEL,
     DEFAULT_UNCONDITIONAL_REVIEW_CYCLES,
     DEFAULT_WALL_CLOCK_BUDGET_MINUTES,
     REVIEW_CYCLE_CEILING_REASON,
@@ -184,6 +185,64 @@ def test_load_partial_loop_block_defaults_the_missing_key(tmp_path: Path) -> Non
     budget = load_loop_budget(tmp_path)
     assert budget.max_review_cycles == 8
     assert budget.wall_clock_budget_minutes == 110
+
+
+# ---------------------------------------------------------------------------
+# review_model — the claude review engine's alias, configured once (#321)
+#
+# It replaces the per-ticket ``review:<tier>`` label ADR 0005 established. The
+# knob is a **plain token string**, not the retired ``Literal["sonnet","opus"]``
+# — an enum is the same premature constraint being retired, and it would coerce
+# a typo to the default, hiding the operator's mistake behind a review that ran
+# on the wrong model.
+# ---------------------------------------------------------------------------
+
+
+def _write_review_model(root: Path, value: str) -> None:
+    (root / "CONTEXT.md").write_text(
+        "```yaml\nprofile: harness\nloop:\n" f"  review_model: {value}\n```\n"
+    )
+
+
+def test_load_reads_review_model_from_context(tmp_path: Path) -> None:
+    """The review engine's alias is read from the ``loop:`` block (#321 AC-4)."""
+    _write_review_model(tmp_path, "opus")
+    assert load_loop_budget(tmp_path).review_model == "opus"
+
+
+def test_load_reads_an_alias_the_harness_has_no_opinion_about(tmp_path: Path) -> None:
+    """Any bare token is carried through — the value is not an enum (#321).
+
+    The retired mechanism resolved to one of two literals and silently coerced
+    everything else to ``sonnet``. That is the constraint being dropped: a third
+    alias must be a one-line CONTEXT.md edit, not a code change, and a typo must
+    reach the claude CLI and fail loudly rather than run the wrong model quietly.
+    """
+    _write_review_model(tmp_path, "haiku")
+    assert load_loop_budget(tmp_path).review_model == "haiku"
+
+
+def test_load_defaults_review_model_when_absent(tmp_path: Path) -> None:
+    """A ``loop:`` block without the key falls back to the documented default."""
+    _write_context(tmp_path, max_cycles=6, wall_clock=90)
+    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "sonnet"
+
+
+def test_load_defaults_review_model_when_no_context(tmp_path: Path) -> None:
+    """No CONTEXT.md at all → the same default a configured repo ships (AC-4)."""
+    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "sonnet"
+
+
+def test_a_value_outside_the_token_pattern_falls_back(tmp_path: Path) -> None:
+    """A value carrying whitespace or quotes never reaches an argv (#321).
+
+    The alias is passed to the claude engine as ``--model <alias>``, so the
+    loader admits only a bare token. Anything else is treated as an unset key —
+    the same degrade-never-raise posture the integer knobs take, because a
+    nonsensical CONTEXT.md must never make a repo unable to run a verb.
+    """
+    _write_review_model(tmp_path, '"gpt 4"')
+    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL
 
 
 # ---------------------------------------------------------------------------

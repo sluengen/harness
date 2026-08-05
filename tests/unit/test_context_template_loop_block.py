@@ -79,6 +79,13 @@ _KEYS = (
     # ``test_template_parses_with_the_runtime_reader`` constructs the tuple
     # positionally from this order, so the two must not drift.
     "unconditional_review_cycles",
+    # …and the same rule again for #321's ``review_model``, the first knob here
+    # that is not an integer. It is the reason :func:`_constant` and
+    # :func:`_configured` read the *constant's* type rather than assuming ``int``:
+    # a type-blind guard would have gone red the day this field landed and been
+    # "fixed" by dropping the key from the table, which is exactly the drift the
+    # derived table exists to prevent.
+    "review_model",
 )
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")
@@ -120,23 +127,44 @@ _ENGINE_SPEED_MARKERS = (
 )
 
 
-def _constant(key: str) -> int:
+def _constant(key: str) -> int | str:
     """The code-level fallback for ``key`` — derived from the key's own name."""
-    return int(getattr(loop_budget, f"DEFAULT_{key.upper()}"))
+    return getattr(loop_budget, f"DEFAULT_{key.upper()}")
 
 
-def _configured(text: str, key: str) -> int | None:
+def _pattern_for(key: str) -> str:
+    """The runtime reader's own regex for ``key``, chosen by the constant's type.
+
+    Which of the two patterns applies is a property of the knob, and the knob
+    already declares it: its constant is an ``int`` or a ``str``. Deriving the
+    choice from that — rather than from a second list of "the string keys" —
+    keeps this guard's single-source property intact for the next non-integer
+    knob (#321).
+    """
+    pattern = (
+        loop_budget._KEY_PATTERN
+        if isinstance(_constant(key), int)
+        else loop_budget._STR_KEY_PATTERN
+    )
+    return pattern.format(key=re.escape(key))
+
+
+def _configured(text: str, key: str) -> int | str | None:
     """The value ``key`` is set to, read with the runtime reader's own pattern.
 
-    ``None`` when the key is absent or does not parse as a bare integer — which
-    is exactly when :func:`load_loop_budget` falls back to the constant, so the
-    distinction "set to 720" versus "absent and defaulting to 720" is
-    recoverable here even though the loaded budget cannot tell them apart.
+    ``None`` when the key is absent or does not parse in the shape its own
+    reader accepts — which is exactly when :func:`load_loop_budget` falls back
+    to the constant, so the distinction "set to 720" versus "absent and
+    defaulting to 720" is recoverable here even though the loaded budget cannot
+    tell them apart.
+
+    The returned value is coerced to the constant's own type, so a comparison
+    against :func:`_constant` is like-for-like rather than ``"720" != 720``.
     """
-    match = re.search(
-        loop_budget._KEY_PATTERN.format(key=re.escape(key)), text, re.MULTILINE
-    )
-    return int(match.group(1)) if match else None
+    match = re.search(_pattern_for(key), text, re.MULTILINE)
+    if match is None:
+        return None
+    return type(_constant(key))(match.group(1))
 
 
 def _comment(text: str, key: str) -> str:
@@ -294,7 +322,7 @@ def test_the_parse_finds_nothing_when_the_block_is_missing(tmp_path: Path) -> No
     text = _TEMPLATE.read_text(encoding="utf-8")
     for key in _KEYS:
         text = re.sub(
-            loop_budget._KEY_PATTERN.format(key=re.escape(key)),
+            _pattern_for(key),
             "",
             text,
             flags=re.MULTILINE,

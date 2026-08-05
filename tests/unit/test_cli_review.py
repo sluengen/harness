@@ -36,6 +36,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.cli import review as review_mod
 from harness.events.payloads import MALFORMED_SUBMIT_REASON, NO_SUBMIT_REASON
+from harness.loop_budget import DEFAULT_REVIEW_MODEL
 from harness.state import store
 from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
@@ -216,14 +217,28 @@ def _make_linear_stub(*, in_review_error: Exception | None = None) -> Any:
     return stub
 
 
+def _configure_review_model(repo: Path, alias: str) -> None:
+    """Give ``repo`` a ``CONTEXT.md`` configuring ``loop.review_model`` (#321).
+
+    The ``repo`` fixture ships no ``CONTEXT.md``, so every review test used to
+    exercise the model default by accident. Since #321 the alias *is* configured
+    state, so a test about it has to say which — and one about the fallback has
+    to say that it deliberately left the file absent.
+    """
+    (repo / "CONTEXT.md").write_text(
+        f"```yaml\nprofile: harness\nloop:\n  review_model: {alias}\n```\n"
+    )
+
+
 def _make_tracker_stub(labels: list[str] | None = None) -> Any:
     """A tracker-agnostic client stub carrying a ticket's ``labels`` (#177).
 
     Patching ``review_mod.tracker_client`` with this (rather than the
     Linear-specific credential stubbing ``linear_stub`` needs) exercises the
-    review verb's model-tiering wiring without pinning to either backend —
-    ``fetch_issue`` is the same seam both ``LinearClient`` and ``GitHubClient``
-    implement.
+    review verb's tracker wiring without pinning to either backend — the
+    transitions are the seam both ``LinearClient`` and ``GitHubClient``
+    implement. Since #321 the model no longer comes from here; ``fetch_issue``
+    survives on the stub so a test can assert it is *not* called.
     """
     stub = mock.MagicMock()
     stub.fetch_issue = mock.AsyncMock(return_value={"labels": labels or []})
@@ -617,58 +632,134 @@ def test_ac4_output_and_event_record_engine_provenance(
 
 
 # ---------------------------------------------------------------------------
-# #177 — per-ticket model tiering: the claude engine command carries --model
-# resolved from the ticket's review:<tier> label (default sonnet), a claude
-# --model override wins over the resolved tier, and the codex command is
-# unaffected by any of it.
+# #321 — the claude engine's model is the repo's configured `loop.review_model`,
+# not a per-ticket `review:<tier>` label (ADR 0005, retired). What survives from
+# #177 is the shape: the alias is appended to the **claude** command only, and an
+# explicit `--model` still beats whatever the repo configured.
 # ---------------------------------------------------------------------------
 
 
-def test_cal177_review_opus_label_appends_model_opus(repo: Path, db_path: Path) -> None:
+def test_321_a_review_tier_label_no_longer_selects_the_model(
+    repo: Path, db_path: Path
+) -> None:
+    """The retired label cannot influence the model any more (#321 AC-1).
+
+    Red against the mechanism this replaces: with ``review:opus`` on the ticket,
+    #177's resolver produced ``--model opus``. The label is still handed to the
+    verb — the ticket that carries it is unchanged, and existing issues still
+    carry these labels — so the assertion measures that the value is *ignored*,
+    which a test that stopped supplying a label could not do.
+    """
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
     runner = _make_capturing_runner(_SUBMIT_PASS, captured)
     stub = _make_tracker_stub(labels=["review:opus"])
 
     result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    assert captured["cmd"][-2:] == ["--model", DEFAULT_REVIEW_MODEL], captured["cmd"]
+
+
+def test_321_the_review_path_never_fetches_the_issue_to_pick_a_model(
+    repo: Path, db_path: Path
+) -> None:
+    """One tracker round-trip leaves the review path (#321 AC-2).
+
+    A *measuring* test for the removed call, not a structural assertion that a
+    function is gone: the stub's ``fetch_issue`` fails the test if it is awaited
+    at all, while ``transition_to_in_review`` stays a working mock so
+    ``_park_ticket`` — the review path's other, untouched tracker consumer —
+    still runs. A review that exits 0 therefore proves the fetch did not happen,
+    rather than proving it was tolerated.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    runner = _make_runner(_SUBMIT_PASS)
+    stub = _make_tracker_stub(labels=["review:opus"])
+    stub.fetch_issue = mock.AsyncMock(
+        side_effect=AssertionError("review must not fetch the issue to resolve a model")
+    )
+
+    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    assert result.exit_code == 0, result.output
+    stub.fetch_issue.assert_not_awaited()
+
+
+def test_321_the_configured_review_model_reaches_the_claude_command(
+    repo: Path, db_path: Path
+) -> None:
+    """The verb reads the field the loader loads (#321 AC-4, end-to-end).
+
+    The loader's own tests prove ``load_loop_budget`` parses the key; they cannot
+    show the verb consumes it. Only this wiring makes the CONTEXT.md value the
+    model a review actually runs on.
+    """
+    _configure_review_model(repo, "opus")
+    run_id = _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+    runner = _make_capturing_runner(_SUBMIT_PASS, captured)
+
+    result = _invoke(repo, db_path, run_id, runner)
     assert result.exit_code == 0, result.output
     assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
 
 
-def test_cal177_no_review_label_defaults_model_sonnet(repo: Path, db_path: Path) -> None:
+def test_321_a_repo_with_no_loop_block_gets_the_shipped_default(
+    repo: Path, db_path: Path
+) -> None:
+    """An unconfigured repo runs the same alias a configured one ships (AC-4).
+
+    The ``repo`` fixture writes no ``CONTEXT.md`` at all, which is the case a
+    freshly-bootstrapped consumer is in. Pinned explicitly because the
+    configured-value test above would pass just as well if the fallback had
+    silently become something else.
+    """
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
     runner = _make_capturing_runner(_SUBMIT_PASS, captured)
-    stub = _make_tracker_stub(labels=[])
 
-    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    result = _invoke(repo, db_path, run_id, runner)
     assert result.exit_code == 0, result.output
-    assert captured["cmd"][-2:] == ["--model", "sonnet"], captured["cmd"]
+    assert captured["cmd"][-2:] == ["--model", DEFAULT_REVIEW_MODEL], captured["cmd"]
 
 
-def test_cal177_codex_engine_ignores_review_tier_label(repo: Path, db_path: Path) -> None:
-    """A review:opus label never reaches the codex command (claude-only signal)."""
+def test_321_codex_engine_ignores_the_configured_model(
+    repo: Path, db_path: Path
+) -> None:
+    """The alias stays claude-only — codex's command is untouched by it.
+
+    Unaffected by the mechanism change and kept for that reason: the retired
+    label and the configured value enter ``_build_cmd`` through the same
+    parameter, so the guard that codex ignores it has to survive the swap.
+    """
+    _configure_review_model(repo, "opus")
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
     runner = _make_capturing_runner(_SUBMIT_PASS, captured)
-    stub = _make_tracker_stub(labels=["review:opus"])
 
-    result = _invoke(repo, db_path, run_id, runner, engine="codex", tracker_stub=stub)
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
     assert result.exit_code == 0, result.output
     assert "--model" not in captured["cmd"], captured["cmd"]
     assert captured["cmd"] == review_mod._build_cmd("codex"), captured["cmd"]
 
 
-def test_cal177_explicit_model_overrides_resolved_tier(repo: Path, db_path: Path) -> None:
-    """An explicit --model wins over the ticket's resolved review:sonnet tier."""
+def test_321_explicit_model_overrides_the_configured_value(
+    repo: Path, db_path: Path
+) -> None:
+    """``--model`` still wins outright (#321 AC-3).
+
+    The flag is an orthogonal host/testing override whose value never depended
+    on the label, so retiring the label must not disturb its precedence. The
+    override is an alias the repo does not configure, so passing the test
+    requires reading the flag rather than coincidentally agreeing with CONTEXT.md.
+    """
+    _configure_review_model(repo, "sonnet")
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
     runner = _make_capturing_runner(_SUBMIT_PASS, captured)
-    stub = _make_tracker_stub(labels=["review:sonnet"])
 
-    result = _invoke(repo, db_path, run_id, runner, model="opus", tracker_stub=stub)
+    result = _invoke(repo, db_path, run_id, runner, model="haiku")
     assert result.exit_code == 0, result.output
-    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
+    assert captured["cmd"][-2:] == ["--model", "haiku"], captured["cmd"]
 
 
 # AC-5: SUBMIT parsing / verdict are unchanged across engines.
@@ -691,16 +782,18 @@ def test_293_claude_review_records_the_model_it_ran_with(
     """AC-1: the recorded value **is** the argv the engine ran with.
 
     Asserted against ``captured["cmd"]`` rather than the literal ``"opus"``: a
-    re-derivation of the tier at event-build time (a second ``fetch_issue``,
-    which can answer differently from the first) would satisfy a literal
-    assertion while violating the AC.
+    re-derivation of the alias at event-build time (a second read that can
+    answer differently from the first) would satisfy a literal assertion while
+    violating the AC. The alias is configured rather than label-carried since
+    #321; what this test measures — the event records the argv that ran — is
+    unchanged by that.
     """
+    _configure_review_model(repo, "opus")
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
     runner = _make_capturing_runner(_SUBMIT_PASS, captured)
-    stub = _make_tracker_stub(labels=["review:opus"])
 
-    result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
+    result = _invoke(repo, db_path, run_id, runner)
     assert result.exit_code == 0, result.output
 
     assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
@@ -788,7 +881,12 @@ def test_293_usage_limit_fallback_records_the_claude_reinvocations_model(
     failure names the model contract. This is the case that separates the two
     keys: an implementation reading the *requested* engine records no ``model``
     here while passing every AC-1 and AC-2 test above.
+
+    The configured alias is deliberately not the shipped default, so the
+    fallback's claude re-invocation has to *carry* the model rather than land on
+    it — the same reason the fallback must not lose the prompt (#212).
     """
+    _configure_review_model(repo, "opus")
     run_id = _seed_open_run(db_path, repo)
     order: list[str] = []
     cmds: list[list[str]] = []
@@ -802,9 +900,8 @@ def test_293_usage_limit_fallback_records_the_claude_reinvocations_model(
         order,
         cmds=cmds,
     )
-    stub = _make_tracker_stub(labels=["review:opus"])
 
-    result = _invoke(repo, db_path, run_id, runner, engine="codex", tracker_stub=stub)
+    result = _invoke(repo, db_path, run_id, runner, engine="codex")
     assert result.exit_code == 0, result.output
     assert order == ["codex", "claude"]
 

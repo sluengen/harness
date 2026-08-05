@@ -40,8 +40,11 @@ from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 # knowledge, split out of the verb in CAL-1107 and kept together because every
 # part of it answers the same question (what does this engine's output mean?):
 # the prompt and its design-context block, the SUBMIT scanner, the per-engine
-# command builder, the three empirically-derived failure detectors, and the
-# per-ticket model-tier resolver. Length here is overwhelmingly the *evidence*
+# command builder, and the three empirically-derived failure detectors. (The
+# per-ticket model-tier resolver was the fourth until #321 retired it: the model
+# is now one configured value the verb reads off its already-loaded
+# ``LoopBudget``, which is not engine knowledge and needs no home here.)
+# Length here is overwhelmingly the *evidence*
 # for the empirical parts — the captured stderr each detector matches, and why
 # each match is narrow — which is the one thing that must not be trimmed, since
 # without it a future reader cannot tell a real engine quirk from a guess.
@@ -57,7 +60,6 @@ __all__ = [
     "DesignContextReason",
     "DesignGate",
     "Engine",
-    "ModelTier",
     "NO_DESIGN_REASON",
     "RunResult",
     "Runner",
@@ -67,7 +69,6 @@ __all__ = [
     "build_review_prompt",
     "resolve_design_gate",
     "scan_submit_line",
-    "resolve_model_tier",
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
     "is_sandbox_blocked_defer",
@@ -94,11 +95,6 @@ Verdict = Literal["pass", "fail", "defer"]
 # cross-model second opinion.
 Engine = Literal["claude", "codex"]
 DEFAULT_ENGINE: Engine = "claude"
-
-# The two per-ticket model tiers (#177, ADR 0005): a GitHub label of the shape
-# ``<dimension>:<tier>`` — e.g. ``review:opus`` — records the tier for the
-# ``build`` or ``review`` dimension. Absence defaults to ``sonnet``.
-ModelTier = Literal["sonnet", "opus"]
 
 
 # :class:`RunResult` and :data:`Runner` describe the *driver's* contract, not this
@@ -381,32 +377,6 @@ def scan_submit_line(stdout: str) -> _Parsed:
 
 
 # ---------------------------------------------------------------------------
-# Per-ticket model tiering (#177, ADR 0005)
-# ---------------------------------------------------------------------------
-
-
-def resolve_model_tier(labels: list[str], dimension: str) -> ModelTier:
-    """Resolve the ``dimension`` model tier off ``labels``, default ``sonnet``.
-
-    Scans for a label of the shape ``<dimension>:<tier>`` (case-insensitive,
-    e.g. ``review:opus``). The first match whose tier is a recognized
-    :data:`ModelTier` wins; an absent family, or a label carrying an
-    unrecognized tier value, both fall through to the ``sonnet`` default — the
-    top tier is opt-in, never inferred.  Pure and dimension-agnostic: the
-    ``build`` and ``review`` families never cross-contaminate because each
-    reads only its own ``<dimension>:`` prefix.
-    """
-    prefix = f"{dimension}:"
-    for label in labels:
-        if not label.lower().startswith(prefix):
-            continue
-        tier = label[len(prefix) :].strip().lower()
-        if tier in ("sonnet", "opus"):
-            return tier  # type: ignore[return-value]
-    return "sonnet"
-
-
-# ---------------------------------------------------------------------------
 # Engine command builder — the per-engine read-only CLI invocation.
 # ---------------------------------------------------------------------------
 
@@ -422,14 +392,14 @@ def _build_cmd(engine: Engine, *, model: str | None = None) -> list[str]:
     * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
       it may read files / run read-only git, but carries no edit/write/bypass
       capability). ``model``, when given, is appended as ``--model <alias>``
-      (#177): the review-tier control signal, resolved from the ticket's
-      ``review:<tier>`` label or an explicit override.
+      (#321): the repo's configured ``loop.review_model``, or an explicit
+      ``--model`` override.
     * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
       (matching the published ``commands/build.md`` Codex-engine guidance), reading
       the prompt from ``-`` (stdin).  This replaces the earlier
       ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
-      ``model`` is ignored here — the review tier is a claude-only control
-      signal (ADR 0005); the codex command is unaffected by it.
+      ``model`` is ignored here — the alias is a claude-only control signal;
+      the codex command is unaffected by it.
     """
     if engine == "claude":
         cmd = ["claude", "-p", "--permission-mode", "plan"]
