@@ -263,8 +263,13 @@ def test_both_paths_construct_the_same_container(
     Both paths call :func:`harness.hostenv.spawn.build_docker_argv`, so this
     compares what the client would spawn against what the server would, for the
     same request.
+
+    The identity is resolved through the same provider both paths use (#307). What
+    is being compared is the **call site** — which arguments each path passes — so
+    resolving it here rather than pinning a literal keeps the comparison about
+    drift between the two callers instead of about this machine's git config.
     """
-    from harness.hostenv import spawn
+    from harness.hostenv import host, spawn
 
     client.run(repo=repo, argv=["start", "307"], env=_env(tmp_path, socket_path), stdio=stdio)
     fallback = _spawns(stub_docker)[0]
@@ -275,6 +280,7 @@ def test_both_paths_construct_the_same_container(
         image=client.DEFAULT_IMAGE,
         env_names=client.FORWARDED_ENV_NAMES,
         home=Path(str(tmp_path / "home")),
+        git_identity=host.resolve_container_env(repo.resolve()).git_identity,
     )
 
     # The stub records "$*" — docker's own argv minus argv[0].

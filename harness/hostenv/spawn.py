@@ -31,7 +31,7 @@ before any container exists — see the package docstring and
 from __future__ import annotations
 
 import shlex
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 __all__ = [
@@ -172,12 +172,19 @@ def build_docker_argv(
     tty: bool = False,
     ssh_auth_sock: str | None = None,
     wrapper_status: str = "",
+    git_identity: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Construct the one-shot verb container's ``docker run`` argv.
 
     ``env_names`` are forwarded **by name** (``-e NAME``), so docker reads each
     value from the spawning process's own environment. A value in the argv would
     be visible in ``ps`` output to every user on the host.
+
+    ``git_identity`` is the one env group pinned **by value** instead, mirroring
+    the wrapper's ``-e "GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Harness}"``: it is not a
+    secret, and pinning it means a host that exports it empty cannot blank the
+    commit attribution. Missing fields fall back to the defaults **per field**, so
+    an operator with a configured name but no email keeps their name.
 
     ``argv`` — the caller's verb and its arguments — is appended last, after the
     image. That position is the whole of AC-4's enforcement; see the module
@@ -231,8 +238,9 @@ def build_docker_argv(
     ]
     if wrapper_status:
         out += ["-e", f"HARNESS_WRAPPER_STATUS={wrapper_status}"]
+    resolved_identity = dict(git_identity or {})
     for name, default in _GIT_IDENTITY_DEFAULTS.items():
-        out += ["-e", f"{name}={default}"]
+        out += ["-e", f"{name}={resolved_identity.get(name) or default}"]
 
     out.append(image)
     out += list(argv)

@@ -29,6 +29,57 @@ stdlib-only and cannot import `harness.cli` (`tests/unit/test_hostenv_stdlib_onl
 | [`harness/hostenv/client.py`](../../harness/hostenv/client.py) | stdlib-only | Connect → send → relay → exit, falling back to a direct spawn. |
 | [`harness/cli/serve.py`](../../harness/cli/serve.py) | CLI | `harness serve`: derive the operation surface, hold the per-repo lock, bind the socket. |
 
+`docker/harness-wrapper.sh` is the live caller. Its tail is now
+
+```bash
+exec env PYTHONPATH=… "${_HOST_PY[@]}" -m harness.hostenv.client "$(pwd)" -- "$@"
+```
+
+replacing the `hostenv env` export block and the hand-rolled `docker run` — so a
+running `harness serve` actually receives requests, and the subsystem has a
+production caller rather than only tests. The wrapper fell from 158 to **116**
+executable lines and the ratchet in `tests/unit/test_wrapper_delegates.py` was
+re-baselined 165 → 120, the downward move the design predicted.
+
+Two things stayed in bash on purpose. The **image-freshness guard** and the
+**source-checkout sync** exist partly to detect "this wrapper has no checkout
+behind it" — the detached-copy deployment, which is exactly the state in which
+checkout-resident Python cannot be imported. A guard that cannot fire in the
+deployment it was written for is not a guard.
+
+One behaviour changed rather than moved, and it is a **hard error where there used
+to be a warning**: with no usable host Python the wrapper now exits 1 naming
+`HARNESS_HOST_PYTHON`. Before the rewire a missing interpreter cost only credential
+resolution and the wrapper still ran its own container; now the client *is* the
+runtime, and the alternative — re-implementing container construction in bash for
+the degraded path — is the second security posture this change exists to delete.
+
+### Credentials are resolved per request
+
+`harness.hostenv.host.resolve_container_env` is the one resolver, called by both
+spawn paths on **every** request. It returns credential values (destined for the
+spawned `docker` process's own environment, from which docker forwards them by
+name) and the git identity (pinned by value, defaulted per field). `python3 -m
+harness.hostenv env` is now a thin CLI over the same function, so the three
+callers cannot drift.
+
+Per request, not once, is the load-bearing half. A Claude OAuth token expires; a
+`harness serve` is designed to outlive many of them, so bind time is the one
+moment whose environment is guaranteed to be stale later. Forwarding the ambient
+environment instead would also mean a server started from a shell without
+credentials spawns credential-less containers forever — failing much later as an
+in-container 401 that reads as a review failure (CAL-941). The workdir passed to
+the resolver is the **requested repo**, not the process's cwd, because `.env`
+lives in the target repo and a persistent server's cwd is whatever shell started
+it. An `UnsupportedHost` stops the spawn with a named message rather than shipping
+a blank credential.
+
+`tests/unit/test_hostenv_per_request_credentials.py` asserts both halves against a
+provider that **rotates its token on every read** — a cached implementation hands
+the second container the first container's token and fails. Nothing resolved is
+retained: the value dies with the call, which keeps ADR 0012's "no run state" true
+of credentials too. Brokering with background renewal remains #309.
+
 ## The two properties that define it
 
 **It spawns; it does not proxy.** The caller names a verb and a repo. The host
@@ -188,7 +239,13 @@ Credential brokering with background renewal (#309), periodic maintenance sweeps
 concerns including path equivalence (#308). This record covers the process, the
 socket, the spawner, and the fallback.
 
-The wrapper (`docker/harness-wrapper.sh`) is **not yet rewired** onto the client:
-it still constructs its own `docker run`. Doing so is what would let #351's
-wrapper-side `--repo` translation land, and the argv half of that translation
-already ships here in `spawn.rewrite_repo_argument`.
+**The mount half of #351 is not here.** The wrapper is rewired (above), and the
+*argv* half of `--repo` translation ships in `spawn.rewrite_repo_argument`: an
+explicit `--repo` naming the mounted repo is rewritten to `/workspace`, and one
+naming another repo is refused `repo_mismatch`. But the mount still follows
+`$(pwd)` — the client is invoked as `… client "$(pwd)" -- "$@"` — so naming a
+different repo is refused rather than mounted, and `.env` is still read from the
+invoking directory. Making the mount follow the flag is #351, which the rewire
+unblocks in two ways: construction is now Python, and the wrapper's line ratchet
+(the measured blocker, 158 against a 165 bound) is no longer in the way at 116
+against 120.

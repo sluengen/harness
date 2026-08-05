@@ -72,18 +72,29 @@ now a property of the parser rather than of a trailing `|| true` on every grep.
 
 ### The wrapper contract
 
-The wrapper is a delegating shim. It calls
-`python3 -m harness.hostenv env --workdir "$(pwd)"` once, via an interpreter ladder
-(`$HARNESS_HOST_PYTHON` → the checkout's `.venv` → bare `python3` with `PYTHONPATH`),
-and imports NUL-terminated `KEY=value` records from stdout with `export "$KEY=value"` —
-never `eval`, so a credential containing shell metacharacters cannot be executed, and
-never newline-delimited, so a credential containing a newline cannot split into two
-records. Secrets continue to cross into the container **by name** (`-e GITHUB_TOKEN`),
-keeping them out of the container's argv where `ps` could read them.
+The wrapper is a delegating shim. It resolves an interpreter via a ladder
+(`$HARNESS_HOST_PYTHON` → the checkout's `.venv` → bare `python3` with `PYTHONPATH`)
+and execs `harness.hostenv.client`, which spawns the verb container. Secrets cross
+into the container **by name** (`-e GITHUB_TOKEN`), keeping them out of the
+container's argv where `ps` could read them.
 
-If no interpreter can import the package, the shim warns once and proceeds with whatever
-environment is already set. Failing closed was rejected: it would turn a wrapper deployed
-without its checkout from degraded into dead.
+**Superseded in part by [#307](../../specs/features/runtime-host.md).** Until then the
+shim called `python3 -m harness.hostenv env --workdir "$(pwd)"` and imported
+NUL-terminated `KEY=value` records back into bash with `export "$KEY=value"` — never
+`eval`, and never newline-delimited, so a credential carrying shell metacharacters or a
+newline could not be executed or split. That import is gone: `harness.hostenv.client`
+now calls `resolve_container_env` in-process and hands the values to `docker` through
+the subprocess environment, so no credential value passes through the shell at all and
+the class of problems the record-format rules guarded against no longer exists.
+`python3 -m harness.hostenv env` remains as a thin CLI over the same resolver — the
+records and their format are unchanged — but the wrapper is no longer its caller.
+
+The other half of that supersession is the degraded path. It **used to** warn once and
+proceed with whatever environment was set, because failing closed would turn a wrapper
+deployed without its checkout from degraded into dead. Since #307 the client *is* the
+runtime, so there is nothing left to degrade to short of re-implementing container
+construction in bash; a missing interpreter is now a hard exit naming
+`HARNESS_HOST_PYTHON`.
 
 ## Data model
 

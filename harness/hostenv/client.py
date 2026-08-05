@@ -33,7 +33,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.hostenv import protocol, spawn
+from harness.hostenv import host, protocol, spawn
 
 __all__ = [
     "DEFAULT_IMAGE",
@@ -107,7 +107,22 @@ def _is_a_tty(fd: int) -> bool:
 def _spawn_directly(
     *, repo: Path, argv: list[str], env: dict[str, str], stdio: tuple[int, int, int]
 ) -> int:
-    """Run the verb container in this process's stead. The AC-3 path."""
+    """Run the verb container in this process's stead. The AC-3 path.
+
+    Credentials are resolved here, for this request, exactly as the socket path
+    resolves them for its own — one resolver, so the fallback cannot ship a
+    credential-less container on the days the socket is broken.
+    """
+    try:
+        resolved = host.resolve_container_env(repo)
+    except host.UnsupportedHost as unsupported:
+        # Exit 2 before anything is spawned, inheriting `python3 -m harness.hostenv
+        # env`'s contract: an unsupported host must stop here, where the message
+        # names the cause, rather than shipping a blank credential that surfaces
+        # much later as an in-container 401.
+        sys.stderr.write(f"harness: {unsupported}\n")
+        return 2
+
     docker_argv = spawn.build_docker_argv(
         repo=repo,
         argv=argv,
@@ -116,10 +131,14 @@ def _spawn_directly(
         home=Path(env.get("HOME", str(Path.home()))),
         tty=_is_a_tty(stdio[0]),
         ssh_auth_sock=env.get("SSH_AUTH_SOCK") or None,
+        wrapper_status=env.get("HARNESS_WRAPPER_STATUS", ""),
+        git_identity=resolved.git_identity,
     )
+    for note in resolved.diagnostics:
+        sys.stderr.write(f"harness: {note}\n")
     completed = subprocess.run(  # noqa: S603 — argv is host-constructed; see spawn.py
         docker_argv,
-        env={**os.environ, **env},
+        env={**os.environ, **env, **resolved.values},
         stdin=stdio[0],
         stdout=stdio[1],
         stderr=stdio[2],

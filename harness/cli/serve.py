@@ -52,7 +52,7 @@ from typing import Annotated, Any
 
 import typer
 
-from harness.hostenv import protocol, spawn
+from harness.hostenv import host, protocol, spawn
 from harness.workspace import (
     WorkspaceNotAllowed,
     resolve_within_allowlist,
@@ -276,6 +276,18 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         ``review`` streams live and no run output is ever buffered here — which
         would be run-describing state.
         """
+        # Per request, never at bind time. This process is designed to outlive many
+        # verbs, so bind time is the one moment whose credentials are guaranteed to
+        # be stale later — and the repo it resolves `.env` against is the one *this
+        # request* named, not the shell's cwd. Nothing resolved here is retained:
+        # `resolved` dies with the call, which is what keeps ADR 0012's "no run
+        # state" true of credentials too.
+        try:
+            resolved = host.resolve_container_env(repo)
+        except host.UnsupportedHost as unsupported:
+            _log_to_stderr(f"credential resolution failed: {unsupported}")
+            return 2
+
         docker_argv = spawn.build_docker_argv(
             repo=repo,
             argv=argv,
@@ -283,13 +295,14 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
             env_names=_forwarded_env_names(),
             home=Path(self.env.get("HOME", str(Path.home()))),
             ssh_auth_sock=self.env.get("SSH_AUTH_SOCK") or None,
+            git_identity=resolved.git_identity,
         )
         stdin, stdout, stderr = (fds + [0, 1, 2])[:3]
 
         with self._lock_for(repo):
             completed = subprocess.run(  # noqa: S603 — argv is host-constructed
                 docker_argv,
-                env={**os.environ, **self.env},
+                env={**os.environ, **self.env, **resolved.values},
                 stdin=stdin,
                 stdout=stdout,
                 stderr=stderr,
