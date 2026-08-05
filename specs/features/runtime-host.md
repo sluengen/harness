@@ -1,0 +1,152 @@
+# Runtime host (live)
+
+The as-built record of `harness serve` — the persistent host-side process that
+owns container construction and spawns each verb as a one-shot container. It is
+the first delivery against [ADR 0012](../decisions/0012-persistent-runtime-host.md)'s
+decision that *continuity belongs to the host, never to the run* (#307).
+
+Related records: [CLI surface](cli-surface.md) (where `serve` sits among the
+commands), [verb model](verb-model.md) (what the spawned containers do), [run
+ledger](run-ledger.md) (the state this process deliberately does not hold).
+
+## What shipped
+
+Four modules, split along one hard constraint: the client runs on the host under
+a bare `python3` before any container exists, so everything it touches is
+stdlib-only and cannot import `harness.cli` (`tests/unit/test_hostenv_stdlib_only.py`).
+
+| Module | Layer | Role |
+|---|---|---|
+| [`harness/hostenv/protocol.py`](../../harness/hostenv/protocol.py) | stdlib-only | Frame encode/decode, socket-path precedence, refusal reasons, exit mapping. |
+| [`harness/hostenv/spawn.py`](../../harness/hostenv/spawn.py) | stdlib-only | The one home for `docker run` argv construction and the `--repo` rewrite. |
+| [`harness/hostenv/client.py`](../../harness/hostenv/client.py) | stdlib-only | Connect → send → relay → exit, falling back to a direct spawn. |
+| [`harness/cli/serve.py`](../../harness/cli/serve.py) | CLI | `harness serve`: derive the operation surface, hold the per-repo lock, bind the socket. |
+
+## The two properties that define it
+
+**It spawns; it does not proxy.** The caller names a verb and a repo. The host
+chooses the image, the mount, the privilege and the env. ADR 0012 rejected
+mounting the docker socket into callers precisely to keep this property — the
+docker socket is root-equivalent on the host, so anything reaching it can
+`docker run -v /:/host`.
+
+The property is enforced **positionally**, not by sanitizing: every
+caller-derived token is appended *after* the image, where docker has stopped
+parsing options and is assembling the container's command line. `harness start
+--privileged` is therefore an argument to `start`, which rejects it as an unknown
+flag. A blocklist of dangerous option names would be defeated by the next docker
+release; a positional rule enumerates nothing, so there is nothing for a new
+option to slip past. The wire schema is the same argument one layer up: exactly
+three keys (`protocol`, `repo`, `argv`) are accepted and anything else is
+refused, which is what makes `image` / `volumes` / `privileged` / `env`
+*inexpressible* rather than merely ignored.
+
+The one caller-derived value that must sit in the docker-option region is the
+resolved repo path, since it is the mount source. It is therefore the one value
+validated by content: a `:` in it would inject `-v` field structure and is
+refused.
+
+**It holds no run state.** ADR 0012: *"if the host process ever holds run state,
+it has exceeded the carve-out."* The close gate rests on the ledger being the
+only memory of a run, so a host caching run status would break that property
+while appearing to work. The server's entire mutable state after a request is
+`_repo_locks` — a mutex per resolved repo path, which names no run, ticket, verb
+or argv, and whose empty state after a restart is a correct one.
+
+Two consequences follow that read as implementation detail and are not:
+
+- The response frame carries **no verb output**. Output crosses on the caller's
+  own file descriptors (`SCM_RIGHTS`), so a twelve-minute `review` streams live
+  instead of arriving at the end — and the server never accumulates a run's
+  output in memory, which would be run-describing state.
+- `block_on_close` is explicitly off. Left at its `socketserver` default it
+  lazily installs a `_threads` list on the instance at the first request — state
+  created *by a request* — and makes shutdown wait for in-flight handlers.
+  Waiting is also wrong: a verb's container is owned by the docker daemon and
+  runs to completion whether or not this process is alive.
+
+## Decisions settled here
+
+**Operation surface: derived, not an allowlist.** `serve` resolves the leading
+tokens of argv against the leaf set of the registered Typer app, longest-prefix
+first, so `promote start` and `worktrees cleanup` resolve as leaves. The retired
+launcher's hardcoded `OPERATIONS` frozenset went stale as soon as a verb was
+added and was six verbs behind by the time it was deleted. Derivation makes that
+drift structurally impossible, which leaves #311's guard as a floor rather than
+the mechanism.
+
+**Supervision: none in this ticket; the fallback is the visibility mechanism.**
+`harness serve` is a foreground process the operator starts. *Client-side
+autostart* was rejected: a verb call would spawn a long-lived credential broker
+as a side effect, inheriting that call's environment, cwd and tty into a process
+outliving it; two concurrent clients would race to start two servers; and it
+makes an outage invisible, which is exactly what ADR 0012 warns against. *launchd
+socket activation* was rejected as macOS-only with no WSL equivalent. A shipped
+launchd/systemd unit belongs to the deployment ticket (#312). "Not running"
+surfaces instead as one stderr line from the client, and the verb still runs.
+
+**The mount stays `/workspace`, not ADR 0012's path-equivalent mount.**
+`runs.worktree_path` is recorded container-absolute as
+`/workspace/.worktrees/harness/<run_id>`, so changing the mount point rewrites
+the meaning of every already-recorded path and strands every in-flight run across
+the cutover. Path equivalence is #308's concern, with the ledger migration that
+makes it safe.
+
+## The fallback, and its one asymmetry
+
+The client falls back to spawning the container itself when the socket is
+unreachable — absent, stale, a plain file, or permission denied all collapse to
+one answer, because the action is identical in all four cases. ADR 0012 requires
+this "built in from the start rather than added after the first outage", and both
+paths call the same `spawn.build_docker_argv`: two constructions would be two
+security postures, and the fallback runs on exactly the days the socket is
+broken.
+
+**Falling back is a connect-time decision only.** Once the request bytes are on
+the wire the verb may already be running, so a lost *response* exits 1 and names
+the ledger as the record rather than re-spawning. Running a `close` twice —
+merging and pushing twice — is the worst failure this design can produce, and is
+strictly worse than reporting an uncertain outcome.
+
+## Concurrency
+
+Requests naming the same resolved repo are **serialized**; requests naming
+different repos run concurrently. ADR 0012 requires serialization until
+parallel-writer behaviour against the ledger over a bind mount is measured, and
+that measurement gates enabling concurrency rather than following it. The lock is
+per repo rather than global because a `status` on one repo must not queue behind
+a twelve-minute `review` on another — and the test asserting different repos
+*do* overlap is the non-vacuity floor for the serialization test, which a server
+that simply never ran anything in parallel would otherwise satisfy.
+
+## Security boundary
+
+The socket's only authentication is filesystem permissions — parent dir `0700`,
+socket `0600`. Anyone who can `connect()` can run any registered verb against any
+allowlisted repo with the host's credentials injected, which is operator-
+equivalent authority. It is deliberately *not* a privilege boundary between
+processes of the same uid; it is one between the docker socket and everything
+else.
+
+Validation order, every step before `docker` is executed: single-message size cap
+→ strict three-key schema → derived-verb lookup → allowlist and colon rejection on
+`repo` → `--repo` agreement. Secrets are resolved by the host and injected **by
+name** (`-e NAME`), so no value ever lands in an argv or in `ps` output.
+
+The allowlist applies at the socket, not to the client's local fallback: that
+path runs with the invoking operator's own authority over their own argv, exactly
+as the wrapper does today, so there is no boundary to check. The container's own
+`HARNESS_WORKSPACE_ROOTS=/workspace` check still applies inside, on both paths.
+
+## What is not here
+
+Credential brokering with background renewal (#309), periodic maintenance sweeps
+(#310), the reachability guard (#311), deployment via image and entrypoint
+(#312), WSL validation on a real Windows host (#313), and platform-specific spawn
+concerns including path equivalence (#308). This record covers the process, the
+socket, the spawner, and the fallback.
+
+The wrapper (`docker/harness-wrapper.sh`) is **not yet rewired** onto the client:
+it still constructs its own `docker run`. Doing so is what would let #351's
+wrapper-side `--repo` translation land, and the argv half of that translation
+already ships here in `spawn.rewrite_repo_argument`.
