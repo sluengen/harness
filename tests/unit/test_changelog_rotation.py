@@ -61,7 +61,7 @@ _ARCHIVE = _REPO_ROOT / _ARCHIVE_DIR / "2026.md"
 #: **It only ever moves down.** The release fold and rotation empty the window,
 #: so re-baselining this constant is housekeeping that can never block anyone —
 #: the property that disqualifies it from being a cadence bound.
-_UNRELEASED_ENTRY_COUNT = 12
+_UNRELEASED_ENTRY_COUNT = 0
 
 #: A single overlong fragment is the entry-length problem ``RELEASING.md``'s
 #: per-entry budget has always named. It stays in the gate: the diff that adds
