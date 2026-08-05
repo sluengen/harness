@@ -42,6 +42,7 @@ CONTEXT = REPO_ROOT / "CONTEXT.md"
 README = REPO_ROOT / "README.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+ARCHIVE = REPO_ROOT / "CHANGELOG-archive" / "2026.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The one wording of the lifecycle, taken verbatim from ADR 0007. Both
@@ -551,11 +552,20 @@ def test_spec_authoring_notes_the_design_stage() -> None:
 def test_changelog_records_the_lifecycle_change() -> None:
     """An entry *heading*, not a mention. #211 and #212's bodies both name #213
     as their out-of-scope follow-on, so a bare substring search passes before
-    this ticket ships anything."""
-    heading = re.search(r"^### .*\(#213\).*$", CHANGELOG.read_text(), re.M)
+    this ticket ships anything.
+
+    Read across the root window **and** the archive since #322: an entry does not
+    stop being recorded when a release rotates it out of the root, so pinning the
+    claim to `CHANGELOG.md` alone would turn every rotation into a false failure.
+    What this guard is about is that #213 has an entry of its own somewhere in the
+    changelog — which file holds it is the rotation's business, not this test's.
+    """
+    changelog = CHANGELOG.read_text() + "\n" + ARCHIVE.read_text()
+    heading = re.search(r"^### .*\(#213\).*$", changelog, re.M)
     assert heading, (
-        "CHANGELOG.md must carry its own `### ` entry heading for #213 — a "
-        "mention inside a sibling entry is not one (#213 AC-4)."
+        "the changelog (CHANGELOG.md or CHANGELOG-archive/) must carry its own "
+        "`### ` entry heading for #213 — a mention inside a sibling entry is not "
+        "one (#213 AC-4)."
     )
     assert "design" in heading.group(0).lower() or "verb" in heading.group(0).lower(), (
         "the #213 CHANGELOG heading must name the design verb / four-verb "

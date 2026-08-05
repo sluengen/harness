@@ -33,6 +33,29 @@ The generic argument for write-time fragments is sound: capture the *user-facing
 
 The general rule this sets: **a record that is compelled per-change, and that duplicates a record already being written, is a tax rather than a control.** Enforcement should be added when the thing it enforces has demonstrated its output, not before.
 
+## Gate outcome — 2026-08-05 (#322)
+
+The *Measurement gates the work* clause above has been discharged. The fold ran once on
+the pending window (43 fragments, 39 releasable) and its output was compared against
+`git log 921a888~1..a0ae5ee --no-merges` over the same range, against a rubric written
+before either form was produced.
+
+**The folded section did not win, so this decision is not revisited.** Coverage was a tie
+(38/39 tickets attributable to a commit, the one miss a known false negative). The fold's
+only clear win was uniquely-present reasoning, and that reached just 4 of 39 fragments —
+2 of them sole carriers — against 73 of 84 commits carrying bodies with a 1,365-byte
+median. The 90% that restate reasoning already in a commit body are this ADR's premise,
+measured rather than argued.
+
+Item 1 is complete and items 2–4 (#323–#325) are unblocked. The evidence, the rubric, and
+the derived form in full are in
+[`../proposals/changelog-from-commits.md`](../proposals/changelog-from-commits.md); the
+drained window is in [`../../CHANGELOG-archive/2026.md`](../../CHANGELOG-archive/2026.md).
+
+One residual is carried into #323: a build that reverses its ticket's plan leaves that
+reasoning in neither the commit subject nor the issue. The release editor is told to look
+for it; no machinery is retained for it.
+
 ## Alternatives rejected
 
 - **Keep it and judge after one release (Option A).** The system is three days old, so "has produced no output" is partly youth. Rejected as the *destination* but adopted as the *gate*: item 1 runs the fold precisely so this option gets its fair test, and retains the standing to overturn the decision. What makes it wrong as a resting place is that each further edge case adds a layer — #287 was the second in three days — and every layer a later simplification must unwind.

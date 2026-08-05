@@ -57,8 +57,8 @@ A change records its changelog entry as its **own file**, `changelog.d/<ticket>.
    | Bound | Name | Value | Remedy |
    |---|---|---|---|
    | Pending fragments | `changelog-fragments` | 40 files | Cut a release; the fold empties the directory |
-   | `CHANGELOG.md` bytes | `changelog-bytes` | 46,500 bytes | Re-baseline in the fold's own commit |
-   | `CHANGELOG.md` lines | `changelog-lines` | 160 lines | Re-baseline in the fold's own commit |
+   | `CHANGELOG.md` bytes | `changelog-bytes` | 965 bytes | Re-baseline in the fold's own commit |
+   | `CHANGELOG.md` lines | `changelog-lines` | 11 lines | Re-baseline in the fold's own commit |
 
    The byte and line bounds are a **ratchet**, not headroom: `CHANGELOG.md` does not accumulate between releases, so "bounded" tightens to "may not grow". Measure with `wc -c CHANGELOG.md` and `wc -l CHANGELOG.md`, or just run `python scripts/cadence.py report`. Only the release fold may move these constants, and it does so deliberately — see "Release notes + the `staging → main` promotion", step 3.
 

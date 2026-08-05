@@ -69,8 +69,17 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 #: Entries do not accumulate here: a change writes ``changelog.d/<ticket>.md``
 #: and only the release fold touches this file, so between releases it does not
 #: change at all. That is what lets the bounds be *may-not-grow*. They are the
-#: measurement at the #267 baseline (156 lines / 45,923 bytes) plus a small
-#: stated allowance.
+#: measurement at the #322 drain baseline (7 lines / 388 bytes) plus the same
+#: small stated allowance the #267 baseline used (+4 lines / +577 bytes).
+#:
+#: **Re-baselined downward at #322**, from 160 lines / 46,500 bytes — the
+#: measurement at #267, when the root still carried 12 entries the rotation had
+#: never moved. The fold + rotation drained the window into
+#: ``CHANGELOG-archive/2026.md``, so the root is now its header, its archive
+#: pointer, and an empty ``## [Unreleased]``. A ratchet that only ever moves
+#: down is doing its job; these constants tighten by 93% rather than being
+#: raised to accommodate the section, which is what landing 76 KB in the root
+#: would have required.
 #:
 #: They are cadence bounds because of how they *breach*: the fold inserts a
 #: released section, and the tree then sits over the ratchet until the same
@@ -78,8 +87,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 #: a direct append under ``## [Unreleased]`` — is now caught in the gate by
 #: ``test_unreleased_window_carries_no_new_entries``, which is base-independent
 #: and has no accumulated-state component. See that test for the pairing.
-_ROOT_BYTE_BOUND = 46_500
-_ROOT_LINE_BOUND = 160
+_ROOT_BYTE_BOUND = 965
+_ROOT_LINE_BOUND = 11
 
 #: Too **many** pending fragments means a release is overdue. (A single overlong
 #: fragment is a different kind of problem entirely — the diff that adds it can
