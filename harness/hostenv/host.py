@@ -197,6 +197,22 @@ class HostPlatform(ABC):
             sources=sources,
         )
 
+    def ssh_agent_is_live(self) -> bool:
+        """Does ``SSH_AUTH_SOCK`` name an agent that actually holds a key?
+
+        The variable routinely outlives the agent it names, so its presence is not
+        evidence. Forwarding a dead socket mounts it and joins group 0, and every
+        ``git push`` over SSH then fails against an agent holding nothing rather
+        than falling back to tokenized https.
+
+        Gating on the *in-VM* path Docker Desktop provides
+        (``/run/host-services/ssh-auth.sock``) is the inverse mistake: that path
+        never exists host-side, so the test was always false and forwarding was
+        silently off on every close. Gate on the host's own agent; let Docker
+        supply the socket at mount time.
+        """
+        return self.bounded_run(["ssh-add", "-l"], seconds=10).returncode == 0
+
     def git_identity(self) -> GitIdentity:
         """Resolve the commit identity from global git config, with defaults.
 
@@ -333,6 +349,9 @@ class ContainerEnv:
     values: dict[str, str]
     git_identity: dict[str, str]
     diagnostics: tuple[str, ...]
+    #: The host's ssh-agent socket, but **only** when an agent is actually live —
+    #: ``None`` otherwise, so a stale ``SSH_AUTH_SOCK`` never mounts a dead socket.
+    ssh_auth_sock: str | None = None
 
 
 def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
@@ -372,9 +391,16 @@ def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) ->
             values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
             values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
 
+    # Liveness is probed only when there is something to forward: the probe is a
+    # subprocess, and running it with no socket buys nothing per request.
+    socket_path = host.env.get("SSH_AUTH_SOCK") or None
+    if socket_path is not None and not host.ssh_agent_is_live():
+        socket_path = None
+
     identity = host.git_identity()
     return ContainerEnv(
         values=values,
+        ssh_auth_sock=socket_path,
         git_identity={
             "GIT_AUTHOR_NAME": identity.name,
             "GIT_AUTHOR_EMAIL": identity.email,

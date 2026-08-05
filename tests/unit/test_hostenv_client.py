@@ -280,7 +280,10 @@ def test_both_paths_construct_the_same_container(
         image=client.DEFAULT_IMAGE,
         env_names=client.FORWARDED_ENV_NAMES,
         home=Path(str(tmp_path / "home")),
-        git_identity=host.resolve_container_env(repo.resolve()).git_identity,
+        **{
+            key: getattr(host.resolve_container_env(repo.resolve()), key)
+            for key in ("git_identity", "ssh_auth_sock")
+        },
     )
 
     # The stub records "$*" — docker's own argv minus argv[0].

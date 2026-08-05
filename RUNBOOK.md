@@ -101,7 +101,7 @@ means that caller is still implicit. Silence means it is done.
 
 ### The wrapper — a repo-side prerequisite (#351)
 
-**Half of this is now done.** #307 rewired the wrapper's tail onto
+**Half of this is now done.** #307 rewired `docker/harness-wrapper.sh`'s tail onto
 `harness.hostenv.client`, so container construction is Python
 (`harness.hostenv.spawn`) rather than hand-rolled bash. Two consequences:
 

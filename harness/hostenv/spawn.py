@@ -57,7 +57,19 @@ WORKSPACE_MOUNT = "/workspace"
 CONTAINER_HOME = "/home/harness"
 
 #: Where a forwarded ssh-agent socket appears inside the container.
-_AGENT_SOCKET = f"{CONTAINER_HOME}/.ssh-agent.sock"
+_AGENT_SOCKET = "/ssh-agent"
+
+#: The **mount source** for the forwarded agent: Docker Desktop bridges the host's
+#: agent into the VM at this fixed path. It exists only *inside* the VM — never on
+#: the macOS host — so it must not be tested for host-side, and the host's own
+#: ``SSH_AUTH_SOCK`` (a per-session launchd path on macOS) must not be used as the
+#: source: bind-mounting it forwards nothing and every SSH push fails against a
+#: healthy agent. The host socket is the liveness *signal*, not the source.
+#:
+#: A native Linux daemon would mount the host socket directly. Selecting the source
+#: per platform is #308's *platform-specific spawn concerns*; this keeps the
+#: wrapper's proven behaviour until that lands.
+_HOST_SERVICES_AGENT_SOCKET = "/run/host-services/ssh-auth.sock"
 
 #: The canonical spelling of the repo option (#306). Matches ``--repo <v>`` and
 #: ``--repo=<v>``; no other spelling is recognized, because no other is emitted.
@@ -210,12 +222,15 @@ def build_docker_argv(
     ]
 
     if ssh_auth_sock:
-        # Forwarded so the container's git can use the operator's agent without
-        # the private key ever being mounted. --group-add 0 mirrors the wrapper:
-        # the agent socket on macOS is group-owned by wheel.
+        # `ssh_auth_sock` is the *signal* that the host has a live agent (resolved
+        # by HostPlatform.ssh_agent_is_live); the mount source is Docker's bridge —
+        # see _HOST_SERVICES_AGENT_SOCKET. Forwarded so the container's git can use
+        # the operator's agent without the private key ever being mounted.
+        # --group-add 0 mirrors the wrapper: the forwarded socket is root-owned and
+        # group-rw inside the container, and the image runs as uid 1000.
         out += [
             "-v",
-            f"{ssh_auth_sock}:{_AGENT_SOCKET}",
+            f"{_HOST_SERVICES_AGENT_SOCKET}:{_AGENT_SOCKET}",
             "-e",
             f"SSH_AUTH_SOCK={_AGENT_SOCKET}",
             "--group-add",

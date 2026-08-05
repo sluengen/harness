@@ -74,6 +74,38 @@ lives in the target repo and a persistent server's cwd is whatever shell started
 it. An `UnsupportedHost` stops the spawn with a named message rather than shipping
 a blank credential.
 
+The ssh-agent is resolved the same way and gated the same way the wrapper gated
+it: `HostPlatform.ssh_agent_is_live` runs `ssh-add -l`, and only a socket whose
+agent actually holds a key is forwarded. `SSH_AUTH_SOCK` routinely outlives the
+agent it names, so its presence is not evidence — forwarding a dead socket mounts
+it, joins group 0, and makes every `git push` over SSH fail against a healthy
+agent instead of falling back to tokenized https. The probe runs only when there
+is a socket to check.
+
+**The mount source is Docker's bridge, not that socket.** Docker Desktop exposes
+the host agent inside the VM at the fixed `/run/host-services/ssh-auth.sock`; the
+host's own `SSH_AUTH_SOCK` on macOS is a per-session launchd path that exists only
+host-side. The spawner mounted the latter, which forwards nothing — caught by the
+retargeted hardening guard when the wrapper stopped being the live caller, and
+fixed here to the wrapper's proven spelling. The host socket is the liveness
+*signal*; choosing the source per platform (a native Linux daemon does mount it
+directly) is #308's *platform-specific spawn concerns*.
+
+### Where the container guards moved
+
+Nine guards asserted container properties as **text inside the wrapper** — the ssh
+and codex mounts, the `known_hosts` path, `--group-add 0`, the TTY flags, the
+`/workspace` mount, the pinned allowlist, the ssh gate, and the bytecode pin. Their
+subject moved, so they were retargeted at the **constructed argv** rather than
+deleted; reading the argv the spawner actually builds is the stronger form of the
+same assertion, and it covers both spawn paths at once. Two changed shape rather
+than home: the TTY guard dropped its bash-specific `SC2046` clause (a list cannot
+word-split) and now asserts the behaviour that clause protected — `-it` when stdin
+is a terminal, and *no* argument otherwise. The `/workspace`-seam derivation over
+`docker/` no longer finds the wrapper, which is now correct rather than a
+regression; because a text scan cannot see a mount built from constants, the
+programmatic seam gained its own behavioural guard alongside.
+
 `tests/unit/test_hostenv_per_request_credentials.py` asserts both halves against a
 provider that **rotates its token on every read** — a cached implementation hands
 the second container the first container's token and fails. Nothing resolved is

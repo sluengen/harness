@@ -294,7 +294,7 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
             image=self.image,
             env_names=_forwarded_env_names(),
             home=Path(self.env.get("HOME", str(Path.home()))),
-            ssh_auth_sock=self.env.get("SSH_AUTH_SOCK") or None,
+            ssh_auth_sock=resolved.ssh_auth_sock,
             git_identity=resolved.git_identity,
         )
         stdin, stdout, stderr = (fds + [0, 1, 2])[:3]

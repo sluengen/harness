@@ -204,13 +204,41 @@ def test_a_tty_is_requested_only_when_the_caller_has_one() -> None:
     assert "-it" in _argv(tty=True)
 
 
+def test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket() -> None:
+    """Docker Desktop bridges the host agent at a fixed **in-VM** path.
+
+    The host's own ``SSH_AUTH_SOCK`` on macOS is a per-session launchd path that
+    exists only on the host; bind-mounting it into the Linux VM forwards nothing,
+    and every ``git push`` over SSH (close / checkpoint) then fails
+    ``Permission denied (publickey)`` against a perfectly healthy agent. The host
+    socket is the *liveness signal*; the mount source is Docker's bridge.
+
+    Selecting this per platform — a native Linux daemon does mount the host socket
+    directly — is #308's *platform-specific spawn concerns*. This pins today's
+    behaviour, which is the wrapper's proven one, until that lands.
+    """
+    argv = _argv(ssh_auth_sock="/private/tmp/com.apple.launchd.abc/Listeners")
+    mounts = [argv[i + 1] for i, tok in enumerate(argv) if tok == "-v"]
+    agent_mounts = [m for m in mounts if "ssh-a" in m or "ssh_a" in m]
+
+    assert agent_mounts == ["/run/host-services/ssh-auth.sock:/ssh-agent"], (
+        f"the agent mount is {agent_mounts} — it must source Docker Desktop's "
+        f"in-VM bridge path, never the host's own launchd socket"
+    )
+    assert not any("com.apple.launchd" in tok for tok in argv), (
+        "the host's launchd socket path leaked into the container invocation"
+    )
+
+
 def test_ssh_agent_is_forwarded_only_when_the_host_has_one() -> None:
     without = _argv(ssh_auth_sock=None)
-    assert not any("ssh-agent" in tok for tok in without)
+    assert not any("ssh-agent" in tok or "ssh-auth" in tok for tok in without)
 
     with_agent = _argv(ssh_auth_sock="/tmp/agent.sock")
     mounts = [with_agent[i + 1] for i, tok in enumerate(with_agent) if tok == "-v"]
-    assert any("/tmp/agent.sock" in m for m in mounts), (
+    # The host path is the liveness signal; the mount source is Docker's bridge —
+    # see test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket.
+    assert any("ssh-auth.sock" in m for m in mounts), (
         f"the agent socket is not mounted: {mounts}"
     )
 

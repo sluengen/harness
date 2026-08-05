@@ -65,6 +65,12 @@ class RotatingHost(HostPlatform):
         self.refreshes = 0
         self.stale = False
         self.workdirs: list[Path] = []
+        self.agent_is_live = False
+        self.liveness_probes = 0
+
+    def ssh_agent_is_live(self) -> bool:
+        self.liveness_probes += 1
+        return self.agent_is_live
 
     def _next(self) -> int:
         self.reads += 1
@@ -431,6 +437,53 @@ def test_an_unsupported_host_stops_the_client_before_a_blank_credential_ships(
     assert spawned_envs(stub_docker) == [], (
         "a container was spawned on an unsupported host — a blank credential "
         "surfaces later as a 401 rather than here as a named refusal"
+    )
+
+
+def test_the_agent_socket_is_forwarded_only_when_the_host_agent_is_live(
+    rotating: RotatingHost,
+    repo: Path,
+) -> None:
+    """The wrapper's ``SSH_AUTH_SOCK`` **and** ``ssh-add -l`` gate, preserved.
+
+    A bare ``SSH_AUTH_SOCK`` is not evidence of a usable agent — the variable
+    outlives the agent it names, so a stale one is common. Forwarding on the
+    variable alone mounts a dead socket and adds ``--group-add 0``, and every
+    ``git push`` over SSH then fails against an agent that holds nothing, instead
+    of falling back to tokenized https.
+
+    The inverse gate is the one that already cost a session: gating on the in-VM
+    path ``/run/host-services/ssh-auth.sock`` ran host-side, was always false, and
+    silently disabled forwarding on every close.
+    """
+    rotating.env["SSH_AUTH_SOCK"] = "/tmp/agent.sock"
+
+    rotating.agent_is_live = False
+    assert host_module.resolve_container_env(repo, host=rotating).ssh_auth_sock is None, (
+        "a socket whose agent holds no key was forwarded anyway"
+    )
+
+    rotating.agent_is_live = True
+    assert (
+        host_module.resolve_container_env(repo, host=rotating).ssh_auth_sock
+        == "/tmp/agent.sock"
+    ), "a live agent was not forwarded — every SSH push falls back to https"
+
+
+def test_no_agent_socket_is_forwarded_when_the_variable_is_unset(
+    rotating: RotatingHost,
+    repo: Path,
+) -> None:
+    """The control: with nothing to forward, liveness is never consulted."""
+    rotating.env.pop("SSH_AUTH_SOCK", None)
+    rotating.agent_is_live = True
+
+    resolved = host_module.resolve_container_env(repo, host=rotating)
+
+    assert resolved.ssh_auth_sock is None
+    assert rotating.liveness_probes == 0, (
+        "an `ssh-add -l` subprocess ran with no socket to check — that is a "
+        "per-request cost buying nothing"
     )
 
 

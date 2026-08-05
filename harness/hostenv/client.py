@@ -130,7 +130,7 @@ def _spawn_directly(
         env_names=FORWARDED_ENV_NAMES,
         home=Path(env.get("HOME", str(Path.home()))),
         tty=_is_a_tty(stdio[0]),
-        ssh_auth_sock=env.get("SSH_AUTH_SOCK") or None,
+        ssh_auth_sock=resolved.ssh_auth_sock,
         wrapper_status=env.get("HARNESS_WRAPPER_STATUS", ""),
         git_identity=resolved.git_identity,
     )
