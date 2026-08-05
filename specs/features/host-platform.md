@@ -1,7 +1,7 @@
 ---
 feature: host-platform
 status: partial
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 tickets: ["#305", "#308"]
 ---
 
@@ -76,6 +76,17 @@ testable. Under WSL, reusing the macOS constant would probe an agent **inside th
 distro** and forward the **Windows** agent — different key sets, so every push fails
 `Permission denied (publickey)` against a healthy agent, with nothing in the output
 naming the cause.
+
+Moving forwarding behind the seam put a **second** value in docker's option region.
+`spawn`'s positional rule keeps caller-derived values after the image, and until now
+the resolved repo path was the only exception — the one value validated by content,
+because a `:` in it injects `-v` field structure. The agent socket is now the other:
+`LinuxHost` and `WslHost` mount `SSH_AUTH_SOCK` verbatim, so it is environment-derived
+rather than a fixed per-platform constant. `SshAgentForwarding.__post_init__` refuses a
+`:` in either `source` or `target` with `UnsafeAgentSocket`, the sibling of
+`UnsafeRepoPath`. It is checked at construction rather than at argv assembly so a
+provider cannot build the malformed object and carry it to spawn time, where the symptom
+is a docker parse error that names docker instead of the value.
 
 **Path equivalence is asserted, not assumed.** `WorkspaceMount` carries the host↔container
 mapping as one object: its `target` is emitted as the `-v` target, as `-w` **and** as
@@ -210,12 +221,18 @@ both are earned.
   and the `/mnt/c` refusal including the non-default-automount and unreadable-table cases,
   with a negative control that a non-WSL provider does **not** refuse a `/mnt` path.
 - `tests/unit/test_hostenv_spawn.py` — the mapping round-trip, each `WorkspaceMount`
-  refusal, and that the three emissions of `target` agree with each other (floored by an
-  assertion that the default is still `/workspace`).
+  refusal (including `from_container`'s outside-the-target branch, whose wrong answer
+  would resolve a run to a directory that is not its worktree), the colon refusal on a
+  forwarded agent socket with a well-formed-still-accepted floor, and that the three
+  emissions of `target` agree with each other (floored by an assertion that the default
+  is still `/workspace`).
 - `tests/unit/test_container_hardening.py` — the macOS argv asserted through the real
   provider, so it is evidence the refactor changed no macOS behaviour; and that no bearer
   push credential reaches the `review` container, with a negative control proving that ban
-  can fail.
+  can fail. The ban reads `client.FORWARDED_ENV_NAMES` — the list production actually
+  forwards — rather than a literal supplied by the test: scanning a test-owned list would
+  hold whatever production did, which is the vacuous shape #181 records, and was measured
+  to pass with `GH_TOKEN` added to the real tuple before it was pointed at production.
 - `tests/unit/test_cli_serve.py`, `tests/unit/test_hostenv_client.py` — a refused repo is
   refused on **both** spawn paths with nothing spawned.
 - `tests/unit/test_hostenv_credentials.py` — the staleness boundary, the refresh flow,

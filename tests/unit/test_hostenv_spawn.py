@@ -246,6 +246,22 @@ def test_the_default_mapping_round_trips_a_path_under_the_repo() -> None:
     assert mount.from_container(mount.to_container(worktree)) == worktree
 
 
+def test_a_container_path_outside_the_mount_target_is_refused() -> None:
+    """``from_container``'s refusal branch — the half the round-trip cannot reach.
+
+    ``to_container``'s refusal is covered by the mismatch tests above, but nothing
+    exercised the inverse: a container path that is not under the target has no
+    host counterpart, and returning ``source / path`` for it would silently invent
+    one. This is the concrete case the ledger produces — a ``worktree_path`` row
+    written by a *differently* mounted run — so a wrong answer here resolves a run
+    to a directory that is not its worktree.
+    """
+    mount = spawn.WorkspaceMount.default(_REPO)
+
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        mount.from_container("/somewhere-else/.worktrees/harness/01ABC")
+
+
 def test_a_mount_source_that_is_not_the_resolved_repo_is_refused() -> None:
     """The docker daemon resolves the source in **its own** namespace.
 
@@ -394,6 +410,42 @@ def test_group_add_is_emitted_per_group_the_provider_asks_for() -> None:
     assert any("/tmp/a.sock:/ssh-agent" in tok for tok in unprivileged), (
         "the socket is still forwarded — only the group grant is absent"
     )
+
+
+def test_a_colon_bearing_agent_socket_is_refused() -> None:
+    """The agent socket is the *second* value in the docker option region.
+
+    This module's docstring says every caller-derived value lands after the image,
+    and the repo path "is the one value validated by content". Moving forwarding
+    behind the provider made that second claim false for the two providers whose
+    source is environment-derived rather than a fixed constant: ``LinuxHost`` and
+    ``WslHost`` both mount ``SSH_AUTH_SOCK`` verbatim.
+
+    ``-v`` splits on ``:``, so a socket path containing one silently re-parses into
+    a different mount: ``/tmp/a:b/agent.sock:/ssh-agent`` reads as source ``/tmp/a``,
+    target ``b/agent.sock``, mode ``/ssh-agent``. The failure is a docker parse
+    error at spawn time, which sends the operator to docker rather than to the
+    malformed value — so refuse it here, by content, with a named error.
+    """
+    with pytest.raises(spawn.UnsafeAgentSocket):
+        spawn.SshAgentForwarding(
+            source="/tmp/a:b/agent.sock", probed="/tmp/a:b/agent.sock"
+        )
+
+
+def test_a_well_formed_agent_socket_is_still_accepted() -> None:
+    """The non-vacuity floor for the refusal above.
+
+    A ban that refused everything would satisfy the test above just as well. This
+    pins that the ordinary path — the one every provider actually produces — still
+    constructs and still reaches the argv.
+    """
+    forwarding = spawn.SshAgentForwarding(source="/tmp/a.sock", probed="/tmp/a.sock")
+    assert forwarding.target == spawn.AGENT_SOCKET_TARGET, (
+        "the target must come from the module constant, not a second literal that "
+        "can disagree with it"
+    )
+    assert any("/tmp/a.sock:/ssh-agent" in tok for tok in _argv(ssh_agent=forwarding))
 
 
 # ---------------------------------------------------------------------------

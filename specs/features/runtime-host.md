@@ -1,7 +1,7 @@
 ---
 feature: runtime-host
 status: implemented
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 tickets: ["#307", "#308"]
 ---
 

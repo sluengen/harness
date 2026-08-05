@@ -499,8 +499,16 @@ def test_no_push_credential_reaches_the_review_container() -> None:
     comment on the issue, so scoping it to ``close`` would break ``review``. It
     crosses **by name** (``-e GITHUB_TOKEN``), so its value never enters the argv
     and never reaches ``ps``; that distinction is the assertion below.
+
+    The forwarded set is read from **production** (``client.FORWARDED_ENV_NAMES``)
+    rather than supplied by this test. Passing a literal here would scan a list the
+    test itself wrote, so the ban would hold no matter what production forwarded —
+    the vacuous shape #181 records. Pointing it at the real tuple is what makes the
+    day someone adds a push credential to it the day this test fails.
     """
-    argv = _verb_container_argv(argv=["review", "R1"])
+    from harness.hostenv.client import FORWARDED_ENV_NAMES
+
+    argv = _verb_container_argv(argv=["review", "R1"], env_names=FORWARDED_ENV_NAMES)
 
     banned = ("GH_TOKEN", "GIT_CONFIG_", "insteadOf", "credential.helper")
     for token in argv:

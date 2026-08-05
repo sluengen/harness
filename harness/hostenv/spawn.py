@@ -19,9 +19,14 @@ verb argument that ``start`` rejects as an unknown flag; it is never a docker fl
 A blocklist of dangerous option names would be defeated by the next docker release;
 a positional rule cannot be, because it does not enumerate anything.
 
-The one exception is the resolved repo path, which must sit in the option region
-(it is the mount source). That is why it is the one value validated by content:
-a ``:`` in it would inject ``-v`` field structure, so it is refused outright.
+Two values are the exception, and both must sit in the option region because both
+are mount sources: the resolved repo path, and — since ssh-agent forwarding moved
+behind the provider seam (#308) — the forwarded agent socket, which ``LinuxHost``
+and ``WslHost`` take verbatim from ``SSH_AUTH_SOCK``. That is why these are the
+values validated by *content*: a ``:`` in either would inject ``-v`` field
+structure, so each is refused outright — the repo path by
+:meth:`WorkspaceMount.validate`, the socket by
+:meth:`SshAgentForwarding.__post_init__`.
 
 **Stdlib only.** ``harness.hostenv`` runs on the host under a bare ``python3``
 before any container exists — see the package docstring and
@@ -41,6 +46,7 @@ __all__ = [
     "DOCKER_DESKTOP_AGENT_SOCKET",
     "RepoMismatch",
     "SshAgentForwarding",
+    "UnsafeAgentSocket",
     "UnsafeRepoPath",
     "WORKSPACE_MOUNT",
     "WorkspaceMount",
@@ -242,12 +248,43 @@ class SshAgentForwarding:
 
     source: str
     probed: str
-    target: str = "/ssh-agent"
+    target: str = AGENT_SOCKET_TARGET
     #: Supplementary groups the container needs to *reach* the socket. Docker
     #: Desktop's bridged socket is root-owned and group-rw while the image runs as
     #: uid 1000; a socket the invoking user owns needs no such grant, so this is
     #: empty everywhere but macOS rather than pinned globally.
     group_add: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # Validated here rather than in ``build_docker_argv`` because this is the
+        # one place every construction passes through — the three providers, the
+        # tests' helpers, and any later platform. A check at the argv site would
+        # leave a provider free to build the malformed object and carry it around
+        # until spawn time, which is exactly the "fails far from its cause" shape
+        # ``WorkspaceMount.validate`` exists to avoid.
+        for label, value in (("source", self.source), ("target", self.target)):
+            if ":" in value:
+                raise UnsafeAgentSocket(label, value)
+
+
+class UnsafeAgentSocket(Exception):  # noqa: N818 — mirrors UnsafeRepoPath
+    """A forwarded agent socket cannot be expressed safely in the option region.
+
+    The sibling of :class:`UnsafeRepoPath`, for the *second* value that sits in
+    the docker-option region. The repo path was the only one until ssh-agent
+    forwarding moved behind the provider seam (#308): ``LinuxHost`` and
+    ``WslHost`` mount ``SSH_AUTH_SOCK`` verbatim, so the value is environment-
+    derived rather than a fixed per-platform constant.
+    """
+
+    def __init__(self, label: str, value: str) -> None:
+        self.label = label
+        self.value = value
+        super().__init__(
+            f"ssh-agent {label} {value!r} contains ':', which is the field "
+            f"separator in a -v host:container:opts mount — docker would parse it "
+            f"as a different mount than the one intended"
+        )
 
 
 class RepoMismatch(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
