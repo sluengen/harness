@@ -23,9 +23,24 @@ from pathlib import Path
 
 import pytest
 
+from harness.hostenv import host as host_module
 from harness.hostenv import spawn
 
 _REPO = Path("/work/repo")
+
+
+def _macos_forwarding(socket_path: str) -> spawn.SshAgentForwarding:
+    """The forwarding ``MacOSHost`` produces for a live agent at ``socket_path``.
+
+    Built through the real provider rather than hand-written, so these tests fail
+    if the macOS pairing ever changes — which is what makes them AC-1 evidence
+    rather than a restatement of the constants.
+    """
+    macos = host_module.MacOSHost(name="macos", env={"SSH_AUTH_SOCK": socket_path})
+    macos.ssh_agent_is_live = lambda: True  # type: ignore[method-assign]
+    forwarding = macos.ssh_agent_forwarding()
+    assert forwarding is not None
+    return forwarding
 
 
 def _argv(**overrides: object) -> list[str]:
@@ -204,6 +219,133 @@ def test_a_tty_is_requested_only_when_the_caller_has_one() -> None:
     assert "-it" in _argv(tty=True)
 
 
+# ---------------------------------------------------------------------------
+# ``WorkspaceMount`` — the host↔container mapping, asserted rather than assumed
+# (#308 AC-2).
+#
+# The ticket's hazard is that "a wrong mount path breaks file references across
+# the container boundary with **no error at all**". The mount is not moving —
+# ``runs.worktree_path`` is recorded container-absolute, so relocating it would
+# rewrite the meaning of every recorded path (#307, and the rejected alternative
+# in #308's design). What ships instead is the mapping as one object that both
+# sides compute with, and a named refusal when it is not a bijection.
+# ---------------------------------------------------------------------------
+
+
+def test_the_default_mapping_round_trips_a_path_under_the_repo() -> None:
+    """``from_container(to_container(p)) == p`` — the bijection, on a real path.
+
+    ``.worktrees/harness/<run_id>`` is not an arbitrary example: it is the exact
+    shape ``runs.worktree_path`` records, so this is the mapping the ledger's
+    already-written rows depend on.
+    """
+    mount = spawn.WorkspaceMount.default(_REPO)
+    worktree = _REPO / ".worktrees/harness/01ABC"
+
+    assert mount.to_container(worktree) == "/workspace/.worktrees/harness/01ABC"
+    assert mount.from_container(mount.to_container(worktree)) == worktree
+
+
+def test_a_container_path_outside_the_mount_target_is_refused() -> None:
+    """``from_container``'s refusal branch — the half the round-trip cannot reach.
+
+    ``to_container``'s refusal is covered by the mismatch tests above, but nothing
+    exercised the inverse: a container path that is not under the target has no
+    host counterpart, and returning ``source / path`` for it would silently invent
+    one. This is the concrete case the ledger produces — a ``worktree_path`` row
+    written by a *differently* mounted run — so a wrong answer here resolves a run
+    to a directory that is not its worktree.
+    """
+    mount = spawn.WorkspaceMount.default(_REPO)
+
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        mount.from_container("/somewhere-else/.worktrees/harness/01ABC")
+
+
+def test_a_mount_source_that_is_not_the_resolved_repo_is_refused() -> None:
+    """The docker daemon resolves the source in **its own** namespace.
+
+    So a source carrying an unresolved ``..`` segment mounts whatever that
+    resolves to there — a directory the caller never named — and every file
+    reference afterwards silently means something else. That is the ticket's
+    "no error at all" case, given an error.
+    """
+    with pytest.raises(spawn.WorkspaceNotEquivalent) as raised:
+        _argv(mount=spawn.WorkspaceMount(source="/work/other/../repo", target="/workspace"))
+
+    assert "/work/other/../repo" in str(raised.value), (
+        "the refusal must name the offending source — it is the whole remediation"
+    )
+
+
+def test_a_mount_source_naming_a_different_directory_than_the_repo_is_refused() -> None:
+    """The mount must be *of the repo the caller named*, not merely well-formed."""
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        _argv(mount=spawn.WorkspaceMount(source="/work/elsewhere", target="/workspace"))
+
+
+def test_a_mount_source_that_is_a_string_prefix_of_the_repo_is_still_refused() -> None:
+    """``/work/repo-evil`` must not pass as ``/work/repo``.
+
+    The same prefix hazard ``rewrite_repo_argument`` guards; asserted here too
+    because this is a *different* comparison in a different function.
+    """
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        _argv(mount=spawn.WorkspaceMount(source="/work/repo-evil", target="/workspace"))
+
+
+def test_a_relative_mount_target_is_refused() -> None:
+    """``-w`` and ``HARNESS_WORKSPACE_ROOTS`` are absolute-path contracts.
+
+    A relative target would make the allowlist compare against something that is
+    not a root, which the in-container check reads as "outside every root".
+    """
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        _argv(mount=spawn.WorkspaceMount(source=str(_REPO), target="workspace"))
+
+
+def test_the_three_places_the_target_is_emitted_cannot_disagree() -> None:
+    """One value, three uses: the ``-v`` target, ``-w``, and the pinned allowlist.
+
+    They are read back out of the constructed argv rather than compared to the
+    literal ``/workspace``, so this asserts they agree *with each other* — which
+    is the property — instead of re-asserting the constant.
+    """
+    mount = spawn.WorkspaceMount(source=str(_REPO), target="/elsewhere")
+    argv = _argv(mount=mount)
+
+    mounts = [argv[i + 1] for i, tok in enumerate(argv) if tok == "-v"]
+    workdir = argv[argv.index("-w") + 1]
+    allowlist = next(
+        tok.split("=", 1)[1] for tok in argv if tok.startswith("HARNESS_WORKSPACE_ROOTS=")
+    )
+
+    assert f"{_REPO}:{mount.target}" in mounts, f"the workspace mount is not in {mounts}"
+    assert workdir == mount.target == allowlist, (
+        f"-w is {workdir!r}, the allowlist is {allowlist!r}, the mount target is "
+        f"{mount.target!r} — a file reference means a different thing in each"
+    )
+
+
+def test_the_default_mount_is_still_workspace() -> None:
+    """The non-vacuity floor under the test above.
+
+    That test proves the three uses agree with *each other*; without this one
+    they could agree on any value, including one that strands every recorded
+    ``runs.worktree_path``. The mount point is deliberately not moving in #308.
+    """
+    assert spawn.WorkspaceMount.default(_REPO).target == "/workspace"
+    assert "HARNESS_WORKSPACE_ROOTS=/workspace" in _argv()
+
+
+def test_a_path_outside_the_repo_has_no_container_spelling() -> None:
+    """``to_container`` refuses rather than inventing a mapping for an unmounted path."""
+    mount = spawn.WorkspaceMount.default(_REPO)
+
+    with pytest.raises(spawn.WorkspaceNotEquivalent):
+        mount.to_container(Path("/etc/passwd"))
+
+
 def test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket() -> None:
     """Docker Desktop bridges the host agent at a fixed **in-VM** path.
 
@@ -213,11 +355,13 @@ def test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket() -> None:
     ``Permission denied (publickey)`` against a perfectly healthy agent. The host
     socket is the *liveness signal*; the mount source is Docker's bridge.
 
-    Selecting this per platform — a native Linux daemon does mount the host socket
-    directly — is #308's *platform-specific spawn concerns*. This pins today's
-    behaviour, which is the wrapper's proven one, until that lands.
+    Since #308 the pairing is the **provider's** to state, not this module's — so
+    this builds it through ``MacOSHost`` rather than passing a bare socket path.
+    The asserted argv is byte-identical to what the wrapper proved, which is AC-1:
+    the refactor moved where the decision is made, not what macOS does.
     """
-    argv = _argv(ssh_auth_sock="/private/tmp/com.apple.launchd.abc/Listeners")
+    forwarding = _macos_forwarding("/private/tmp/com.apple.launchd.abc/Listeners")
+    argv = _argv(ssh_agent=forwarding)
     mounts = [argv[i + 1] for i, tok in enumerate(argv) if tok == "-v"]
     agent_mounts = [m for m in mounts if "ssh-a" in m or "ssh_a" in m]
 
@@ -228,19 +372,80 @@ def test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket() -> None:
     assert not any("com.apple.launchd" in tok for tok in argv), (
         "the host's launchd socket path leaked into the container invocation"
     )
+    assert forwarding.probed == "/private/tmp/com.apple.launchd.abc/Listeners", (
+        "the probed socket must be retained — it is the evidence that liveness was "
+        "checked against the same agent whose bridge is mounted"
+    )
 
 
 def test_ssh_agent_is_forwarded_only_when_the_host_has_one() -> None:
-    without = _argv(ssh_auth_sock=None)
+    without = _argv(ssh_agent=None)
     assert not any("ssh-agent" in tok or "ssh-auth" in tok for tok in without)
 
-    with_agent = _argv(ssh_auth_sock="/tmp/agent.sock")
+    with_agent = _argv(ssh_agent=_macos_forwarding("/tmp/agent.sock"))
     mounts = [with_agent[i + 1] for i, tok in enumerate(with_agent) if tok == "-v"]
     # The host path is the liveness signal; the mount source is Docker's bridge —
     # see test_the_agent_mount_source_is_dockers_bridge_not_the_host_socket.
     assert any("ssh-auth.sock" in m for m in mounts), (
         f"the agent socket is not mounted: {mounts}"
     )
+
+
+def test_group_add_is_emitted_per_group_the_provider_asks_for() -> None:
+    """Empty means *no* ``--group-add``, not a group named ``""``.
+
+    macOS needs group 0 to reach Docker Desktop's root-owned bridged socket; a
+    Linux host mounting a socket the invoking user already owns needs no such
+    grant, and emitting one would be a privilege the platform does not require.
+    """
+    macos = _argv(ssh_agent=_macos_forwarding("/tmp/agent.sock"))
+    assert macos[macos.index("--group-add") + 1] == "0"
+
+    unprivileged = _argv(
+        ssh_agent=spawn.SshAgentForwarding(source="/tmp/a.sock", probed="/tmp/a.sock")
+    )
+    assert "--group-add" not in unprivileged, (
+        "a provider asking for no supplementary group must get none"
+    )
+    assert any("/tmp/a.sock:/ssh-agent" in tok for tok in unprivileged), (
+        "the socket is still forwarded — only the group grant is absent"
+    )
+
+
+def test_a_colon_bearing_agent_socket_is_refused() -> None:
+    """The agent socket is the *second* value in the docker option region.
+
+    This module's docstring says every caller-derived value lands after the image,
+    and the repo path "is the one value validated by content". Moving forwarding
+    behind the provider made that second claim false for the two providers whose
+    source is environment-derived rather than a fixed constant: ``LinuxHost`` and
+    ``WslHost`` both mount ``SSH_AUTH_SOCK`` verbatim.
+
+    ``-v`` splits on ``:``, so a socket path containing one silently re-parses into
+    a different mount: ``/tmp/a:b/agent.sock:/ssh-agent`` reads as source ``/tmp/a``,
+    target ``b/agent.sock``, mode ``/ssh-agent``. The failure is a docker parse
+    error at spawn time, which sends the operator to docker rather than to the
+    malformed value — so refuse it here, by content, with a named error.
+    """
+    with pytest.raises(spawn.UnsafeAgentSocket):
+        spawn.SshAgentForwarding(
+            source="/tmp/a:b/agent.sock", probed="/tmp/a:b/agent.sock"
+        )
+
+
+def test_a_well_formed_agent_socket_is_still_accepted() -> None:
+    """The non-vacuity floor for the refusal above.
+
+    A ban that refused everything would satisfy the test above just as well. This
+    pins that the ordinary path — the one every provider actually produces — still
+    constructs and still reaches the argv.
+    """
+    forwarding = spawn.SshAgentForwarding(source="/tmp/a.sock", probed="/tmp/a.sock")
+    assert forwarding.target == spawn.AGENT_SOCKET_TARGET, (
+        "the target must come from the module constant, not a second literal that "
+        "can disagree with it"
+    )
+    assert any("/tmp/a.sock:/ssh-agent" in tok for tok in _argv(ssh_agent=forwarding))
 
 
 # ---------------------------------------------------------------------------

@@ -438,7 +438,9 @@ def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
             image="harness:dev",
             env_names=(),
             home=Path("/home/op"),
-            ssh_auth_sock="/tmp/agent.sock",
+            ssh_agent=spawn.SshAgentForwarding(
+                source=spawn.DOCKER_DESKTOP_AGENT_SOCKET, probed="/tmp/agent.sock"
+            ),
         )
     )
     assert not _SSH_VM_SOCKET_TEST_RE.search(text), (

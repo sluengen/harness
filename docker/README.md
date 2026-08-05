@@ -313,11 +313,28 @@ directory with no flags or env-var setup.
   exposes that socket as `root`-owned, group-rw, so the wrapper adds
   `--group-add 0` — the non-root `harness` user (uid 1000) otherwise cannot
   connect to it and every push fails `Permission denied (publickey)`.
+  > **That bridge path is macOS-specific**
+  > ([#308](https://github.com/sluengen/harness/issues/308)). The host-platform
+  > provider now chooses the mount source: a native Linux daemon shares the
+  > kernel namespace and mounts the probed `SSH_AUTH_SOCK` itself, joining no
+  > supplementary group. The host socket is only ever the *liveness signal*.
   > **Scope the forwarded key.** The container runs untrusted diff content, and a
   > forwarded agent can authenticate as you to **any** host your loaded keys
   > reach. Load only a key **scoped to the target remote(s)** into the agent for
   > a harness run (e.g. a deploy key for the repo, not your account-wide key), so
   > an in-container compromise cannot push to unrelated hosts on your behalf.
+- **WSL: keep the repo inside the distro filesystem**
+  ([#308](https://github.com/sluengen/harness/issues/308)). A repo under
+  `/mnt/c/...` (or any `drvfs`/`9p`/`cifs` path) is **refused** with a named
+  error before any container starts. Such a path reaches the container across the
+  Windows filesystem boundary, whose permission, symlink and case semantics are
+  not the distro's — and the verbs depend on all three (mode bits on hooks, the
+  `.git` *file* of a linked worktree, case-sensitive allowlist comparison).
+  Refusing is deliberate: warning and proceeding would break silently, which is
+  the failure mode this ticket exists to end. Clone into the WSL filesystem
+  instead (`~/src/<repo>`). There is no override flag; WSL support is validated
+  on a real Windows host in
+  [#313](https://github.com/sluengen/harness/issues/313).
 - **Non-root user** — the container runs as the unprivileged `harness` user
   (uid 1000), not root (CAL-1008), so an in-container compromise is not root over
   the mounted repo or credentials. Host credentials are therefore mounted under

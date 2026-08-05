@@ -28,8 +28,10 @@ from harness.hostenv.host import (
     LinuxHost,
     MacOSHost,
     UnsupportedHost,
+    WslHost,
     detect_host,
 )
+from harness.hostenv.spawn import DOCKER_DESKTOP_AGENT_SOCKET, WorkspaceNotEquivalent
 
 
 def _path_env(*prepend: Path) -> dict[str, str]:
@@ -352,3 +354,261 @@ def test_bounded_run_is_a_completed_process(tmp_path: Path) -> None:
     host = LinuxHost(name="linux", env=_path_env())
 
     assert isinstance(host.bounded_run(["echo", "x"], seconds=5), subprocess.CompletedProcess)
+
+
+# ---------------------------------------------------------------------------
+# Platform-specific spawn concerns (#308): the ssh-agent pairing each provider
+# chooses, and the workspace mount it will allow.
+#
+# Both were macOS constants inlined in ``spawn.build_docker_argv``. The hazard is
+# not that they were wrong on macOS — they are the wrapper's proven behaviour —
+# but that reusing them elsewhere is silently wrong: under WSL the Docker Desktop
+# bridge and ``SSH_AUTH_SOCK`` name *different agents*, so the liveness probe would
+# pass against one and the mount forward the other.
+# ---------------------------------------------------------------------------
+
+
+def _live_agent(host: object, socket_path: str) -> object:
+    """Pin the liveness probe true, so these tests are about the *pairing* alone."""
+    host.ssh_agent_is_live = lambda: True  # type: ignore[attr-defined]
+    host.env["SSH_AUTH_SOCK"] = socket_path  # type: ignore[attr-defined]
+    return host
+
+
+@pytest.mark.parametrize(
+    ("host_factory", "expected_source", "expected_groups"),
+    [
+        pytest.param(
+            lambda: MacOSHost(name="macos", env={}),
+            "/run/host-services/ssh-auth.sock",
+            ("0",),
+            id="macos-mounts-docker-desktops-bridge",
+        ),
+        pytest.param(
+            lambda: LinuxHost(name="linux", env={}),
+            "/tmp/probed-agent.sock",
+            (),
+            id="linux-mounts-the-probed-socket-itself",
+        ),
+        pytest.param(
+            lambda: WslHost(name="wsl", env={}),
+            "/tmp/probed-agent.sock",
+            (),
+            id="wsl-mounts-the-probed-socket-not-the-bridge",
+        ),
+    ],
+)
+def test_each_provider_pairs_the_probed_socket_with_its_own_mount_source(
+    host_factory: object, expected_source: str, expected_groups: tuple[str, ...]
+) -> None:
+    """The ``(probed, source)`` pair, per provider — the invariant #308 exists for.
+
+    macOS is the **only** platform where the two differ: its ``SSH_AUTH_SOCK`` is a
+    per-session launchd path that does not exist inside the VM, and Docker Desktop
+    bridges the agent at a fixed path instead. A native Linux daemon shares the
+    kernel namespace, so the probed socket *is* the mountable one.
+
+    Under WSL, reusing the macOS constant would forward the **Windows** agent while
+    having probed an agent inside the distro — different key sets, so every push
+    fails ``Permission denied (publickey)`` against a healthy agent. This is the
+    assertion that would have caught that.
+    """
+    host = _live_agent(host_factory(), "/tmp/probed-agent.sock")  # type: ignore[operator]
+
+    forwarding = host.ssh_agent_forwarding()  # type: ignore[attr-defined]
+
+    assert forwarding is not None, "a live agent must produce a forwarding"
+    assert forwarding.probed == "/tmp/probed-agent.sock", (
+        "the probed socket must be the host's own — it is the liveness signal"
+    )
+    assert forwarding.source == expected_source
+    assert forwarding.group_add == expected_groups
+    assert forwarding.target == "/ssh-agent"
+
+
+def test_only_macos_forwards_docker_desktops_bridge() -> None:
+    """The non-vacuity floor under the table above.
+
+    Every row could agree on one shared constant and the parametrized test would
+    still pass; this states the discrimination directly, so a provider that
+    silently adopted the bridge path fails here even if the table were edited.
+    """
+    sources = {}
+    for host in (
+        MacOSHost(name="macos", env={}),
+        LinuxHost(name="linux", env={}),
+        WslHost(name="wsl", env={}),
+    ):
+        _live_agent(host, "/tmp/probed-agent.sock")
+        forwarding = host.ssh_agent_forwarding()
+        assert forwarding is not None
+        sources[host.name] = forwarding.source
+
+    bridging = {name for name, src in sources.items() if src == DOCKER_DESKTOP_AGENT_SOCKET}
+    assert bridging == {"macos"}, (
+        f"providers mounting Docker Desktop's bridge are {sorted(bridging)} — only "
+        f"macOS may, because only there does the host socket not exist in the VM"
+    )
+
+
+@pytest.mark.parametrize(
+    "host_factory",
+    [
+        pytest.param(lambda: MacOSHost(name="macos", env={}), id="macos"),
+        pytest.param(lambda: LinuxHost(name="linux", env={}), id="linux"),
+        pytest.param(lambda: WslHost(name="wsl", env={}), id="wsl"),
+    ],
+)
+def test_no_provider_forwards_an_agent_that_is_not_live(host_factory: object) -> None:
+    """A dead socket mounted, plus a group grant, is a privilege with no benefit."""
+    host = host_factory()  # type: ignore[operator]
+    host.env["SSH_AUTH_SOCK"] = "/tmp/stale-agent.sock"
+    host.ssh_agent_is_live = lambda: False  # type: ignore[attr-defined]
+
+    assert host.ssh_agent_forwarding() is None
+
+    without_socket = host_factory()  # type: ignore[operator]
+    without_socket.ssh_agent_is_live = lambda: pytest.fail(  # type: ignore[attr-defined]
+        "the liveness probe is a subprocess — it must not run when there is no socket"
+    )
+    assert without_socket.ssh_agent_forwarding() is None
+
+
+# -- AC-4: the /mnt/c case has a decided, documented behaviour ---------------
+
+
+_DRVFS_MOUNTS = """\
+/dev/sdc / ext4 rw,relatime 0 0
+drivers /usr/lib/wsl/drivers drvfs ro,nosuid,nodev,noatime 0 0
+C:\\134 /mnt/c drvfs rw,noatime,uid=1000,gid=1000,case=off 0 0
+"""
+
+_NON_DEFAULT_ROOT_MOUNTS = """\
+/dev/sdc / ext4 rw,relatime 0 0
+C:\\134 /c drvfs rw,noatime,uid=1000,gid=1000,case=off 0 0
+"""
+
+
+def test_a_windows_filesystem_repo_is_refused_under_wsl(tmp_path: Path) -> None:
+    """AC-4. The decided behaviour is **refuse**, and the refusal must be actionable.
+
+    A repo on ``/mnt/c`` reaches the container across drvfs, whose permission,
+    symlink and case semantics are not the distro's — and the harness's verbs
+    depend on all three (mode bits on hooks, the ``.git`` file of a linked
+    worktree, case-sensitive path comparison). Warning and proceeding would
+    reproduce exactly the silent breakage this ticket names; supporting it would
+    be a claim no one has exercised. Moving the repo is a remedy the operator
+    controls, so the refusal names it.
+    """
+    mounts = tmp_path / "mounts"
+    mounts.write_text(_DRVFS_MOUNTS)
+    host = WslHost(name="wsl", env={}, mounts_path=mounts)
+
+    with pytest.raises(WorkspaceNotEquivalent) as raised:
+        host.workspace_mount(Path("/mnt/c/Users/op/repo"))
+
+    message = str(raised.value)
+    assert "/mnt/c/Users/op/repo" in message, "the refusal must name the path"
+    assert "#313" in message, (
+        "the message must name the ticket where WSL support is earned, so an "
+        "operator can see this is undecided-pending-validation, not a bug"
+    )
+    assert "drvfs" in message
+
+
+def test_a_repo_inside_the_wsl_filesystem_is_accepted(tmp_path: Path) -> None:
+    """The other half. Without this the refusal could be unconditional."""
+    mounts = tmp_path / "mounts"
+    mounts.write_text(_DRVFS_MOUNTS)
+    host = WslHost(name="wsl", env={}, mounts_path=mounts)
+
+    mount = host.workspace_mount(Path("/home/op/src/repo"))
+
+    assert mount.target == "/workspace"
+    # Compared against the *resolved* spelling, not the literal, because that is
+    # the contract (`WorkspaceMount.validate` refuses anything else) and because
+    # this suite runs on macOS, where /home is a firmlink.
+    assert mount.source == str(Path("/home/op/src/repo").resolve())
+
+
+def test_the_refusal_follows_the_mount_table_not_the_mnt_prefix(tmp_path: Path) -> None:
+    """``wsl.conf`` can set ``root=/c/``, so the prefix is a fallback, not the rule.
+
+    Detection reads the fstype of the repo's longest-matching mount entry. A host
+    that automounts its Windows drives somewhere other than ``/mnt`` must still be
+    refused, and a ``/mnt/...`` path that is *not* a Windows filesystem must not be.
+    """
+    mounts = tmp_path / "mounts"
+    mounts.write_text(_NON_DEFAULT_ROOT_MOUNTS)
+    host = WslHost(name="wsl", env={}, mounts_path=mounts)
+
+    with pytest.raises(WorkspaceNotEquivalent):
+        host.workspace_mount(Path("/c/Users/op/repo"))
+
+    # /mnt/data is on ext4 here (it falls under `/`), so the prefix alone must not
+    # condemn it.
+    accepted = host.workspace_mount(Path("/mnt/data/repo"))
+    assert accepted.source == str(Path("/mnt/data/repo").resolve())
+
+
+def test_an_unreadable_mount_table_falls_back_to_the_automount_prefix(
+    tmp_path: Path,
+) -> None:
+    """Fail *safe*, not open: with no evidence, the documented default applies.
+
+    ``/proc/mounts`` is always readable on a real WSL distro; this is the
+    belt-and-braces path, and proceeding as if a ``/mnt/c`` repo were fine is the
+    one outcome that reproduces the silent failure.
+    """
+    host = WslHost(name="wsl", env={}, mounts_path=tmp_path / "does-not-exist")
+
+    with pytest.raises(WorkspaceNotEquivalent):
+        host.workspace_mount(Path("/mnt/c/Users/op/repo"))
+
+    accepted = host.workspace_mount(Path("/home/op/src/repo"))
+    assert accepted.source == str(Path("/home/op/src/repo").resolve()), (
+        "the fallback must condemn only the automount prefix — a distro path with "
+        "no mount table to consult is still an ordinary repo"
+    )
+
+
+@pytest.mark.parametrize(
+    "host_factory",
+    [
+        pytest.param(lambda: MacOSHost(name="macos", env={}), id="macos"),
+        pytest.param(lambda: LinuxHost(name="linux", env={}), id="linux"),
+    ],
+)
+def test_a_non_wsl_provider_does_not_refuse_a_mnt_path(host_factory: object) -> None:
+    """``/mnt/c`` is an ordinary directory name on macOS and plain Linux.
+
+    The negative control for the refusal: a predicate keyed on the path spelling
+    rather than on the platform would break every Linux host with a ``/mnt``
+    layout, and nothing else in the suite would notice.
+    """
+    host = host_factory()  # type: ignore[operator]
+
+    assert host.workspace_mount(Path("/mnt/c/data/repo")).target == "/workspace"
+
+
+def test_detect_host_returns_the_wsl_provider_for_a_wsl_marker(tmp_path: Path) -> None:
+    """The seam is only reachable if detection actually selects it.
+
+    Without this, every WSL assertion above would be testing a class nothing
+    constructs — the shape #181 records as a guard that certifies itself.
+    """
+    osrelease = tmp_path / "version"
+    osrelease.write_text("Linux version 5.15.0-microsoft-standard-WSL2")
+
+    resolved = detect_host(platform="linux", osrelease_path=osrelease, env={})
+
+    assert isinstance(resolved, WslHost)
+    assert resolved.name == "wsl"
+
+    plain = tmp_path / "plain"
+    plain.write_text("Linux version 6.1.0-generic")
+    ordinary = detect_host(platform="linux", osrelease_path=plain, env={})
+    assert not isinstance(ordinary, WslHost), (
+        "a plain Linux host must not get the WSL provider — its refusal would be "
+        "wrong there, and its agent pairing is only coincidentally the same"
+    )
