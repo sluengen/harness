@@ -46,7 +46,9 @@ deterministic seam:
   dimension from the run's ticket labels (`tracker_client().fetch_issue`) and
   appends `--model <alias>` to the **claude** engine command only; the codex
   branch is untouched (ADR 0002 already keeps `--engine codex` a distinct,
-  host-only path). An explicit `harness review --model <alias>` overrides the
+  host-only path; ADR [0013](0013-codex-engines-in-container.md) amends why that
+  path is host-only and declines to extend this ADR's labels to the engine
+  choice). An explicit `harness review --model <alias>` overrides the
   resolved tier, for host/testing use.
 - **`build` → recorded judgement, not control.** No verb reads it. It is
   metadata on the ticket — the spec author's judged difficulty — so a
