@@ -107,7 +107,12 @@ Claude engine writes session state to, so it must stay read-write — the
 in-container review engine is Claude, not Codex (`--engine codex` is host-only,
 [ADR 0002](../specs/decisions/0002-in-container-review-engine.md)). Nothing in
 the container writes `~/.codex`, so read-only removes that write surface without
-breaking anything.
+breaking anything. [ADR 0013](../specs/decisions/0013-codex-engines-in-container.md)
+amends ADR 0002's *reason* — the wall is a seccomp profile, not a capability
+grant — and decides to run Codex in-container behind one. **The read-only mount
+is not loosened by that decision**: it holds while the profile is unshipped, and
+whether a Codex engine that actually runs here needs write access is for the
+tickets that enable it to establish, not something to grant ahead of them.
 
 ```bash
 docker run --rm -it \
@@ -257,8 +262,10 @@ directory with no flags or env-var setup.
   uses subscription auth (`auth_mode: chatgpt`) stored in `~/.codex/auth.json`;
   no `OPENAI_API_KEY` is required or passed. Read-only is safe because the
   in-container review engine is Claude, not Codex (`--engine codex` is host-only,
-  [ADR 0002](../specs/decisions/0002-in-container-review-engine.md)) — nothing in
-  the container writes `~/.codex`.
+  [ADR 0002](../specs/decisions/0002-in-container-review-engine.md), whose reason
+  [ADR 0013](../specs/decisions/0013-codex-engines-in-container.md) amends) —
+  nothing in the container writes `~/.codex`. Read-only stays read-only until a
+  ticket that runs Codex here shows otherwise.
 - **Image freshness** — rebuilds `harness:dev` when this repo's `harness/`
   source is newer than the image (CAL-1144). Nothing else rebuilds the image
   after a merge to `dev`, so a verb that ships is otherwise invisible to the next
@@ -319,6 +326,21 @@ directory with no flags or env-var setup.
   it.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
+- **Container construction is Python, not bash** ([#307](https://github.com/sluengen/harness/issues/307)).
+  Everything above still happens; the wrapper simply no longer builds the
+  `docker run` itself. Its tail is `exec … -m harness.hostenv.client "$(pwd)" --
+  "$@"`, which routes the verb through a running `harness serve` when one is
+  listening and spawns the identical container itself when none is — one
+  construction (`harness.hostenv.spawn`) shared by both, so the fallback cannot
+  drift into a laxer posture on the days the socket is broken. Credentials are
+  resolved per request by the host providers and handed to `docker` through the
+  subprocess environment, so no credential value passes through the shell.
+  **A host Python 3.11+ with the harness package importable is therefore
+  required**, and a missing one is now a hard error naming `HARNESS_HOST_PYTHON`
+  rather than a warning — before #307 it cost only credential resolution, but the
+  client is now the runtime. The image-freshness guard and source-checkout sync
+  below deliberately stay in bash: they must work when no checkout-resident
+  Python is importable.
 
 ### Installation
 

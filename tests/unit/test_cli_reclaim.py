@@ -169,7 +169,7 @@ def test_reclaim_surfaces_failure_reason_in_status(tmp_path: Path) -> None:
 
     status_result = cli_runner.invoke(app, ["status", "R1", "--json", "--db", str(db)])
     assert status_result.exit_code == 0, status_result.output
-    payload = json.loads(status_result.output)
+    payload = json.loads(status_result.stdout)
     assert payload["status"] == "cancelled"
     assert payload["failure_reason"] == "reclaimed"
 
@@ -182,7 +182,7 @@ def test_reclaim_json_output(tmp_path: Path) -> None:
     seed_checkpoint(db, "R1")  # checkpoint-pushed → the branch is resumable
     result = invoke(["reclaim", "R1", "--json", "--db", str(db)], _make_linear_stub())
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["run_id"] == "R1"
     assert payload["ticket"] == "CAL-735"
     assert payload["outcome"] == "reclaimed"
@@ -201,7 +201,7 @@ def test_reclaim_without_checkpoint_reports_no_resumable_branch(tmp_path: Path) 
     result = invoke(["reclaim", "R1", "--json", "--db", str(db)], stub)
     assert result.exit_code == 0, result.output
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "reclaimed"
     assert payload["branch_preserved"] is None
     # The comment does not promise a branch a resume could not find.
@@ -238,7 +238,7 @@ def test_reclaim_by_ticket_with_no_local_run_still_reverts_linear(
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-901")
     stub.apply_label.assert_awaited_once_with("CAL-901", "reclaimed")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "reverted"
     assert payload["branch_preserved"] is None
 
@@ -260,7 +260,7 @@ def test_reclaim_already_cancelled_is_a_safe_noop(tmp_path: Path) -> None:
     second_stub = _make_linear_stub()
     result = invoke(["reclaim", "R1", "--json", "--db", str(db)], second_stub)
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "already_reclaimed"
     # No Linear mutation on the idempotent re-run.
     second_stub.transition_to_unstarted.assert_not_awaited()
@@ -411,7 +411,7 @@ def test_stale_sweep_reclaims_past_threshold(tmp_path: Path) -> None:
     stub.fetch_reclaimable_issues.assert_awaited_once_with(project="Harness v3")
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-800")
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["mode"] == "stale-sweep"
     assert payload["scanned"] == 1
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-800"]
@@ -439,7 +439,7 @@ def test_stale_sweep_reclaims_stranded_in_review_ticket(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     # Reverted to Todo — the stranded In-Review ticket re-enters the queue.
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-900")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-900"]
 
 
@@ -455,7 +455,7 @@ def test_stale_sweep_skips_sub_threshold(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_not_awaited()
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["skipped"] == ["CAL-801"]
 
@@ -476,7 +476,7 @@ def test_stale_sweep_mixed_partitions_by_age(tmp_path: Path) -> None:
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-810"]
     assert payload["skipped"] == ["CAL-811"]
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-810")
@@ -496,7 +496,7 @@ def test_stale_sweep_honours_custom_older_than(tmp_path: Path) -> None:
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-820"]
     assert payload["older_than"] == "20m"
 
@@ -512,7 +512,7 @@ def test_stale_sweep_empty_project_is_noop(tmp_path: Path) -> None:
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["scanned"] == 0
     assert payload["reclaimed"] == []
     assert payload["skipped"] == []
@@ -560,7 +560,7 @@ def test_stale_sweep_full_reclaim_when_local_run_exists(tmp_path: Path) -> None:
     assert fetch_events(db, "R9", "workflow_failed")[0]["reason"] == "reclaimed"
     (_ident, body) = stub.post_comment.await_args.args
     assert "harness/cal-840" in body
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"][0]["outcome"] == "reclaimed"
 
 
@@ -581,7 +581,7 @@ def test_stale_without_project_sweeps_the_whole_queue(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     stub.fetch_reclaimable_issues.assert_awaited_once_with(project=None)
     stub.transition_to_unstarted.assert_awaited_once_with("CAL-900")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["project"] is None
     assert [r["ticket"] for r in payload["reclaimed"]] == ["CAL-900"]
 

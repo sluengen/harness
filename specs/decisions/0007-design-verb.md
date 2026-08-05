@@ -6,10 +6,12 @@
 
 ## Context
 
-ADR 0005 left an admitted asymmetry: `review:<tier>` is a control signal (the
-verb constructs the engine subprocess and passes `--model`), but `build:<tier>`
-is a recorded judgement only, because the orchestrating session *is* the
-builder and no verb-owned seam exists to swap its model per ticket. Its
+ADR 0005 left an admitted asymmetry: `review:<tier>` was a control signal (the
+verb constructs the engine subprocess and passes `--model`), while `build:<tier>`
+was a recorded judgement only, because the orchestrating session *is* the
+builder and no verb-owned seam exists to swap its model per ticket. (Both labels
+were retired by #321; the asymmetry is what motivated this ADR, not a live
+mechanism.) Its
 consequences section anticipated that wiring the build dimension "would need
 its own deterministic seam (e.g. a dispatch step)".
 
@@ -51,11 +53,13 @@ Four resolved dimensions:
   ticket, regardless of judged difficulty. The rationale is context
   segmentation as much as tier: the design happens in a fresh, dedicated
   engine context, uncontaminated by the build session's orchestration state.
-  The engine model is **Opus for all runs initially**; a lower tier (e.g. a
-  `design:<tier>` label defaulting to `opus`, on the dimension-generic
-  `resolve_model_tier` seam, `harness/cli/review_protocol.py:179`) is an
-  anticipated refinement, deliberately not built now. `build:<tier>` /
-  `review:<tier>` semantics from ADR 0005 are untouched.
+  The engine model is **Opus for all runs initially**; a lower tier was an
+  anticipated refinement, deliberately not built. That refinement was described
+  as a `design:<tier>` label hanging off the dimension-generic resolver in
+  `harness/cli/review_protocol.py`; #321 deleted that resolver along with ADR
+  0005's own labels, so the seam it would have hung off no longer exists. A
+  configurable design model would now follow `review`'s shape — one value in
+  `CONTEXT.md`'s `loop:` block — and is still not built.
 - **The artifact is the change spec's Design section, not a new artifact
   class.** The verb posts the design to the ticket as a marked comment (the
   reclaim/handoff marker pattern) and returns it in bounded `DesignOutput`
@@ -102,6 +106,6 @@ Four resolved dimensions:
   satisfy — the proposal's breakdown is sequential for this reason.
 - The build dimension gets its deterministic seam: top-tier thinking happens
   in a verb-owned subprocess, and the Sonnet session executes against its
-  output. `build:<tier>` stays a pure judged-difficulty record.
+  output. `build:<tier>` stayed a pure judged-difficulty record until #321 removed it.
 - The mechanics land through the proposal's breakdown tickets; this ADR is
   the policy record.

@@ -54,6 +54,7 @@ from pydantic import BaseModel
 
 from harness._time import elapsed_ms, iso_z
 from harness.cli._query_common import _resolve_db_path
+from harness.cli._repo import REPO_OPTION, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.defer import DeferNeeds
 from harness.events.emitter import EventEmitter
@@ -285,6 +286,7 @@ def release_command(
         help="The hold kind being released: `decision` (the default), `input`, "
         "or `operator`. Selects the label removed.",
     ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
@@ -294,8 +296,8 @@ def release_command(
 ) -> None:
     """Release a held ticket: write the resolution into the change spec, remove
     the hold label, unassign the operator, and record a ledger event."""
-    db_path = _resolve_db_path(db)
-    repo_root = Path.cwd()
+    repo_root = repo_arg_or_cwd(repo)
+    db_path = _resolve_db_path(db, repo_root)
 
     def _do() -> ReleaseOutput:
         body = _resolve_resolution(resolution, resolution_file)

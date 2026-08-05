@@ -13,6 +13,7 @@ are split across modules for readability:
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
 * :mod:`harness.cli.promote`  — ``harness promote start / continue / status / pr / escalate``
+* :mod:`harness.cli.serve`    — ``harness serve`` (the ADR 0012 runtime host)
 
 Exit codes:
 - 0   command succeeded
@@ -42,6 +43,7 @@ from harness.cli.query import (
 from harness.cli.reclaim import reclaim_command
 from harness.cli.release import release_command
 from harness.cli.review import review_command
+from harness.cli.serve import serve_command
 from harness.cli.start import start_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
@@ -63,6 +65,9 @@ def _root() -> None:
 
 # Top-level read commands.
 app.command(name="version", help="Print harness version.")(version_command)
+app.command(name="serve", help="Run the persistent runtime host (unix socket, one-shot verb containers).")(  # noqa: E501
+    serve_command
+)
 app.command(name="status", help="Print a run's terminal-state summary.")(
     status_command
 )

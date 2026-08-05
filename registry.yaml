@@ -43,7 +43,7 @@ files:
   # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.4.0, profiles: [harness] }
   skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.7.0, profiles: [harness] }
-  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.10.1, profiles: [harness] }
+  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.11.0, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.20.0, profiles: [harness] }
   skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.8.2, profiles: [harness] }
@@ -74,7 +74,7 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.0, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.2.0, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.2.1, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.3.0, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.2.2, profiles: [harness] }
 
@@ -101,7 +101,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.3.2, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.4.0, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project
@@ -124,7 +124,7 @@ files:
   templates/decision.md:              { id: template-decision,        version: 0.2.0, profiles: [harness] }
   templates/infrastructure.md:        { id: template-infrastructure,  version: 0.1.0, profiles: [harness] }
   templates/architecture.md:          { id: template-architecture,    version: 0.2.0, profiles: [harness] }
-  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.17, profiles: [harness] }
+  templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.18, profiles: [harness] }
   # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
   # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
   templates/feature.md:               { id: template-feature,         version: 0.5.0, profiles: [harness] }

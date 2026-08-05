@@ -16,7 +16,15 @@ Cutting a release starts by summarising what shipped since the last one and driv
 
    That assembles every fragment into one `## [<version>] — <date>` section (grouped by category, newest ticket first, bodies verbatim), inserts it into `CHANGELOG.md`, and deletes the consumed fragments — including any `### None` exemptions, which are consumed but never emitted. Then move that section, plus anything still under `## [Unreleased]` from before #267, to the top of `CHANGELOG-archive/<year>.md` (newest first, under that file's `## Released` heading — create the file with an archive header if the year has none yet), leaving `## [Unreleased]` empty for the next cycle. The archive is historical record.
 
-   **Re-baseline the ratchet in the same commit.** `tests/unit/test_changelog_rotation.py`'s `_ROOT_BYTE_BOUND` / `_ROOT_LINE_BOUND` are a may-not-grow ratchet, not a headroom budget, so the fold is the one step allowed to move them: run `wc -lc CHANGELOG.md` after rotating and set them to that measurement plus the same small allowance. This is a deliberate re-taking, like `_RELEASED_SENTINELS`. Include the rotation in the promotion below.
+   **Re-baseline the ratchet in the same commit.** `scripts/cadence.py`'s `_ROOT_BYTE_BOUND` / `_ROOT_LINE_BOUND` are a may-not-grow ratchet, not a headroom budget, so the fold is the one step allowed to move them: run `wc -lc CHANGELOG.md` after rotating and set them to that measurement plus the same small allowance. This is a deliberate re-taking, like `_RELEASED_SENTINELS`. Include the rotation in the promotion below.
+
+   **Then verify the cadence is clear, before driving the promotion:**
+
+   ```bash
+   uv run --extra dev python scripts/cadence.py check
+   ```
+
+   It must exit 0. This is the enforcing half of the bounds the gate only reports (see "Changelog fragments", step 5) — the fold is what clears them, so this is where an unfolded or un-re-baselined window is caught. CI runs the same check as the `release-cadence` job on the PR into `main`, so a miss here surfaces there rather than shipping.
 4. **Drive the promotion to `main`** via `/promote staging to main` (or `harness promote start/continue/pr --from staging --to main` directly) — the audited promotion lifecycle (ADR 0003), which gates the merge and opens the release PR rather than a hand-rolled `gh pr create`.
 
    The `staging → main` promotion *is* the release (`specs/architecture-principles.md`, D7; ADR 0003 amendment, #189/#190). Merge the opened PR before working the checklist below.
@@ -42,18 +50,21 @@ A change records its changelog entry as its **own file**, `changelog.d/<ticket>.
 
 3. **The gate checks both shape and presence.** `scripts/verify.sh` runs `scripts/changelog_fragments.py check` (every fragment parses — structural, and meaningful wherever it runs) and `require` (this change carries a fragment or an exemption — a merge-base diff against `origin/<integration>`). `require` **abstains with a printed reason** rather than guessing where the base cannot resolve: a shallow `actions/checkout` fetch, a detached `promote` worktree, or HEAD being the integration branch itself.
 
-4. **The ratchet is the half that holds everywhere.** Because `CHANGELOG.md` no longer accumulates, `tests/unit/test_changelog_rotation.py` enforces its size as **may-not-grow** rather than as headroom:
+4. **The window guard is the half that holds everywhere.** `tests/unit/test_changelog_rotation.py::test_unreleased_window_carries_no_new_entries` counts the `### ` entries under `## [Unreleased]` and fails a change that appends one instead of writing a fragment. It trips wherever the suite runs, including the environments where `require` abstains. That is why there are two guards rather than one: `require` is the direct check but is base-dependent, and the window guard is base-independent but indirect. Neither subsumes the other. Its constant only ever moves **down** — the fold empties the window — so re-baselining it can never block anyone.
 
-   | Bound | Value | Enforced by |
-   |---|---|---|
-   | Byte ratchet | 46,500 bytes | `test_root_changelog_is_byte_bounded` |
-   | Line ratchet | 160 lines | `test_root_changelog_is_line_bounded` |
+5. **The cadence bounds live on the release path, not in the gate.** These describe *accumulated repo state over time*: no single change causes a breach and none can fix one, so since #350 they are enforced by `scripts/cadence.py` rather than by the gate. `scripts/verify.sh` runs `scripts/cadence.py report`, which prints each bound and **always exits 0**; the enforcing `scripts/cadence.py check` runs in CI's `release-cadence` job on a PR into `main` and in the release step below.
 
-   An append to `[Unreleased]` trips these wherever the suite runs, including the environments where `require` abstains. That is why there are two guards rather than one: `require` is the direct check but is base-dependent, and the ratchet is base-independent but indirect. Neither subsumes the other.
+   | Bound | Name | Value | Remedy |
+   |---|---|---|---|
+   | Pending fragments | `changelog-fragments` | 40 files | Cut a release; the fold empties the directory |
+   | `CHANGELOG.md` bytes | `changelog-bytes` | 965 bytes | Re-baseline in the fold's own commit |
+   | `CHANGELOG.md` lines | `changelog-lines` | 11 lines | Re-baseline in the fold's own commit |
 
-   Measure with `wc -c CHANGELOG.md` and `wc -l CHANGELOG.md` if you need to see where the file sits. Only the release fold may move these constants, and it does so deliberately — see "Release notes + the `staging → main` promotion", step 3.
+   The byte and line bounds are a **ratchet**, not headroom: `CHANGELOG.md` does not accumulate between releases, so "bounded" tightens to "may not grow". Measure with `wc -c CHANGELOG.md` and `wc -l CHANGELOG.md`, or just run `python scripts/cadence.py report`. Only the release fold may move these constants, and it does so deliberately — see "Release notes + the `staging → main` promotion", step 3.
 
-5. **The fold happens at release, not between releases.** There is no between-release fold any more, and nothing to fold: the root file does not grow. The pending window is `changelog.d/` itself, bounded by `test_unreleased_fragments_are_bounded` (too many fragments means a release is overdue) and `test_each_fragment_is_byte_bounded`.
+   **Why they are not in the gate.** A release-cadence breach used to fail `scripts/verify.sh`, which made it indistinguishable from a correctness failure: `harness review` refuses any non-zero `--gate-exit` before invoking an engine, so one overdue release halted **every** unrelated ticket — five consecutive unattended build ticks shipped nothing. The rule that replaced it: ask what a single change can do about an assertion. Fails because of the diff → correctness, and it belongs in the gate. Fails because of accumulated state → cadence, and it belongs here.
+
+6. **The fold happens at release, not between releases.** There is no between-release fold any more, and nothing to fold: the root file does not grow. The pending window is `changelog.d/` itself, bounded by the `changelog-fragments` cadence bound above (too many fragments means a release is overdue) and, in the gate, by `test_each_fragment_is_byte_bounded` — a single overlong fragment *is* the business of the diff that adds it.
 
 **The per-entry budget.** The old fold ran on nine consecutive ticks without ever buying durable headroom, because entry *length* was the cause and the fold only ever treated the symptom: entries ran 2,000–3,000 bytes each against a window median nearer 600. A fragment should target **1,000 bytes and three lines**, and `test_each_fragment_is_byte_bounded` now enforces an outer limit rather than merely asking. Reasoning longer than that belongs in the change spec, the commit body, or the review record — where it already lives in full, and where nobody pays a context tax to skip it.
 
@@ -72,7 +83,9 @@ Run `scripts/verify.sh` and confirm every check passes:
 bash scripts/verify.sh
 ```
 
-The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version` and `harness --help`).
+The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version` and `harness --help`) → the drift and changelog guards → the release-cadence **report**.
+
+The last stage prints each cadence bound and never fails the gate — it is informational here. The enforcing `scripts/cadence.py check` is step 3 of the release above, and CI's `release-cadence` job on the PR into `main`.
 
 - [ ] `ruff check .` — zero errors
 - [ ] `mypy harness` — zero errors

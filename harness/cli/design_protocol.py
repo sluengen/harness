@@ -41,9 +41,12 @@ unchanged by that:
 * **Claude only.** ADR 0002 keeps the in-container engine unprivileged, where
   Codex's ``bwrap`` sandbox cannot start; design has no codex variant at all,
   so there is no ``Engine`` union and no per-engine branch to build.
-* **Opus unconditionally.** The tier is a constant, not a per-ticket label.
-  ``review_protocol.resolve_model_tier`` is dimension-generic and remains the
-  seam a future tier label would hang off; it is deliberately not wired here.
+* **Opus unconditionally.** The model is a constant here. ADR 0007 named a
+  future ``design:<tier>`` label as an anticipated refinement, hanging off the
+  dimension-generic resolver ``review_protocol`` carried; #321 deleted that
+  resolver along with the per-ticket tiers, so there is no such seam to inherit.
+  A configurable design model would follow ``review``'s shape instead — one
+  value in ``CONTEXT.md``'s ``loop:`` block — and is not built.
 """
 
 from __future__ import annotations

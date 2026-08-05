@@ -37,8 +37,16 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 #: says "it is no longer read-only", which a token sweep would flag), a released
 #: changelog entry is immutable, a proposal records what was proposed, and
 #: ``specs/retired/`` is retired by definition.
+#:
+#: ``CHANGELOG-archive/`` was missing here until #322 and that was a latent gap,
+#: not a change this ticket caused: the archive already held 74 released entries
+#: and is *more* immutable than the root window, which at least accumulates
+#: before a release. #322's rotation merely moved an entry carrying the retired
+#: claim across the boundary, which is what surfaced it. Excluding the root but
+#: scanning its archive would have failed the same entry the day it rotated.
 _HISTORICAL_PREFIXES = (
     "CHANGELOG.md",
+    "CHANGELOG-archive/",
     "changelog.d/",
     "specs/decisions/",
     "specs/proposals/",

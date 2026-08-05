@@ -219,7 +219,7 @@ def test_stale_sweep_reports_a_closable_run_instead_of_reclaiming_it(
     )
     assert result.exit_code == 0, result.output
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["closable"] == [
         {"ticket": "400", "run_id": "RCLOSE", "head_sha": head}
     ]
@@ -257,7 +257,7 @@ def test_stale_sweep_reports_the_same_closable_run_on_every_tick(
             stub,
         )
         assert result.exit_code == 0, result.output
-        assert [c["ticket"] for c in json.loads(result.output)["closable"]] == ["401"]
+        assert [c["ticket"] for c in json.loads(result.stdout)["closable"]] == ["401"]
         stub.transition_to_unstarted.assert_not_awaited()
 
     assert fetch_row(db, "RTWICE")["status"] == "open"  # type: ignore[index]
@@ -275,7 +275,7 @@ def test_stale_sweep_reclaims_a_pass_bound_to_a_different_sha(tmp_path: Path) ->
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("402")
     assert fetch_row(db, "RSTALE")["status"] == "cancelled"  # type: ignore[index]
 
@@ -298,7 +298,7 @@ def test_stale_sweep_reclaims_a_pass_without_verify_gate_evidence(
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("403")
 
 
@@ -313,7 +313,7 @@ def test_stale_sweep_reclaims_a_run_whose_only_verdict_is_fail(tmp_path: Path) -
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("404")
 
 
@@ -337,7 +337,7 @@ def test_stale_sweep_reclaims_a_closable_looking_run_with_a_dirty_worktree(
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("405")
 
 
@@ -370,7 +370,7 @@ def test_stale_sweep_does_not_call_a_closable_run_inside_an_enclosing_repo(
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("406")
 
 
@@ -403,7 +403,7 @@ def test_stale_sweep_reclaims_when_a_closable_probe_is_wedged(tmp_path: Path) ->
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("407")
 
 
@@ -429,7 +429,7 @@ def test_stale_sweep_prefers_alive_over_closable(tmp_path: Path) -> None:
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["skipped"] == ["408"]
     assert payload["closable"] == []
     stub.transition_to_unstarted.assert_not_awaited()
@@ -456,7 +456,7 @@ def test_stale_sweep_without_a_ledger_is_byte_identical_to_the_old_behaviour(
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["closable"] == []
     assert [r["ticket"] for r in payload["reclaimed"]] == ["409", "411"]
     assert payload["skipped"] == ["410"]
@@ -493,7 +493,7 @@ def test_stale_sweep_spends_nothing_on_a_within_threshold_ticket(
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["412"]
+    assert json.loads(result.stdout)["skipped"] == ["412"]
 
 
 def test_stale_sweep_outcomes_are_disjoint_and_total(tmp_path: Path) -> None:
@@ -527,7 +527,7 @@ def test_stale_sweep_outcomes_are_disjoint_and_total(tmp_path: Path) -> None:
         ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)], stub
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
 
     reclaimed = {r["ticket"] for r in payload["reclaimed"]}
     skipped = set(payload["skipped"])
@@ -578,7 +578,7 @@ def test_closable_predicate_reads_the_verdict_through_the_payload_constant(
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["closable"] == []
+    assert json.loads(result.stdout)["closable"] == []
     stub.transition_to_unstarted.assert_awaited_once_with("424")
 
 

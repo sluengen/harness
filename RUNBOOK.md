@@ -71,6 +71,66 @@ For **each** task file above:
 
 ---
 
+## Owed: state the target repo before the implicit form is removed (#306)
+
+Every verb now takes an explicit `--repo <path>`. Omitting it still works and
+still means "the current working directory", but prints one deprecation line to
+stderr:
+
+```
+warning: no --repo given — defaulting to the current working directory. The implicit form is deprecated and will be removed; pass --repo <path> explicitly (ADR 0012).
+```
+
+The warning is the whole point of the release: ADR 0012 retires ambient shell
+state as an interface, and the implicit form is removed in a later change. What
+follows is the work that must land **before** that removal, split by who can do
+it.
+
+### Callers outside this checkout — the operator's job
+
+Neither file is in this repo, so no guard here can see them and no change here
+can fix them:
+
+| Caller | Fix |
+|---|---|
+| `~/.claude/scheduled-tasks/harness-work-pull` | Give the thin caller the absolute repo path, and pass it as `--repo` on each verb invocation it makes. |
+| `~/.claude/scheduled-tasks/harness-code-assess` | Same. |
+
+**How to check one:** fire the task once and read stderr. A deprecation line
+means that caller is still implicit. Silence means it is done.
+
+### The wrapper — a repo-side prerequisite (#351)
+
+**Half of this is now done.** #307 rewired `docker/harness-wrapper.sh`'s tail onto
+`harness.hostenv.client`, so container construction is Python
+(`harness.hostenv.spawn`) rather than hand-rolled bash. Two consequences:
+
+- **The argv half is discharged.** `spawn.rewrite_repo_argument` resolves an
+  explicit `--repo`, rewrites it to `/workspace` when it names the mounted repo,
+  and refuses it (`repo_mismatch`) when it names another — so the flag no longer
+  resolves outside the allowlist, and the same translation applies on both the
+  socket and fallback paths.
+- **The line-ratchet blocker is gone.** The wrapper dropped from 158 to 116
+  executable lines and the ratchet in `tests/unit/test_wrapper_delegates.py` was
+  re-baselined 165 → 120. The remaining work is Python, which that ratchet does
+  not bound at all.
+
+What is **not** done, and is what [#351](https://github.com/sluengen/harness/issues/351)
+still is: the mount still follows `$(pwd)`, not the `--repo` value. The client is
+invoked as `… client "$(pwd)" -- "$@"`, so naming a *different* repo is refused
+rather than mounted, and `.env` is still read from the invoking directory.
+Invocations through `~/bin/harness` therefore stay implicit and keep warning until
+the mount half lands.
+
+This is also why the in-repo callers in `commands/harness.md` are deliberately
+**not** updated to pass `--repo`: documenting an invocation the primary entry
+point rejects would be worse than the warning.
+
+Order of operations: #351 → the in-repo callers → the two operator triggers
+above → remove the implicit form.
+
+---
+
 ## Substrate: always-on local is the default
 
 The local triggers above are the **default** substrate for the harness's own

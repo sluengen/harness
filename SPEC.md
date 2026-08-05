@@ -282,6 +282,7 @@ harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--jso
 harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a release event (#193)
 harness doctor                                # system health checks
 harness version                           [--json]
+harness serve                             [--socket <p>] [--image <tag>]   # the persistent runtime host (ADR 0012, #307): bind a local unix socket and spawn each verb as a one-shot container, holding no run state. Foreground; the client falls back to a direct spawn when the socket is unreachable
 
 # Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
 harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify

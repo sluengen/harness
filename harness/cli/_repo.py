@@ -12,6 +12,25 @@ resolves through :func:`resolve_ledger_root` so a ``--repo`` pointing at a
 linked worktree still finds the ledger ``start`` wrote under the main checkout
 (#179) — a worktree created by ``harness start`` never gets its own
 ``.harness/``.
+
+The explicit repo argument (#306, ADR 0012)
+-------------------------------------------
+:func:`repo_arg_or_cwd` is the **one** place in ``harness/cli/`` where an
+omitted ``--repo`` becomes the current working directory, and therefore the one
+place the deprecation warning is emitted. Every command declares its repo
+argument with a ``None`` default and passes it through here.
+
+``None`` rather than ``Path(".")`` is load-bearing, not stylistic: with a
+``Path(".")`` default a command cannot tell *omitted* from an explicit
+``--repo .``, so it would have to warn a caller who did state its intent — which
+makes the deprecation unactionable. ``None`` is what makes omission
+representable at all.
+
+"Exactly one warning per invocation" is a property of the call graph, not of a
+suppression latch: a command enters this seam once, from its command function,
+and hands the resolved path down to any helper that needs it. A latch was
+rejected — it would silently under-report under an in-process ``CliRunner``, and
+would mask a second ambient read rather than expose it.
 """
 
 from __future__ import annotations
@@ -23,6 +42,64 @@ import typer
 from harness._git import git_common_dir
 from harness.state import store
 from harness.workspace import NotAGitTopLevel, WorkspaceNotAllowed, resolve_repo_root
+
+#: Stable prefix of the deprecation line, so callers and guards can recognize it
+#: without pinning the whole sentence.
+IMPLICIT_REPO_WARNING_PREFIX = "warning: no --repo given"
+
+#: The full deprecation warning. One constant, so retiring the implicit form
+#: later is a deletion rather than an audit. It interpolates nothing — no path,
+#: no token, no ticket content — so it can never leak repo layout into a log.
+IMPLICIT_REPO_DEPRECATION = (
+    f"{IMPLICIT_REPO_WARNING_PREFIX} — defaulting to the current working "
+    "directory. The implicit form is deprecated and will be removed; pass "
+    "--repo <path> explicitly (ADR 0012)."
+)
+
+#: Help text shared by every command's ``--repo`` declaration. Exported
+#: separately from :data:`REPO_OPTION` for the one command that cannot reuse the
+#: shared instance: ``worktrees`` declares a second option name on the same
+#: parameter (``--repo-root``, retained so existing callers are undisturbed), so
+#: it builds its own ``typer.Option`` and takes only the text.
+REPO_OPTION_HELP = (
+    "Repo root to act on. Defaults to the current working directory, which is "
+    "deprecated and will be removed (ADR 0012)."
+)
+
+#: The one ``--repo`` declaration. Every command references this instance rather
+#: than repeating the call, so the flag's name, default and help exist once and
+#: cannot drift command to command — and retiring the implicit form later is a
+#: change here, not an audit of twenty signatures. A ``typer.OptionInfo`` is
+#: inert metadata read at registration, so sharing one instance across commands
+#: is safe.
+REPO_OPTION = typer.Option(None, "--repo", help=REPO_OPTION_HELP)
+
+
+def repo_arg_or_cwd(repo: Path | None) -> Path:
+    """The explicit ``--repo``, or the CWD plus one deprecation warning.
+
+    Written to stderr: stdout carries the JSON contract the orchestrating loop
+    parses, and a warning that leaked into it would break ``json.loads`` in
+    every caller.
+    """
+    if repo is not None:
+        return repo
+    typer.echo(IMPLICIT_REPO_DEPRECATION, err=True)
+    return Path.cwd()
+
+
+def resolve_repo_argument(repo: Path | None) -> Path:
+    """:func:`repo_arg_or_cwd` then :func:`resolve_repo_root_or_exit`.
+
+    The one call the enforcing verbs make: warn-if-omitted, then allowlist- and
+    git-top-level-check. Two steps rather than one function so the commands that
+    deliberately do *not* enforce the allowlist today (the read and ops
+    commands) can take the first half without acquiring the second — enforcing
+    it there would refuse every native invocation with no
+    ``HARNESS_WORKSPACE_ROOTS`` set, a behaviour change the implicit path must
+    not have.
+    """
+    return resolve_repo_root_or_exit(repo_arg_or_cwd(repo))
 
 
 def resolve_repo_root_or_exit(repo: Path) -> Path:
