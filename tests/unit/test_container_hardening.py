@@ -230,6 +230,24 @@ def test_readme_references_wrapper_and_does_not_embed_it() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _macos_forwarding(socket_path: str) -> object:
+    """The agent forwarding ``MacOSHost`` produces for a live agent (#308).
+
+    Built through the real provider rather than hand-written. The properties below
+    were the wrapper's proven macOS behaviour, and #308 moved *where the decision
+    is made* without changing what macOS does — so asserting them over the
+    provider's own output is what makes them evidence of that, rather than a
+    restatement of the constants they came from.
+    """
+    from harness.hostenv import host as host_module
+
+    macos = host_module.MacOSHost(name="macos", env={"SSH_AUTH_SOCK": socket_path})
+    macos.ssh_agent_is_live = lambda: True  # type: ignore[method-assign]
+    forwarding = macos.ssh_agent_forwarding()
+    assert forwarding is not None
+    return forwarding
+
+
 def _verb_container_argv(**overrides: object) -> list[str]:
     """The real ``docker run`` argv for a verb container.
 
@@ -248,7 +266,7 @@ def _verb_container_argv(**overrides: object) -> list[str]:
         "image": "harness:dev",
         "env_names": ("GITHUB_TOKEN",),
         "home": Path("/home/op"),
-        "ssh_auth_sock": "/tmp/agent.sock",
+        "ssh_agent": _macos_forwarding("/tmp/agent.sock"),
     }
     kwargs.update(overrides)
     return spawn.build_docker_argv(**kwargs)  # type: ignore[arg-type]
@@ -292,7 +310,7 @@ def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
         "container user can reach the root-owned, group-rw agent socket"
     )
 
-    assert "--group-add" not in _verb_container_argv(ssh_auth_sock=None), (
+    assert "--group-add" not in _verb_container_argv(ssh_agent=None), (
         "group 0 was joined with no agent socket to reach — the grant must be "
         "scoped to the case that needs it"
     )
@@ -452,3 +470,69 @@ def test_bytecode_suppression_is_pinned_not_forwarded_from_the_host() -> None:
                 f"docker/{name} forwards PYTHONDONTWRITEBYTECODE from the host "
                 "instead of pinning it to 1; an empty host value would disable it"
             )
+
+
+# ---------------------------------------------------------------------------
+# #308 AC-3 — no bearer push credential reaches the review container.
+# ---------------------------------------------------------------------------
+
+
+def test_no_push_credential_reaches_the_review_container() -> None:
+    """A bearer push credential must not be handed to the verb that reads a diff.
+
+    **Read the history before reading this as a port.** CAL-622 shipped a
+    tokenized-https push fallback — ``GIT_CONFIG_*`` ``insteadOf`` rules plus a
+    credential helper supplying ``x-access-token``, scoped to ``close`` and
+    deliberately withheld from ``review``. That mechanism lived in
+    ``harness/launcher.py``, which CAL-712 deleted with the workflow engine; its
+    only surviving description is ``specs/retired/hermes-orchestration.md``. So
+    this is **not** a port of a live feature, and a reader who assumes it is will
+    mistake this for a vacuous pass. Today ``close`` pushes over ssh.
+
+    What survives is the *intent*, and it is worth guarding because the reasoning
+    still holds: ``review`` runs an engine over an untrusted diff, so a bearer
+    token in its environment is exfiltratable by the thing it is reviewing. This
+    is the regression guard that fails the day one is reintroduced there.
+
+    ``GITHUB_TOKEN`` is the deliberate exception and is *not* a push credential
+    here — it is the **tracker** credential this repo's GitHub backend needs to
+    comment on the issue, so scoping it to ``close`` would break ``review``. It
+    crosses **by name** (``-e GITHUB_TOKEN``), so its value never enters the argv
+    and never reaches ``ps``; that distinction is the assertion below.
+    """
+    argv = _verb_container_argv(argv=["review", "R1"])
+
+    banned = ("GH_TOKEN", "GIT_CONFIG_", "insteadOf", "credential.helper")
+    for token in argv:
+        for pattern in banned:
+            assert pattern not in token, (
+                f"the review container's argv carries {token!r}, which matches the "
+                f"bearer-push-credential pattern {pattern!r} — review reads an "
+                f"untrusted diff and must not hold a credential that can push"
+            )
+
+    assert "GITHUB_TOKEN" in argv, (
+        "the tracker credential must still be forwarded — review comments on the issue"
+    )
+    assert not any(tok.startswith("GITHUB_TOKEN=") for tok in argv), (
+        "GITHUB_TOKEN was passed by value; its secret would be visible in ps"
+    )
+
+
+def test_the_push_credential_ban_would_catch_a_reintroduced_one() -> None:
+    """The negative control: the ban above must be able to fail.
+
+    Every banned pattern is absent from today's argv, so the test passes whether
+    or not its predicate discriminates anything — the shape #181 records. This
+    runs the same predicate over an argv that *does* carry a push credential and
+    asserts it is caught, so a ban that had been narrowed to nothing fails here.
+    """
+    banned = ("GH_TOKEN", "GIT_CONFIG_", "insteadOf", "credential.helper")
+    reintroduced = _verb_container_argv(
+        argv=["review", "R1"], env_names=("GITHUB_TOKEN", "GH_TOKEN")
+    )
+
+    assert any(pattern in token for token in reintroduced for pattern in banned), (
+        "the ban matched nothing in an argv that carries GH_TOKEN — the predicate "
+        "no longer discriminates, so the guard above is vacuous"
+    )

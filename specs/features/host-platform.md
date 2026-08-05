@@ -2,7 +2,7 @@
 feature: host-platform
 status: partial
 last_updated: 2026-08-05
-tickets: ["#305"]
+tickets: ["#305", "#308"]
 ---
 
 # Host platform abstraction
@@ -35,10 +35,72 @@ WSL branch, which detection from ambient state cannot.
 | anything else | — | raises `UnsupportedHost` |
 
 WSL is distinguished from plain Linux by `/proc/version` content or `WSL_DISTRO_NAME`,
-because `sys.platform` reports `linux` for both and the follow-on ADR 0012 work (bind-mount
-path translation, ssh-agent forwarding) turns on exactly that difference. Both flavours
-share one class today — only the *store* varies, so tracker credentials, git identity and
-bounded execution live once on the ABC.
+because `sys.platform` reports `linux` for both. Since #308 that distinction is
+load-bearing rather than anticipatory: `WslHost` is its own provider, overriding
+**only** the two spawn concerns below. Everything else — the credential store, tracker
+credentials, git identity, bounded execution — stays on `LinuxHost`/the ABC, so this
+provider's unverified status cannot contaminate logic that is not platform-dependent.
+
+### The two spawn concerns (#308)
+
+Both were macOS constants inlined in `spawn.build_docker_argv`. They are not wrong on
+macOS — they are the wrapper's proven behaviour — but reusing them elsewhere is
+*silently* wrong, which is the failure class this ticket exists to end.
+
+| Provider | `ssh_agent_forwarding()` (live agent) | `workspace_mount(repo)` |
+|---|---|---|
+| `MacOSHost` | mounts Docker Desktop's bridge, `--group-add 0` | default mapping |
+| `LinuxHost` | mounts the probed socket itself, no group grant | default mapping |
+| `WslHost` | mounts the probed socket itself, no group grant | refuses a Windows-filesystem path |
+
+**macOS is the only platform where the probed socket is not the mounted one.** Its
+`SSH_AUTH_SOCK` is a per-session launchd path that exists only host-side, so Docker
+Desktop bridges the agent into the VM at a fixed path instead; the host socket is the
+liveness *signal*, the bridge is the source. `--group-add 0` rides with it because that
+bridged socket is root-owned and group-rw while the image runs as uid 1000 — so the
+grant is now *narrower* than before, since a provider mounting a socket the invoking
+user owns asks for no group at all.
+
+Keeping `probed` and `source` on one object is what makes the pairing statable and
+testable. Under WSL, reusing the macOS constant would probe an agent **inside the
+distro** and forward the **Windows** agent — different key sets, so every push fails
+`Permission denied (publickey)` against a healthy agent, with nothing in the output
+naming the cause.
+
+**Path equivalence is asserted, not assumed.** `WorkspaceMount` carries the host↔container
+mapping as one object: its `target` is emitted as the `-v` target, as `-w` **and** as
+`HARNESS_WORKSPACE_ROOTS`, so those three cannot disagree, and `validate` refuses a source
+that is not the resolved path of the repo the caller named (the docker daemon resolves the
+source in *its* namespace, so an unresolved `..` can mount a directory nobody asked for).
+The mount point deliberately stays `/workspace` — see
+[runtime-host](runtime-host.md) for why relocating it would strand every recorded
+`runs.worktree_path`.
+
+#### Scenario: a repo on the Windows filesystem under WSL
+
+- GIVEN a WSL host and a repo under `/mnt/c/...`
+- WHEN any verb runs
+- THEN it refuses with `WorkspaceNotEquivalent` naming the path, the filesystem type, and
+  `#313`, and suggesting a clone inside the WSL filesystem — over the socket as
+  `REPO_NOT_ALLOWED`, through the client's fallback as exit 2, **before docker is touched**
+
+**Refusing is the decided behaviour** (#308 AC-4), not an omission. A drvfs bind mount does
+not carry the distro's permission, symlink and case semantics, and the verbs depend on all
+three: mode bits on hooks, the `.git` *file* of a linked worktree whose `gitdir:` pointer
+must resolve, and case-sensitive comparison in the workspace allowlist. Warning and
+proceeding would reproduce exactly the silent breakage this ticket ends; calling it
+supported would be a claim nobody has exercised. Moving the repo is a remedy the operator
+controls, and #313 is where "supported" gets earned.
+
+Detection reads the fstype of the repo's longest-matching `/proc/mounts` entry — `drvfs`,
+`9p` or `cifs` — rather than matching on `/mnt/`, because `wsl.conf` can set a non-default
+automount `root`, and an ordinary `/mnt/data` on ext4 must not be condemned. When the table
+is unreadable it falls back to the documented `/mnt/<drive letter>/` prefix: with no
+evidence, treating such a repo as fine is the one answer that reproduces the silent failure.
+
+There is deliberately **no operator override**. The `HARNESS_CLAUDE_CREDENTIALS_FILE`
+precedent does not transfer — that is a *value* an operator can know to be correct, whereas
+whether drvfs preserves the semantics the verbs need is not something an env var can assert.
 
 #### Scenario: an unsupported host
 
@@ -120,10 +182,32 @@ search over candidate paths, so the blast radius of being wrong is one line, and
 records WSL as a claim until exercised on a real Windows host; **#313 is that ticket**.
 This is why `status:` above is `partial` rather than `implemented`.
 
+#308 added two more claims to that list, and deliberately did not pretend otherwise.
+Whether Docker Desktop's WSL2 backend can bind-mount a socket out of the distro
+filesystem is unverified — but the failure is *loud* either way (docker fails at run
+time, or the target is an empty directory and ssh reports `Error connecting to agent` in
+push output), and the private key never crosses regardless. That is the whole reason the
+provider mounts the probed socket rather than guessing the bridge: a wrong guess there
+would be silent. Whether drvfs could in fact carry the semantics the verbs need is
+likewise unverified, which is why that case refuses rather than warns. #313 remains where
+both are earned.
+
 ## Verification
 
 - `tests/unit/test_hostenv_host.py` — provider detection (every branch injected), both
-  credential stores, git identity, bounded execution on both providers.
+  credential stores, git identity, bounded execution on both providers; the per-provider
+  `(probed, source)` agent pairing with a floor asserting only macOS returns the bridge,
+  and the `/mnt/c` refusal including the non-default-automount and unreadable-table cases,
+  with a negative control that a non-WSL provider does **not** refuse a `/mnt` path.
+- `tests/unit/test_hostenv_spawn.py` — the mapping round-trip, each `WorkspaceMount`
+  refusal, and that the three emissions of `target` agree with each other (floored by an
+  assertion that the default is still `/workspace`).
+- `tests/unit/test_container_hardening.py` — the macOS argv asserted through the real
+  provider, so it is evidence the refactor changed no macOS behaviour; and that no bearer
+  push credential reaches the `review` container, with a negative control proving that ban
+  can fail.
+- `tests/unit/test_cli_serve.py`, `tests/unit/test_hostenv_client.py` — a refused repo is
+  refused on **both** spawn paths with nothing spawned.
 - `tests/unit/test_hostenv_credentials.py` — the staleness boundary, the refresh flow,
   tracker precedence, `.env` parsing including the embedded-`=` case.
 - `tests/unit/test_hostenv_stdlib_only.py` — the package imports with site-packages off

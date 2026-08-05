@@ -32,44 +32,55 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
+    "AGENT_SOCKET_TARGET",
     "CONTAINER_HOME",
+    "DOCKER_DESKTOP_AGENT_SOCKET",
     "RepoMismatch",
+    "SshAgentForwarding",
     "UnsafeRepoPath",
     "WORKSPACE_MOUNT",
+    "WorkspaceMount",
+    "WorkspaceNotEquivalent",
     "build_docker_argv",
     "rewrite_repo_argument",
 ]
 
 #: Where the repo is bind-mounted inside every verb container.
 #:
-#: **Not the path-equivalent mount ADR 0012 describes** (``-v <repo>:<repo>``).
-#: ``runs.worktree_path`` is recorded container-absolute as
-#: ``/workspace/.worktrees/harness/<run_id>``, so changing the mount point
-#: rewrites the meaning of every already-recorded path and strands every
-#: in-flight run across the cutover. Path equivalence is #308's concern, with the
-#: ledger migration that makes it safe; this ticket keeps today's mount.
+#: **Not the path-equivalent mount ADR 0012 describes** (``-v <repo>:<repo>``),
+#: and #308 decided it stays that way. ``runs.worktree_path`` is recorded
+#: container-absolute as ``/workspace/.worktrees/harness/<run_id>``, so changing
+#: the mount point rewrites the meaning of every already-recorded path and
+#: strands every in-flight run across the cutover — a ledger migration bundled
+#: into a platform refactor. #308 delivers the property ADR 0012 wanted (a file
+#: reference means the same thing on both sides) as *mapping* equivalence
+#: instead: one :class:`WorkspaceMount` both sides compute with, asserted rather
+#: than assumed. The identity mapping remains available as a later variant.
 WORKSPACE_MOUNT = "/workspace"
 
 #: The unprivileged in-container user's home — the target of the credential mounts.
 CONTAINER_HOME = "/home/harness"
 
 #: Where a forwarded ssh-agent socket appears inside the container.
-_AGENT_SOCKET = "/ssh-agent"
+AGENT_SOCKET_TARGET = "/ssh-agent"
 
-#: The **mount source** for the forwarded agent: Docker Desktop bridges the host's
-#: agent into the VM at this fixed path. It exists only *inside* the VM — never on
-#: the macOS host — so it must not be tested for host-side, and the host's own
-#: ``SSH_AUTH_SOCK`` (a per-session launchd path on macOS) must not be used as the
-#: source: bind-mounting it forwards nothing and every SSH push fails against a
+#: The **mount source** for the forwarded agent *on macOS*: Docker Desktop bridges
+#: the host's agent into the VM at this fixed path. It exists only *inside* the VM —
+#: never on the macOS host — so it must not be tested for host-side, and the host's
+#: own ``SSH_AUTH_SOCK`` (a per-session launchd path on macOS) must not be used as
+#: the source: bind-mounting it forwards nothing and every SSH push fails against a
 #: healthy agent. The host socket is the liveness *signal*, not the source.
 #:
-#: A native Linux daemon would mount the host socket directly. Selecting the source
-#: per platform is #308's *platform-specific spawn concerns*; this keeps the
-#: wrapper's proven behaviour until that lands.
-_HOST_SERVICES_AGENT_SOCKET = "/run/host-services/ssh-auth.sock"
+#: **Read by ``MacOSHost`` alone** (#308). A native Linux daemon shares the kernel
+#: namespace and mounts the probed socket directly; under WSL this path bridges the
+#: *Windows* agent while ``SSH_AUTH_SOCK`` names an agent inside the distro — two
+#: different agents with two different key sets, which is why reusing this constant
+#: there would probe one and forward the other.
+DOCKER_DESKTOP_AGENT_SOCKET = "/run/host-services/ssh-auth.sock"
 
 #: The canonical spelling of the repo option (#306). Matches ``--repo <v>`` and
 #: ``--repo=<v>``; no other spelling is recognized, because no other is emitted.
@@ -107,6 +118,136 @@ class UnsafeRepoPath(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
             f"repo path {repo} contains ':', which is the field separator in a "
             f"docker -v specification — it cannot be mounted safely."
         )
+
+
+class WorkspaceNotEquivalent(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
+    """The host↔container path mapping is not a bijection, so refuse to spawn.
+
+    Distinct from :class:`UnsafeRepoPath` on purpose. That one is a *security*
+    refusal — a ``:`` in the mount source injects docker ``-v`` field structure.
+    This is a *portability* refusal: the mount is well-formed but a path would not
+    mean the same thing on both sides of the boundary. Folding them would blur
+    the two, and an operator reading the message needs to know which one they hit.
+
+    Raised before any token is emitted, because the failure this exists to prevent
+    is silent: a wrong mount produces no error at all — the verb simply operates on
+    a directory the caller did not name (#308's problem statement).
+    """
+
+    def __init__(self, subject: object, reason: str, remedy: str = "") -> None:
+        self.subject = subject
+        self.reason = reason
+        self.remedy = remedy
+        message = f"{subject} cannot be mounted equivalently: {reason}"
+        super().__init__(f"{message}. {remedy}" if remedy else message)
+
+
+@dataclass(frozen=True)
+class WorkspaceMount:
+    """The repo bind mount, and the host↔container path mapping it defines.
+
+    One object rather than three uses of a bare constant: ``target`` is emitted as
+    the ``-v`` right field, as ``-w``, **and** as ``HARNESS_WORKSPACE_ROOTS``, so
+    those three cannot disagree by construction. When they disagree a file
+    reference means a different thing to each of the three parties ADR 0012 names
+    — the host process, the client, and the verb container — which is exactly the
+    silent failure #308 exists to make loud.
+
+    ``source`` is a **fully resolved** absolute host path. The docker daemon
+    resolves the source in its own namespace, so an unresolved ``..`` segment or
+    symlink can mount a directory the caller never named.
+    """
+
+    source: str
+    target: str
+
+    @classmethod
+    def default(cls, repo: Path) -> WorkspaceMount:
+        """Today's mapping: the resolved repo at :data:`WORKSPACE_MOUNT`.
+
+        Validated on construction, so a caller that only *builds* a mount — the
+        socket path's pre-flight, which refuses before docker is touched — gets
+        the same refusals as one that goes on to build an argv.
+        """
+        mount = cls(source=str(Path(repo).resolve()), target=WORKSPACE_MOUNT)
+        mount.validate(repo)
+        return mount
+
+    def validate(self, repo: Path) -> None:
+        """Refuse a mapping that is not a bijection *of the repo the caller named*.
+
+        Checked against ``repo`` rather than in isolation: a mount can be
+        perfectly well-formed and still be of the wrong directory, which is the
+        failure with no symptom.
+        """
+        # Checked first, and on the *source* rather than on ``repo``, because the
+        # source is what lands in the ``-v`` field. Ordering matters: a colon-
+        # bearing path that is also a mismatch is a security refusal, and reporting
+        # it as a portability one would send the operator to the wrong remedy.
+        if ":" in self.source:
+            raise UnsafeRepoPath(Path(self.source))
+        resolved = str(Path(repo).resolve())
+        if self.source != resolved:
+            raise WorkspaceNotEquivalent(
+                self.source,
+                f"it is not the resolved path of the requested repo ({resolved})",
+                "the docker daemon resolves the mount source in its own namespace, "
+                "so an unresolved source can mount a directory you did not name.",
+            )
+        if not self.target.startswith("/") or self.target.rstrip("/") != self.target:
+            raise WorkspaceNotEquivalent(
+                self.target,
+                "a mount target must be an absolute path with no trailing slash",
+                "-w and HARNESS_WORKSPACE_ROOTS are absolute-path contracts; a "
+                "relative target reads as outside every allowlisted root.",
+            )
+
+    def to_container(self, path: Path) -> str:
+        """Spell a host path the way the verb container sees it."""
+        try:
+            relative = Path(path).resolve().relative_to(self.source)
+        except ValueError as outside:
+            raise WorkspaceNotEquivalent(
+                path,
+                f"it is not under the mounted repo ({self.source})",
+                "only paths inside the workspace cross the container boundary.",
+            ) from outside
+        return str(Path(self.target) / relative) if str(relative) != "." else self.target
+
+    def from_container(self, path: str) -> Path:
+        """The inverse of :meth:`to_container` — a container path back to the host."""
+        try:
+            relative = Path(path).relative_to(self.target)
+        except ValueError as outside:
+            raise WorkspaceNotEquivalent(
+                path,
+                f"it is not under the mount target ({self.target})",
+                "only paths inside the workspace cross the container boundary.",
+            ) from outside
+        return Path(self.source) / relative
+
+
+@dataclass(frozen=True)
+class SshAgentForwarding:
+    """How this host forwards its ssh-agent into a verb container.
+
+    ``probed`` is the socket the liveness check actually talked to; ``source`` is
+    what gets mounted. They differ on **exactly one** platform — macOS, where the
+    host's ``SSH_AUTH_SOCK`` is a per-session launchd path that exists only
+    host-side and Docker Desktop bridges the agent into the VM at a fixed path.
+    Keeping both on one object is what makes that pairing statable in one place,
+    and testable: a provider that probes agent A and mounts agent B passes every
+    liveness check and then fails every push against a healthy agent.
+    """
+
+    source: str
+    probed: str
+    target: str = "/ssh-agent"
+    #: Supplementary groups the container needs to *reach* the socket. Docker
+    #: Desktop's bridged socket is root-owned and group-rw while the image runs as
+    #: uid 1000; a socket the invoking user owns needs no such grant, so this is
+    #: empty everywhere but macOS rather than pinned globally.
+    group_add: tuple[str, ...] = field(default_factory=tuple)
 
 
 class RepoMismatch(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
@@ -182,7 +323,8 @@ def build_docker_argv(
     env_names: Sequence[str],
     home: Path,
     tty: bool = False,
-    ssh_auth_sock: str | None = None,
+    ssh_agent: SshAgentForwarding | None = None,
+    mount: WorkspaceMount | None = None,
     wrapper_status: str = "",
     git_identity: Mapping[str, str] | None = None,
 ) -> list[str]:
@@ -201,10 +343,20 @@ def build_docker_argv(
     ``argv`` — the caller's verb and its arguments — is appended last, after the
     image. That position is the whole of AC-4's enforcement; see the module
     docstring.
+
+    ``ssh_agent`` and ``mount`` are **provider-supplied** (#308): both were macOS
+    constants inlined here, and both are the platform-specific half of the spawn.
+    ``None`` means, respectively, *this host has no live agent to forward* and
+    *use today's default mapping*. The mount is validated unconditionally before
+    a token is emitted — that assertion is the backstop under the client's
+    direct-spawn fallback, which has no earlier check.
     """
     repo = Path(repo)
-    if ":" in str(repo):
-        raise UnsafeRepoPath(repo)
+    # Both refusals now live on the mount object — the one place that knows what a
+    # ``-v`` field may contain — so the socket path can reach them before it
+    # touches docker instead of re-implementing the colon check inline (#308).
+    mount = WorkspaceMount.default(repo) if mount is None else mount
+    mount.validate(repo)
 
     out = ["docker", "run", "--rm"]
     if tty:
@@ -212,30 +364,28 @@ def build_docker_argv(
 
     out += [
         "-v",
-        f"{repo}:{WORKSPACE_MOUNT}",
+        f"{mount.source}:{mount.target}",
         "-w",
-        WORKSPACE_MOUNT,
+        mount.target,
         "-v",
         f"{home / '.ssh'}:{CONTAINER_HOME}/.ssh:ro",
         "-v",
         f"{home / '.codex'}:{CONTAINER_HOME}/.codex:ro",
     ]
 
-    if ssh_auth_sock:
-        # `ssh_auth_sock` is the *signal* that the host has a live agent (resolved
-        # by HostPlatform.ssh_agent_is_live); the mount source is Docker's bridge —
-        # see _HOST_SERVICES_AGENT_SOCKET. Forwarded so the container's git can use
-        # the operator's agent without the private key ever being mounted.
-        # --group-add 0 mirrors the wrapper: the forwarded socket is root-owned and
-        # group-rw inside the container, and the image runs as uid 1000.
+    if ssh_agent is not None:
+        # Forwarded so the container's git can use the operator's agent without the
+        # private key ever being mounted. `probed` is the socket liveness was
+        # checked against and `source` is what is mounted; the provider pairs them
+        # (see SshAgentForwarding), because on macOS alone they differ.
         out += [
             "-v",
-            f"{_HOST_SERVICES_AGENT_SOCKET}:{_AGENT_SOCKET}",
+            f"{ssh_agent.source}:{ssh_agent.target}",
             "-e",
-            f"SSH_AUTH_SOCK={_AGENT_SOCKET}",
-            "--group-add",
-            "0",
+            f"SSH_AUTH_SOCK={ssh_agent.target}",
         ]
+        for group in ssh_agent.group_add:
+            out += ["--group-add", group]
 
     for name in env_names:
         out += ["-e", name]
@@ -245,7 +395,7 @@ def build_docker_argv(
     # in-container allowlist (CAL-584) and the bytecode guard (#278).
     out += [
         "-e",
-        f"HARNESS_WORKSPACE_ROOTS={WORKSPACE_MOUNT}",
+        f"HARNESS_WORKSPACE_ROOTS={mount.target}",
         "-e",
         "PYTHONDONTWRITEBYTECODE=1",
         "-e",

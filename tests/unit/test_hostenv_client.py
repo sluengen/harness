@@ -281,8 +281,18 @@ def test_both_paths_construct_the_same_container(
         env_names=client.FORWARDED_ENV_NAMES,
         home=Path(str(tmp_path / "home")),
         **{
-            key: getattr(host.resolve_container_env(repo.resolve()), key)
-            for key in ("git_identity", "ssh_auth_sock")
+            # Every provider-supplied argument, so the comparison covers the two
+            # #308 added (the agent pairing and the mount) rather than silently
+            # letting the fallback default them. The mapping is spelled out
+            # because the resolver's field name and the builder's parameter name
+            # differ for the mount — a `for key in (...)` comprehension would have
+            # skipped it with a TypeError that reads as a signature problem.
+            parameter: getattr(host.resolve_container_env(repo.resolve()), field)
+            for field, parameter in (
+                ("git_identity", "git_identity"),
+                ("ssh_agent", "ssh_agent"),
+                ("workspace_mount", "mount"),
+            )
         },
     )
 
@@ -380,3 +390,51 @@ def test_the_cli_entrypoint_splits_repo_from_verb_argv() -> None:
 def test_the_entrypoint_rejects_a_missing_separator() -> None:
     with pytest.raises(SystemExit):
         client.parse_argv(["/work/repo", "review"])
+
+
+# ---------------------------------------------------------------------------
+# #308 — a repo the provider refuses is refused on *this* path too.
+#
+# The fallback runs on exactly the days the socket is broken, so a refusal it
+# does not implement is a refusal that disappears when it is most needed. This is
+# the same argument that makes both paths share `build_docker_argv`.
+# ---------------------------------------------------------------------------
+
+
+def test_a_repo_the_provider_refuses_stops_before_docker_is_touched(
+    tmp_path: Path,
+    repo: Path,
+    socket_path: Path,
+    stub_docker: Path,
+    stdio: tuple[int, int, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exit 2, and — the property that matters — **nothing was spawned**.
+
+    Asserting the exit code alone would pass on a container that ran and happened
+    to exit 2. The refusal exists to stop a verb operating on a directory that
+    does not mean what the caller thinks, so "docker was never invoked" is the
+    assertion; the code is secondary.
+    """
+    from harness.hostenv import host, spawn
+
+    def _refuse(workdir: Path, *, host: object = None) -> object:
+        raise spawn.WorkspaceNotEquivalent(
+            workdir, "it is on a Windows filesystem (drvfs) ... (#313)", "clone it inside WSL."
+        )
+
+    monkeypatch.setattr(host, "resolve_container_env", _refuse)
+
+    code = client.run(
+        repo=repo, argv=["start", "308"], env=_env(tmp_path, socket_path), stdio=stdio
+    )
+
+    assert code == 2
+    assert _spawns(stub_docker) == [], (
+        "a container was spawned for a repo the provider refused — the refusal "
+        "must land before docker is touched, not after"
+    )
+    assert "#313" in capsys.readouterr().err, (
+        "the operator must be told why and where support is earned"
+    )

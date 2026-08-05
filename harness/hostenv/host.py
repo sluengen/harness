@@ -32,6 +32,12 @@ from harness.hostenv.credentials import (
     parse_credential_store,
     read_dotenv_value,
 )
+from harness.hostenv.spawn import (
+    DOCKER_DESKTOP_AGENT_SOCKET,
+    SshAgentForwarding,
+    WorkspaceMount,
+    WorkspaceNotEquivalent,
+)
 
 #: The Keychain service name the Claude CLI stores its credentials under (macOS).
 KEYCHAIN_SERVICE = "Claude Code-credentials"
@@ -56,6 +62,12 @@ REFRESH_TIMEOUT_SECONDS = 60
 #: Markers that identify WSL. ``sys.platform`` cannot: WSL reports ``linux``.
 _WSL_MARKERS = re.compile(r"microsoft|wsl", re.IGNORECASE)
 _WSL_ENV_MARKER = "WSL_DISTRO_NAME"
+
+#: Filesystem types that reach the **Windows** side from inside a WSL distro.
+#: ``drvfs`` is the automounted local drive, ``9p`` the WSL2 transport, ``cifs`` a
+#: mapped network drive. A repo on any of them crosses a semantics boundary the
+#: verbs depend on not crossing — see :meth:`WslHost.workspace_mount`.
+_WINDOWS_FSTYPES = frozenset({"drvfs", "9p", "cifs"})
 
 
 class UnsupportedHost(Exception):  # noqa: N818 — spec vocabulary, not an "…Error"
@@ -213,6 +225,31 @@ class HostPlatform(ABC):
         """
         return self.bounded_run(["ssh-add", "-l"], seconds=10).returncode == 0
 
+    # -- platform-specific spawn concerns (#308) -----------------------------
+
+    def ssh_agent_forwarding(self) -> SshAgentForwarding | None:
+        """How to forward this host's ssh-agent, or ``None`` when there is none.
+
+        The default is the one that holds wherever the daemon shares the host's
+        kernel namespace: mount the socket liveness was probed against. macOS is
+        the single exception and overrides this.
+
+        The probe runs only when there is a socket to check — it is a subprocess,
+        and running it against nothing buys nothing per request.
+        """
+        socket_path = self.env.get("SSH_AUTH_SOCK") or None
+        if socket_path is None or not self.ssh_agent_is_live():
+            return None
+        return SshAgentForwarding(source=socket_path, probed=socket_path)
+
+    def workspace_mount(self, repo: Path) -> WorkspaceMount:
+        """The bind mount for ``repo``, or a refusal when it cannot be equivalent.
+
+        Every host but WSL accepts any resolvable path: one filesystem, one set of
+        semantics on both sides of the bind mount.
+        """
+        return WorkspaceMount.default(repo)
+
     def git_identity(self) -> GitIdentity:
         """Resolve the commit identity from global git config, with defaults.
 
@@ -256,6 +293,27 @@ class MacOSHost(HostPlatform):
                 f"keychain: item {KEYCHAIN_SERVICE!r} did not parse as a Claude credential store"
             )
         return credential
+
+    def ssh_agent_forwarding(self) -> SshAgentForwarding | None:
+        """The one platform where the probed socket is not the mountable one.
+
+        macOS's ``SSH_AUTH_SOCK`` is a per-session launchd path that exists only
+        host-side; bind-mounting it into the Linux VM forwards nothing and every
+        push fails ``Permission denied (publickey)`` against a healthy agent.
+        Docker Desktop bridges the agent into the VM at a fixed path instead — so
+        the host socket is the liveness *signal* and the bridge is the source.
+
+        ``--group-add 0`` comes with it: the bridged socket is root-owned and
+        group-rw inside the container, and the image runs as uid 1000.
+        """
+        socket_path = self.env.get("SSH_AUTH_SOCK") or None
+        if socket_path is None or not self.ssh_agent_is_live():
+            return None
+        return SshAgentForwarding(
+            source=DOCKER_DESKTOP_AGENT_SOCKET,
+            probed=socket_path,
+            group_add=("0",),
+        )
 
 
 class LinuxHost(HostPlatform):
@@ -306,6 +364,94 @@ class LinuxHost(HostPlatform):
         return credential
 
 
+class WslHost(LinuxHost):
+    """Windows-via-WSL: the same credential store as Linux, a different geography.
+
+    It overrides **only** the two spawn concerns, because they are the only things
+    that actually differ. The credential store, tracker credentials, git identity
+    and bounded execution are Linux's — duplicating them would let this provider's
+    unverified status contaminate logic that is not platform-dependent at all.
+
+    Both overrides exist for the same reason: under WSL there are *two* worlds
+    reachable from one path namespace, and a path alone does not say which. The
+    Docker Desktop bridge leads to the **Windows** ssh-agent while
+    ``SSH_AUTH_SOCK`` names one inside the distro; ``/mnt/c`` leads to the Windows
+    filesystem while ``/home`` is the distro's. Guessing either wrong fails
+    silently, which is #308's whole problem statement.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        env: Mapping[str, str] | None = None,
+        mounts_path: Path = Path("/proc/mounts"),
+    ) -> None:
+        super().__init__(name=name, env=env)
+        #: Injected so the branch is exercisable on a macOS dev box, exactly as
+        #: ``detect_host``'s ``osrelease_path`` is.
+        self.mounts_path = mounts_path
+
+    def workspace_mount(self, repo: Path) -> WorkspaceMount:
+        """Refuse a repo on a Windows filesystem; accept one inside the distro.
+
+        **The decided behaviour for the ``/mnt/c/...`` case is refuse** (#308 AC-4).
+        A drvfs bind mount does not carry the distro's permission, symlink and case
+        semantics, and the verbs depend on all three — mode bits on hooks, the
+        ``.git`` *file* of a linked worktree whose ``gitdir:`` pointer must resolve,
+        and case-sensitive path comparison in the workspace allowlist. Warning and
+        proceeding would reproduce precisely the silent breakage this ticket exists
+        to end; calling it supported would be a claim nobody has exercised. Moving
+        the repo into the distro filesystem is a remedy the operator controls, so
+        the refusal names it, and #313 is where "supported" gets earned.
+
+        There is deliberately **no operator override** here. The
+        ``HARNESS_CLAUDE_CREDENTIALS_FILE`` precedent does not transfer: that is a
+        *value* an operator can know to be right, whereas whether drvfs preserves
+        the semantics the verbs need is not something an env var can assert.
+        """
+        resolved = Path(repo).resolve()
+        fstype = self._fstype_for(resolved)
+        if fstype is not None and fstype in _WINDOWS_FSTYPES:
+            raise WorkspaceNotEquivalent(
+                resolved,
+                f"it is on a Windows filesystem ({fstype}), whose in-container "
+                f"permission, symlink and case semantics are not the distro's and "
+                f"are unverified (#313)",
+                "clone the repo inside the WSL filesystem instead, e.g. ~/src/<repo>.",
+            )
+        return WorkspaceMount.default(resolved)
+
+    def _fstype_for(self, path: Path) -> str | None:
+        """The fstype of the longest mount entry containing ``path``.
+
+        Reading the mount table rather than matching ``/mnt/`` is what makes this
+        correct on a distro whose ``wsl.conf`` sets a non-default automount
+        ``root``, and what stops it condemning an ordinary ``/mnt/data`` on ext4.
+        When the table is unreadable it falls back to the documented automount
+        prefix — fail *safe*: with no evidence, treating a ``/mnt/<x>/`` repo as
+        fine is the one answer that reproduces the silent failure.
+        """
+        try:
+            table = self.mounts_path.read_text()
+        except OSError:
+            parts = path.parts
+            if len(parts) >= 3 and parts[1] == "mnt" and len(parts[2]) == 1:
+                return "drvfs"
+            return None
+
+        best: tuple[int, str] | None = None
+        for line in table.splitlines():
+            fields = line.split()
+            if len(fields) < 3:
+                continue
+            mountpoint, fstype = fields[1], fields[2]
+            if path == Path(mountpoint) or Path(mountpoint) in path.parents:
+                depth = len(Path(mountpoint).parts)
+                if best is None or depth > best[0]:
+                    best = (depth, fstype)
+        return None if best is None else best[1]
+
+
 def detect_host(
     platform: str,
     osrelease_path: Path = Path("/proc/version"),
@@ -329,7 +475,10 @@ def detect_host(
         return MacOSHost(name="macos", env=resolved_env)
 
     if platform.startswith("linux"):
-        return LinuxHost(name=_linux_flavour(osrelease_path, resolved_env), env=resolved_env)
+        flavour = _linux_flavour(osrelease_path, resolved_env)
+        if flavour == "wsl":
+            return WslHost(name=flavour, env=resolved_env)
+        return LinuxHost(name=flavour, env=resolved_env)
 
     raise UnsupportedHost(platform=platform, needed="credential-store")
 
@@ -349,9 +498,14 @@ class ContainerEnv:
     values: dict[str, str]
     git_identity: dict[str, str]
     diagnostics: tuple[str, ...]
-    #: The host's ssh-agent socket, but **only** when an agent is actually live —
+    #: How this host forwards its agent, but **only** when one is actually live —
     #: ``None`` otherwise, so a stale ``SSH_AUTH_SOCK`` never mounts a dead socket.
-    ssh_auth_sock: str | None = None
+    #: Provider-produced since #308: which socket is *mounted* is platform-specific
+    #: even though which socket is *probed* is not.
+    ssh_agent: SshAgentForwarding | None = None
+    #: The repo bind mount the provider allows for this request. ``None`` only in
+    #: the resolver's own tests; production callers always carry the provider's.
+    workspace_mount: WorkspaceMount | None = None
 
 
 def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
@@ -391,16 +545,19 @@ def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) ->
             values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
             values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
 
-    # Liveness is probed only when there is something to forward: the probe is a
-    # subprocess, and running it with no socket buys nothing per request.
-    socket_path = host.env.get("SSH_AUTH_SOCK") or None
-    if socket_path is not None and not host.ssh_agent_is_live():
-        socket_path = None
-
+    # Both spawn concerns are the provider's since #308. The liveness gate is
+    # unchanged — it now lives inside `ssh_agent_forwarding`, so the gate and the
+    # mount source are one decision rather than two that can disagree.
+    #
+    # `workspace_mount` can refuse (WorkspaceNotEquivalent), which propagates: a
+    # repo that cannot be mounted equivalently must stop here, where the message
+    # names the path and the remedy, rather than running against a directory that
+    # does not mean what the caller thinks.
     identity = host.git_identity()
     return ContainerEnv(
         values=values,
-        ssh_auth_sock=socket_path,
+        ssh_agent=host.ssh_agent_forwarding(),
+        workspace_mount=host.workspace_mount(Path(workdir)),
         git_identity={
             "GIT_AUTHOR_NAME": identity.name,
             "GIT_AUTHOR_EMAIL": identity.email,

@@ -2,7 +2,7 @@
 feature: runtime-host
 status: implemented
 last_updated: 2026-08-05
-tickets: ["#307"]
+tickets: ["#307", "#308"]
 ---
 
 # Runtime host (live)
@@ -88,8 +88,11 @@ host's own `SSH_AUTH_SOCK` on macOS is a per-session launchd path that exists on
 host-side. The spawner mounted the latter, which forwards nothing — caught by the
 retargeted hardening guard when the wrapper stopped being the live caller, and
 fixed here to the wrapper's proven spelling. The host socket is the liveness
-*signal*; choosing the source per platform (a native Linux daemon does mount it
-directly) is #308's *platform-specific spawn concerns*.
+*signal*. Choosing the source per platform **landed in #308**: the pairing is now
+`HostPlatform.ssh_agent_forwarding`, and macOS is the only provider that returns
+the bridge — a native Linux daemon mounts the probed socket directly, and under
+WSL the bridge reaches a different agent entirely. See
+[host-platform](host-platform.md).
 
 ### Where the container guards moved
 
@@ -179,8 +182,11 @@ surfaces instead as one stderr line from the client, and the verb still runs.
 `runs.worktree_path` is recorded container-absolute as
 `/workspace/.worktrees/harness/<run_id>`, so changing the mount point rewrites
 the meaning of every already-recorded path and strands every in-flight run across
-the cutover. Path equivalence is #308's concern, with the ledger migration that
-makes it safe.
+the cutover. **#308 settled this without a migration:** it delivers the property
+ADR 0012 wanted — a file reference means the same thing on both sides — as
+*mapping* equivalence, one `WorkspaceMount` both spawn paths compute with and
+that refuses a mount it cannot round-trip. The literal `-v <repo>:<repo>` form
+remains available as a later variant if a migration ticket wants it.
 
 ## The fallback, and its one asymmetry
 
@@ -267,9 +273,10 @@ as the wrapper does today, so there is no boundary to check. The container's own
 
 Credential brokering with background renewal (#309), periodic maintenance sweeps
 (#310), the reachability guard (#311), deployment via image and entrypoint
-(#312), WSL validation on a real Windows host (#313), and platform-specific spawn
-concerns including path equivalence (#308). This record covers the process, the
-socket, the spawner, and the fallback.
+(#312), and WSL validation on a real Windows host (#313). This record covers the
+process, the socket, the spawner, and the fallback. Platform-specific spawn
+concerns **shipped in #308** and are recorded in
+[host-platform](host-platform.md), which owns the provider seam they extend.
 
 **The mount half of #351 is not here.** The wrapper is rewired (above), and the
 *argv* half of `--repo` translation ships in `spawn.rewrite_repo_argument`: an

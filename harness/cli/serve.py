@@ -179,11 +179,17 @@ class _Handler(socketserver.BaseRequestHandler):
             refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
             return
         state["repo"] = str(repo)
-        if ":" in str(repo):
-            refuse(
-                protocol.Reason.REPO_NOT_ALLOWED,
-                f"repo path {repo} contains ':', the docker -v field separator",
-            )
+        # The provider decides whether this repo can be mounted *equivalently*
+        # (#308) — under WSL a Windows-filesystem path cannot — and the mount
+        # object owns the ``:`` refusal that was hand-inlined here. One home, and
+        # both land before docker is touched.
+        try:
+            host.detect_host(platform=sys.platform).workspace_mount(repo)
+        except (spawn.WorkspaceNotEquivalent, spawn.UnsafeRepoPath) as exc:
+            refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
+            return
+        except host.UnsupportedHost as exc:
+            refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
             return
 
         # 4. An explicit --repo in argv must name the repo actually being mounted.
@@ -287,6 +293,12 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         except host.UnsupportedHost as unsupported:
             _log_to_stderr(f"credential resolution failed: {unsupported}")
             return 2
+        except spawn.WorkspaceNotEquivalent as not_equivalent:
+            # The provider refuses this repo (#308) — a Windows-filesystem path
+            # under WSL, today. Refused here for the same reason an unsupported
+            # host is: nothing is spawned, and the message names the remedy.
+            _log_to_stderr(f"workspace refused: {not_equivalent}")
+            return 2
 
         docker_argv = spawn.build_docker_argv(
             repo=repo,
@@ -294,7 +306,8 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
             image=self.image,
             env_names=_forwarded_env_names(),
             home=Path(self.env.get("HOME", str(Path.home()))),
-            ssh_auth_sock=resolved.ssh_auth_sock,
+            ssh_agent=resolved.ssh_agent,
+            mount=resolved.workspace_mount,
             git_identity=resolved.git_identity,
         )
         stdin, stdout, stderr = (fds + [0, 1, 2])[:3]
