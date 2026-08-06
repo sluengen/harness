@@ -175,8 +175,18 @@ def test_a_timeout_refusal_bound_to_head_still_cannot_certify_it(repo: Path) -> 
                 "state_json, inputs_json, base_branch, worktree_path, worktree_branch, "
                 "ticket, started_at, pid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    _RUN_ID, "", 0, "open", "{}", "{}", "dev", str(repo),
-                    f"harness/{_RUN_ID}", "347", datetime.now(UTC).isoformat(), 1234,
+                    _RUN_ID,
+                    "",
+                    0,
+                    "open",
+                    "{}",
+                    "{}",
+                    "dev",
+                    str(repo),
+                    f"harness/{_RUN_ID}",
+                    "347",
+                    datetime.now(UTC).isoformat(),
+                    1234,
                 ),
             )
             for reason in ("engine_timeout", REPEAT_ENGINE_TIMEOUT_REASON):
@@ -246,6 +256,15 @@ def test_the_infra_wall_paragraph_bounds_the_re_run() -> None:
     one-shot, so the loop #330 spent 48 minutes in was driven by this prose. It
     must now say the re-run is bounded and name the refusal that ends it, by tag,
     so a rename cannot leave the doc promising a tag nobody emits.
+
+    The bound is asserted as the **claim** the paragraph makes, not as the bare
+    token ``once``. That token was the original guard and it did not hold: a
+    rewrite dropping the bound outright — "re-run it with care", followed by an
+    ordinary "read the verdict once the engine returns" elsewhere in the region —
+    still satisfied it, because ``once`` is common enough in running prose to
+    reappear by accident. The negation is what carries the meaning: a doc telling
+    the reader to re-run *until it works* is exactly the loop this ticket closes,
+    so its explicit denial is the sentence worth pinning.
     """
     region = _slice(
         HARNESS_COMMAND.read_text(),
@@ -253,7 +272,7 @@ def test_the_infra_wall_paragraph_bounds_the_re_run() -> None:
         "Act on `verdict`:",
     )
     assert REPEAT_ENGINE_TIMEOUT_REASON in region
-    assert "once" in region
+    assert "not until it works" in region
 
 
 def test_the_exit_4_row_lists_the_third_breaker() -> None:
@@ -264,8 +283,6 @@ def test_the_exit_4_row_lists_the_third_breaker() -> None:
     fresh budget window and walks straight back into the same hang.
     """
     exit_4_row = next(
-        line
-        for line in CLI_SURFACE_SPEC.read_text().splitlines()
-        if line.startswith("| 4 |")
+        line for line in CLI_SURFACE_SPEC.read_text().splitlines() if line.startswith("| 4 |")
     )
     assert REPEAT_ENGINE_TIMEOUT_REASON in exit_4_row
