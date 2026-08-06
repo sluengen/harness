@@ -62,6 +62,18 @@ def _docker_available() -> bool:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.docker,
+    # Keep the global 120s cap — it exists to kill a *hung* test, and these six
+    # take ~25s each — but measure it over the test body alone. Setup here is a
+    # cold `docker build`, which is long by design rather than hung: it measured
+    # 165s cold (CAL-1110), so under a cap covering setup the whole module ERRORs
+    # on every cold cache and passes on every warm one (#357). The build gets its
+    # own budget below instead; `tests/unit/test_timeout_budgets_coherent.py`
+    # pins that the two stay distinct and correctly ordered.
+    #
+    # Deliberately NOT test_docker.py's fix. That module raises its whole cap to
+    # 600s, which it can afford because its tests *are* the build; doing that
+    # here would give a genuinely hung socket test ten minutes to burn.
+    pytest.mark.timeout(func_only=True),
     pytest.mark.skipif(not _docker_available(), reason="docker daemon unavailable"),
 ]
 
@@ -78,6 +90,12 @@ def image() -> str:
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
+        # The build's own budget, and — with the pytest cap deferred to the test
+        # body above — the only thing bounding it short of the CI job's wall
+        # clock. 600s matches test_docker.py's identical build of the same
+        # Dockerfile: ~3.6x the 165s cold measurement, leaving room for a CI
+        # runner slower than the author's machine.
+        timeout=600,
     )
     return IMAGE_TAG
 
