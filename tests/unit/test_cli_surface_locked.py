@@ -862,15 +862,28 @@ _PROSE_MENTION = (
 )
 
 
+#: An indented block line — Markdown's indented code block and reST's literal
+#: block. Backticks alone are *not* a sufficient notion of command context: the
+#: CAL-699 drift this guard exists for was an indented ``Covers:`` listing in a
+#: module docstring (``harness validate <workflow.yaml>``) carrying no backticks
+#: at all, so a backticks-only rule would silently un-catch its own founding
+#: case. Requires a non-space after the indent so blank lines contribute
+#: nothing, and 4+ columns so ordinary wrapped prose and 2-space list
+#: continuations stay out.
+_INDENTED_BLOCK = re.compile(r"^[ \t]{4,}\S[^\n]*$", re.M)
+
+
 def _command_context(text: str) -> str:
-    """The text formatted as code — fenced bodies plus inline spans.
+    """The text formatted as code — fenced bodies, inline spans, indented blocks.
 
     Prose is excluded by construction, which is the whole point: a command is
     written as code in this repo's docs, an English mention is not.
     """
     fences = _FENCE.findall(text)
     prose = _FENCE.sub(_CONTEXT_SEP, text)
-    return _CONTEXT_SEP.join([*fences, *_CODE_SPAN.findall(prose)])
+    return _CONTEXT_SEP.join(
+        [*fences, *_CODE_SPAN.findall(prose), *_INDENTED_BLOCK.findall(prose)]
+    )
 
 
 def _invocation_hits(text: str, code_only: bool) -> list[str]:
@@ -1038,6 +1051,41 @@ def test_an_unformatted_invocation_in_an_executable_file_is_caught() -> None:
     doctored += "\nexec harness run feature\n  harness:dev \\\n  run steward --x\n"
     hits = _hits_in(doctored, script.suffix in _MARKUP_SUFFIXES)
     assert hits == ["harness run", "run steward"]
+
+
+#: The module docstring CAL-699 was written to catch, verbatim from the commit
+#: it fixed (``8ca27fe^``): an indented command listing with no backticks
+#: anywhere. Kept in its original shape on purpose — re-spelling it in code
+#: markup would make the control agree with whatever the guard currently does,
+#: which is exactly how a narrowing change deletes its own founding coverage.
+_CAL699_DOCSTRING = """Tests for harness CLI read-side query commands — see SPEC §11.
+
+Covers:
+    harness status <run-id>          [--json]
+    harness validate <workflow.yaml>
+    harness version                  [--json]
+"""
+
+
+def test_the_cal699_indented_command_listing_is_still_caught() -> None:
+    """An indented listing is command context, even with no backticks (#355).
+
+    Regression control for the narrowing itself: scanning only backticked text
+    would let the *original* CAL-699 drift back in while every re-spelled
+    fixture stayed green.
+    """
+    assert _docstring_hits(_CAL699_DOCSTRING) == ["harness validate"]
+
+
+def test_a_shallow_indented_prose_continuation_is_not_command_context() -> None:
+    """The indent threshold is 4 columns, and that bound is load-bearing.
+
+    Markdown list continuations sit at 2 spaces and carry ordinary prose, so a
+    laxer threshold would re-admit the very false positive this ticket fixes —
+    just indented under a bullet instead of at column 0.
+    """
+    text = "- a bullet\n  Every harness run currently invokes the design engine.\n"
+    assert _invocation_hits(text, code_only=True) == []
 
 
 def test_adjacent_extracted_segments_do_not_fuse_into_a_hit() -> None:
