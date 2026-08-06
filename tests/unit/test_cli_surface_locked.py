@@ -168,8 +168,10 @@ EXPECTED_SURFACE = {
     "stats",  # read / inspection ("stats" is the aggregate one, #265)
     "cancel",
     "reclaim",
-    "defer",  # triage: comment + label + assign operator + ledger event (CAL-1143, CAL-1167)
-    "release",  # decision-sweep return write: body + label removal + unassign + ledger event (#193)
+    "defer",  # triage: comment + label + assign operator (CAL-1143, CAL-1167; the
+    # ledger event it also wrote was retired in #338 — the tracker is the record)
+    "release",  # decision-sweep return write: body + label removal + unassign
+    # (#193; likewise no ledger event since #338)
     "doctor",
     "version",
     "worktrees",

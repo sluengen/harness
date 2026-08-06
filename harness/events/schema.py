@@ -33,10 +33,12 @@ EventType = Literal[
     # WIP survives the container dying; the ledger signal ``reclaim`` reads to
     # report a *durable* (resumable) branch rather than a never-pushed local one.
     "checkpoint",
-    # Defer verb (CAL-1143) — the unattended Build routine's triage write: a
-    # picked ticket judged not-yet-actionable gets a comment + the ``decision``
-    # label, and this event records that decision (ticket, reason, timestamp) in
-    # the audit trail so triage is auditable like every other verb.
+    # Defer verb (CAL-1143) — **historical only since #338; no live emitter.**
+    # The triage write (comment + hold label + assignment) is now recorded on
+    # the tracker issue alone, so nothing writes this type any more. It stays in
+    # the set because the emitter validates *writes*, never reads: removing it
+    # would not make an existing ledger fail, it would only strand the rows
+    # already carrying it. Retained so they parse and read back unchanged.
     "defer",
     # Design verb (#211, ADR 0007) — the design stage between ``start`` and
     # implement: a dedicated Opus engine produces the change spec's Design
@@ -45,10 +47,10 @@ EventType = Literal[
     # when the engine did not deliver one (degrade-and-record, D4). Its presence
     # is what the review verb's ``no_design`` enforcement checks.
     "design",
-    # Release verb (#193) — the ``/decision`` return path: a held ticket's
-    # resolution is written into its change spec, the hold label removed, and
-    # the operator unassigned. This event records the release (ticket, kind,
-    # timestamp) in the audit trail — the ``defer`` shape, in reverse.
+    # Release verb (#193) — **historical only since #338; no live emitter.**
+    # The ``defer`` shape in reverse, and retired from writing for the same
+    # reason and on the same terms: the tracker issue is the record, and the
+    # type is retained so historical rows stay readable.
     "release",
     # ``reclaim --undo`` (#254) — a reclamation confirmed to have been a false
     # positive is reversed: the ticket returns to In Progress and the ``cancelled``

@@ -9,253 +9,64 @@ thread), remove the hold label, and — critically — **unassign the operator**
 because ``work-discovery`` treats assignment as the authoritative "a human
 holds this" skip signal. A sweep that records an answer without unassigning
 leaves the ticket held forever — the exact failure mode the ad-hoc prompt this
-replaces has today. Like ``defer``, this is a bounded, named verb rather than a
-hand-rolled tracker write, so the release binds cleanly to its
-``autoMode.allow`` clause and is auditable in the runs/events ledger.
+replaces has today.
 
 What ``release`` does, for a ticket on this repo's Build queue:
 
-1. **Verify Build-queue membership.** Ask the tracker seam whether the ticket is
-   on the queue in force — ``repo.project`` when it is configured, the backend's
-   natural full queue when it is not (#248) — and refuse a ticket that is not
-   found, or found but off the queue (exit 2): no write, no event.
-2. **Write the resolution into the change spec.** Fetch the current issue body
-   and append (or replace, if a prior release already left one) a
-   ``## Resolution`` section carrying the resolution text, then
-   ``update_issue_body``. This is deliberately the *first* write: a crash
-   between steps leaves the ticket still held (label + assignment intact) but
-   never silently drops the answer.
-3. **Remove the hold label** (``remove_label`` — additive removal of the
-   ``needs`` kind's label; a ticket already missing it is an idempotent no-op).
-4. **Unassign the operator** (``unassign_viewer``) — the load-bearing step.
-5. **Record a ``release`` event** in the runs/events ledger (ticket, needs
-   kind, timestamp), so the release is auditable like every other verb.
+1. **Verify Build-queue membership** — refusing a ticket not found, or found
+   but off the queue (exit 2), before any write.
+2. **Write the resolution into the change spec** — appending (or replacing, if
+   a prior release already left one) a ``## Resolution`` section.
+3. **Remove the hold label** (only the selected kind; a ticket already missing
+   it is an idempotent no-op).
+4. **Unassign the operator** — the load-bearing step, done last.
 
-Tracker-less repo (``layers.linear: false``): a **clean no-op** (exit 0, no
-write), consistent with the other verbs — there is no tracker to release on.
+Since #338 the transition itself — the membership gate, the ordered bundle
+(including the rule that the resolution is durable *before* the ticket stops
+being held), and the translation of tracker failures into this verb's error
+model — lives in :mod:`harness.cli.held_ticket`, shared with ``defer``. This
+module is the CLI adapter: flags in, one seam call, one presentation line out.
+
+**No ledger write.** A held-ticket transition records nothing in
+``runs``/``events``; the tracker issue is the canonical audit trail (see the
+seam module's recorded decision). ``--db`` and the ``run_id`` field are retained
+as deprecated compatibility surface and are inert.
 
 Exit codes (mirrors ``defer``):
 * 0  — released (or a tracker-less clean no-op).
 * 2  — invocation / refusal: neither/both of ``--resolution`` /
-       ``--resolution-file``, the ticket not found on the tracker, or the ticket
-       not on the Build queue. An absent ``repo.project`` is **not** a refusal —
-       it means the whole tracker queue (#248).
-* 1  — unexpected error (DB failure, or an unexpected tracker transport error).
+       ``--resolution-file``, a missing tracker credential/config, the ticket
+       not found, or the ticket not on the Build queue. An absent
+       ``repo.project`` is **not** a refusal — it means the whole tracker queue.
+* 1  — unexpected error (an unexpected tracker transport error).
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
 from pathlib import Path
 
 import typer
-from pydantic import BaseModel
 
-from harness._time import elapsed_ms, iso_z
-from harness.cli._query_common import _resolve_db_path
 from harness.cli._repo import REPO_OPTION, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
-from harness.cli.defer import DeferNeeds
-from harness.events.emitter import EventEmitter
-from harness.events.payloads import ReleaseEventData
-from harness.identity import generate_run_id
-from harness.layers import tracker as tracker_backend
-from harness.repo_config import repo_project
-from harness.state import store
-from harness.tracker import tracker_client
-from harness.tracker_errors import (
-    TrackerConfigError,
-    TrackerNotFound,
-    TrackerRequestError,
-)
-from harness.tracker_queue import scope_phrase
+from harness.cli.held_ticket import HeldTicketOutput, HoldKind, release
+
+#: Retained name. ``ReleaseOutput`` was this module's own model before #338
+#: unified it with ``defer``'s field-identical one in the shared seam.
+ReleaseOutput = HeldTicketOutput
 
 __all__ = ["ReleaseOutput", "release_command"]
-
-#: The ``## Resolution`` section heading a release writes/replaces. A prior
-#: release's section (and everything after it) is dropped before the fresh one
-#: is appended, so re-running release is idempotent rather than accreting.
-_RESOLUTION_HEADING = "## Resolution"
-
-
-def _compose_body(existing_body: str, resolution: str) -> str:
-    """The issue body with a ``## Resolution`` section set to ``resolution``.
-
-    Strips any prior ``## Resolution`` section (and everything after it —
-    resolutions are always the last section a release writes) before
-    appending the fresh one, so a repeated release replaces rather than
-    duplicates.
-    """
-    base = re.split(rf"\n{re.escape(_RESOLUTION_HEADING)}\b.*", existing_body, flags=re.S)[0]
-    return f"{base.rstrip()}\n\n{_RESOLUTION_HEADING}\n\n{resolution.strip()}\n"
-
-
-class _ReleaseError(VerbError):
-    """``release``'s control-flow exception — a :class:`VerbError` (mirrors ``defer``)."""
-
-
-class ReleaseOutput(BaseModel):
-    """Typed result of a ``release`` — like every sibling verb.
-
-    ``run_id`` is the synthetic run row anchoring the ``release`` event, or
-    ``None`` for a tracker-less no-op. ``project`` is the effective Build-queue
-    scope: ``repo.project`` when configured, else the ticket's own project as
-    the backend reports it.
-
-    ``project`` is ``None`` on a tracker-less no-op **and**, since #248, on a
-    *successful* release against an unscoped repo whose ticket sits on no
-    project. So it no longer distinguishes the two — read ``outcome``, which is
-    the field that says what happened."""
-
-    ticket: str
-    outcome: str
-    project: str | None
-    run_id: str | None
-
-
-async def _record_release_event(
-    db_path: Path, ticket: str, project: str | None, needs: str, *, invoked_at: str
-) -> str:
-    """Anchor a ``release`` event in the ledger and return its run id.
-
-    Mirrors ``defer``'s ``_record_defer_event``: a release has no build run, so
-    it gets its own terminal run row (``workflow_name='release'``,
-    ``status='closed'``) to carry the audit event, keeping it clear of
-    ``idx_runs_ticket_open`` so a later ``harness start`` on the same ticket is
-    never blocked.
-    """
-    run_id = generate_run_id()
-    # One clock reading serves the run row, the payload's ``released_at``, and the
-    # duration's end (#264) — see ``defer``, whose shape this mirrors.
-    now = iso_z()
-    await store.init_db(db_path)
-    async with store.connect(db_path) as conn:
-        await conn.execute(
-            "INSERT INTO runs ("
-            "run_id, workflow_name, workflow_version, status, "
-            "state_json, inputs_json, ticket, started_at, completed_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (run_id, "release", 0, "closed", "{}", "{}", ticket, now, now),
-        )
-        await conn.commit()
-    await EventEmitter(db_path).emit(
-        run_id=run_id,
-        event_type="release",
-        data=ReleaseEventData(
-            run_id=run_id,
-            ticket=ticket,
-            project=project,
-            needs=needs,
-            released_at=now,
-        ).model_dump(),
-        duration_ms=elapsed_ms(invoked_at, now),
-    )
-    return run_id
-
-
-async def _run_release(
-    db_path: Path,
-    ticket: str,
-    resolution: str,
-    *,
-    needs: DeferNeeds,
-    repo_root: Path,
-) -> ReleaseOutput:
-    """Release ``ticket``; raise :class:`_ReleaseError` on refusal/error.
-
-    Tracker-less (``layers.linear: false``) it is a clean no-op — there is no
-    tracker to write to, so the honest outcome is "skipped".
-    """
-    # The start of the latency this verb records (#264) — see ``defer``.
-    invoked_at = iso_z()
-
-    if tracker_backend(repo_root) == "none":
-        return ReleaseOutput(
-            ticket=ticket, outcome="skipped_no_tracker", project=None, run_id=None
-        )
-
-    # Nullable scope (#248) — see ``defer``, whose shape this mirrors exactly.
-    project = repo_project(repo_root)
-
-    try:
-        client = tracker_client(repo_root)
-    except TrackerConfigError as exc:
-        raise _ReleaseError(str(exc), 2, reason="tracker_config") from exc
-
-    assert client is not None
-
-    # 1. Verify the ticket is on this repo's Build queue before any write.
-    try:
-        membership = await client.fetch_queue_membership(ticket, project=project)
-    except TrackerNotFound as exc:
-        raise _ReleaseError(
-            f"ticket {ticket!r} not found on the tracker", 2, reason="ticket_not_found"
-        ) from exc
-    except TrackerRequestError as exc:
-        raise _ReleaseError(
-            f"failed to look up ticket {ticket!r} on the tracker: {exc}",
-            2,
-            reason="tracker_error",
-        ) from exc
-
-    if not membership.on_queue:
-        raise _ReleaseError(
-            f"ticket {ticket!r} is not on {scope_phrase(project)} "
-            f"(project: {membership.project!r}); refusing to release",
-            2,
-            reason="not_on_build_queue",
-        )
-
-    # See ``defer``: the configured scope when set, else the ticket's own project.
-    effective_project = project if project is not None else membership.project
-
-    # 2 + 3 + 4. The release write (load-bearing external effect): the
-    #        resolution lands in the change spec first, then the hold label is
-    #        removed, then the operator is unassigned — the authoritative
-    #        "a human holds this" signal work-discovery reads, cleared last so
-    #        a mid-sequence failure leaves the ticket still (visibly) held
-    #        rather than silently dropped with no recorded answer.
-    try:
-        issue = await client.fetch_issue(ticket)
-        new_body = _compose_body(issue.get("description") or "", resolution)
-        await client.update_issue_body(ticket, new_body)
-        await client.remove_label(ticket, needs.value)
-        await client.unassign_viewer(ticket)
-    except TrackerNotFound as exc:
-        raise _ReleaseError(
-            f"ticket {ticket!r} not found on the tracker: {exc}",
-            2,
-            reason="ticket_not_found",
-        ) from exc
-    except TrackerRequestError as exc:
-        raise _ReleaseError(
-            f"failed to release ticket {ticket!r} on the tracker: {exc}",
-            2,
-            reason="tracker_error",
-        ) from exc
-    except Exception as exc:  # noqa: BLE001 — map any transport surprise to a verb error
-        raise _ReleaseError(
-            f"unexpected error releasing ticket {ticket!r}: {exc}", 1
-        ) from exc
-
-    # 5. Record the release in the ledger (audit trail) — after the tracker write.
-    run_id = await _record_release_event(
-        db_path, ticket, effective_project, needs.value, invoked_at=invoked_at
-    )
-    return ReleaseOutput(
-        ticket=ticket, outcome="released", project=effective_project, run_id=run_id
-    )
 
 
 def _resolve_resolution(resolution: str | None, resolution_file: Path | None) -> str:
     """Exactly one of ``--resolution`` / ``--resolution-file`` supplies the body.
 
-    Raises :class:`_ReleaseError` (exit 2) when neither or both is given, or
-    when ``--resolution-file`` cannot be read.
+    Raises :class:`VerbError` (exit 2) when neither or both is given, or when
+    ``--resolution-file`` cannot be read.
     """
     if (resolution is None) == (resolution_file is None):
-        raise _ReleaseError(
+        raise VerbError(
             "provide exactly one of --resolution <text> or --resolution-file <path>",
             2,
         )
@@ -265,13 +76,13 @@ def _resolve_resolution(resolution: str | None, resolution_file: Path | None) ->
     try:
         return resolution_file.read_text()
     except OSError as exc:
-        raise _ReleaseError(
+        raise VerbError(
             f"could not read --resolution-file {str(resolution_file)!r}: {exc}", 2
         ) from exc
 
 
 def release_command(
-    ticket: str = typer.Argument(..., help="Tracker ticket identifier (e.g. CAL-193, 193)."),
+    ticket: str = typer.Argument(..., help="Tracker ticket identifier (e.g. 193)."),
     resolution: str | None = typer.Option(
         None, "--resolution", help="The operator's call, written into the change spec."
     ),
@@ -280,30 +91,29 @@ def release_command(
         "--resolution-file",
         help="Read the resolution from a file (for a long body).",
     ),
-    needs: DeferNeeds = typer.Option(
-        DeferNeeds.decision,
+    needs: HoldKind = typer.Option(
+        HoldKind.decision,
         "--needs",
         help="The hold kind being released: `decision` (the default), `input`, "
         "or `operator`. Selects the label removed.",
     ),
     repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
-        None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
+        None,
+        "--db",
+        help="Deprecated and ignored: a release writes no ledger row (#338).",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
     """Release a held ticket: write the resolution into the change spec, remove
-    the hold label, unassign the operator, and record a ledger event."""
+    the hold label, and unassign the operator."""
     repo_root = repo_arg_or_cwd(repo)
-    db_path = _resolve_db_path(db, repo_root)
 
-    def _do() -> ReleaseOutput:
+    def _do() -> HeldTicketOutput:
         body = _resolve_resolution(resolution, resolution_file)
-        return asyncio.run(
-            _run_release(db_path, ticket, body, needs=needs, repo_root=repo_root)
-        )
+        return asyncio.run(release(repo_root, ticket, resolution=body, kind=needs))
 
     result = run_verb(_do, json_output=json_output)
 

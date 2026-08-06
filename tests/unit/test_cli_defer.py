@@ -9,10 +9,12 @@ verb the routine calls the same way it calls ``start`` / ``review`` / ``close``.
 
 Contract under test:
 
-* ``harness defer <ticket> --reason <text>`` posts a comment and *additively*
+* ``harness defer <ticket> --reason <text>`` posts a comment, *additively*
   applies the ``decision`` label (``issueAddLabel``, never a full-set replace, so
-  existing labels are preserved), then records a ``defer`` event in the
-  runs/events ledger; exits 0.
+  existing labels are preserved), and assigns the operator; exits 0. Since #338
+  it writes **nothing** to the runs/events ledger — the tracker issue is the
+  canonical record. The ledger half of that contract is in
+  ``test_held_ticket.py``; what stays here is the CLI-level surface.
 * It binds to a ticket on this repo's Build queue (``repo.project``): a ticket
   not found, or found but on another project, is refused (exit 2) with a
   structured ``reason`` — no comment, no label, no event.
@@ -25,16 +27,13 @@ Contract under test:
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
-from harness._time import iso_z
 from harness.cli import app
-from harness.cli import defer as defer_mod
 from harness.state import store
 from harness.tracker_queue import QueueMembership
 from tests._asyncutil import run_sync
@@ -156,10 +155,14 @@ def test_defer_unscoped_human_output_never_prints_none(
     assert "the whole tracker queue" in result.output
 
 
-def test_defer_unscoped_records_the_tickets_own_project(
+def test_defer_unscoped_reports_the_tickets_own_project(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """With no scope the effective project is the ticket's own, not `null`."""
+    """With no scope the effective project is the ticket's own, not `null`.
+
+    Since #338 the effective project is observable on the JSON envelope only —
+    there is no ledger row to read it back from.
+    """
     _write_context(tmp_path, project=None)
     db = tmp_path / "harness.db"
     stub = _make_stub(ticket_project="Design System")
@@ -171,14 +174,14 @@ def test_defer_unscoped_records_the_tickets_own_project(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["project"] == "Design System"
-    assert _fetch_defer_events(db)[0]["project"] == "Design System"
+    assert _fetch_defer_events(db) == []
 
 
-def test_defer_scoped_records_the_configured_project_not_the_tickets(
+def test_defer_scoped_reports_the_configured_project_not_the_tickets(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Scoped, the configured value wins — so the ledger is byte-identical to
-    before #248 for every repo that already sets `repo.project`."""
+    """Scoped, the configured value wins — the rule #248 established, still
+    observable on the envelope now that the ledger row is gone (#338)."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     # A GitHub-shaped case: the backend reports the board title, which need not
@@ -192,7 +195,7 @@ def test_defer_scoped_records_the_configured_project_not_the_tickets(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["project"] == _BUILD_PROJECT
-    assert _fetch_defer_events(db)[0]["project"] == _BUILD_PROJECT
+    assert _fetch_defer_events(db) == []
 
 
 def _make_labelled_stub(existing_labels: list[str]) -> MagicMock:
@@ -260,7 +263,7 @@ def test_defer_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) ->
     which is exactly what these verbs exist to replace.
 
     The seam answers membership for its own queue, so with no scope configured
-    the verb writes normally and records the *ticket's own* project — here
+    the verb writes normally and reports the *ticket's own* project — here
     ``None``, a Linear issue inside the team but attached to no project.
     """
     _write_context(tmp_path, project=None)
@@ -285,22 +288,19 @@ def test_defer_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) ->
     stub.post_comment.assert_awaited_once()
     stub.apply_label.assert_awaited_once()
     stub.assign_to_viewer.assert_awaited_once()
-    events = _fetch_defer_events(db)
-    assert len(events) == 1
-    assert events[0]["project"] is None
-
+    assert _fetch_defer_events(db) == []
 
 
 # ===========================================================================
-# AC: happy path — comment + additive label + defer event
+# AC: happy path — comment + additive label + assignment, and no ledger row
 # ===========================================================================
 
 
-def test_defer_posts_comment_applies_label_and_records_event(
+def test_defer_posts_comment_and_applies_label(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """``defer`` posts the reason as a comment, additively applies ``decision``, and
-    records a ``defer`` event; exits 0."""
+    """``defer`` posts the reason as a comment and additively applies
+    ``decision``; exits 0, writing nothing to the ledger (#338)."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
@@ -314,16 +314,14 @@ def test_defer_posts_comment_applies_label_and_records_event(
     stub.post_comment.assert_awaited_once()
     _, comment_body = stub.post_comment.await_args.args
     assert "needs a human call on scope" in comment_body
-
-    events = _fetch_defer_events(db)
-    assert len(events) == 1
-    assert events[0]["ticket"] == "CAL-999"
-    assert events[0]["reason"] == "needs a human call on scope"
+    stub.apply_label.assert_awaited_once_with("CAL-999", "decision")
+    assert _fetch_defer_events(db) == []
 
 
 def test_defer_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
-    """``--json`` on a successful defer emits the typed ``DeferOutput`` — outcome
-    ``deferred``, the bound Build queue, and the synthetic run id."""
+    """``--json`` on a successful defer emits the typed output — outcome
+    ``deferred``, the bound Build queue, and a ``run_id`` that is now always
+    ``null`` (the deprecated compatibility field, #338)."""
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
@@ -338,7 +336,8 @@ def test_defer_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
     assert payload["ticket"] == "CAL-999"
     assert payload["outcome"] == "deferred"
     assert payload["project"] == _BUILD_PROJECT
-    assert payload["run_id"]
+    assert "run_id" in payload
+    assert payload["run_id"] is None
 
 
 def test_defer_applies_label_additively(tmp_path: Path, monkeypatch: Any) -> None:
@@ -472,49 +471,23 @@ def test_defer_assigns_ticket_to_viewer(tmp_path: Path, monkeypatch: Any) -> Non
 
 
 # ===========================================================================
-# AC-3: the ledger event carries the needs kind
+# AC-3: the hold label carries the needs kind (the ledger event that also did
+# is retired — #338)
 # ===========================================================================
 
 
-def test_defer_event_records_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
-    """The ``defer`` ledger event records which hold kind (``decision`` /
-    ``operator``) the deferral applied."""
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    stub = _make_stub()
+def test_defer_default_needs_applies_the_decision_label(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """With no ``--needs`` the deferral holds for a ``decision``.
 
-    result = _invoke(
-        ["defer", "CAL-999", "--reason", "x", "--needs", "operator", "--db", str(db)],
-        tmp_path, stub, monkeypatch,
-    )
-
-    assert result.exit_code == 0, result.output
-    events = _fetch_defer_events(db)
-    assert len(events) == 1
-    assert events[0]["needs"] == "operator"
-
-
-def test_defer_event_records_needs_input_kind(tmp_path: Path, monkeypatch: Any) -> None:
-    """The ``defer`` ledger event records the ``input`` hold kind (ADR 0006, #191)
-    — the return path (``/decision``, #193) reads this to select only ``decision``
-    holds without re-triaging every ticket."""
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    stub = _make_stub()
-
-    result = _invoke(
-        ["defer", "CAL-999", "--reason", "x", "--needs", "input", "--db", str(db)],
-        tmp_path, stub, monkeypatch,
-    )
-
-    assert result.exit_code == 0, result.output
-    events = _fetch_defer_events(db)
-    assert len(events) == 1
-    assert events[0]["needs"] == "input"
-
-
-def test_defer_default_needs_records_decision(tmp_path: Path, monkeypatch: Any) -> None:
-    """With no ``--needs`` the event records the backward-compatible ``decision`` kind."""
+    Before #338 the hold kind was durably recorded twice — as the label on the
+    ticket and as the ledger event's ``needs`` field. Only the label survives,
+    and it is the better record: it is what ``work-discovery`` and ``/decision``
+    actually read. The explicit ``--needs operator`` / ``--needs input`` cases
+    are covered by ``test_defer_needs_*_applies_*_label`` above; this pins the
+    default, which nothing else exercises.
+    """
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
     stub = _make_stub()
@@ -525,8 +498,8 @@ def test_defer_default_needs_records_decision(tmp_path: Path, monkeypatch: Any) 
     )
 
     assert result.exit_code == 0, result.output
-    events = _fetch_defer_events(db)
-    assert events[0]["needs"] == "decision"
+    stub.apply_label.assert_awaited_once_with("CAL-999", "decision")
+    assert _fetch_defer_events(db) == []
 
 
 # ===========================================================================
@@ -634,97 +607,28 @@ def test_defer_reads_reason_file(tmp_path: Path, monkeypatch: Any) -> None:
 
     assert result.exit_code == 0, result.output
     _, comment_body = stub.post_comment.await_args.args
-    assert "multi-line" in comment_body
-    events = _fetch_defer_events(db)
-    assert events[0]["reason"] == "A long\nmulti-line\ntriage rationale."
+    assert comment_body == "A long\nmulti-line\ntriage rationale."
+    assert _fetch_defer_events(db) == []
 
 
 # ===========================================================================
-# #264 — the verb's own latency, in the ledger's typed duration column
+# A refused defer writes nothing — and since #338, neither does a successful one
 # ===========================================================================
+#
+# #264 gave the ``defer`` event a typed ``duration_ms`` column and this file
+# pinned it. #338 retired the event, so that telemetry is **gone**, not moved:
+# a held-ticket transition's latency is no longer measured anywhere. That is an
+# accepted, recorded cost of making the tracker the sole record for these two
+# verbs — the duration was only ever readable through the synthetic row the
+# ticket set out to delete. The refusal case below survives on its own merit:
+# it pins that the membership gate still stands before any write.
 
 
-def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
-    """The ``events.duration_ms`` **column** for every row of ``event_type``.
+def test_defer_refusal_writes_nothing(tmp_path: Path, monkeypatch: Any) -> None:
+    """A refused defer performs no tracker write and no ledger write.
 
-    Reads the column, never ``json_extract(data_json, ...)``: the duration has
-    one home, and a test that passed against the payload would be asserting the
-    wrong place.
-    """
-    if not db_path.exists():
-        return []
-
-    async def _select() -> list[int | None]:
-        async with store.connect(db_path) as conn:
-            cur = await conn.execute(
-                "SELECT duration_ms FROM events WHERE event_type = ? ORDER BY id",
-                (event_type,),
-            )
-            rows = await cur.fetchall()
-        return [None if r[0] is None else int(r[0]) for r in rows]
-
-    return run_sync(_select())
-
-
-def _pin_clock(monkeypatch: Any, elapsed_ms: int) -> None:
-    """Hand ``defer`` its ``invoked_at`` then a reading ``elapsed_ms`` later.
-
-    Distinct successive readings on purpose (#261's lesson): a constant stub
-    cannot tell one clock read from two, so the duration would pass vacuously
-    at 0 against an implementation that simply read the clock twice at the end.
-    """
-    start = datetime(2026, 7, 31, 8, 0, 0, tzinfo=UTC)
-    readings = iter([iso_z(start), iso_z(start + timedelta(milliseconds=elapsed_ms))])
-    monkeypatch.setattr(
-        defer_mod, "iso_z", lambda *_a, **_k: next(readings, iso_z(start))
-    )
-
-def test_defer_records_its_duration_in_the_event_column(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """AC-1: the ``defer`` event carries the verb's latency as whole milliseconds.
-
-    The window spans the three tracker writes (comment, label, assign), which is
-    what dominates a defer's wall-clock and the only part worth measuring.
-    """
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    _pin_clock(monkeypatch, 2500)
-
-    result = _invoke(
-        ["defer", "CAL-999", "--reason", "needs a human call", "--db", str(db)],
-        tmp_path, _make_stub(), monkeypatch,
-    )
-
-    assert result.exit_code == 0, result.output
-    assert _event_durations(db, "defer") == [2500]
-    assert isinstance(_event_durations(db, "defer")[0], int)
-
-
-def test_defer_payload_gains_no_duration_key(tmp_path: Path, monkeypatch: Any) -> None:
-    """One quantity, one home — the payload's key set is unchanged by #264."""
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    _pin_clock(monkeypatch, 2500)
-
-    _invoke(
-        ["defer", "CAL-999", "--reason", "needs a human call", "--db", str(db)],
-        tmp_path, _make_stub(), monkeypatch,
-    )
-
-    (payload,) = _fetch_defer_events(db)
-    assert "duration_ms" not in payload
-
-
-def test_defer_refusal_records_no_event_and_no_duration(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """A refused defer still writes nothing at all — #264 adds no refusal row.
-
-    ``defer`` has no non-success event path, which is why it needs no ADR 0009
-    ``outcome`` field: there are no refusal rows for a success marker to
-    discriminate against, and a field that could only ever hold one value is the
-    premature abstraction the principles rule out.
+    The membership gate is the only bound between an arbitrary identifier and
+    three authenticated mutations, so "refused" has to mean nothing happened.
     """
     _write_context(tmp_path)
     db = tmp_path / "harness.db"
@@ -739,4 +643,7 @@ def test_defer_refusal_records_no_event_and_no_duration(
     )
 
     assert result.exit_code == 2, result.output
-    assert _event_durations(db, "defer") == []
+    stub.post_comment.assert_not_awaited()
+    stub.apply_label.assert_not_awaited()
+    stub.assign_to_viewer.assert_not_awaited()
+    assert _fetch_defer_events(db) == []
