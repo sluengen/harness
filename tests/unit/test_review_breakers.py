@@ -25,8 +25,13 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.cli import review as review_mod
+from harness.cli._engine import EngineTimeoutError
 from harness.cli._runs import attendance_inputs_json
 from harness.loop_budget import (
+    ENGINE_TIMEOUT_ATTEMPT_LIMIT as _TIMEOUTS_BEFORE_REFUSAL,
+)
+from harness.loop_budget import (
+    REPEAT_ENGINE_TIMEOUT_REASON,
     REVIEW_CYCLE_CEILING_REASON,
     WALL_CLOCK_BUDGET_REASON,
 )
@@ -439,3 +444,211 @@ def test_context_md_tightens_the_cycle_ceiling(repo: Path, db_path: Path) -> Non
     assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
     assert json.loads(result.output)["reason"] == REVIEW_CYCLE_CEILING_REASON
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# #347: a hung engine is not retried into the same ceiling at an unchanged tree
+#
+# Run 01KZ67FRV3HZRZ8CMAHBYBP4QT (ticket #330) recorded FOUR consecutive
+# ``engine_timeout`` refusals against one pushed SHA, each ~725s — ~48 minutes,
+# roughly 44% of the unattended wall-clock budget, spent re-buying an identical
+# answer.  The fifth attempt passed only because the tree had changed.
+#
+# These tests drive the REAL timeout path: they patch the engine *subprocess*
+# (:func:`harness.cli._engine.run_engine_subprocess`, bound into the review
+# module at import) rather than ``_default_runner``, so production's own
+# ``EngineTimeoutError`` -> ``_ReviewError(engine_timeout)`` translation stays
+# under test and the counter measures genuine spawn attempts.
+# ---------------------------------------------------------------------------
+
+
+def _timing_out_subprocess(spawns: list[int], *, then: str | None = None) -> Any:
+    """A fake engine subprocess that times out, optionally succeeding once.
+
+    Each call appends to ``spawns`` — the quantity #347's central acceptance
+    criterion is stated in, so the tests below assert on the *count of engine
+    invocations*, not on the presence of an event.  When ``then`` is given, the
+    call made after the recorded timeouts returns it instead, which is how the
+    #330 regression case (a new SHA earns a fresh full attempt) is expressed.
+    """
+
+    async def _spawn(
+        *,
+        cmd: list[str],
+        stdin: str,
+        env: dict[str, str],
+        cwd: Path | None,
+        timeout: float | None = None,
+    ) -> review_mod.RunResult:
+        spawns.append(1)
+        if then is not None and len(spawns) > _TIMEOUTS_BEFORE_REFUSAL:
+            return review_mod.RunResult(stdout=then, stderr="", returncode=0)
+        raise EngineTimeoutError(timeout or 720.0)
+
+    return _spawn
+
+
+def _invoke_real_runner(repo: Path, db_path: Path, spawn: Any) -> Any:
+    """Invoke ``review`` with the engine subprocess faked, ``_default_runner`` real."""
+    argv = ["review", "--repo", str(repo), "--db", str(db_path), "--run-id", _RUN_ID, "--json"]
+    with mock.patch.object(review_mod, "run_engine_subprocess", spawn):
+        return cli_runner.invoke(app, argv)
+
+
+def test_a_third_engine_attempt_at_an_unchanged_tree_is_never_spawned(
+    repo: Path, db_path: Path
+) -> None:
+    """The measuring test: two timeouts at one SHA, and the engine runs no more.
+
+    Asserted as a **count of engine invocations** rather than as "a refusal event
+    exists" — a structural change is not evidence that the spend stopped.  Before
+    #347 this failed with three spawns and an exit-3 ``engine_timeout``, which is
+    exactly the #330 trail.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+    spawns: list[int] = []
+
+    first = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    second = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    third = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+
+    assert first.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert second.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert len(spawns) == _TIMEOUTS_BEFORE_REFUSAL
+    assert third.exit_code == review_mod.EXIT_BREAKER_TRIPPED
+    assert json.loads(third.output)["reason"] == REPEAT_ENGINE_TIMEOUT_REASON
+
+
+def test_a_new_commit_earns_a_fresh_full_attempt(repo: Path, db_path: Path) -> None:
+    """AC-3, the #330 regression: the guard keys on the tree, not on the run.
+
+    Run 01KZ67FRV3HZRZ8CMAHBYBP4QT's fifth attempt passed in 345s, against a tree
+    that had changed. That attempt must stay reachable — a guard that outlived the
+    SHA it was about would strand every run whose engine ever hung twice.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+    spawns: list[int] = []
+
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    stale_head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    (repo / "fix.txt").write_text("the tree changed\n")
+    _git(repo, "add", "fix.txt")
+    _git(repo, "commit", "-m", "a new SHA")
+    fresh_head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert fresh_head != stale_head
+
+    third = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns, then=_PASS_LINE))
+
+    assert len(spawns) == _TIMEOUTS_BEFORE_REFUSAL + 1
+    assert third.exit_code == 0
+    payload = json.loads(third.output)
+    assert payload["verdict"] == "pass"
+    assert payload["reviewed_sha"] == fresh_head
+
+
+def test_one_timeout_does_not_stop_the_next_attempt(repo: Path, db_path: Path) -> None:
+    """The bound is two attempts spent, then stop — not one.
+
+    A single hang is exactly the case worth one re-run: the engine may genuinely
+    have been wedged by something transient. Pinning this keeps a later tightening
+    of :data:`ENGINE_TIMEOUT_ATTEMPT_LIMIT` from passing unnoticed.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+    spawns: list[int] = []
+
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    second = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+
+    assert len(spawns) == 2
+    assert second.exit_code == review_mod.EXIT_INFRA_FAILURE
+    assert json.loads(second.output)["reason"] == "engine_timeout"
+
+
+def test_pre_347_timeout_rows_cannot_strand_a_run(repo: Path, db_path: Path) -> None:
+    """Rows carrying no ``reviewed_sha`` count as zero, so the engine still runs.
+
+    #330's own four ``engine_timeout`` rows predate the SHA being recorded on a
+    refusal. A guard that read them as "some timeouts happened here" would refuse
+    a tree they say nothing about. A refusal that stops a run rests only on
+    evidence the ledger actually holds.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+
+    async def _seed_legacy_rows() -> None:
+        async with store.connect(db_path) as conn:
+            for _ in range(_TIMEOUTS_BEFORE_REFUSAL + 2):
+                await conn.execute(
+                    "INSERT INTO events (run_id, event_type, timestamp, data_json) "
+                    "VALUES (?, 'review', ?, ?)",
+                    (
+                        _RUN_ID,
+                        datetime.now(UTC).isoformat(),
+                        json.dumps(
+                            {
+                                "run_id": _RUN_ID,
+                                "outcome": "failed",
+                                "reason": "engine_timeout",
+                                "detail": "recorded before #347 put the SHA on the row",
+                            }
+                        ),
+                    ),
+                )
+            await conn.commit()
+
+    run_sync(_seed_legacy_rows())
+    spawns: list[int] = []
+    result = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns, then=_PASS_LINE))
+
+    assert len(spawns) == 1
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
+
+
+def test_a_repeat_refusal_records_the_sha_and_consumes_no_cycle(
+    repo: Path, db_path: Path
+) -> None:
+    """The refusal is itself recorded, bound to the tree, and costs no cycle.
+
+    ``engine_timeout`` is infra and consumes no review cycle; a refusal that
+    *replaces* one of those attempts must not cost more than the attempt it
+    saved. Asserted by counting through :func:`review_mod._count_review_events`
+    — the ceiling's own input — rather than by inspecting the row's shape.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+    spawns: list[int] = []
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+    _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    refusals = [
+        e for e in _review_events(db_path) if e.get("reason") == REPEAT_ENGINE_TIMEOUT_REASON
+    ]
+    assert len(refusals) == 1
+    assert refusals[0]["reviewed_sha"] == head
+    assert "verdict" not in refusals[0]
+    assert run_sync(review_mod._count_review_events(db_path, _RUN_ID)) == 0
+
+
+def test_the_refusal_is_idempotent_and_does_not_feed_itself(
+    repo: Path, db_path: Path
+) -> None:
+    """A refused run refuses again on the same evidence, never on its own output.
+
+    The count keys on ``reason='engine_timeout'``, so the repeat-refusal rows the
+    guard writes cannot inflate it. Without that, the guard would be counting a
+    population it grows on every invocation — true here only because the two
+    reasons are distinct tags, which is what this pins.
+    """
+    _seed_run(db_path, repo, started_at=datetime.now(UTC))
+    spawns: list[int] = []
+    for _ in range(4):
+        result = _invoke_real_runner(repo, db_path, _timing_out_subprocess(spawns))
+
+    assert len(spawns) == _TIMEOUTS_BEFORE_REFUSAL
+    assert result.exit_code == review_mod.EXIT_BREAKER_TRIPPED
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert run_sync(review_mod._count_engine_timeouts_at_sha(db_path, _RUN_ID, head)) == (
+        _TIMEOUTS_BEFORE_REFUSAL
+    )
