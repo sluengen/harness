@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-05
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321"]
+last_updated: 2026-08-06
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -134,9 +134,29 @@ The verbs (`start` / `design` / `review` / `close`) and `status` / `events` / `v
 
 Commands are split per concern across `harness/cli/*.py` for readability and registered in `harness/cli/__init__.py`. The verb output shapes (`StartOutput` / `ReviewOutput` / `CloseOutput`) are defined alongside their verbs and locked by `test_verb_contract_locked.py`; the full registered command set is locked by `test_cli_surface_locked.py`.
 
+### The retired surface is banned as a usage, not as a phrase
+
+`test_cli_surface_locked.py` also holds the *docs* to the live surface: no live doc, and no Python module docstring, may name the retired engine-era CLI (CAL-574). As built, that ban distinguishes a **usage** from a **mention** (#355).
+
+The banned terms are split by whether English can produce them:
+
+| Kind | Terms | Scanned over |
+|---|---|---|
+| Invocation (`_RETIRED_INVOCATION_TERMS`) | harness run &lt;arg&gt;, harness validate, a bare run &lt;workflow&gt; | **command context only** |
+| Artefact (`_RETIRED_ARTEFACT_TERMS`) | `harness.{engine,nodes,dispatch,workflow}`, `workflows/*.yaml` | the whole live text |
+
+The invocation terms are named unformatted in that table on purpose: this row *mentions* them, and formatting a mention as code is what would — correctly — make this very spec fail its own guard. The artefact terms carry no such ambiguity, so they stay in code spans.
+
+Command context is the text formatted as code — fenced-block bodies plus inline code spans — for markup (`.md`) and a module docstring; the executable members of the corpus (`entrypoint.sh`, `Dockerfile`, `docker-compose.yml`) are scanned whole, since every line there *is* command context. Prose is therefore out of scope by construction: the sentence "Every harness run currently invokes the design engine" is a noun phrase, and before #355 it matched and turned `origin/dev` red — with `harness review` refusing a non-zero gate, nothing could reach review until it was green.
+
+Two extraction invariants are load-bearing, and each has its own control: segments are joined by a sentinel that satisfies neither `\s` nor `[<\w-]`, so two abutting fences cannot fuse into a hit neither contains; and an inline span never crosses a newline, so one unpaired backtick cannot pair with a later one and launder a passage into "code". The narrowing is a one-way ratchet — the new hit set is a subset of the old — so it can delete real coverage, which is what the per-term controls exist to prevent: they parametrize over the production term tuple, with a bijection floor pinning samples to terms so neither adding nor deleting a term can slip through unguarded.
+
+The accepted trade is that a genuine instruction written as bare prose ("use harness run feature to build") now escapes. Every command reference in the live corpus is written as code today, and executable files are still scanned whole; if unformatted instructions ever appear, the answer is a "commands are written as code" style guard, not re-widening this one.
+
 ## Known limitations
 
 - No dynamic subcommands: the surface only changes by editing a verb, by design (the engine-era YAML-driven subcommand generation was retired in CAL-574).
+- The retired-surface doc ban sees only code-formatted invocations (#355, above): a retired command named in bare prose is out of scope by design.
 
 ## Decisions
 

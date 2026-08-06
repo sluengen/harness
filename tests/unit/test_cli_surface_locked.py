@@ -801,27 +801,101 @@ def test_contract_documents_only_registered_verbs() -> None:
 #: alone misses it).
 _RETIRED_WORKFLOWS = "build-codex|build|feature|steward|bugfix|release"
 
-#: Retired surface references that must not appear in a live doc:
-#: the bare ``harness run/validate`` CLI invocation (not the ``/harness run``
-#: slash command), a retired ``run <workflow>`` subcommand, a retired engine
-#: module path, or a retired workflow YAML file.
-_RETIRED_REFERENCE = re.compile(
+#: Retired **invocation** terms — the ones spelled out of ordinary English
+#: words, so a bare match cannot tell a *usage* from a *mention*. These are
+#: scanned in command context only (see ``_command_context``): prose that merely
+#: says "a harness run" is out of scope by construction (#355). Kept as a named
+#: tuple rather than one opaque alternation so the negative controls can
+#: parametrize over the production terms and a term added without a control
+#: fails loudly instead of shipping unguarded.
+_RETIRED_INVOCATION_TERMS: tuple[tuple[str, str], ...] = (
     # ``harness run <anything>`` as the CLI invocation — an *arbitrary* workflow
     # name (the retired CLI accepted any), a ``<placeholder>``, or a ``--flag``.
-    # The lookahead requires a real argument token after ``run`` so the English
-    # noun "a harness run." (followed by punctuation) and annotations like
-    # "`harness run` (legacy)" are left alone; the ``\s`` after ``run`` keeps the
-    # live ``harness runs`` read command (no space before ``s``) out of scope.
-    r"(?<!/)\bharness run(?=\s+[<\w-])"
-    r"|(?<!/)\bharness validate\b"  # retired `harness validate`
-    rf"|\brun (?:{_RETIRED_WORKFLOWS})\b"  # bare `run <workflow>` across a multiline
-    #                                        docker invocation (no `harness ` on the
-    #                                        same line); restricted to the known
-    #                                        workflow names so `docker run` / `uv run`
-    #                                        are not swept up.
-    r"|\bharness\.(?:engine|nodes|dispatch|workflow)\b"  # retired engine modules
-    r"|\bworkflows/[A-Za-z0-9_-]+\.yaml\b"  # retired workflow YAML file
+    # The lookahead requires an argument token after ``run`` so ``harness run``
+    # annotated as legacy is left alone; the ``\s`` keeps the live ``harness
+    # runs`` read command (no space before ``s``) out of scope.
+    ("harness run <arg>", r"(?<!/)\bharness run(?=\s+[<\w-])"),
+    ("harness validate", r"(?<!/)\bharness validate\b"),
+    # Bare ``run <workflow>`` across a *multiline* docker invocation
+    # (``harness:dev \`` then ``run steward …``), restricted to the known
+    # workflow names so ``docker run`` / ``uv run`` are not swept up.
+    ("run <workflow>", rf"\brun (?:{_RETIRED_WORKFLOWS})\b"),
 )
+
+#: Retired **artefact** terms — a dotted engine module path or a workflow YAML
+#: path. No English sentence produces these, so they carry no usage/mention
+#: ambiguity and keep firing anywhere in a live doc, prose included.
+_RETIRED_ARTEFACT_TERMS: tuple[tuple[str, str], ...] = (
+    ("harness.<engine module>", r"\bharness\.(?:engine|nodes|dispatch|workflow)\b"),
+    ("workflows/*.yaml", r"\bworkflows/[A-Za-z0-9_-]+\.yaml\b"),
+)
+
+_RETIRED_INVOCATION = re.compile(
+    "|".join(pattern for _, pattern in _RETIRED_INVOCATION_TERMS)
+)
+_RETIRED_ARTEFACT = re.compile(
+    "|".join(pattern for _, pattern in _RETIRED_ARTEFACT_TERMS)
+)
+
+#: File suffixes whose content has a prose register worth protecting. Everything
+#: else in ``_live_docs()`` — ``entrypoint.sh``, ``Dockerfile``,
+#: ``docker-compose.yml`` — is executable, where every line *is* command context
+#: and a real invocation would actually hide, so those are scanned whole.
+_MARKUP_SUFFIXES = {".md"}
+
+#: Joins extracted segments. A control character satisfies neither ``\s`` nor
+#: ``[<\w-]``, so adjacent spans — ```harness run``` next to
+#: ```feature``` — cannot fuse into a match that neither contains.
+_CONTEXT_SEP = "\n\x00\n"
+
+#: An inline code span. The newline exclusion is load-bearing: one unpaired
+#: backtick must not pair with another paragraphs later and launder prose into
+#: "code". Non-nested quantifiers, so there is no backtracking blowup.
+_CODE_SPAN = re.compile(r"`+[^`\n]+?`+")
+
+#: The exact sentence from ``b64abb5`` that turned ``origin/dev`` red — "harness
+#: run" as a noun phrase, with an argument-shaped word after it. The regression
+#: fixture this ticket exists for; shared by the guards' fixture tables below.
+_PROSE_MENTION = (
+    "Every harness run currently invokes the design engine, and `review` "
+    "accepts a failed design attempt as satisfying the design gate."
+)
+
+
+def _command_context(text: str) -> str:
+    """The text formatted as code — fenced bodies plus inline spans.
+
+    Prose is excluded by construction, which is the whole point: a command is
+    written as code in this repo's docs, an English mention is not.
+    """
+    fences = _FENCE.findall(text)
+    prose = _FENCE.sub(_CONTEXT_SEP, text)
+    return _CONTEXT_SEP.join([*fences, *_CODE_SPAN.findall(prose)])
+
+
+def _invocation_hits(text: str, code_only: bool) -> list[str]:
+    """Retired invocations in *text*; when *code_only*, command context only."""
+    scanned = _command_context(text) if code_only else text
+    return [m.group(0) for m in _RETIRED_INVOCATION.finditer(scanned)]
+
+
+def _hits_in(text: str, code_only: bool) -> list[str]:
+    """The whole live-doc rule over raw *text*: context-gated invocations plus
+    always-on artefacts. Shared with the fixture table below, so the table
+    exercises the guard's own composition instead of restating it."""
+    return _invocation_hits(text, code_only) + [
+        m.group(0) for m in _RETIRED_ARTEFACT.finditer(text)
+    ]
+
+
+def _doc_hits(doc: Path) -> list[str]:
+    """The live-doc rule for a file: markup is context-gated, executable files
+    are scanned whole.
+
+    ``_live_text`` composes *first*, so ``SPEC.md``'s live-section selection is
+    unchanged and a fence in a retired section stays out of scope.
+    """
+    return _hits_in(_live_text(doc), doc.suffix in _MARKUP_SUFFIXES)
 
 @pytest.mark.parametrize(
     "doc", _live_docs(), ids=lambda p: str(p.relative_to(REPO_ROOT))
@@ -833,48 +907,167 @@ def test_live_docs_have_no_retired_surface_reference(doc: Path) -> None:
     entrypoint and is allowlisted; this fires only on the bare CLI form and on
     retired engine module / workflow-YAML references.
     """
-    hits = [m.group(0) for m in _RETIRED_REFERENCE.finditer(_live_text(doc))]
+    hits = _doc_hits(doc)
     assert not hits, (
         f"{doc.relative_to(REPO_ROOT)} references retired surface "
         f"{sorted(set(hits))!r}. The deterministic engine was retired (CAL-574); "
         "the CLI no longer registers `run`/`validate` and the engine modules / "
         "`workflows/*.yaml` are gone. Rewrite to the as-built verb surface "
-        "(`harness start/review/close`) or, for the slash command, `/harness run`."
+        "(`harness start/review/close`) or, for the slash command, `/harness run`. "
+        "An invocation hit means the reference is written as a command — in a "
+        "code span, a fenced block, or an executable file; prose that merely "
+        'mentions "a harness run" is out of scope and never reaches here (#355).'
     )
 
 
 @pytest.mark.parametrize(
     "text, flagged",
     [
-        # Retired CLI invocations — flagged. The name is arbitrary: the retired
-        # `run <workflow>` accepted any workflow name, not a fixed list.
-        ("harness run <workflow>", True),
-        ("harness run feature --linear=CAL-1", True),
-        ("harness run custom-workflow --foo", True),
-        ("harness run --help", True),
-        ("harness validate workflow.yaml", True),
-        ("    harness:dev \\\n      run steward --domain=architecture", True),
+        # Retired CLI invocations *written as commands* — flagged. The name is
+        # arbitrary: the retired `run <workflow>` accepted any workflow name.
+        ("`harness run <workflow>`", True),
+        ("`harness run feature --linear=CAL-1`", True),
+        ("`harness run custom-workflow --foo`", True),
+        ("`harness run --help`", True),
+        ("`harness validate workflow.yaml`", True),
+        ("```\n    harness:dev \\\n      run steward --domain=architecture\n```", True),
+        # Artefacts are not context-gated — still flagged in bare prose.
         ("import harness.engine.runner", True),
         ("see workflows/feature.yaml for the inputs block", True),
         # Live / legitimate — not flagged.
-        ("/harness run CAL-42", False),  # the slash command (current entrypoint)
+        ("`/harness run CAL-42`", False),  # the slash command (current entrypoint)
         ("a deterministic harness run. That role is dissolved.", False),  # noun
         ("| `pending` | `harness run` (legacy) | …", False),  # historical annotation
-        ("harness runs --failed", False),  # the live `runs` read command
-        ("docker run --rm harness:dev start CAL-1", False),  # plain `docker run`
-        ("uv run harness start CAL-1", False),  # `uv run`, then the live verb
+        ("`harness runs --failed`", False),  # the live `runs` read command
+        ("`docker run --rm harness:dev start CAL-1`", False),  # plain `docker run`
+        ("`uv run harness start CAL-1`", False),  # `uv run`, then the live verb
+        # The #355 cases: the same invocations as *prose* are mentions, not uses.
+        (_PROSE_MENTION, False),
+        ("we then harness run feature to build the thing", False),
     ],
 )
 def test_retired_reference_detection(text: str, flagged: bool) -> None:
-    """The detector flags retired invocations (any workflow name) without
-    catching the slash command, the English noun, or live `runs`/`docker run`."""
-    assert bool(_RETIRED_REFERENCE.search(text)) is flagged
+    """The detector flags retired invocations written as commands, without
+    catching the slash command, the English noun, live `runs`/`docker run`, or
+    prose that merely mentions the retired surface (#355)."""
+    assert bool(_hits_in(text, code_only=True)) is flagged
+
+
+# --- Usage vs mention (#355) --------------------------------------------------
+# The invocation terms are spelled out of ordinary English words, so a bare match
+# cannot tell a command from prose. They are scanned in *command context* only;
+# the artefact terms are identifiers no sentence produces and stay whole-text.
+
+#: One command-context sample per invocation term, keyed by the term's name in
+#: ``_RETIRED_INVOCATION_TERMS``. The control below reads the *production* tuple
+#: and demands a sample for every term in it, so a term added without a control
+#: fails rather than shipping unguarded.
+_INVOCATION_SAMPLES = {
+    "harness run <arg>": "```\nharness run feature --linear=CAL-1\n```",
+    "harness validate": "```\nharness validate workflow.yaml\n```",
+    "run <workflow>": "```\n    harness:dev \\\n      run steward --domain=arch\n```",
+}
+
+
+def test_prose_mentioning_a_harness_run_is_not_a_retired_reference() -> None:
+    """The noun phrase is a *mention*, not a usage (#355, the b64abb5 red)."""
+    assert _invocation_hits(_PROSE_MENTION, code_only=True) == []
+
+
+def test_every_invocation_term_has_a_command_context_control() -> None:
+    """Non-vacuity floor for the per-term control below.
+
+    That control parametrizes over the production tuple, so *deleting* a term
+    would silently delete its own test. Pinning the sample keys to the term
+    names as a bijection makes a deletion fail here, and an addition without a
+    control fail too — in both directions, against the production tuple.
+    """
+    assert set(_INVOCATION_SAMPLES) == {name for name, _ in _RETIRED_INVOCATION_TERMS}
+
+
+@pytest.mark.parametrize("name, _pattern", _RETIRED_INVOCATION_TERMS)
+def test_every_invocation_term_still_fires_in_command_context(
+    name: str, _pattern: str
+) -> None:
+    """Negative control: narrowing to command context must not disarm a term.
+
+    Parametrized over the **production** term tuple, so this cannot pass by the
+    tuple and the samples drifting apart — a new term with no sample raises.
+    """
+    assert _invocation_hits(_INVOCATION_SAMPLES[name], code_only=True), (
+        f"retired invocation term {name!r} no longer fires in command context — "
+        "the context narrowing disarmed the guard instead of aiming it."
+    )
+
+
+@pytest.mark.parametrize("name, _pattern", _RETIRED_ARTEFACT_TERMS)
+def test_every_artefact_term_still_fires_in_prose(name: str, _pattern: str) -> None:
+    """Artefact terms are identifiers, not English — they stay context-free."""
+    sample = {
+        "harness.<engine module>": "see import harness.engine.runner for the loop",
+        "workflows/*.yaml": "see workflows/feature.yaml for the inputs block",
+    }[name]
+    assert [m.group(0) for m in _RETIRED_ARTEFACT.finditer(sample)]
+
+
+@pytest.mark.parametrize(
+    "doc", (README, CONTEXT, DOCKER_README, SPEC, HARNESS_CONTRACT)
+)
+def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(doc: Path) -> None:
+    """Per-doc injection probe, run through the guard's own scan path.
+
+    Asserting *equality* with the injected hit — not merely non-emptiness — is
+    what also proves the doc is clean today, so the probe cannot pass on a
+    pre-existing hit. ``SPEC`` is in the list because it is the only doc whose
+    ``_live_text`` is not identity, pinning the composition order.
+    """
+    doctored = _live_text(doc) + "\n```\nharness run feature --linear=CAL-1\n```\n"
+    assert _invocation_hits(doctored, code_only=True) == ["harness run"]
+
+
+def test_an_unformatted_invocation_in_an_executable_file_is_caught() -> None:
+    """Shell/Dockerfile members of the corpus have no prose register, so they
+    are scanned whole — the files where an invocation would actually execute.
+
+    ``code_only`` is derived from the production ``_MARKUP_SUFFIXES`` rather
+    than passed as a literal, so widening that set to swallow executables fails
+    here instead of quietly opening a blind spot.
+    """
+    script = REPO_ROOT / "docker" / "entrypoint.sh"
+    doctored = _live_text(script)
+    doctored += "\nexec harness run feature\n  harness:dev \\\n  run steward --x\n"
+    hits = _hits_in(doctored, script.suffix in _MARKUP_SUFFIXES)
+    assert hits == ["harness run", "run steward"]
+
+
+def test_adjacent_extracted_segments_do_not_fuse_into_a_hit() -> None:
+    """Extraction joins segments with a sentinel: without it this fix would
+    *add* a false positive the broad pattern never had.
+
+    Fenced bodies are extracted *without* their backticks, so two fences are
+    what can actually abut — the first ending in a bare verb, the second
+    opening with a word that would complete it.
+    """
+    text = "```\necho harness run\n```\n\nprose\n\n```\nfeature --linear=CAL-1\n```\n"
+    assert _invocation_hits(text, code_only=True) == []
+
+
+def test_a_code_span_never_crosses_a_line() -> None:
+    """One unpaired backtick must not pair with a *later* one and launder the
+    prose between them into "code" — which resurrects the false positive.
+
+    Needs a second backtick further down the document for the bad pairing to be
+    available at all; with the newline exclusion the stray tick pairs with
+    nothing and only ``x`` is extracted.
+    """
+    text = "A stray ` tick.\n\nEvery harness run currently invokes it, see `x`.\n"
+    assert _invocation_hits(text, code_only=True) == []
 
 
 # --- Python module-docstring lock (CAL-699) -----------------------------------
 
-#: Retired CLI *command* references — the subset of ``_RETIRED_REFERENCE`` that
-#: names a command the CLI no longer registers (``harness run <arg>`` /
+#: Retired CLI *command* references — the ``_RETIRED_INVOCATION`` terms, which
+#: name a command the CLI no longer registers (``harness run <arg>`` /
 #: ``harness validate`` / a bare ``run <workflow>``). The full doc-scan rule also
 #: flags retired engine *module paths* (``harness.nodes|engine|…``) and
 #: ``workflows/*.yaml``; that part is deliberately omitted here because a Python
@@ -884,11 +1077,14 @@ def test_retired_reference_detection(text: str, flagged: bool) -> None:
 #: appearing in a docstring as if it were current (the ``harness validate`` line
 #: that survived in ``test_cli_query.py`` is exactly this drift). So source
 #: docstrings are held only to the narrower CLI-name rule.
-_RETIRED_CLI_REFERENCE = re.compile(
-    r"(?<!/)\bharness run(?=\s+[<\w-])"  # `harness run <arg>` CLI invocation
-    r"|(?<!/)\bharness validate\b"  # retired `harness validate`
-    rf"|\brun (?:{_RETIRED_WORKFLOWS})\b"  # bare `run <workflow>`
-)
+#: …and it is the *same* ``_RETIRED_INVOCATION`` terms, not a second copy of
+#: them (#355). The usage/mention defect is a property of the terms, so a
+#: transcription here would keep the prose bug alive one function away. The
+#: accepted trade — a command name written as bare prose in a docstring now
+#: escapes — is the trade this guard already makes for module-path provenance.
+def _docstring_hits(text: str) -> list[str]:
+    """The docstring rule: retired invocations in command context only."""
+    return _invocation_hits(text, code_only=True)
 
 #: Python sources whose module docstring legitimately *documents* the retired
 #: CLI surface as its subject — this guard names ``harness run`` / ``harness
@@ -927,7 +1123,7 @@ def test_py_docstrings_have_no_retired_cli_reference(src: Path) -> None:
     the retired ``harness validate``). This closes that gap for source docstrings
     while leaving legitimate engine-module *provenance* notes alone.
     """
-    hits = [m.group(0) for m in _RETIRED_CLI_REFERENCE.finditer(_module_docstring(src))]
+    hits = _docstring_hits(_module_docstring(src))
     assert not hits, (
         f"{src.relative_to(REPO_ROOT)} module docstring names retired CLI "
         f"surface {sorted(set(hits))!r}. `run`/`validate` were retired with the "
@@ -939,22 +1135,25 @@ def test_py_docstrings_have_no_retired_cli_reference(src: Path) -> None:
 @pytest.mark.parametrize(
     "text, flagged",
     [
-        # Retired CLI command names — flagged.
-        ("harness validate workflow.yaml", True),
-        ("harness run feature --linear=CAL-1", True),
-        ("    run steward --domain=architecture", True),
+        # Retired CLI command names, written as commands (RST ``code``) — flagged.
+        ("``harness validate workflow.yaml``", True),
+        ("``harness run feature --linear=CAL-1``", True),
+        ("``run steward --domain=architecture``", True),
         # Legitimate in a source docstring — NOT flagged. Engine-module
         # provenance and workflow-walking history are narration, not a live
         # command name; the slash command and live `runs` stay clear too.
-        ("re-homed from the retired harness.nodes package (CAL-574)", False),
+        ("re-homed from the retired ``harness.nodes`` package (CAL-574)", False),
         ("import harness.engine.runner", False),
         ("the YAML-walking engine (engine.runner|executor|loop|retry)", False),
-        ("/harness run CAL-42", False),
+        ("``/harness run CAL-42``", False),
         ("a deterministic harness run. That role is dissolved.", False),
-        ("harness runs --failed", False),
+        ("``harness runs --failed``", False),
+        # #355: the same command name narrated as prose is a mention, not a use.
+        (_PROSE_MENTION, False),
     ],
 )
 def test_retired_cli_reference_detection(text: str, flagged: bool) -> None:
     """The CLI-name detector flags retired *commands* but leaves engine-module
-    provenance, the slash command, the English noun, and live `runs` alone."""
-    assert bool(_RETIRED_CLI_REFERENCE.search(text)) is flagged
+    provenance, the slash command, the English noun, live `runs`, and prose
+    mentions (#355) alone."""
+    assert bool(_docstring_hits(text)) is flagged
