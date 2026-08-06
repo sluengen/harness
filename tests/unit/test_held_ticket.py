@@ -689,16 +689,34 @@ def test_the_verb_modules_import_no_ledger_writer(module: str) -> None:
     assert imported & banned == set()
 
 
-def test_the_guard_catches_a_reintroduced_ledger_writer(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "from harness.events.emitter import EventEmitter\nx = EventEmitter\n",
+            id="import-from",
+        ),
+        pytest.param(
+            "import harness.events.emitter\nx = harness.events.emitter\n",
+            id="plain-import",
+        ),
+    ],
+)
+def test_the_guard_catches_a_reintroduced_ledger_writer(
+    tmp_path: Path, source: str
+) -> None:
     """Negative control: the guard must actually fire on the thing it bans.
 
     Without this, a scanner that silently returned an empty set would pass the
     test above against a module that imports every writer there is.
+
+    Both import forms are exercised because ``_imported_modules`` handles them
+    in two separate branches. A control over only ``from x import y`` would
+    leave the ``import x`` branch unscanned, and a writer re-added in that form
+    would slip past the guard with the whole suite green.
     """
     offender = tmp_path / "regressed.py"
-    offender.write_text(
-        "from harness.events.emitter import EventEmitter\nx = EventEmitter\n"
-    )
+    offender.write_text(source)
     assert "harness.events.emitter" in _imported_modules(offender)
 
 

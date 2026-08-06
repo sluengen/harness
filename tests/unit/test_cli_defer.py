@@ -471,7 +471,8 @@ def test_defer_assigns_ticket_to_viewer(tmp_path: Path, monkeypatch: Any) -> Non
 
 
 # ===========================================================================
-# AC-3: the ledger event carries the needs kind
+# AC-3: the hold label carries the needs kind (the ledger event that also did
+# is retired — #338)
 # ===========================================================================
 
 
