@@ -348,7 +348,10 @@ def test_the_declared_timeout_policy_exempts_setup_but_not_the_test_body(
             "-p",
             "no:cacheprovider",
             "--timeout=1",
-            "-q",
+            # Per-test outcomes, not an aggregate count: a marker that restates a
+            # large number makes *both* generated tests pass, and a count-based
+            # assertion would fire with a message describing the wrong failure.
+            "-v",
         ],
         cwd=tmp_path,
         capture_output=True,
@@ -362,13 +365,16 @@ def test_the_declared_timeout_policy_exempts_setup_but_not_the_test_body(
     )
     report = f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
 
-    assert "1 passed" in result.stdout, (
-        "a 3s module-scoped fixture was killed under a 1s cap, so the cap still "
-        "covers fixture setup and a cold docker build cannot fit under it — AC-1 "
-        f"(#357).\n{report}"
+    assert "test_a_setup_is_exempt PASSED" in result.stdout, (
+        "a module-scoped fixture that slept past the cap did not pass, so the cap "
+        "still covers fixture setup and a cold docker build cannot fit under it "
+        f"— AC-1 (#357).\n{report}"
     )
-    assert "1 failed" in result.stdout and "Timeout (>1.0s)" in result.stdout, (
-        "a test body that slept 3s under a 1s cap was NOT killed, so the marker "
-        "exempts more than the build and a genuinely hung socket test would no "
-        f"longer fail fast — AC-3 (#357).\n{report}"
+    assert (
+        "test_b_body_is_still_bounded FAILED" in result.stdout
+        and "Timeout (>1.0s)" in result.stdout
+    ), (
+        "a test body that slept past the cap was NOT killed by pytest-timeout, so "
+        "the marker exempts more than the build and a genuinely hung socket test "
+        f"would no longer fail fast — AC-3 (#357).\n{report}"
     )
