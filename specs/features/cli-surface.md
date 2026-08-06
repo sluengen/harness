@@ -151,6 +151,8 @@ Command context, for markup (`.md`) and for a module docstring, is the text form
 
 Backticks alone would **not** have been a sufficient notion of command context, and that is the subtle part. The CAL-699 drift the docstring guard exists for was an indented `Covers:` listing carrying no backticks at all, so a backticks-only rule would have silently un-caught that guard's own founding case while every fixture re-spelled in code markup stayed green. Its control is therefore pinned to the original docstring verbatim rather than a re-spelling.
 
+The markup/executable dispatch lives in one function (`_scans_code_only`) that the guard *and* its injection probes both read, and the probes run through `_doc_hits` itself rather than restating the dispatch. A probe that restates it is not a floor: short-circuiting `_doc_hits` then leaves every probe green while the executable branch — the files where an invocation would actually execute — goes unscanned. The executable set is derived from the corpus rather than hand-picked, with a membership floor, so widening `_MARKUP_SUFFIXES` fails a test instead of shrinking the probe's own parametrize list.
+
 Three extraction invariants are load-bearing, and each has its own control: segments are joined by a sentinel that satisfies neither `\s` nor `[<\w-]`, so two abutting fences cannot fuse into a hit neither contains; an inline span never crosses a newline, so one unpaired backtick cannot pair with a later one and launder a passage into "code"; and the indent threshold stays at 4 columns, because 2-space list continuations carry ordinary prose. The narrowing is a one-way ratchet — the new hit set is a subset of the old — so it can delete real coverage, which is what the per-term controls exist to prevent: they parametrize over the production term tuple, with a bijection floor pinning samples to terms so neither adding nor deleting a term can slip through unguarded.
 
 The accepted trade is that a genuine instruction written as bare prose ("use harness run feature to build") now escapes. Every command reference in the live corpus is written as code today, and executable files are still scanned whole; if unformatted instructions ever appear, the answer is a "commands are written as code" style guard, not re-widening this one.
@@ -159,6 +161,7 @@ The accepted trade is that a genuine instruction written as bare prose ("use har
 
 - No dynamic subcommands: the surface only changes by editing a verb, by design (the engine-era YAML-driven subcommand generation was retired in CAL-574).
 - The retired-surface doc ban sees only code-formatted invocations (#355, above): a retired command named in bare prose is out of scope by design.
+- Four command-context shapes the #355 extractor does not recognise, each measured at **zero occurrences** in the live corpus when it shipped, so they are latent rather than live: a tilde fence (`~~~`, since `_FENCE` is backtick-only), an HTML `<code>` element, a reST literal block indented fewer than 4 columns, and a fence-pairing desync caused by an inline triple-backtick span. A retired invocation written in one of those would not be caught. The fix if one ever appears is to widen the extractor, not to re-widen the term match.
 
 ## Decisions
 

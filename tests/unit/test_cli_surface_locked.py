@@ -901,6 +901,16 @@ def _hits_in(text: str, code_only: bool) -> list[str]:
     ]
 
 
+def _scans_code_only(doc: Path) -> bool:
+    """Whether *doc* has a prose register worth protecting.
+
+    The single home of the markup/executable dispatch. The guard *and* its
+    probes both read it, so widening ``_MARKUP_SUFFIXES`` — or short-circuiting
+    this decision — fails a test rather than silently exempting a file.
+    """
+    return doc.suffix in _MARKUP_SUFFIXES
+
+
 def _doc_hits(doc: Path) -> list[str]:
     """The live-doc rule for a file: markup is context-gated, executable files
     are scanned whole.
@@ -908,7 +918,7 @@ def _doc_hits(doc: Path) -> list[str]:
     ``_live_text`` composes *first*, so ``SPEC.md``'s live-section selection is
     unchanged and a fence in a retired section stays out of scope.
     """
-    return _hits_in(_live_text(doc), doc.suffix in _MARKUP_SUFFIXES)
+    return _hits_in(_live_text(doc), _scans_code_only(doc))
 
 @pytest.mark.parametrize(
     "doc", _live_docs(), ids=lambda p: str(p.relative_to(REPO_ROOT))
@@ -943,7 +953,11 @@ def test_live_docs_have_no_retired_surface_reference(doc: Path) -> None:
         ("`harness run custom-workflow --foo`", True),
         ("`harness run --help`", True),
         ("`harness validate workflow.yaml`", True),
-        ("```\n    harness:dev \\\n      run steward --domain=architecture\n```", True),
+        # Kept in its real-world shape — an indented multiline docker
+        # invocation, no fence — because that is how the corpus actually
+        # carries it. Re-spelling it into markup would only prove the guard
+        # agrees with itself.
+        ("    harness:dev \\\n      run steward --domain=architecture", True),
         # Artefacts are not context-gated — still flagged in bare prose.
         ("import harness.engine.runner", True),
         ("see workflows/feature.yaml for the inputs block", True),
@@ -1023,10 +1037,27 @@ def test_every_artefact_term_still_fires_in_prose(name: str, _pattern: str) -> N
     assert [m.group(0) for m in _RETIRED_ARTEFACT.finditer(sample)]
 
 
+def _hits_with_injection(doc: Path, injection: str, mp: pytest.MonkeyPatch) -> list[str]:
+    """``_doc_hits(doc)`` over the doc's real text plus *injection*.
+
+    The probes go through ``_doc_hits`` — not through ``_hits_in`` with the
+    dispatch expression restated — so the markup/executable decision is itself
+    under test. Restating it would re-implement the guard's own scan, which is
+    not a floor: short-circuiting ``_doc_hits`` would then leave every probe
+    green. Patching ``_live_text`` (rather than the file) keeps its composition
+    ahead of extraction, so ``SPEC``'s live-section selection still runs first.
+    """
+    original = _live_text
+    mp.setitem(globals(), "_live_text", lambda p: original(p) + injection)
+    return _doc_hits(doc)
+
+
 @pytest.mark.parametrize(
     "doc", (README, CONTEXT, DOCKER_README, SPEC, HARNESS_CONTRACT)
 )
-def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(doc: Path) -> None:
+def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(
+    doc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Per-doc injection probe, run through the guard's own scan path.
 
     Asserting *equality* with the injected hit — not merely non-emptiness — is
@@ -1034,22 +1065,37 @@ def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(doc: Path) -> None:
     pre-existing hit. ``SPEC`` is in the list because it is the only doc whose
     ``_live_text`` is not identity, pinning the composition order.
     """
-    doctored = _live_text(doc) + "\n```\nharness run feature --linear=CAL-1\n```\n"
-    assert _invocation_hits(doctored, code_only=True) == ["harness run"]
+    injected = "\n```\nharness run feature --linear=CAL-1\n```\n"
+    assert _hits_with_injection(doc, injected, monkeypatch) == ["harness run"]
 
 
-def test_an_unformatted_invocation_in_an_executable_file_is_caught() -> None:
-    """Shell/Dockerfile members of the corpus have no prose register, so they
-    are scanned whole — the files where an invocation would actually execute.
+#: The corpus members with no prose register, derived from the tree rather than
+#: hand-picked — a probe over one of them would leave the others unguarded.
+_EXECUTABLE_DOCS = [d for d in _live_docs() if not _scans_code_only(d)]
 
-    ``code_only`` is derived from the production ``_MARKUP_SUFFIXES`` rather
-    than passed as a literal, so widening that set to swallow executables fails
-    here instead of quietly opening a blind spot.
+
+def test_the_executable_corpus_members_are_the_expected_set() -> None:
+    """Non-vacuity floor for the probe below.
+
+    That probe parametrizes over ``_EXECUTABLE_DOCS``, so widening
+    ``_MARKUP_SUFFIXES`` would *shrink the parametrize list* and silently stop
+    testing the files it exempted. Pinning the membership makes that a failure.
     """
-    script = REPO_ROOT / "docker" / "entrypoint.sh"
-    doctored = _live_text(script)
-    doctored += "\nexec harness run feature\n  harness:dev \\\n  run steward --x\n"
-    hits = _hits_in(doctored, script.suffix in _MARKUP_SUFFIXES)
+    assert {d.name for d in _EXECUTABLE_DOCS} == {
+        "entrypoint.sh",
+        "Dockerfile",
+        "docker-compose.yml",
+    }
+
+
+@pytest.mark.parametrize("doc", _EXECUTABLE_DOCS, ids=lambda p: p.name)
+def test_an_unformatted_invocation_in_an_executable_file_is_caught(
+    doc: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Executable corpus members are scanned whole — no prose register to
+    protect, and the files where a real invocation would actually execute."""
+    injected = "\nexec harness run feature\n  harness:dev \\\n  run steward --x\n"
+    hits = _hits_with_injection(doc, injected, monkeypatch)
     assert hits == ["harness run", "run steward"]
 
 
@@ -1186,7 +1232,8 @@ def test_py_docstrings_have_no_retired_cli_reference(src: Path) -> None:
         # Retired CLI command names, written as commands (RST ``code``) — flagged.
         ("``harness validate workflow.yaml``", True),
         ("``harness run feature --linear=CAL-1``", True),
-        ("``run steward --domain=architecture``", True),
+        # Real-world shape kept: the indented CLI listing a docstring uses.
+        ("    run steward --domain=architecture", True),
         # Legitimate in a source docstring — NOT flagged. Engine-module
         # provenance and workflow-walking history are narration, not a live
         # command name; the slash command and live `runs` stay clear too.
