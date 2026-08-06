@@ -11,9 +11,10 @@ Tier             May cross
 ===============  ==========================================================
 ``unit``         nothing outside the process — parsers, models, protocol
                  shapes, argv builders against stubs
-``guard``        the checked-out tree, read-only: docs, skills, sources, CI
-                 YAML, and the ``git ls-files`` tracked set behind
-                 :mod:`tests._gitutil`
+``guard``        the checked-out tree: docs, skills, sources, CI YAML, and
+                 the ``git ls-files`` tracked set behind
+                 :mod:`tests._gitutil`. Reading it is the convention, not
+                 an enforced property — see the denial's scope below
 ``integration``  a real repository or worktree, the SQLite ledger, a spawned
                  process, or a whole verb through ``CliRunner``
 ===============  ==========================================================
@@ -100,7 +101,7 @@ BoundaryFlag = Literal["cli", "db", "proc", "tree"]
 TIERS: tuple[Tier, ...] = ("unit", "guard", "integration")
 
 #: Which tier a boundary flag forces. ``cli``/``db``/``proc`` are the
-#: out-of-process boundaries; ``tree`` is the read-only checkout.
+#: out-of-process boundaries; ``tree`` is the checkout itself.
 _BOUNDARY_TIER: dict[str, Tier] = {
     "cli": "integration",
     "db": "integration",
@@ -176,7 +177,7 @@ OVERRIDES: dict[str, Tier] = {
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-class TierViolation(RuntimeError):
+class TierViolationError(RuntimeError):
     """A ``unit``-tier test crossed a boundary its tier forbids."""
 
 
@@ -228,7 +229,7 @@ def _reads_the_tree(tree: ast.Module) -> bool:
     )
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _boundaries_of_source(source: str) -> frozenset[str]:
     tree = ast.parse(source)
     flags: set[str] = set()
@@ -307,13 +308,24 @@ def apply_tier_markers(items: Iterable[_Markable]) -> None:
     Applied from ``tests/conftest.py``'s ``pytest_collection_modifyitems``,
     which runs before ``-m`` deselection — so the derived tier is selectable
     without a single marker line in a test module.
+
+    Memoized **per call** rather than globally: there are ~4,800 items across
+    ~250 modules, so classifying each one would re-read and re-``stat`` every
+    module about twenty times. Scoping the cache to one collection is what
+    makes that safe without a staleness key — no file changes while pytest is
+    collecting, and nothing survives to serve a later caller a stale answer.
     """
+    seen: dict[Path, Tier] = {}
     for item in items:
-        item.add_marker(getattr(pytest.mark, classify(item.path)))
+        path = item.path
+        tier = seen.get(path)
+        if tier is None:
+            tier = seen[path] = classify(path)
+        item.add_marker(getattr(pytest.mark, tier))
 
 
 def deny_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make a process spawn or a database connection raise :class:`TierViolation`.
+    """Make a process spawn or a database connection raise :class:`TierViolationError`.
 
     Patched at the chokepoints rather than at each caller's alias:
     ``subprocess.Popen`` is what every ``run``/``check_output``/``call`` funnels
@@ -324,7 +336,7 @@ def deny_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _refuse(kind: str) -> Callable[..., object]:
         def deny(*args: object, **kwargs: object) -> object:
-            raise TierViolation(
+            raise TierViolationError(
                 f"a unit-tier test {kind}. Either keep it in-process, or record "
                 f"its tier in tests/_tiers.py OVERRIDES with the reason. "
                 f"(called with {args!r})"

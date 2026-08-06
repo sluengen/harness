@@ -23,6 +23,18 @@ If you do open a PR:
 - **Stay in scope and test-first.** The repo builds test-first and runs a gate —
   `uv run --extra dev pytest`, plus `ruff` and `mypy`. See [`CONTEXT.md`](./CONTEXT.md)
   for the exact commands and [`CLAUDE.md`](./CLAUDE.md) for how work happens here.
+- **Use the tiers for the fast loop.** Every test is assigned a dependency tier
+  at collection — `unit` (nothing outside the process), `guard` (reads the
+  checked-out tree) or `integration` (a real repo or worktree, the
+  SQLite ledger, a spawned process, or a whole verb through `CliRunner`). Run
+  `uv run --extra dev pytest -m "unit or guard"` while iterating: ~2,900 tests
+  in about ten seconds, against roughly five minutes for the whole suite. Add
+  `-m integration` — or `-m "integration and not docker"` without a daemon — for
+  the rest. The tier is *derived* from your module's imports, so there is no
+  marker to write; if a `unit`-tier test of yours spawns a process it fails with
+  `TierViolationError`, and [`tests/_tiers.py`](./tests/_tiers.py) explains the
+  escape hatch. **A tier selection is not a gate run** — `bash scripts/verify.sh`
+  runs everything, and only that counts as verification.
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing
