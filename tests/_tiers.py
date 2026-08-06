@@ -241,10 +241,15 @@ def _boundaries_of_source(source: str) -> frozenset[str]:
                 continue
             if (module, name) == _CLI_SYMBOL:
                 flags.add("cli")
-            # ``from tests import _gitutil`` — the imported *name* is the helper.
-            helper = HELPER_BOUNDARIES.get(f"{module}.{name}")
-            if helper is not None:
-                flags |= helper
+            # ``from tests import _gitutil`` / ``from harness import state`` —
+            # the boundary is the imported *name*, not the package it came
+            # from. Both tables are consulted the same way, because otherwise
+            # the two forms disagree: the helper spelling was handled and the
+            # package spelling silently was not.
+            for table in (HELPER_BOUNDARIES, _IMPORT_BOUNDARIES):
+                entry = table.get(f"{module}.{name}")
+                if entry is not None:
+                    flags |= entry
         helper = HELPER_BOUNDARIES.get(module)
         if helper is not None:
             flags |= helper
@@ -332,6 +337,13 @@ def deny_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     through, and ``aiosqlite`` reaches ``sqlite3.connect`` on its worker thread.
     A test that has *already* replaced these with its own fakes is unaffected —
     it is not crossing the boundary either.
+
+    The two chokepoints are not the whole boundary set, and the asymmetry is
+    deliberate rather than an oversight: ``cli`` has no runtime counterpart,
+    because driving a verb through ``CliRunner`` need not spawn or connect to
+    anything. So a ``cli`` boundary reached through production code is caught
+    structurally or not at all. That is the narrower half of the guarantee, and
+    it is why :data:`OVERRIDES` exists rather than being a bug to close.
     """
 
     def _refuse(kind: str) -> Callable[..., object]:

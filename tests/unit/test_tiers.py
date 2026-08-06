@@ -185,6 +185,37 @@ def test_a_whole_module_helper_import_takes_the_union(tmp_path: Path) -> None:
     assert classify(module) == "integration"
 
 
+def test_a_package_import_of_a_boundary_module_is_detected(tmp_path: Path) -> None:
+    """``from harness import state`` reads the same as ``import harness.state``.
+
+    The two spellings have to agree, and until this test they did not: the
+    ``from <package> import <module>`` form was resolved against the *helper*
+    table only, so ``from tests import _ledger`` was caught while the
+    package-level spelling of a production boundary fell through to ``unit``.
+    Backstopped at runtime by the database chokepoint, but a tier that is wrong
+    until a test happens to connect is not a tier.
+    """
+    module = _write(tmp_path, "from harness import state\n")
+    assert boundaries(module) == frozenset({"db"})
+    assert classify(module) == "integration"
+
+
+def test_an_unrecognized_helper_symbol_falls_back_to_the_whole_module(
+    tmp_path: Path,
+) -> None:
+    """A new ``tests/_gitutil.py`` export gets the union until it is classified.
+
+    The symbol table cannot know a function added tomorrow. Falling back to the
+    module-wide entry means the answer is pessimistic — the new symbol is
+    treated as if it might both spawn and read — rather than silently
+    ``unit``. Deciding it more precisely is one line in
+    :data:`~tests._tiers.HELPER_BOUNDARIES`, which is the intended prompt.
+    """
+    module = _write(tmp_path, "from tests._gitutil import a_symbol_added_tomorrow\n")
+    assert boundaries(module) == frozenset({"proc", "tree"})
+    assert classify(module) == "integration"
+
+
 def test_importing_the_classifier_crosses_nothing(tmp_path: Path) -> None:
     """:mod:`tests._tiers` patches ``subprocess``; it never spawns.
 
