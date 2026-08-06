@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-08-05
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321"]
+last_updated: 2026-08-06
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339"]
 ---
 
 # Verb model — start / design / review / close
@@ -221,6 +221,8 @@ The switch above resolves *which* backend; the **seam** is *how* the verbs consu
 - `tracker: github` → a `GitHubClient` built from the `github:` config block and `GITHUB_TOKEN` (CAL-1105); an absent/incomplete config block or a missing token raises `GitHubConfigError`, so a *misconfigured* github repo fails loudly (never a silent no-op tracker), while a *correctly configured* one gets a working backend.
 
 Both backends' boundary exceptions subclass the tracker-agnostic bases in `harness/tracker_errors.py` (`TrackerConfigError` / `TrackerNotFound` / `TrackerRequestError`), so the verbs catch failures **without naming a backend** — `except TrackerNotFound` catches a Linear-or-GitHub not-found alike. Because backend selection lives in that one factory, a second backend slots in **without touching a verb**: `start`, `close`, `defer`, `reclaim`, and `review`'s post-verdict transition all depend only on the `Tracker` protocol and the agnostic errors. `test_tracker_seam.py` pins the contract — both clients satisfy the protocol structurally (`@runtime_checkable`), the factory returns a Linear client for `linear`, a GitHub client for a configured `github`, `None` for `none`, and `GitHubConfigError` for a github repo with no config block.
+
+Since #339 the seam is also a **source-tree invariant**, not only a convention a review has to remember: no module under `harness/cli/` may name `harness.linear` or `harness.github` at all — no import of the module, no import of a name from it, no attribute chain into it — while `harness.tracker`, `harness.tracker_errors` and `harness.tracker_queue` are unrestricted. `test_cli_module_boundaries.py` enforces it over the **tracked** `harness/cli/*.py` set (`tracked_py_sources`, so an abandoned worktree cannot read as living source, #215), reading the AST rather than the text because four CLI modules name a backend client in prose legitimately. The denylist is itself pinned to the factory: `test_backend_modules_match_the_seam_factory` derives the backend vocabulary from the `*Client` imports in `harness/tracker.py`, so a third backend wired into `tracker_client` fails the guard rather than slipping past a stale literal. What this defends is credential and write authority — a verb that constructs its own client acquires a second, ungated path to `LINEAR_API_KEY` / `GITHUB_TOKEN`, which is precisely what made `promote escalate` demand the Linear key in a repo configured `tracker: github` before #328; that specific regression keeps its named pin (`test_promote_reaches_the_tracker_through_the_seam`). The rule reads static source only: dynamic access (`importlib.import_module`, `getattr`) is a stated non-goal — the guard is against drift and accident, not an adversarial sandbox. An escape exists but leaves a record: `_BACKEND_EXEMPT` maps a path to a documented, issue-citing rationale for a module whose *purpose* is one backend, and it is empty today.
 
 #### The GitHub backend — Projects v2 status (CAL-1105)
 
