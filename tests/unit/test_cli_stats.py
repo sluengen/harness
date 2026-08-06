@@ -793,3 +793,31 @@ def test_stats_is_registered_on_the_cli(tmp_path: Path) -> None:
     result = runner.invoke(app, ["stats", "--help"])
 
     assert result.exit_code == 0
+
+
+# ===========================================================================
+# #338 — a ledger holding historical defer/release rows still reads
+# ===========================================================================
+
+
+@pytest.mark.parametrize("verb", ["defer", "release"])
+def test_historical_hold_events_still_report_after_their_emitter_retired(
+    tmp_path: Path, verb: str
+) -> None:
+    """#338 stopped ``defer``/``release`` writing events; it did not orphan the
+    rows they already wrote.
+
+    "Existing ledgers remain queryable without migration" is the acceptance
+    criterion, and this measures it against the **reader** rather than asserting
+    it in prose: a seeded historical row must still be found, counted, and
+    scored ``ok``. It would fail if the types were pruned from ``EventType``,
+    or if ``VERB_OUTCOME_PATHS`` dropped its key and the row fell out of the
+    aggregate as an unrecognised verb.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, "run-1", workflow_name=verb)
+    seed_event(db, "run-1", verb, data={"ticket": "CAL-1", "needs": "decision"})
+
+    report = _verb(_stats(db), verb)
+
+    assert (report.attempts, report.ok, report.refused, report.failed) == (1, 1, 0, 0)

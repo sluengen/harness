@@ -85,7 +85,10 @@ from harness.state.schema import RETIRED_ENGINE_WORKFLOWS
 #: ``checkpoint`` / ``defer`` / ``release`` map to ``None``: #264 established by
 #: analysis that every refusal and error on those three raises *before* the
 #: emit, so there are no non-ok rows for a discriminator to discriminate, and
-#: their payloads carry no such field.
+#: their payloads carry no such field. ``defer`` / ``release`` keep their keys
+#: after #338 retired their emitters: the rows already on disk still need
+#: scoring, and dropping the keys would score them as an unknown verb rather
+#: than the successes they are.
 VERB_OUTCOME_PATHS: dict[str, str | None] = {
     "review": REVIEW_OUTCOME_PATH,
     "close": CLOSE_OUTCOME_PATH,

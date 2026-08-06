@@ -2,7 +2,7 @@
 feature: cli-surface
 status: implemented
 last_updated: 2026-08-06
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339"]
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339", "#338"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -34,8 +34,8 @@ harness worktrees list                    [--repo <p>] [--json]
 # Maintenance / ops — mutate outside the audited lifecycle
 harness cancel    <run-id>                [--repo <p>] [--db <p>] [--json]      # abandon an in-flight run: marks the ledger row cancelled
 harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--older-than <dur>]] [--undo] [--repo <p>] [--db <p>] [--json]   # reclaim a stranded run (single ticket), or --stale sweeps active tickets idle past the threshold (default: `loop.wall_clock_budget_minutes`, #260 — or `loop.attended_idle_minutes` for a run started `--attended`, #297) — the whole tracker queue, or one --project when given; --undo reverses a confirmed false-positive reclaim
-harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a defer event carrying the needs kind (CAL-1143, CAL-1167, ADR 0006)
-harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a release event carrying the needs kind (#193, the `defer` shape in reverse)
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (CAL-1143, CAL-1167, ADR 0006, #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (#193, the `defer` shape in reverse; #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
 harness worktrees cleanup                 [--repo <p>] [--age <duration>] [--merged] [--force] [--db <p>]   # remove stale worktrees (git/fs); --merged vetoes an in-flight/stashed/dirty run unless --force (#235)
 harness doctor                            [--repo <p>] [--db <p>]               # system health checks (read-only)
 harness version                           [--json]
