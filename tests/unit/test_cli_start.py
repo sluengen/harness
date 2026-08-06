@@ -160,7 +160,6 @@ def fetch_events(db_path: Path) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     """AC-1: one ``runs`` row with status=open and all required fields."""
     stub = _make_linear_stub()
@@ -190,7 +189,6 @@ def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     assert len(row["run_id"]) == 26
 
 
-@pytest.mark.slow
 def test_start_emits_no_event_open_run_is_the_runs_row(
     repo: Path, db_path: Path
 ) -> None:
@@ -236,7 +234,6 @@ def _repo_on(tmp_path: Path, branch: str, integration: str | None) -> Path:
     return repo_root
 
 
-@pytest.mark.slow
 def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
     """AC-1: a repo whose CONTEXT.md says ``integration: main`` opens the worktree
     off ``main`` when ``start`` is called with no ``--base``."""
@@ -257,7 +254,6 @@ def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
     assert rows[0]["base_branch"] == "main"
 
 
-@pytest.mark.slow
 def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
     """AC-3: a repo configured ``integration: dev`` still opens off ``dev`` — the
     existing behaviour is preserved for the common case."""
@@ -276,7 +272,6 @@ def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
     assert fetch_runs(db)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
     """An explicit ``--base`` overrides the configured integration branch."""
     repo_root = _repo_on(tmp_path, "main", integration="main")
@@ -303,7 +298,6 @@ def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac2_transitions_ticket_to_in_progress(repo: Path, db_path: Path) -> None:
     """AC-2: Linear mutation called with the canonical ticket identifier."""
     stub = _make_linear_stub()
@@ -325,7 +319,6 @@ def test_ac2_transitions_ticket_to_in_progress(repo: Path, db_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac3_worktree_created_at_expected_path(repo: Path, db_path: Path) -> None:
     """AC-3: worktree dir exists and is on the expected harness/<run_id> branch."""
     stub = _make_linear_stub()
@@ -423,7 +416,6 @@ def test_incoherent_tracker_config_rejected_before_side_effects(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac5_json_output_schema_new_run(repo: Path, db_path: Path) -> None:
     """AC-5: new-run JSON output parses and validates against StartOutput schema."""
     from harness.cli.start import StartOutput
@@ -459,7 +451,6 @@ def test_ac5_json_output_schema_new_run(repo: Path, db_path: Path) -> None:
     assert "nodes" not in ticket
 
 
-@pytest.mark.slow
 def test_ac5_json_output_schema_existing_run(repo: Path, db_path: Path) -> None:
     """AC-5: existing-run JSON output parses and validates against StartOutput schema."""
     from harness.cli.start import StartOutput
@@ -495,7 +486,6 @@ def test_ac5_json_output_schema_existing_run(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_context_economy_compact_blob(repo: Path, db_path: Path) -> None:
     """Context economy: output is bounded and contains only agent-relevant fields."""
     # Simulate a fat Linear response that the LinearClient normalises
@@ -535,7 +525,6 @@ def test_context_economy_compact_blob(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_duplicate_ticket_refused(repo: Path, db_path: Path) -> None:
     """A second ``harness start`` for the same ticket surfaces the existing run."""
     stub = _make_linear_stub()
@@ -568,7 +557,6 @@ def test_duplicate_ticket_refused(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_canonical_identifier_dedupes_mixed_case(repo: Path, db_path: Path) -> None:
     """A lowercase alias then the canonical spelling must not open two runs.
 
@@ -607,7 +595,6 @@ def test_canonical_identifier_dedupes_mixed_case(repo: Path, db_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_description_truncated_at_max_chars(repo: Path, db_path: Path) -> None:
     """AC-description-bound: oversized description is capped at TICKET_DESCRIPTION_MAX_CHARS."""
     from harness.cli.start import TICKET_DESCRIPTION_MAX_CHARS, StartOutput
@@ -1015,7 +1002,6 @@ def test_worktree_failure_leaves_no_db_row_and_no_transition(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_db_failure_removes_worktree_and_no_transition(
     repo: Path, db_path: Path
 ) -> None:
@@ -1051,7 +1037,6 @@ def test_db_failure_removes_worktree_and_no_transition(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_transition_failure_rolls_back_worktree_and_db_row(
     repo: Path, db_path: Path
 ) -> None:
@@ -1082,7 +1067,6 @@ def test_transition_failure_rolls_back_worktree_and_db_row(
     assert remaining == [], f"expected no worktrees after transition failure, got {remaining}"
 
 
-@pytest.mark.slow
 def test_unconfirmed_transition_rolls_back_same_as_a_raised_request_error(
     repo: Path, db_path: Path
 ) -> None:
@@ -1119,7 +1103,6 @@ def test_unconfirmed_transition_rolls_back_same_as_a_raised_request_error(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_timeout_during_transition_rolls_back(repo: Path, db_path: Path) -> None:
     """A transport failure (timeout, surfaced as LinearRequestError) rolls back all state."""
     from harness.linear import LinearRequestError
@@ -1151,7 +1134,6 @@ def test_timeout_during_transition_rolls_back(repo: Path, db_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> None:
     """Without --db, the DB file is created inside --repo, not the caller's CWD."""
     stub = _make_linear_stub()
@@ -1183,7 +1165,6 @@ def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
     """The open run row leaves ``pid`` NULL.
 
@@ -1317,7 +1298,6 @@ def _worktree_head(worktree_path: Path) -> str:
     ).stdout.strip()
 
 
-@pytest.mark.slow
 def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> None:
     """AC-1: a `reclaimed` ticket with a pushed WIP branch resumes from it — the
     new worktree continues from the WIP tip, while `base_branch` stays `dev`."""
@@ -1346,7 +1326,6 @@ def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> No
     stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
 
 
-@pytest.mark.slow
 def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None:
     """CAL-923: a proactively handed-off ticket (still In Progress, no `reclaimed`
     label, so `fetch_resume_branch` finds nothing) resumes the SAME ticket from its
@@ -1375,7 +1354,6 @@ def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None
     stub.fetch_handoff_branch.assert_awaited_once_with("CAL-570")
 
 
-@pytest.mark.slow
 def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) -> None:
     """AC-2: `--resume` on a ticket with no preserved branch starts clean off dev."""
     dev_sha = _git(repo, "rev-parse", "dev").stdout.strip()
@@ -1396,7 +1374,6 @@ def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) ->
     assert fetch_runs(db_path)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_resume_records_the_recovered_branch_on_the_run(
     repo: Path, db_path: Path
 ) -> None:
@@ -1423,7 +1400,6 @@ def test_resume_records_the_recovered_branch_on_the_run(
     assert fetch_runs(db_path)[0]["resumed_from"] == wip_branch
 
 
-@pytest.mark.slow
 def test_resume_that_falls_back_records_no_resumed_from(
     repo: Path, db_path: Path
 ) -> None:
@@ -1448,7 +1424,6 @@ def test_resume_that_falls_back_records_no_resumed_from(
     assert fetch_runs(db_path)[0]["resumed_from"] is None
 
 
-@pytest.mark.slow
 def test_plain_start_records_no_resumed_from(repo: Path, db_path: Path) -> None:
     """#258: an ordinary start (no ``--resume``) records ``NULL`` — the common path."""
     stub = _make_resume_stub("harness/should-not-be-used")
@@ -1465,7 +1440,6 @@ def test_plain_start_records_no_resumed_from(repo: Path, db_path: Path) -> None:
     assert fetch_runs(db_path)[0]["resumed_from"] is None
 
 
-@pytest.mark.slow
 def test_resume_falls_back_clean_when_branch_does_not_fetch(
     repo: Path, db_path: Path
 ) -> None:
@@ -1496,7 +1470,6 @@ def test_resume_falls_back_clean_when_branch_does_not_fetch(
     assert fetch_runs(db_path)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> None:
     """Without `--resume`, start never calls fetch_resume_branch — a plain start
     is unchanged (an ordinary interactive run pays no resume cost)."""
@@ -1521,7 +1494,6 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_resume_on_open_run_returns_it_unchanged_without_probing_branches(
     repo: Path, db_path: Path
 ) -> None:
@@ -1558,7 +1530,6 @@ def test_resume_on_open_run_returns_it_unchanged_without_probing_branches(
     stub.fetch_handoff_branch.assert_not_awaited()
 
 
-@pytest.mark.slow
 def test_cancel_then_resume_opens_a_new_run_from_the_preserved_branch(
     repo: Path, db_path: Path
 ) -> None:
@@ -1879,7 +1850,6 @@ def test_delete_run_row_silent_on_successful_rollback(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_start_attended_records_the_declared_mode(repo: Path, db_path: Path) -> None:
     """AC-1: ``--attended`` is recorded on the run row.
 
@@ -1904,7 +1874,6 @@ def test_start_attended_records_the_declared_mode(repo: Path, db_path: Path) -> 
     assert resolve_attended(fetch_runs(db_path)[0]["inputs_json"]) is True
 
 
-@pytest.mark.slow
 def test_plain_start_records_todays_exact_inputs_json(repo: Path, db_path: Path) -> None:
     """AC-2: no flag writes the byte-identical value ``start`` wrote before #295.
 
@@ -1929,7 +1898,6 @@ def test_plain_start_records_todays_exact_inputs_json(repo: Path, db_path: Path)
     assert fetch_runs(db_path)[0]["inputs_json"] == "{}"
 
 
-@pytest.mark.slow
 @pytest.mark.parametrize("declared", [True, False])
 def test_json_output_names_the_resolved_mode(
     repo: Path, db_path: Path, declared: bool
@@ -1957,7 +1925,6 @@ def test_json_output_names_the_resolved_mode(
     assert StartOutput.model_validate(payload).attended is declared
 
 
-@pytest.mark.slow
 def test_attended_cannot_be_declared_onto_an_already_open_run(
     repo: Path, db_path: Path
 ) -> None:
