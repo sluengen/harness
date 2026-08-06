@@ -130,13 +130,17 @@ from harness.events.payloads import (
     REVIEW_INHERITED_FROM_PATH,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
+    REVIEW_REFUSAL_REASON_PATH,
+    REVIEW_REVIEWED_SHA_PATH,
     ReviewEventData,
 )
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
+    REPEAT_ENGINE_TIMEOUT_REASON,
     convergence_check_required,
     cycles_exhausted,
     evaluate_breakers,
+    evaluate_repeat_timeout,
     load_loop_budget,
 )
 from harness.state import store
@@ -289,8 +293,14 @@ async def _default_runner(
         raise _ReviewError(
             f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
             "this is an environment/infra failure (a hung engine never reviewed "
-            "the diff), not a code-review verdict. Raise engine_timeout_seconds "
-            "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
+            "the diff), not a code-review verdict. The usual cause is a hung "
+            "engine, and one re-run against this same HEAD is worth trying — but "
+            f"a second timeout at this SHA is refused ({REPEAT_ENGINE_TIMEOUT_REASON}) "
+            "instead of retried, because repeated attempts at an unchanged tree "
+            "return one identical answer at full cost each. Only if the ledger "
+            "shows this engine *finishing* just past the ceiling, rather than "
+            "hanging at it, is engine_timeout_seconds in CONTEXT.md's loop: block "
+            "the thing to change.",
             EXIT_INFRA_FAILURE,
             reason=ENGINE_TIMEOUT_REASON,
         ) from None
@@ -409,6 +419,22 @@ async def _invoke_engine(
 # ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
+
+
+class _HeadUnderReview:
+    """The SHA this invocation is about, once the verb has read it (#347).
+
+    Mutable and single-field by design: it is written once, immediately after
+    ``rev_parse_head``, and read only by the terminal-refusal handler, which sits
+    outside the frame that captured it. Everything before the capture leaves it
+    ``None``, which is exactly the pre-HEAD refusals whose rows must stay as they
+    were.
+    """
+
+    __slots__ = ("sha",)
+
+    def __init__(self) -> None:
+        self.sha: str | None = None
 
 
 def review_command(
@@ -546,6 +572,14 @@ async def _run_review(
     # every terminal event now carries, and the reference point that makes a slow
     # refusal distinguishable from a fast one.
     invoked_at = iso_z()
+    # The one fact the handler below needs that it cannot see (#347): HEAD is
+    # captured deep inside the body, and a refusal raised after that point must
+    # record which tree it was about. A one-field carrier rather than
+    # ``_ReviewError.extra`` — ``extra`` is merged into the *printed* error JSON,
+    # so using it would widen the CLI contract at every post-HEAD raise site for
+    # a ledger-only need, and would put the burden back on each site to remember,
+    # which is the very failure this single-handler split exists to prevent.
+    head = _HeadUnderReview()
     try:
         return await _review_resolved_run(
             repo_root=repo_root,
@@ -559,6 +593,7 @@ async def _run_review(
             design_file=design_file,
             runner=runner,
             invoked_at=invoked_at,
+            head=head,
         )
     except _ReviewError as exc:
         await record_terminal_refusal(
@@ -567,6 +602,7 @@ async def _run_review(
             reason=exc.reason,
             detail=str(exc),
             invoked_at=invoked_at,
+            reviewed_sha=head.sha,
         )
         raise
 
@@ -584,6 +620,7 @@ async def _review_resolved_run(
     design_file: Path | None,
     runner: Runner,
     invoked_at: str,
+    head: _HeadUnderReview | None = None,
 ) -> ReviewOutput:
     """Drive the review flow for an already-resolved run; raise on failure.
 
@@ -758,6 +795,36 @@ async def _review_resolved_run(
         reviewed_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
+    if head is not None:
+        head.sha = reviewed_sha
+
+    # 2a. The third spend breaker, and the only one keyed on the tree (#347).
+    #     An engine that has already hung twice at *this* SHA is not asked a
+    #     third time: run 01KZ67FRV3HZRZ8CMAHBYBP4QT spent four ~725s attempts
+    #     against one pushed SHA for four identical answers, ~44% of the
+    #     unattended wall-clock budget, and finished only because the tree then
+    #     changed. Repetition against a byte-identical tree gathers no evidence.
+    #
+    #     It sits HERE, not with the two breakers in 1a, only because it needs
+    #     HEAD — and before the tracker park below, so a bounded-out run leaves
+    #     its ticket where it stopped, exactly like the other two. Exit 4 rather
+    #     than the timeout's own exit 3 is the point of the refusal: exit 3's
+    #     documented orchestrator response is "just re-run", which is the loop
+    #     being closed, whereas exit 4's is "stop and escalate".
+    #
+    #     Fail-open by construction: the count comes from the ledger, so rows
+    #     predating #347 (which carry no ``reviewed_sha``) match no HEAD and read
+    #     as zero. A guard that stops a run rests only on evidence the ledger
+    #     actually holds.
+    repeat_trip = evaluate_repeat_timeout(
+        timeouts_at_sha=await _count_engine_timeouts_at_sha(
+            db_path, resolved_run_id, reviewed_sha
+        ),
+        reviewed_sha=reviewed_sha,
+        budget=budget,
+    )
+    if repeat_trip is not None:
+        raise _ReviewError(repeat_trip.message, EXIT_BREAKER_TRIPPED, reason=repeat_trip.reason)
 
     # 2b. Park the ticket In Review before the engine runs (CAL-1103) — the queue
     #     shows "reviewing" while the (possibly long) engine works. Deliberately
@@ -1072,6 +1139,45 @@ async def _count_review_events(db_path: Path, run_id: str) -> int:
                 REVIEW_OUTCOME_PATH,
                 REVIEW_OUTCOME_OK,
                 REVIEW_OUTCOME_OK,
+            ),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+async def _count_engine_timeouts_at_sha(db_path: Path, run_id: str, sha: str) -> int:
+    """Count this run's ``engine_timeout`` refusals recorded **at ``sha``** (#347).
+
+    The input to :func:`~harness.loop_budget.evaluate_repeat_timeout`, and the
+    reason ``reviewed_sha`` had to reach the refusal payload: a fresh verb
+    invocation has no in-process memory of the previous one, so "has the engine
+    already hung at this exact tree?" is answerable only from the ledger.
+
+    No ``outcome`` predicate is needed. :class:`~harness.events.payloads.ReviewEventData`
+    has no ``reason`` field at all, so matching on the reason path already
+    excludes every verdict row — the same property that lets ``close`` key its
+    failure reads on :data:`~harness.events.payloads.CLOSE_REASON_PATH` alone.
+    Nor does it count the repeat *refusals* themselves: those carry
+    ``repeat_engine_timeout``, so the decision is idempotent — a run that refuses
+    once refuses again on the same evidence rather than on evidence it generated.
+
+    A missing DB counts as zero, as :func:`_count_review_events` does. This guard
+    protects budget, not integrity, so absent evidence must let the engine run.
+    """
+    if not db_path.exists():
+        return 0
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review' "
+            "AND json_extract(data_json, ?) = ? AND json_extract(data_json, ?) = ?",
+            (
+                run_id,
+                REVIEW_REFUSAL_REASON_PATH,
+                ENGINE_TIMEOUT_REASON,
+                REVIEW_REVIEWED_SHA_PATH,
+                sha,
             ),
         ) as cur,
     ):

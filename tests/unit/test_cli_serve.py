@@ -491,3 +491,58 @@ def test_the_log_never_carries_argv_beyond_the_verb(
     assert "SECRETSENTINEL" not in records[0], (
         f"an argv value reached the audit log: {records[0]!r}"
     )
+
+
+def test_a_repo_the_provider_cannot_mount_equivalently_is_refused(
+    running_server: serve.VerbServer,
+    repo: Path,
+    stub_docker: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#308: the socket path refuses it as a *refusal*, not as a verb that exited 2.
+
+    Placement is the point. Catching this inside ``spawn`` would answer
+    ``ok=true, exit_code=2`` — indistinguishable on the wire from a verb that ran
+    and failed — so it belongs beside the allowlist check, before docker is
+    touched. It reuses ``REPO_NOT_ALLOWED`` rather than adding a wire reason: an
+    older client decodes an unknown reason as ``BadRequest`` and reports "the verb
+    may have run", which is the worst possible message for a refusal that spawned
+    nothing.
+    """
+    from harness.hostenv import host as host_module
+    from harness.hostenv import spawn as spawn_module
+
+    class _RefusingHost:
+        def workspace_mount(self, path: Path) -> object:
+            raise spawn_module.WorkspaceNotEquivalent(
+                path, "it is on a Windows filesystem (drvfs) ... (#313)", "clone it inside WSL."
+            )
+
+    monkeypatch.setattr(host_module, "detect_host", lambda **_kwargs: _RefusingHost())
+
+    response = _verb(running_server, repo, ["status"])
+
+    assert response.reason == protocol.Reason.REPO_NOT_ALLOWED
+    assert _spawns(stub_docker) == [], (
+        "a container was spawned for a repo the provider refused"
+    )
+
+
+def test_a_colon_bearing_repo_is_still_refused_after_the_check_moved(
+    running_server: serve.VerbServer, tmp_path: Path, stub_docker: Path
+) -> None:
+    """The regression floor under moving that check onto ``WorkspaceMount``.
+
+    #308 deleted ``serve``'s hand-inlined ``if ":" in str(repo)`` because the
+    mount object is the one place that knows what a ``-v`` field may contain. If
+    the move had lost it, a path carrying the field separator would reach docker's
+    option region — so this asserts the behaviour survived the relocation, which
+    a test of the new home alone would not.
+    """
+    colonised = tmp_path / "re:po"
+    (colonised / ".git").mkdir(parents=True)
+
+    response = _verb(running_server, colonised, ["status"])
+
+    assert response.reason == protocol.Reason.REPO_NOT_ALLOWED
+    assert _spawns(stub_docker) == []

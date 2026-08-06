@@ -44,6 +44,7 @@ async def record_terminal_refusal(
     reason: str | None,
     detail: str,
     invoked_at: str,
+    reviewed_sha: str | None = None,
 ) -> None:
     """Append the ``review`` event for a terminal path that produced no verdict.
 
@@ -57,6 +58,12 @@ async def record_terminal_refusal(
             than collapsing into a NULL.
         detail: The human specifics (the refusal's own message).
         invoked_at: When the verb began work on this run, for the duration.
+        reviewed_sha: HEAD, for a refusal raised at or after the verb captured
+            it; ``None`` for the pre-HEAD refusals, whose rows are unchanged
+            because ``exclude_none=True`` drops the key (#347). It is what lets
+            the repeated-engine-timeout guard ask "has this engine already hung
+            at this exact tree?" of the ledger rather than of in-process memory,
+            which no fresh verb invocation has.
 
     The row carries **no ``verdict`` key**, which is what keeps the close gate
     exactly as wide as it was: :func:`~harness.cli._review_gate.certify_head`
@@ -74,6 +81,7 @@ async def record_terminal_refusal(
         created_at=created_at,
         invoked_at=invoked_at,
         duration_ms=elapsed_ms(invoked_at, created_at),
+        reviewed_sha=reviewed_sha,
     ).model_dump(exclude_none=True)
 
     await emit_observation(db_path, run_id=run_id, event_type="review", data=data)
