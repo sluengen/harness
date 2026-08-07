@@ -614,10 +614,11 @@ def _cleanup_worktree_sync(repo_root: Path, worktree_path: str) -> None:
     """Best-effort rollback of a failed ``start`` create: remove the worktree.
 
     Delegates to the shared :func:`harness._git.teardown_worktree` so the
-    reclaim logic — worktree-remove (with an orphan ``rmtree`` fallback), prune,
-    and local ``branch -D`` — has one home (CAL-767). ``start`` never pushed the
-    branch, so ``delete_remote`` stays ``False``. Kept as a named wrapper so the
-    rollback call sites (and the test that patches it) have a stable seam.
+    reclaim logic — worktree-remove (which clears this path's admin entry and no
+    other, with an orphan ``rmtree`` fallback) and local ``branch -D`` — has one
+    home (CAL-767). ``start`` never pushed the branch, so ``delete_remote`` stays
+    ``False``. Kept as a named wrapper so the rollback call sites (and the test
+    that patches it) have a stable seam.
     """
     path = Path(worktree_path)
     teardown_worktree(

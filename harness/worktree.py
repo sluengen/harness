@@ -161,11 +161,13 @@ class WorktreeNode:
         )
         if rc != 0:
             # Git refuses to create the worktree on a bad start point; ensure no
-            # half-baked dir survives so AC7 is honoured.
-            if path.exists():
-                # Best-effort cleanup; if this fails the original error wins.
-                await _git(repo_root, "worktree", "remove", "--force", str(path))
-                await _git(repo_root, "worktree", "prune")
+            # half-baked dir survives so AC7 is honoured. Best-effort cleanup; if
+            # this fails the original error wins. Scoped to the path this call
+            # was creating — it clears that admin entry whether or not the
+            # directory got as far as existing, and no other. A repo-wide
+            # `git worktree prune` here deregistered every worktree outside the
+            # container mount (#371).
+            await _git(repo_root, "worktree", "remove", "--force", str(path))
             raise WorktreeNodeError(
                 f"git worktree add failed (start_point={commit_ish!r}): {stderr.strip()}"
             )

@@ -1,8 +1,8 @@
 ---
 feature: worktree-lifecycle
 status: implemented
-last_updated: 2026-08-04
-tickets: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935]
+last_updated: 2026-08-08
+tickets: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935, 371]
 ---
 
 # Worktree lifecycle — isolated branch per run
@@ -50,6 +50,23 @@ The worktree is **started from `origin/<base>`**, not the local `<base>` branch 
 
 **What `--resume` fetches after a rebase.** `--resume` fetches whatever tip the dead run last *checkpointed to `origin`* — so the freshness of the resume point is exactly the freshness of the last successful checkpoint. Because [`checkpoint`](run-ledger.md) force-with-lease-pushes (CAL-1162), a rebase-before-close that rewrote `<wip>` **re-checkpoints cleanly**, and `--resume` fetches the rebased tip — not the stale pre-rebase one. The tip can be stale only when the final checkpoint after that rebase did **not** land: either it was never attempted (the run died between the rebase and the next checkpoint), or the force-with-lease lease *refused* it because `origin` carried a commit the run had not seen (`reason='stale_remote'`) — and that refusal is a **named outcome the run sees**, not a silent lapse. In that lapsed case `--resume` fetches the pre-rebase tip and the resumed run re-encounters the conflict the rebase had resolved; the durability guarantee is best-effort, and a stale resume degrades to redoing the rebase, never a wrong merge (the HEAD-bound `close` gate still holds).
 
+### Teardown — scoped to the worktree it was asked to reclaim
+
+`teardown_worktree` acts on **one named path**, and its blast radius is part of the contract rather than an implementation detail (#371). `git worktree remove --force <path>` removes that worktree's directory *and* its admin entry under `<git-common-dir>/worktrees/<name>/`, and provably leaves every other registration alone. It runs whether or not the directory is still present: git clears a registration whose directory is already gone, so a stale entry cannot accumulate and block a later `git worktree add` at the same path — which is how `probe_tree.create` reclaims a leftover from a previous review. Only if that call fails *and* the directory survives does the `rmtree` fallback run, for the orphan whose registration was already gone.
+
+The `.worktrees/harness/` area guard gates **both** steps. A `worktree_path` that is the main checkout, or anything outside the run-worktree area, has neither its directory removed nor its registration cleared: deregistering a directory teardown may not delete would leave a live worktree with no registration, which is the broken half-state below.
+
+Until #371 the removal was followed by a bare, repo-wide `git worktree prune`. That command takes no path, and every verb runs **in the container**, where the repo is mounted at `/workspace` and nothing else on the host filesystem exists — so the prune read every worktree registered outside the mount as missing and deleted its admin entry. The directory survived on the host, so the damage stayed invisible until something read that tree and git answered `fatal: not a git repository: <repo>/.git/worktrees/<name>` with exit 128, arriving as a wall of red in tracked-tree guards the change never touched. A *host-side* prune does not do this, which is why the failure was twice recorded as a race between concurrent sessions before the mechanism was found. The harness's own worktrees were immune only by accident of location.
+
+The two `git worktree add` rollback paths (`harness/worktree.py`, `harness/promotion.py`) carried the same unscoped prune and are scoped the same way. `tests/unit/test_no_unscoped_worktree_prune.py` bans the call across `harness/` outright — there is no scoped form of `git worktree prune`, so the token pair is the defect rather than an argument to check — and `tests/integration/test_docker_worktree_prune.py` proves it in a real container.
+
+#### Scenario: a worktree outside the container mount survives an unrelated teardown
+
+- GIVEN a run worktree at `<repo>/.worktrees/harness/<run_id>` and an unrelated worktree registered at a host path outside the mount (a verify-gate worktree, say)
+- WHEN a verb runs `teardown_worktree` for that run inside the container
+- THEN the run's directory and admin entry are both gone
+- AND the outside worktree stays registered — `git ls-files` there still exits 0 on the host
+
 ### Rollback — `start` removes its own worktree on a later failure
 
 `start` creates the worktree as a **local** side effect before it touches the ledger or Linear, so any later failure rolls it back.
@@ -57,7 +74,7 @@ The worktree is **started from `origin/<base>`**, not the local `<base>` branch 
 #### Scenario: a duplicate-run or DB failure after create
 
 - GIVEN `start` has created the worktree but a later step fails (the partial unique index rejects a duplicate open run, or the ledger insert fails)
-- THEN `start` removes the worktree directly via `_cleanup_worktree_sync`, which delegates to `teardown_worktree` (`git worktree remove --force`, `git worktree prune`, `git branch -D harness/<run_id>`; no remote delete — the branch was never pushed) — best-effort, so a failed rollback never masks the original error
+- THEN `start` removes the worktree directly via `_cleanup_worktree_sync`, which delegates to `teardown_worktree` (`git worktree remove --force`, `git branch -D harness/<run_id>`; no remote delete — the branch was never pushed) — best-effort, so a failed rollback never masks the original error
 
 ### Merge back — `close` merges in a throwaway worktree, then reclaims the run worktree
 
