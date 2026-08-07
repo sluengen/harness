@@ -28,8 +28,20 @@ Module-level ``subprocess`` puts this module in the ``integration`` tier
 module from the fast half.
 """
 
+# size: declarative fixtures, not logic — roughly half this module is the source
+# of the synthetic projects the assertions run against, and each is spelled out
+# because the oracle is only trustworthy if the expected outcome is readable by
+# construction. The extraction candidate is the #365 half (`_selection_project`
+# and the liveness tests below), and it stays for a specific reason: it shares
+# `_table`, `_entry`, `_run` and `_snapshot` with the #360 half, and splitting
+# would either duplicate the TOML emitter — two spellings of the contract under
+# test, which is the defect this repo keeps paying for — or make one test module
+# import another's private helpers. When a third subject arrives, extract the
+# emitters to a shared fixture module first, then split on that seam.
+
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -116,22 +128,49 @@ def _table(
     return path
 
 
-def _entry(*, ident: str, old: str, new: str, kills: str, note: str = "") -> str:
-    return (
+def _entry(
+    *,
+    ident: str,
+    old: str,
+    new: str,
+    kills: str,
+    note: str = "",
+    file: str = "calc.py",
+    observe: str | None = None,
+) -> str:
+    """The emitted TOML is byte-identical for a caller that passes neither of the
+    two #365 keyword defaults, which is what keeps AC-5's "unmodified" true of
+    every test above."""
+    text = (
         "\n[[mutation]]\n"
         f'id = "{ident}"\n'
-        f'file = "calc.py"\n'
+        f'file = "{file}"\n'
         f"old = '''{old}'''\n"
         f"new = '''{new}'''\n"
         f"kills = {kills}\n"
         f'note = "{note}"\n'
     )
+    if observe is not None:
+        text += f"observe = {observe}\n"
+    return text
 
 
 def _run(
-    mode: str, table: Path, tree: Path, tmp_path: Path, *extra: str
+    mode: str,
+    table: Path,
+    tree: Path,
+    tmp_path: Path,
+    *extra: str,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the real script the way a tick runs it."""
+    """Run the real script the way a tick runs it.
+
+    ``env`` defaults to inheriting, which is what every caller but one wants.
+    The exception is the bytecode-cache test: this module is itself often run
+    *under* a mutation harness, whose own ``PYTHONPYCACHEPREFIX`` would
+    propagate into the child and silently supply the very defence that test
+    exists to exercise.
+    """
     return subprocess.run(
         [
             sys.executable,
@@ -149,6 +188,7 @@ def _run(
         text=True,
         check=False,
         timeout=300,
+        env=env,
     )
 
 
@@ -514,3 +554,258 @@ def test_the_plugin_and_the_harness_do_not_import_each_other(
     }
 
     assert forbidden not in imported, f"{module.name} must not import {forbidden}"
+
+
+# ---------------------------------------------------------------------------
+# #365 — the paired fixture that discriminates `inert` from `survived`.
+# ---------------------------------------------------------------------------
+
+_SEL = '''"""A selection over one corpus — #209 reduced to three strings."""
+
+CORPUS = ["alpha", "alpha_beta", "beta"]
+
+
+def chosen():
+    return sorted(n for n in CORPUS if n.startswith("alpha"))
+'''
+
+#: Deliberately weak: it constrains the *shape* of the answer and nothing about
+#: which names are in it, so both mutations below sail past it. That is the
+#: point — the fixture needs a guard that notices neither, so the only thing
+#: separating the two entries is whether the mutation was live.
+_SEL_TESTS = '''from sel import chosen
+
+
+def test_chosen_is_sorted():
+    assert chosen() == sorted(chosen())
+'''
+
+_CHOSEN_IS_SORTED = "tests/test_sel.py::test_chosen_is_sorted"
+_OBSERVE = '''["-c", "import sel; print(*sel.chosen(), sep=chr(10))"]'''
+
+
+def _selection_project(tmp_path: Path) -> Path:
+    """A corpus, a selection over it, and one guard too weak to see either change.
+
+    Its own project rather than a module added to :func:`_project`, whose
+    collected counts are asserted verbatim by the tests above.
+    """
+    tree = tmp_path / "selection"
+    (tree / "tests").mkdir(parents=True)
+    (tree / "sel.py").write_text(_SEL, encoding="utf-8")
+    (tree / "tests" / "test_sel.py").write_text(_SEL_TESTS, encoding="utf-8")
+    (tree / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tree / "MARKER.md").write_text(f"{_SENTINEL}\n", encoding="utf-8")
+    (tree / "conftest.py").write_text(
+        "import sys\nfrom pathlib import Path\n"
+        "sys.path.insert(0, str(Path(__file__).parent))\n",
+        encoding="utf-8",
+    )
+    return tree
+
+
+def test_inert_and_live_survivors_are_told_apart_by_one_observable(tmp_path: Path) -> None:
+    """AC-4 — two entries differing *only* in whether the mutation changed behaviour.
+
+    One table, one guard, one observable, one invocation, so "they differ only
+    in that" is a fact about the fixture rather than a claim in a docstring. Two
+    unrelated fixtures would not show the check discriminates.
+
+    Over ``["alpha", "alpha_beta", "beta"]``:
+
+    * ``equivalent`` — ``startswith("alpha")`` → ``not startswith("beta")``
+      selects the identical two names. A real textual change that lands exactly
+      once and passes every refusal #360 has, and it changed nothing. This is
+      tick #209's ``-m "not docker"`` → ``tests/unit -m "not docker"`` in
+      miniature: two selections over one corpus that collect the same set.
+    * ``live`` — ``startswith("alpha")`` → ``startswith("b")`` selects ``beta``.
+      The guard stays green, so the guard really is weak.
+
+    Before #365 both printed SURVIVED and a reader was free to take either for
+    whichever meaning suited them.
+    """
+    tree = _selection_project(tmp_path)
+    table = _table(
+        tmp_path,
+        entries=(
+            _entry(
+                ident="equivalent",
+                file="sel.py",
+                old='n.startswith("alpha")',
+                new='not n.startswith("beta")',
+                kills=f'["{_CHOSEN_IS_SORTED}"]',
+                observe=_OBSERVE,
+            )
+            + _entry(
+                ident="live",
+                file="sel.py",
+                old='n.startswith("alpha")',
+                new='n.startswith("b")',
+                kills=f'["{_CHOSEN_IS_SORTED}"]',
+                observe=_OBSERVE,
+            )
+        ),
+    )
+
+    result = _run("run", table, tree, tmp_path)
+    report = result.stdout
+
+    assert result.returncode == 4, report + result.stderr
+    equivalent, live = _entry_lines(report, "equivalent", "live")
+    assert "INERT" in equivalent, report
+    assert "SURVIVED (LIVE)" in live, report
+    # Each word attached to its own entry, not merely both present somewhere.
+    assert "INERT" not in live and "SURVIVED" not in equivalent, report
+    assert "RESULT: 1 entry is inert" in report
+
+
+def test_a_survivor_with_no_observable_is_unproven_end_to_end(tmp_path: Path) -> None:
+    """AC-2 over the real script: same outcome, same exit code, a named remedy.
+
+    Read against the paired fixture above, this is what makes ``(UNPROVEN)``
+    load-bearing: the *same* inert mutation, with the observable removed, can no
+    longer be reported as a survivor at all.
+    """
+    tree = _selection_project(tmp_path)
+    table = _table(
+        tmp_path,
+        entries=_entry(
+            ident="equivalent",
+            file="sel.py",
+            old='n.startswith("alpha")',
+            new='not n.startswith("beta")',
+            kills=f'["{_CHOSEN_IS_SORTED}"]',
+        ),
+    )
+
+    result = _run("run", table, tree, tmp_path)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "SURVIVED (UNPROVEN)" in result.stdout
+    assert "declares no `observe`" in result.stdout
+    assert "observe = [" in result.stdout
+    assert "INERT" not in result.stdout
+
+
+def test_a_nondeterministic_observable_is_refused_end_to_end(tmp_path: Path) -> None:
+    """AC-3 over a genuinely nondeterministic probe, not a contrived one.
+
+    A clock always "differs", so without this refusal it would certify every
+    mutation in the table as live — the report reading strongest exactly when it
+    measured least.
+    """
+    tree = _selection_project(tmp_path)
+    table = _table(
+        tmp_path,
+        entries=_entry(
+            ident="clock",
+            file="sel.py",
+            old='n.startswith("alpha")',
+            new='n.startswith("b")',
+            kills=f'["{_CHOSEN_IS_SORTED}"]',
+            observe='''["-c", "import time; print(time.time_ns())"]''',
+        ),
+    )
+    before = _snapshot(tree)
+
+    result = _run("run", table, tree, tmp_path)
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "refused (observable)" in result.stderr
+    assert "clock" in result.stderr
+    assert "not deterministic" in result.stderr
+    assert _snapshot(tree) == before
+
+
+def test_the_observable_really_runs_against_the_mutated_tree(tmp_path: Path) -> None:
+    """The `live` verdict is worthless unless the probe saw ``new`` on disk.
+
+    Proven the only way a black-box run can: the probe prints the mutated source
+    itself, so an observable running after the restore would digest the pristine
+    text and the entry would report ``inert`` instead.
+    """
+    tree = _selection_project(tmp_path)
+    table = _table(
+        tmp_path,
+        entries=_entry(
+            ident="reads-source",
+            file="sel.py",
+            old='n.startswith("alpha")',
+            new='n.startswith("b")',
+            kills=f'["{_CHOSEN_IS_SORTED}"]',
+            observe='''["-c", "print(open('sel.py').read())"]''',
+        ),
+    )
+
+    result = _run("run", table, tree, tmp_path)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "SURVIVED (LIVE)" in result.stdout
+    assert _snapshot(tree)[tree / "sel.py"] == _SEL.encode("utf-8")
+
+
+def _entry_lines(report: str, *idents: str) -> list[str]:
+    """The report block belonging to each entry — id line plus its advisories.
+
+    Without this split, "both words appear in the output" would pass on a
+    harness that printed them against the wrong entries.
+    """
+    blocks: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in report.splitlines():
+        head = line.split(" ", 1)[0]
+        if head in idents and not line.startswith(" "):
+            current = head
+            blocks[current] = []
+        elif not line.startswith(" "):
+            current = None
+        if current:
+            blocks[current].append(line)
+    missing = [ident for ident in idents if ident not in blocks]
+    assert not missing, f"no report block for {missing} in:\n{report}"
+    return ["\n".join(blocks[ident]) for ident in idents]
+
+
+def test_an_import_based_observable_sees_a_same_size_mutation(tmp_path: Path) -> None:
+    """The staleness trap #360 met in the runner, arriving at the new spawn site.
+
+    ``"alpha"`` → ``"betaX"`` is exactly the same number of bytes, so CPython's
+    ``(mtime, size)`` validation would accept a ``.pyc`` compiled from the
+    *pristine* module if one were written into the tree. An observable that
+    imports would then digest identically and the entry would report ``INERT``
+    — a live mutation dismissed as a table defect, which is the one verdict this
+    stage must never invent. :class:`PythonObserver` redirects
+    ``PYTHONPYCACHEPREFIX`` per run, so the import compiles from the source on
+    disk and the tree gets no ``__pycache__`` written into it either.
+
+    The corpus holds no name starting with ``betaX``, so the selection empties
+    while the shape guard stays green: live, and unnoticed.
+
+    The child's ``PYTHONPYCACHEPREFIX`` is **cleared deliberately**. Inheriting
+    it made this test pass for the wrong reason — when this module runs under a
+    mutation harness, that harness's own prefix propagates down and supplies the
+    defence, so deleting the line under test changed nothing and the entry
+    reported SURVIVED. Clearing it is what makes the assertion measure
+    :class:`PythonObserver`'s own behaviour rather than an inherited variable.
+    """
+    tree = _selection_project(tmp_path)
+    table = _table(
+        tmp_path,
+        entries=_entry(
+            ident="same-size",
+            file="sel.py",
+            old='n.startswith("alpha")',
+            new='n.startswith("betaX")',
+            kills=f'["{_CHOSEN_IS_SORTED}"]',
+            observe=_OBSERVE,
+        ),
+    )
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPYCACHEPREFIX"}
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+
+    result = _run("run", table, tree, tmp_path, env=env)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "SURVIVED (LIVE)" in result.stdout
+    assert "INERT" not in result.stdout
+    assert not list(tree.rglob("__pycache__")), "the observable left droppings in the tree"
