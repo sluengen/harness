@@ -3,8 +3,11 @@
 The classifier's own cases live in ``test_tiers.py`` and run against synthetic
 sources under ``tmp_path``. This module asks the questions that only the real
 tree can answer: does every tracked test module classify, is every shared helper
-entered in the boundary table, does every override still name live code, and is
-the gate still the whole suite.
+entered in the boundary table, and does every override still name live code.
+
+*"Is the gate still the whole suite" was answered here too until #358 split the
+gate into two selected stages; it is now answered by measurement in
+``test_verify_parallel_tiers.py`` — see the note where it stood.*
 
 **This module is deliberately ``guard``-tier.** It reads the committed tree
 through :mod:`tests._gitutil`, which is exactly the boundary ``guard`` names, so
@@ -270,30 +273,17 @@ def test_the_retirement_scan_would_see_the_marker_if_it_returned() -> None:
     assert _RETIRED_MARKER not in "import pytest\n\npytestmark = pytest.mark.docker\n"
 
 
-def test_the_gate_still_runs_the_whole_suite() -> None:
-    """A tier selector is a feedback affordance, never a gate mode.
-
-    The one abuse the tiers make possible is running a subset and calling it
-    verified. ``scripts/verify.sh`` is the only thing ``harness review`` and
-    ``harness close`` accept as gate evidence, so a ``-m`` appearing on its
-    pytest line is the regression that would make every recorded pass mean less
-    than it says.
-    """
-    gate = (_REPO_ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
-    pytest_lines = [
-        line
-        for line in gate.splitlines()
-        if "pytest" in line and not line.lstrip().startswith("#")
-    ]
-    assert pytest_lines, "no pytest invocation found in scripts/verify.sh"
-    for line in pytest_lines:
-        assert " -m " not in line and "--markers" not in line, (
-            f"scripts/verify.sh narrows the gate to a tier: {line.strip()}"
-        )
-    assert any("--cov-fail-under=90" in line for line in pytest_lines), (
-        "the gate's coverage floor is measured over the whole suite; a tier "
-        "selection would silently lower the population it is measured on"
-    )
+# ``test_the_gate_still_runs_the_whole_suite`` lived here until #358 and is not
+# lost: it is superseded by
+# ``test_verify_parallel_tiers.py::test_the_gate_stages_partition_the_whole_suite``.
+# Its #336 form banned any ``-m`` from the gate's pytest lines, which was a proxy
+# for "the gate does not narrow the suite". #358 partitions the gate into
+# ``-m docker`` and ``-m "not docker"``, so the proxy would now forbid the
+# arrangement rather than the abuse. The successor asserts the property itself —
+# the union of the gate's selections *is* the whole suite, and the stages do not
+# overlap — by collecting each selection, which also catches the narrowings a
+# ``-m`` ban never could (``--ignore``, ``--deselect``). It lives beside the other
+# gate-shape guards; the tier vocabulary this module owns is unchanged.
 
 
 # ---------------------------------------------------------------------------

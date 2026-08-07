@@ -28,13 +28,18 @@ If you do open a PR:
   checked-out tree) or `integration` (a real repo or worktree, the
   SQLite ledger, a spawned process, or a whole verb through `CliRunner`). Run
   `uv run --extra dev pytest -m "unit or guard"` while iterating: ~2,900 tests
-  in about ten seconds, against roughly five minutes for the whole suite. Add
-  `-m integration` — or `-m "integration and not docker"` without a daemon — for
-  the rest. The tier is *derived* from your module's imports, so there is no
-  marker to write; if a `unit`-tier test of yours spawns a process it fails with
-  `TierViolationError`, and [`tests/_tiers.py`](./tests/_tiers.py) explains the
-  escape hatch. **A tier selection is not a gate run** — `bash scripts/verify.sh`
-  runs everything, and only that counts as verification.
+  in about nine seconds, against roughly four minutes to run the whole suite
+  serially. Add `-m integration` — or `-m "integration and not docker"` without a
+  daemon — for the rest. The tier is *derived* from your module's imports, so
+  there is no marker to write; if a `unit`-tier test of yours spawns a process it
+  fails with `TierViolationError`, and [`tests/_tiers.py`](./tests/_tiers.py)
+  explains the escape hatch. **A tier selection is still not a gate run** —
+  `bash scripts/verify.sh` runs everything, and only that counts as verification.
+  It does so in two stages: the tests sharing the `harness:test` Docker image tag
+  run serially, and the rest run across your cores (about a minute on eight),
+  under one coverage floor measured on the union. Set `HARNESS_TEST_WORKERS` to
+  override the worker count — `HARNESS_TEST_WORKERS=0` runs in the controller,
+  which is how you reproduce a failure that only appears under parallelism.
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing
