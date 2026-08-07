@@ -105,7 +105,7 @@ def test_verify_preflights_the_parallel_plugin() -> None:
     )
     tail = text[probe.end() :]
     guarded = tail[: tail.find("\nfi")] if "\nfi" in tail else tail
-    assert f'exit "$GATE_UNRUNNABLE_EXIT"' in guarded, (
+    assert 'exit "$GATE_UNRUNNABLE_EXIT"' in guarded, (
         "the xdist preflight must exit the reserved GATE_UNRUNNABLE_EXIT so a "
         "stale venv classifies as `blocked`, not `needs_ticket` (#358, CAL-1160)."
     )
