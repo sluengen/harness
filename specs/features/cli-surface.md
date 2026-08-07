@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-06
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339", "#338"]
+last_updated: 2026-08-07
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339", "#338", "#359"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -95,10 +95,10 @@ There is **no separate `verify` command** in v1, by design. Gate execution runs 
 | 2 | Invocation error or gate refusal (bad flags, unknown run-id, gate not satisfied) |
 | 3 | `review`: an infra failure — the engine could not run at all (`sandbox_init_failure` / `engine_timeout`) |
 | 4 | `review`: a spend breaker tripped (`review_cycle_ceiling` / `wall_clock_budget` / `repeat_engine_timeout`). The third is the only one keyed on the **tree** rather than the run (#347): the engine already hung twice at this exact HEAD, so a further attempt re-buys a known answer at `engine_timeout_seconds` each. It therefore does *not* take the other two's cancel-and-resume recovery — that opens a fresh budget window and walks straight back into the same hang; a **new commit** is what earns a fresh full attempt |
-| 5 | `review`: the verify gate cannot certify the tree — red evidence (`gate_failed`) or none supplied (`no_gate_evidence`); no engine ran, no verdict was recorded |
+| 5 | `review`: the tree cannot be certified as reviewable — red gate evidence (`gate_failed`), none supplied (`no_gate_evidence`), no recorded design (`no_design`), a `--design-file` outside the workspace (`design_file_outside_workspace`), or a run worktree too far past its own git index for the engine to read (`polluted_worktree`, #359); no engine ran, no verdict was recorded |
 | 130 | SIGINT (user cancelled) |
 
-Each of `review`'s dedicated codes exists so an orchestrating agent can tell the *kind* of stop apart without parsing prose: an environment wall (3), a bounded-out loop (4), and a tree that cannot show it is green (5) call for three different responses, and none of them is a rejected diff.
+Each of `review`'s dedicated codes exists so an orchestrating agent can tell the *kind* of stop apart without parsing prose: an environment wall (3), a bounded-out loop (4), and a tree that cannot be certified as reviewable (5) call for three different responses, and none of them is a rejected diff. The split matters most where two codes describe the same symptom: a worktree drowning in untracked files *presents* as `engine_timeout` (3), and refusing it up front as `polluted_worktree` (5) is what lets the ledger say whether the engine hung or the harness declined to spawn one.
 
 #### Scenario: a gate refusal exits 2
 
@@ -119,6 +119,7 @@ Each of `review`'s dedicated codes exists so an orchestrating agent can tell the
 - THEN it exits 5 with `reason=no_gate_evidence`, having invoked no engine and recorded no `review` event (CAL-1082)
 - AND WHEN it runs with a non-zero `--gate-exit`, THEN it exits 5 with `{ "error": ..., "reason": "gate_failed", "gate_output_tail": ... }`, the same way
 - AND WHEN the run has no `design` event on record, THEN it exits 5 with `reason=no_design`, the same way, and *before* the gate checks above (#212, ADR 0007 D3) — one exit code for the pre-engine refusals, because the response is the same shape in each case (supply the missing evidence and review again); the `reason` names which
+- AND WHEN the run's worktree carries more untracked files than `loop.untracked_file_limit` past its git index, THEN it exits 5 with `reason=polluted_worktree` and a `worktree_pollution` object naming the counts and the largest top-level entries — the same way, and *after* the checks above, a directory walk being the most expensive of the pre-engine refusals (#359). It fails **open**: a disabled bound, a path that is not a git top-level, a wedged `git ls-files` or an empty index all proceed to review, because a guard that stops a run may rest only on evidence it gathered
 
 ### JSON output is part of the public contract
 

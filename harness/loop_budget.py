@@ -55,6 +55,7 @@ __all__ = [
     "DEFAULT_MAX_REVIEW_CYCLES",
     "DEFAULT_REVIEW_MODEL",
     "DEFAULT_UNCONDITIONAL_REVIEW_CYCLES",
+    "DEFAULT_UNTRACKED_FILE_LIMIT",
     "DEFAULT_WALL_CLOCK_BUDGET_MINUTES",
     "REVIEW_CYCLE_CEILING_REASON",
     "WALL_CLOCK_BUDGET_REASON",
@@ -162,6 +163,30 @@ REPEAT_ENGINE_TIMEOUT_REASON = "repeat_engine_timeout"
 # moving the call site.
 ENGINE_TIMEOUT_ATTEMPT_LIMIT = 2
 
+# How far past its own git index a run worktree may drift before ``review``
+# refuses to spawn an engine over it (#359). A worktree carrying thousands of
+# untracked files drowns the review engine's tool use: #208 arrived at review
+# with 3,555 files against 578 tracked, burned the full 720s ceiling and returned
+# ``engine_timeout`` having reviewed nothing; removing the stray ``.venv`` took
+# the tree to 586/578 and the very next review returned a real verdict.
+#
+# Unlike ``ENGINE_TIMEOUT_ATTEMPT_LIMIT`` directly above, this **is** a
+# CONTEXT.md key, on that constant's own stated criterion: it asks whether any
+# repo could rightly want a different value. No repo wants a fifth identical
+# timeout; a repo whose gate cannot run without ``node_modules`` in the worktree
+# genuinely does want a larger bound here, and without a key its every review
+# would be refused with no recourse. ``0`` disables the check outright — the
+# escape hatch of last resort, and the reason this key is *not* clamped to a
+# floor of 1 the way the cycle knobs are.
+#
+# 1000 is chosen against the measured separation, which is coarse by two orders
+# of magnitude rather than marginal: a clean run worktree of this repo carries
+# single-digit excess, one that has run the suite in place carries ~390
+# (``__pycache__`` plus the tool caches), and the observed pollution carried
+# ~2,977. Anything in the hundreds-to-low-thousands range picks the same trees;
+# a finer bound would imply a precision the signal does not have.
+DEFAULT_UNTRACKED_FILE_LIMIT = 1000
+
 
 class LoopBudget(NamedTuple):
     """The configured loop bounds for a run, read from CONTEXT.md's ``loop:`` block.
@@ -194,6 +219,7 @@ class LoopBudget(NamedTuple):
     attended_idle_minutes: int = DEFAULT_ATTENDED_IDLE_MINUTES
     unconditional_review_cycles: int = DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
     review_model: str = DEFAULT_REVIEW_MODEL
+    untracked_file_limit: int = DEFAULT_UNTRACKED_FILE_LIMIT
 
 
 class BreakerTrip(NamedTuple):
@@ -282,6 +308,13 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         ),
         unconditional_review_cycles=min(max(1, unconditional), max_cycles),
         review_model=_read_str_key(text, "review_model", DEFAULT_REVIEW_MODEL),
+        # Deliberately un-clamped, unlike the cycle knobs above: 0 is this
+        # key's documented "do not measure" value, so a floor of 1 would make
+        # the escape hatch unreachable. A negative or non-numeric value does
+        # not match the digits-only reader at all and reads as absent.
+        untracked_file_limit=_read_int_key(
+            text, "untracked_file_limit", DEFAULT_UNTRACKED_FILE_LIMIT
+        ),
     )
 
 
