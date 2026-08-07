@@ -156,7 +156,7 @@ DEFAULT_ATTENDED_IDLE_MINUTES = 480
 # unrecognized alias instead reaches the claude CLI and fails there, loudly.
 # ``sonnet`` is the value every recorded review has actually run, so this change
 # retires the mechanism without also moving the behaviour.
-DEFAULT_REVIEW_MODEL = "sonnet"
+DEFAULT_REVIEW_MODEL = "opus"
 
 # Stable, machine-readable ``reason`` tags carried on a trip — mirrors the
 # ``{"error", "reason"}`` refusal shape of ``close`` / the review infra failure

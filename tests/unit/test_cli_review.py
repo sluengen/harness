@@ -805,7 +805,7 @@ def test_293_claude_review_records_the_model_it_ran_with(
     assert event["model"] == captured["cmd"][-1], (event, captured["cmd"])
 
 
-def test_293_default_tier_review_records_sonnet(repo: Path, db_path: Path) -> None:
+def test_293_default_tier_review_records_the_configured_default(repo: Path, db_path: Path) -> None:
     """AC-1 on the default path: an unlabelled ticket records what ran, not nothing."""
     run_id = _seed_open_run(db_path, repo)
     captured: dict[str, Any] = {}
@@ -815,7 +815,7 @@ def test_293_default_tier_review_records_sonnet(repo: Path, db_path: Path) -> No
     result = _invoke(repo, db_path, run_id, runner, tracker_stub=stub)
     assert result.exit_code == 0, result.output
 
-    assert captured["cmd"][-2:] == ["--model", "sonnet"], captured["cmd"]
+    assert captured["cmd"][-2:] == ["--model", "opus"], captured["cmd"]
     event = fetch_review_events(db_path)[0]["data"]
     assert event["model"] == captured["cmd"][-1], (event, captured["cmd"])
 

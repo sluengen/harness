@@ -248,12 +248,12 @@ def test_load_reads_an_alias_the_harness_has_no_opinion_about(tmp_path: Path) ->
 def test_load_defaults_review_model_when_absent(tmp_path: Path) -> None:
     """A ``loop:`` block without the key falls back to the documented default."""
     _write_context(tmp_path, max_cycles=6, wall_clock=90)
-    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "sonnet"
+    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "opus"
 
 
 def test_load_defaults_review_model_when_no_context(tmp_path: Path) -> None:
     """No CONTEXT.md at all → the same default a configured repo ships (AC-4)."""
-    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "sonnet"
+    assert load_loop_budget(tmp_path).review_model == DEFAULT_REVIEW_MODEL == "opus"
 
 
 def test_a_value_outside_the_token_pattern_falls_back(tmp_path: Path) -> None:
