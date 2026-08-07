@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-08-06
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338"]
+last_updated: 2026-08-07
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338", "#359"]
 ---
 
 # Verb model — start / design / review / close
@@ -115,6 +115,25 @@ The design check runs **before** the gate-evidence check above: a run that never
 **Enforcement refuses; context degrades.** The two halves have deliberately different postures. Enforcement keys on the ledger alone — `--design-file` can neither satisfy nor bypass it — so it refuses. The design *body* is not in the ledger (the event carries `design_hash`; the body lives on the ticket as a marked comment), so the orchestrator that ran `harness design` hands its `design_markdown` back and the recorded hash authenticates it. Context is enrichment: the safe outcome — never reviewing against a wrong or unverified design — is fully achieved by dropping it, so refusing there would only add a wedge. `close` is unchanged: its gate already requires a passing review, which now transitively requires a recorded design attempt.
 
 **The evidence is self-reported, deliberately.** It moves no trust boundary: any process that can write the workspace can already forge a ledger event, so a fabricated `--gate-exit 0` is the same class of act as a fabricated event, and the ledger's filesystem trust boundary is unchanged. The authoritative control over what actually merges is server-side branch protection (CAL-1029), not this record. What the record buys is that a `pass` now *states* whether a gate ran, so a reader — and `close` — can tell a verified tree from an unverified one. Cryptographic attestation was weighed and left out of scope. This design also removes the pressure to loosen the review container toward foreign toolchains, which ADR 0002 rejected for good reason.
+
+#### Scenario: the run worktree is too far past its own index to review
+
+A run worktree carrying thousands of untracked files drowns the review engine's tool-using pass. #205 traced that cause and answered it with a rule an operator has to keep — *never gate in the run worktree* — and #208 kept the rule, deliberately routing `uv` at an external environment, and still arrived at review with **3,555 files on disk against 578 tracked**: the review burned the whole `engine_timeout_seconds` ceiling and returned `engine_timeout` having reviewed nothing, while the same tree cleaned to 586/578 returned a real verdict in ~9 minutes. #359 makes the rule a mechanism.
+
+- GIVEN an open run whose worktree holds more untracked files than `loop.untracked_file_limit` (default **1000**) past its git index
+- WHEN the agent runs `harness review`
+- THEN the verb refuses **before invoking any engine** and exits `5` with `{ "error": ..., "reason": "polluted_worktree", "worktree_pollution": { "tracked": …, "scanned": …, "excess": …, "limit": …, "truncated": …, "largest": [ … ] } }`, leaving the ticket where it stopped
+- AND the refusal **costs no review cycle and no wall-clock budget** — it records the ordinary terminal-refusal event (`outcome=failed`, no `verdict` key), which `_count_review_events` excludes, so cleaning up is never more expensive than the burn it replaces
+- AND GIVEN instead an excess exactly **equal** to the limit, THEN the engine runs — the configured budget spent is not the budget exceeded
+- AND GIVEN instead `loop.untracked_file_limit: 0`, THEN no probe is spawned and no walk happens: `0` is the documented off switch, and it is the reason this key is the one integer knob the loader does **not** clamp to a floor of 1
+
+The `reason` and the exit code are both **distinct from `engine_timeout`** (exit 5, not 3). That distinctness is load-bearing rather than cosmetic: a polluted tree *presents* as an engine timeout, so a shared tag would leave a reader of the ledger unable to tell "the engine hung" from "the harness refused to let it".
+
+It is placed after the HEAD capture and before the tracker park, which fixes all four of its edges: after the inherited-pass short-circuit (that path spawns no engine, so a polluted tree is irrelevant to it and refusing would block a review that costs nothing); after every cheaper pre-engine check, a directory walk being the most expensive of them, so a bounded-out, undesigned or red-gated run is refused on *that*; after the HEAD capture, so the refusal row carries `reviewed_sha` and an operator sees `engine_timeout` and `polluted_worktree` against the same tree — the #208 correlation made legible; and before the park, so the ticket stays In Progress like every other pre-engine refusal.
+
+**The check fails open, without exception.** Every case it cannot answer — the bound disabled, a path that is not a git top-level, a failed or wedged `git ls-files`, an empty index — proceeds to review. A guard that *stops* a run may rest only on evidence it actually gathered, the same asymmetry `reclaim --stale` states for its three clocks; and the failure it prevents is expensive but recoverable, whereas a falsely refused review is not. Two properties follow from the worktree's contents being untrusted (the pollution of #208 was written by tooling nobody has identified, and finding it was explicitly out of scope): the scan reads **directory entries only** — never a file's content, never a `stat` — with symlinks unfollowed and `.git` pruned, so it cannot leave the worktree or fail to terminate; and only **depth-1 path segments** are ever reported, so a root-level `.env.production` is aggregated under `(root)` and never named. What escapes to the ledger and to the orchestrator's context is integers plus at most three top-level segment names.
+
+The measurement is `scanned - tracked` — on-disk count against index size — rather than the size of the set difference, because comparing path *spellings* misses on every non-ASCII name where macOS returns NFD against git's NFC, and would refuse a clean tree: the one direction this guard must never fail in. Subtraction also errs safely, a tracked file deleted from the working tree lowering `scanned` alone. The enumeration and its top-level anchor are shared with `reclaim --stale`'s liveness probe (`harness/_git.py`), so the two cannot disagree about which paths are a worktree's own.
 
 #### Scenario: the spend breakers bound the fix loop
 
