@@ -82,3 +82,30 @@ def test_verify_exits_reserved_code_when_toolchain_unavailable(tmp_path: Path) -
         f"toolchain; got {result.returncode}\nstdout={result.stdout}\n"
         f"stderr={result.stderr}"
     )
+
+
+def test_verify_preflights_the_parallel_plugin() -> None:
+    """The xdist probe is part of the preflight, not a bare ``-n`` on the stage (#358).
+
+    ``-n`` is pytest-xdist's flag: without the plugin, pytest exits **4** (usage
+    error), which the promotion classifier cannot tell from a red tree — so a
+    developer venv predating the parallel gate would file a ticket blaming the
+    code. Probing it alongside ruff/mypy/pytest routes that case to the same
+    reserved ``blocked`` code.
+
+    Pinned as *probe implies reserved exit* rather than as a line match, so the
+    check cannot be satisfied by a probe that fails the gate red instead.
+    """
+    text = VERIFY.read_text()
+    probe = re.search(r"^.*import xdist.*$", text, re.MULTILINE)
+    assert probe is not None, (
+        "scripts/verify.sh must preflight `import xdist`: the parallel stage "
+        "passes -n, and a venv without the plugin is a toolchain failure, not a "
+        "red tree (#358)."
+    )
+    tail = text[probe.end() :]
+    guarded = tail[: tail.find("\nfi")] if "\nfi" in tail else tail
+    assert f'exit "$GATE_UNRUNNABLE_EXIT"' in guarded, (
+        "the xdist preflight must exit the reserved GATE_UNRUNNABLE_EXIT so a "
+        "stale venv classifies as `blocked`, not `needs_ticket` (#358, CAL-1160)."
+    )
