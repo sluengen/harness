@@ -96,8 +96,15 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "ticket",       # CAL-570: Linear ticket identifier for ``harness start``
         "worktree_path",  # CAL-570: worktree filesystem path for ``harness start``
         "resumed_from",   # #258: the preserved branch ``--resume`` recovered, else NULL
+        "assurance",         # #352: the level start snapshotted for the run
+        "assurance_reason",  # #352: why the run carries that level
     }
     assert set(cols.keys()) == expected
+    # #352: both nullable. A run row written before the migration must be
+    # readable *as it stands* — ``coerce_assurance(None)`` reads NULL as
+    # ``simple`` — so no backfill is needed and no historical row is rewritten.
+    assert cols["assurance"]["notnull"] == 0
+    assert cols["assurance_reason"]["notnull"] == 0
     # #258 / ADR 0008 F2: the adopt gate reads this as "did the WIP come back?",
     # so a clean start must be distinguishable — the column has to be nullable.
     assert cols["resumed_from"]["notnull"] == 0
@@ -331,3 +338,64 @@ async def test_resumed_from_migration_is_idempotent(tmp_path: Path) -> None:
     ):
         rows = await cursor.fetchall()
     assert rows == [("harness/01JSOURCE",)]
+
+
+# ---------------------------------------------------------------------------
+# #352 — the ``runs.assurance`` / ``runs.assurance_reason`` migration (AC-2)
+# ---------------------------------------------------------------------------
+
+
+async def test_assurance_migration_opens_a_premigration_ledger(tmp_path: Path) -> None:
+    """AC-2: an existing ledger gains both columns without losing or rewriting a row.
+
+    :func:`_premigration_ledger` builds the ``runs`` table as it stood before
+    ``resumed_from``, so it also predates these two — which is exactly the shape
+    every existing checkout's ledger has. The row must survive with ``NULL`` in
+    both, because "no assurance recorded" is the state
+    ``harness.assurance.coerce_assurance`` reads as ``simple``: the no-backfill
+    half of the criterion is that the row is still there and still untouched.
+    """
+    db_path = tmp_path / "harness.db"
+    await _premigration_ledger(db_path, "01JOLDRUNXXXXXXXXXXXXXXXX3")
+
+    await store.init_db(db_path)
+
+    cols = await _table_columns(db_path, "runs")
+    assert "assurance" in cols
+    assert "assurance_reason" in cols
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute(
+            "SELECT run_id, status, started_at, assurance, assurance_reason FROM runs"
+        ) as cursor,
+    ):
+        rows = await cursor.fetchall()
+    assert rows == [
+        ("01JOLDRUNXXXXXXXXXXXXXXXX3", "open", "2026-07-30T00:00:00Z", None, None)
+    ]
+
+
+async def test_assurance_migration_is_idempotent(tmp_path: Path) -> None:
+    """AC-2: ``init_db`` runs on every verb invocation, so re-application is the
+    common case — it must neither raise nor reset a recorded snapshot.
+
+    Resetting would be the worse failure of the two and is the one an
+    "it did not raise" assertion misses: a run opened ``complex`` would silently
+    read back as ``simple`` on the next verb call, dropping its design
+    requirement mid-run.
+    """
+    db_path = tmp_path / "harness.db"
+    await _premigration_ledger(db_path, "01JOLDRUNXXXXXXXXXXXXXXXX4")
+    await store.init_db(db_path)
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("UPDATE runs SET assurance = 'complex', assurance_reason = 'label'")
+        await conn.commit()
+
+    await store.init_db(db_path)  # second application — must not raise or reset
+
+    async with (
+        aiosqlite.connect(db_path) as conn,
+        conn.execute("SELECT assurance, assurance_reason FROM runs") as cursor,
+    ):
+        rows = await cursor.fetchall()
+    assert rows == [("complex", "label")]

@@ -276,6 +276,30 @@ def test_ac1_start_opens_a_run_without_a_tracker(repo: Path, db_path: Path) -> N
     assert rows[0]["status"] == "open"
 
 
+def test_start_resolves_a_tracker_less_run_to_simple_assurance(
+    repo: Path, db_path: Path
+) -> None:
+    """#352: with no tracker there are no labels, so the run snapshots ``simple``.
+
+    Worth its own case rather than folding into the label corpus in
+    ``test_start_assurance.py``: this path never builds a tracker payload at all
+    — the ticket dict is synthesized from the argument — so it is the one shape
+    where "no labels" is a property of the *code path* rather than of the issue.
+    It must resolve like any unlabelled issue, and it must not reach for a
+    tracker to find out (``_exploding_client`` is what proves that).
+    """
+    with patch("harness.tracker.LinearClient", _exploding_client()):
+        result = cli_runner.invoke(
+            app,
+            ["start", "RUN-ASSURANCE", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["assurance"] == "simple"
+    assert payload["assurance_reason"] == "no_label"
+
+
 def test_ac1_start_degrades_ticket_context_to_the_identifier(
     repo: Path, db_path: Path
 ) -> None:
