@@ -167,8 +167,10 @@ class _Probe:
         returncode: int = 0,
         results: list[dict[str, Any]] | None = None,
         raises: BaseException | None = None,
+        stderr: str = "",
     ) -> None:
         self.returncode = returncode
+        self.stderr = stderr
         self.results = results or []
         self.raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -189,7 +191,9 @@ class _Probe:
             json.dumps({"select": [], "baseline": {}, "results": self.results}),
             encoding="utf-8",
         )
-        return review_mod.RunResult(stdout="", stderr="", returncode=self.returncode)
+        return review_mod.RunResult(
+            stdout="", stderr=self.stderr, returncode=self.returncode
+        )
 
     @property
     def table(self) -> dict[str, Any]:
@@ -545,7 +549,7 @@ def test_the_second_pass_is_told_what_the_first_pass_concluded(
 
 @pytest.mark.parametrize(
     ("returncode", "status"),
-    [(2, "refused"), (3, "unavailable"), (99, "error")],
+    [(2, "refused:unknown"), (3, "unavailable"), (99, "error")],
     ids=["table-refused", "runner-unavailable", "unexpected"],
 )
 def test_every_non_report_exit_degrades_and_records_which(
@@ -563,6 +567,38 @@ def test_every_non_report_exit_degrades_and_records_which(
     assert result.exit_code == 0
     assert json.loads(result.stdout)["verdict"] == "pass"
     assert _event(db_path)["probe_status"] == status
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        ("refused (prediction): node id not in the baseline\n", "refused:prediction"),
+        ("refused (baseline): the tree is already red\n", "refused:baseline"),
+        ("something went wrong\n", "refused:unknown"),
+    ],
+    ids=["prediction", "baseline", "unparseable"],
+)
+def test_a_refused_table_records_which_rule_refused(
+    repo: Path, db_path: Path, stderr: str, expected: str
+) -> None:
+    """`refused` alone answers the wrong question.
+
+    `refused:prediction` says the reviewer named a node id outside the selection
+    — a defect in its proposal, and exactly the measurement that decides whether
+    a probing reviewer earns its cost. `refused:baseline` says the tree was
+    already red and says nothing about the reviewer at all. Folding the two into
+    one status would make the follow-up's central question unanswerable from the
+    ledger.
+
+    The unparseable case is the third: a status is an observation, so it degrades
+    to `unknown` rather than failing the review that produced it.
+    """
+    probe = _Probe(returncode=2, stderr=stderr)
+
+    result = _invoke(repo, db_path, _Engine(_submit("pass", [], [_proposal()])), probe)
+
+    assert result.exit_code == 0
+    assert _event(db_path)["probe_status"] == expected
 
 
 def test_a_repo_with_no_mutation_harness_records_no_instrument(

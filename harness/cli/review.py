@@ -775,6 +775,26 @@ def _refuse_if_worktree_moved(worktree: Path, before: str | None) -> None:
     )
 
 
+def _refusal_reason(stderr: str) -> str:
+    """The refusal tag the mutation harness printed, or ``unknown``.
+
+    Its contract is a stable first-line ``refused (<reason>): <message>``, and
+    the tag exists precisely so a caller can branch on *which* rule refused
+    rather than matching prose. Reading it is not scraping a human summary — the
+    thing this module refuses to do with ``render()`` — it is reading the one
+    machine-readable field a non-zero exit has room for.
+
+    Falls back to ``unknown`` rather than raising: a status is an observation,
+    and an observation that can fail the thing it observes is worse than a
+    coarse one.
+    """
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("refused (") and "):" in stripped:
+            return stripped[len("refused (") : stripped.index("):")]
+    return "unknown"
+
+
 def _probe_status_for(result: RunResult) -> str:
     """Map the mutation harness's exit code onto a recorded status.
 
@@ -782,6 +802,15 @@ def _probe_status_for(result: RunResult) -> str:
     least one inert) is a *table verdict*, and every one of those is a legitimate
     outcome of asking a reviewer for mutations — 0, 1 and 4 all produced a report
     to read. Only 2 and 3 did not.
+
+    A refusal carries *which* rule refused, taken from the harness's own stable
+    tag rather than invented here — ``table`` / ``containment`` / ``landing`` /
+    ``baseline`` / ``prediction`` / ``observable``. The distinction is the whole
+    diagnostic value of the status: ``refused:prediction`` says the reviewer
+    named a node id outside the selection (a defect in its proposal, and the
+    measurement that decides whether a probing reviewer is worth its cost),
+    while ``refused:baseline`` says the tree was already red and says nothing
+    about the reviewer at all.
 
     ``unavailable`` (exit 3) is the one worth naming separately rather than
     folding into ``error``, because it is the expected in-container outcome: the
@@ -793,7 +822,7 @@ def _probe_status_for(result: RunResult) -> str:
     if result.returncode in (0, 1, 4):
         return "ran"
     if result.returncode == 2:
-        return "refused"
+        return f"refused:{_refusal_reason(result.stderr)}"
     if result.returncode == 3:
         return "unavailable"
     return "error"

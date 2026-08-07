@@ -198,7 +198,12 @@ SHA in a tree that is thrown away. That is an agent-layer control, the same hone
 `design`'s single-file write grant states about itself.
 
 **Every path degrades.** `probe_status` records which: `disabled`, `none_proposed`,
-`no_instrument`, `tree_failed`, `ran`, `refused`, `unavailable`, `timeout`, `error`. None of
+`no_instrument`, `tree_failed`, `ran`, `refused:<rule>`, `unavailable`, `timeout`, `error`.
+A refusal carries the mutation harness's own stable tag for *which* rule refused, because
+the distinction is the diagnostic value: `refused:prediction` says the reviewer named a node
+id outside the selection — a defect in its proposal, and the measurement that decides whether
+a probing reviewer earns its cost — while `refused:baseline` says the tree was already red and
+says nothing about the reviewer at all. None of
 them changes a verdict, which is exactly why the reason has to be on the ledger rather than on
 stderr — the same argument `design_context_reason` makes. `unavailable` is worth naming
 separately because it is the expected **in-container** outcome: `harness:dev` is built

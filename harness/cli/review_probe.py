@@ -41,6 +41,24 @@ one read-only look at the probe tree's own files. The subprocess mechanics live
 in :mod:`harness.probe_tree` and in the verb.
 """
 
+# size: over the ceiling on *stated rationale*, not on logic. Every rule here is
+# a rule because a specific defect made it one — the untrusted-proposal boundary,
+# the required prediction, the demonstrated/unproven split, the monotone
+# combination — and a reader who cannot see which defect a rule answers will
+# relax it. That is not hypothetical for this module: it is the counterparty on a
+# mutation table, and the failure it exists to prevent is vacuity relocating into
+# review, which looks exactly like the code working.
+# The two prompt templates are ~70 lines of that on their own, and they are
+# prose addressed to an engine rather than logic: they cannot be shortened
+# without weakening the brief, which is the deliverable.
+# The extraction candidate, if it grows again, is the **screen** (`_as_proposal`,
+# `_reject`, `screen_proposals`, `Screened`, ~110 lines) — it is the only part
+# that touches the filesystem at all, and it is the part the general probe
+# callback would reuse unchanged while wanting none of the mutation vocabulary.
+# Splitting now would separate the screen from the renderer it feeds, which is
+# where the injection argument lives, and that argument is the one thing that
+# must be read as a pair.
+
 from __future__ import annotations
 
 import json

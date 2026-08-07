@@ -49,6 +49,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+# size: one config module whose length is its per-knob evidence, not its logic —
+# the loader is ~40 lines and the decision functions ~60. Every constant carries
+# the measurement that set it (18 timed design runs for the engine ceiling; the
+# two-order-of-magnitude separation behind the untracked-file bound; the sampled
+# 230s behind the probe cap), because a threshold whose evidence is not written
+# down is re-tuned by the next person on intuition — which is how this repo got
+# a wall-clock budget and a staleness threshold that had drifted apart. Crossed
+# the ceiling in #363, which added two knobs and their sample.
+# The extraction candidate is the **breaker decisions** (`evaluate_breakers`,
+# `evaluate_repeat_timeout`, `convergence_check_required`, `cycles_exhausted`
+# and `BreakerTrip`, ~150 lines): they are pure policy over an already-loaded
+# budget and read coherently apart from the loading, on the `review_inherit`
+# precedent. Left together for now because every one of them exists to be read
+# beside the constant it bounds.
+
 __all__ = [
     "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
