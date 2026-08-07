@@ -372,7 +372,12 @@ def _resolve_target(tree: Path, mutation: Mutation) -> Path:
     the primary checkout.
     """
     root = tree.resolve()
-    candidate = (tree / mutation.file).resolve()
+    # ``root`` is already resolved, so ``naive`` differs from ``candidate``
+    # exactly when a symlink *inside* the tree redirected the walk — comparing
+    # a resolved path against an unresolved one instead would call every
+    # relative ``--tree`` a symlink.
+    naive = root / mutation.file
+    candidate = naive.resolve()
     if not str(candidate).startswith(str(root) + os.sep):
         raise RefusalError(
             "containment",
@@ -381,11 +386,12 @@ def _resolve_target(tree: Path, mutation: Mutation) -> Path:
         )
     if not candidate.is_file():
         raise RefusalError("containment", f"{mutation.id}: {mutation.file} is not a file in {root}")
-    if (tree / mutation.file).is_symlink() or candidate != (tree / mutation.file):
+    if candidate != naive:
         raise RefusalError(
             "containment",
             f"{mutation.id}: {mutation.file} reaches its target through a symlink "
-            f"({candidate}) — refusing, because the link may leave the tree",
+            f"({candidate}) — refusing, because the report would name a path that "
+            "is not the file the bytes land in",
         )
     return candidate
 
@@ -585,16 +591,19 @@ def run_plan(
 
     selected = [m for m in table.mutations if not only or m.id in set(only)]
     results: list[EntryResult] = []
-    try:
-        for mutation in selected:
-            try:
-                _apply(targets[mutation.id], mutation)
-                outcome = runner(tree, select)
-            finally:
-                backups.restore()
-            results.append(_classify(mutation, outcome, baseline))
-    finally:
-        backups.restore()
+    for mutation in selected:
+        # The single restore guarantee. Every path out of this block goes
+        # through it: a normal return, a runner exception, the ``SystemExit`` a
+        # ``SIGTERM`` handler raises. An outer ``try/finally`` around the whole
+        # loop was written first and then deleted — it was mutation-proved to
+        # kill nothing, because no code outside this block can leave a target
+        # written, so it was defence that could not be exercised.
+        try:
+            _apply(targets[mutation.id], mutation)
+            outcome = runner(tree, select)
+        finally:
+            backups.restore()
+        results.append(_classify(mutation, outcome, baseline))
 
     return Report(
         baseline=baseline,

@@ -25,6 +25,7 @@ suite. The end-to-end proof over a real pytest run is
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -351,7 +352,7 @@ def test_a_target_outside_the_tree_is_refused(tmp_path: Path) -> None:
     assert runner.calls == 0
 
 
-def test_a_symlinked_target_is_refused(tmp_path: Path) -> None:
+def test_a_symlink_out_of_the_tree_is_refused_as_escaping(tmp_path: Path) -> None:
     """A symlink inside the tree can still point at the main checkout."""
     tree = _mini_tree(tmp_path, {"pkg/calc.py": "def add(a, b):\n    return a + b\n"})
     outside = tmp_path / "outside.py"
@@ -366,7 +367,50 @@ def test_a_symlinked_target_is_refused(tmp_path: Path) -> None:
         mutate.run_plan(table, tree, runner=runner)
 
     assert excinfo.value.reason == "containment"
+    assert "outside the tree" in str(excinfo.value)
     assert runner.calls == 0
+    assert outside.read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+
+
+def test_a_symlink_within_the_tree_is_refused_as_a_symlink(tmp_path: Path) -> None:
+    """Refused on its own branch, and asserted by its own message.
+
+    Distinct from the escaping case above, which the containment check already
+    catches: here the bytes would land in a real in-tree file while the report
+    named the link. Without the separate message assertion, one refusal could
+    stand in for both and neither branch would be measured.
+    """
+    tree = _mini_tree(tmp_path, {"pkg/calc.py": "def add(a, b):\n    return a + b\n"})
+    (tree / "alias.py").symlink_to(tree / "pkg" / "calc.py")
+    table = mutate.load_table(
+        _write_table(tmp_path, _table_text(mutations=_entry(file="alias.py")))
+    )
+    runner = _StubRunner(_GREEN)
+
+    with pytest.raises(mutate.RefusalError) as excinfo:
+        mutate.run_plan(table, tree, runner=runner)
+
+    assert excinfo.value.reason == "containment"
+    assert "symlink" in str(excinfo.value)
+    assert runner.calls == 0
+
+
+def test_a_relative_tree_path_is_not_mistaken_for_a_symlink(tmp_path: Path) -> None:
+    """The obvious way to write the symlink check refuses every relative ``--tree``.
+
+    Comparing the resolved target against the *unresolved* join makes them
+    differ whenever the tree argument is relative or sits under a symlinked
+    prefix — which on macOS is every ``tmp_path``. This is the shape that
+    refused the harness's own first self-run.
+    """
+    tree = _mini_tree(tmp_path, {"pkg/calc.py": "def add(a, b):\n    return a + b\n"})
+    table = mutate.load_table(_write_table(tmp_path, _table_text(mutations=_entry())))
+    runner = _StubRunner(_GREEN, _outcome(failed={"tests/test_calc.py::test_add"}))
+
+    relative = Path(os.path.relpath(tree, Path.cwd()))
+    report = mutate.run_plan(table, relative, runner=runner)
+
+    assert [result.outcome for result in report.results] == ["killed"]
 
 
 def test_landing_is_checked_for_the_whole_table_before_the_first_write(
@@ -563,9 +607,14 @@ def test_a_red_baseline_refuses_before_any_write(tmp_path: Path) -> None:
     table = mutate.load_table(_write_table(tmp_path, _table_text(mutations=_entry())))
     runner = _StubRunner(_outcome(failed={"tests/test_calc.py::test_sub"}))
 
-    with pytest.raises(mutate.RefusalError):
+    with pytest.raises(mutate.RefusalError) as excinfo:
         mutate.run_plan(table, tree, runner=runner)
 
+    # Pin *which* rule refused. Without this the test passes on a harness that
+    # dropped the baseline check entirely: the prediction check downstream would
+    # then refuse this same table (its node id is absent from an empty passed
+    # set), leaving the tree untouched for the wrong reason.
+    assert excinfo.value.reason == "baseline"
     assert (tree / "pkg" / "calc.py").read_bytes() == before
 
 
@@ -688,6 +737,10 @@ def test_the_report_names_every_entry_its_outcome_and_its_note(tmp_path: Path) -
     # Collected counts sit beside the baseline's, so #336's 0.25s-against-0.70s
     # tell is on the line rather than in the operator's head.
     assert "collected" in rendered
+    # The summary counts entries that did not kill. Asserted here because the
+    # ``honest`` branch is asserted elsewhere, and a render that printed
+    # "honest" unconditionally would otherwise satisfy both.
+    assert "RESULT: 2 entries did not kill as predicted" in rendered
 
 
 def test_the_report_of_an_all_killed_table_says_honest(tmp_path: Path) -> None:
