@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.4.0
+// guidance:hook-guidance-freshness@0.4.1
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -148,11 +148,15 @@ function main() {
     }
     if (!recently(D_GENERIC)) {
       mark(D_GENERIC);
+      // The changelog entry is derived from the commit at release (#324, ADR
+      // 0014), so there is no artifact to nag for — the commit body IS the
+      // entry. Pointing anywhere else would send an author to a path that no
+      // longer exists.
       const where = relPath.endsWith(".json")
-        ? "bump its version in registry.yaml (JSON carries no header) and add a fragment at changelog.d/<ticket>.md"
+        ? "bump its version in registry.yaml (JSON carries no header) and describe the change in the commit body"
         : isMeta
-          ? "bump its version in both the file header and the registry `meta:` block, and add a fragment at changelog.d/<ticket>.md"
-          : "bump its version in both the file header and registry.yaml, and add a fragment at changelog.d/<ticket>.md";
+          ? "bump its version in both the file header and the registry `meta:` block, and describe the change in the commit body"
+          : "bump its version in both the file header and registry.yaml, and describe the change in the commit body";
       return done(`[GUIDANCE-FRESHNESS] You edited a version-stamped file (${relPath}). Before finishing: ${where}. ` +
         `An un-bumped edit is invisible to repos that installed it.`);
     }

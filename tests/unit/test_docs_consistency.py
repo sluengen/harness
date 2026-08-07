@@ -246,37 +246,40 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
 # --- CHANGELOG freshness anchor (CAL-651, AC-2) -------------------------------
 
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
-FRAGMENT_README = REPO_ROOT / "changelog.d" / "README.md"
 FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 
 def test_changelog_present_and_referenced_by_freshness_hook() -> None:
     """AC-2: the changelog exists and the SOURCE-mode freshness hook nags toward it.
 
-    The freshness hook (SOURCE mode) tells an author to record a version bump in
-    the changelog. If the hook points somewhere, that place must exist or the
-    pointer is a dead end.
+    The freshness hook (SOURCE mode) tells an author where to record a version
+    bump. If the hook points somewhere, that place must exist or the pointer is
+    a dead end — which is exactly what #324 would have left behind: the hook
+    named ``changelog.d/<ticket>.md`` in all three of its branches, and the
+    directory is deleted.
 
-    Since #267 the place is ``changelog.d/`` — an author writes a fragment, not
-    an entry in ``CHANGELOG.md``, so a reminder still naming the root file would
-    send them to the one file the ratchet forbids them to grow. ``CHANGELOG.md``
-    itself remains a tracked root file: it is the released history the fold
-    writes into.
+    Since #324 there is no changelog artifact to nag for. The entry is derived
+    from the commit at release (ADR 0014), so the reminder points at the commit
+    body. ``CHANGELOG.md`` itself remains a tracked root file: it is the
+    released history the release assembly writes into, and naming *it* would
+    send an author to the one file the ratchet forbids them to grow.
     """
     assert CHANGELOG.resolve() in tracked_files_under("CHANGELOG.md"), (
         "CHANGELOG.md must be a committed root file — it holds the released "
-        "history the release fold writes into (CAL-651, AC-2; #267)."
+        "history the release assembly writes into (CAL-651, AC-2)."
     )
-    assert FRAGMENT_README.resolve() in tracked_files_under("changelog.d"), (
-        "changelog.d/README.md must be a committed file — a directory needs a "
-        "tracked file to exist in git at all, and the freshness hook now points "
-        "authors at that directory (#267)."
+    hook = FRESHNESS_HOOK.read_text()
+    assert "changelog.d" not in hook, (
+        "hooks/guidance-freshness.js still points authors at changelog.d/, "
+        "which #324 deleted. A reminder naming a path that does not exist is "
+        "worse than none: it sends an author to create the directory the "
+        "deletion removed."
     )
-    assert "changelog.d/" in FRESHNESS_HOOK.read_text(), (
-        "hooks/guidance-freshness.js no longer references changelog.d/. The "
-        "SOURCE-mode bump reminder must point authors at the fragment directory "
-        "— since #267 that is where an entry goes, and naming CHANGELOG.md would "
-        "send them to a file the ratchet forbids them to grow (CAL-651, AC-2)."
+    assert "commit body" in hook, (
+        "hooks/guidance-freshness.js must tell an author where the changelog "
+        "entry goes. Since #324 that is the commit body, which the release "
+        "assembles from (ADR 0014) — without it the bump reminder names a "
+        "version to change and no record to change it in (CAL-651, AC-2)."
     )
 
 

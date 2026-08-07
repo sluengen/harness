@@ -85,17 +85,6 @@ echo "=== design-token drift guard ==="
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
 
-echo "=== changelog fragment guard ==="
-# Two guards, cause and symptom, because neither subsumes the other (#267).
-# `check` is structural and base-independent, so it is meaningful wherever the
-# gate runs. `require` is the direct presence check but needs a merge base, and
-# abstains with a printed reason where one cannot be resolved (a shallow CI
-# checkout, a detached `promote` worktree). The base-independent half that
-# holds the line either way is the CHANGELOG ratchet in
-# tests/unit/test_changelog_rotation.py.
-uv run --extra dev python scripts/changelog_fragments.py check
-uv run --extra dev python scripts/changelog_fragments.py require
-
 echo "=== release cadence (report only) ==="
 # Cadence bounds describe accumulated repo state, not this change: no change
 # here caused a breach and none can fix one, so a breach must never be this
