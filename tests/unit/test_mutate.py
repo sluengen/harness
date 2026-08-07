@@ -33,6 +33,7 @@ suite. The end-to-end proof over a real pytest run is
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -555,6 +556,52 @@ def test_backups_are_written_to_the_work_dir(tmp_path: Path) -> None:
     backup = work_dir / "backup" / "pkg" / "calc.py"
     assert report.work_dir == work_dir
     assert backup.read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+
+
+@pytest.mark.parametrize(
+    "boom",
+    [RuntimeError("the runner crashed"), SystemExit(143)],
+    ids=["exception", "sigterm"],
+)
+def test_the_work_dir_is_announced_before_the_first_write(
+    tmp_path: Path, boom: BaseException
+) -> None:
+    """The backups are only recoverable by hand if their path was printed.
+
+    A crash — or the ``SIGKILL`` no handler can catch — never reaches the
+    report, so announcing the work dir from the report would print it in exactly
+    the cases that do not need it and withhold it in the one that does. Asserted
+    on a run that never returns a ``Report``, which is the only shape that can
+    tell the two placements apart.
+    """
+    tree = _mini_tree(
+        tmp_path,
+        {
+            "pkg/calc.py": "def add(a, b):\n    return a + b\n",
+            "pkg/other.py": "LIMIT = 4",
+            "pkg/third.py": "FLAG = True\n",
+        },
+    )
+    work_dir = tmp_path / "work"
+    table = mutate.load_table(
+        _write_table(
+            tmp_path,
+            _table_text(
+                mutations=_entry()
+                + _entry(ident="e2", file="pkg/other.py", old="LIMIT = 4", new="LIMIT = 1")
+                + _entry(ident="e3", file="pkg/third.py", old="FLAG = True", new="FLAG = False")
+            ),
+        )
+    )
+    captured = io.StringIO()
+
+    with pytest.raises(type(boom)):
+        mutate.run_plan(
+            table, tree, runner=_RaisingRunner(boom), work_dir=work_dir, out=captured
+        )
+
+    assert str(work_dir) in captured.getvalue()
+    assert (work_dir / "backup" / "pkg" / "calc.py").exists()
 
 
 def test_the_module_spawns_only_python_never_git() -> None:

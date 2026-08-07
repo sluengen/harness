@@ -161,6 +161,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
+from typing import TextIO
 
 __all__ = [
     "Baseline",
@@ -627,8 +628,14 @@ def run_plan(
     runner: Runner,
     work_dir: Path | None = None,
     only: Sequence[str] = (),
+    out: TextIO | None = None,
 ) -> Report:
-    """Validate, baseline, then run every selected entry against a pristine tree."""
+    """Validate, baseline, then run every selected entry against a pristine tree.
+
+    ``out`` receives the work-dir announcement (default ``sys.stdout``). It is a
+    parameter rather than a bare print so a test can prove the announcement
+    happened on a path that never returns a report.
+    """
     targets = check_plan(table, tree, only=only)
     select = list(table.select)
 
@@ -637,6 +644,13 @@ def run_plan(
 
     work_dir = work_dir or Path(tempfile.mkdtemp(prefix="mutate-"))
     work_dir.mkdir(parents=True, exist_ok=True)
+    # Announced here, before the first write, and flushed — not folded into the
+    # report. The report is only reached on a clean return, so deferring this
+    # line to it would print the recovery path in exactly the cases that do not
+    # need it and withhold it in the one that does: a crash, a SIGTERM, or the
+    # SIGKILL no handler can catch, after which these backups are the only copy
+    # of the pre-run bytes and this path is the only way to find them.
+    print(f"work dir: {work_dir}", file=out if out is not None else sys.stdout, flush=True)
     backups = _Backups(work_dir=work_dir)
     backups.take(targets.values(), tree)
 
@@ -683,7 +697,6 @@ def render(report: Report) -> str:
     """
     baseline = report.baseline
     lines = [
-        f"work dir: {report.work_dir}",
         f"baseline: {len(baseline.passed)} passed, {baseline.collected} collected, "
         f"{baseline.duration_s:.1f}s  [{' '.join(report.select)}]",
     ]

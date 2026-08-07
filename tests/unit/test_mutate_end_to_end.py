@@ -188,6 +188,9 @@ def test_an_honest_mutation_kills_exactly_its_prediction(tmp_path: Path) -> None
     assert "honest" in result.stdout
     assert "KILLED" in result.stdout
     assert "RESULT: honest" in result.stdout
+    # Binds the announcement to the *default* stream. The unit test proves it
+    # happens before the first write; without this, it could go anywhere.
+    assert f"work dir: {tmp_path / 'work'}" in result.stdout
 
 
 def test_a_no_op_mutation_reports_as_a_failure_of_the_entry(tmp_path: Path) -> None:
