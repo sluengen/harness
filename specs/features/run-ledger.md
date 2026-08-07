@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-08-06
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#321", "#347", "#338"]
+last_updated: 2026-08-07
+tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#321", "#347", "#338", "#352"]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -167,7 +167,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_ticket_open
   ON runs(ticket) WHERE status = 'open';
 ```
 
-WAL journal mode and `PRAGMA foreign_keys = ON` are set on every connection opened via `connect()`. `init_db()` creates all tables and indexes idempotently (`IF NOT EXISTS`).
+WAL journal mode and `PRAGMA foreign_keys = ON` are set on every connection opened via `connect()`. `init_db()` creates all tables and indexes idempotently (`IF NOT EXISTS`). The DDL above is the base `CREATE TABLE`; the columns added since are in the migration table below, not repeated here — duplicating them in both places is the drift the additive `ALTER TABLE` form avoids.
+
+**The assurance pair is a snapshot, never mutated** (#352). `start` is its only writer; `design` and `review` read it through `harness.cli._runs.read_run_assurance`, which is the one query and routes the value through `harness.assurance.coerce_assurance`. That coercion is total and falls back to `simple` — the level that still requires a review — so a `NULL`, an unknown string, or a hand-edited value can only ever make a run *more* verified, never less. Every row written before the migration therefore behaves exactly as it did, with **no backfill and no historical rewrite**: `NULL` is already the correct answer.
 
 ### `runs` column additions (migrations)
 
@@ -177,6 +179,9 @@ New columns added after the initial schema are applied via `ALTER TABLE ... ADD 
 |---|---|---|---|
 | `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
 | `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
+| `resumed_from` | `TEXT` | #258 | The preserved WIP branch `harness start --resume` actually recovered, or `NULL` for a clean start (including a `--resume` that fell back). ADR 0008 gates design inheritance on how the run started. |
+| `assurance` | `TEXT` | #352 | The assurance level `harness start` resolved from the issue's labels — `simple` or `complex` (never `trivial`, which is rewritten at the boundary). `NULL` on every row written before the migration. |
+| `assurance_reason` | `TEXT` | #352 | Why the run carries that level: `label`, `no_label`, `conflicting_labels`, `unknown_label`, or `fast_path_unavailable`. `NULL` on a pre-migration row, which reads as `unrecorded`. |
 
 > The `pid` column is **not** in this table: it is declared in the base `_SCHEMA` CREATE TABLE (a dormant, writer-less column — see above) and its redundant `ADD COLUMN` migration was removed in CAL-713.
 

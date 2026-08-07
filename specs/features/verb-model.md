@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-07
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338", "#359"]
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338", "#359", "#352"]
 ---
 
 # Verb model — start / design / review / close
@@ -22,9 +22,23 @@ The harness is **not** a pipeline that drives agents. A single Claude session or
 - GIVEN a Linear ticket that has no other `open` run
 - WHEN the agent runs `harness start <ticket>`
 - THEN the verb fetches and canonicalises the ticket, generates a ULID `run_id`, creates an isolated git worktree off the base branch (default `dev`, see [worktree lifecycle](worktree-lifecycle.md)), inserts the `open` `runs` ledger row, and **transitions the ticket to In Progress last**
-- AND it emits a `StartOutput` JSON object (`run_id`, ticket context, `worktree_path`, `worktree_branch`, `base_branch`, `attended`)
+- AND it emits a `StartOutput` JSON object (`run_id`, ticket context, `worktree_path`, `worktree_branch`, `base_branch`, `attended`, `assurance`, `assurance_reason`)
 
 `--attended` declares that an operator is present ([ADR 0011](../decisions/0011-attended-run-spend-scope.md), #295). The mode is recorded in the run row's `inputs_json` and echoed as `attended` so the orchestrator confirms what was stored. Unattended is the default and the failure default: an undeclared run writes the byte-identical `"{}"` it always has, and only the literal JSON `true` reads back as attended — declaring it opts a run out of the wall clock, the only ceiling on autonomous spend, so every ambiguous value fails toward the bound. Attendance is **fixed at `start`**; nothing mutates it afterwards. Both readers have shipped: `review` reads it to scope the wall-clock breaker to unattended runs (#296), and `reclaim --stale` reads it to select which staleness threshold to measure the run against (#297). `/harness run` is the one caller that declares the flag, and no routine path passes it (#298) — the erosion guard ADR 0011 names as the mechanism's only enforcement.
+
+`start` also resolves the run's **assurance** and snapshots it on the row (#352, proposal [`assurance-led-lifecycle`](../proposals/assurance-led-lifecycle.md)). The issue carries the intent as an `assurance:<level>` label over the closed vocabulary `trivial | simple | complex`; the level decides which lifecycle stages the run is required to pay for, and [`harness/assurance.py`](../../harness/assurance.py) is its single home — the vocabulary, the resolution, the ledger coercion, and the required-stages table `design` and `review` both read.
+
+| Assurance | Design | LLM review |
+|---|---|---|
+| `trivial` | no | no |
+| `simple` | no | yes |
+| `complex` | a design that **succeeded** | yes |
+
+No new tracker round-trip: `labels` is already in the payload `start` fetched, so a tracker-less run simply has none to read. Resolution is **total and fails safe in one direction** — no label, two conflicting levels, an uninterpretable `assurance:*` value, and a `NULL` column on a row written before the migration all read as `simple`, the level that still requires a review. The recorded `assurance_reason` says which of those it was (`label`, `no_label`, `conflicting_labels`, `unknown_label`, `fast_path_unavailable`, `unrecorded`), because a run that silently lost its operator's stated intent is what an audit needs to see; the three reasons that mean *you stated something and it was not honoured* also warn on stderr. A bad label is never a refusal.
+
+**`trivial` is recognized and rewritten.** It is in the vocabulary because the vocabulary is the decided policy, but no run can snapshot it: `start` upgrades it to `simple` with reason `fast_path_unavailable`, since the deterministic certification path that makes skipping a review safe is item 2 of the proposal and is not built. So the `llm_review` column above has no consumer yet — every level a run can currently hold requires a review.
+
+**It is a snapshot, not a cache.** `start` is its only writer and nothing mutates it, so `design` and `review` read the run row rather than re-reading labels: a label edited mid-run cannot remove a requirement the run was opened under. A repeat `start` reports the *recorded* pair for the same reason `attended` does.
 
 The Linear transition is the only non-local side effect, and it runs **last**: if the worktree creation or the ledger insert fails, nothing has touched Linear. The rollback ordering is locked by `test_cli_start.py::test_worktree_failure_leaves_no_db_row_and_no_transition` and `::test_db_failure_removes_worktree_and_no_transition`. The open run is recorded as the `runs` row, not as an event.
 
@@ -46,14 +60,22 @@ The verb records the design in three places: the ticket, as a marked comment; th
 
 This replaced the `SUBMIT: <json>` line design had inherited from `review`. That contract fits `review` — a fixed shape under 100 characters — and does not fit a 14–17 KB Markdown document, which it forced onto one physical line with every newline escaped and no structural landmark anywhere in it. Measured on this repo's ledger before the change, `design` lost **12.5% of attempts** to the wire format against `review`'s **0.24%**; one run lost 12m44s of Opus and a complete design because a single closing brace never arrived. `review`'s contract is deliberately untouched.
 
-A **stdout fallback** — the design between two nonce-marked lines — is the second channel, and it is a detector as much as a fallback: no test can spawn a real `claude`, so a permission-config regression would otherwise take the stage from working to producing nothing, invisibly. With it, that degrades to a design on the wrong channel, recorded as `channel="stdout"` and warned about on stderr. The fallback also tolerates a **missing closing marker**, so an engine that finishes its design and drops the final line still delivers it — the salvage the JSON contract could not offer. The stage is **unconditional** — it runs for every ticket whatever its judged difficulty. Nothing on the ticket gates it; ADR 0005's per-ticket labels, which never gated it either, were retired by #321.
+A **stdout fallback** — the design between two nonce-marked lines — is the second channel, and it is a detector as much as a fallback: no test can spawn a real `claude`, so a permission-config regression would otherwise take the stage from working to producing nothing, invisibly. With it, that degrades to a design on the wrong channel, recorded as `channel="stdout"` and warned about on stderr. The fallback also tolerates a **missing closing marker**, so an engine that finishes its design and drops the final line still delivers it — the salvage the JSON contract could not offer.
+
+**The stage is conditional on the run's assurance** (#352). ADR 0007 D1 ran it for every ticket whatever its judged difficulty; it now runs only where the run snapshotted a level that requires a design, which today means `complex` alone. (ADR 0005's per-ticket model-tier labels are a separate, retired mechanism — #321 — and never gated this stage.) The check reads the run row, before the adopt path and before any engine:
+
+- GIVEN an open run whose assurance does not require a design (`simple`, or a row written before the migration)
+- WHEN the agent runs `harness design --run-id <id>`
+- THEN the verb invokes **no engine**, reads **no ticket**, records **no `design` event** and posts **no comment**, and exits `0` emitting the same locked `DesignOutput` key set with `status="not_required"` and an empty `design_markdown`
+
+`status` is where the skip is reported, so the output contract keeps its six keys and the orchestrator branches on a value rather than on a missing field; an empty `design_markdown` says plainly there is nothing to stage for `review`'s `--design-file`. `not_required` is deliberately **not** a third `design` *event* status: `resolve_design_gate`, the adopt path's authentication, and the ledger statistics all key on `status != "ok"`, so a new event status would silently reclassify events for three readers. Nothing is written to the ledger on this path at all — a skipped stage must not manufacture the artifact a `complex` review would later demand. `--model` is accepted and ignored: engine and model selection stay orthogonal to assurance.
 
 - GIVEN an open run
 - WHEN the agent runs `harness design --run-id <id>`
 - THEN the verb records a `design` event with `status="ok"`, `design_hash`, and the `grounded_sha` it studied, posts the design as a marked ticket comment, and emits `DesignOutput` on stdout
 - THEN the `design` event also carries `channel` (which of the two channels delivered) and `design_chars` (the design's length) — the second being the measuring instrument for the length target the prompt states
 - AND GIVEN instead the engine is killed, cannot be spawned, delivers a design on **neither** channel (`reason="no_design_output"`, which replaced `no_submit` / `malformed_submit` here — a file is written or it is not, so the distinction the JSON format created no longer exists), or the ticket spec cannot be read, THEN the verb records a `design` event with `status="failed"` and a stable `reason`, posts **no** comment, and exits `3` (decision **D4**: every failure mode degrades and records)
-- AND GIVEN a `failed` design event, WHEN the agent runs `harness review`, THEN review is **not** refused — the check is that a design was *attempted and recorded*, never that it succeeded, so an infra flake costs a run its design but never its ability to ship
+- AND GIVEN a `failed` design event on a run that does **not** require a design, WHEN the agent runs `harness review`, THEN review is **not** refused — ADR 0007 D4's degradation, now scoped to those levels, so an infra flake costs such a run its design but never its ability to ship. On a `complex` run the same event **is** refused (see `review` below)
 
 **A failed design is not a stop.** The orchestrator proceeds to implement without one rather than re-running the verb in a loop chasing a green result; a re-run is legitimate (the latest event is authoritative and nothing is mutated), but the run is not blocked either way. How `review` consumes the design — enforcement on the ledger, context via `--design-file` — is the "design stage is required" scenario under [`review`](#review--record-a-verdict-bound-to-the-reviewed-sha) below.
 
@@ -101,12 +123,27 @@ The evidence is checked **after** the spend breakers below (a run already bounde
 
 #### Scenario: the design stage is required before any engine
 
-ADR [`0007`](../decisions/0007-design-verb.md) makes `design` a stage of every run, and `review` is where that is enforced (decision **D3**). Without enforcement the stage is advisory and compliance decays on exactly the unattended runs it exists for; without linkage the engine never sees the design, so the `(fix → review)*` loop re-derives intent each cycle instead of converging on conformance.
+ADR [`0007`](../decisions/0007-design-verb.md) makes `review` the place the design stage is enforced (decision **D3**). Without enforcement the stage is advisory and compliance decays on exactly the unattended runs it exists for; without linkage the engine never sees the design, so the `(fix → review)*` loop re-derives intent each cycle instead of converging on conformance.
 
-- GIVEN an open run with **no** `design` event on record
+**What is enforced is the run's assurance, not the presence of an event** (#352). D3 asked one question of every run — is there a `design` event? — and D4 let a `failed` one answer it, so the gate proved *invocation* rather than a usable outcome: a complex change could ship after the stage produced nothing, while a small one was refused for skipping a stage it did not need. The precondition is now [`harness/assurance.py`](../../harness/assurance.py)'s, called by `resolve_design_gate` and delegated to whole, so the requirement and the refusal are one decision with one home:
+
+| Assurance | Latest `design` event | Result |
+|---|---|---|
+| `simple` | absent, `failed`, or `ok` | proceed |
+| `complex` | absent | refuse `no_design` |
+| `complex` | present, `status != "ok"` | refuse `design_not_usable` |
+| `complex` | present, `status == "ok"` | proceed |
+
+- GIVEN an open `complex` run with **no** `design` event on record
 - WHEN the agent runs `harness review`
-- THEN the verb refuses **before invoking any engine**, records **no** `review` event, and exits `5` with `reason=no_design` — the `no_gate_evidence` philosophy: silence is not a pass
-- AND GIVEN instead the run's latest `design` event carries `status="failed"`, THEN it is **not** refused: D4 degrades and records, so the check is that a design was *attempted and recorded*, never that it succeeded, and an engine flake costs a run its design but never its ability to ship
+- THEN the verb refuses **before invoking any engine**, records no verdict, and exits `5` with `reason=no_design` — the `no_gate_evidence` philosophy: silence is not a pass
+- AND GIVEN instead its latest `design` event carries `status="failed"`, THEN it refuses the same way with `reason=design_not_usable` — a distinct tag because "the stage was skipped" and "the stage ran and produced nothing usable" have different remedies, and because `design_failed` already names a review that *proceeded*, so one string meaning both would be unreadable in the ledger
+- AND GIVEN a `simple` run with no `design` event at all, THEN review proceeds — that is the ordinary shape after #352, since `harness design` skips the stage for such a run, and refusing it would make the two verbs contradict each other
+- AND GIVEN a `simple` run carrying a `failed` event (a run opened before the migration), THEN review proceeds with no design context, recorded as `design_context_reason="design_failed"` — D4's degradation, narrowed rather than removed
+
+Both refusals record the terminal-observation `review` event every terminal path writes since #262, carrying the `reason` and **no `verdict` key**, so the ledger keeps its denominator while `close`'s `$.verdict = 'pass'` filter still reads nothing. The latest `design` event decides, as it already does for context: a failed attempt followed by a successful one proceeds, so re-running `harness design` clears the refusal and an engine flake cannot wedge a `complex` run permanently.
+
+The inherited-pass path (#259) gates on the same answer rather than on the event's presence — a resumed `simple` run has no design event and would otherwise decline inheritance forever, waiting for a `no_design` that can no longer fire.
 - AND GIVEN an `ok` design event and `--design-file <path>` whose content hashes to the event's `design_hash`, THEN that design is given to the review engine as context, so the diff is reviewed against the ticket **and** the design; the `review` event records `design_context=true`
 - AND GIVEN an `ok` design event but no `--design-file` (or one that cannot be read or matched), THEN the review proceeds with no design context and records `design_context=false` — a mismatch also warns on stderr
 
