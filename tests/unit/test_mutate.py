@@ -23,6 +23,14 @@ suite. The end-to-end proof over a real pytest run is
 :mod:`tests.unit.test_mutate_end_to_end`.
 """
 
+# size: one surface's acceptance matrix — the kill/survive determination and every
+# refusal that guards it. The refusals are the obvious split and are exactly what
+# must not move: each is asserted against the same green-baseline and pristine-tree
+# fixtures the determination uses, and the module's value is that the whole refusal
+# matrix is readable beside the rule it protects. The split that does pay is
+# already taken — the end-to-end half is its own module, divided on the tier
+# boundary (`tests/_tiers.py`) rather than on subject matter.
+
 from __future__ import annotations
 
 import os

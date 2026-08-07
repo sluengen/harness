@@ -137,6 +137,15 @@ reasoning:
   does without it.
 """
 
+# size: over the ceiling on documentation, not on logic — the code is well under
+# it, and the balance is the recorded rationale that IS this ticket's deliverable
+# (#360). A harness whose rules are structural rather than remembered has to
+# state, at each rule, the defect that rule exists to stop; deleting that to fit
+# the ceiling deletes the feature. The one extraction candidate is
+# `PytestRunner`, the concrete side of the injected `Runner` seam — it stays
+# because a tick reads one file to learn the instrument, and pulling it out would
+# relocate a boundary that is already testable exactly where it is.
+
 from __future__ import annotations
 
 import argparse
