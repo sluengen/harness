@@ -45,6 +45,7 @@ from harness.cli.review_probe import (
     screen_proposals,
     survivors,
 )
+from harness.cli.review_protocol import build_review_prompt, scan_submit_line
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
@@ -429,6 +430,83 @@ def test_a_second_pass_that_says_nothing_loses_no_finding() -> None:
     assert combine_issues(["a real finding"], []) == ["a real finding"]
     assert combine_verdict("fail", None) == "fail"
     assert combine_issues(["a real finding"], None) == ["a real finding"]
+
+
+# ---------------------------------------------------------------------------
+# The SUBMIT contract and the prompt — the channel the proposal arrives on.
+# ---------------------------------------------------------------------------
+
+
+def test_the_submit_line_carries_a_probes_array() -> None:
+    """The proposal rides the existing contract rather than a new channel.
+
+    Rejected: `design`'s single-file write grant (#294). That grant is the trust
+    escalation this change is defined *not* to make — the reviewer keeps running
+    `--permission-mode plan` / `--sandbox read-only`, byte-for-byte the command
+    it runs today. A bounded proposal fits one JSON line, so a write capability
+    would buy nothing and cost the property that makes this change the cheap test
+    of whether a probing reviewer is worth its cost.
+    """
+    line = (
+        'SUBMIT: {"verdict": "pass", "issues": [], "probes": '
+        '[{"id": "e1", "file": "a.py", "old": "x", "new": "y", "kills": ["t::u"]}]}'
+    )
+
+    parsed = scan_submit_line(line)
+
+    assert parsed.verdict == "pass"
+    assert parsed.probes == [
+        {"id": "e1", "file": "a.py", "old": "x", "new": "y", "kills": ["t::u"]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"verdict": "fail", "issues": ["a finding"]}',
+        '{"verdict": "fail", "issues": ["a finding"], "probes": "not-an-array"}',
+        '{"verdict": "fail", "issues": ["a finding"], "probes": null}',
+    ],
+    ids=["absent", "wrong-type", "null"],
+)
+def test_a_missing_or_malformed_probes_value_never_costs_the_verdict(payload: str) -> None:
+    """`probes` is an addition to the contract, not a new way to fail it."""
+    parsed = scan_submit_line(f"SUBMIT: {payload}")
+
+    assert parsed.verdict == "fail"
+    assert parsed.issues == ["a finding"]
+    assert parsed.submit_failure is None
+
+
+def test_the_prompt_asks_for_probes_only_when_the_budget_allows_any() -> None:
+    """A prompt that asks for what the verb will discard trains the engine to
+    spend tokens on nothing, and makes `probe_max_entries: 0` a lie."""
+    enabled = build_review_prompt(None, probe_cap=3)
+    disabled = build_review_prompt(None, probe_cap=0)
+
+    assert "probes" in enabled
+    assert "up to 3" in enabled
+    assert "probes" not in disabled
+
+
+def test_a_disabled_probe_budget_leaves_the_prompt_byte_identical_to_before() -> None:
+    """The disable switch has to actually restore the prior behaviour, or the
+    scenario "review is byte-identical to today's" is untestable."""
+    assert build_review_prompt(None, probe_cap=0) == build_review_prompt(None)
+
+
+def test_the_probe_request_states_both_rules_that_stop_vacuity_relocating() -> None:
+    """Predict the outcome, and prove the edit was live.
+
+    These are the two rules the whole change rests on, and a prompt that omits
+    either produces the shape this repo already pays for: a reviewer that runs
+    something, reads green, and reports a feeling.
+    """
+    request = build_review_prompt(None, probe_cap=3)
+
+    assert "kills" in request
+    assert "observe" in request
+    assert "EVALUATES TO" in request
 
 
 def test_outcome_construction_is_bounded_to_counts_and_ids() -> None:

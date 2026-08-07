@@ -458,15 +458,37 @@ def build_probe_request(cap: int) -> str:
     return _PROBE_REQUEST_TEMPLATE.format(cap=cap)
 
 
-def build_probe_feedback(outcomes: tuple[ProbeOutcome, ...]) -> str:
+def build_probe_feedback(
+    outcomes: tuple[ProbeOutcome, ...],
+    *,
+    first_verdict: str = "",
+    first_issues: tuple[str, ...] = (),
+) -> str:
     """The second-pass block: the rules, plus the citable entries only.
 
     Entries that were failures of the entry are deliberately **absent** rather
     than listed as rejected. A reviewer handed a table of raw outcomes reads
     every non-``killed`` row as a hole; naming a defect at all invites it to be
     raised with a caveat, and a finding with a caveat is still a finding.
+
+    ``first_verdict`` / ``first_issues`` restate what this same engine already
+    concluded. The second pass runs in a **fresh** subprocess with no memory of
+    the first, so without them it would be re-reviewing the diff from nothing
+    while being handed probe outcomes it never proposed — and a finding it made
+    an hour of tokens ago would read as a new one. Restating them is also what
+    makes :func:`combine_issues` a deduplication rather than a concatenation.
     """
     lines = [_PROBE_FEEDBACK_HEADER.rstrip("\n")]
+    if first_verdict:
+        lines.append(f"Your first-pass verdict on this diff was: {first_verdict}")
+        if first_issues:
+            lines.append("Your first-pass findings were:")
+            lines += [f"  - {issue}" for issue in first_issues]
+        else:
+            lines.append("You raised no findings.")
+        lines.append("")
+    if outcomes:
+        lines.append("Probe outcomes:")
     for outcome in survivors(outcomes):
         label = "demonstrated" if outcome.live else "unproven"
         lines.append(

@@ -91,6 +91,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
@@ -108,6 +110,18 @@ from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_pollution import (
     measure_worktree_pollution,
     pollution_refusal_message,
+)
+from harness.cli.review_probe import (
+    SENTINEL_FILENAME,
+    ProbeOutcome,
+    build_probe_feedback,
+    combine_issues,
+    combine_verdict,
+    demonstrated_ids,
+    read_probe_report,
+    render_probe_table,
+    screen_proposals,
+    survivors,
 )
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
@@ -136,17 +150,20 @@ from harness.events.payloads import (
     REVIEW_OUTCOME_PATH,
     REVIEW_REFUSAL_REASON_PATH,
     REVIEW_REVIEWED_SHA_PATH,
+    ProbeEntryRecord,
     ReviewEventData,
 )
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
     REPEAT_ENGINE_TIMEOUT_REASON,
+    LoopBudget,
     convergence_check_required,
     cycles_exhausted,
     evaluate_breakers,
     evaluate_repeat_timeout,
     load_loop_budget,
 )
+from harness.probe_tree import ProbeTreeError, create_probe_tree, snapshot_tree, teardown_probe_tree
 from harness.state import store
 from harness.tracker import tracker_client
 from harness.tracker_errors import (
@@ -207,6 +224,7 @@ __all__ = [
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
     "DESIGN_FILE_OUTSIDE_WORKSPACE_REASON",
+    "RUN_WORKTREE_MUTATED_REASON",
 ]
 
 # The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
@@ -250,6 +268,15 @@ class ReviewOutput(BaseModel):
     engine: Engine
     convergence_check_required: bool = False
     cycles_exhausted: bool = False
+    #: The probe stage's two numbers (#363): how many reviewer-proposed
+    #: mutations actually ran, and how many the suite failed to catch. Two
+    #: integers are not engine reasoning, so the context-economy guarantee is
+    #: intact — and they are what an orchestrator needs to read a `fail` whose
+    #: findings are prefixed `[probe:<id>]` without going to the ledger. Zero on
+    #: every path where no stage ran, which `probe_status` on the event
+    #: disambiguates.
+    probes_run: int = 0
+    probes_survived: int = 0
 
 
 class _ReviewError(VerbError):
@@ -534,6 +561,7 @@ def review_command(
                 gate_log=gate_log,
                 design_file=design_file,
                 runner=_default_runner,
+                probe_runner=_default_probe_runner,
             )
         ),
         json_output=json_output,
@@ -543,6 +571,240 @@ def review_command(
         typer.echo(output.model_dump_json())
     else:
         typer.echo(f"{output.verdict} ({output.reviewed_sha}) — {len(output.issues)} issue(s)")
+
+
+# ---------------------------------------------------------------------------
+# The probe stage (#363) — the reviewer's mutation budget.
+#
+# The *judgment* is pure and lives in harness.cli.review_probe; the throwaway
+# tree and the identity check are git mechanics in harness.probe_tree. What is
+# here is the impure middle: spawn the mutation harness under the configured
+# ceiling, and map every way it can end onto a recorded status.
+# ---------------------------------------------------------------------------
+
+#: The engine broke the one contract granting it execute rests on: it left the
+#: reviewed worktree changed. Classified as INFRA, like the sandbox wall and the
+#: timeout, because the reason is the same — the engine did not do the thing it
+#: was asked to do, so no verdict it produced is trustworthy. It is not a code
+#: review ``fail``: the diff was never the problem.
+RUN_WORKTREE_MUTATED_REASON = "run_worktree_mutated"
+
+#: ``scripts/mutate.py``, relative to the **primary checkout** — never the probe
+#: tree. Only the *tree* comes from the reviewed SHA; the instrument that judges
+#: it must not be swappable by the branch under review.
+_MUTATE_SCRIPT = Path("scripts") / "mutate.py"
+
+
+class _ProbeStage(NamedTuple):
+    """What the probe stage did, reduced to what the event records."""
+
+    status: str
+    proposed: int = 0
+    dropped: int = 0
+    outcomes: tuple[ProbeOutcome, ...] = ()
+    duration_ms: int = 0
+
+
+async def _default_probe_runner(
+    *,
+    cmd: list[str],
+    stdin: str,
+    env: dict[str, str],
+    cwd: Path | None,
+    timeout: float | None = None,
+) -> RunResult:
+    """Spawn the mutation harness on the shared bounded driver.
+
+    The same :func:`~harness.cli._engine.run_engine_subprocess` both engine verbs
+    use, for the one property that makes AC-4's budget a *bound* rather than a
+    convention: the subprocess is killed at ``timeout`` and reaped. A mutation
+    can induce an infinite loop, so an unbounded probe stage would be a new way
+    to hang a run — which is precisely the failure the review timeout exists for.
+
+    A separate seam from ``_default_runner`` even though the shape is identical:
+    tests must be able to stub the engine and the probe independently, and
+    "the engine was never spawned" is an assertion this change needs to make.
+    """
+    return await run_engine_subprocess(cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout)
+
+
+async def _run_probe_stage(
+    *,
+    repo_root: Path,
+    run_id: str,
+    reviewed_sha: str,
+    raw_probes: list[Any] | None,
+    budget: LoopBudget,
+    probe_runner: Runner,
+) -> _ProbeStage:
+    """Run the reviewer's proposed mutations against a throwaway tree.
+
+    **Every path degrades.** The stage returns a status and the review keeps the
+    first pass's verdict; nothing here can refuse a run. That is ADR 0007 D4's
+    posture for the design stage applied to an instrument that is strictly more
+    optional than a design: probing is evidence-gathering, and an instrument that
+    can wedge the thing it observes is worse than no instrument.
+
+    The one thing it does **not** do is touch the run worktree. The probe tree is
+    a different directory at the reviewed SHA, so the tree under review is
+    untouched by construction rather than by care.
+    """
+    started = iso_z()
+    if budget.probe_max_entries <= 0:
+        return _ProbeStage(status="disabled")
+    script = repo_root / _MUTATE_SCRIPT
+    if not script.is_file():
+        # A consuming repo, or one whose checkout predates the harness. Not an
+        # error: the harness cannot mutate what a repo has no instrument for,
+        # exactly as it cannot run a gate it has no toolchain for.
+        return _ProbeStage(status="no_instrument")
+
+    try:
+        probe_tree = await asyncio.to_thread(create_probe_tree, repo_root, run_id, reviewed_sha)
+    except ProbeTreeError as exc:
+        typer.echo(f"warning: probe stage skipped — {exc}", err=True)
+        return _ProbeStage(status="tree_failed")
+
+    try:
+        sentinel_text = f"{run_id} {reviewed_sha}"
+        (probe_tree / SENTINEL_FILENAME).write_text(sentinel_text + "\n", encoding="utf-8")
+        screened = await asyncio.to_thread(
+            screen_proposals, raw_probes, tree=probe_tree, cap=budget.probe_max_entries
+        )
+        if screened.dropped:
+            typer.echo(
+                "warning: probe entries dropped — "
+                + "; ".join(f"{i}: {r}" for i, r in screened.dropped),
+                err=True,
+            )
+        if not screened.kept:
+            return _ProbeStage(
+                status="none_proposed",
+                proposed=screened.proposed,
+                dropped=len(screened.dropped),
+                duration_ms=elapsed_ms(started, iso_z()) or 0,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="harness-probe-") as scratch:
+            scratch_dir = Path(scratch)
+            table_path = scratch_dir / "probe.toml"
+            report_path = scratch_dir / "report.json"
+            table_path.write_text(
+                render_probe_table(
+                    screened.kept,
+                    sentinel_file=SENTINEL_FILENAME,
+                    sentinel_text=sentinel_text,
+                ),
+                encoding="utf-8",
+            )
+            cmd = [
+                sys.executable,
+                str(script),
+                "run",
+                "--table",
+                str(table_path),
+                "--tree",
+                str(probe_tree),
+                "--json",
+                str(report_path),
+                "--work-dir",
+                str(scratch_dir / "work"),
+                "--timeout",
+                str(budget.probe_budget_seconds),
+            ]
+            try:
+                result = await probe_runner(
+                    cmd=cmd,
+                    stdin="",
+                    env=dict(os.environ),
+                    cwd=repo_root,
+                    timeout=float(budget.probe_budget_seconds),
+                )
+            except EngineTimeoutError:
+                return _ProbeStage(
+                    status="timeout",
+                    proposed=screened.proposed,
+                    dropped=len(screened.dropped),
+                    duration_ms=elapsed_ms(started, iso_z()) or 0,
+                )
+            status = _probe_status_for(result)
+            outcomes: tuple[ProbeOutcome, ...] = ()
+            if status == "ran":
+                outcomes = _read_probe_report_file(report_path)
+                if not outcomes:
+                    status = "error"
+            return _ProbeStage(
+                status=status,
+                proposed=screened.proposed,
+                dropped=len(screened.dropped),
+                outcomes=outcomes,
+                duration_ms=elapsed_ms(started, iso_z()) or 0,
+            )
+    finally:
+        await asyncio.to_thread(teardown_probe_tree, repo_root, probe_tree)
+
+
+def _refuse_if_worktree_moved(worktree: Path, before: str | None) -> None:
+    """Refuse if the run worktree changed while an untrusted actor had control.
+
+    Honest about its reach, per the rule ``design``'s own write grant states of
+    itself: this detects what **git can see** — a tracked edit, a deletion, an
+    untracked addition, HEAD moving — and not a write inside a gitignored path.
+    It is a detector at the boundary, not the boundary. ``close``'s two conjuncts
+    stay the enforcement, which is why the worst case remains a wedged run rather
+    than a laundered merge.
+
+    Skips when either snapshot is unknown. A failed ``git status`` is not
+    evidence of a write, and manufacturing a refusal out of a failed probe would
+    stop runs for a reason nothing observed.
+    """
+    if before is None:
+        return
+    after = snapshot_tree(worktree)
+    if after is None or after == before:
+        return
+    raise _ReviewError(
+        f"the run worktree at {worktree} changed while the review engine had "
+        f"control. The reviewer runs read-only and the probe stage works in a "
+        f"separate throwaway tree, so nothing in this verb should have written "
+        f"here — the tree that would merge is no longer the tree that was "
+        f"reviewed. No verdict was recorded. Inspect `git status` in the "
+        f"worktree, restore it to the reviewed commit, and review again.",
+        EXIT_INFRA_FAILURE,
+        reason=RUN_WORKTREE_MUTATED_REASON,
+    )
+
+
+def _probe_status_for(result: RunResult) -> str:
+    """Map the mutation harness's exit code onto a recorded status.
+
+    Its contract (0 all killed / 1 not / 2 refused / 3 runner unavailable / 4 at
+    least one inert) is a *table verdict*, and every one of those is a legitimate
+    outcome of asking a reviewer for mutations — 0, 1 and 4 all produced a report
+    to read. Only 2 and 3 did not.
+
+    ``unavailable`` (exit 3) is the one worth naming separately rather than
+    folding into ``error``, because it is the expected in-container outcome: the
+    verb's image is built ``--no-dev`` and carries no pytest, the same catch-22
+    :mod:`harness.gate` records for the verify gate. A host-side install runs the
+    stage; the container degrades and says so, rather than reporting a failure
+    that reads like a defect in the diff.
+    """
+    if result.returncode in (0, 1, 4):
+        return "ran"
+    if result.returncode == 2:
+        return "refused"
+    if result.returncode == 3:
+        return "unavailable"
+    return "error"
+
+
+def _read_probe_report_file(path: Path) -> tuple[ProbeOutcome, ...]:
+    """Read the harness's ``--json`` report; ``()`` when it is not readable."""
+    try:
+        return read_probe_report(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return ()
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +823,7 @@ async def _run_review(
     gate_log: Path | None = None,
     design_file: Path | None = None,
     runner: Runner,
+    probe_runner: Runner,
 ) -> ReviewOutput:
     """Resolve the run, then drive the review, recording **every** terminal path.
 
@@ -609,6 +872,7 @@ async def _run_review(
             gate_log=gate_log,
             design_file=design_file,
             runner=runner,
+            probe_runner=probe_runner,
             invoked_at=invoked_at,
             head=head,
         )
@@ -636,6 +900,7 @@ async def _review_resolved_run(
     gate_log: Path | None,
     design_file: Path | None,
     runner: Runner,
+    probe_runner: Runner,
     invoked_at: str,
     head: _HeadUnderReview | None = None,
 ) -> ReviewOutput:
@@ -893,6 +1158,20 @@ async def _review_resolved_run(
     #     the review (the verdict is the record; the transition is bookkeeping).
     await _park_ticket(repo_root, ticket, to="in_review")
 
+    # 2b'. Snapshot the run worktree before control passes to the engine (#363).
+    #      Until this change nothing the engine produced could reach the tree —
+    #      it runs read-only, and that was the third defence behind `close`'s
+    #      SHA-bound pass and its dirty-worktree refusal. Granting the reviewer a
+    #      way to cause execution removes that third defence, so the other two
+    #      become load-bearing in a way they were not, and this makes the wedge
+    #      surface where it happened rather than at the end of the run.
+    #
+    #      ``None`` when git cannot answer, and the comparison is then skipped:
+    #      the same fail-open asymmetry the pollution check above states, for the
+    #      same reason — a guard that stops a run may rest only on evidence it
+    #      actually gathered.
+    worktree_before = await asyncio.to_thread(snapshot_tree, Path(worktree_path))
+
     # 2c. Resolve the claude-engine model (#321): an explicit --model wins, else
     #     CONTEXT.md's loop.review_model (default sonnet). Codex ignores it —
     #     see _invoke_engine / _build_cmd. ``budget`` is already loaded for the
@@ -913,7 +1192,9 @@ async def _review_resolved_run(
     engine_timeout = budget.engine_timeout_seconds
     # Built once (#212) so the usage-limit fallback below re-runs the identical
     # prompt, design context included.
-    prompt = build_review_prompt(design_gate.design_markdown)
+    prompt = build_review_prompt(
+        design_gate.design_markdown, probe_cap=budget.probe_max_entries
+    )
     result = await _invoke_engine(
         runner,
         engine,
@@ -1009,6 +1290,81 @@ async def _review_resolved_run(
             reason=SANDBOX_INIT_REASON,
         )
 
+    # 4b-i. The engine has had control of a worktree it is not allowed to write.
+    #       Check that before anything else uses its output (#363). Classified as
+    #       INFRA rather than as a `fail`: the engine broke the contract its
+    #       execute grant rests on, so no verdict it produced is trustworthy —
+    #       the same reason the sandbox wall and the timeout are infra, and the
+    #       same cost (no review cycle, ticket left In Review).
+    _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    # 4b-ii. The probe stage: run the mutations the reviewer proposed against a
+    #        throwaway tree at the reviewed SHA. Deliberately AFTER the infra
+    #        classifications above — an engine that never delivered a verdict has
+    #        proposed nothing worth running — and after the identity check, so a
+    #        misbehaving engine is never handed a second opportunity.
+    #
+    #        Every path degrades: the stage records what happened and the first
+    #        pass's verdict stands. Probing gathers evidence, and an instrument
+    #        that can wedge the thing it observes is worse than no instrument
+    #        (ADR 0007 D4's posture for the design stage, which is strictly less
+    #        optional than this one).
+    probe = await _run_probe_stage(
+        repo_root=repo_root,
+        run_id=resolved_run_id,
+        reviewed_sha=reviewed_sha,
+        raw_probes=parsed.probes,
+        budget=budget,
+        probe_runner=probe_runner,
+    )
+    # The probe tree is a different directory, but an `observe` is arbitrary
+    # Python running as the invoking user (mutate.py says so plainly), so the
+    # tree under review is re-checked after the stage as well as after the
+    # engine.
+    _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    # 4b-iii. The second pass, iff something survived. A fresh engine invocation
+    #         under its own ceiling, told what its proposals did and what it
+    #         already concluded, and asked to revise. It cannot propose more:
+    #         `build_review_prompt` takes the feedback block *instead of* the
+    #         request, so one review spends the budget once.
+    #
+    #         The combination is computed here, never trusted to that pass — a
+    #         monotone max, so an engine just told its own proposals mostly
+    #         failed cannot soften into withdrawing a finding about the diff.
+    survived = survivors(probe.outcomes)
+    second_verdict: str | None = None
+    second_issues: list[str] | None = None
+    if survived:
+        try:
+            second = await _invoke_engine(
+                runner,
+                engine_used,
+                Path(worktree_path),
+                prompt=build_review_prompt(
+                    design_gate.design_markdown,
+                    probe_feedback=build_probe_feedback(
+                        probe.outcomes,
+                        first_verdict=parsed.verdict,
+                        first_issues=tuple(parsed.issues),
+                    ),
+                ),
+                timeout=engine_timeout,
+                model=resolved_model,
+            )
+            second_parsed = scan_submit_line(second.stdout)
+            if second_parsed.submit_failure is None:
+                second_verdict, second_issues = second_parsed.verdict, second_parsed.issues
+        except _ReviewError as exc:
+            # A second pass that times out or walls costs the review its probe
+            # findings, never its verdict. Raising here would let an optional
+            # enrichment fail a review the first pass already completed.
+            typer.echo(f"warning: probe second pass did not complete: {exc}", err=True)
+        _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    final_verdict = cast("Verdict", combine_verdict(parsed.verdict, second_verdict))
+    final_issues = combine_issues(parsed.issues, second_issues)
+
     # 4c. The convergence advisory (CAL-906): this review is cycle
     #     ``prior_review_count + 1``. A fail past the unconditional window and
     #     below the ceiling tells the build agent to assess whether the fixes are
@@ -1016,7 +1372,7 @@ async def _review_resolved_run(
     #     reasoning — surfaced on both the printed verdict and the ledger event.
     needs_convergence_check = convergence_check_required(
         cycles_completed=prior_review_count + 1,
-        verdict=parsed.verdict,
+        verdict=final_verdict,
         budget=budget,
     )
     # 4d. The terminal signal (#329): this fail spent the last cycle the run may
@@ -1024,7 +1380,7 @@ async def _review_resolved_run(
     #     about which cycle this is.
     budget_exhausted = cycles_exhausted(
         cycles_completed=prior_review_count + 1,
-        verdict=parsed.verdict,
+        verdict=final_verdict,
         budget=budget,
     )
 
@@ -1039,8 +1395,8 @@ async def _review_resolved_run(
     event_data = ReviewEventData(
         run_id=resolved_run_id,
         reviewed_sha=reviewed_sha,
-        verdict=parsed.verdict,
-        issues=parsed.issues,
+        verdict=final_verdict,
+        issues=final_issues,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
         cycles_exhausted=budget_exhausted,
@@ -1073,6 +1429,20 @@ async def _review_resolved_run(
         # field is ``outcome`` rather than ``design``'s ``status``.)
         invoked_at=invoked_at,
         duration_ms=elapsed_ms(invoked_at, created_at),
+        # #363. `probe_status` carries the degradations as well as the successes
+        # — six of its eight values are ways the stage did not produce a report —
+        # because none of them may change a verdict, so "did it run, and if not
+        # why" has to be answerable from the ledger rather than from stderr.
+        probe_status=probe.status,
+        probe_proposed=probe.proposed,
+        probe_dropped=probe.dropped,
+        probe_entries=[ProbeEntryRecord(**o.as_payload()) for o in probe.outcomes] or None,
+        probe_demonstrated=list(demonstrated_ids(probe.outcomes)) or None,
+        probe_duration_ms=probe.duration_ms,
+        # Absent unless a stage ran at all: `False` on a repo that disabled
+        # probing would assert that a pass which was never possible did not
+        # happen.
+        probe_second_pass=(second_verdict is not None) if survived else None,
     ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
@@ -1089,7 +1459,7 @@ async def _review_resolved_run(
     #     Progress (CAL-1103). AFTER the review event is recorded, so a transition
     #     failure can never lose the verdict (AC-4). ``pass``/``defer`` leave it In
     #     Review for ``close`` or a follow-up.
-    if parsed.verdict == "fail":
+    if final_verdict == "fail":
         await _park_ticket(repo_root, ticket, to="in_progress")
 
     # 6. Return ONLY the bounded verdict — the engine's stdout stays inside the
@@ -1097,13 +1467,15 @@ async def _review_resolved_run(
     #    verdict (``claude`` after a fallback); ``fallback_from`` lives on the
     #    ledger event, off the printed contract (CAL-702).
     return ReviewOutput(
-        verdict=parsed.verdict,
-        issues=parsed.issues,
+        verdict=final_verdict,
+        issues=final_issues,
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
         cycles_exhausted=budget_exhausted,
+        probes_run=len(probe.outcomes),
+        probes_survived=len(survived),
     )
 
 
