@@ -213,14 +213,20 @@ def _totals(report: Path) -> dict[str, float]:
     return data["totals"]
 
 
-@pytest.fixture
-def measured(tmp_path: Path) -> dict[str, object]:
+@pytest.fixture(scope="module")
+def measured(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     """Measure the synthetic package the old way and the gate's way.
 
     Returns both totals plus the set of processes the parallel leg's tests ran
     under, so the assertions below can check the numbers *and* that the leg
     genuinely distributed.
+
+    Module-scoped: the measurement is three nested pytest sessions (one of them an
+    xdist run) and every test here reads the *same* measurement, so a
+    function-scoped fixture would repeat all three per test for no added evidence.
+    Nothing here mutates what it returns.
     """
+    tmp_path = tmp_path_factory.mktemp("combine")
     serial_root = tmp_path / "serial"
     split_root = tmp_path / "split"
     pid_dir = tmp_path / "pids"

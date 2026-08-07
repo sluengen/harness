@@ -83,7 +83,7 @@ Run `scripts/verify.sh` and confirm every check passes:
 bash scripts/verify.sh
 ```
 
-The script runs, in order: ruff → mypy → pytest (with `--durations=20`) → CLI smoke (`harness version` and `harness --help`) → the drift and changelog guards → the release-cadence **report**.
+The script runs, in order: ruff → mypy → pytest in two stages (`-m docker` serially, since those tests share one Docker image tag, then `-m "not docker"` across the host's cores; both with `--durations=20`, and one `--cov-fail-under=90` evaluated on the union) → CLI smoke (`harness version` and `harness --help`) → the drift and changelog guards → the release-cadence **report**.
 
 The last stage prints each cadence bound and never fails the gate — it is informational here. The enforcing `scripts/cadence.py check` is step 3 of the release above, and CI's `release-cadence` job on the PR into `main`.
 

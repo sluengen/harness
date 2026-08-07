@@ -39,13 +39,14 @@ The coverage-combine wiring (AC-4) lives with the floor it protects, in
 ``test_verify_coverage_gate.py``; the behavioural proof that the combine preserves
 the total is in ``test_coverage_combine_equivalence.py``. The union-is-the-whole-suite
 invariant — the property that survives from #336's now-superseded ban on any ``-m``
-appearing on a gate pytest line — is in ``test_tiers_corpus.py``, next to the tier
-vocabulary it reasons about.
+appearing on a gate pytest line — is below, in
+:func:`test_the_gate_stages_partition_the_whole_suite`.
 """
 
 from __future__ import annotations
 
 import ast
+import functools
 import re
 import shlex
 import subprocess
@@ -125,9 +126,11 @@ def _stage(selector: str) -> str:
 def test_the_gate_runs_exactly_two_pytest_stages() -> None:
     """The partition is two invocations, selecting ``docker`` and ``not docker``.
 
-    Asserted as set equality rather than membership so neither stage can be
-    dropped, duplicated, or have its selector hand-edited into something that
-    still looks plausible while omitting a slice of the suite.
+    Asserted as set equality rather than membership, so neither stage can be
+    dropped nor have its selector hand-edited into something that still looks
+    plausible while omitting a slice. Set equality cannot see a *duplicated*
+    stage; that is caught by :func:`_stage`'s exactly-one lookup and by
+    ``test_verify_coverage_gate.py``'s two-stage count.
     """
     selectors = [_marker_selector(cmd) for cmd in pytest_commands()]
     assert set(selectors) == {_DOCKER_MARKER, f"not {_DOCKER_MARKER}"}, (
@@ -213,8 +216,36 @@ def _module_pytestmark_names(source: str) -> set[str]:
     return names
 
 
+#: The module-level name the two owners give the tag. A third module can reach the
+#: shared resource without ever spelling the literal — ``from
+#: tests.integration.test_docker import IMAGE_TAG`` is enough — so importing the
+#: constant counts as sharing the tag. Without this the scan is a spelling check
+#: rather than a dependency check, and the hole it leaves is the exact failure
+#: AC-2 exists to prevent.
+_TAG_CONSTANT = "IMAGE_TAG"
+
+
+def _imports_the_tag_constant(source: str) -> bool:
+    """Whether *source* imports :data:`_TAG_CONSTANT` from anywhere.
+
+    Read from the AST, so the name has to be genuinely imported rather than merely
+    mentioned in a docstring or comment.
+    """
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and any(
+            alias.name == _TAG_CONSTANT for alias in node.names
+        ):
+            return True
+    return False
+
+
+def _shares_the_tag(source: str) -> bool:
+    """Whether *source* reaches the shared image tag, by literal or by import."""
+    return SHARED_IMAGE_TAG in source or _imports_the_tag_constant(source)
+
+
 def _tag_sharing_modules() -> dict[str, set[str]]:
-    """Every tracked test module naming :data:`SHARED_IMAGE_TAG`, to its markers."""
+    """Every tracked test module reaching :data:`SHARED_IMAGE_TAG`, to its markers."""
     sharers: dict[str, set[str]] = {}
     for path in tracked_files_under("tests"):
         if not (path.name.startswith("test_") and path.suffix == ".py"):
@@ -223,7 +254,7 @@ def _tag_sharing_modules() -> dict[str, set[str]]:
         if relpath == _SELF:
             continue
         source = path.read_text(encoding="utf-8")
-        if SHARED_IMAGE_TAG not in source:
+        if not _shares_the_tag(source):
             continue
         sharers[relpath] = _module_pytestmark_names(source)
     return sharers
@@ -304,8 +335,46 @@ def test_the_marker_scan_would_notice_an_unmarked_sharer() -> None:
     assert _DOCKER_MARKER not in _module_pytestmark_names(unmarked)
 
 
-def _collect_node_ids(selector: str | None) -> set[str]:
-    """The node ids pytest collects for *selector* (None = the whole suite).
+#: Tokens that change how a stage *executes* but not *which tests it selects*.
+#: Everything else on the gate's command line is reproduced in the collection —
+#: that is what makes this check see a narrowing spelled any way at all, not only
+#: as a ``-m``. Each of these takes a separate value token, which is dropped too.
+_EXECUTION_ONLY_WITH_VALUE = frozenset({"-n", "--dist", "--durations", "-p"})
+
+#: Same, for the ``--flag=value`` spelling, plus the coverage flags.
+_EXECUTION_ONLY_PREFIXES = ("--cov", "--durations=", "--dist=", "-n=")
+
+
+def _collection_argv(command: str) -> list[str]:
+    """*command*'s selection arguments, as argv for a ``--collect-only`` run.
+
+    Derived from the gate's real command line rather than rebuilt from its ``-m``
+    expression alone. That distinction is the whole point: a stage can be narrowed
+    by ``--ignore``, ``--deselect``, ``-k``, or a positional path just as easily as
+    by a marker, and a check that reads only the marker is blind to every one of
+    them — it would certify a gate that runs a subset while looking like it
+    partitions. Only genuinely execution-only tokens are dropped.
+    """
+    tokens = shlex.split(command, comments=True)
+    assert "pytest" in tokens, f"not a pytest command: {command!r}"
+    argv: list[str] = []
+    skip_value = False
+    for token in tokens[tokens.index("pytest") + 1 :]:
+        if skip_value:
+            skip_value = False
+            continue
+        if token in _EXECUTION_ONLY_WITH_VALUE:
+            skip_value = True
+            continue
+        if token.startswith(_EXECUTION_ONLY_PREFIXES):
+            continue
+        argv.append(token)
+    return argv
+
+
+@functools.lru_cache(maxsize=None)
+def _collect_node_ids(argv: tuple[str, ...]) -> frozenset[str]:
+    """The node ids pytest collects for *argv* (empty = the whole suite).
 
     A real collection in a subprocess rather than a re-derivation of the tiers in
     Python: the claim under test is about what **the gate** runs, and the gate
@@ -314,21 +383,23 @@ def _collect_node_ids(selector: str | None) -> set[str]:
     that assigns the tier markers the gate's ``-m`` expressions select on — so a
     hook that stopped marking shrinks these sets instead of leaving the check
     agreeing with itself.
+
+    Cached because a full collection is ~2s and the checks below ask for the same
+    few selections more than once; keyed on the argv tuple, and nothing mutates
+    the tree during a run.
     """
-    command = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "--collect-only",
-        "-q",
-        "--no-header",
-        "-p",
-        "no:cacheprovider",
-    ]
-    if selector is not None:
-        command += ["-m", selector]
     result = subprocess.run(
-        command,
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            *argv,
+        ],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
@@ -336,14 +407,40 @@ def _collect_node_ids(selector: str | None) -> set[str]:
         check=False,
     )
     assert result.returncode == 0, (
-        f"collection failed for -m {selector!r} (exit {result.returncode}):\n"
+        f"collection failed for {list(argv)!r} (exit {result.returncode}):\n"
         f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
     )
-    return {
+    return frozenset(
         line.strip()
         for line in result.stdout.splitlines()
         if "::" in line and not line.lstrip().startswith(("[", "<"))
-    }
+    )
+
+
+def _partition_gaps(argvs: list[list[str]]) -> tuple[set[str], set[str]]:
+    """``(overlap, missing)`` for *argvs* measured against the whole suite.
+
+    The single home for the partition computation, so that the real assertion and
+    its controls exercise the *same* code. A control that re-implemented this
+    comparison inline would leave a mutation to it killing nothing (#327), which
+    is exactly the shape this function exists to avoid.
+
+    ``overlap`` — node ids selected by more than one argv (double-counted in the
+    coverage population). ``missing`` — node ids in the suite that no argv selects
+    (silently unverified).
+    """
+    whole = _collect_node_ids(())
+    assert len(whole) > 4000, (
+        f"the unfiltered collection is this check's yardstick and must be the "
+        f"real suite; collected {len(whole)}"
+    )
+    union: set[str] = set()
+    overlap: set[str] = set()
+    for argv in argvs:
+        selected = _collect_node_ids(tuple(argv))
+        overlap |= union & selected
+        union |= selected
+    return overlap, set(whole) - union
 
 
 def test_the_gate_stages_partition_the_whole_suite() -> None:
@@ -352,39 +449,28 @@ def test_the_gate_stages_partition_the_whole_suite() -> None:
     **Supersedes ``test_tiers_corpus.py::test_the_gate_still_runs_the_whole_suite``**
     (#336), which banned any ``-m`` from the gate's pytest lines. That ban was a
     proxy for this property, and #358's partition would now trip it. The property
-    itself is strictly stronger: the proxy would have passed a gate that quietly
-    added ``--ignore=tests/integration`` or ``--deselect``, because neither is a
-    ``-m``.
+    itself is stronger, and in the dimension that matters: it is measured from the
+    gate's real argv, so it also catches a narrowing spelled ``--ignore``,
+    ``--deselect``, ``-k`` or a positional path — none of which is a ``-m``, and
+    every one of which the old ban would have waved through.
 
     Two halves, because a partition can fail in two directions: a test in **no**
     stage is silently unverified, and a test in **two** stages is double-counted
     in the coverage population the floor is measured on.
     """
-    selectors = [_marker_selector(cmd) for cmd in pytest_commands()]
+    commands = pytest_commands()
+    selectors = [_marker_selector(cmd) for cmd in commands]
     assert all(selector is not None for selector in selectors), (
         f"every gate pytest stage must carry an explicit -m expression, so the "
         f"union accounts for all of them; found {selectors!r}"
     )
 
-    whole = _collect_node_ids(None)
-    assert len(whole) > 4000, (
-        f"the unfiltered collection is this check's yardstick and must be the "
-        f"real suite; collected {len(whole)}"
+    overlap, missing = _partition_gaps([_collection_argv(cmd) for cmd in commands])
+    assert not overlap, (
+        f"the gate's stages overlap: {len(overlap)} tests are run by more than one "
+        f"stage, so the coverage floor would be measured on a double-counted "
+        f"population: {sorted(overlap)[:10]} (#358 AC-4)."
     )
-
-    union: set[str] = set()
-    for selector in selectors:
-        selected = _collect_node_ids(selector)
-        assert selected, f'the gate stage -m "{selector}" collects nothing'
-        overlap = union & selected
-        assert not overlap, (
-            f'the gate\'s stages overlap: -m "{selector}" re-runs {len(overlap)} '
-            f"tests another stage already ran, so the coverage floor would be "
-            f"measured on a double-counted population (#358 AC-4)."
-        )
-        union |= selected
-
-    missing = whole - union
     assert not missing, (
         f"the gate's stages must partition the whole suite; {len(missing)} tests "
         f"run in no stage and would be silently unverified: "
@@ -392,23 +478,99 @@ def test_the_gate_stages_partition_the_whole_suite() -> None:
     )
 
 
-def test_the_partition_check_would_notice_a_dropped_slice() -> None:
-    """Positive control: the union check discriminates rather than always passing.
+def test_the_partition_check_notices_a_dropped_slice() -> None:
+    """Control: a stage list that omits a slice is reported as ``missing``.
 
     The real gate partitions correctly, so the assertion above is an absence
     assertion — free without a control showing the check *can* fail (#183). This
-    runs the same :func:`_collect_node_ids` the real check calls over a selection
-    that drops a slice, and requires the result to fall short of the whole. Using
-    the same function, rather than a second inline collection, is what makes a
-    mutation to it visible here too (#327).
+    calls :func:`_partition_gaps` itself, rather than re-deriving the comparison,
+    so a mutation to the real computation dies here too (#327).
     """
-    whole = _collect_node_ids(None)
-    partial = _collect_node_ids(_DOCKER_MARKER)
-    assert partial, "the control's own selection must be non-empty to prove anything"
-    assert partial < whole, (
-        "a single-slice selection must be a proper subset of the whole suite, or "
-        "the union check could not tell a partition from a dropped slice"
+    overlap, missing = _partition_gaps([["-m", _DOCKER_MARKER]])
+    assert not overlap
+    assert missing, (
+        "selecting only the docker slice must leave the rest of the suite "
+        "`missing`, or the check cannot tell a partition from a dropped slice"
     )
+
+
+def test_the_partition_check_notices_an_overlap() -> None:
+    """Control: a stage list that runs the same tests twice is reported as ``overlap``.
+
+    Without this, nothing ever constructs an overlapping pair, and the overlap
+    half of :func:`_partition_gaps` could be degraded to a constant empty set
+    while every assertion stayed green.
+    """
+    overlap, _ = _partition_gaps(
+        [["-m", _DOCKER_MARKER], ["-m", _DOCKER_MARKER], ["-m", f"not {_DOCKER_MARKER}"]]
+    )
+    assert overlap, (
+        "running the docker slice twice must be reported as an overlap, or the "
+        "double-counting half of the check measures nothing"
+    )
+
+
+def test_the_partition_check_notices_a_narrowing_that_is_not_a_marker() -> None:
+    """Control: the check reads the gate's argv, not just its ``-m`` expression.
+
+    This is the claim that makes the successor stronger than the #336 ban it
+    replaced, so it is pinned rather than asserted in prose. The two argvs below
+    partition the suite *by marker* and would satisfy any marker-only reading —
+    but the second also carries ``--ignore``, so a real collection reports the
+    ignored tests as ``missing``.
+
+    The ignored path is a module of **non-docker** tests on purpose. Ignoring
+    ``tests/integration/`` instead would prove nothing: every module there is
+    docker-marked, so stage 1 already covers them and the union stays complete.
+    A control has to drop something the other stage does not pick back up.
+    """
+    ignored = "tests/unit/test_tiers.py"
+    assert (_REPO_ROOT / ignored).is_file(), (
+        f"the control ignores {ignored}, which must exist for it to drop anything"
+    )
+    argvs = [
+        ["-m", _DOCKER_MARKER],
+        ["-m", f"not {_DOCKER_MARKER}", f"--ignore={ignored}"],
+    ]
+    assert [argv[1] for argv in argvs] == [
+        _DOCKER_MARKER,
+        f"not {_DOCKER_MARKER}",
+    ], "the samples must look like a correct partition to a marker-only reading"
+    _, missing = _partition_gaps(argvs)
+    assert missing, (
+        "a stage narrowed by --ignore must leave tests `missing`; a check that "
+        "rebuilt the collection from the -m expression alone would call this a "
+        "clean partition and certify a gate that runs a subset (#358)"
+    )
+
+
+def test_a_module_reaching_the_tag_by_import_is_still_caught() -> None:
+    """Control: the scan is a dependency check, not a spelling check.
+
+    A third module can join the shared tag without ever writing the literal — it
+    imports the owner's constant instead. A scan that only matched the literal
+    would leave that module in the parallel pool, racing the tag, which is the
+    precise failure AC-2's serial stage exists to prevent. The sample below is a
+    real bypass: it builds the image and never spells ``harness:test``.
+    """
+    bypass = (
+        "import subprocess\n"
+        "\n"
+        f"from tests.integration.test_docker import {_TAG_CONSTANT}\n"
+        "\n"
+        f"subprocess.run(['docker', 'build', '-t', {_TAG_CONSTANT}, '.'])\n"
+    )
+    assert SHARED_IMAGE_TAG not in bypass, (
+        "the sample must not contain the literal, or it does not distinguish the "
+        "dependency check from the spelling check it replaced"
+    )
+    assert _shares_the_tag(bypass)
+    assert _DOCKER_MARKER not in _module_pytestmark_names(bypass)
+
+    # And the name must be genuinely imported, not merely mentioned.
+    prose = f'"""This test reuses {_TAG_CONSTANT} from the docker suite."""\n'
+    assert _TAG_CONSTANT in prose
+    assert not _shares_the_tag(prose)
 
 
 def test_a_marker_named_only_in_prose_does_not_satisfy_the_check() -> None:

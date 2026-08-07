@@ -39,9 +39,9 @@ uv run --extra dev mypy harness
 # The suite runs in two stages, partitioned by the `docker` marker (#358). It is
 # one population measured by one coverage floor, split only by how it is executed:
 # `-m docker` and `-m "not docker"` are complementary, so every collected test
-# runs in exactly one stage. tests/unit/test_tiers_corpus.py proves that union is
-# the whole suite by collecting both selections; tests/unit/test_verify_parallel_tiers.py
-# pins the execution modes.
+# runs in exactly one stage. tests/unit/test_verify_parallel_tiers.py proves that
+# by collecting each stage's real argv and checking the union covers the suite
+# with no test in two stages, and pins the execution modes alongside it.
 #
 # Measured on dev @ 6e4174b (2026-08-07, 8-core host): the whole suite serially is
 # ~224s, of which `-m "unit or guard"` is only 9.1s — post-#336 the cost is the
