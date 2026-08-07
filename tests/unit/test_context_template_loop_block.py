@@ -91,6 +91,13 @@ _KEYS = (
     # 0 disables ``review``'s polluted-worktree guard outright — which is why the
     # loader does not clamp it to a floor of 1 the way it clamps the cycle knobs.
     "untracked_file_limit",
+    # …and again for #363's two probe knobs, appended last for the same
+    # positional reason. ``probe_budget_seconds`` is the first knob the loader
+    # *clamps against another knob* rather than against a constant, so the value
+    # shipped here has to sit at or below ``engine_timeout_seconds`` or the
+    # template would document a number no repo bootstrapped from it can obtain.
+    "probe_max_entries",
+    "probe_budget_seconds",
 )
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")

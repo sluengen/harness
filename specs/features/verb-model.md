@@ -2,7 +2,7 @@
 feature: verb-model
 status: implemented
 last_updated: 2026-08-07
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338", "#359"]
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#321", "#339", "#338", "#359", "#363"]
 ---
 
 # Verb model — start / design / review / close
@@ -74,7 +74,7 @@ This replaced ADR [0005](../decisions/0005-per-ticket-model-tiering.md)'s per-ti
 - GIVEN an open run whose worktree HEAD holds committed work
 - WHEN the agent runs `harness review`
 - THEN the verb resolves the current run (the `status='open'` run whose `worktree_path` equals `--repo`, or the run named by `--run-id`), enforces the verify-gate evidence (below), captures `git rev-parse HEAD` as `reviewed_sha`, invokes the selected engine with the review prompt on stdin, scans stdout for the first `SUBMIT: <json>` line, and appends a `review` event carrying `{ run_id, reviewed_sha, verdict, issues, engine, convergence_check_required, cycles_exhausted, created_at, gate_ran }` (and optional `gate_command` / `gate_exit_code` / `gate_reason` / `gate_output_tail` / `commit_message` / `deferred_brief`)
-- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`, `cycles_exhausted`) — the engine's full reasoning stays inside the verb (context economy)
+- AND it prints **only** the bounded verdict (`verdict`, `issues`, `reviewed_sha`, `run_id`, `engine`, `convergence_check_required`, `cycles_exhausted`, `probes_run`, `probes_survived`) — the engine's full reasoning stays inside the verb (context economy)
 
 A recorded `fail` is still a *successful* review (exit 0): deciding what to do with a verdict is the agent's job, not the verb's. A missing, malformed, or unknown-verdict `SUBMIT` line is **not** one of those verdicts — the reviewer delivered none — so since #270 it is classified as infra rather than as a rejected diff: exit 3 (`EXIT_INFRA_FAILURE`) carrying `reason='no_submit'` (no `SUBMIT:` line anywhere) or `reason='malformed_submit'` (one was seen but none parsed), recorded in #262's refusal shape with no `verdict` key. It therefore consumes no review cycle, cannot open the close gate, and leaves the ticket **In Review** rather than bouncing it back to In Progress — the same treatment the engine timeout and the two sandbox walls already get, on the same stated principle that an engine which never reviewed the diff produced no verdict. The verb still never raises on a bad reviewer; it records the failure. (The two `reason` tags are the ones `design` already uses for the identical failure, shared from `harness/events/payloads.py` so one protocol failure has one name across both engine verbs.)
 
@@ -134,6 +134,100 @@ It is placed after the HEAD capture and before the tracker park, which fixes all
 **The check fails open, without exception.** Every case it cannot answer — the bound disabled, a path that is not a git top-level, a failed or wedged `git ls-files`, an empty index — proceeds to review. A guard that *stops* a run may rest only on evidence it actually gathered, the same asymmetry `reclaim --stale` states for its three clocks; and the failure it prevents is expensive but recoverable, whereas a falsely refused review is not. Two properties follow from the worktree's contents being untrusted (the pollution of #208 was written by tooling nobody has identified, and finding it was explicitly out of scope): the scan reads **directory entries only** — never a file's content, never a `stat` — with symlinks unfollowed and `.git` pruned, so it cannot leave the worktree or fail to terminate; and only **depth-1 path segments** are ever reported, so a root-level `.env.production` is aggregated under `(root)` and never named. What escapes to the ledger and to the orchestrator's context is integers plus at most three top-level segment names.
 
 The measurement is `scanned - tracked` — on-disk count against index size — rather than the size of the set difference, because comparing path *spellings* misses on every non-ASCII name where macOS returns NFD against git's NFC, and would refuse a clean tree: the one direction this guard must never fail in. Subtraction also errs safely, a tracked file deleted from the working tree lowering `scanned` alone. The enumeration and its top-level anchor are shared with `reclaim --stale`'s liveness probe (`harness/_git.py`), so the two cannot disagree about which paths are a worktree's own.
+
+#### Scenario: the reviewer proposes the mutations the builder did not
+
+A mutation table certifies only what its author thought to mutate — and the author is the
+person being reviewed. #360's own record holds two instances of what that costs: an aggregate
+assertion in #207 that reported a kill it never made, and four entries in #336 that evaluated
+to the original value and printed SURVIVED. The one party positioned to be an independent
+counterparty on that table was, until #363, the one party that could not run anything: the
+review engine is `claude -p --permission-mode plan` / `codex exec --sandbox read-only`, and it
+stays exactly that. What changes is that it may now *propose*, and the verb runs what it
+proposed.
+
+- GIVEN `loop.probe_max_entries` is positive, WHEN the engine reviews, THEN its prompt asks for
+  up to that many mutation entries in `scripts/mutate.py`'s table format, emitted as a `probes`
+  array on the same `SUBMIT:` line — an addition to that contract, never a new way to fail it,
+  so a malformed `probes` value is dropped and counted while the verdict stands
+- AND THEN the verb creates a **detached throwaway worktree at the reviewed SHA**
+  (`.worktrees/harness/<run_id>-probe`, `harness/probe_tree.py`), screens the proposals against
+  it, renders the survivors of that screen as a table, and runs the mutation harness over it
+  under `loop.probe_budget_seconds`
+- AND GIVEN an entry whose mutation **survives** with an observable that moved, THEN it is
+  recorded in `probe_demonstrated`, a **second engine pass** is given the outcomes and the
+  first pass's own findings, and its `[probe:<id>]` finding joins the recorded issues
+- AND GIVEN an entry that kills nothing, or one that breaks collection, THEN it is a failure of
+  **the entry** — `mispredicted`, `inert` or `errored` per #360's set-equality rule and #365's
+  liveness fork — recorded on the event and shown to no one. It is never a survivor and never a
+  finding
+- AND GIVEN the run worktree is not byte-identical to what it was before the engine ran, THEN
+  the verb exits `3` with `reason=run_worktree_mutated`, records the refusal, and records no
+  verdict
+
+**Three bounds, and each one is enforced rather than conventional.** The count cap
+(`loop.probe_max_entries`, default 3) truncates the proposal and *names* what it cut. The time
+ceiling (`loop.probe_budget_seconds`, default 720) kills the subprocess, and the loader clamps
+it to whatever `engine_timeout_seconds` is actually configured to, so one review's added cost
+can never exceed one engine's ceiling — raising `engine_timeout_seconds` to buy a probe more
+time is the standing "the ceiling is not the fix" rule wearing a new hat. And the `select` the
+table runs under is **verb-owned**, never proposable: a reviewer that could choose the selection
+could spend the budget N+1 times over the whole suite. `probe_max_entries: 0` disables the stage
+outright, and the prompt then omits the request entirely, so the review is byte-identical to
+what it was before this change.
+
+**A probe must predict its outcome.** This is #360 AC-1's rule, and here it is what stops the
+vacuity this repo pays for from simply relocating into review. A reviewer that runs a suite,
+reads green and concludes "verified" has produced a feeling; an entry that declares the tests it
+must kill and is judged against that produces evidence. So `kills` is required, and the
+distinction between a *demonstrated* survivor (an observable moved) and an *unproven* one
+(nothing showed the edit was live, as four of #336's twenty entries were not) is carried all the
+way onto the event — which is what makes "was this finding demonstrated or argued" a ledger
+question.
+
+**Nothing this grants can reach the reviewed SHA.** The probe tree is a different directory at
+the same commit, so the run worktree is untouched by construction rather than by configuration.
+Be plain about what the identity check is: it detects what **git can see** — a tracked edit, a
+deletion, an untracked addition, HEAD moving — and not a write inside a gitignored path. It is a
+detector at the boundary; the boundary is `close`'s two conjuncts, a pass bound to current HEAD
+**and** its separate refusal of a dirty worktree, which is why the failure mode of a misbehaving
+prober is a **wedged run rather than a laundered merge**. Execution itself is bounded not by a
+sandbox but by shape: a mutation is applied by one tool with a fixed argv the reviewer cannot
+influence — no shell, no free-form command, no flags from the proposal — running at the reviewed
+SHA in a tree that is thrown away. That is an agent-layer control, the same honesty
+`design`'s single-file write grant states about itself.
+
+**Every path degrades.** `probe_status` records which: `disabled`, `none_proposed`,
+`no_instrument`, `tree_failed`, `ran`, `refused:<rule>`, `unavailable`, `timeout`, `error`.
+A refusal carries the mutation harness's own stable tag for *which* rule refused, because
+the distinction is the diagnostic value: `refused:prediction` says the reviewer named a node
+id outside the selection — a defect in its proposal, and the measurement that decides whether
+a probing reviewer earns its cost — while `refused:baseline` says the tree was already red and
+says nothing about the reviewer at all. None of
+them changes a verdict, which is exactly why the reason has to be on the ledger rather than on
+stderr — the same argument `design_context_reason` makes. `unavailable` is worth naming
+separately because it is the expected **in-container** outcome: `harness:dev` is built
+`--no-dev` and carries no pytest, the same catch-22 `harness/gate.py` records for the verify
+gate, so the stage runs on a host-side install and degrades honestly in the container rather
+than reporting something that reads like a defect in the diff.
+
+**The measured cost, stated rather than assumed** (AC-5). Sampled on this repo, host-side and
+warm, at the verb-owned `-m "unit or guard"` selection: the mutation harness's own baseline run
+is **81.5s over 3,049 tests**, and three entries cost **31.4s / 44.6s / 70.0s** — **230s total**,
+32% of the 720s ceiling. Two conclusions the follow-up's defaults should be set from rather than
+guessed at. The **count cap is the binding constraint, not the clock**: at this repo's size a cap
+of 3 fits comfortably inside the budget where 8 would not. And the **fixed cost dominates** — the
+baseline is 35% of the total, and every run recompiles into a fresh `PYTHONPYCACHEPREFIX` (the
+stale-`.pyc` defence the mutation harness needs, whose price is paid here), so the marginal entry
+is much cheaper than the first. A repo whose suite is slower than this one should lower the cap
+before it touches the ceiling.
+
+The stage is change 1 of the accepted `specs/proposals/review-probing.md` sequence, and it is
+deliberately the narrow one: it grants no general execute, because the thing invoked is a single
+tool with a fixed contract. Whether the general probe callback (#364) is worth its larger cost
+is decided on what this one measures — `probe_proposed` against `probe_dropped` answers the
+question the proposal names as able to invalidate it, namely whether the reviewer's proposals
+are mostly real or mostly no-ops and duplicates of the builder's own table.
 
 #### Scenario: the spend breakers bound the fix loop
 

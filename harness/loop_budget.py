@@ -49,10 +49,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+# size: one config module whose length is its per-knob evidence, not its logic —
+# the loader is ~40 lines and the decision functions ~60. Every constant carries
+# the measurement that set it (18 timed design runs for the engine ceiling; the
+# two-order-of-magnitude separation behind the untracked-file bound; the sampled
+# 230s behind the probe cap), because a threshold whose evidence is not written
+# down is re-tuned by the next person on intuition — which is how this repo got
+# a wall-clock budget and a staleness threshold that had drifted apart. Crossed
+# the ceiling in #363, which added two knobs and their sample.
+# The extraction candidate is the **breaker decisions** (`evaluate_breakers`,
+# `evaluate_repeat_timeout`, `convergence_check_required`, `cycles_exhausted`
+# and `BreakerTrip`, ~150 lines): they are pure policy over an already-loaded
+# budget and read coherently apart from the loading, on the `review_inherit`
+# precedent. Left together for now because every one of them exists to be read
+# beside the constant it bounds.
+
 __all__ = [
     "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
     "DEFAULT_MAX_REVIEW_CYCLES",
+    "DEFAULT_PROBE_BUDGET_SECONDS",
+    "DEFAULT_PROBE_MAX_ENTRIES",
     "DEFAULT_REVIEW_MODEL",
     "DEFAULT_UNCONDITIONAL_REVIEW_CYCLES",
     "DEFAULT_UNTRACKED_FILE_LIMIT",
@@ -187,6 +204,30 @@ ENGINE_TIMEOUT_ATTEMPT_LIMIT = 2
 # a finer bound would imply a precision the signal does not have.
 DEFAULT_UNTRACKED_FILE_LIMIT = 1000
 
+# How many reviewer-proposed mutations one review may run (#363), and how long
+# the mutation subprocess running them may take. Two keys because the two
+# quantities fail differently: too many entries spends the *suite* repeatedly,
+# while one pathological entry (a mutation that induces an infinite loop) spends
+# wall clock without spending entries.
+#
+# 3 is a starting bound, not a measured one, and it is deliberately small: the
+# stage costs one baseline run plus one suite run per entry, and the ticket's
+# AC-5 sets the real number from a stated sample of live runs rather than from a
+# guess made here. `0` disables the stage outright, on
+# ``DEFAULT_UNTRACKED_FILE_LIMIT``'s convention — the same reason it is not
+# clamped to a floor of 1.
+DEFAULT_PROBE_MAX_ENTRIES = 3
+
+# The probe subprocess ceiling. Equal to ``DEFAULT_ENGINE_TIMEOUT_SECONDS`` and
+# clamped by the loader to whatever that key is actually configured to, never
+# above it: one review's *added* cost is then bounded by one engine's ceiling.
+# The clamp is the point. Raising ``engine_timeout_seconds`` to buy a probe more
+# time is the standing "the ceiling is not the fix" mistake wearing a new hat,
+# and reading the configured ceiling rather than this constant is what stops a
+# repo that lowered its engine ceiling from getting a probe stage allowed to
+# outlast its own engine.
+DEFAULT_PROBE_BUDGET_SECONDS = 720
+
 
 class LoopBudget(NamedTuple):
     """The configured loop bounds for a run, read from CONTEXT.md's ``loop:`` block.
@@ -220,6 +261,8 @@ class LoopBudget(NamedTuple):
     unconditional_review_cycles: int = DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
     review_model: str = DEFAULT_REVIEW_MODEL
     untracked_file_limit: int = DEFAULT_UNTRACKED_FILE_LIMIT
+    probe_max_entries: int = DEFAULT_PROBE_MAX_ENTRIES
+    probe_budget_seconds: int = DEFAULT_PROBE_BUDGET_SECONDS
 
 
 class BreakerTrip(NamedTuple):
@@ -295,14 +338,15 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
     unconditional = _read_int_key(
         text, "unconditional_review_cycles", DEFAULT_UNCONDITIONAL_REVIEW_CYCLES
     )
+    engine_timeout = _read_int_key(
+        text, "engine_timeout_seconds", DEFAULT_ENGINE_TIMEOUT_SECONDS
+    )
     return LoopBudget(
         max_review_cycles=max_cycles,
         wall_clock_budget_minutes=_read_int_key(
             text, "wall_clock_budget_minutes", DEFAULT_WALL_CLOCK_BUDGET_MINUTES
         ),
-        engine_timeout_seconds=_read_int_key(
-            text, "engine_timeout_seconds", DEFAULT_ENGINE_TIMEOUT_SECONDS
-        ),
+        engine_timeout_seconds=engine_timeout,
         attended_idle_minutes=_read_int_key(
             text, "attended_idle_minutes", DEFAULT_ATTENDED_IDLE_MINUTES
         ),
@@ -314,6 +358,16 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         # not match the digits-only reader at all and reads as absent.
         untracked_file_limit=_read_int_key(
             text, "untracked_file_limit", DEFAULT_UNTRACKED_FILE_LIMIT
+        ),
+        # Un-clamped for the same reason as the key above: 0 is this key's
+        # documented "run no probe stage" value.
+        probe_max_entries=_read_int_key(text, "probe_max_entries", DEFAULT_PROBE_MAX_ENTRIES),
+        # Clamped against the *configured* engine ceiling, not the constant, so a
+        # repo that lowered the ceiling does not get a probe stage allowed to
+        # outlast its own engine (#363, AC-4).
+        probe_budget_seconds=min(
+            _read_int_key(text, "probe_budget_seconds", DEFAULT_PROBE_BUDGET_SECONDS),
+            engine_timeout,
         ),
     )
 

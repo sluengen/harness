@@ -107,6 +107,32 @@ CLOSE_OUTCOME_FAILED = "failed"
 CLOSE_UNEXPECTED_REASON = "unexpected_error"
 
 
+class ProbeEntryRecord(BaseModel):
+    """One reviewer-proposed mutation's outcome, as it reaches the ledger (#363).
+
+    **Ids, outcomes, counts and durations only.** The mutation itself is an exact
+    source substring of the tree under review, and a ``review`` event is read
+    into a ticket, so ``old``/``new`` never travel and neither does anything the
+    mutation harness captured. ``id`` is the handle the reviewer's own finding
+    cites by (``[probe:<id>]``), which is what makes a finding traceable to the
+    experiment that produced it.
+
+    ``live`` is the liveness fork #365 added to the mutation harness: an
+    observable that *moved* between the pristine and the mutated tree. It is the
+    difference between a demonstrated gap and a mutation that may simply have
+    evaluated to the original value, which four of #336's twenty entries did —
+    so recording ``survived`` without it would put the ledger back where that
+    ticket found it.
+    """
+
+    id: str
+    outcome: str
+    live: bool
+    predicted: int
+    observed: int
+    duration_ms: int
+
+
 class ReviewEventData(BaseModel):
     """Payload of a ``review`` event.
 
@@ -245,6 +271,43 @@ class ReviewEventData(BaseModel):
     commit_message: str | None = None
     deferred_brief: str | None = None
     inherited_from: str | None = None
+    #: The probe stage (#363). All optional and absent on every row written
+    #: before it existed, so a reader treats absence as *unknown* rather than as
+    #: zero — nothing backfills ~900 historical rows (ADR 0009).
+    #:
+    #: ``probe_status`` is the discriminator and carries the degradations as
+    #: well as the successes, which is the point: this stage may fail in half a
+    #: dozen ways and none of them may change a verdict, so "did it run, and if
+    #: not why" has to be a ledger question rather than a console-noise one —
+    #: the same argument ``design_context_reason`` (#247) makes.
+    probe_status: str | None = None
+    #: What the engine emitted, before screening, against what was screened out.
+    #: The pair is the measurement the proposal names as deciding whether the
+    #: follow-up (#364) is worth building: if the reviewer's proposals are mostly
+    #: no-ops and duplicates of the builder's own table, the
+    #: independent-counterparty premise is wrong.
+    probe_proposed: int | None = None
+    probe_dropped: int | None = None
+    probe_entries: list[ProbeEntryRecord] | None = None
+    #: The ids whose survival was *demonstrated* — a live observable, not merely
+    #: a green suite. This is the ledger's answer to "was this finding
+    #: demonstrated or argued", which is the distinction the whole change exists
+    #: to make recordable.
+    probe_demonstrated: list[str] | None = None
+    #: Wall clock of the whole stage, the quantity AC-4 bounds and AC-5 samples.
+    probe_duration_ms: int | None = None
+    #: Whether a second engine pass ran *and* returned a verdict. ``False``
+    #: covers both "no survivor to show it" and "it produced no SUBMIT line",
+    #: which are told apart by ``probe_status`` plus the demonstrated set.
+    #:
+    #: Optional rather than a defaulted ``bool``, unlike ``gate_ran`` and
+    #: ``design_context`` which it otherwise resembles: those describe stages
+    #: every run has, so ``False`` means something on every row. A repo with
+    #: ``probe_max_entries: 0`` has no probe stage at all, and a defaulted bool
+    #: would put a key on each of its review events asserting that a pass which
+    #: was never possible did not happen. Absent means *no stage*;
+    #: ``probe_status`` says which kind of no.
+    probe_second_pass: bool | None = None
 
 
 class ReviewRefusalEventData(BaseModel):
