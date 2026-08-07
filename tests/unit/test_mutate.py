@@ -792,6 +792,29 @@ def test_only_restricts_the_entries_run_but_not_the_baseline(tmp_path: Path) -> 
     assert runner.calls == 2
 
 
+def test_main_maps_a_refusal_to_exit_2_and_names_the_reason(tmp_path: Path) -> None:
+    """Every refusal above reaches a caller as exit 2, whatever raised it.
+
+    The unit tests assert *which* rule refused; this asserts the mapping from
+    that to the process's answer. Without it, ``main`` could swallow a
+    ``RefusalError`` into a clean exit and every one of them would still pass.
+    """
+    tree = _mini_tree(tmp_path, {"pkg/calc.py": "def add(a, b):\n    return a + b\n"})
+    table = _write_table(tmp_path, _table_text(mutations=_entry() + _entry(old="a - b")))
+
+    code = mutate.main(["check", "--table", str(table), "--tree", str(tree)])
+
+    assert code == 2
+
+
+def test_main_exits_0_on_a_table_that_lands(tmp_path: Path) -> None:
+    """The control for the test above: ``check`` is not a refusal machine."""
+    tree = _mini_tree(tmp_path, {"pkg/calc.py": "def add(a, b):\n    return a + b\n"})
+    table = _write_table(tmp_path, _table_text(mutations=_entry()))
+
+    assert mutate.main(["check", "--table", str(table), "--tree", str(tree)]) == 0
+
+
 def test_only_naming_an_unknown_entry_is_refused(tmp_path: Path) -> None:
     runner = _StubRunner(_GREEN)
 

@@ -441,6 +441,29 @@ def test_a_stale_bytecode_cache_cannot_mask_a_same_size_mutation(tmp_path: Path)
     assert "KILLED" in result.stdout
 
 
+def test_an_unrunnable_selection_exits_3_not_2(tmp_path: Path) -> None:
+    """Infrastructure and a red tree are different answers.
+
+    A pytest that never starts says nothing about the tree, so it must not be
+    reported as the refusal that means "your baseline is red" — an operator who
+    conflated the two would go looking for a failing test that does not exist.
+    Driven by a real usage error, so the plugin genuinely never writes its file.
+    """
+    tree = _project(tmp_path)
+    before = _snapshot(tree)
+    table = _table(
+        tmp_path,
+        select='["--no-such-pytest-flag"]',
+        entries=_entry(ident="honest", old="return a + b", new="return a - b", kills=f'["{_ADD}"]'),
+    )
+
+    result = _run("run", table, tree, tmp_path)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "runner unavailable" in result.stderr
+    assert _snapshot(tree) == before
+
+
 # ---------------------------------------------------------------------------
 # Integration points the ticket puts out of scope.
 # ---------------------------------------------------------------------------

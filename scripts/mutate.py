@@ -121,9 +121,20 @@ This is a **build-time instrument**, not a gate stage: it proves a new guard
 while the guard is being written. ``scripts/verify.sh`` does not run it, and
 ``tests/unit/test_mutate_end_to_end.py`` pins that.
 
-Stdlib only, in the shape of :mod:`cadence`. Departure from the design, recorded:
-the optional ``--json <path>`` report dump was dropped — nothing consumes it, and
-the rendered report is the contract a tick reads.
+Stdlib only, in the shape of :mod:`cadence`. Three departures from the run's
+design, recorded so they are legible in the diff rather than in someone's
+reasoning:
+
+* The optional ``--json <path>`` report dump was **dropped**. Nothing consumes
+  it, and the rendered report is the contract a tick reads.
+* ``Baseline`` carries only ``passed``, ``collected`` and ``duration_s``, not the
+  design's ``failed``/``errored``. A baseline that is not green refuses, so its
+  red set cannot reach any later stage — carrying it would be dead data that
+  reads as though something consults it.
+* The child's environment gained ``PYTHONPYCACHEPREFIX``, which the design did
+  not specify. It was **added in response to a real failure**, not a
+  precaution: see :func:`PytestRunner.__call__` for what a same-size mutation
+  does without it.
 """
 
 from __future__ import annotations
