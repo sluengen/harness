@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from harness import _git
 from harness.cli import reclaim_liveness
 from harness.state import store
 from tests._asyncutil import run_sync
@@ -504,14 +505,14 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_times_out(
               started_at=iso_minutes_ago(240))
     stub = make_sweep_stub([{"identifier": "308", "updated_at": iso_minutes_ago(300)}])
 
-    real_run_git = reclaim_liveness.run_git
+    real_run_git = _git.run_git
 
     def _wedge(cwd: Path, *args: str, **kwargs: Any) -> Any:
         if args[:1] == ("ls-files",):
             raise subprocess.TimeoutExpired(cmd="git ls-files", timeout=15)
         return real_run_git(cwd, *args, **kwargs)
 
-    with patch.object(reclaim_liveness, "run_git", _wedge):
+    with patch.object(_git, "run_git", _wedge):
         result = invoke(
             ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
             stub,
@@ -537,7 +538,7 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_fails(tmp_path: Path) -> N
               started_at=iso_minutes_ago(240))
     stub = make_sweep_stub([{"identifier": "309", "updated_at": iso_minutes_ago(300)}])
 
-    real_run_git = reclaim_liveness.run_git
+    real_run_git = _git.run_git
 
     def _fail(cwd: Path, *args: str, **kwargs: Any) -> Any:
         if args[:1] == ("ls-files",):
@@ -547,7 +548,7 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_fails(tmp_path: Path) -> N
             )
         return real_run_git(cwd, *args, **kwargs)
 
-    with patch.object(reclaim_liveness, "run_git", _fail):
+    with patch.object(_git, "run_git", _fail):
         result = invoke(
             ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
             stub,

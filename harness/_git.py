@@ -157,6 +157,58 @@ def worktree_toplevel_matches(worktree_path: Path) -> bool:
         return False
 
 
+#: Ceiling (seconds) for the ``git ls-files`` probe behind :func:`tracked_paths`.
+#: A local call does not reach a remote, but both callers run on paths where a
+#: wedged git must degrade to *no opinion* rather than hang: ``reclaim --stale``
+#: is the Build routine's every-tick pre-flight, and ``review``'s pollution guard
+#: sits in front of an engine it exists to keep from being reached slowly.
+LS_FILES_TIMEOUT_SECONDS = 15
+
+
+def tracked_paths(
+    worktree_path: Path, *, timeout: float | None = LS_FILES_TIMEOUT_SECONDS
+) -> list[str] | None:
+    """The worktree-relative paths ``git`` tracks at ``worktree_path`` — or ``None``.
+
+    Sync (it shells out); call it through :func:`asyncio.to_thread` from async
+    code. ``None`` means *no opinion* and every caller must fail open on it: the
+    path is not a directory, is not itself a git top-level, ``git ls-files``
+    failed or timed out, or the index is empty.
+
+    An empty index answers ``None`` rather than ``[]`` deliberately. ``[]`` reads
+    as "0 tracked files", which is the one input that makes every file on disk
+    look like excess — so the ambiguous case must not be representable as a
+    measurement.
+
+    The :func:`worktree_toplevel_matches` anchor is load-bearing, not defensive
+    padding. ``git`` walks **up** from a directory whose worktree registration was
+    pruned, so ``ls-files`` there reports the *main checkout's* index — whose
+    files the operator is almost always editing. ``reclaim --stale`` would then
+    read a fresh mtime for every stale ticket and silently switch itself off
+    (#254); ``review``'s pollution guard would compare a worktree's on-disk count
+    against a *different* tree's index and could refuse a clean run.
+
+    Extracted here (#359) when that guard became the second caller of an
+    enumeration ``reclaim_liveness.worktree_last_activity`` had owned privately.
+    The two ask different questions — a newest mtime, and a file count — so only
+    the enumeration and its anchor are shared; sharing them is what stops the two
+    disagreeing about which paths are the worktree's own.
+    """
+    if not worktree_path.is_dir() or not worktree_toplevel_matches(worktree_path):
+        return None
+    try:
+        proc = run_git(worktree_path, "ls-files", "-z", timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
+        return None
+    if proc.returncode != 0:
+        return None
+    # ``-z`` is NUL-terminated, so a newline in a tracked filename cannot forge a
+    # second entry. The trailing separator yields one empty field — skip it.
+    names = [name for name in proc.stdout.split("\0") if name]
+    return names or None
+
+
 def rev_parse_head(worktree_path: Path, *, timeout: float | None = None) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 

@@ -48,12 +48,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from harness._git import run_git, worktree_toplevel_matches
+from harness._git import tracked_paths
 from harness._time import parse_iso_z
 from harness.cli._runs import resolve_attended
 from harness.state import store
@@ -64,13 +63,6 @@ __all__ = [
     "open_run_liveness",
     "worktree_last_activity",
 ]
-
-#: Ceiling (seconds) for the ``git ls-files`` probe. Matches the bound
-#: ``_git_worktree_branches`` puts on its own local ``git worktree list``: a local
-#: call does not reach a remote, but the Build routine runs this sweep as a
-#: pre-flight every tick, so a wedged git must degrade to "no opinion" rather
-#: than hang the loop the sweep exists to unblock.
-_LS_FILES_TIMEOUT_SECONDS = 15
 
 
 @dataclass(frozen=True)
@@ -163,33 +155,18 @@ def worktree_last_activity(worktree: Path) -> datetime | None:
     Build routine's pre-flight: a probe that can wedge the loop is worse than a
     probe that occasionally has nothing to say.
 
-    ``None`` is returned when the path is not a directory; when it is not itself a
-    git top-level (see below); when ``git ls-files`` fails or times out; or when
-    the index is empty.
-
-    The top-level check is the load-bearing guard, not defensive padding. ``git``
-    walks *up* from a directory whose worktree registration was pruned, so
-    ``ls-files`` there would report the **main checkout's** index — whose files
-    the operator is almost always editing — and the sweep would spare every stale
-    ticket while looking like it still worked.
+    Enumeration is :func:`harness._git.tracked_paths`, which owns the ``None``
+    contract above — not a directory, not a git top-level, ``ls-files`` failed or
+    timed out, or an empty index — and the load-bearing top-level anchor behind
+    it. It moved there in #359 when ``review``'s polluted-worktree guard became
+    its second caller; what stays here is this signal's own question, the newest
+    mtime among those paths.
     """
-    if not worktree.is_dir() or not worktree_toplevel_matches(worktree):
-        return None
-    try:
-        proc = run_git(
-            worktree, "ls-files", "-z", timeout=_LS_FILES_TIMEOUT_SECONDS
-        )
-    except (OSError, subprocess.SubprocessError):
-        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
-        return None
-    if proc.returncode != 0:
+    names = tracked_paths(worktree)
+    if names is None:
         return None
     newest: float | None = None
-    # ``-z`` is NUL-terminated, so a newline in a tracked filename cannot forge a
-    # second entry. The trailing separator yields one empty field — skip it.
-    for name in proc.stdout.split("\0"):
-        if not name:
-            continue
+    for name in names:
         with contextlib.suppress(OSError):
             # A tracked path that is deleted or unreadable in the working tree is
             # simply not a signal; it must not abort the whole probe.
