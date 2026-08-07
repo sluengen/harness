@@ -212,7 +212,11 @@ def test_the_section_no_longer_calls_killing_nothing_self_evident() -> None:
 def _documented_stages() -> list[str]:
     """The ordered stage list, from the module docstring's own numbered list."""
     doc = mutate.__doc__ or ""
-    block = _span(doc, "Every refusal happens **before any file is written**", re.compile(r"^\w+ a survivor", re.MULTILINE))
+    block = _span(
+        doc,
+        "Every refusal happens **before any file is written**",
+        re.compile(r"^\w+ a survivor", re.MULTILINE),
+    )
     return [name.lower() for name in re.findall(r"^\d+\. \*\*(\w+)\*\*", block, re.MULTILINE)]
 
 
