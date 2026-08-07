@@ -308,3 +308,68 @@ def test_root_level_files_are_aggregated_and_never_named(worktree: Path) -> None
     assert ".env.production" not in segments
     assert "notes.txt" not in segments
     assert any(entry.segment == "(root)" for entry in measured.largest)
+
+
+# --- The two shapes a real run worktree has that a `git init` fixture does not --
+
+
+def test_a_linked_worktrees_git_file_is_counted_once_and_not_a_directory(
+    worktree: Path, tmp_path: Path
+) -> None:
+    """The production shape: in a linked worktree ``.git`` is a **file**.
+
+    Every fixture above builds its tree with ``git init``, where ``.git`` is a
+    directory and the prune is what keeps it out. A ``harness start`` worktree is
+    not that — ``.git`` there is a one-line gitdir *pointer file*, so the prune
+    never fires and the pointer is counted as one ordinary root-level file.
+
+    That is the right answer (one file is not pollution), but until this case
+    existed nothing measured the shape the guard actually runs against, and the
+    module's own docstring claims to handle both. Raised as a coverage gap by the
+    review of #359.
+    """
+    linked = tmp_path / "linked"
+    subprocess.run(
+        ["git", "-C", str(worktree), "worktree", "add", "-q", str(linked), "-b", "wt"],
+        check=True, capture_output=True, text=True,
+    )
+    assert (linked / ".git").is_file(), "premise: a linked worktree's .git is a file"
+
+    measured = measure_worktree_pollution(linked, limit=100)
+
+    assert measured is not None
+    # The three tracked files, plus the gitdir pointer as a single root entry.
+    assert measured.tracked == 3
+    assert measured.scanned == 4
+    assert measured.excess == 1
+    assert measured.refuses is False
+    assert all(entry.segment != ".git" for entry in measured.largest)
+
+
+def test_a_nested_git_repository_is_counted_as_ordinary_pollution(
+    worktree: Path,
+) -> None:
+    """A checkout someone left inside the worktree is pollution, and counts.
+
+    Its *working files* are exactly the bulk that drowns the engine, so they
+    count — which is also why the walk is not delegated to git, whose own tooling
+    treats a nested repository as opaque and would report it as a single entry.
+
+    Its ``.git`` does **not** count: the prune drops any directory of that name at
+    any depth, not only the worktree's own. Object churn is git's, never the
+    operator's pollution, and it is not what the operator can act on. The exact
+    equality below is what pins that — the nested repo's internals are dozens of
+    files, so a prune scoped to depth 0 would fail here rather than pass quietly.
+    """
+    nested = worktree / "vendored"
+    nested.mkdir()
+    _git_cmd(nested, "init", "-b", "dev")
+    for i in range(30):
+        (nested / f"v{i}.py").write_text("x = 1\n")
+
+    measured = measure_worktree_pollution(worktree, limit=100)
+
+    assert measured is not None
+    assert measured.largest[0].segment == "vendored"
+    assert measured.largest[0].files == 30
+    assert measured.excess == 30

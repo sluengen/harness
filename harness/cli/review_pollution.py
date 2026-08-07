@@ -54,7 +54,10 @@ of that ticket's scope). So the scan reads *directory entries only*: never a fil
 content, never a ``stat``, never an ``open``. ``followlinks=False`` and the
 ``.git`` prune mean a symlink pointing outside the worktree — or at a parent — is
 counted once and never traversed, so the scan cannot leave the worktree and
-cannot fail to terminate. Unreadable directories are skipped rather than raised
+cannot fail to terminate. The prune drops a directory of that name at **any**
+depth, not only the worktree's own: a nested repository someone left behind is
+pollution and its working files count, but git's object churn is git's and is
+nothing the operator can act on. Unreadable directories are skipped rather than raised
 on. And the entry cap makes the work constant rather than proportional: a
 200,000-file tree costs the same as a 5,000-file one, which is what keeps this
 guard from becoming its own version of the burn it exists to prevent.
