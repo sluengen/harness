@@ -139,13 +139,13 @@ def test_load_defaults_engine_timeout_when_absent(tmp_path: Path) -> None:
     # CONTEXT.md present but no engine_timeout_seconds line → default, not error.
     _write_context(tmp_path, max_cycles=6, wall_clock=90)
     budget = load_loop_budget(tmp_path)
-    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 720
+    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 900
 
 
 def test_load_defaults_engine_timeout_when_no_context(tmp_path: Path) -> None:
     """No CONTEXT.md at all → the documented engine-timeout default."""
     budget = load_loop_budget(tmp_path)
-    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 720
+    assert budget.engine_timeout_seconds == DEFAULT_ENGINE_TIMEOUT_SECONDS == 900
 
 
 # ---------------------------------------------------------------------------
