@@ -102,6 +102,7 @@ from pydantic import BaseModel
 
 from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z
+from harness.assurance import design_precondition
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._runs import read_run_assurance, resolve_attended, resolve_open_run
@@ -143,6 +144,7 @@ from harness.cli.review_protocol import (
 from harness.cli.review_telemetry import record_terminal_refusal
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    DESIGN_STATUS_KEY,
     MALFORMED_SUBMIT_REASON,
     NO_SUBMIT_REASON,
     REVIEW_INHERITED_FROM_PATH,
@@ -949,8 +951,16 @@ async def _review_resolved_run(
     # all, which both the inheritance resolver below and the design gate at 1b
     # need; the *decision* is harness.assurance's, never this verb's.
     assurance = await read_run_assurance(db_path, resolved_run_id)
-    design_gate = resolve_design_gate(
-        assurance, design_event, await asyncio.to_thread(_read_design_file, design_file)
+
+    # Whether the design stage lets this review proceed — the ledger-keyed half
+    # of the gate, and the only half the short-circuit below needs. Resolved
+    # from the policy directly rather than through ``resolve_design_gate``,
+    # because that also reads ``--design-file``, and reading it here would open
+    # a caller-supplied path *before* the workspace-allowlist refusal at 1b —
+    # the containment AC-2 (#247) exists for. The refusal's position is not the
+    # property; not opening the file is.
+    design_precondition_result = design_precondition(
+        assurance, None if design_event is None else design_event.get(DESIGN_STATUS_KEY)
     )
 
     # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
@@ -985,7 +995,7 @@ async def _review_resolved_run(
         # A ``simple`` run legitimately has no design event, and gating on the
         # event's presence would make such a run decline inheritance forever,
         # waiting for a ``no_design`` refusal that can no longer fire.
-        design_precondition_met=design_gate.refusal_reason is None,
+        design_precondition_met=design_precondition_result.satisfied,
         gate_exit=gate_exit,
         created_at=iso_z(),
     )
@@ -1058,6 +1068,9 @@ async def _review_resolved_run(
                 reason=DESIGN_FILE_OUTSIDE_WORKSPACE_REASON,
             ) from exc
 
+    design_gate = resolve_design_gate(
+        assurance, design_event, await asyncio.to_thread(_read_design_file, design_file)
+    )
     if design_gate.refusal_reason is not None:
         raise _ReviewError(
             design_gate.refusal_message or design_gate.refusal_reason,

@@ -301,6 +301,18 @@ async def _run_start(
     resolution = resolve_assurance(ticket_data.get("labels") or [])
 
     # 4. Check for an existing open run for this ticket (keyed on canonical).
+    #    Migrate the ledger FIRST (#352). ``_migrate`` runs only from
+    #    ``store.init_db``, which until now happened inside the insert at step 6
+    #    — i.e. *after* this read. That was harmless while this projection read
+    #    only columns every schema version has, and stopped being harmless the
+    #    moment it began projecting ``assurance``: against an existing
+    #    checkout's ledger the SELECT failed with ``no such column`` and the verb
+    #    exited 1, so upgrading the harness wedged ``start`` rather than
+    #    self-healing the ledger on the next run, which is what every previous
+    #    migration did. ``init_db`` is idempotent and ``start`` is the ledger's
+    #    writer, so running it here restores that property at its source instead
+    #    of teaching each reader to tolerate a schema it should not have to see.
+    await store.init_db(db_path)
     existing = await _find_open_run(db_path, canonical, ticket_data)
     if existing is not None:
         return existing

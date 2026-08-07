@@ -376,8 +376,15 @@ async def test_assurance_migration_opens_a_premigration_ledger(tmp_path: Path) -
 
 
 async def test_assurance_migration_is_idempotent(tmp_path: Path) -> None:
-    """AC-2: ``init_db`` runs on every verb invocation, so re-application is the
-    common case — it must neither raise nor reset a recorded snapshot.
+    """AC-2: re-application must neither raise nor reset a recorded snapshot.
+
+    ``start`` runs ``init_db`` on every invocation — before its first ledger read
+    since #352 — so a run's second, third and hundredth ``start`` all re-apply
+    this migration. (An earlier draft of this docstring said *every verb* runs
+    it. That was false, and the falsehood mattered: ``design`` and ``review``
+    never call it, which is why they must tolerate a ledger that predates the
+    column rather than assume it has been healed. See
+    ``test_runs_resolver.py::test_read_run_assurance_tolerates_a_ledger_that_predates_the_column``.)
 
     Resetting would be the worse failure of the two and is the one an
     "it did not raise" assertion misses: a run opened ``complex`` would silently

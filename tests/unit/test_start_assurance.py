@@ -33,6 +33,7 @@ from typer.testing import CliRunner
 from harness.cli import app
 from harness.state import store
 from tests._asyncutil import run_sync
+from tests._ledger import seed_premigration_ledger
 
 cli_runner = CliRunner()
 
@@ -259,3 +260,85 @@ def test_an_honoured_or_absent_intent_is_silent(
 
     assert result.exit_code == 0, result.output
     assert "assurance" not in (result.stderr or "").lower()
+
+
+def test_start_works_against_a_ledger_that_predates_the_migration(
+    repo: Path, db_path: Path
+) -> None:
+    """The upgrade path: an existing checkout's ledger has no assurance columns.
+
+    ``_find_open_run`` projects them, and it runs *before* the insert that calls
+    ``store.init_db`` — so nothing has migrated the ledger by the time they are
+    first read. A test that calls ``init_db`` itself cannot see this: it heals
+    the ledger before the verb runs, which is exactly why this one seeds the old
+    schema directly and drives the CLI.
+
+    What must hold is that the first verb invocation after an upgrade still
+    self-heals the ledger, as every previous migration did. Here the run is a
+    *different* ticket, so ``start`` opens a new one over the migrated schema.
+    """
+    seed_premigration_ledger(
+        db_path,
+        run_id="01JLEGACYRUNXXXXXXXXXXXXX1",
+        worktree_path="/gone",
+        ticket="OLD-1",
+        started_at="2026-07-01T00:00:00Z",
+    )
+
+    result = _start(repo, db_path, _stub(["assurance:complex"]), "--json")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["assurance"] == "complex"
+    assert payload["assurance_reason"] == "label"
+
+
+def test_start_reports_a_legacy_open_run_as_unrecorded(repo: Path, db_path: Path) -> None:
+    """...and an open run written by the older harness reads as ``simple``.
+
+    The existing-run path returns that row without ever reaching the insert, so
+    this is the projection reading columns a pre-migration ledger does not have.
+    ``unrecorded`` is the reason reserved for exactly this: the run predates the
+    snapshot, so nothing was resolved for it.
+    """
+    seed_premigration_ledger(
+        db_path,
+        run_id="01JLEGACYRUNXXXXXXXXXXXXX2",
+        worktree_path="/gone",
+        ticket="352",
+        started_at="2026-07-01T00:00:00Z",
+    )
+
+    result = _start(repo, db_path, _stub(["assurance:complex"]), "--json")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["run_id"] == "01JLEGACYRUNXXXXXXXXXXXXX2"
+    assert payload["assurance"] == "simple"
+    assert payload["assurance_reason"] == "unrecorded"
+
+
+def test_a_repeat_start_does_not_re_warn(repo: Path, db_path: Path) -> None:
+    """The warning belongs to the resolution, and a repeat ``start`` makes none.
+
+    ``start`` returns the recorded run before it acts on anything it resolved,
+    so a second call against an issue whose labels are now unhonourable must be
+    silent: the run's level was fixed when it opened, and warning about a
+    resolution that changed nothing would tell an operator their edit had an
+    effect it did not have.
+
+    The first call uses an honoured label precisely so the *only* thing that
+    could produce a warning on the second call is the second call's own
+    resolution — which is the placement under test.
+    """
+    first = _start(repo, db_path, _stub(["assurance:complex"]), "--json")
+    assert first.exit_code == 0, first.output
+    assert "assurance" not in (first.stderr or "").lower()
+
+    second = _start(repo, db_path, _stub(["assurance:trivial"]), "--json")
+
+    assert second.exit_code == 0, second.output
+    assert json.loads(second.stdout)["assurance_reason"] == "label"
+    assert "assurance" not in (second.stderr or "").lower(), (
+        "a repeat start re-warned about a resolution it did not act on"
+    )

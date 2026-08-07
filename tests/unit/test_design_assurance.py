@@ -308,3 +308,36 @@ def test_a_complex_run_still_invokes_the_engine(repo: Path, db_path: Path) -> No
     assert events[0]["status"] == "ok"
     assert tracker.post_comment.await_count == 1
     assert DESIGN_MARKER in tracker.post_comment.await_args.args[1]
+
+
+def test_the_skip_precedes_the_adopt_path(repo: Path, db_path: Path) -> None:
+    """The placement the design calls for: skip before adopt, not after.
+
+    ADR 0008 D1 lets a resumed run *adopt* its predecessor's design instead of
+    running the engine — and adoption writes its own ``design`` event. For a run
+    that requires no design that event would be exactly the artifact the skip
+    exists not to manufacture: a later ``complex`` re-read would find a
+    successful design nothing produced for this run.
+
+    Asserted by spying on the adoption resolver rather than by constructing a
+    full adoptable predecessor, because the claim is about *order* — the skip
+    returns before the adopt decision is ever consulted — and a spy measures
+    order directly where a fixture would only measure the outcome.
+    """
+    _seed_open_run(db_path, repo, assurance="simple")
+    consulted = {"called": False}
+
+    async def _spy(*args: Any, **kwargs: Any) -> Any:
+        consulted["called"] = True
+        raise AssertionError("the adopt path must not be reached")
+
+    # Patched on ``design`` itself, not on ``design_adopt``: the verb binds the
+    # name at import, so patching the defining module leaves the verb calling
+    # the original and this spy would never fire — a vacuous pass.
+    with mock.patch.object(design_mod, "resolve_adoption", _spy):
+        result = _invoke(repo, db_path, _CountingRunner(), _tracker_stub())
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "not_required"
+    assert consulted["called"] is False
+    assert _design_events(db_path) == []

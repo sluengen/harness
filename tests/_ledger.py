@@ -1,6 +1,7 @@
 """Shared test ledger seeders.
 
 :func:`seed_design_event` appends one ``design`` event to a run.
+:func:`seed_premigration_ledger` builds a ledger as it stood before #352.
 
 Since #212 ``review`` refuses a run with no recorded design attempt
 (``reason=no_design``, ADR 0007 D3), so every test that drives a review through
@@ -19,6 +20,8 @@ explicitly (``status="failed"``, or no call at all for the refusal itself), in
 from __future__ import annotations
 
 from pathlib import Path
+
+import aiosqlite
 
 from harness.events.payloads import DesignEventData
 from harness.state import store
@@ -86,3 +89,60 @@ def seed_design_event(
             await conn.commit()
 
     run_sync(_insert())
+
+
+#: The ``runs`` table exactly as it stood **before** #352 added ``assurance`` and
+#: ``assurance_reason``. ``CREATE TABLE IF NOT EXISTS`` cannot express a column
+#: drop, so the old shape is written out; this is what every existing checkout's
+#: ledger looks like on the first verb invocation after upgrading.
+_PREMIGRATION_RUNS_DDL = (
+    "CREATE TABLE runs ("
+    "run_id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, "
+    "workflow_version INTEGER NOT NULL, status TEXT NOT NULL, "
+    "state_json TEXT NOT NULL, inputs_json TEXT NOT NULL, "
+    "base_branch TEXT, worktree_branch TEXT, exit_code INTEGER, "
+    "started_at TEXT NOT NULL, completed_at TEXT, duration_ms INTEGER, "
+    "pid INTEGER, ticket TEXT, worktree_path TEXT, resumed_from TEXT)"
+)
+
+_PREMIGRATION_EVENTS_DDL = (
+    "CREATE TABLE events ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL "
+    "REFERENCES runs(run_id) ON DELETE CASCADE, node_id TEXT, "
+    "event_type TEXT NOT NULL, timestamp TEXT NOT NULL, duration_ms INTEGER, "
+    "data_json TEXT NOT NULL DEFAULT '{}')"
+)
+
+
+def seed_premigration_ledger(
+    db_path: Path,
+    *,
+    run_id: str,
+    worktree_path: str,
+    ticket: str,
+    started_at: str,
+) -> None:
+    """A ledger with one open run and **no** assurance columns (#352).
+
+    The fixture that catches the defect a migration test cannot: ``_migrate``
+    runs only from ``store.init_db``, and a test that calls ``init_db`` itself
+    has already healed the ledger before the verb ever reads it. Driving a verb
+    against *this* is what exercises the real ordering — whether the first read
+    of a new column happens before or after the migration that adds it.
+    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def _build() -> None:
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute(_PREMIGRATION_RUNS_DDL)
+            await conn.execute(_PREMIGRATION_EVENTS_DDL)
+            await conn.execute(
+                "INSERT INTO runs (run_id, workflow_name, workflow_version, status, "
+                "state_json, inputs_json, base_branch, worktree_path, worktree_branch, "
+                "ticket, started_at) "
+                "VALUES (?, '', 0, 'open', '{}', '{}', 'dev', ?, ?, ?, ?)",
+                (run_id, worktree_path, f"harness/{run_id}", ticket, started_at),
+            )
+            await conn.commit()
+
+    run_sync(_build())

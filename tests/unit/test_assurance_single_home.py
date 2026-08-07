@@ -76,21 +76,43 @@ def _harness_modules() -> list[str]:
     ]
 
 
+#: One level as a string literal, e.g. ``"complex"`` or ``\'simple\'``. Derived
+#: from :data:`ASSURANCE_LEVELS`, so a fourth level is covered without editing
+#: anything here.
+_LEVEL_LITERAL = re.compile(
+    "|".join(rf'["\']({re.escape(level)})["\']' for level in ASSURANCE_LEVELS)
+)
+
+
+def _blocks(source: str) -> list[str]:
+    """``source`` split into blank-line-separated blocks.
+
+    The unit has to be a **block**, not a line. The most likely shape of a second
+    mapping is a multi-line dict — which is exactly how ``_REQUIRED_STAGES``
+    itself is written — and a line-scoped scan sees only one level per line of
+    it, so it would pass unflagged. A blank line separates unrelated code in
+    Python, which makes it the right boundary: it is wide enough to hold a
+    literal table and narrow enough that two unrelated mentions elsewhere in a
+    module do not read as a relation.
+    """
+    return [block for block in re.split(r"\n\s*\n", source) if block.strip()]
+
+
 def _relates_the_levels(source: str) -> list[str]:
-    """Lines of ``source`` that name **two or more** assurance levels as literals.
+    """Blocks of ``source`` naming **two or more distinct** assurance levels.
 
     The signature of a second mapping: a table, an ``if``-chain, or a set that
     decides one level's stages against another's. One level named alone is not —
-    a module may legitimately mention ``"complex"`` in a docstring, or seed a
-    fixture — so the predicate is a *run* of levels within one line, the same
-    shape ``test_payload_class_runs`` uses for its own corpus.
-
-    Derived from :data:`ASSURANCE_LEVELS`, so a fourth level is covered without
-    editing this function.
+    a module may legitimately mention ``"complex"`` in a docstring or seed a
+    fixture with it — and neither is the *same* level twice, which is why the
+    count is over distinct values rather than matches.
     """
-    levels = [re.escape(level) for level in ASSURANCE_LEVELS]
-    pattern = re.compile("|".join(rf'["\']{level}["\']' for level in levels))
-    return [line for line in source.splitlines() if len(pattern.findall(line)) >= 2]
+    offenders = []
+    for block in _blocks(source):
+        named = {m.group(0).strip("\"\'") for m in _LEVEL_LITERAL.finditer(block)}
+        if len(named) >= 2:
+            offenders.append(block)
+    return offenders
 
 
 def test_the_module_corpus_reaches_the_verbs_it_claims_to() -> None:
@@ -132,9 +154,25 @@ def test_the_relation_predicate_finds_a_planted_second_mapping() -> None:
     assertion pins the *discrimination*: a lone level, which is legal, must not
     be flagged, so the guard cannot be satisfied by simply banning the word.
     """
-    planted = '_STAGES = {"simple": False, "complex": True}\n'
-    assert _relates_the_levels(planted) == [planted.rstrip("\n")]
-    assert _relates_the_levels('DEFAULT = "simple"  # the safe level\n') == []
+    one_line = '_STAGES = {"simple": False, "complex": True}'
+    assert _relates_the_levels(one_line) == [one_line]
+
+    # The shape that matters, and the one a line-scoped predicate missed: a
+    # multi-line dict, written exactly the way ``_REQUIRED_STAGES`` is. No line
+    # of it names two levels, so this is the case that decides whether the guard
+    # measures the mapping or only a compact spelling of it.
+    multi_line = (
+        "_STAGES = {\n"
+        '    "simple": RequiredStages(design=False),\n'
+        '    "complex": RequiredStages(design=True),\n'
+        "}"
+    )
+    assert _relates_the_levels(multi_line) == [multi_line]
+
+    # ...and the two shapes that must stay legal: one level alone, and the same
+    # level twice. Neither relates anything.
+    assert _relates_the_levels('DEFAULT = "simple"  # the safe level') == []
+    assert _relates_the_levels('assert x == "simple"\nassert y == "simple"') == []
 
 
 def test_the_policy_module_is_what_the_predicate_would_flag() -> None:
@@ -145,9 +183,18 @@ def test_the_policy_module_is_what_the_predicate_would_flag() -> None:
     relation, this fails and the exclusion should go with it.
     """
     policy = (_REPO_ROOT / _POLICY_MODULE).read_text(encoding="utf-8")
-    assert _relates_the_levels(policy), (
+    offenders = _relates_the_levels(policy)
+    assert offenders, (
         f"{_POLICY_MODULE} no longer relates the levels, so excluding it from "
         f"the AC-7 scan proves nothing"
+    )
+    # Bound to the *mapping*, not merely to some block naming two levels. The
+    # ``Assurance = Literal[...]`` alias also names all three, so a bare
+    # non-empty assertion is satisfied by the type declaration and would keep
+    # justifying the exclusion after the table it exists for had moved out.
+    assert any("RequiredStages(" in block for block in offenders), (
+        f"the block the exclusion is for — the required-stages table — is no "
+        f"longer what {_POLICY_MODULE} relates the levels in"
     )
 
 

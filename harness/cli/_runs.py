@@ -57,6 +57,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import aiosqlite
+
 from harness.assurance import DEFAULT_ASSURANCE, Assurance, coerce_assurance
 from harness.cli._verb import VerbError
 from harness.state import store
@@ -213,11 +215,25 @@ async def read_run_assurance(db_path: Path, run_id: str) -> Assurance:
     """
     if not db_path.exists():
         return DEFAULT_ASSURANCE
-    async with (
-        store.connect(db_path) as conn,
-        conn.execute("SELECT assurance FROM runs WHERE run_id = ?", (run_id,)) as cur,
-    ):
-        row = await cur.fetchone()
+    try:
+        async with (
+            store.connect(db_path) as conn,
+            conn.execute("SELECT assurance FROM runs WHERE run_id = ?", (run_id,)) as cur,
+        ):
+            row = await cur.fetchone()
+    except aiosqlite.OperationalError:
+        # A ledger written before the #352 migration has no such column, and
+        # nothing has migrated it yet: ``_migrate`` runs only from
+        # ``store.init_db``, whose one caller is ``start``'s insert, so a run
+        # opened by an older harness reaches ``design`` and ``review`` first.
+        # "The column is absent" and "the column is NULL" are the same fact one
+        # level up — the run recorded no assurance — so both take the same
+        # fail-safe answer rather than raising a bare OperationalError past the
+        # verb's JSON refusal contract. Deliberately not narrowed to the message
+        # text: any read failure here must fail toward the more-verified level,
+        # and ``resolve_open_run`` has already refused a ledger that is missing
+        # or unreadable for a reason the caller needs to hear about.
+        return DEFAULT_ASSURANCE
     if row is None:
         return DEFAULT_ASSURANCE
     return coerce_assurance(row[0])

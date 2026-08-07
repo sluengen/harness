@@ -46,7 +46,7 @@ from harness.cli import app
 from harness.cli import review as review_mod
 from harness.state import store
 from tests._asyncutil import run_sync
-from tests._ledger import seed_design_event
+from tests._ledger import seed_design_event, seed_premigration_ledger
 
 cli_runner = CliRunner()
 
@@ -345,3 +345,113 @@ def test_a_simple_run_with_a_failed_design_still_proceeds_without_context(
     assert len(events) == 1
     assert events[0]["design_context"] is False
     assert events[0]["design_context_reason"] == "design_failed"
+
+
+def test_review_runs_against_a_ledger_that_predates_the_migration(
+    repo: Path, db_path: Path, gate_log: Path
+) -> None:
+    """A run opened by an older harness still reviews, and reads as ``simple``.
+
+    ``review`` reads the assurance column before anything migrates the ledger —
+    ``_migrate`` runs only from ``store.init_db``, whose one caller is
+    ``start``'s insert, and that already happened under the *old* schema for
+    this run. So this is the ordering the migration tests cannot reach: they
+    call ``init_db`` themselves and heal the ledger before the verb looks.
+
+    Left unhandled the reader raised ``OperationalError`` straight past the
+    verb's JSON refusal contract (exit 1, empty stdout). What must happen
+    instead is the documented fallback: no recorded assurance means ``simple``,
+    which requires no design, so the run reviews normally.
+    """
+    seed_premigration_ledger(
+        db_path,
+        run_id=_RUN_ID,
+        worktree_path=str(repo),
+        ticket="352",
+        started_at=datetime.now(UTC).isoformat(),
+    )
+    prompts: list[str] = []
+
+    result = _invoke(repo, db_path, _capturing_runner(prompts), gate_log)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["verdict"] == "pass"
+    assert len(prompts) == 1
+
+
+def test_a_simple_run_with_no_design_records_not_supplied(
+    repo: Path, db_path: Path, gate_log: Path
+) -> None:
+    """The context reason for the ordinary post-#352 shape.
+
+    A ``simple`` run has no design event because ``harness design`` skipped the
+    stage, and the review that follows must record *why* no design reached the
+    engine. ``not_supplied`` is the honest answer — nothing was produced and
+    nothing was owed — and it is a distinct branch from ``design_failed``, which
+    names a stage that ran and did not deliver. Without this assertion the two
+    are interchangeable in the ledger and ``harness stats`` cannot tell a skipped
+    stage from a broken one.
+    """
+    _seed_run(db_path, repo, assurance="simple")
+
+    result = _invoke(repo, db_path, _capturing_runner([]), gate_log)
+
+    assert result.exit_code == 0, result.output
+    events = _review_events(db_path)
+    assert len(events) == 1
+    assert events[0]["design_context"] is False
+    assert events[0]["design_context_reason"] == "not_supplied"
+
+
+def test_a_design_file_outside_the_workspace_is_never_opened(
+    repo: Path, db_path: Path, gate_log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2 (#247) is containment, not just a refusal in the right position.
+
+    ``--design-file`` is refused before the engine when it resolves outside the
+    mounted workspace. The *point* of checking it there is that the harness never
+    reads a path the container was not given — a refusal that fires after the
+    file has already been opened and slurped satisfies the exit code and not the
+    property.
+
+    This is a regression test in the strict sense: #352 hoisted the design-gate
+    resolution above the short-circuit, and with it the file read, so the guard
+    kept its position while the containment silently went away. Asserting the
+    exit code alone would not have noticed — the existing refusal test still
+    passed throughout. So this one spies on the reader itself.
+    """
+    outside = tmp_path.parent / "outside-the-workspace.md"
+    outside.write_text("### Data model\n\nnot reachable\n")
+    monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(repo))
+    _seed_run(db_path, repo, assurance="simple")
+
+    opened: list[str] = []
+    real_reader = review_mod._read_design_file
+
+    def _spy(path: Path | None) -> str | None:
+        opened.append(str(path))
+        return real_reader(path)
+
+    with (
+        mock.patch.object(review_mod, "_read_design_file", _spy),
+        mock.patch.object(review_mod, "_default_runner", _capturing_runner([])),
+    ):
+        result = cli_runner.invoke(
+            app,
+            [
+                "review",
+                "--repo", str(repo),
+                "--db", str(db_path),
+                "--run-id", _RUN_ID,
+                "--gate-exit", "0",
+                "--gate-log", str(gate_log),
+                "--design-file", str(outside),
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == review_mod.EXIT_GATE_FAILED, result.output
+    assert json.loads(result.stdout)["reason"] == "design_file_outside_workspace"
+    assert opened == [], (
+        f"the refused path was read before the allowlist guard fired: {opened}"
+    )

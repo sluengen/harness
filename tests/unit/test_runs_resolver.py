@@ -19,6 +19,7 @@ import pytest
 from harness.cli._runs import LedgerNotFoundError, read_run_assurance, resolve_open_run
 from harness.state import store
 from tests._asyncutil import run_sync
+from tests._ledger import seed_premigration_ledger
 
 RUN_ID = "01JRUNRESOLVEXXXXXXXXXXX01"
 
@@ -294,3 +295,31 @@ def test_read_run_assurance_falls_back_without_a_ledger(tmp_path: Path) -> None:
     never needs a second copy of it.
     """
     assert run_sync(read_run_assurance(tmp_path / "absent.db", RUN_ID)) == "simple"
+
+
+def test_read_run_assurance_tolerates_a_ledger_that_predates_the_column(
+    tmp_path: Path,
+) -> None:
+    """A pre-#352 ledger has no ``assurance`` column at all — read it as ``simple``.
+
+    The migration runs only from ``store.init_db``, whose sole caller is
+    ``start``'s insert; ``design`` and ``review`` read this column *before* any
+    such call on a run opened by an older harness. Without tolerance the reader
+    raises ``OperationalError`` and the verb exits 1 with no JSON refusal
+    contract at all — a legacy ledger would wedge every verb.
+
+    "The column is absent" and "the column is NULL" are the same fact one level
+    up, and both mean the run recorded no assurance, so both take the same
+    fail-safe answer. This is not a second policy: it routes through the same
+    :func:`coerce_assurance` fallback the ``NULL`` case does.
+    """
+    db_path = tmp_path / "harness.db"
+    seed_premigration_ledger(
+        db_path,
+        run_id=RUN_ID,
+        worktree_path=str(tmp_path),
+        ticket="CAL-631",
+        started_at="2026-07-01T00:00:00Z",
+    )
+
+    assert run_sync(read_run_assurance(db_path, RUN_ID)) == "simple"
