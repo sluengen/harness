@@ -527,27 +527,116 @@ def test_readme_live_text_tolerates_a_missing_changelog_heading() -> None:
     )
 
 
-# --- AC-3: spec-authoring records the unconditional, verb-owned stage -------
+# --- AC-3: spec-authoring records what gates the verb-owned stage -----------
+
+#: The paragraph in spec-authoring that owns the design-stage instruction, taken
+#: **verbatim from before #352** (``git show <pre-#352>:skills/spec-authoring/SKILL.md``).
+#: It is the positive control for both predicates below: it is the real prose
+#: that stated the retired policy, so a predicate that cannot tell it apart from
+#: the current paragraph is measuring nothing. Do not re-word it to suit a later
+#: rule — a fixture re-spelled to agree with the change is the change agreeing
+#: with itself.
+_PRE_352_DESIGN_PARAGRAPH = (
+    "**The design stage is not yours to size (conditional).** Where the harness "
+    "verb loop drives the ticket, `harness design` runs a top-tier engine for "
+    "**every** run (ADR 0007) — unconditional and verb-owned, gated by nothing "
+    "on the ticket. Write the change spec's Design section to the depth the "
+    "*decision* needs and no further: the build's technical design is produced "
+    "per run in a fresh engine context rather than by the implementing session "
+    "inline, so a thin Design section on a filed ticket is not the failure mode "
+    "it once was."
+)
+
+
+def _design_stage_paragraph(text: str) -> str:
+    """The one paragraph that instructs the spec author about the design stage.
+
+    Sliced to a paragraph rather than searched whole-file because the claims
+    below are about *this* instruction: a "conditional" elsewhere in a skill
+    about writing specs says nothing about what gates the verb. Markdown
+    paragraphs here are single physical lines, so a line-scoped qualifier would
+    let a claim at one end excuse a contradiction at the other — the assertions
+    that consume this therefore work per **sentence**.
+    """
+    paragraphs = [block for block in text.split("\n\n") if "harness design" in block]
+    assert paragraphs, "spec-authoring names no `harness design` paragraph to measure"
+    return paragraphs[0]
+
+
+def _sentences(paragraph: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+", paragraph) if s.strip()]
+
+
+def _claims_the_stage_is_ungated(paragraph: str) -> bool:
+    """Does this paragraph state that nothing gates the design stage?
+
+    The retired claim (ADR 0007 D1), which #352 superseded. Anchored on the
+    discriminating wording rather than any single word: "conditional" appears in
+    the paragraph's own heading in both the old and the new text, so a bare token
+    scan cannot tell them apart.
+    """
+    return any(
+        re.search(r"\bunconditional\b", sentence)
+        or re.search(r"gated by nothing", sentence)
+        or re.search(r"runs .{0,40}\bfor \*\*every\*\* run\b", sentence)
+        for sentence in _sentences(paragraph)
+    )
+
+
+def _names_the_gate(paragraph: str) -> bool:
+    """Does some sentence say the stage is gated by the issue's assurance?
+
+    Bound within one sentence: the word alone could sit in an unrelated clause
+    while the gating claim stayed absent, which is the containment trap this
+    module's other guards already avoid.
+    """
+    return any(
+        "assurance" in sentence.lower()
+        and re.search(r"\bgate|\bruns at all|\brequires\b|\bwhether\b", sentence)
+        for sentence in _sentences(paragraph)
+    )
 
 
 def test_spec_authoring_notes_the_design_stage() -> None:
-    text = SPEC_AUTHORING.read_text()
-    assert "harness design" in text, (
+    """AC-8 (#352), superseding #213 AC-3's "unconditional" assertion.
+
+    #213 pinned that spec-authoring named the stage, its verb owner, and what
+    gated it — which was, then, nothing. #352 made the gate real (the issue's
+    assurance), so the *subject* of the third clause changed while the reason for
+    having it did not: an author must still be able to read what decides whether
+    the stage runs, and must not be told it always does.
+    """
+    paragraph = _design_stage_paragraph(SPEC_AUTHORING.read_text())
+    assert "harness design" in paragraph, (
         "spec-authoring must name the `harness design` verb as the owner of "
         "the design stage (#213 AC-3)."
     )
-    assert re.search(r"unconditional", text), (
-        "spec-authoring must record that the design stage is unconditional — "
-        "it runs for every ticket, gated by nothing on the ticket (#213 AC-3)."
+    assert _names_the_gate(paragraph), (
+        "spec-authoring must record what gates the design stage — the issue's "
+        "assurance level, not the spec author's judgment (#352 AC-8)."
     )
-    # A third assertion stood here until #321: that spec-authoring still carried
-    # the `build` / `review` tier-label semantics, which #213 "does not touch".
-    # #321 retired those labels, so the assertion now pins a claim that is false
-    # — and a guard whose subject has been deleted is not evidence of anything.
-    # What #213 actually cares about survives above: that the design stage is
-    # named, owned by the verb, and unconditional. That it is unconditional was
-    # originally worth saying *because* it contrasted with the tier labels; it is
-    # worth saying now because nothing on a ticket gates it at all.
+    assert not _claims_the_stage_is_ungated(paragraph), (
+        "spec-authoring still claims the design stage runs for every ticket "
+        "gated by nothing; #352 made it conditional on the run's assurance."
+    )
+
+
+def test_the_gate_predicates_discriminate_the_retired_wording() -> None:
+    """The control, run through the *same* predicates the guard calls.
+
+    Without it both assertions above are free to be vacuous in opposite ways: a
+    ban is satisfied for free by prose that never said the thing, and a presence
+    check is satisfied by any paragraph mentioning the word. Feeding them the
+    verbatim pre-#352 paragraph pins that they actually tell the two policies
+    apart — and it must fail *both* ways round, so a predicate degraded to a
+    constant kills this test rather than sailing through it.
+    """
+    assert _claims_the_stage_is_ungated(_PRE_352_DESIGN_PARAGRAPH)
+    assert not _names_the_gate(_PRE_352_DESIGN_PARAGRAPH)
+    # ...and the live paragraph is judged the other way by the same two calls.
+    live = _design_stage_paragraph(SPEC_AUTHORING.read_text())
+    assert not _claims_the_stage_is_ungated(live)
+    assert _names_the_gate(live)
 
 
 # --- AC-4: the CHANGELOG entry ---------------------------------------------

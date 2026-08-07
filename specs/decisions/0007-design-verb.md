@@ -49,7 +49,29 @@ technical design.
 
 Four resolved dimensions:
 
-- **Unconditional, not label-gated.** The design stage runs for **every**
+> **Amended 2026-08-07 (#352) — the policy, not the protocol.** Two of the four
+> dimensions below no longer hold as written. The stage is **no longer
+> unconditional**: an issue carries its intent as an `assurance:<level>` label,
+> `start` snapshots the resolved level on the run, and only `complex` requires a
+> design. And a *failed* attempt **no longer satisfies `review`** on such a run —
+> it is refused with `design_not_usable`. What is unchanged is why the stage
+> exists (context segmentation, Opus, the artifact is the change spec's Design
+> section) and that `review` is where it is enforced. The reasoning is in
+> `specs/proposals/assurance-led-lifecycle.md`; the as-built policy is in
+> `specs/features/verb-model.md`, and the vocabulary lives in one module,
+> `harness/assurance.py`.
+>
+> Two guard rails came with it. Everything unresolved fails safe to `simple`,
+> the level that still requires a review — a label is third-party input, so the
+> most a hostile or mistaken one can buy is skipping the *design* stage, never
+> the review, the verify-gate evidence check, or `close`'s SHA-bound gate. And
+> `trivial` — the level that *would* skip review — is recognized but rewritten
+> to `simple` at the boundary, because the deterministic certification that
+> makes skipping a review safe is a later increment and is not built. The
+> trivial fast path has **not** shipped.
+
+- **Unconditional, not label-gated.** *(Superseded by the #352 amendment above:
+  conditional on issue-carried assurance.)* The design stage runs for **every**
   ticket, regardless of judged difficulty. The rationale is context
   segmentation as much as tier: the design happens in a fresh, dedicated
   engine context, uncontaminated by the build session's orchestration state.
@@ -72,7 +94,9 @@ Four resolved dimensions:
   pass. When a design exists, `review` passes it to the review engine as
   context, so the fix loop converges on conformance to the design rather than
   re-deriving intent each cycle.
-- **Failure degrades and records.** A design-engine failure (timeout, infra
+- **Failure degrades and records.** *(Narrowed by the #352 amendment above: it
+  holds where the run's assurance does not require a design; a `complex` run is
+  refused `design_not_usable`.)* A design-engine failure (timeout, infra
   error) is recorded as the design event and the build proceeds without a
   design; enforcement checks that a design was *attempted and recorded*, not
   that it succeeded. An infra flake never wedges the unattended queue, and
@@ -98,7 +122,8 @@ Four resolved dimensions:
 
 ## Consequences
 
-- Every run pays one Opus engine call at design time; the counterfactual —
+- Every run pays one Opus engine call at design time — until #352, which is the
+  cost that motivated making the stage conditional. The counterfactual —
   design-by-rejection burning review cycles — is the expensive path this
   removes on hard tickets, and trivial tickets buy context segmentation.
 - `review` gains a refusal reason (`no_design`); enforcement must ship

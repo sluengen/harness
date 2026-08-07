@@ -42,6 +42,14 @@ between the side that records the mode and the sides that act on it. They are a
 *pure* pair over the column's value rather than a DB reader, because both
 consumers already project run rows for their own reasons and need the rule, not
 another query.
+
+:func:`read_run_assurance` is the third of the same kind (#352). "What assurance
+level is this run under?" has two readers — ``design`` (is the stage required at
+all?) and ``review`` (may it proceed without one?) — and the answer must be the
+snapshot ``start`` wrote, never a re-read of the issue's labels, or a label
+edited mid-run would change the stages a run is required to pay for after it
+opened. The *policy* it reads through lives in :mod:`harness.assurance`, which is
+pure; this is the one query that fetches its input.
 """
 
 from __future__ import annotations
@@ -49,6 +57,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import aiosqlite
+
+from harness.assurance import DEFAULT_ASSURANCE, Assurance, coerce_assurance
 from harness.cli._verb import VerbError
 from harness.state import store
 
@@ -183,3 +194,46 @@ async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
     if row is None or row[0] is None:
         return None
     return str(row[0])
+
+
+async def read_run_assurance(db_path: Path, run_id: str) -> Assurance:
+    """The assurance level this run was opened under (#352).
+
+    ``start`` resolves the issue's labels once and snapshots the answer on the
+    row; every later verb reads it from here rather than re-reading labels, so a
+    label edited mid-run cannot retroactively change the stages the run is
+    required to pay for.
+
+    Total, and falls back to :data:`~harness.assurance.DEFAULT_ASSURANCE` in one
+    direction: a ledger that does not exist, a run row that is not there, a
+    ``NULL`` column on a row written before the migration, or a value outside the
+    vocabulary all read as ``simple`` — the level that still requires a review.
+    A damaged or absent snapshot can therefore only make a run *more* verified,
+    never less, which is the same posture :func:`resolve_attended` takes. The
+    ``no_ledger`` refusal is not restated here: every caller resolves its run
+    through :func:`resolve_open_run` first, which owns it.
+    """
+    if not db_path.exists():
+        return DEFAULT_ASSURANCE
+    try:
+        async with (
+            store.connect(db_path) as conn,
+            conn.execute("SELECT assurance FROM runs WHERE run_id = ?", (run_id,)) as cur,
+        ):
+            row = await cur.fetchone()
+    except aiosqlite.OperationalError:
+        # A ledger written before the #352 migration has no such column, and
+        # nothing has migrated it yet: ``_migrate`` runs only from
+        # ``store.init_db``, whose one caller is ``start``'s insert, so a run
+        # opened by an older harness reaches ``design`` and ``review`` first.
+        # "The column is absent" and "the column is NULL" are the same fact one
+        # level up — the run recorded no assurance — so both take the same
+        # fail-safe answer rather than raising a bare OperationalError past the
+        # verb's JSON refusal contract. Deliberately not narrowed to the message
+        # text: any read failure here must fail toward the more-verified level,
+        # and ``resolve_open_run`` has already refused a ledger that is missing
+        # or unreadable for a reason the caller needs to hear about.
+        return DEFAULT_ASSURANCE
+    if row is None:
+        return DEFAULT_ASSURANCE
+    return coerce_assurance(row[0])

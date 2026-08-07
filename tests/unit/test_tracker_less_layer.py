@@ -172,6 +172,7 @@ def _seed_open_run(
     ticket: str = "RUN-1",
     *,
     started_at: str = "2026-07-16T00:00:00Z",
+    assurance: str | None = None,
 ) -> str:
     """Insert an ``open`` runs row whose worktree_path == repo; return run_id.
 
@@ -191,8 +192,8 @@ def _seed_open_run(
                 "INSERT INTO runs ("
                 "run_id, workflow_name, workflow_version, status, state_json, "
                 "inputs_json, base_branch, worktree_path, worktree_branch, "
-                "ticket, started_at, pid"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ticket, started_at, pid, assurance"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     RUN_ID,
                     "",
@@ -206,6 +207,9 @@ def _seed_open_run(
                     ticket,
                     started_at,
                     1234,
+                    # #352: NULL by default — the level a real tracker-less run
+                    # resolves to, since there are no labels to read.
+                    assurance,
                 ),
             )
             await conn.commit()
@@ -274,6 +278,30 @@ def test_ac1_start_opens_a_run_without_a_tracker(repo: Path, db_path: Path) -> N
     assert len(rows) == 1
     assert rows[0]["ticket"] == "RUN-1"
     assert rows[0]["status"] == "open"
+
+
+def test_start_resolves_a_tracker_less_run_to_simple_assurance(
+    repo: Path, db_path: Path
+) -> None:
+    """#352: with no tracker there are no labels, so the run snapshots ``simple``.
+
+    Worth its own case rather than folding into the label corpus in
+    ``test_start_assurance.py``: this path never builds a tracker payload at all
+    — the ticket dict is synthesized from the argument — so it is the one shape
+    where "no labels" is a property of the *code path* rather than of the issue.
+    It must resolve like any unlabelled issue, and it must not reach for a
+    tracker to find out (``_exploding_client`` is what proves that).
+    """
+    with patch("harness.tracker.LinearClient", _exploding_client()):
+        result = cli_runner.invoke(
+            app,
+            ["start", "RUN-ASSURANCE", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["assurance"] == "simple"
+    assert payload["assurance_reason"] == "no_label"
 
 
 def test_ac1_start_degrades_ticket_context_to_the_identifier(
@@ -474,6 +502,14 @@ def test_design_degrades_and_records_without_a_tracker(
     neither title nor body, so a tracker-less repo leaves nothing to design
     against. Designing anyway would post a confidently ungrounded design, so the
     verb degrades: exit 3, one ``failed`` event, no comment.
+
+    The run is seeded ``complex`` (#352) because that is the only level at which
+    the stage runs at all. The combination is synthetic **here** and the reason
+    is worth stating: a real tracker-less run has no labels, so it resolves to
+    ``simple`` and never reaches this path — see
+    :func:`test_a_tracker_less_run_needs_no_design_at_all`. What is pinned is the
+    degrade contract itself, which a *tracker'd* repo reaches whenever its fetch
+    fails, and this is the suite's only fixture with no tracker to fetch from.
     """
     ran = {"called": False}
 
@@ -481,7 +517,7 @@ def test_design_degrades_and_records_without_a_tracker(
         ran["called"] = True
         raise AssertionError("unreachable")
 
-    _seed_open_run(db_path, repo)
+    _seed_open_run(db_path, repo, assurance="complex")
 
     with (
         patch("harness.tracker.LinearClient", _exploding_client()),
@@ -517,20 +553,30 @@ def test_design_degrades_and_records_without_a_tracker(
     assert "design_hash" not in events[0]
 
 
-def test_review_after_a_tracker_less_design_is_not_refused(
+def test_a_tracker_less_run_needs_no_design_at_all(
     repo: Path, db_path: Path
 ) -> None:
-    """The failed attempt satisfies ``no_design`` — a tracker-less build ships.
+    """A tracker-less build ships, and after #352 it never designs at all.
 
     #212 made ``review`` refuse **every** run carrying no recorded design, which
-    would wedge a tracker-less repo permanently if a degraded attempt did not
-    count. It does: the gate keys on the presence of a ``design`` event, not its
-    status. The precondition here is the *real* event the verb above wrote — not
-    a seeded one, which would only re-prove ``test_review_design_linkage.py``.
+    would have wedged a tracker-less repo permanently; the wedge was avoided by
+    letting a *degraded* attempt count. #352 removes the tension at its source
+    rather than mitigating it: a tracker-less run has no labels, so it resolves
+    to ``simple``, which requires no design — ``design`` returns ``not_required``
+    without an engine, and ``review`` is not refused for the absence.
+
+    The whole lifecycle is driven here rather than seeded, so what is asserted is
+    the *composition* of the two verbs' answers. A seeded event would only
+    re-prove ``test_review_design_linkage.py``, and would miss the thing that
+    matters: that the verb which skips and the verb which enforces read the same
+    snapshot and agree about it.
     """
     _seed_open_run(db_path, repo, started_at=datetime.now(UTC).isoformat())
 
+    designed = {"called": False}
+
     async def _design_runner(**_: Any) -> Any:
+        designed["called"] = True
         raise AssertionError("unreachable")
 
     prompts: list[str] = []
@@ -548,7 +594,10 @@ def test_review_after_a_tracker_less_design_is_not_refused(
                 ["design", "--repo", str(repo), "--db", str(db_path),
                  "--run-id", RUN_ID, "--json"],
             )
-        assert design_result.exit_code == design_mod.EXIT_DESIGN_FAILED
+        assert design_result.exit_code == 0, design_result.output
+        assert json.loads(design_result.stdout)["status"] == "not_required"
+        assert designed["called"] is False
+        assert _events_of_type(db_path, "design") == []
 
         with patch.object(review_mod, "_default_runner", _review_runner):
             result = cli_runner.invoke(
@@ -557,16 +606,16 @@ def test_review_after_a_tracker_less_design_is_not_refused(
                  "--run-id", RUN_ID, "--json"],
             )
 
-    # Not refused: no exit 5 / reason=no_design. The fixture CONTEXT.md
-    # configures no ``verify:``, so the gate-evidence check records
-    # ``gate_not_configured`` and proceeds without --gate-exit.
+    # Not refused: no exit 5 / reason=no_design, even though no design event
+    # exists at all. The fixture CONTEXT.md configures no ``verify:``, so the
+    # gate-evidence check records ``gate_not_configured`` and proceeds without
+    # --gate-exit.
     assert result.exit_code == 0, result.output
     assert len(prompts) == 1, "the engine ran, so nothing refused before it"
     events = _events_of_type(db_path, "review")
     assert len(events) == 1
     assert events[0]["verdict"] == "pass"
-    # The design existed only as a failed attempt, so no design text reached the
-    # prompt — the run shipped without a design, exactly as D4 intends.
+    # No design was produced *or* owed, so none reached the prompt.
     assert events[0]["design_context"] is False
 
 

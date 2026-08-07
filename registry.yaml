@@ -1,4 +1,4 @@
-# guidance:registry@0.5.125
+# guidance:registry@0.5.126
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -43,7 +43,7 @@ files:
   # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.4.0, profiles: [harness] }
   skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.7.0, profiles: [harness] }
-  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.11.0, profiles: [harness] }
+  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.12.0, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.20.0, profiles: [harness] }
   skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.8.2, profiles: [harness] }
@@ -101,7 +101,7 @@ files:
   # inert where the ~/bin/harness tool is absent (the command documents its
   # prereq). Reverses the CAL-650 repo-owned exclusion; the contract is pinned by
   # tests/unit/test_harness_command_distributed.py.
-  commands/harness.md:                { id: harness,                  version: 0.6.0, profiles: [harness] }
+  commands/harness.md:                { id: harness,                  version: 0.7.0, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # GitHub filing path explicitly sets Status=Todo after `gh project
@@ -161,4 +161,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.5 }
-  registry.yaml:                      { id: registry,                 version: 0.5.125 }
+  registry.yaml:                      { id: registry,                 version: 0.5.126 }

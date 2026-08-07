@@ -125,8 +125,11 @@ def _seed_run(
                 "INSERT INTO runs ("
                 "run_id, workflow_name, workflow_version, status, state_json, "
                 "inputs_json, base_branch, worktree_path, worktree_branch, "
-                "ticket, started_at, pid"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ticket, started_at, pid, assurance"
+                # #352: ``complex`` — this module records what every *terminal*
+                # path writes, and the ``no_design`` path is terminal only where
+                # a design is required. Every other assertion is unaffected.
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complex')",
                 (
                     _RUN_ID,
                     "",

@@ -68,6 +68,13 @@ from harness._git import (
     run_git,
     teardown_worktree,
 )
+from harness.assurance import (
+    DEFAULT_ASSURANCE,
+    UNRECORDED_REASON,
+    Assurance,
+    coerce_assurance,
+    resolve_assurance,
+)
 from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
 from harness.cli._runs import attendance_inputs_json, resolve_attended
 from harness.cli._verb import VerbError, run_verb
@@ -128,6 +135,28 @@ class StartOutput(BaseModel):
     #: invocation — attendance is fixed at ``start``. Defaults to ``False`` so
     #: the model stays back-compatible for any caller constructing it.
     attended: bool = False
+    #: The assurance level this run was opened under (#352) — the snapshot every
+    #: later verb reads instead of re-reading the issue's labels, so the stages
+    #: the run must pay for cannot change under it mid-run. Like ``attended``,
+    #: the existing-run path reports the *recorded* value rather than a fresh
+    #: resolution. Defaults keep the model constructible by any caller: a run
+    #: row predating the migration reads as ``simple`` for the reason
+    #: ``unrecorded``.
+    assurance: str = DEFAULT_ASSURANCE
+    #: Why the run carries that level (``harness.assurance.ResolutionReason``) —
+    #: persisted beside it because ``simple`` is the answer to five different
+    #: questions, and a run that silently lost its operator's stated intent is
+    #: what an audit needs to see.
+    assurance_reason: str = UNRECORDED_REASON
+
+
+#: The resolution reasons that mean the operator stated an assurance intent and
+#: the harness did not honour it (#352) — the only ones ``start`` warns about.
+#: ``label`` was honoured; ``no_label`` states nothing; ``unrecorded`` describes
+#: a legacy *row*, never a resolution, so it cannot arrive here.
+_UNHONOURED_INTENT_REASONS = frozenset(
+    {"conflicting_labels", "unknown_label", "fast_path_unavailable"}
+)
 
 
 class _StartError(VerbError):
@@ -262,10 +291,49 @@ async def _run_start(
         ticket_data = {"identifier": ticket}
         canonical = ticket
 
+    # 3b. Resolve the run's assurance from the issue's labels — once, here (#352).
+    #     No new tracker round-trip: ``labels`` is already in the payload step 2
+    #     fetched, and a tracker-less run has no labels to read, so it resolves
+    #     ``no_label`` -> ``simple`` like any unlabelled issue. Resolving at
+    #     ``start`` and snapshotting the answer is what makes the required stages
+    #     stable: ``design`` and ``review`` read the run row, never the ticket, so
+    #     a label edited mid-run cannot remove a requirement the run opened under.
+    resolution = resolve_assurance(ticket_data.get("labels") or [])
+
     # 4. Check for an existing open run for this ticket (keyed on canonical).
+    #    Migrate the ledger FIRST (#352). ``_migrate`` runs only from
+    #    ``store.init_db``, which until now happened inside the insert at step 6
+    #    — i.e. *after* this read. That was harmless while this projection read
+    #    only columns every schema version has, and stopped being harmless the
+    #    moment it began projecting ``assurance``: against an existing
+    #    checkout's ledger the SELECT failed with ``no such column`` and the verb
+    #    exited 1, so upgrading the harness wedged ``start`` rather than
+    #    self-healing the ledger on the next run, which is what every previous
+    #    migration did. ``init_db`` is idempotent and ``start`` is the ledger's
+    #    writer, so running it here restores that property at its source instead
+    #    of teaching each reader to tolerate a schema it should not have to see.
+    await store.init_db(db_path)
     existing = await _find_open_run(db_path, canonical, ticket_data)
     if existing is not None:
         return existing
+
+    #     Warn only where the operator stated something that was not honoured —
+    #     a conflict, an uninterpretable value, or ``trivial`` before the
+    #     certification path exists. Never a refusal: a bad label is a downgrade
+    #     to the safe level, not a reason to block the queue. And never on
+    #     ``no_label``, the common case, which would put a line on every run in
+    #     every repo that has not adopted the labels and train readers to ignore
+    #     the warning that matters. Emitted after the existing-run short-circuit
+    #     above, so a repeat ``start`` reporting a recorded run does not re-warn
+    #     about a resolution this invocation did not make.
+    if resolution.reason in _UNHONOURED_INTENT_REASONS:
+        typer.echo(
+            f"warning: this issue's assurance labels resolved to "
+            f"{resolution.effective!r} ({resolution.reason}) — the run is opened "
+            f"at that level. Fix the labels and open a new run if a different "
+            f"level was intended.",
+            err=True,
+        )
 
     # 4b. Resume resolution (--resume only): if this is a reclaimed ticket whose
     # dead run left a checkpoint-pushed branch, base the worktree on that branch
@@ -323,6 +391,8 @@ async def _run_start(
             started_at=started_at,
             resumed_from=resumed.branch if resumed is not None else None,
             attended=attended,
+            assurance=resolution.effective,
+            assurance_reason=resolution.reason,
         )
     except aiosqlite.IntegrityError:
         # A concurrent start process won the race — the unique partial index on
@@ -363,6 +433,10 @@ async def _run_start(
         worktree_branch=worktree_branch,
         base_branch=base,
         attended=attended,
+        # The pair just persisted on the row — reported so the orchestrator
+        # follows the recorded plan without re-reading the issue (#352).
+        assurance=resolution.effective,
+        assurance_reason=resolution.reason,
     )
 
 
@@ -498,7 +572,8 @@ async def _find_open_run(
             store.connect(db_path) as conn,
             conn.execute(
                 "SELECT run_id, ticket, base_branch, worktree_path, worktree_branch, "
-                "started_at, inputs_json FROM runs WHERE ticket = ? AND status = 'open'",
+                "started_at, inputs_json, assurance, assurance_reason "
+                "FROM runs WHERE ticket = ? AND status = 'open'",
                 (ticket,),
             ) as cur,
         ):
@@ -517,7 +592,17 @@ async def _find_open_run(
     if row is None:
         return None
 
-    run_id, _ticket, base_branch, wt_path, wt_branch, _started_at, inputs_json = row
+    (
+        run_id,
+        _ticket,
+        base_branch,
+        wt_path,
+        wt_branch,
+        _started_at,
+        inputs_json,
+        assurance,
+        assurance_reason,
+    ) = row
     ticket_ctx = _compact_ticket(ticket_data) if ticket_data else TicketContext(identifier=ticket)
     return StartOutput(
         run_id=run_id,
@@ -529,6 +614,11 @@ async def _find_open_run(
         # at start (ADR 0011), so a repeat `start --attended` against a run
         # opened without it reports false rather than upgrading it in place.
         attended=resolve_attended(inputs_json),
+        # Likewise recorded, not re-resolved (#352): the run reports the level it
+        # was opened under. A row written before the migration carries NULL in
+        # both columns and reads as ``simple`` / ``unrecorded``.
+        assurance=coerce_assurance(assurance),
+        assurance_reason=assurance_reason or UNRECORDED_REASON,
     )
 
 
@@ -543,6 +633,8 @@ async def _insert_open_run(
     started_at: str,
     resumed_from: str | None = None,
     attended: bool = False,
+    assurance: Assurance = DEFAULT_ASSURANCE,
+    assurance_reason: str = "no_label",
 ) -> None:
     """Insert a ``status='open'`` row into ``runs``.
 
@@ -560,8 +652,9 @@ async def _insert_open_run(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, "
             "state_json, inputs_json, base_branch, worktree_path, "
-            "worktree_branch, ticket, started_at, resumed_from"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "worktree_branch, ticket, started_at, resumed_from, "
+            "assurance, assurance_reason"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 "",          # workflow_name — not yet known at open time
@@ -576,6 +669,10 @@ async def _insert_open_run(
                 ticket,
                 started_at,
                 resumed_from,
+                # The assurance snapshot (#352) — written once here and never
+                # mutated, which is what makes it a snapshot rather than a cache.
+                assurance,
+                assurance_reason,
             ),
         )
         await conn.commit()

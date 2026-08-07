@@ -32,6 +32,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from harness.assurance import DESIGN_NOT_USABLE_REASON as _DESIGN_NOT_USABLE_REASON
+from harness.assurance import NO_DESIGN_REASON as _NO_DESIGN_REASON
+from harness.assurance import Assurance, design_precondition
 from harness.cli._engine import Runner, RunResult
 from harness.cli.design_protocol import design_content_hash
 from harness.cli.review_probe import build_probe_request
@@ -198,12 +201,16 @@ def build_review_prompt(
 # The design gate (#212, ADR 0007 D3/D4) — pure decision, no ledger, no I/O
 # ---------------------------------------------------------------------------
 
-#: The run recorded no design attempt at all. Mirrors ``no_gate_evidence``:
-#: silence is not a pass, and the refusal names the verb that satisfies it.
-#: This is the *only* refusal the design stage produces — see
-#: :func:`resolve_design_gate` for why a failure to supply the design itself is
-#: a degradation rather than a second refusal.
-NO_DESIGN_REASON = "no_design"
+#: The design stage's refusals, re-exported from :mod:`harness.assurance` where
+#: they are defined (#352) — *whether* the stage is required is the assurance
+#: policy's decision, and one home for the tag keeps this module's mapping and
+#: that decision from drifting. ``NO_DESIGN_REASON`` mirrors ``no_gate_evidence``
+#: (silence is not a pass); ``DESIGN_NOT_USABLE_REASON`` is its #352 counterpart
+#: for a run that required a design and recorded an attempt that did not succeed.
+#: Failing to *supply* the design text is neither: it degrades — see
+#: :func:`resolve_design_gate`.
+NO_DESIGN_REASON = _NO_DESIGN_REASON
+DESIGN_NOT_USABLE_REASON = _DESIGN_NOT_USABLE_REASON
 
 #: Why a review proceeded WITHOUT design context, when it did (AC-1, #247) —
 #: recorded alongside ``design_context`` so "did the linkage stop working, and
@@ -235,28 +242,39 @@ class DesignGate(BaseModel):
 
 
 def resolve_design_gate(
-    event: dict[str, Any] | None, supplied_design: str | None
+    assurance: Assurance, event: dict[str, Any] | None, supplied_design: str | None
 ) -> DesignGate:
-    """Decide the design gate from the run's latest ``design`` event.
+    """Decide the design gate from the run's assurance and latest ``design`` event.
 
-    ``event`` is that event's payload (``None`` when the run has none), and
-    ``supplied_design`` the text read from ``--design-file`` — ``None`` only
-    when no path was given, and the empty string when one was given but could
-    not be read, so an unreadable file is reported rather than passed over as
-    though nothing was supplied.
+    ``assurance`` is the level the run was opened under (#352) — the only thing
+    that decides whether the stage is *required*. ``event`` is the latest design
+    event's payload (``None`` when the run has none), and ``supplied_design`` the
+    text read from ``--design-file`` — ``None`` only when no path was given, and
+    the empty string when one was given but could not be read, so an unreadable
+    file is reported rather than passed over as though nothing was supplied.
+
+    **Requirement and context are separate questions, answered in that order.**
+    Whether a missing or failed design *refuses* is
+    :func:`harness.assurance.design_precondition`'s answer and is delegated to it
+    whole, so this module carries no second copy of the policy. Everything below
+    that refusal is about the design *text* — which is enrichment, and degrades.
 
     Five outcomes, each recorded on the returned :class:`DesignGate` as
     ``context_reason`` (:data:`DesignContextReason`, AC-1 #247) when no design
     reaches the engine — a ``None`` reason means the last outcome, the design
     applied:
 
-    * **no event** → refuse :data:`NO_DESIGN_REASON`. The design stage runs on
-      every run (ADR 0007 D1), so its absence means it was skipped.
-    * **a ``failed`` event** → proceed with no context, reason
-      ``"design_failed"``. D4 is explicit that the check is *attempted and
-      recorded*, not *succeeded*; there is no design to review against, and
-      any text supplied for one is ignored, since no recorded hash could
-      authenticate it.
+    * **the run requires a design and has none** → refuse
+      :data:`NO_DESIGN_REASON`; **requires one and its attempt failed** → refuse
+      :data:`DESIGN_NOT_USABLE_REASON`. Both come from the assurance policy.
+    * **a ``failed`` event on a run that does not require one** → proceed with no
+      context, reason ``"design_failed"``. This is ADR 0007 D4's original
+      degradation, now narrowed to the levels that do not require the stage:
+      there is no design to review against, and any text supplied for one is
+      ignored, since no recorded hash could authenticate it.
+    * **no event on a run that does not require one** → proceed with no context,
+      reason ``"not_supplied"``. That is the ordinary shape after #352, since
+      ``harness design`` skips the stage entirely for such a run.
     * **an ``ok`` event + no text supplied** → proceed with no context, reason
       ``"not_supplied"``.
     * **an ``ok`` event + text that could not be read** (the empty-string
@@ -285,19 +303,16 @@ def resolve_design_gate(
     event (``design_context``), so whether a review actually saw the design is
     auditable from the ledger rather than from console noise.
     """
-    if event is None:
+    status = None if event is None else event.get(DESIGN_STATUS_KEY)
+    precondition = design_precondition(assurance, status)
+    if not precondition.satisfied:
         return DesignGate(
-            refusal_reason=NO_DESIGN_REASON,
-            refusal_message=(
-                "this run has no recorded design attempt. ADR 0007 makes the "
-                "design stage part of every run (start → design → implement → "
-                "review → close); run `harness design --run-id <id>` and review "
-                "again. No engine was invoked and no verdict was recorded — "
-                "silence is not a pass. A design attempt that *failed* also "
-                "satisfies this check, so an engine flake never wedges the run."
-            ),
+            refusal_reason=precondition.refusal_reason,
+            refusal_message=precondition.refusal_message,
         )
-    if event.get(DESIGN_STATUS_KEY) != "ok":
+    if event is None:
+        return DesignGate(context_reason="not_supplied")
+    if status != "ok":
         return DesignGate(context_reason="design_failed")
     if supplied_design is None:
         return DesignGate(context_reason="not_supplied")

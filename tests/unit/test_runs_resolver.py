@@ -16,9 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from harness.cli._runs import LedgerNotFoundError, resolve_open_run
+from harness.cli._runs import LedgerNotFoundError, read_run_assurance, resolve_open_run
 from harness.state import store
 from tests._asyncutil import run_sync
+from tests._ledger import seed_premigration_ledger
 
 RUN_ID = "01JRUNRESOLVEXXXXXXXXXXX01"
 
@@ -221,3 +222,104 @@ def test_attended_writes_a_parseable_object_carrying_the_key() -> None:
     from harness.cli._runs import ATTENDED_KEY, attendance_inputs_json
 
     assert json.loads(attendance_inputs_json(True)) == {ATTENDED_KEY: True}
+
+
+# ---------------------------------------------------------------------------
+# #352 — ``read_run_assurance``: the run's snapshotted level, read once
+#
+# Sits beside ``read_run_resumed_from`` for the reason that module's docstring
+# already gives: two verbs read it — ``design`` (does this run require the
+# stage at all?) and ``review`` (may it proceed without one?) — so "what
+# assurance is this run under?" is a shared run-row rule, and a second query is
+# how the two start disagreeing.
+#
+# The asymmetry these tests lock mirrors attendance's: every uncertainty reads
+# as ``simple``, the level that still requires a review. A missing row, a NULL
+# column, a hand-edited value — none of them may make a run *less* verified.
+# ---------------------------------------------------------------------------
+
+
+def _set_assurance(db_path: Path, run_id: str, value: str | None) -> None:
+    async def _update() -> None:
+        async with store.connect(db_path) as conn:
+            await conn.execute(
+                "UPDATE runs SET assurance = ? WHERE run_id = ?", (value, run_id)
+            )
+            await conn.commit()
+
+    run_sync(_update())
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ("complex", "complex"),
+        ("simple", "simple"),
+        # A run row written before the migration — the no-backfill case.
+        (None, "simple"),
+        # Corrupted or hand-edited: fails toward the more-verified level.
+        ("garbage", "simple"),
+        ("", "simple"),
+    ],
+    ids=["complex", "simple", "legacy-null", "garbage", "empty"],
+)
+def test_read_run_assurance_reads_the_snapshot(
+    tmp_path: Path, stored: str | None, expected: str
+) -> None:
+    db_path = tmp_path / "harness.db"
+    _seed_run(db_path, tmp_path)
+    _set_assurance(db_path, RUN_ID, stored)
+
+    assert run_sync(read_run_assurance(db_path, RUN_ID)) == expected
+
+
+def test_read_run_assurance_falls_back_for_an_unknown_run(tmp_path: Path) -> None:
+    """No row is an uncertainty like any other — it reads as ``simple``.
+
+    A verb that cannot find its own run row has a bigger problem than its
+    assurance, and every caller here already refuses on the missing run through
+    :func:`resolve_open_run`. What this pins is that the *fallback direction* is
+    the same one every other uncertainty takes.
+    """
+    db_path = tmp_path / "harness.db"
+    _seed_run(db_path, tmp_path)
+
+    assert run_sync(read_run_assurance(db_path, "01JNOSUCHRUNXXXXXXXXXXXX")) == "simple"
+
+
+def test_read_run_assurance_falls_back_without_a_ledger(tmp_path: Path) -> None:
+    """A ledger that does not exist reads as ``simple`` rather than raising.
+
+    ``read_run_resumed_from``'s precedent: the ``no_ledger`` refusal belongs to
+    :func:`resolve_open_run`, which every caller runs *first*, so this reader
+    never needs a second copy of it.
+    """
+    assert run_sync(read_run_assurance(tmp_path / "absent.db", RUN_ID)) == "simple"
+
+
+def test_read_run_assurance_tolerates_a_ledger_that_predates_the_column(
+    tmp_path: Path,
+) -> None:
+    """A pre-#352 ledger has no ``assurance`` column at all — read it as ``simple``.
+
+    The migration runs only from ``store.init_db``, whose sole caller is
+    ``start``'s insert; ``design`` and ``review`` read this column *before* any
+    such call on a run opened by an older harness. Without tolerance the reader
+    raises ``OperationalError`` and the verb exits 1 with no JSON refusal
+    contract at all — a legacy ledger would wedge every verb.
+
+    "The column is absent" and "the column is NULL" are the same fact one level
+    up, and both mean the run recorded no assurance, so both take the same
+    fail-safe answer. This is not a second policy: it routes through the same
+    :func:`coerce_assurance` fallback the ``NULL`` case does.
+    """
+    db_path = tmp_path / "harness.db"
+    seed_premigration_ledger(
+        db_path,
+        run_id=RUN_ID,
+        worktree_path=str(tmp_path),
+        ticket="CAL-631",
+        started_at="2026-07-01T00:00:00Z",
+    )
+
+    assert run_sync(read_run_assurance(db_path, RUN_ID)) == "simple"

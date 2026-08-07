@@ -112,6 +112,12 @@ EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
     # mode, emitted on both the new-run and existing-run path. Additive and
     # always present (never omitted when false), so a consumer reads the mode
     # from a field rather than inferring it from absence.
+    # ``assurance`` / ``assurance_reason`` added with #352 — the level the run
+    # was opened under and why, snapshotted at start so the orchestrator follows
+    # the recorded plan rather than re-reading the issue's labels. Additive and
+    # always present (a run predating the migration reports ``simple`` /
+    # ``unrecorded``), so a consumer reads the level from a field rather than
+    # inferring it from absence — the same shape ``attended`` took.
     "start": {
         "run_id",
         "ticket",
@@ -119,6 +125,8 @@ EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
         "worktree_branch",
         "base_branch",
         "attended",
+        "assurance",
+        "assurance_reason",
     },
     # ``convergence_check_required`` added with the CAL-906 spend breakers — a
     # bounded advisory bool prompting the build agent to assess convergence on a
