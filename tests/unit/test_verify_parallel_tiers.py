@@ -372,7 +372,7 @@ def _collection_argv(command: str) -> list[str]:
     return argv
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _collect_node_ids(argv: tuple[str, ...]) -> frozenset[str]:
     """The node ids pytest collects for *argv* (empty = the whole suite).
 
