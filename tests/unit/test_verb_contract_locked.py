@@ -133,6 +133,9 @@ EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
     # fail past the unconditional review→fix cycles (a deliberate, additive
     # output-contract extension). ``cycles_exhausted`` is its #329 terminal
     # counterpart, added the same way: a fail that spent the last allowed cycle.
+    # ``probes_run`` / ``probes_survived`` (#363) are the probe stage's two
+    # integers, added on the same rule: additive, bounded, and carrying counts
+    # rather than any part of what the engine said.
     "review": {
         "verdict",
         "issues",
@@ -141,6 +144,8 @@ EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
         "engine",
         "convergence_check_required",
         "cycles_exhausted",
+        "probes_run",
+        "probes_survived",
     },
     "close": {"run_id", "ticket", "reviewed_sha", "merged", "ticket_done", "status"},
 }

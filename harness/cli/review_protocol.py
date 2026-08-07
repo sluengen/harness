@@ -37,6 +37,7 @@ from harness.assurance import NO_DESIGN_REASON as _NO_DESIGN_REASON
 from harness.assurance import Assurance, design_precondition
 from harness.cli._engine import Runner, RunResult
 from harness.cli.design_protocol import design_content_hash
+from harness.cli.review_probe import build_probe_request
 from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 
 # size: the review engine's protocol layer — one cohesive body of *pure* engine
@@ -158,7 +159,12 @@ SUBMIT: {"verdict": "pass", "issues": []}
 _REVIEW_PROMPT = _REVIEW_INTRO + _SUBMIT_CONTRACT
 
 
-def build_review_prompt(design_markdown: str | None = None) -> str:
+def build_review_prompt(
+    design_markdown: str | None = None,
+    *,
+    probe_cap: int = 0,
+    probe_feedback: str | None = None,
+) -> str:
     """The review prompt, with the run's design as context when there is one.
 
     Without a design this is byte-identical to the pre-#212 prompt, so a run
@@ -166,11 +172,29 @@ def build_review_prompt(design_markdown: str | None = None) -> str:
     as it always did. With one, the design is embedded **verbatim** between the
     framing and the ``SUBMIT`` contract — never summarised, since the point is
     that the engine reviews conformance to what was actually designed.
+
+    ``probe_cap`` (#363) is ``loop.probe_max_entries``: when positive, the mutation
+    budget's brief is appended, asking the engine to propose up to that many
+    entries. At ``0`` — the stage's off switch — the block is omitted entirely
+    and the prompt is byte-identical to what it was before, so a repo that
+    disables probing pays nothing for it, not even the tokens spent asking for
+    proposals the verb would discard.
+
+    ``probe_feedback`` is the *second* pass's block, and it **replaces** the
+    request rather than accompanying it: the second pass is asked to revise its
+    verdict in the light of outcomes it already proposed, not to propose more.
+    Allowing both would let one review spend the budget twice.
+
+    Either block sits **before** the ``SUBMIT`` contract for the same reason the
+    design block does: the contract stays the last thing the engine reads.
     """
-    if design_markdown is None:
-        return _REVIEW_PROMPT
-    design_block = _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
-    return _REVIEW_INTRO + design_block + _SUBMIT_CONTRACT
+    probe_block = probe_feedback or (build_probe_request(probe_cap) if probe_cap > 0 else "")
+    design_block = (
+        ""
+        if design_markdown is None
+        else _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
+    )
+    return _REVIEW_INTRO + design_block + probe_block + _SUBMIT_CONTRACT
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +362,13 @@ class _Parsed(BaseModel):
     commit_message: str | None = None
     deferred_brief: str | None = None
     submit_failure: str | None = None
+    #: The raw ``probes`` array as the engine emitted it (#363) — deliberately
+    #: unvalidated here. Screening needs the probe tree on disk to check that a
+    #: proposed ``file`` exists and that ``old`` lands exactly once, which is I/O
+    #: this pure module does not do. ``None`` when the key was absent or was not
+    #: a list, which is indistinguishable on purpose: both mean "no usable
+    #: proposal", and neither is a protocol failure.
+    probes: list[Any] | None = None
 
 
 def scan_submit_line(stdout: str) -> _Parsed:
@@ -378,11 +409,13 @@ def scan_submit_line(stdout: str) -> _Parsed:
         issues = [str(i) for i in raw_issues] if isinstance(raw_issues, list) else []
         commit_message = payload.get("commit_message")
         deferred_brief = payload.get("deferred_brief")
+        probes = payload.get("probes")
         return _Parsed(
             verdict=verdict,
             issues=issues,
             commit_message=commit_message if isinstance(commit_message, str) else None,
             deferred_brief=deferred_brief if isinstance(deferred_brief, str) else None,
+            probes=probes if isinstance(probes, list) else None,
         )
 
     # No parseable SUBMIT line — report which failure it was, on both the legacy

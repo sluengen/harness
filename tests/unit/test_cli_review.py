@@ -470,6 +470,10 @@ def test_context_economy_only_bounded_fields_no_raw_stdout(
         "engine",
         "convergence_check_required",
         "cycles_exhausted",
+        # #363: two integers from the probe stage. Counts, never entry ids and
+        # never engine reasoning, so the bound this test enforces is unmoved.
+        "probes_run",
+        "probes_survived",
     }
     assert payload["verdict"] == "fail"
     assert payload["issues"] == ["one issue"]

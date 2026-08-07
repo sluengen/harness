@@ -182,8 +182,13 @@ Stdlib only, in the shape of :mod:`cadence`. Three departures from the run's
 design, recorded so they are legible in the diff rather than in someone's
 reasoning:
 
-* The optional ``--json <path>`` report dump was **dropped**. Nothing consumes
-  it, and the rendered report is the contract a tick reads.
+* The optional ``--json <path>`` report dump was **dropped**, on the stated
+  ground that nothing consumed it and the rendered report is the contract a tick
+  reads. #363 restored it, because that ground expired: ``harness review``'s
+  probe stage runs this module as a subprocess and classifies each entry with no
+  human in the loop. It reads :func:`json_report`, never :func:`render` —
+  deriving a verdict from a human summary is the defect #207 *is*, and this
+  module's own rule against parsing ``N passed`` says so.
 * ``Baseline`` carries only ``passed``, ``collected`` and ``duration_s``, not the
   design's ``failed``/``errored``. A baseline that is not green refuses, so its
   red set cannot reach any later stage — carrying it would be dead data that
@@ -240,6 +245,7 @@ __all__ = [
     "RunnerUnavailableError",
     "check_plan",
     "exit_code",
+    "json_report",
     "load_table",
     "main",
     "render",
@@ -1088,6 +1094,54 @@ def _liveness_advisory(result: EntryResult) -> list[str]:
     ]
 
 
+def json_report(report: Report) -> dict[str, object]:
+    """The same observations as :func:`render`, shaped for a machine reader (#363).
+
+    ``harness review``'s probe stage runs this module as a subprocess and has to
+    classify each entry without a human in the loop. The alternative — parsing
+    :func:`render` — is textually the defect #207 *is*, so the producer grows a
+    machine channel rather than the consumer growing a scraper.
+
+    The **same** disclosure rule applies as to :func:`render`, and it binds
+    harder here because the output is read into a ledger event and pasted into a
+    ticket: node ids, counts, durations and digests only. In particular a
+    mutation's ``old``/``new`` are exact source substrings of the tree under
+    review and are deliberately **absent**; ``id`` is the handle a consumer cites
+    by, and it is the one the entry's author chose.
+
+    ``predicted`` / ``observed`` / ``missing`` / ``unexpected`` travel as sorted
+    node-id **lists**, not counts: ``observed`` being a strict superset of
+    ``predicted`` is what makes a collection-breaker legible as ``mispredicted``,
+    and equal-sized-but-different sets are indistinguishable by count alone. A
+    consumer that only needs the counts can take the lengths; one that only has
+    the counts cannot recover the sets.
+    """
+    return {
+        "select": list(report.select),
+        "baseline": {
+            "passed": len(report.baseline.passed),
+            "collected": report.baseline.collected,
+            "duration_s": report.baseline.duration_s,
+        },
+        "results": [
+            {
+                "id": result.mutation.id,
+                "outcome": result.outcome,
+                "predicted": sorted(result.mutation.kills),
+                "observed": sorted(result.observed),
+                "missing": sorted(result.missing),
+                "unexpected": sorted(result.unexpected),
+                "collected": result.collected,
+                "duration_s": result.duration_s,
+                "detail": result.detail,
+                "pristine_digest": result.pristine_digest,
+                "mutated_digest": result.mutated_digest,
+            }
+            for result in report.results
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # The pytest runner.
 # ---------------------------------------------------------------------------
@@ -1259,6 +1313,14 @@ def main(argv: list[str] | None = None) -> int:
         "--only", action="append", default=[], metavar="ID", help="run only these entries"
     )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S)
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        dest="json_path",
+        metavar="PATH",
+        help="also write the report as JSON for a machine consumer (#363)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1283,6 +1345,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"runner unavailable: {unavailable}", file=sys.stderr)
         return 3
 
+    if args.json_path is not None:
+        args.json_path.write_text(json.dumps(json_report(report), indent=2), encoding="utf-8")
     print(render(report))
     return exit_code(report)
 

@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.5.0 -->
+<!-- guidance:harness@0.6.0 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -122,6 +122,16 @@ The verb does **not** run the gate itself — the toolchain lives on your side, 
 **One narrow exception, mirroring Step 1.5's adopted design: a resumed run may inherit a prior pass (#259, ADR 0008 D3).** When the run resumed from a preserved WIP branch *and* its worktree HEAD is the **exact commit** another run for the same ticket already passed behind a green gate, the verb records its own `review` pass carrying that source's `reviewed_sha`, verify-gate evidence and `engine`, marked `inherited_from` — **no engine runs, and no fresh gate evidence is needed**, because the gate already ran green over this byte-identical tree. `ReviewOutput` has the same shape (`verdict: "pass"`), so Step 4 is unchanged; a stderr note and `harness events <run_id> --type review` name the source run.
 
 Inheritance is deliberately hard to earn, so most resumed runs still review normally: a clean start, a HEAD no pass covers, a dirty worktree, a source pass carrying no gate evidence, or a source `fail` at the same SHA all decline and run the engine. It also never skips a refusal that is about **this** run — a run that still owes its design stage gets `no_design` or `design_not_usable`, and if you pass a non-zero `--gate-exit` you still get `gate_failed`, because a red gate you just ran is never overridden by an old green one. What it does skip, besides the engine, is the **spend breakers**: an inherited pass consumes no review cycle and cannot trip the wall-clock budget, since it buys no engine time.
+
+**The reviewer may now run an experiment, not only read the diff.** When `loop.probe_max_entries` is above 0, the engine is asked to propose up to that many **mutation entries** alongside its verdict — deliberate edits to the code under review, each declaring the tests it must make fail. The verb creates a throwaway detached worktree at the reviewed SHA, runs them through the repo's mutation harness under `loop.probe_budget_seconds`, and gives any survivor back to a second engine pass, where it may become a finding prefixed `[probe:<id>]`. A mutation table certifies only what its author thought to mutate, and the author is the person being reviewed; this makes the reviewer the counterparty on it.
+
+Nothing about your loop changes. The printed verdict gains two integers (`probes_run`, `probes_survived`) and the stage is bounded, degrading and self-recording: every way it can fail — no instrument in the repo, a refused table, a subprocess that outlives its ceiling — records a `probe_status` on the `review` event and leaves the first pass's verdict exactly as it was. Three things are worth knowing:
+
+- **It runs where a suite can run.** In-container the verb's image carries no test toolchain, so the stage records `probe_status=unavailable` and the review proceeds unprobed — the same catch-22 that keeps the verify gate on your side. A host-side install runs it.
+- **Set `probe_max_entries: 0` to turn it off**, which restores the prior behaviour byte-for-byte, prompt included.
+- **Do not raise `engine_timeout_seconds` to buy a probe more time.** The probe budget is clamped to it, so raising the engine ceiling raises both — which is the standing "the ceiling is not the fix" rule wearing a new hat.
+
+One new refusal comes with it: **the run worktree changed while the engine had control** → exit `3`, `reason=run_worktree_mutated`, no verdict recorded. Unlike the other exit-3 walls this is **not** a "just re-run" — the tree that would merge is no longer the tree that was reviewed. Inspect `git status` in the worktree, restore it to the reviewed commit, and review again. If you cannot account for the change, escalate rather than re-running: something wrote into a tree nothing in this verb writes to.
 
 Do not route around a refusal: `close` refuses a pass carrying no gate evidence (`no_gate_evidence`). Reporting a green exit code for a gate you did not run is falsifying the record the whole loop rests on.
 
