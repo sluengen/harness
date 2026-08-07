@@ -229,6 +229,7 @@ __all__ = [
     "EntryResult",
     "Mutation",
     "MutationTable",
+    "OUTCOMES",
     "Observation",
     "Observer",
     "PythonObserver",
@@ -260,6 +261,16 @@ DEFAULT_TIMEOUT_S = 900.0
 
 #: The closed outcome vocabulary. ``killed`` is the only pass.
 Outcome = str
+
+#: The members of that vocabulary, in the order :func:`render` reads best.
+#: Load-bearing rather than a second list to keep in sync: :class:`EntryResult`
+#: refuses an outcome outside it, so a classifier that invents a sixth verdict
+#: raises on the first test that reaches the branch. That matters here because
+#: ``mypy``'s scope is ``harness`` (see ``CONTEXT.md``), so ``scripts/`` is not
+#: type-checked and a ``Literal`` alias would be an unenforced list. It is also
+#: what lets a doc guard *derive* what ``CONTRIBUTING.md`` must document, instead
+#: of hand-listing it and going stale the way #365 left it (#366).
+OUTCOMES: tuple[Outcome, ...] = ("killed", "survived", "mispredicted", "errored", "inert")
 
 
 class RefusalError(Exception):
@@ -385,6 +396,20 @@ class EntryResult:
     #: Populated only when the observable actually ran on both trees (#365).
     pristine_digest: str = ""
     mutated_digest: str = ""
+
+    def __post_init__(self) -> None:
+        """The vocabulary is closed, and this is what closes it (#366).
+
+        Constructed in exactly one place (:func:`_classify`), so the check costs
+        nothing and cannot be routed around. Without it, ``OUTCOMES`` would be a
+        second copy of the classifier's literals, free to drift from them — and a
+        doc guard deriving from a stale copy reports currency it cannot see.
+        """
+        if self.outcome not in OUTCOMES:
+            raise ValueError(
+                f"{self.outcome!r} is not one of {OUTCOMES} — add it there, and to "
+                "CONTRIBUTING.md's mutation section, which is derived from it"
+            )
 
 
 @dataclass(frozen=True)

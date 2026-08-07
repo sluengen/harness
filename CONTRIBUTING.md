@@ -51,14 +51,37 @@ If you do open a PR:
   uv run python scripts/mutate.py run   --table <table>.toml   # baseline, then each entry
   ```
 
-  It compares the observed failure set to your prediction by **equality**, which
-  is what makes both directions of a dishonest table visible: an edit that
-  changes no behaviour kills nothing, and one that breaks collection kills
-  everything, and neither can be recorded as the kill it appears to be. It backs
-  up every target before touching any and restores only from those backups, and
-  it refuses to start against a wrong tree, an ambiguous edit, a red baseline or
-  a mistyped prediction. The table stays outside the repo — only the mechanism
-  is versioned. Full rationale in the module docstring.
+  Each entry carries an `id`, the `file` it edits, the exact `old` and `new`
+  text, the `kills` it predicts, an optional `note`, and — see below — an
+  optional `observe`.
+
+  It compares the observed failure set to your prediction by **equality**:
+  exactly the predicted set is `killed`, the only pass, and anything else is
+  `mispredicted`, which is how a collection-breaker's several hundred failures
+  stop reading as the kill they resemble. A run that could not complete is
+  `errored`, never a verdict.
+
+  Killing nothing is where it gets interesting, because that is **not** by itself
+  evidence of a weak guard — it is equally an edit that changed nothing, and
+  #209 spent two re-derivations learning the difference the expensive way. So an
+  entry may declare `observe`, argv appended to this interpreter and run inside
+  the tree. On a would-be survivor it runs on both trees and the digests decide:
+  differ → `survived`, printed `SURVIVED (LIVE)`, a real gap in the guard; match
+  → `inert`, a defect in your table rather than in the guard. With no `observe`
+  you get `SURVIVED (UNPROVEN)` — nobody has shown the edit was live, so it is
+  not evidence of anything and must not be cited as though it were.
+
+  Exit `0` when every entry killed as predicted, `1` when some did not, and `4`
+  when at least one was `inert`. `4` dominates `1`: "your table proved nothing"
+  is the louder answer, and it calls for different work.
+
+  It refuses before it writes a byte, in this order: a malformed **table**, a
+  **containment** failure (the wrong tree), a **landing** failure (`old` absent
+  or ambiguous), a red **baseline**, a mistyped **prediction**, and an unusable
+  **observable** (nondeterministic, or already failing on the pristine tree). It
+  backs up every target before touching any and restores only from those
+  backups. The table stays outside the repo — only the mechanism is versioned.
+  Full rationale in the module docstring.
 
 - **Describe the problem and the approach**, not just the diff.
 
