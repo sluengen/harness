@@ -63,6 +63,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: scan and its floor cannot drift into looking for different needles.
 SHARED_IMAGE_TAG = "harness:test"
 
+#: This module, excluded from the tag scan below — it has to carry the literal in
+#: order to look for it, so a tracked-tree scan finds *itself* and demands a
+#: ``docker`` marker it must not have (it builds no image). Same ``_SELF``
+#: exclusion the repo's other retirement guards use, e.g.
+#: ``test_tiers_corpus.py``. The exclusion is kept narrow by
+#: :func:`test_the_tag_sharing_scan_finds_the_modules_it_claims_to`, which
+#: requires the scan to still reach the modules that really do build the tag.
+_SELF = "tests/unit/test_verify_parallel_tiers.py"
+
 #: The marker that selects the serial stage.
 _DOCKER_MARKER = "docker"
 
@@ -210,12 +219,13 @@ def _tag_sharing_modules() -> dict[str, set[str]]:
     for path in tracked_files_under("tests"):
         if not (path.name.startswith("test_") and path.suffix == ".py"):
             continue
+        relpath = path.relative_to(_REPO_ROOT).as_posix()
+        if relpath == _SELF:
+            continue
         source = path.read_text(encoding="utf-8")
         if SHARED_IMAGE_TAG not in source:
             continue
-        sharers[path.relative_to(_REPO_ROOT).as_posix()] = _module_pytestmark_names(
-            source
-        )
+        sharers[relpath] = _module_pytestmark_names(source)
     return sharers
 
 
@@ -232,6 +242,35 @@ def test_the_tag_sharing_scan_finds_the_modules_it_claims_to() -> None:
         f"the {SHARED_IMAGE_TAG} scan must reach the modules that build the tag; "
         f"missing {sorted(_KNOWN_TAG_SHARERS - found)} — the scan is not measuring "
         f"what it claims (#358 AC-2)."
+    )
+
+
+def test_the_self_exclusion_is_narrow_and_still_needed() -> None:
+    """The ``_SELF`` exclusion names this file, and this file really would trip.
+
+    An exclusion is a hole in the scan, so it needs both halves: that it names
+    live code, and that removing it would change the answer. The second is what
+    stops a stale exclusion quietly widening — the failure mode #327's
+    still-needed test was written against.
+
+    This module names the tag but builds no image, which is exactly why it is
+    exempt and why the exemption must not extend past it.
+    """
+    assert (_REPO_ROOT / _SELF).is_file(), (
+        f"_SELF names {_SELF}, which the tree does not contain — a stale "
+        f"exclusion is a hole, not a no-op"
+    )
+    own_source = (_REPO_ROOT / _SELF).read_text(encoding="utf-8")
+    assert SHARED_IMAGE_TAG in own_source, (
+        "this module no longer names the shared tag, so the _SELF exclusion is "
+        "unnecessary — delete it rather than leaving the scan with a hole"
+    )
+    assert _DOCKER_MARKER not in _module_pytestmark_names(own_source), (
+        "this module is not marked docker (it builds no image), which is why it "
+        "must be excluded rather than marked"
+    )
+    assert _SELF not in _tag_sharing_modules(), (
+        "the exclusion must actually remove this module from the scan"
     )
 
 
