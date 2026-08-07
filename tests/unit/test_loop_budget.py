@@ -21,6 +21,25 @@ review count, the run's ``started_at``, and ``now``. That keeps every numeric
 bound measurable in a unit test, per ``code-quality`` Part C.
 """
 
+# size: one production module's whole contract, and it is a *table* of knobs
+# rather than a set of behaviours — every knob added to ``LoopBudget`` costs this
+# file a fixed handful of cases (present / absent / unreadable / clamped), so it
+# grows linearly with a table it does not control. #359's
+# ``untracked_file_limit`` is the addition that crossed the ceiling; the file sat
+# just under it beforehand, which is exactly the state in which the next feature
+# trips a guard that is not really about that feature.
+#
+# The extraction candidate, named rather than deferred vaguely: the
+# ``load_loop_budget`` cases — everything that writes a synthetic CONTEXT.md and
+# asserts what comes back — split to ``test_loop_budget_loader.py``, leaving the
+# pure decision functions (``evaluate_breakers``, the convergence advisory,
+# ``cycles_exhausted``, ``evaluate_repeat_timeout``) here. The seam is real and
+# already visible in the helper split: the loader half builds files through
+# ``_write_context`` / ``_write_loop_block``, the decision half builds values
+# through ``_budget``, and the two share nothing but the ``LoopBudget`` type.
+# It is not done in #359 because that ticket adds one knob and the split touches
+# every case in the file, which would bury the change under the move.
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
