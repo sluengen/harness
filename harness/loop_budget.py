@@ -121,7 +121,7 @@ DEFAULT_WALL_CLOCK_BUDGET_MINUTES = 110
 # (#260, #291) — a repo that never wrote a ``loop:`` block must run the ceiling
 # this one's evidence produced, not the one it replaced. A repo still overrides
 # it in the same ``loop:`` block.
-DEFAULT_ENGINE_TIMEOUT_SECONDS = 720
+DEFAULT_ENGINE_TIMEOUT_SECONDS = 900
 
 # How long a run that *declared itself attended* may sit idle before
 # ``reclaim --stale`` presumes it abandoned (#297, ADR 0011). A longer
@@ -218,9 +218,13 @@ DEFAULT_UNTRACKED_FILE_LIMIT = 1000
 # clamped to a floor of 1.
 DEFAULT_PROBE_MAX_ENTRIES = 3
 
-# The probe subprocess ceiling. Equal to ``DEFAULT_ENGINE_TIMEOUT_SECONDS`` and
-# clamped by the loader to whatever that key is actually configured to, never
+# The probe subprocess ceiling. Held at or below ``DEFAULT_ENGINE_TIMEOUT_SECONDS``
+# and clamped by the loader to whatever that key is actually configured to, never
 # above it: one review's *added* cost is then bounded by one engine's ceiling.
+# The two were equal until the engine ceiling moved 720 -> 900 (#375); the probe
+# stayed, because that retune was bought for the review engine's own right tail
+# and a probe stage is added cost on top of it, not part of the distribution the
+# measurement covered.
 # The clamp is the point. Raising ``engine_timeout_seconds`` to buy a probe more
 # time is the standing "the ceiling is not the fix" mistake wearing a new hat,
 # and reading the configured ceiling rather than this constant is what stops a
