@@ -66,6 +66,13 @@ def repo(tmp_path: Path) -> Path:
     # The instrument comes from the primary checkout, so it has to be there for
     # the stage to run at all. Its contents are irrelevant: the runner is stubbed.
     (root / "scripts" / "mutate.py").write_text("# stub\n", encoding="utf-8")
+    # Production's shape, and load-bearing here rather than cosmetic: `.harness/`
+    # and `.worktrees/` are the harness's own directories and are gitignored in a
+    # real repo. This fixture resolves `--repo` to the run worktree itself — the
+    # one arrangement in which the probe tree lands *inside* the tree under
+    # review — so without this the identity check reads the harness's own scratch
+    # directory as a write by the engine.
+    (root / ".gitignore").write_text(".harness/\n.worktrees/\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-m", "initial")
     (root / "CONTEXT.md").write_text("```yaml\nrepo:\n  name: t\n```\n", encoding="utf-8")
@@ -281,12 +288,19 @@ def test_a_commit_made_under_the_engine_stops_the_review(repo: Path, db_path: Pa
         _git(repo, "add", "-A")
         _git(repo, "commit", "-m", "moved")
 
-    engine = _Engine(_submit("pass", []), side_effect=_commit)
+    engine = _Engine(_submit("pass", [], [_proposal()]), side_effect=_commit)
+    probe = _Probe()
 
-    result = _invoke(repo, db_path, engine, _Probe())
+    result = _invoke(repo, db_path, engine, probe)
 
     assert result.exit_code == review_mod.EXIT_INFRA_FAILURE
     assert json.loads(result.stdout)["reason"] == review_mod.RUN_WORKTREE_MUTATED_REASON
+    # The *placement* claim, not only the detection one: the check has to sit
+    # before the probe stage, so an engine that just broke the contract its
+    # execute grant rests on is never handed the thing that grant was for.
+    # Mutation-proved: without this the test stays green against a check made
+    # only after the probe stage, where the same write is still detected.
+    assert probe.calls == []
 
 
 def test_an_untouched_worktree_reviews_normally(repo: Path, db_path: Path) -> None:
@@ -482,6 +496,10 @@ def test_a_second_pass_cannot_withdraw_the_first_passs_rejection(
 
     result = _invoke(repo, db_path, engine, probe)
 
+    # The second pass must actually have run and said `pass`, or this asserts
+    # nothing about the combination — it would hold identically against a stage
+    # that never reached a second pass at all. Mutation-proved.
+    assert len(engine.calls) == 2
     printed = json.loads(result.stdout)
     assert printed["verdict"] == "fail"
     assert printed["issues"] == ["the original finding"]

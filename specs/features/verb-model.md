@@ -206,6 +206,17 @@ separately because it is the expected **in-container** outcome: `harness:dev` is
 gate, so the stage runs on a host-side install and degrades honestly in the container rather
 than reporting something that reads like a defect in the diff.
 
+**The measured cost, stated rather than assumed** (AC-5). Sampled on this repo, host-side and
+warm, at the verb-owned `-m "unit or guard"` selection: the mutation harness's own baseline run
+is **81.5s over 3,049 tests**, and three entries cost **31.4s / 44.6s / 70.0s** — **230s total**,
+32% of the 720s ceiling. Two conclusions the follow-up's defaults should be set from rather than
+guessed at. The **count cap is the binding constraint, not the clock**: at this repo's size a cap
+of 3 fits comfortably inside the budget where 8 would not. And the **fixed cost dominates** — the
+baseline is 35% of the total, and every run recompiles into a fresh `PYTHONPYCACHEPREFIX` (the
+stale-`.pyc` defence the mutation harness needs, whose price is paid here), so the marginal entry
+is much cheaper than the first. A repo whose suite is slower than this one should lower the cap
+before it touches the ceiling.
+
 The stage is change 1 of the accepted `specs/proposals/review-probing.md` sequence, and it is
 deliberately the narrow one: it grants no general execute, because the thing invoked is a single
 tool with a fixed contract. Whether the general probe callback (#364) is worth its larger cost
