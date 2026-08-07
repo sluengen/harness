@@ -85,9 +85,10 @@ from pydantic import BaseModel
 
 from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z, parse_iso_z
+from harness.assurance import required_stages
 from harness.cli._engine import EngineTimeoutError, Runner, RunResult, run_engine_subprocess
 from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
-from harness.cli._runs import resolve_open_run
+from harness.cli._runs import read_run_assurance, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.design_adopt import AdoptedDesign, resolve_adoption
 from harness.cli.design_protocol import (
@@ -167,6 +168,15 @@ NO_TICKET_SPEC_REASON = "no_ticket_spec"
 # after the change from the 12.5% wire-format baseline before it, instead of
 # summing them into a rate that can only be read as a trend.
 NO_DESIGN_OUTPUT_REASON = "no_design_output"
+
+#: ``DesignOutput.status`` for a run whose assurance does not require the stage
+#: (#352). A third value beside ``ok`` and ``failed``, and deliberately **not** a
+#: third ``design`` *event* status: ``resolve_design_gate``, ``design_adopt``'s
+#: authentication and the ledger statistics all key on ``status != 'ok'``, so a
+#: new event status would silently reclassify events for three readers. Nothing
+#: is written to the ledger on this path — the value exists only on stdout, where
+#: the orchestrator reads it.
+DESIGN_NOT_REQUIRED_STATUS = "not_required"
 
 # Which channel delivered the design, recorded on the ``ok`` event. ``file`` is
 # the contract; ``stdout`` means the scoped write did not take and the fallback
@@ -368,6 +378,34 @@ async def _run_design(
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
     resolved_model = model if model is not None else DESIGN_MODEL_DEFAULT
+
+    # 1b. Consult the run's assurance snapshot before doing anything expensive
+    #     (#352). ADR 0007 D1 ran this stage unconditionally; the assurance
+    #     policy now decides, and only ``complex`` requires a design.
+    #
+    #     Deliberately BEFORE the adopt path as well as before the engine: a run
+    #     that does not require a design has nothing to adopt either, and
+    #     adopting one would write a ``design`` event that later reads as
+    #     evidence the stage ran.
+    #
+    #     What this path must NOT do is manufacture a successful artifact. It
+    #     records no event, posts no comment, and reads no ticket — a skipped
+    #     stage leaves the ledger saying exactly what happened, which is nothing.
+    #     The result is still a ``DesignOutput`` with the same locked key set, so
+    #     the orchestrator branches on ``status`` rather than on a missing field;
+    #     ``design_markdown`` is empty because there is nothing to stage for
+    #     ``review``'s ``--design-file``. ``--model`` is accepted and ignored
+    #     here: engine and model selection stay orthogonal to assurance.
+    assurance = await read_run_assurance(db_path, resolved_run_id)
+    if not required_stages(assurance).design:
+        return DesignOutput(
+            run_id=resolved_run_id,
+            design_markdown="",
+            design_hash="",
+            grounded_sha="",
+            model="",
+            status=DESIGN_NOT_REQUIRED_STATUS,
+        )
 
     # Captured before any engine work — the concurrent-invocation detector's
     # (#236) reference point: a prior design event that finished at or after

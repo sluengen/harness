@@ -209,7 +209,7 @@ def coerce_assurance(stored: str | None) -> Assurance:
         return DEFAULT_ASSURANCE
     normalized = stored.strip().lower()
     if normalized in ASSURANCE_LEVELS:
-        return normalized  # type: ignore[return-value]
+        return normalized
     return DEFAULT_ASSURANCE
 
 

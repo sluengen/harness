@@ -25,9 +25,10 @@ Three properties carry the safety argument and are each measured, not implied:
 
 The label corpus is derived from :data:`ASSURANCE_LEVELS` (itself derived from
 the ``Assurance`` ``Literal``), so adding a level to the vocabulary extends every
-property below instead of silently leaving it unasserted. :func:`test_the_label_corpus_reaches_the_levels_it_claims_to`
-is the non-vacuity floor on that derivation — without it a narrowed corpus would
-leave the parametrized properties green while measuring nothing.
+property below instead of silently leaving it unasserted.
+``test_the_label_corpus_reaches_the_levels_it_claims_to`` is the non-vacuity
+floor on that derivation — without it a narrowed corpus would leave the
+parametrized properties green while measuring nothing.
 """
 
 from __future__ import annotations
@@ -37,8 +38,8 @@ import itertools
 import pytest
 
 from harness.assurance import (
-    ASSURANCE_LEVELS,
     ASSURANCE_LABEL_PREFIX,
+    ASSURANCE_LEVELS,
     DEFAULT_ASSURANCE,
     DESIGN_NOT_USABLE_REASON,
     NO_DESIGN_REASON,

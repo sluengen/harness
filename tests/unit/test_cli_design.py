@@ -109,8 +109,8 @@ def _seed_open_run(db_path: Path, repo: Path, *, ticket: str | None = "211") -> 
                 "INSERT INTO runs ("
                 "run_id, workflow_name, workflow_version, status, state_json, "
                 "inputs_json, base_branch, worktree_path, worktree_branch, "
-                "ticket, started_at, pid"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ticket, started_at, pid, assurance"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     _RUN_ID,
                     "",
@@ -124,6 +124,13 @@ def _seed_open_run(db_path: Path, repo: Path, *, ticket: str | None = "211") -> 
                     ticket,
                     datetime.now(UTC).isoformat(),
                     1234,
+                    # #352: this suite is the *design production* contract, whose
+                    # precondition is now an assurance level that requires the
+                    # stage. Seeding ``complex`` keeps every assertion below
+                    # about the engine, the comment and the event exactly as it
+                    # was; the conditional-skip behaviour is
+                    # ``test_design_assurance.py``'s subject, not this file's.
+                    "complex",
                 ),
             )
             await conn.commit()

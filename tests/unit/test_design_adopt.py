@@ -101,8 +101,12 @@ async def _insert_run(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, state_json, "
             "inputs_json, base_branch, worktree_path, worktree_branch, ticket, "
-            "started_at, resumed_from"
-            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?)",
+            "started_at, resumed_from, assurance"
+            # #352: ``complex`` — adoption is a *design* path, so it only arises
+            # on a run whose assurance requires the stage. A run that requires no
+            # design has nothing to adopt, which is asserted in
+            # ``test_design_assurance.py`` rather than by neutering this suite.
+            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?, 'complex')",
             (
                 run_id,
                 status,
