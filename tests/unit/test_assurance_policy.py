@@ -361,6 +361,19 @@ def test_the_precondition_refuses_exactly_where_design_is_required(
     Written as a derivation from :func:`required_stages` so the two cannot
     disagree — the refusal a verb raises and the stage the policy declares
     required are the same decision, which is the whole point of AC-7.
+
+    **What this cannot see, stated rather than implied.** Because the expectation
+    derives from the same table the code reads, flipping a row moves both sides
+    together and this test stays green — mutation-proven: changing ``complex`` to
+    ``design=False`` left both ``*-complex`` cases passing. That is the
+    self-satisfiable shape a derived assertion always has, and it is deliberate
+    here: what is being pinned is the *coupling*, so a future verb that grew its
+    own refusal rule independent of the table would break it.
+
+    The table's **contents** are therefore pinned elsewhere, against literals
+    that do not move: :data:`EXPECTED_STAGES` in
+    :func:`test_required_stages_matches_the_decided_mapping`, and
+    :func:`test_only_complex_requires_a_design`. The same mutation kills both.
     """
     precondition = design_precondition(level, design_status)
     should_refuse = required_stages(level).design and design_status != "ok"

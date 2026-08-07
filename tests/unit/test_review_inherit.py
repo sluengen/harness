@@ -121,6 +121,7 @@ async def _insert_run(
     status: str,
     resumed_from: str | None,
     started_at: datetime | None = None,
+    assurance: str = "complex",
 ) -> None:
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -128,8 +129,8 @@ async def _insert_run(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, state_json, "
             "inputs_json, base_branch, worktree_path, worktree_branch, ticket, "
-            "started_at, resumed_from"
-            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?)",
+            "started_at, resumed_from, assurance"
+            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 status,
@@ -138,6 +139,7 @@ async def _insert_run(
                 _TICKET,
                 (started_at or datetime.now(UTC)).isoformat(),
                 resumed_from,
+                assurance,
             ),
         )
         await conn.commit()
@@ -150,14 +152,21 @@ def _seed_resumed_run(
     resumed_from: str | None = _WIP_BRANCH,
     started_at: datetime | None = None,
     design: bool = True,
+    assurance: str = "complex",
 ) -> None:
     """The run under test: open, worktree == repo, resumed (or not) as given.
 
-    A ``design`` event is seeded by default because a recorded design attempt is
-    itself an inherit condition (the short-circuit may skip work, never a refusal
-    about this run's own state) *and* the decline tests all reach the engine,
-    which the same check gates. ``design=False`` drops it, for the test that
-    asserts the ``no_design`` refusal still fires.
+    A ``design`` event is seeded by default because a satisfied design
+    precondition is itself an inherit condition (the short-circuit may skip work,
+    never a refusal about this run's own state) *and* the decline tests all reach
+    the engine, which the same check gates. ``design=False`` drops it, for the
+    test that asserts the design refusal still fires.
+
+    ``assurance`` defaults to ``complex`` (#352) — the level at which a missing
+    design *is* a refusal, which is what makes ``design=False`` mean what it has
+    always meant here. The other levels require no design, so the precondition is
+    satisfied with or without an event; that direction is its own test below
+    rather than a mode of this seeder.
     """
     run_sync(
         _insert_run(
@@ -167,6 +176,7 @@ def _seed_resumed_run(
             status="open",
             resumed_from=resumed_from,
             started_at=started_at,
+            assurance=assurance,
         )
     )
     if design:
@@ -668,6 +678,35 @@ def test_declines_when_run_recorded_no_design(repo: Path, db_path: Path) -> None
     # carries neither a verdict nor an ``inherited_from``, so the short-circuit
     # provably did not fire.
     _assert_only_a_refusal(db_path, review_mod.NO_DESIGN_REASON)
+
+
+def test_a_simple_run_inherits_without_ever_recording_a_design(
+    repo: Path, db_path: Path
+) -> None:
+    """#352: condition 2 is "may this run review?", not "did it record a design?".
+
+    A ``simple`` run requires no design and ``harness design`` writes no event
+    for it, so keying condition 2 on an event's *presence* would make every
+    resumed simple run decline inheritance — forever, waiting for a ``no_design``
+    refusal that can no longer fire. It would then re-review a byte-identical
+    tree a predecessor already passed behind a green gate, which is exactly the
+    spend #259 exists to remove.
+
+    The mirror of :func:`test_declines_when_run_recorded_no_design`, which keeps
+    the same fixture at ``complex`` and asserts the refusal still fires there —
+    the two together are what pin that the condition tracks the *policy* rather
+    than either constant.
+    """
+    head = _head_sha(repo)
+    _seed_resumed_run(db_path, repo, design=False, assurance="simple")
+    _seed_source_review(db_path, head)
+    engine = _EngineSpy()
+
+    result = _invoke(repo, db_path, engine)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["verdict"] == "pass"
+    assert engine.calls == 0, "an inherited pass buys no engine time"
 
 
 def test_declines_when_the_caller_reports_a_red_gate(repo: Path, db_path: Path) -> None:

@@ -36,6 +36,7 @@ def seed_design_event(
     grounded_sha: str = "basesha",
     timestamp: str = DEFAULT_DESIGNED_AT,
     duration_ms: int | None = None,
+    inherited_from: str | None = None,
 ) -> None:
     """Append one ``design`` event for ``run_id``, satisfying ``review``'s check.
 
@@ -63,6 +64,10 @@ def seed_design_event(
         grounded_sha=grounded_sha if status == "ok" else None,
         reason=None if status == "ok" else "engine_timeout",
         detail=None if status == "ok" else "the engine was killed",
+        # #258's adopt shape: additive to the ``ok`` payload, naming the run
+        # whose design this one recovered rather than produced (#352 needs it
+        # to seed a complex run whose design was adopted, not engine-made).
+        inherited_from=inherited_from,
     )
 
     async def _insert() -> None:

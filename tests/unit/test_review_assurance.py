@@ -254,6 +254,29 @@ def test_a_complex_run_with_a_successful_design_proceeds(
     assert len(prompts) == 1
 
 
+def test_an_adopted_design_satisfies_a_complex_run(
+    repo: Path, db_path: Path, gate_log: Path
+) -> None:
+    """AC-5: a design *adopted* from a predecessor is a design (ADR 0008 D1).
+
+    A resumed run may record its own ``design`` event marked ``inherited_from``
+    rather than running the engine, and that event carries ``status="ok"``
+    because the design it names exists and authenticated. The precondition keys
+    on the status alone, so adoption satisfies it — which is the point of the
+    adopt path: it exists to spare a re-design, not to leave the run unable to
+    review afterwards.
+    """
+    _seed_run(db_path, repo, assurance="complex")
+    seed_design_event(db_path, _RUN_ID, status="ok", inherited_from="01JSOURCERUNXXXXXXXXXXXX")
+    prompts: list[str] = []
+
+    result = _invoke(repo, db_path, _capturing_runner(prompts), gate_log)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["verdict"] == "pass"
+    assert len(prompts) == 1
+
+
 def test_the_latest_design_event_decides(repo: Path, db_path: Path, gate_log: Path) -> None:
     """A failed attempt followed by a successful one proceeds.
 
