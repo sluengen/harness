@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from harness import loop_budget
 from harness.loop_budget import (
     DEFAULT_ATTENDED_IDLE_MINUTES,
     DEFAULT_ENGINE_TIMEOUT_SECONDS,
@@ -724,4 +725,73 @@ def test_the_limit_is_a_parameter_so_a_repo_key_can_arrive_later() -> None:
             timeouts_at_sha=2, reviewed_sha=_SHA, budget=_budget(), limit=3
         )
         is None
+    )
+
+
+def _write_loop_block(root: Path, body: str) -> None:
+    """Write a CONTEXT.md whose ``loop:`` block is exactly ``body``.
+
+    The sibling ``_write_context`` takes one keyword per knob, which does not
+    reach the cases below: a key spelled with a value its reader *rejects*, and a
+    block that omits the key entirely.
+    """
+    (root / "CONTEXT.md").write_text(
+        "<!-- guidance:template-context@0.1.4 -->\n"
+        "# CONTEXT.md\n\n"
+        "```yaml\n"
+        "profile: harness\n"
+        f"{body}"
+        "```\n"
+    )
+
+
+# --- untracked_file_limit (#359) ----------------------------------------------
+#
+# The bound ``review``'s polluted-worktree guard measures a run worktree against.
+# A CONTEXT key rather than a module constant like ``ENGINE_TIMEOUT_ATTEMPT_LIMIT``
+# on the criterion that constant's own comment states: there is no repo for which
+# a fifth identical timeout is right, but there *is* one for which a large
+# untracked tree is right — a JS repo whose gate cannot run without
+# ``node_modules`` in the worktree. Without the key, that repo's every review is
+# refused with no recourse.
+
+
+def test_load_reads_the_untracked_file_limit_from_context(tmp_path: Path) -> None:
+    """A configured key wins over the constant."""
+    _write_loop_block(tmp_path, "loop:\n  untracked_file_limit: 250\n")
+    assert load_loop_budget(tmp_path).untracked_file_limit == 250
+
+
+def test_load_defaults_the_untracked_file_limit_when_absent(tmp_path: Path) -> None:
+    """An absent key falls back to the constant, so an unconfigured repo is guarded."""
+    _write_loop_block(tmp_path, "loop:\n  max_review_cycles: 5\n")
+    assert (
+        load_loop_budget(tmp_path).untracked_file_limit
+        == loop_budget.DEFAULT_UNTRACKED_FILE_LIMIT
+    )
+
+
+def test_a_zero_untracked_file_limit_is_honoured_as_disabled(tmp_path: Path) -> None:
+    """``0`` reaches the caller intact — it is the documented off switch.
+
+    The other integer knobs floor at 1 because a 0 there wedges every run at its
+    first boundary. This one is the opposite: 0 means *do not measure*, so a
+    clamp would make the escape hatch unreachable.
+    """
+    _write_loop_block(tmp_path, "loop:\n  untracked_file_limit: 0\n")
+    assert load_loop_budget(tmp_path).untracked_file_limit == 0
+
+
+@pytest.mark.parametrize("raw", ["-5", "lots", ""])
+def test_an_unreadable_untracked_file_limit_falls_back(tmp_path: Path, raw: str) -> None:
+    """A value the reader's digits-only pattern rejects degrades to the default.
+
+    Notably a **negative** does not clamp to 0 — it does not match at all, so it
+    reads as absent. That matters because 0 is the off switch: a clamp would turn
+    a typo into a silently disabled guard.
+    """
+    _write_loop_block(tmp_path, f"loop:\n  untracked_file_limit: {raw}\n")
+    assert (
+        load_loop_budget(tmp_path).untracked_file_limit
+        == loop_budget.DEFAULT_UNTRACKED_FILE_LIMIT
     )

@@ -86,6 +86,11 @@ _KEYS = (
     # "fixed" by dropping the key from the table, which is exactly the drift the
     # derived table exists to prevent.
     "review_model",
+    # …and again for #359's ``untracked_file_limit``, appended last for the same
+    # positional reason. It is the first knob whose valid range **includes 0** —
+    # 0 disables ``review``'s polluted-worktree guard outright — which is why the
+    # loader does not clamp it to a floor of 1 the way it clamps the cycle knobs.
+    "untracked_file_limit",
 )
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")

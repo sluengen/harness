@@ -105,6 +105,10 @@ from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_d
 from harness.cli._runs import resolve_attended, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
+from harness.cli.review_pollution import (
+    measure_worktree_pollution,
+    pollution_refusal_message,
+)
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
     MALFORMED_SUBMIT_SENTINEL,
@@ -360,6 +364,19 @@ NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
 # outcome as a legitimately stale in-workspace file. Shares
 # ``EXIT_GATE_FAILED`` — same response shape (fix the input, review again).
 DESIGN_FILE_OUTSIDE_WORKSPACE_REASON = "design_file_outside_workspace"
+
+# Machine-readable ``reason`` for a run worktree that has drifted far past its
+# own git index (#359). Shares ``EXIT_GATE_FAILED`` with the three refusals above
+# — same response shape, and the same thing to do about it: fix the input and
+# review again. A sixth exit code would say something new to an orchestrator that
+# has nothing new to do.
+#
+# Distinct from :data:`ENGINE_TIMEOUT_REASON` in both the exit code (5, not 3)
+# and the tag, and that distinctness is the point rather than a formality: a
+# polluted tree *presents* as an engine timeout, so a shared tag would leave an
+# operator reading the ledger unable to tell "the engine hung" from "we refused
+# to let it".
+POLLUTED_WORKTREE_REASON = "polluted_worktree"
 
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
@@ -825,6 +842,48 @@ async def _review_resolved_run(
     )
     if repeat_trip is not None:
         raise _ReviewError(repeat_trip.message, EXIT_BREAKER_TRIPPED, reason=repeat_trip.reason)
+
+    # 2a'. Refuse a run worktree that has drifted far past its own git index
+    #      (#359). A worktree carrying thousands of untracked files drowns the
+    #      review engine's tool use: #208 arrived here with 3,555 files against
+    #      578 tracked, burned the whole engine ceiling and returned
+    #      ``engine_timeout`` having reviewed nothing; the tree cleaned to 586/578
+    #      and the very next review returned a real verdict. #205 identified that
+    #      cause and fixed it with a rule an operator has to keep ("never gate in
+    #      the run worktree"); this is the same rule as a mechanism, turning a
+    #      silent 720-second burn into an instant refusal that states its remedy.
+    #
+    #      Placed HERE for four reasons, each of which fixes one edge of the slot:
+    #      after the inherit short-circuit (that path spawns no engine, so a
+    #      polluted tree is irrelevant to it and refusing would block a review
+    #      that costs nothing); after every cheaper pre-engine check, since a
+    #      directory walk is the most expensive of them and a bounded-out,
+    #      undesigned or red-gated run should be refused on *that*; after the HEAD
+    #      capture just above, so the refusal row carries ``reviewed_sha`` and an
+    #      operator reading the ledger sees ``engine_timeout`` and
+    #      ``polluted_worktree`` against the same tree — the #208 correlation made
+    #      legible; and before the tracker park below, so a refused run leaves its
+    #      ticket where it stopped, exactly like every other pre-engine refusal.
+    #
+    #      Fail-open by construction, like the repeat-timeout breaker above: the
+    #      measurement is ``None`` for every case it cannot answer (the check
+    #      disabled, a path that is not a git top-level, a wedged or failed
+    #      ``ls-files``, an empty index) and review proceeds. A guard that stops a
+    #      run may rest only on evidence it actually gathered — and the failure it
+    #      prevents is expensive but recoverable, whereas refusing a legitimate
+    #      review is not.
+    pollution = await asyncio.to_thread(
+        measure_worktree_pollution,
+        Path(worktree_path),
+        limit=budget.untracked_file_limit,
+    )
+    if pollution is not None and pollution.refuses:
+        raise _ReviewError(
+            pollution_refusal_message(pollution),
+            EXIT_GATE_FAILED,
+            reason=POLLUTED_WORKTREE_REASON,
+            extra={"worktree_pollution": pollution.as_payload()},
+        )
 
     # 2b. Park the ticket In Review before the engine runs (CAL-1103) — the queue
     #     shows "reviewing" while the (possibly long) engine works. Deliberately
