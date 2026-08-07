@@ -33,6 +33,7 @@ suite. The end-to-end proof over a real pytest run is
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -693,6 +694,47 @@ def test_an_entry_predicting_no_kills_is_refused(tmp_path: Path) -> None:
 
     assert excinfo.value.reason == "table"
     assert "e1" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "select",
+    ['["-n", "auto"]', '["-nauto"]', '["--numprocesses=4"]', '["--dist", "loadfile"]'],
+    ids=["separate", "joined", "long-equals", "dist"],
+)
+def test_a_parallel_selection_is_refused(tmp_path: Path, select: str) -> None:
+    """The plugin's sets are per-interpreter, so xdist would report every entry green.
+
+    Four spellings, because refusing only the obvious one leaves the hole open:
+    the flag a tick is most likely to copy is whichever spelling the gate uses.
+    """
+    with pytest.raises(mutate.RefusalError) as excinfo:
+        mutate.load_table(
+            _write_table(tmp_path, _table_text(mutations=_entry(), select=select))
+        )
+
+    assert excinfo.value.reason == "table"
+    assert "xdist" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "select",
+    ['["-m", "unit or guard"]', '["tests/unit/test_mutate.py"]', '["-k", "not slow"]'],
+    ids=["marker", "path", "keyword"],
+)
+def test_an_ordinary_selection_is_not_mistaken_for_a_parallel_one(
+    tmp_path: Path, select: str
+) -> None:
+    """The negative control: the refusal must discriminate, not just fire.
+
+    ``-k`` and a path both start with characters the naive check could catch,
+    and a predicate that refused them would make the harness unusable for the
+    selections the ticket exists to support.
+    """
+    table = mutate.load_table(
+        _write_table(tmp_path, _table_text(mutations=_entry(), select=select))
+    )
+
+    assert table.select == tuple(json.loads(select))
 
 
 def test_a_table_with_no_mutations_is_refused(tmp_path: Path) -> None:

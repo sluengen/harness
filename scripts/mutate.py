@@ -322,6 +322,7 @@ def load_table(path: Path) -> MutationTable:
     select = raw.get("select", ["-m", "unit or guard"])
     if not isinstance(select, list) or not all(isinstance(item, str) for item in select):
         raise RefusalError("table", f"{path}: `select` must be a list of strings")
+    _refuse_parallel_selection(path, select)
 
     entries = raw.get("mutation", [])
     if not isinstance(entries, list) or not entries:
@@ -342,6 +343,36 @@ def load_table(path: Path) -> MutationTable:
         sentinel_text=raw["sentinel_text"],
         mutations=tuple(mutations),
     )
+
+
+def _refuse_parallel_selection(path: Path, select: list[str]) -> None:
+    """Refuse an xdist selection, because the plugin cannot observe across workers.
+
+    :mod:`_mutate_outcomes` accumulates node ids in module-level sets and writes
+    them at ``pytest_sessionfinish``. Under ``-n`` each worker gets its own
+    interpreter and its own copy of those sets, so the file that survives holds
+    a fraction of the run — or none of it. Every entry would then report
+    ``survived`` while the suite was in fact killing tests, which is precisely
+    the lie this module exists to remove, arriving from the runner instead of
+    from the table.
+
+    Worth refusing rather than documenting: since #358 the gate's own pytest
+    stage runs ``-n auto``, so copying that flag into a table's ``select`` is
+    now the obvious thing to try. A refusal names the reason; a silent wrong
+    answer costs a re-derivation.
+    """
+    flags = {"-n", "--numprocesses", "--dist"}
+    for item in select:
+        head = item.split("=", 1)[0]
+        parallel = head in flags or (item.startswith("-n") and len(item) > 2)
+        if parallel:
+            raise RefusalError(
+                "table",
+                f"{path}: `select` passes {item!r}, but this harness cannot observe "
+                "outcomes across xdist workers — each worker would record into its "
+                "own copy of the plugin's sets and every entry would read as "
+                "`survived`. Narrow the selection instead (a path, or -m).",
+            )
 
 
 def _parse_entry(path: Path, index: int, entry: object) -> Mutation:
