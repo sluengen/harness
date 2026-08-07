@@ -262,11 +262,22 @@ def test_the_refusal_names_the_counts_offenders_and_remedy(
     payload = json.loads(result.output)
     message = payload["error"]
 
+    measured = payload["worktree_pollution"]
+
     # The counts, as numbers rather than an adjective.
-    assert str(payload["worktree_pollution"]["excess"]) in message.replace(",", "")
+    assert str(measured["excess"]) in message.replace(",", "")
     assert "limit" in message
-    # The largest offender, named.
-    assert ".venv" in message
+
+    # The largest offender, named *with its size* — the binding matters. A bare
+    # ``".venv" in message`` passes against a refusal that names no offender at
+    # all, because the remedy sentence below already says "most often a
+    # verify-gate `.venv`". Asserting the rendered clause is what makes this
+    # measure the offenders list rather than boilerplate the mutation never
+    # touches (the mutation harness caught exactly that).
+    largest = measured["largest"][0]
+    assert largest["segment"] == ".venv"
+    assert f"`{largest['segment']}` ({largest['files']:,} files)" in message
+
     # The remedy, and the bound's own address.
     assert "UV_PROJECT_ENVIRONMENT" in message
     assert "untracked_file_limit" in message

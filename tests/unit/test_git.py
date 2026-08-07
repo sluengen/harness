@@ -249,3 +249,32 @@ def test_tracked_paths_is_none_when_git_times_out(
 
     monkeypatch.setattr(git_mod, "run_git", _hang)
     assert tracked_paths(repo) is None
+
+
+def test_tracked_paths_is_none_for_a_subdirectory_of_a_repo(repo: Path) -> None:
+    """The anchor's real hazard: a directory *inside* a worktree, not its top.
+
+    The plain-directory case above is not this one. There ``git ls-files`` fails
+    outright, so ``None`` comes back whether the anchor exists or not — it cannot
+    tell an anchored implementation from an unanchored one. Here git walks **up**,
+    finds the repo, and answers *successfully* with a subset: only the paths under
+    this subdirectory, spelled relative to it.
+
+    That is the silent wrong answer, and it is wrong in the dangerous direction.
+    A consumer counting tracked files gets an **undercount** while its own view of
+    what is on disk does not shrink to match — which for ``review``'s pollution
+    guard means an overstated excess and a clean worktree refused.
+    """
+    (repo / "sub").mkdir()
+    (repo / "sub" / "b.txt").write_text("b\n")
+    _git(repo, "add", "sub/b.txt")
+    _git(repo, "-c", "user.email=t@e.c", "-c", "user.name=T", "commit", "-m", "add")
+
+    # The premise, asserted rather than assumed: from in here git succeeds and
+    # reports a partial index — ``sub``'s own file, not the repo's README.
+    walked_up = run_git(repo / "sub", "ls-files", "-z")
+    assert walked_up.returncode == 0
+    assert "b.txt" in walked_up.stdout
+    assert "README.md" not in walked_up.stdout
+
+    assert tracked_paths(repo / "sub") is None
