@@ -38,9 +38,14 @@ Selection
 docker"``
 =====================================  ===================================
 
-A tier selector is a **feedback affordance, never a gate run**.
-``scripts/verify.sh`` passes no ``-m`` and keeps ``--cov-fail-under=90``; the
-tiers select, they never deselect, and ``test_tiers.py`` pins that.
+A tier selector is a **feedback affordance, never a way to run less**. Since #358
+the gate does pass ``-m``, but only to *partition*: ``-m docker`` runs serially
+(those tests share the ``harness:test`` image tag) and ``-m "not docker"`` runs
+across the host's cores, with ``--cov-fail-under=90`` evaluated on the union. The
+invariant is therefore the union rather than the absence of a selector, and it is
+measured — ``tests/unit/test_verify_parallel_tiers.py`` collects both selections
+and asserts they cover the whole suite exactly once each. The tiers still select,
+they never deselect.
 
 Two halves, one guarantee
 -------------------------
