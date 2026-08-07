@@ -40,6 +40,26 @@ If you do open a PR:
   under one coverage floor measured on the union. Set `HARNESS_TEST_WORKERS` to
   override the worker count — `HARNESS_TEST_WORKERS=0` runs in the controller,
   which is how you reproduce a failure that only appears under parallelism.
+- **Prove a new guard by mutating what it guards.** A test written after the
+  code, or one that was green the moment it was born, has not been shown to
+  measure anything. `scripts/mutate.py` runs that proof: you write a TOML table
+  of exact edits, each declaring the pytest node ids it must kill, and the
+  harness applies them one at a time against a pristine tree.
+
+  ```bash
+  uv run python scripts/mutate.py check --table <table>.toml   # lands? costs nothing
+  uv run python scripts/mutate.py run   --table <table>.toml   # baseline, then each entry
+  ```
+
+  It compares the observed failure set to your prediction by **equality**, which
+  is what makes both directions of a dishonest table visible: an edit that
+  changes no behaviour kills nothing, and one that breaks collection kills
+  everything, and neither can be recorded as the kill it appears to be. It backs
+  up every target before touching any and restores only from those backups, and
+  it refuses to start against a wrong tree, an ambiguous edit, a red baseline or
+  a mistyped prediction. The table stays outside the repo — only the mechanism
+  is versioned. Full rationale in the module docstring.
+
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing
