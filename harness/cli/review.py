@@ -102,7 +102,7 @@ from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
 from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
-from harness.cli._runs import resolve_attended, resolve_open_run
+from harness.cli._runs import read_run_assurance, resolve_attended, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
 from harness.cli.review_pollution import (
@@ -650,6 +650,14 @@ async def _review_resolved_run(
     # Moving a read is behaviour-preserving: every refusal keeps its position.
     ticket = await _read_ticket(db_path, resolved_run_id)
     design_event = await _read_latest_design_event(db_path, resolved_run_id)
+    # The run's assurance snapshot (#352) — read once, here, beside the other two
+    # hoisted ledger reads. It decides whether the design stage was required at
+    # all, which both the inheritance resolver below and the design gate at 1b
+    # need; the *decision* is harness.assurance's, never this verb's.
+    assurance = await read_run_assurance(db_path, resolved_run_id)
+    design_gate = resolve_design_gate(
+        assurance, design_event, await asyncio.to_thread(_read_design_file, design_file)
+    )
 
     # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
     #       from a preserved WIP branch and its HEAD is the exact commit a
@@ -679,7 +687,11 @@ async def _review_resolved_run(
         run_id=resolved_run_id,
         ticket=ticket,
         worktree_path=Path(worktree_path),
-        design_recorded=design_event is not None,
+        # Not "did it record a design?" but "may it review without one?" (#352).
+        # A ``simple`` run legitimately has no design event, and gating on the
+        # event's presence would make such a run decline inheritance forever,
+        # waiting for a ``no_design`` refusal that can no longer fire.
+        design_precondition_met=design_gate.refusal_reason is None,
         gate_exit=gate_exit,
         created_at=iso_z(),
     )
@@ -752,9 +764,6 @@ async def _review_resolved_run(
                 reason=DESIGN_FILE_OUTSIDE_WORKSPACE_REASON,
             ) from exc
 
-    design_gate = resolve_design_gate(
-        design_event, await asyncio.to_thread(_read_design_file, design_file)
-    )
     if design_gate.refusal_reason is not None:
         raise _ReviewError(
             design_gate.refusal_message or design_gate.refusal_reason,
