@@ -111,6 +111,7 @@ Architecture decisions live in `specs/decisions/` (ADRs, `0001`+); older design 
 ## Where deeper truth lives
 
 - **How the system is built** → `specs/` (design docs; `SPEC.md` is the index)
+- **Build-time instruments (proving a new guard by mutating what it guards)** → `scripts/mutate.py`, driven per [`CONTRIBUTING.md`](./CONTRIBUTING.md)'s mutation section. Not a gate stage — you run it while writing a guard, and a test that was green the moment it was born has not been shown to measure anything
 - **The verb contract the agent drives** → `commands/harness.md`
 - **Operating the loops (re-syncing the local scheduled-task triggers)** → `RUNBOOK.md`
 - **Loop substrate (always-on local default; optional Claude-routine cloud; per-target-repo rule)** → `specs/decisions/0001-cloud-runnable-harness-loop.md`
