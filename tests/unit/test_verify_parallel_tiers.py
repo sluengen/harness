@@ -76,14 +76,15 @@ _SELF = "tests/unit/test_verify_parallel_tiers.py"
 #: The marker that selects the serial stage.
 _DOCKER_MARKER = "docker"
 
-#: The two modules that build into :data:`SHARED_IMAGE_TAG` today. An anchor for
+#: The modules that build into :data:`SHARED_IMAGE_TAG` today. An anchor for
 #: the scan's floor, not a value the scan is allowed to assume: the assertion is
 #: that the scan *finds* these, so a derivation that silently matched nothing
-#: cannot pass. A third module joining the tag is expected to add itself here in
-#: the same change that marks it.
+#: cannot pass. A module joining the tag adds itself here in the same change
+#: that marks it — ``test_docker_worktree_prune.py`` did so on #371.
 _KNOWN_TAG_SHARERS = frozenset(
     {
         "tests/integration/test_docker.py",
+        "tests/integration/test_docker_worktree_prune.py",
         "tests/integration/test_serve_socket.py",
     }
 )
@@ -265,7 +266,7 @@ def test_the_tag_sharing_scan_finds_the_modules_it_claims_to() -> None:
 
     An "every module that shares the tag is marked" assertion is free if the scan
     matches nothing — the shape that reads green while measuring nothing (#168).
-    Anchored on the two modules known to build the tag rather than on a count,
+    Anchored on the modules known to build the tag rather than on a count,
     since a count is the drift the floor exists to absorb.
     """
     found = set(_tag_sharing_modules())

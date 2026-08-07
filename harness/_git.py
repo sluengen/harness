@@ -327,23 +327,43 @@ def teardown_worktree(
 
     Steps, in order:
 
-    1. ``git worktree remove --force`` the directory. If that exits non-zero and
-       the directory is still present, it is an **orphan** — its worktree
-       registration was already pruned, so git no longer recognises it as a
+    1. ``git worktree remove --force`` the directory *and* its admin entry under
+       ``<git-common-dir>/worktrees/``. Run whether or not the directory is
+       present: git clears a registration whose directory is already gone, which
+       is what keeps a stale entry from accumulating and blocking a later
+       ``git worktree add`` at the same path (``probe_tree.create`` reclaims a
+       leftover from a previous review exactly that way). If it exits non-zero
+       and the directory is still present, it is an **orphan** — its worktree
+       registration was already gone, so git no longer recognises it as a
        working tree — and :func:`shutil.rmtree` removes it instead. This is the
        cruft case a plain ``git worktree remove`` cannot touch.
-    2. ``git worktree prune`` to drop any stale admin entry left behind.
-    3. ``git branch -D <branch>`` to delete the local branch (when given).
-    4. ``git push origin --delete <branch>`` when ``delete_remote`` — a
+    2. ``git branch -D <branch>`` to delete the local branch (when given).
+    3. ``git push origin --delete <branch>`` when ``delete_remote`` — a
        checkpoint push may have created the branch on ``origin``; once the run is
        merged it is dead weight. A no-op (and harmless non-zero exit) when the
        remote ref does not exist.
 
-    **Safety:** directory removal only ever touches a path *inside*
-    ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that is the main
-    checkout (or anything outside the run-worktree area) skips removal entirely —
-    the ``rmtree`` fallback must never be able to destroy the repository itself.
-    The branch operations still run (deleting a merged run branch is safe) —
+    **Blast radius (#371).** Step 1 names the one path teardown was asked to
+    reclaim, and git touches no other registration — verified against
+    ``git worktree remove``, which leaves an unrelated stale entry registered.
+    Until #371 the step was followed by a bare, repo-wide ``git worktree prune``.
+    That command takes no path, and every verb runs *in the container*, where the
+    repo is mounted at ``/workspace`` and nothing else on the host filesystem
+    exists — so the prune read every worktree registered outside the mount as
+    missing and deleted its admin entry. The directory survived on the host, so
+    the damage stayed invisible until something read that tree and git answered
+    ``fatal: not a git repository: <repo>/.git/worktrees/<name>`` with exit 128,
+    arriving as a wall of red in tracked-tree guards the change never touched. A
+    *host-side* prune does not do this — the path is there — which is why it was
+    twice recorded as a race between concurrent sessions rather than as this.
+
+    **Safety:** the directory *and* the admin entry are only ever touched for a
+    path *inside* ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that
+    is the main checkout (or anything outside the run-worktree area) skips both —
+    the ``rmtree`` fallback must never be able to destroy the repository itself,
+    and deregistering a directory teardown may not remove would leave exactly the
+    broken half-state above. The branch operations still run (deleting a merged
+    run branch is safe) —
     unless ``branch`` is flag-like (leading ``-``), which :func:`_is_safe_branch_arg`
     refuses so an untrusted, tracker-parsed name cannot be read by git as an
     option instead of a branch.
@@ -353,12 +373,16 @@ def teardown_worktree(
     within_worktrees_area = (
         resolved != worktrees_area and worktrees_area in resolved.parents
     )
-    if within_worktrees_area and worktree_path.exists():
+    if within_worktrees_area:
+        # Named path, not a sweep: this clears this worktree's admin entry and
+        # provably no other, including one whose directory is unreachable from
+        # the namespace we are running in (#371). Not gated on the directory
+        # existing — a registration outliving its directory is the stale entry
+        # the retired repo-wide prune used to collect.
         result = run_git(repo_root, "worktree", "remove", "--force", str(worktree_path))
         if result.returncode != 0 and worktree_path.exists():
             # Orphaned directory — git won't remove what it no longer tracks.
             shutil.rmtree(worktree_path, ignore_errors=True)
-    run_git(repo_root, "worktree", "prune")
     if branch and _is_safe_branch_arg(branch):
         run_git(repo_root, "branch", "-D", branch)
         if delete_remote:
