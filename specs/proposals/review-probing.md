@@ -178,9 +178,17 @@ from change 1's reported sample, as its own row says.
 
 ## Breakdown
 
-Accepted 2026-08-07 on the staged sequence; filed as **#363** and **#364**. Both are
-**Backlog, not Todo** — #363 is blocked on #360 and #364 is blocked on #363's evidence, and
-a blocked ticket sitting in the Todo queue is one an unattended Build tick will pick up.
+Accepted 2026-08-07 on the staged sequence; filed as **#363** and **#364**, both Todo.
+Sequencing is carried by GitHub issue dependencies rather than by queue placement:
+#363 is *blocked by* #360, and #364 by #363.
+
+Note the gap this leaves. `work-discovery` gates on dependencies as a matter of
+judgment, but the `github-issues` queue recipe reads
+`gh issue list --json number,title,labels,assignees`, and `gh issue list` exposes no
+dependency field at all — the edges are readable only per-issue through
+`repos/{owner}/{repo}/issues/{n}/dependencies/blocked_by`. So an unattended Build tick
+picking from Todo cannot currently see that #363 is blocked. Until the queue read
+consults the edges, the sequencing here is advisory.
 
 1. **A mutation budget for review** (#363) — the reviewer proposes up to N entries in #360's
    table format; the orchestrator runs them through that harness; survivors return for a
