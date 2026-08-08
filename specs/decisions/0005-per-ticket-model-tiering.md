@@ -1,8 +1,46 @@
 # ADR 0005 — Per-ticket model tiering: two independent, label-carried dimensions
 
-- **Status:** Accepted
-- **Date:** 2026-07-22 (#177)
+- **Status:** Superseded — the mechanism below is retired
+- **Date:** 2026-07-22 (#177); retired 2026-08-05 (#321)
 - **Source:** #177
+
+> **Retired 2026-08-05 (#321).** Previously: the claude review engine's model was
+> resolved per ticket from a `review:<tier>` label, and a sibling `build:<tier>`
+> label recorded judged build difficulty. Changed to: one configured value,
+> `CONTEXT.md` `loop.review_model` (default `sonnet`), read off the `LoopBudget`
+> the review verb already loads. `harness review --model <alias>` is unchanged —
+> what went is the resolution *from the ticket*.
+>
+> Because, measured 2026-08-04, neither dimension was doing work. `build:` is
+> consumed by nothing — this ADR says so itself — and in roughly two weeks was set
+> on **0 of 25** open issues. `review:` *was* a real control signal and was
+> **never once set**: every review in the ledger resolved past it to the `sonnet`
+> fallback, while the mechanism cost a tracker `fetch_issue` round-trip and five
+> degradation branches on the review path to read a label nobody wrote. Since ADR
+> [0013](0013-codex-engines-in-container.md) the tier was also claude-only by
+> construction, so a per-ticket tier would have governed one of two engines.
+>
+> The evidence that Sonnet suffices, claude engine only, from this repo's ledger.
+> Reviews before #177 ran Opus by ambient default; everything after runs Sonnet:
+>
+> | | pre-#177 (Opus) | post-#177 (Sonnet) |
+> |---|---|---|
+> | runs | 110 | 114 |
+> | fail rate | 18.4% (28/152) | 17.3% (30/173) |
+> | avg issues per fail | 1.39 | 1.43 |
+> | one-shot pass | 76% | 64% |
+> | avg review cycles | 1.38 | 1.52 |
+>
+> Rejection rate and issue density are unchanged, so the Sonnet reviewer is not
+> rubber-stamping. The cycles difference is borderline (z≈2.0) and **confounded** —
+> the builder, the guidance and the ticket mix all changed across that boundary,
+> and the design verb landed *after* #177. This is observational, not controlled,
+> and is not evidence of causation in either direction.
+>
+> The record below stands as what was believed and why; it is not the current
+> design. What survives it: the *shape* of the argument that a dimension with no
+> deterministic seam gets a record rather than a control, and #172's finding that
+> a custom project field is invisible on the board's default view.
 
 ## Context
 
@@ -46,7 +84,9 @@ deterministic seam:
   dimension from the run's ticket labels (`tracker_client().fetch_issue`) and
   appends `--model <alias>` to the **claude** engine command only; the codex
   branch is untouched (ADR 0002 already keeps `--engine codex` a distinct,
-  host-only path). An explicit `harness review --model <alias>` overrides the
+  host-only path; ADR [0013](0013-codex-engines-in-container.md) amends why that
+  path is host-only and declines to extend this ADR's labels to the engine
+  choice). An explicit `harness review --model <alias>` overrides the
   resolved tier, for host/testing use.
 - **`build` → recorded judgement, not control.** No verb reads it. It is
   metadata on the ticket — the spec author's judged difficulty — so a

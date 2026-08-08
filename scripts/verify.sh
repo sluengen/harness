@@ -19,16 +19,54 @@ for _tool in ruff mypy pytest; do
   fi
 done
 
+# `-n` is pytest-xdist's flag (#358). Without the plugin installed pytest exits 4
+# (usage error) — which the promotion classifier cannot tell from a red tree. A
+# venv predating the parallel gate is infrastructure, not a code failure, so it
+# gets the same reserved code as a missing ruff/mypy/pytest above. Probed by
+# import rather than by `pytest --help`, so the answer does not depend on parsing
+# help text.
+if ! uv run --extra dev python -c "import xdist" >/dev/null 2>&1; then
+  echo "gate precondition failed: 'pytest-xdist' is not importable under 'uv run --extra dev' — run 'uv sync --extra dev' (toolchain unavailable, not a code failure)" >&2
+  exit "$GATE_UNRUNNABLE_EXIT"
+fi
+
 echo "=== ruff ==="
 uv run --extra dev ruff check .
 
 echo "=== mypy ==="
 uv run --extra dev mypy harness
 
-echo "=== pytest ==="
-# --cov-fail-under enforces the coverage floor: the gate fails if line coverage
-# of the harness package drops below 90% (baseline 91%, 2026-07-06). CAL-1015.
-uv run --extra dev pytest --durations=20 --cov=harness --cov-fail-under=90
+# The suite runs in two stages, partitioned by the `docker` marker (#358). It is
+# one population measured by one coverage floor, split only by how it is executed:
+# `-m docker` and `-m "not docker"` are complementary, so every collected test
+# runs in exactly one stage. tests/unit/test_verify_parallel_tiers.py proves that
+# by collecting each stage's real argv and checking the union covers the suite
+# with no test in two stages, and pins the execution modes alongside it.
+#
+# Measured on dev @ 6e4174b (2026-08-07, 8-core host): the whole suite serially is
+# ~224s, of which `-m "unit or guard"` is only 9.1s — post-#336 the cost is the
+# ~1,933 process-spawning integration tests, not the unit tier. Parallel: ~58s.
+
+echo "=== pytest (docker, serial) ==="
+# These tests build and run the shared `harness:test` image tag, so no two of them
+# may run concurrently: one test can otherwise run a container from a tag another
+# is mid-way through rewriting. No `-n` — there is no pool for them to land in.
+# First, and without --cov-append, so this run *resets* the coverage data file for
+# the pair (there is no separate `coverage erase` step to forget). Running the
+# fragile slice on an otherwise idle host also keeps the cold-cache build (#357)
+# clear of seven busy workers.
+uv run --extra dev pytest -m docker --durations=20 --cov=harness
+
+echo "=== pytest (parallel) ==="
+# Everything else, across the host's cores. HARNESS_TEST_WORKERS overrides the
+# count; unset, xdist's `auto` derives it from the host. Set it to 0 to run in the
+# controller when reproducing an order-dependence failure.
+# --cov-append unions this stage's arcs onto the docker stage's, and
+# --cov-fail-under is evaluated last, on that union — so the floor covers exactly
+# the population the single serial run covered (CAL-1015, #358). `set -euo
+# pipefail` means a red first stage aborts before this one, so the floor is never
+# evaluated on a partial population.
+uv run --extra dev pytest -m "not docker" -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=harness --cov-append --cov-fail-under=90
 
 echo "=== CLI smoke ==="
 uv run --extra dev python -m harness.cli version
@@ -47,16 +85,15 @@ echo "=== design-token drift guard ==="
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
 
-echo "=== changelog fragment guard ==="
-# Two guards, cause and symptom, because neither subsumes the other (#267).
-# `check` is structural and base-independent, so it is meaningful wherever the
-# gate runs. `require` is the direct presence check but needs a merge base, and
-# abstains with a printed reason where one cannot be resolved (a shallow CI
-# checkout, a detached `promote` worktree). The base-independent half that
-# holds the line either way is the CHANGELOG ratchet in
-# tests/unit/test_changelog_rotation.py.
-uv run --extra dev python scripts/changelog_fragments.py check
-uv run --extra dev python scripts/changelog_fragments.py require
+echo "=== release cadence (report only) ==="
+# Cadence bounds describe accumulated repo state, not this change: no change
+# here caused a breach and none can fix one, so a breach must never be this
+# gate's verdict (#350 — it wedged the build queue for five ticks). `report`
+# exits 0 regardless and is deliberately the LAST stage, so the breach line
+# lands inside the bounded gate-log tail `review` and `promote` already record.
+# The enforcing half is `cadence.py check`, run by the release-cadence CI job on
+# a PR into main and by RELEASING.md step 3.
+uv run --extra dev python scripts/cadence.py report
 
 echo ""
 echo "All checks passed."

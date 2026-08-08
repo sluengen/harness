@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-context-monitor@0.1.1
+// guidance:hook-context-monitor@0.2.0
 /**
  * Context monitor (PostToolUse).
  * Estimates context usage from the session transcript size and warns when it
@@ -58,4 +58,22 @@ function done(additionalContext) {
   process.stdout.write(JSON.stringify(out));
 }
 
-try { main(); } catch { process.stdout.write(JSON.stringify({ continue: true })); }
+/**
+ * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * approving payload still goes out, but stderr says this hook did not run, so a
+ * disarmed hook is distinguishable from a clean pass-through. Built from hook-owned
+ * constants and `err.message` only — never the payload, which is untrusted text.
+ * Inlined per hook: a shared module would be a load-time dependency whose own failure
+ * is the class being reported on.
+ */
+function failOpen(reason, err) {
+  const cause = err && err.message ? String(err.message) : String(err || "no detail");
+  process.stderr.write(
+    `[CONTEXT-MONITOR] fail-open: ${reason}: ${cause.replace(/\s+/g, " ").slice(0, 200)}\n`
+  );
+}
+
+try { main(); } catch (err) {
+  failOpen("crashed before it could decide", err);
+  process.stdout.write(JSON.stringify({ continue: true }));
+}

@@ -24,6 +24,10 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.1",
     "pytest-timeout>=2.3",
+    # The gate's parallel stage (#358). Deliberately not wired into `addopts`:
+    # parallelism belongs to the gate, not to an ad-hoc `pytest <file>::<test>`,
+    # which stays serial, live-output and debuggable.
+    "pytest-xdist>=3.5",
     "ruff>=0.1.6",
     "mypy>=2.0.0",
 ]
@@ -67,8 +71,16 @@ addopts = "-ra --strict-markers"
 # consuming the full CI job budget; the job-level timeout-minutes is a
 # secondary backstop.
 timeout = 120
+# The three dependency tiers, applied to every collected test by
+# tests/conftest.py from the classifier in tests/_tiers.py — which is where the
+# boundary definitions, the selectors and the escape hatch live. Registered here
+# because --strict-markers turns an unregistered marker into a collection error;
+# tests/unit/test_tiers.py checks this list against tests._tiers.TIERS, so a new
+# tier cannot ship unregistered. `docker` is orthogonal: a capability that
+# narrows `integration`, not a tier of its own.
 markers = [
-    "slow: marks tests as slow (deselect with -m 'not slow')",
-    "integration: marks tests that require external services or a real Docker environment",
+    "unit: no dependency outside the process (#336)",
+    "guard: reads the checked-out tree, read-only (#336)",
+    "integration: a real repo/worktree, the SQLite ledger, a spawned process, or a whole verb through CliRunner (#336)",
     "docker: marks tests that require a running Docker daemon",
 ]

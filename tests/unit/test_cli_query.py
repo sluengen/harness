@@ -20,7 +20,6 @@ captured stdout.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 import subprocess
@@ -35,6 +34,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app, query_events
 from harness.state import store
+from tests._asyncutil import run_sync
 
 runner = CliRunner()
 
@@ -93,18 +93,6 @@ async def _seed_run_async(
         await conn.commit()
 
 
-def _run_sync(coro: Any) -> Any:
-    """Run a coroutine to completion regardless of whether pytest-asyncio left
-    an event loop dangling on the current thread. ``asyncio.run`` refuses to
-    run when any loop is "running", so we use a fresh loop with explicit
-    teardown."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _seed_run(
     db_path: Path,
     *,
@@ -122,7 +110,7 @@ def _seed_run(
     duration_ms: int | None = 1_800_000,
     worktree_path: str | None = None,
 ) -> None:
-    _run_sync(
+    run_sync(
         _seed_run_async(
             db_path,
             run_id=run_id,
@@ -172,7 +160,7 @@ def _seed_event(
     duration_ms: int | None = None,
     data: dict[str, Any] | None = None,
 ) -> None:
-    _run_sync(
+    run_sync(
         _seed_event_async(
             db_path,
             run_id=run_id,
@@ -186,7 +174,7 @@ def _seed_event(
 
 
 def _init_db(db_path: Path) -> None:
-    _run_sync(store.init_db(db_path))
+    run_sync(store.init_db(db_path))
 
 
 # ---------------------------------------------------------------------------

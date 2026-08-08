@@ -45,8 +45,8 @@ builder/recorder split — are the portable part; the plumbing around them is no
 A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: four verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`design`** — run a read-only design engine (a fresh, top-tier context, uncontaminated by the session's orchestration state) against the worktree and the ticket, and record the resulting design in three places: the ticket as a marked comment, the ledger as a `design` event carrying its content hash and grounded SHA, and stdout. Unconditional — every run; a *failed* attempt still satisfies `review`'s enforcement, so an infra flake never blocks a run.
-- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
+- **`design`** — run a dedicated design engine (a fresh, top-tier context, uncontaminated by the session's orchestration state; it can write exactly one file, outside the worktree, and that file is how its design is collected) against the worktree and the ticket, and record the resulting design in three places: the ticket as a marked comment, the ledger as a `design` event carrying its content hash and grounded SHA, and stdout. Unconditional — every run; a *failed* attempt still satisfies `review`'s enforcement, so an infra flake never blocks a run.
+- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option, ADR 0002 as amended by ADR 0013) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
 The agent does what only an agent can do (judgement, code, deciding how to fix a finding). Everything the audit trail depends on — opening the run, binding a review to a SHA, gating the merge — is deterministic verb code.
@@ -138,7 +138,7 @@ The ledger, worktrees, and event log land under `/workspace/.harness/` and `/wor
 
 ## Authentication
 
-harness dispatches review through the Claude CLI by default (`--engine codex` is a host-only cross-model option). **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+harness dispatches review through the Claude CLI by default (`--engine codex` is a host-only cross-model option — ADR 0013 amends the reason and chooses to end it). **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
 
 | Path | Pricing | When |
 |---|---|---|

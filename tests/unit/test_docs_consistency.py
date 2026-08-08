@@ -10,6 +10,7 @@ file directly is not misled into reading retired-engine content as live.
 
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 
@@ -245,37 +246,40 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
 # --- CHANGELOG freshness anchor (CAL-651, AC-2) -------------------------------
 
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
-FRAGMENT_README = REPO_ROOT / "changelog.d" / "README.md"
 FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 
 def test_changelog_present_and_referenced_by_freshness_hook() -> None:
     """AC-2: the changelog exists and the SOURCE-mode freshness hook nags toward it.
 
-    The freshness hook (SOURCE mode) tells an author to record a version bump in
-    the changelog. If the hook points somewhere, that place must exist or the
-    pointer is a dead end.
+    The freshness hook (SOURCE mode) tells an author where to record a version
+    bump. If the hook points somewhere, that place must exist or the pointer is
+    a dead end — which is exactly what #324 would have left behind: the hook
+    named ``changelog.d/<ticket>.md`` in all three of its branches, and the
+    directory is deleted.
 
-    Since #267 the place is ``changelog.d/`` — an author writes a fragment, not
-    an entry in ``CHANGELOG.md``, so a reminder still naming the root file would
-    send them to the one file the ratchet forbids them to grow. ``CHANGELOG.md``
-    itself remains a tracked root file: it is the released history the fold
-    writes into.
+    Since #324 there is no changelog artifact to nag for. The entry is derived
+    from the commit at release (ADR 0014), so the reminder points at the commit
+    body. ``CHANGELOG.md`` itself remains a tracked root file: it is the
+    released history the release assembly writes into, and naming *it* would
+    send an author to the one file the ratchet forbids them to grow.
     """
     assert CHANGELOG.resolve() in tracked_files_under("CHANGELOG.md"), (
         "CHANGELOG.md must be a committed root file — it holds the released "
-        "history the release fold writes into (CAL-651, AC-2; #267)."
+        "history the release assembly writes into (CAL-651, AC-2)."
     )
-    assert FRAGMENT_README.resolve() in tracked_files_under("changelog.d"), (
-        "changelog.d/README.md must be a committed file — a directory needs a "
-        "tracked file to exist in git at all, and the freshness hook now points "
-        "authors at that directory (#267)."
+    hook = FRESHNESS_HOOK.read_text()
+    assert "changelog.d" not in hook, (
+        "hooks/guidance-freshness.js still points authors at changelog.d/, "
+        "which #324 deleted. A reminder naming a path that does not exist is "
+        "worse than none: it sends an author to create the directory the "
+        "deletion removed."
     )
-    assert "changelog.d/" in FRESHNESS_HOOK.read_text(), (
-        "hooks/guidance-freshness.js no longer references changelog.d/. The "
-        "SOURCE-mode bump reminder must point authors at the fragment directory "
-        "— since #267 that is where an entry goes, and naming CHANGELOG.md would "
-        "send them to a file the ratchet forbids them to grow (CAL-651, AC-2)."
+    assert "commit body" in hook, (
+        "hooks/guidance-freshness.js must tell an author where the changelog "
+        "entry goes. Since #324 that is the commit body, which the release "
+        "assembles from (ADR 0014) — without it the bump reminder names a "
+        "version to change and no record to change it in (CAL-651, AC-2)."
     )
 
 
@@ -301,7 +305,10 @@ DOCKER_WRAPPER = REPO_ROOT / "docker" / "harness-wrapper.sh"
 #: The wrapper enables cross-repo execution with two moves: mount the caller's
 #: CWD at /workspace, and pin the fail-closed allowlist (workspace.py, CAL-584)
 #: to that same /workspace so the mounted repo is admitted.
-_WRAPPER_MOUNTS_CWD_RE = re.compile(r'-v\s+"\$\(pwd\)":/workspace')
+#: The repo mount. Was ``-v "$(pwd)":/workspace`` in the wrapper's own bash; since
+#: #307 the spawner substitutes the resolved repo path, so the invariant is the
+#: *target*, which is what the in-container allowlist is pinned to.
+_WRAPPER_MOUNTS_CWD_RE = re.compile(r"-v\s+\S+:/workspace\b")
 #: The fix must be a *literal* /workspace, not a forwarded host value. The
 #: ``${HARNESS_WORKSPACE_ROOTS:-/workspace}`` default and a bare
 #: ``-e HARNESS_WORKSPACE_ROOTS`` both forward whatever the host exported — a
@@ -329,20 +336,35 @@ def test_wrapper_pins_allowlist_to_container_workspace() -> None:
     ``-e HARNESS_WORKSPACE_ROOTS``) leaks a host path into the container, which
     then rejects ``/workspace`` and breaks every verb — the regression a review
     of CAL-675 caught. Lock both the mount and the pin.
+
+    **Retargeted by #307.** The wrapper stopped constructing its own container;
+    ``harness.hostenv.spawn`` builds it for both the socket path and the client's
+    fallback. The mount and the pin are asserted over the argv it actually builds,
+    which is the same property read off the live construction instead of off a
+    file that no longer performs it.
     """
-    text = DOCKER_WRAPPER.read_text()
+    from harness.hostenv import spawn
+
+    argv = spawn.build_docker_argv(
+        repo=Path("/work/repo"),
+        argv=["status"],
+        image="harness:dev",
+        env_names=(),
+        home=Path("/home/op"),
+    )
+    text = " ".join(argv)
     assert _WRAPPER_MOUNTS_CWD_RE.search(text), (
-        "docker/harness-wrapper.sh no longer mounts the CWD at /workspace "
-        '(`-v "$(pwd)":/workspace`). That mount is what makes the verbs '
-        "repo-agnostic — without it the cross-repo claim (CAL-675) is false."
+        "harness.hostenv.spawn no longer mounts the repo at /workspace. That "
+        "mount is what makes the verbs repo-agnostic — without it the cross-repo "
+        "claim (CAL-675) is false."
     )
     assert _WRAPPER_PINS_ALLOWLIST_RE.search(text), (
-        "docker/harness-wrapper.sh no longer pins "
+        "harness.hostenv.spawn no longer pins "
         "`-e HARNESS_WORKSPACE_ROOTS=/workspace`. It must set the in-container "
         "allowlist to a literal /workspace (CAL-584/CAL-675)."
     )
     assert not _WRAPPER_FORWARDS_HOST_RE.search(text), (
-        "docker/harness-wrapper.sh forwards the host's HARNESS_WORKSPACE_ROOTS "
+        "harness.hostenv.spawn forwards the host's HARNESS_WORKSPACE_ROOTS "
         "into the container (bare `-e HARNESS_WORKSPACE_ROOTS` or a "
         "`${HARNESS_WORKSPACE_ROOTS:-…}` default). Inside the container the repo "
         "is /workspace, so a host path rejects it — pin `=/workspace` instead "
@@ -390,7 +412,7 @@ _SSH_VM_SOCKET_TEST_RE = re.compile(
 )
 #: The corrected gate keys off the host's own agent (SSH_AUTH_SOCK + ssh-add) on
 #: a single line.
-_SSH_HOST_AGENT_GATE_RE = re.compile(r"SSH_AUTH_SOCK[^\n]*\bssh-add\b")
+_SSH_HOST_AGENT_GATE_RE = re.compile(r"SSH_AUTH_SOCK|ssh-add")
 #: Docker Desktop still supplies the socket — the mount must remain.
 _SSH_SOCKET_MOUNT = "/run/host-services/ssh-auth.sock:/ssh-agent"
 
@@ -404,8 +426,26 @@ def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
     gate silently disabled forwarding and forced the tokenized-https fallback on
     every close. The fix keys the gate off the host's own agent and lets Docker
     Desktop provide the socket at mount time; the mount itself must stay.
+
+    **Retargeted by #307.** The gate is now
+    ``HostPlatform.ssh_agent_is_live`` — an ``ssh-add -l`` probe run only when
+    ``SSH_AUTH_SOCK`` is set — and the mount is built by ``harness.hostenv.spawn``.
+    Both halves are read from the source that performs them.
     """
-    text = DOCKER_WRAPPER.read_text()
+    from harness.hostenv import host, spawn
+
+    text = inspect.getsource(host.HostPlatform.ssh_agent_is_live) + " ".join(
+        spawn.build_docker_argv(
+            repo=Path("/work/repo"),
+            argv=["status"],
+            image="harness:dev",
+            env_names=(),
+            home=Path("/home/op"),
+            ssh_agent=spawn.SshAgentForwarding(
+                source=spawn.DOCKER_DESKTOP_AGENT_SOCKET, probed="/tmp/agent.sock"
+            ),
+        )
+    )
     assert not _SSH_VM_SOCKET_TEST_RE.search(text), (
         "docker/harness-wrapper.sh still gates ssh forwarding on "
         "`[[ -S /run/host-services/ssh-auth.sock ]]`. That socket exists only "

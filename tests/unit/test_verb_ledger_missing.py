@@ -19,27 +19,18 @@ check would not silently regress this guard for the other four.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 #: argv per verb, minus ``--repo``/``--db`` (filled at call time). ``close``
@@ -85,7 +76,7 @@ def test_present_but_empty_ledger_is_unchanged(verb: str, repo: Path, tmp_path: 
     """AC-2: when the ledger exists and simply holds no open row, the historical
     message and reason are byte-for-byte what they were before this ticket."""
     db_path = tmp_path / "harness.db"
-    _sync(store.init_db(db_path))
+    run_sync(store.init_db(db_path))
 
     result = cli_runner.invoke(
         app, [*_ARGV[verb], "--repo", str(repo), "--db", str(db_path)]
@@ -109,7 +100,7 @@ def test_no_ledger_and_empty_ledger_reasons_differ(
     )
 
     empty_db = tmp_path / "empty.db"
-    _sync(store.init_db(empty_db))
+    run_sync(store.init_db(empty_db))
     empty_result = cli_runner.invoke(
         app, [*_ARGV[verb], "--repo", str(repo), "--db", str(empty_db)]
     )
@@ -193,7 +184,7 @@ def test_worktree_walkup_still_resolves_main_checkout_ledger(
             )
             await conn.commit()
 
-    _sync(_seed())
+    run_sync(_seed())
 
     result = cli_runner.invoke(app, ["checkpoint", "--repo", str(worktree)])
 

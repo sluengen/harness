@@ -101,7 +101,8 @@ to the next).
    building the ticket cold will actually see it, not buried in a comment
    thread), removes the `decision` label, and unassigns the operator — the
    full "released" definition `work-discovery` names, done as one audited
-   write with a ledger event.
+   write. The audit trail is the tracker issue itself — the resolution in the
+   body, the label gone, the assignment cleared — not a ledger event (#338).
 3. If `release` refuses (not on the Build queue, tracker error) — report the
    refusal and its `reason`; do not work around it by hand-rolling the write
    it exists to replace.

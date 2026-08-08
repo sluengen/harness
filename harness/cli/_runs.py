@@ -32,12 +32,34 @@ either verb's private one. It arrived with the design verb and moved here when t
 second reader appeared; a review-path module reaching into ``design_tracker`` for
 it would read as coupling that is not there, and a second copy is how two paths
 start disagreeing about what *resumed* means.
+
+:func:`attendance_inputs_json` / :func:`resolve_attended` sit here for that same
+reason, one step earlier (#295, ADR 0011). "Is this run attended?" is a shared
+run-row rule with two readers already specified — ``review``'s wall-clock
+breaker (#296) and ``reclaim --stale``'s threshold selection (#297) — and the
+writer (``start``'s insert) lives with them so the key's spelling cannot drift
+between the side that records the mode and the sides that act on it. They are a
+*pure* pair over the column's value rather than a DB reader, because both
+consumers already project run rows for their own reasons and need the rule, not
+another query.
+
+:func:`read_run_assurance` is the third of the same kind (#352). "What assurance
+level is this run under?" has two readers — ``design`` (is the stage required at
+all?) and ``review`` (may it proceed without one?) — and the answer must be the
+snapshot ``start`` wrote, never a re-read of the issue's labels, or a label
+edited mid-run would change the stages a run is required to pay for after it
+opened. The *policy* it reads through lives in :mod:`harness.assurance`, which is
+pure; this is the one query that fetches its input.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import aiosqlite
+
+from harness.assurance import DEFAULT_ASSURANCE, Assurance, coerce_assurance
 from harness.cli._verb import VerbError
 from harness.state import store
 
@@ -45,6 +67,15 @@ from harness.state import store
 #: found`` case keeps its own per-verb reason (or none), so this tag can never
 #: collide with it (#244 AC-3).
 LEDGER_NOT_FOUND_REASON = "no_ledger"
+
+#: The one key ``inputs_json`` carries under the verb model (#295, ADR 0011).
+#: Spelled once, next to both the writer and the reader, so the two cannot drift.
+ATTENDED_KEY = "attended"
+
+#: What ``start`` has always inserted, and still inserts for an undeclared run.
+#: Byte-identical is the point: every row written before #295 already means
+#: *unattended*, so there is no backfill and ``"{}"`` gains no second meaning.
+UNATTENDED_INPUTS_JSON = "{}"
 
 
 class LedgerNotFoundError(VerbError):
@@ -107,6 +138,44 @@ async def resolve_open_run(
     return str(row[0]), str(row[1]), str(row[2]), str(row[3])
 
 
+def attendance_inputs_json(attended: bool) -> str:
+    """The ``inputs_json`` value for a declared attendance mode (#295).
+
+    ``start``'s only writer. Pairs with :func:`resolve_attended` — keeping the
+    two together is why they live here rather than in ``start``: the readers
+    (#296 ``review``, #297 ``reclaim --stale``) must agree with the writer about
+    the key's spelling, and a second copy is how that agreement breaks.
+    """
+    return json.dumps({ATTENDED_KEY: True}) if attended else UNATTENDED_INPUTS_JSON
+
+
+def resolve_attended(inputs_json: str | None) -> bool:
+    """Whether a run row declared itself attended (#295, ADR 0011).
+
+    Total by construction — it never raises, and *unattended* is both the
+    default and the failure default. Only the literal JSON ``true`` declares
+    attendance: a string ``"true"``, a ``1``, a non-object document, unparseable
+    text and an absent column all resolve unattended.
+
+    That strictness is deliberate rather than defensive. Declaring attendance
+    opts a run out of the wall clock, which is the only ceiling on autonomous
+    spend, so every ambiguous value must fail *toward* the bound. A corrupted or
+    hand-edited ledger can then only ever make a run more bounded, never less.
+
+    The parse failure is swallowed on purpose, and this is the honest trade: the
+    alternative is ``review`` and the ``--stale`` sweep raising over a column
+    that carried no meaning until #295, wedging a verb (and, in the sweep, a
+    whole tick) on a value nothing has ever validated. It is not hidden either —
+    ``harness status --json`` already parses this column and surfaces it as
+    ``inputs``, so a malformed value is visible where a human would look.
+    """
+    try:
+        data = json.loads(inputs_json) if inputs_json else None
+    except (TypeError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get(ATTENDED_KEY) is True
+
+
 async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
     """The preserved WIP branch this run resumed from, or ``None`` (#258).
 
@@ -125,3 +194,46 @@ async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
     if row is None or row[0] is None:
         return None
     return str(row[0])
+
+
+async def read_run_assurance(db_path: Path, run_id: str) -> Assurance:
+    """The assurance level this run was opened under (#352).
+
+    ``start`` resolves the issue's labels once and snapshots the answer on the
+    row; every later verb reads it from here rather than re-reading labels, so a
+    label edited mid-run cannot retroactively change the stages the run is
+    required to pay for.
+
+    Total, and falls back to :data:`~harness.assurance.DEFAULT_ASSURANCE` in one
+    direction: a ledger that does not exist, a run row that is not there, a
+    ``NULL`` column on a row written before the migration, or a value outside the
+    vocabulary all read as ``simple`` — the level that still requires a review.
+    A damaged or absent snapshot can therefore only make a run *more* verified,
+    never less, which is the same posture :func:`resolve_attended` takes. The
+    ``no_ledger`` refusal is not restated here: every caller resolves its run
+    through :func:`resolve_open_run` first, which owns it.
+    """
+    if not db_path.exists():
+        return DEFAULT_ASSURANCE
+    try:
+        async with (
+            store.connect(db_path) as conn,
+            conn.execute("SELECT assurance FROM runs WHERE run_id = ?", (run_id,)) as cur,
+        ):
+            row = await cur.fetchone()
+    except aiosqlite.OperationalError:
+        # A ledger written before the #352 migration has no such column, and
+        # nothing has migrated it yet: ``_migrate`` runs only from
+        # ``store.init_db``, whose one caller is ``start``'s insert, so a run
+        # opened by an older harness reaches ``design`` and ``review`` first.
+        # "The column is absent" and "the column is NULL" are the same fact one
+        # level up — the run recorded no assurance — so both take the same
+        # fail-safe answer rather than raising a bare OperationalError past the
+        # verb's JSON refusal contract. Deliberately not narrowed to the message
+        # text: any read failure here must fail toward the more-verified level,
+        # and ``resolve_open_run`` has already refused a ledger that is missing
+        # or unreadable for a reason the caller needs to hear about.
+        return DEFAULT_ASSURANCE
+    if row is None:
+        return DEFAULT_ASSURANCE
+    return coerce_assurance(row[0])

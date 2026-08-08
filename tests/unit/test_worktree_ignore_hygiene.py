@@ -67,7 +67,9 @@ def _init_hermetic_repo(path: Path) -> Path:
     alone, not from any ambient exclude file.
     """
     path.mkdir(parents=True, exist_ok=True)
-    _git(path, "init", "-q")
+    # Branch stated, not inherited from the host's `init.defaultBranch` (#369) —
+    # which is the same hermeticity this fixture already argues for above.
+    _git(path, "init", "-q", "-b", "dev")
     (path / ".gitignore").write_text((_REPO_ROOT / ".gitignore").read_text())
     (path / ".claude").mkdir()
     (path / ".claude" / "settings.json").write_text("{}\n")
@@ -122,7 +124,8 @@ def test_nested_worktree_is_not_staged_as_a_gitlink(tmp_path: Path) -> None:
 
     nested = repo / ".claude" / "worktrees" / "some-agent-run"
     nested.mkdir(parents=True)
-    _git(nested, "init", "-q")
+    # Branch stated, not inherited from the host's `init.defaultBranch` (#369).
+    _git(nested, "init", "-q", "-b", "dev")
     (nested / "file.txt").write_text("x")
     _git(nested, "add", "file.txt")
     _git(

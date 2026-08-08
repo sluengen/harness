@@ -868,26 +868,41 @@ mutation UpdateDescription($id: String!, $description: String!) {
     async def create_issue(
         self,
         *,
-        team_key: str,
-        project_name: str | None,
         title: str,
         description: str,
+        project: str | None,
     ) -> dict[str, str]:
-        """Create a Todo issue on team ``team_key`` and return ``{identifier, url}``.
+        """Create a Todo issue on the configured team; return ``{identifier, url}``.
 
         The primitive behind ``harness promote escalate`` (CAL-1118): file a fresh
         escalation ticket carrying the promotion evidence. Resolves the team id
         from its key, the Todo (``unstarted``) workflow state, and — when
-        ``project_name`` is given — the project id by name, all at runtime (never a
+        ``project`` is given — the project id by name, all at runtime (never a
         hard-coded UUID, the same discipline as :meth:`apply_label`), then fires
         ``issueCreate`` into that team/project/state.
 
+        The team is **client config** (``repo.linear``, threaded in by
+        :func:`harness.tracker.tracker_client`), not a seam parameter: a team is a
+        Linear concept GitHub can never honour, so a caller that had to supply one
+        would be a caller that knows which backend it holds (#328). A client built
+        without one therefore raises here rather than letting a neutral verb
+        pre-check a Linear-only fact.
+
         Raises:
-            LinearNotFound: no team with ``team_key`` exists.
-            LinearRequestError: the API errored, ``project_name`` names no project
+            LinearConfigError: the client carries no team (``repo.linear`` unset) —
+                raised before any request, so nothing is mutated.
+            LinearNotFound: no team with the configured key exists.
+            LinearRequestError: the API errored, ``project`` names no project
                 on the team, the team has no ``unstarted`` (Todo) state, or
                 ``issueCreate`` did not return an issue.
         """
+        if self._team is None:
+            raise LinearConfigError(
+                "no Linear team configured — set repo.linear in CONTEXT.md to file "
+                "an issue"
+            )
+        team_key = self._team
+        project_name = project
         team_query = """
 query TeamForIssue($key: String!) {
   teams(filter: { key: { eq: $key } }, first: 1) {

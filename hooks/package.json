@@ -1,0 +1,4 @@
+{
+  "//": "Pins the module type for the hook scripts in this directory. Node resolves a .js file's module type from the NEAREST package.json walking up; in a consuming repo whose root declares \"type\": \"module\" these CommonJS hooks would be parsed as ESM and their require() calls would fail. Keep this file next to the hooks.",
+  "type": "commonjs"
+}

@@ -30,7 +30,6 @@ undo arm's own wrapper) for that reason.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import subprocess
@@ -43,7 +42,9 @@ from typer.testing import CliRunner
 
 from harness._time import iso_z
 from harness.cli import app
+from harness.cli._runs import attendance_inputs_json
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
 
 cli_runner = CliRunner()
@@ -60,14 +61,6 @@ def iso_minutes_ago(minutes: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run_sync(coro: object) -> object:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
-
-
 def seed_run(
     db_path: Path,
     *,
@@ -77,6 +70,7 @@ def seed_run(
     worktree_branch: str | None = "harness/cal-735",
     worktree_path: str | None = None,
     started_at: str = "2026-01-01T00:00:00+00:00",
+    attended: bool = False,
 ) -> None:
     """Seed a run row with the ticket + branch fields reclaim reads.
 
@@ -84,6 +78,12 @@ def seed_run(
     reads as dead — which is what those tests mean. Since #216 the sweep treats
     ``started_at`` as a liveness signal (``start`` emits no event, so it is the
     only one a pre-``design`` run has), so a test about a *live* run sets it.
+
+    ``attended`` writes the declared mode through the **production** writer
+    (``attendance_inputs_json``, #295) rather than a literal, so the key's
+    spelling cannot drift between ``start``, the sweep and these fixtures. The
+    ``False`` default is byte-identical to the ``"{}"`` this always wrote, so
+    every existing caller's row means exactly what it meant before (#297).
     """
 
     async def _insert() -> None:
@@ -100,7 +100,7 @@ def seed_run(
                     1,
                     status,
                     "{}",
-                    "{}",
+                    attendance_inputs_json(attended),
                     "dev",
                     worktree_branch,
                     worktree_path,
@@ -178,7 +178,7 @@ def fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
             return None
         return {"status": row[0], "completed_at": row[1]}
 
-    return run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str, Any]]:
@@ -191,7 +191,7 @@ def fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str, 
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def count_open_for_ticket(db_path: Path, ticket: str) -> int:
@@ -204,7 +204,7 @@ def count_open_for_ticket(db_path: Path, ticket: str) -> int:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
 
-    return run_sync(_count())  # type: ignore[return-value]
+    return run_sync(_count())
 
 
 def insert_fresh_open(db_path: Path, *, run_id: str, ticket: str) -> bool:
@@ -229,7 +229,7 @@ def insert_fresh_open(db_path: Path, *, run_id: str, ticket: str) -> bool:
         except Exception:
             return False
 
-    return run_sync(_insert())  # type: ignore[return-value]
+    return run_sync(_insert())
 
 
 def make_sweep_stub(active: list[dict[str, str]]) -> MagicMock:
