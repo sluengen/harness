@@ -176,6 +176,45 @@ def test_command_model_is_overridable_for_testing() -> None:
     assert cmd[cmd.index("--model") + 1] == "sonnet"
 
 
+def test_codex_command_uses_read_only_cli_owned_output_file() -> None:
+    """Codex writes the final message itself; the model gets no write grant."""
+    cmd = build_design_cmd(engine="codex", model=None, channel=CHANNEL)
+
+    assert cmd == [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--output-last-message",
+        str(CHANNEL.path),
+        "-",
+    ]
+    assert "--add-dir" not in cmd
+    assert "--settings" not in cmd
+
+
+def test_codex_prompt_requests_only_the_final_markdown() -> None:
+    prompt = build_design_prompt(
+        "Add a thing", "## Problem\n\nNo thing.\n", channel=CHANNEL, engine="codex"
+    )
+
+    assert "Return only the Design section Markdown as your final response." in prompt
+    assert str(CHANNEL.path) not in prompt
+    assert FALLBACK_BEGIN_MARKER not in prompt
+    assert FALLBACK_END_MARKER not in prompt
+
+
+def test_explicit_claude_prompt_keeps_the_scoped_file_and_fallback_contract() -> None:
+    prompt = build_design_prompt(
+        "Add a thing", "## Problem\n\nNo thing.\n", channel=CHANNEL, engine="claude"
+    )
+
+    assert str(CHANNEL.path) in prompt
+    assert f"{FALLBACK_BEGIN_MARKER} {NONCE}" in prompt
+    assert f"{FALLBACK_END_MARKER} {NONCE}" in prompt
+
+
 def test_command_is_no_longer_plan_mode() -> None:
     """Plan mode is what forced stdout to be the only channel (#294)."""
     assert "plan" not in build_design_cmd(channel=CHANNEL)

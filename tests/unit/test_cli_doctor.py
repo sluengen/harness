@@ -619,6 +619,33 @@ def test_doctor_command_exits_zero_on_pass_or_warn(
     assert result.exit_code == 0, result.stdout
 
 
+def test_doctor_codex_mode_never_checks_claude_auth(
+    tmp_path: Path,
+    engines_live: None,
+    wrapper_pinned: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.cli import doctor
+
+    def unexpected_claude_auth(*_args: object, **_kwargs: object) -> tuple[str, str]:
+        raise AssertionError("strict Codex doctor invoked Claude auth")
+
+    monkeypatch.setattr(doctor, "check_auth", unexpected_claude_auth)
+    monkeypatch.setattr(
+        doctor, "check_codex_auth", lambda: ("PASS", "Codex login active")
+    )
+    db = tmp_path / ".harness" / "harness.db"
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--engine", "codex", "--db", str(db)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Codex login active" in result.stdout
+
+
 def test_doctor_command_exits_one_on_failure(
     tmp_path: Path, engines_live: None, wrapper_pinned: None
 ) -> None:

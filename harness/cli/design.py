@@ -96,6 +96,7 @@ from harness.cli.design_protocol import (
     DESIGN_OUT_FILENAME,
     DESIGN_TMP_PREFIX,
     DesignChannel,
+    DesignEngine,
     build_design_cmd,
     build_design_prompt,
     build_stdout_excerpt,
@@ -134,10 +135,9 @@ __all__ = [
 # into ``design_adopt`` — it needs ``DesignOutput`` and ``_record_design_event``,
 # and importing them back would make the seam circular.
 
-# The design engine. Claude only — ADR 0002 keeps the in-container engine
-# unprivileged, where codex's bwrap sandbox cannot start, so unlike ``review``
-# there is no engine union and no ``--engine`` flag to select one.
-DESIGN_ENGINE = "claude"
+# The default design engine. Codex is selectable for native runs; ADR 0013 keeps
+# that path out of the Docker wrapper until its targeted seccomp work ships.
+DESIGN_ENGINE: DesignEngine = "claude"
 
 # Exit code for "no design was produced". One code for every degrade-and-record
 # path (ADR 0007 D4) — a timeout, an unspawnable engine, unusable output, or an
@@ -183,6 +183,7 @@ DESIGN_NOT_REQUIRED_STATUS = "not_required"
 # caught it — see ``_run_engine_and_collect``.
 DESIGN_CHANNEL_FILE = "file"
 DESIGN_CHANNEL_STDOUT = "stdout"
+DESIGN_CHANNEL_LAST_MESSAGE = "last_message"
 
 # The one wording of the fallback warning, so the stderr line and the ledger
 # cannot drift into two phrasings of the same fact.
@@ -219,15 +220,15 @@ class DesignOutput(BaseModel):
 
     ``concurrent_prior_at`` (#236) is set only when a stray overlapping
     ``design`` invocation is detected — see :func:`_record_design_event`.
-    Dumped with ``exclude_none=True`` so the normal-path key set stays the six
-    keys pinned since #211.
+    Dumped with ``exclude_none=True``. Claude's normal path retains the six keys
+    pinned since #211; Codex omits ``model`` when it uses its configured default.
     """
 
     run_id: str
     design_markdown: str
     design_hash: str
     grounded_sha: str
-    model: str
+    model: str | None
     status: str
     concurrent_prior_at: str | None = None
 
@@ -302,13 +303,20 @@ def design_command(
         "--db",
         help="Path to harness.db (defaults to .harness/harness.db under --repo).",
     ),
+    engine: DesignEngine = typer.Option(  # noqa: B008
+        DESIGN_ENGINE,
+        "--engine",
+        help=(
+            "Design engine: claude (default) or codex. Codex inspects read-only; "
+            "Claude can write only its verb-owned output file."
+        ),
+    ),
     model: str | None = typer.Option(
         None,
         "--model",
         help=(
-            f"Model alias for the design engine (host/testing override). "
-            f"Defaults to {DESIGN_MODEL_DEFAULT!r} on every run — ADR 0007 makes "
-            f"the design tier unconditional, not label-gated."
+            f"Model alias for the selected design engine. Claude defaults to "
+            f"{DESIGN_MODEL_DEFAULT!r}; Codex uses its configured default when omitted."
         ),
     ),
     json_output: bool = typer.Option(  # noqa: B008
@@ -319,13 +327,11 @@ def design_command(
 ) -> None:
     """Produce the run's Design section; record it on the ticket and the ledger.
 
-    The engine is a ``claude -p`` subprocess that writes its design to one file
-    outside the worktree, the only path it holds write capability for — it
-    designs, it does not implement. Since #294 it holds one scoped write
-    grant, so it is deliberately no longer described as read-only — that was the
-    overclaim #294 was filed against. A run whose design cannot be produced records
-    the failed attempt and exits 3; the build then proceeds without one rather
-    than stalling (ADR 0007 D4).
+    Claude writes through one scoped grant to a file outside the worktree.
+    Codex's model receives no writable path; the CLI captures its final message
+    into the same verb-owned channel. Both design rather than implement. A run
+    whose design cannot be produced records the failed attempt and exits 3; the
+    build then proceeds without one rather than stalling (ADR 0007 D4).
     """
     repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
@@ -336,6 +342,7 @@ def design_command(
                 repo_root=repo_root,
                 run_id=run_id,
                 db_path=db_path,
+                engine=engine,
                 model=model,
                 runner=_default_runner,
             )
@@ -362,6 +369,7 @@ async def _run_design(
     repo_root: Path,
     run_id: str | None,
     db_path: Path,
+    engine: DesignEngine,
     model: str | None,
     runner: Runner,
 ) -> DesignOutput:
@@ -377,7 +385,9 @@ async def _run_design(
             2,
         )
     resolved_run_id, worktree_path = resolved[0], resolved[1]
-    resolved_model = model if model is not None else DESIGN_MODEL_DEFAULT
+    resolved_model = (
+        model if model is not None else DESIGN_MODEL_DEFAULT if engine == "claude" else None
+    )
 
     # 1b. Consult the run's assurance snapshot before doing anything expensive
     #     (#352). ADR 0007 D1 ran this stage unconditionally; the assurance
@@ -420,6 +430,7 @@ async def _run_design(
             db_path=db_path,
             run_id=resolved_run_id,
             worktree_path=Path(worktree_path),
+            engine=engine,
             model=resolved_model,
             runner=runner,
             invoked_at=invoked_at,
@@ -430,7 +441,7 @@ async def _run_design(
             DesignEventData(
                 run_id=resolved_run_id,
                 status="failed",
-                engine=DESIGN_ENGINE,
+                engine=engine,
                 model=resolved_model,
                 designed_at=iso_z(),
                 invoked_at=invoked_at,
@@ -458,7 +469,8 @@ async def _run_design(
 async def _run_engine_and_collect(
     *,
     runner: Runner,
-    model: str,
+    engine: DesignEngine,
+    model: str | None,
     worktree_path: Path,
     title: str,
     description: str,
@@ -473,13 +485,10 @@ async def _run_engine_and_collect(
     worktree, which is what keeps ``close``'s ``dirty_worktree`` gate untouched
     by anything this stage does.
 
-    Collection order is **file, then stdout fallback**, and which one answered is
-    returned so the ledger can record it. That ordering is not a preference
-    between two equal channels: the file is the contract, and a design arriving
-    on stdout means the scoped write did not take — a regression no test in this
-    suite can catch, since none spawns a real engine. Recording it (and warning
-    on stderr) is what turns that from a silent return to zero designs into a
-    measurable degradation.
+    The file is the primary contract for both engines. Claude alone may fall
+    back to its nonce-marked stdout block; a design arriving there means its
+    scoped write did not take, so the ledger records and warns about that
+    permission regression. Codex accepts only the CLI-owned final-message file.
 
     Raises :class:`_DesignNotProducedError` when neither channel delivered, so
     the caller's single handler records the failed attempt (ADR 0007 D4).
@@ -492,8 +501,10 @@ async def _run_engine_and_collect(
         )
         try:
             result = await runner(
-                cmd=build_design_cmd(model=model, channel=channel),
-                stdin=build_design_prompt(title, description, channel=channel),
+                cmd=build_design_cmd(engine=engine, model=model, channel=channel),
+                stdin=build_design_prompt(
+                    title, description, channel=channel, engine=engine
+                ),
                 env=dict(os.environ),
                 cwd=worktree_path,
                 timeout=timeout,
@@ -518,12 +529,20 @@ async def _run_engine_and_collect(
 
         from_file = normalize_design(await asyncio.to_thread(_read_design_file, channel.path))
         if from_file is not None:
-            return from_file, DESIGN_CHANNEL_FILE
+            channel_name = (
+                DESIGN_CHANNEL_LAST_MESSAGE
+                if engine == "codex"
+                else DESIGN_CHANNEL_FILE
+            )
+            return from_file, channel_name
 
-        from_stdout = normalize_design(parse_design_fallback(result.stdout, channel.nonce))
-        if from_stdout is not None:
-            typer.echo(_FALLBACK_CHANNEL_WARNING.format(run_id=run_id), err=True)
-            return from_stdout, DESIGN_CHANNEL_STDOUT
+        if engine == "claude":
+            from_stdout = normalize_design(
+                parse_design_fallback(result.stdout, channel.nonce)
+            )
+            if from_stdout is not None:
+                typer.echo(_FALLBACK_CHANNEL_WARNING.format(run_id=run_id), err=True)
+                return from_stdout, DESIGN_CHANNEL_STDOUT
 
         # Neither channel delivered. The excerpt is the only evidence this
         # attempt leaves: a degraded run posts no comment and prints no engine
@@ -531,8 +550,8 @@ async def _run_engine_and_collect(
         # ledger (#277).
         raise _DesignNotProducedError(
             NO_DESIGN_OUTPUT_REASON,
-            f"the design engine wrote no design to {channel.path} and emitted no "
-            f"marked fallback block on stdout",
+            f"the {engine} design engine produced no design through its "
+            f"configured output channel",
             submit_excerpt=build_stdout_excerpt(result.stdout),
             stdout_chars=len(result.stdout),
         )
@@ -541,13 +560,13 @@ async def _run_engine_and_collect(
 
 
 def _read_design_file(path: Path) -> str | None:
-    """Read the design the engine wrote, or ``None`` if it wrote none.
+    """Read the design written by the engine or its CLI, else ``None``.
 
     ``errors="replace"`` rather than a raise: an engine that emitted a stray
     undecodable byte still designed, and turning that into an unexpected exit 1
     would lose a produced design to a transcoding detail. A missing file — the
-    ordinary "the engine did not write" case — is likewise ``None``, not an
-    error, because the fallback is still to be tried.
+    ordinary "no output was written" case — is likewise ``None``, not an error.
+    Claude may then use its marked stdout fallback; Codex has no second channel.
     """
     try:
         return path.read_text(encoding="utf-8", errors="replace")
@@ -561,7 +580,8 @@ async def _produce_design(
     db_path: Path,
     run_id: str,
     worktree_path: Path,
-    model: str,
+    engine: DesignEngine,
+    model: str | None,
     runner: Runner,
     invoked_at: str,
 ) -> DesignOutput:
@@ -607,6 +627,7 @@ async def _produce_design(
     budget = load_loop_budget(repo_root)
     design_markdown, delivered_by = await _run_engine_and_collect(
         runner=runner,
+        engine=engine,
         model=model,
         worktree_path=worktree_path,
         title=title,
@@ -635,7 +656,7 @@ async def _produce_design(
         DesignEventData(
             run_id=run_id,
             status="ok",
-            engine=DESIGN_ENGINE,
+            engine=engine,
             model=model,
             designed_at=iso_z(),
             invoked_at=invoked_at,

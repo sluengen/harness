@@ -176,6 +176,8 @@ def _design_path(cmd: list[str]) -> Path:
     naming the directory it grants, every file-channel test here would fail rather
     than quietly testing a path nothing uses.
     """
+    if "--output-last-message" in cmd:
+        return Path(cmd[cmd.index("--output-last-message") + 1])
     return Path(cmd[cmd.index("--add-dir") + 1]) / design_protocol.DESIGN_OUT_FILENAME
 
 
@@ -284,6 +286,7 @@ def _invoke(
     *,
     run_id: str | None = _RUN_ID,
     model: str | None = None,
+    engine: str | None = None,
     tracker_stub: Any | None = None,
 ) -> Any:
     argv = ["design", "--repo", str(repo), "--db", str(db_path), "--json"]
@@ -291,6 +294,8 @@ def _invoke(
         argv += ["--run-id", run_id]
     if model is not None:
         argv += ["--model", model]
+    if engine is not None:
+        argv += ["--engine", engine]
     with mock.patch.object(design_mod, "_default_runner", runner):
         if tracker_stub is None:
             # Hermetic env: no LINEAR_API_KEY, so the tracker cannot be resolved
@@ -452,6 +457,74 @@ def test_model_flag_overrides_the_opus_default(repo: Path, db_path: Path) -> Non
     assert result.exit_code == 0, result.output
     assert captured["cmd"][captured["cmd"].index("--model") + 1] == "sonnet"
     assert design_events(db_path)[0]["data"]["model"] == "sonnet"
+
+
+def test_codex_success_records_honest_engine_channel_and_model_provenance(
+    repo: Path, db_path: Path
+) -> None:
+    _seed_open_run(db_path, repo)
+    captured: dict[str, Any] = {}
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_capturing_runner(captured),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["cmd"][:2] == ["codex", "exec"]
+    assert "--output-last-message" in captured["cmd"]
+    assert "--add-dir" not in captured["cmd"]
+    assert "--settings" not in captured["cmd"]
+    data = design_events(db_path)[0]["data"]
+    assert data["engine"] == "codex"
+    assert data["channel"] == "last_message"
+    assert "model" not in data
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert "model" not in payload
+    assert "warning:" not in result.output
+
+
+def test_codex_no_design_records_the_selected_engine_without_a_model(
+    repo: Path, db_path: Path
+) -> None:
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(None),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    data = design_events(db_path)[0]["data"]
+    assert data["engine"] == "codex"
+    assert "model" not in data
+
+
+def test_codex_never_accepts_claudes_marked_stdout_fallback(
+    repo: Path, db_path: Path
+) -> None:
+    """Codex has one channel: the CLI-owned final-message file."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_fallback_runner(),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    data = design_events(db_path)[0]["data"]
+    assert data["reason"] == design_mod.NO_DESIGN_OUTPUT_REASON
+    assert "channel" not in data
+    assert "permission regression" not in result.output
 
 
 def test_re_running_appends_a_second_event(repo: Path, db_path: Path) -> None:

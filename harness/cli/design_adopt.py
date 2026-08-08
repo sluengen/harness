@@ -107,7 +107,7 @@ async def resolve_adoption(
             run_id=run_id,
             status="ok",
             engine=str(payload.get("engine") or ""),
-            model=str(payload.get("model") or ""),
+            model=payload.get("model"),
             designed_at=str(payload.get("designed_at") or ""),
             invoked_at=invoked_at,
             design_hash=parsed.design_hash,

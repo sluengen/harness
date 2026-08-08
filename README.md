@@ -42,11 +42,11 @@ builder/recorder split — are the portable part; the plumbing around them is no
 
 ## What it does
 
-A single Claude session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: four verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
+A single agent session **orchestrates and implements** a ticket — it reads the ticket, writes the code and tests, decides how to fix a review finding, and when to re-review. The harness owns only the **durable record and the gate**: four verbs over a SQLite ledger, and a `close` gate that refuses to merge anything that wasn't reviewed.
 
 - **`start`** — validate the ticket, transition it to *In Progress*, create an isolated git worktree off the base branch (default `dev`), and open a `runs` ledger row.
-- **`design`** — run a dedicated design engine (a fresh, top-tier context, uncontaminated by the session's orchestration state; it can write exactly one file, outside the worktree, and that file is how its design is collected) against the worktree and the ticket, and record the resulting design in three places: the ticket as a marked comment, the ledger as a `design` event carrying its content hash and grounded SHA, and stdout. Unconditional — every run; a *failed* attempt still satisfies `review`'s enforcement, so an infra flake never blocks a run.
-- **`review`** — run the review engine (**Claude by default**; `--engine codex` is a host-only cross-model option, ADR 0002 as amended by ADR 0013) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. The session sees only the bounded verdict; the engine's full reasoning stays inside the verb.
+- **`design`** — on a `complex` run, invoke Claude/Opus by default or native Codex with `--engine codex` in a fresh context, and record the resulting design on the ticket, in the ledger, and on stdout. Simpler assurance levels skip the engine entirely. Claude receives one scoped output-file grant; Codex receives no model-writable path while its CLI captures the final response.
+- **`review`** — run the review engine (**Claude by default**; native Codex with `--engine codex`, host-only until ADR 0013's #314 seccomp work lands) against the worktree HEAD and record a verdict (`pass` / `fail` / `defer`) **bound to that git SHA**. Add `--no-fallback` when Claude must never be invoked.
 - **`close`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA equals the current HEAD), then commit / merge / push, transition the ticket to *Done*, and finalize the run.
 
 The agent does what only an agent can do (judgement, code, deciding how to fix a finding). Everything the audit trail depends on — opening the run, binding a review to a SHA, gating the merge — is deterministic verb code.
@@ -55,20 +55,20 @@ For the full architectural picture and the "why" of every decision, read [`SPEC.
 
 ## The model: one execution path, two triggers
 
-There is **one** execution model — a Claude session running `start → design → implement → review → (fix → review)* → close` — designed for **two** trigger slots, one built today and one **design-only**:
+There is **one** execution model — an agent session running `start → design → implement → review → (fix → review)* → close` — designed for **two** trigger slots, one built today and one **design-only**:
 
-- a **human**, via the `/harness run <ISSUE-ID>` slash command in Claude Code (the built trigger), or
+- a **human**, via the `/harness run <ISSUE-ID>` command in a supported agent host (the built trigger), or
 - **Hermes**, the autonomous dispatcher that *would* occupy the same trigger slot — **design-only**, not built: the launcher was removed in CAL-712 and the design is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
 
-By design, either trigger produces the identical execution path. The agent runtime is *per-session* (one Claude per ticket, where context lives); each verb is *per-call* — a one-shot `docker run` spawned **outside** the runtime by the `~/bin/harness` wrapper. The agent never runs inside a verb container.
+By design, either trigger produces the identical execution path. The agent runtime is *per-session* (one agent per ticket, where context lives); each verb is *per-call*. The default wrapper launches a one-shot `docker run` outside the runtime; strict Codex-only operation currently invokes a native Harness install instead.
 
 ```
 trigger ( /harness run CAL-42  |  Hermes† )
-   │  launches a Claude session for the ticket
+   │  launches an agent session for the ticket
    ▼
-Claude session — orchestrator + implementer
+agent session — orchestrator + implementer
    start → design → [implement] → review → (fix → review)* → close
-   │  shells out to verbs (one-shot `docker run`)
+   │  shells out to verbs (one-shot Docker or strict native Codex)
    ▼
 harness verbs:  start / design / review / close   +   SQLite ledger   +   close gate
 ```
@@ -125,6 +125,8 @@ harness version
 
 The primary way to invoke the verbs is the `~/bin/harness` wrapper — a thin shell around the Docker image. It mounts the current repo at `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, and extracts your Claude OAuth token from the macOS Keychain so runs use subscription pricing. See [`docker/README.md`](./docker/README.md) for the wrapper script and one-time setup.
 
+For a Codex-only development loop, install Harness natively, authenticate with `codex login`, and run `/harness run <ISSUE-ID> --codex-only`. That mode uses `harness design --engine codex`, `harness review --engine codex --no-fallback`, and `harness doctor --engine codex`; it never invokes Claude. It is native-only until #314 enables Codex's sandbox in the Docker wrapper.
+
 ```bash
 # Build the image
 docker build -t harness:dev -f docker/Dockerfile .
@@ -138,7 +140,7 @@ The ledger, worktrees, and event log land under `/workspace/.harness/` and `/wor
 
 ## Authentication
 
-harness dispatches review through the Claude CLI by default (`--engine codex` is a host-only cross-model option — ADR 0013 amends the reason and chooses to end it). **Auth follows Claude Code's conventions, not the raw Anthropic API.** Three paths, in order of preference:
+Harness dispatches review through the Claude CLI by default. Claude auth follows Claude Code's conventions, not the raw Anthropic API:
 
 | Path | Pricing | When |
 |---|---|---|
@@ -146,11 +148,13 @@ harness dispatches review through the Claude CLI by default (`--engine codex` is
 | Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts. The `~/bin/harness` wrapper extracts the Keychain token for you. |
 | `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. |
 
+For strict native Codex-only operation, authenticate separately with `codex login` and verify it with `harness doctor --engine codex`. No Claude credential is required in that mode.
+
 `LINEAR_API_KEY` lives in a gitignored `.env` at the target repo root; the verbs read it to fetch and transition the ticket. No Linear CLI is involved — all Linear interaction is via the GraphQL API inside the verbs.
 
 ## Driving a ticket
 
-In Claude Code, the `/harness run <ISSUE-ID>` command orchestrates the whole loop: it calls each verb, you (the session) write the code and tests inline in the worktree, and it acts on each verdict. The loop, the gate-refusal handling, and the routing rules are documented in [`commands/harness.md`](./commands/harness.md).
+The `/harness run <ISSUE-ID>` command orchestrates the whole loop: it calls each verb, you (the session) write the code and tests inline in the worktree, and it acts on each verdict. Add `--codex-only` for the strict native mode. The loop, gate-refusal handling, and routing rules are documented in [`commands/harness.md`](./commands/harness.md).
 
 By hand, the same loop is:
 
