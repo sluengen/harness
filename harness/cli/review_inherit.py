@@ -20,10 +20,13 @@ it.
    Provenance is required, not merely a SHA match: a clean-start run's HEAD could
    coincide with an old pass only through a recreated branch, and gating on
    ``resumed_from`` removes that reasoning entirely rather than weighing it;
-2. the run recorded a ``design`` attempt. The short-circuit may skip *work*, never
-   a refusal that is about **this** run's own state — and ADR 0007 D3's
-   ``no_design`` is exactly that. Declining costs nothing: the normal path then
-   raises it precisely as today;
+2. the run's **design precondition is met**. The short-circuit may skip *work*,
+   never a refusal that is about **this** run's own state, and the design
+   refusals are exactly that. Since #352 the condition is the assurance policy's
+   answer rather than "an event exists": a ``simple`` run legitimately has none,
+   and gating on presence would make it decline inheritance forever, waiting for
+   a ``no_design`` that can no longer fire. Declining still costs nothing — the
+   normal path then raises whichever refusal is owed, precisely as today;
 3. the caller supplied no **red** gate evidence (``--gate-exit`` absent, or 0).
    An orchestrator that ran the gate and got red must not have that tree
    certified. HEAD being byte-identical to a green-passed tree makes the red
@@ -113,7 +116,7 @@ async def resolve_inheritance(
     run_id: str,
     ticket: str | None,
     worktree_path: Path,
-    design_recorded: bool,
+    design_precondition_met: bool,
     gate_exit: int | None,
     created_at: str,
 ) -> InheritedReview | None:
@@ -131,8 +134,8 @@ async def resolve_inheritance(
     if await read_run_resumed_from(db_path, run_id) is None:
         return None  # (1) clean start: no predecessor whose work this continues.
 
-    if not design_recorded:
-        return None  # (2) let the normal path raise no_design, as it does today.
+    if not design_precondition_met:
+        return None  # (2) let the normal path raise the design refusal it owes.
 
     if gate_exit is not None and gate_exit != 0:
         return None  # (3) the caller's own red gate is never overridden.

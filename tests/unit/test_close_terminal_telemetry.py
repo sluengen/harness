@@ -43,9 +43,14 @@ Fixtures mirror ``test_cli_close.py``: the tracker client and the git merge/push
 are faked, and the ledger is seeded directly.
 """
 
+# size: one terminal-outcome contract, exercised once per way a close can end.
+# Every case asserts the same invariant — exactly one `close` observation, with
+# the outcome and reason that terminal path owes — and the suite's value is that
+# the whole matrix of endings is readable together; splitting it by ending would
+# hide which endings are covered, which is the one thing this file is for.
+
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -55,7 +60,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from harness.cli import app
+from harness import close_merge
+from harness.cli import app, close_retry
 from harness.cli import close as close_mod
 from harness.cli.close_telemetry import outcome_for_exit_code
 from harness.events import observation as observation_mod
@@ -69,6 +75,7 @@ from harness.events.payloads import (
     CLOSE_UNEXPECTED_REASON,
 )
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -95,6 +102,24 @@ def _allow_tmp_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("HARNESS_WORKSPACE_ROOTS", str(tmp_path))
 
 
+@pytest.fixture(autouse=True)
+def retry_delays(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record the bounded retry's sleeps instead of paying them (#301).
+
+    Several cases here drive a retryable step-6 or step-7 failure to record the
+    terminal event it produces. Each now costs the full 2s + 8s backoff before
+    that event is written, so without this the suite would sleep on the
+    telemetry it is measuring rather than measuring it.
+    """
+    recorded: list[float] = []
+
+    async def _record(seconds: float) -> None:
+        recorded.append(seconds)
+
+    monkeypatch.setattr(close_retry, "_sleep", _record)
+    return recorded
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     repo_root = tmp_path / "repo"
@@ -112,14 +137,6 @@ def repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 def _head_sha(repo: Path) -> str:
@@ -174,7 +191,7 @@ def _seed_open_run(
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return run_id
 
 
@@ -206,7 +223,7 @@ def _emit_review(
             },
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 async def _fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, Any]]:
@@ -222,7 +239,7 @@ async def _fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, An
 
 
 def fetch_close_payloads(db_path: Path, run_id: str) -> list[dict[str, Any]]:
-    return _sync(_fetch_close_payloads(db_path, run_id))
+    return run_sync(_fetch_close_payloads(db_path, run_id))
 
 
 def _make_tracker_stub(raise_on_transition: Exception | None = None) -> MagicMock:
@@ -397,7 +414,7 @@ def test_ac2_no_run_refusal_writes_no_event(repo: Path, db_path: Path) -> None:
     deliberate rather than becoming accidental, and so a later reader does not
     "fix" it. It is the one hole in the denominator: the measured rate is per
     *resolved-run* close attempt."""
-    _sync(store.init_db(db_path))
+    run_sync(store.init_db(db_path))
 
     result, merge, _stub = _invoke(repo, db_path, RUN_ID)
 
@@ -407,7 +424,7 @@ def test_ac2_no_run_refusal_writes_no_event(repo: Path, db_path: Path) -> None:
     assert set(payload) == {"error", "reason"}, "refusal JSON unchanged"
     merge.assert_not_called()
 
-    assert _sync(_count_all_close_events(db_path)) == 0
+    assert run_sync(_count_all_close_events(db_path)) == 0
 
 
 async def _count_all_close_events(db_path: Path) -> int:
@@ -508,7 +525,7 @@ def test_ac3_post_merge_failure_is_not_counted_as_a_blocked_close(
             rows = await cur.fetchall()
         return [row[0] for row in rows]
 
-    assert _sync(_refused_run_ids()) == [blocked]
+    assert run_sync(_refused_run_ids()) == [blocked]
 
 
 def test_outcome_for_exit_code_maps_the_verbs_documented_codes() -> None:
@@ -582,6 +599,38 @@ def test_ac4_unexpected_error_without_a_reason_is_still_recorded(
     assert "merged_sha" not in payloads[0]
 
 
+def test_a_classified_merge_failure_records_its_own_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """A step-6 failure ``close_merge`` classified records **that** reason (#300).
+
+    Before the propagation fix every merge/push failure collapsed into
+    :data:`CLOSE_UNEXPECTED_REASON` in the ledger as well as in the printed
+    JSON, so the aggregate could not count genuine conflicts against lost push
+    races. The sibling test above is the control: an *unclassified* error still
+    records :data:`CLOSE_UNEXPECTED_REASON`, so this is a real discrimination
+    and not the tag having simply been renamed.
+    """
+    run_id = _seed_open_run(db_path, repo)
+    _emit_review(db_path, run_id, _head_sha(repo))
+    rejected = MagicMock(
+        side_effect=close_merge.CloseMergeError("lost the race", reason="push_rejected")
+    )
+
+    result, _merge, _stub = _invoke(repo, db_path, run_id, merge_push=rejected)
+
+    assert result.exit_code == 1, result.output
+
+    payloads = fetch_close_payloads(db_path, run_id)
+    assert len(payloads) == 1
+    assert payloads[0]["reason"] == "push_rejected"
+    assert payloads[0]["reason"] != CLOSE_UNEXPECTED_REASON
+    assert payloads[0]["outcome"] == CLOSE_OUTCOME_FAILED
+    # The merge did not land, so the un-merged family stays honest in the
+    # ledger as well as on the wire.
+    assert "merged_sha" not in payloads[0]
+
+
 # ---------------------------------------------------------------------------
 # AC-5 — the rate is one SQL query
 # ---------------------------------------------------------------------------
@@ -622,7 +671,7 @@ def test_ac5_stale_review_rate_is_one_sql_query(repo: Path, db_path: Path) -> No
             row = await cur.fetchone()
         return int(row[0]), int(row[1] or 0)
 
-    assert _sync(_rate()) == (3, 2)
+    assert run_sync(_rate()) == (3, 2)
 
 
 def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
@@ -645,7 +694,7 @@ def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
             },
         )
 
-    _sync(_seed_legacy())
+    run_sync(_seed_legacy())
 
     async def _count_ok() -> int:
         async with (
@@ -659,7 +708,7 @@ def test_ac5_a_pre_existing_close_row_reads_as_a_landed_close(
             row = await cur.fetchone()
         return int(row[0])
 
-    assert _sync(_count_ok()) == 1
+    assert run_sync(_count_ok()) == 1
 
 
 # ---------------------------------------------------------------------------

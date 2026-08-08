@@ -2,7 +2,7 @@
 name: architecture
 description: Use when making a cross-cutting design decision — data models, contracts, interfaces — and recording it in the spec it governs. Load when shaping how something is built; every decision should trace to engineering-principles.
 ---
-<!-- guidance:architecture@0.7.0 -->
+<!-- guidance:architecture@0.7.2 -->
 # Architecture
 
 How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
@@ -27,7 +27,7 @@ Do **not** record a decision for a routine choice with no lasting consequence. T
 
 ## Where the decision is recorded
 
-The mechanics — which spec a decision lives in, the block's shape, and how to supersede it — are owned by `spec-authoring` → "Decisions live in the spec they govern". The short version: a decision is recorded **in the spec it governs** (a Decision block in the feature spec, or the architecture-principles spec for a cross-cutting one), never a standalone ADR or a `decisions/` folder, and is superseded **in place** with a dated note. This skill governs only *when* a choice rises to a decision (above) and *that* it is recorded honestly (below); the recording rule itself lives in one place, there.
+The mechanics — which spec a decision lives in, the block's shape, and how to supersede it — are owned by `spec-authoring` → "Decisions live in the spec they govern". The short version: a decision is recorded **in the spec it governs** (a Decision block in the feature spec, or the architecture-principles spec for a cross-cutting one) and superseded **in place** with a dated note — never a standalone ADR or a `decisions/` folder unless the repo declares one (`CONTEXT.md` → `paths.decisions`), which is the only switch and carries its own threshold. This skill governs only *when* a choice rises to a decision (above) and *that* it is recorded honestly (below); the recording rule itself lives in one place, there.
 
 ## Recording, not deciding alone
 
@@ -63,6 +63,8 @@ git diff --name-only "<integration-branch>...HEAD"
 If the integration branch is unknown or unavailable — a detached checkout, or a `CONTEXT.md` that omits `branches.integration` — **fall back** to the working-tree diff (`git diff --name-only HEAD` plus staged and untracked files) so the check still runs against whatever this change adds, rather than skipping silently. Match each changed path against the watchlist globs.
 
 **Refreshing the list.** The watchlist is not write-once. When the steward (`/assess code`, and the `--deep` arm) finds a recurring gravity well or repeated architectural drag in a file, it proposes adding that file to `architecture_watchlist` so the next change there trips the trigger (`assessment-craft`). This skill is the one home for the mechanism; the builder reference is in `spec-authoring` (the change-spec section) and the reviewer reference in `review-discipline` (the Stage-2 check).
+
+**Growing the list from a change.** A **second seam extraction** from the same **non-watchlisted module** is itself the signal that the module is a gravity well: add it to `CONTEXT.md`'s `architecture_watchlist.files` in that change. Give the entry the same descriptive comment the entry-currency rule requires. One extraction alone does not qualify; the point is to make repeated structural drag durable without waiting for a steward pass.
 
 ## Architecture assessment
 

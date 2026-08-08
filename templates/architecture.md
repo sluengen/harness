@@ -1,4 +1,4 @@
-<!-- guidance:template-architecture@0.1.0 -->
+<!-- guidance:template-architecture@0.2.0 -->
 ---
 spec: architecture-principles
 last_updated: YYYY-MM-DD
@@ -21,7 +21,9 @@ Group by area (data, schema, API, deployment, security — whatever fits). For e
 
 ## Cross-cutting decisions
 
-Decisions whose scope crosses features live here as Decision blocks (`templates/decision.md`), recorded in place rather than as standalone files. Each states context, decision, alternatives rejected, and consequences; superseding updates it inline with a dated note.
+Decisions whose scope crosses features live here as Decision blocks (`templates/decision.md`), recorded in place rather than as standalone files unless this repo declares `paths.decisions`. Each states context, decision, alternatives rejected, and consequences; superseding updates it inline with a dated note.
+
+Where a decision directory *is* configured, this section becomes the **index** for it: state the bar a record must clear (cross-cutting, consequential, expensive to reverse), the naming and numbering convention, and how supersession is recorded there — universal guidance defers all three to this page — then link each record rather than restating its reasoning. Decisions below that bar stay inline here.
 
 ### Decision: {title}
 

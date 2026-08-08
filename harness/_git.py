@@ -157,6 +157,58 @@ def worktree_toplevel_matches(worktree_path: Path) -> bool:
         return False
 
 
+#: Ceiling (seconds) for the ``git ls-files`` probe behind :func:`tracked_paths`.
+#: A local call does not reach a remote, but both callers run on paths where a
+#: wedged git must degrade to *no opinion* rather than hang: ``reclaim --stale``
+#: is the Build routine's every-tick pre-flight, and ``review``'s pollution guard
+#: sits in front of an engine it exists to keep from being reached slowly.
+LS_FILES_TIMEOUT_SECONDS = 15
+
+
+def tracked_paths(
+    worktree_path: Path, *, timeout: float | None = LS_FILES_TIMEOUT_SECONDS
+) -> list[str] | None:
+    """The worktree-relative paths ``git`` tracks at ``worktree_path`` — or ``None``.
+
+    Sync (it shells out); call it through :func:`asyncio.to_thread` from async
+    code. ``None`` means *no opinion* and every caller must fail open on it: the
+    path is not a directory, is not itself a git top-level, ``git ls-files``
+    failed or timed out, or the index is empty.
+
+    An empty index answers ``None`` rather than ``[]`` deliberately. ``[]`` reads
+    as "0 tracked files", which is the one input that makes every file on disk
+    look like excess — so the ambiguous case must not be representable as a
+    measurement.
+
+    The :func:`worktree_toplevel_matches` anchor is load-bearing, not defensive
+    padding. ``git`` walks **up** from a directory whose worktree registration was
+    pruned, so ``ls-files`` there reports the *main checkout's* index — whose
+    files the operator is almost always editing. ``reclaim --stale`` would then
+    read a fresh mtime for every stale ticket and silently switch itself off
+    (#254); ``review``'s pollution guard would compare a worktree's on-disk count
+    against a *different* tree's index and could refuse a clean run.
+
+    Extracted here (#359) when that guard became the second caller of an
+    enumeration ``reclaim_liveness.worktree_last_activity`` had owned privately.
+    The two ask different questions — a newest mtime, and a file count — so only
+    the enumeration and its anchor are shared; sharing them is what stops the two
+    disagreeing about which paths are the worktree's own.
+    """
+    if not worktree_path.is_dir() or not worktree_toplevel_matches(worktree_path):
+        return None
+    try:
+        proc = run_git(worktree_path, "ls-files", "-z", timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
+        return None
+    if proc.returncode != 0:
+        return None
+    # ``-z`` is NUL-terminated, so a newline in a tracked filename cannot forge a
+    # second entry. The trailing separator yields one empty field — skip it.
+    names = [name for name in proc.stdout.split("\0") if name]
+    return names or None
+
+
 def rev_parse_head(worktree_path: Path, *, timeout: float | None = None) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 
@@ -275,23 +327,43 @@ def teardown_worktree(
 
     Steps, in order:
 
-    1. ``git worktree remove --force`` the directory. If that exits non-zero and
-       the directory is still present, it is an **orphan** — its worktree
-       registration was already pruned, so git no longer recognises it as a
+    1. ``git worktree remove --force`` the directory *and* its admin entry under
+       ``<git-common-dir>/worktrees/``. Run whether or not the directory is
+       present: git clears a registration whose directory is already gone, which
+       is what keeps a stale entry from accumulating and blocking a later
+       ``git worktree add`` at the same path (``probe_tree.create`` reclaims a
+       leftover from a previous review exactly that way). If it exits non-zero
+       and the directory is still present, it is an **orphan** — its worktree
+       registration was already gone, so git no longer recognises it as a
        working tree — and :func:`shutil.rmtree` removes it instead. This is the
        cruft case a plain ``git worktree remove`` cannot touch.
-    2. ``git worktree prune`` to drop any stale admin entry left behind.
-    3. ``git branch -D <branch>`` to delete the local branch (when given).
-    4. ``git push origin --delete <branch>`` when ``delete_remote`` — a
+    2. ``git branch -D <branch>`` to delete the local branch (when given).
+    3. ``git push origin --delete <branch>`` when ``delete_remote`` — a
        checkpoint push may have created the branch on ``origin``; once the run is
        merged it is dead weight. A no-op (and harmless non-zero exit) when the
        remote ref does not exist.
 
-    **Safety:** directory removal only ever touches a path *inside*
-    ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that is the main
-    checkout (or anything outside the run-worktree area) skips removal entirely —
-    the ``rmtree`` fallback must never be able to destroy the repository itself.
-    The branch operations still run (deleting a merged run branch is safe) —
+    **Blast radius (#371).** Step 1 names the one path teardown was asked to
+    reclaim, and git touches no other registration — verified against
+    ``git worktree remove``, which leaves an unrelated stale entry registered.
+    Until #371 the step was followed by a bare, repo-wide ``git worktree prune``.
+    That command takes no path, and every verb runs *in the container*, where the
+    repo is mounted at ``/workspace`` and nothing else on the host filesystem
+    exists — so the prune read every worktree registered outside the mount as
+    missing and deleted its admin entry. The directory survived on the host, so
+    the damage stayed invisible until something read that tree and git answered
+    ``fatal: not a git repository: <repo>/.git/worktrees/<name>`` with exit 128,
+    arriving as a wall of red in tracked-tree guards the change never touched. A
+    *host-side* prune does not do this — the path is there — which is why it was
+    twice recorded as a race between concurrent sessions rather than as this.
+
+    **Safety:** the directory *and* the admin entry are only ever touched for a
+    path *inside* ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that
+    is the main checkout (or anything outside the run-worktree area) skips both —
+    the ``rmtree`` fallback must never be able to destroy the repository itself,
+    and deregistering a directory teardown may not remove would leave exactly the
+    broken half-state above. The branch operations still run (deleting a merged
+    run branch is safe) —
     unless ``branch`` is flag-like (leading ``-``), which :func:`_is_safe_branch_arg`
     refuses so an untrusted, tracker-parsed name cannot be read by git as an
     option instead of a branch.
@@ -301,12 +373,16 @@ def teardown_worktree(
     within_worktrees_area = (
         resolved != worktrees_area and worktrees_area in resolved.parents
     )
-    if within_worktrees_area and worktree_path.exists():
+    if within_worktrees_area:
+        # Named path, not a sweep: this clears this worktree's admin entry and
+        # provably no other, including one whose directory is unreachable from
+        # the namespace we are running in (#371). Not gated on the directory
+        # existing — a registration outliving its directory is the stale entry
+        # the retired repo-wide prune used to collect.
         result = run_git(repo_root, "worktree", "remove", "--force", str(worktree_path))
         if result.returncode != 0 and worktree_path.exists():
             # Orphaned directory — git won't remove what it no longer tracks.
             shutil.rmtree(worktree_path, ignore_errors=True)
-    run_git(repo_root, "worktree", "prune")
     if branch and _is_safe_branch_arg(branch):
         run_git(repo_root, "branch", "-D", branch)
         if delete_remote:

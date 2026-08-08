@@ -18,6 +18,8 @@ nothing of exit codes or ``reason`` tags — that vocabulary, and the
 
 from __future__ import annotations
 
+from typing import Literal
+
 from harness.tracker import Tracker
 from harness.tracker_errors import (
     TrackerNotFound,
@@ -25,24 +27,43 @@ from harness.tracker_errors import (
     TrackerTransitionUnconfirmed,
 )
 
-__all__ = ["TicketNotDone", "transition_ticket_done"]
+__all__ = ["TicketFailureKind", "TicketNotDone", "transition_ticket_done"]
+
+#: How the Done transition failed — one member per tracker failure shape (#301).
+#:
+#: This used to be a ``bool``: ``TrackerNotFound`` and ``TrackerRequestError``
+#: both meant ``unconfirmed=False``, which was enough while the verb only had to
+#: choose between two exit-1 ``reason`` tags. It stopped being enough once the
+#: verb *retries*: a not-found issue is deterministic — re-issuing the mutation
+#: cannot make the issue exist — while a request error (401, 5xx) is the
+#: transient blip a retry exists to ride out. Collapsed together, the retry
+#: would have to either burn its whole budget on a permanently missing ticket or
+#: give up on a recoverable one.
+#:
+#: The kinds are *how the tracker failed*, deliberately not the verb's exit-1
+#: ``reason`` vocabulary: this module knows nothing of exit codes, and the
+#: mapping from three kinds onto the two unchanged ``TicketFailureReason`` tags
+#: stays in ``close.py`` where that contract lives.
+TicketFailureKind = Literal["unconfirmed", "not_found", "request_error"]
 
 
 class TicketNotDone(Exception):  # noqa: N818 — SPEC vocab, not PEP 8 Error suffix
     """The ticket could not be confirmed Done after the merge already landed.
 
-    ``unconfirmed`` is ``True`` iff the tracker raised
+    ``kind`` is the :data:`TicketFailureKind` naming which tracker failure shape
+    fired: ``unconfirmed`` for
     :class:`~harness.tracker_errors.TrackerTransitionUnconfirmed` (the mutation
-    reported success, but the post-write state was not Done, #233); ``False``
-    for every other tracker failure. The verb maps the two to distinct
-    ``FailureReason`` tags so an operator can tell "the tracker refused" from
-    "the tracker said yes but lied" apart.
+    reported success, but the post-write state was not Done, #233),
+    ``not_found`` for :class:`~harness.tracker_errors.TrackerNotFound`, and
+    ``request_error`` for :class:`~harness.tracker_errors.TrackerRequestError`.
+    The verb reads it twice over: to pick the exit-1 ``FailureReason`` tag an
+    operator branches on, and to decide whether the failure is worth retrying.
     """
 
-    def __init__(self, detail: str, *, unconfirmed: bool) -> None:
+    def __init__(self, detail: str, *, kind: TicketFailureKind) -> None:
         super().__init__(detail)
         self.detail = detail
-        self.unconfirmed = unconfirmed
+        self.kind: TicketFailureKind = kind
 
 
 async def transition_ticket_done(client: Tracker, ticket: str) -> None:
@@ -50,16 +71,22 @@ async def transition_ticket_done(client: Tracker, ticket: str) -> None:
 
     ``TrackerTransitionUnconfirmed`` is checked **first** — it subclasses
     ``TrackerRequestError``, so clause order is the only thing distinguishing
-    ``unconfirmed=True`` from ``unconfirmed=False``. Any other exception type
+    ``kind='unconfirmed'`` from ``kind='request_error'``. ``TrackerNotFound``
+    precedes the request-error clause for readability only; the two are
+    unrelated types, so that pair is order-independent. Any other exception type
     propagates unchanged: no broad ``except`` is added here.
     """
     try:
         await client.transition_to_done(ticket)
     except TrackerTransitionUnconfirmed as exc:
         raise TicketNotDone(
-            f"ticket {ticket} was not confirmed Done: {exc}", unconfirmed=True
+            f"ticket {ticket} was not confirmed Done: {exc}", kind="unconfirmed"
         ) from exc
-    except (TrackerNotFound, TrackerRequestError) as exc:
+    except TrackerNotFound as exc:
         raise TicketNotDone(
-            f"failed to transition ticket {ticket} to Done: {exc}", unconfirmed=False
+            f"failed to transition ticket {ticket} to Done: {exc}", kind="not_found"
+        ) from exc
+    except TrackerRequestError as exc:
+        raise TicketNotDone(
+            f"failed to transition ticket {ticket} to Done: {exc}", kind="request_error"
         ) from exc

@@ -24,7 +24,6 @@ ever hit its refusal paths).  The redefined contract:
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,7 @@ from typer.testing import CliRunner
 
 from harness.cli import app
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -40,15 +40,6 @@ cli_runner = CliRunner()
 # ---------------------------------------------------------------------------
 # DB seeding / inspection helpers
 # ---------------------------------------------------------------------------
-
-
-def _run_sync(coro: object) -> object:
-    """Drive a coroutine from a synchronous test function."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
 
 
 def _seed_run(
@@ -81,7 +72,7 @@ def _seed_run(
             )
             await conn.commit()
 
-    _run_sync(_insert())
+    run_sync(_insert())
 
 
 def _fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
@@ -97,7 +88,7 @@ def _fetch_row(db_path: Path, run_id: str) -> dict[str, Any] | None:
             return None
         return {"status": row[0], "completed_at": row[1]}
 
-    return _run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 def _fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str, Any]]:
@@ -112,7 +103,7 @@ def _fetch_events(db_path: Path, run_id: str, event_type: str) -> list[dict[str,
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +296,7 @@ def _drop_events_table(db_path: Path) -> None:
             await conn.execute("DROP TABLE events")
             await conn.commit()
 
-    _run_sync(_drop())
+    run_sync(_drop())
 
 
 def test_cancel_event_write_failure_rolls_back_status(tmp_path: Path) -> None:

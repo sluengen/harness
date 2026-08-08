@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.3.0
+// guidance:hook-git-push-guard@0.4.0
 /**
  * Git force-push guard (PreToolUse: Bash).
  *
@@ -100,6 +100,13 @@
  * pre-approve, so the deny globs and normal checks still apply). It fails open
  * on any internal error, matching the repo's other hooks: the deny globs remain
  * the backstop, so a crashing guard must not wedge every Bash call.
+ *
+ * **Falling open is announced** (#303). The approving payload and the exit status are
+ * unchanged, but a fall-open writes one ``[GIT-PUSH-GUARD] fail-open: …`` line to
+ * stderr, so a silently-disarmed guard is distinguishable from a deliberate
+ * pass-through — the two used to be byte-identical, which is how #302 stayed hidden.
+ * The notice carries hook-owned constants and ``err.message`` only, never the command
+ * under inspection. Best-effort swallows elsewhere in the bundle stay silent.
  */
 "use strict";
 
@@ -575,10 +582,26 @@ function forcePushAnywhere(command, depth = 0) {
   return substitutions.some((body) => forcePushAnywhere(body, depth + 1));
 }
 
+/**
+ * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * approving payload still goes out, but stderr says this hook did not run, so a
+ * silently-disarmed guard is distinguishable from a deliberate pass-through. Built
+ * from hook-owned constants and `err.message` only — never the payload, which carries
+ * the very Bash command under inspection. Inlined per hook on purpose: a shared module
+ * would be a load-time dependency whose own failure is the class being reported on.
+ */
+function failOpen(reason, err) {
+  const cause = err && err.message ? String(err.message) : String(err || "no detail");
+  process.stderr.write(
+    `[GIT-PUSH-GUARD] fail-open: ${reason}: ${cause.replace(/\s+/g, " ").slice(0, 200)}\n`
+  );
+}
+
 function readStdin() {
   try {
     return JSON.parse(require("fs").readFileSync(0, "utf8"));
-  } catch {
+  } catch (err) {
+    failOpen("could not parse the hook payload on stdin", err);
     return {};
   }
 }
@@ -617,8 +640,10 @@ function main() {
 if (require.main === module) {
   try {
     main();
-  } catch {
+  } catch (err) {
     // Fail open: the deny globs remain the backstop; never wedge every Bash call.
+    // Loudly, since #303 — a disarmed force-push guard must not look like a pass.
+    failOpen("crashed before it could decide", err);
     process.stdout.write(JSON.stringify({ continue: true }));
   }
 }

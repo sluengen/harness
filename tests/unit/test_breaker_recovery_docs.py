@@ -38,6 +38,13 @@ _STEP4_HEADING = "**Step 4 — `close`.**"
 _HANDOFF_HEADING = "#### Proactive context-rollover handoff"
 _HANDOFF_END = "**This is distinct from death-keyed reclamation**"
 
+# The `fail`-verdict bullet, sliced out of the wider Step 3 region because the
+# human-authorised recovery recipe *also* lives in Step 3 and legitimately names
+# `harness cancel` / `--resume` (#329). Asserting their absence over the whole
+# region would flag the very block they belong in.
+_FAIL_BULLET_HEADING = "- **`fail`** —"
+_FAIL_BULLET_END = "- **`defer`** —"
+
 
 def _doc() -> str:
     return HARNESS_COMMAND.read_text()
@@ -55,6 +62,10 @@ def _step3_slice(doc: str) -> str:
 
 def _handoff_slice(doc: str) -> str:
     return _slice(doc, _HANDOFF_HEADING, _HANDOFF_END)
+
+
+def _fail_bullet_slice(doc: str) -> str:
+    return _slice(doc, _FAIL_BULLET_HEADING, _FAIL_BULLET_END)
 
 
 def test_step3_and_handoff_slices_are_non_empty() -> None:
@@ -156,3 +167,97 @@ def test_teeth_handoff_cross_reference_fails_on_pre_fix_text() -> None:
     pre = _pre_fix_handoff()
     with pytest.raises(AssertionError):
         assert "harness cancel" in pre
+
+
+# ---------------------------------------------------------------------------
+# #329 — the automated exhaustion recipe, and what it must NOT reach for
+# ---------------------------------------------------------------------------
+#
+# Two recoveries live in this document and they are not interchangeable. The
+# automated one, on the `fail` bullet, preserves the work and hands the ticket to
+# a human. The human-authorised one, under *Recovering from a breaker trip*,
+# cancels the run and resumes it — which opens a fresh budget window and resets
+# *both* breakers. If the automated path ever reaches for the second, an
+# unattended loop can grant itself unlimited cycles one cancel at a time, which
+# is the runaway spend the budget exists to bound. Prose is the only thing
+# holding those apart, so it is what this pins.
+
+#: The two commands the automated recipe runs, in the order it must run them.
+_EXHAUSTION_RECIPE = ("harness checkpoint", "harness defer")
+
+#: The commands that reset a budget. Legal under the human-authorised heading,
+#: never on the automated path.
+_BUDGET_RESETTING = ("harness cancel", "--resume")
+
+
+def test_fail_bullet_slice_is_non_empty() -> None:
+    """Floor: the slice exists, so the two rules below are not vacuous.
+
+    A rename of either bullet marker would silently empty the subject and leave
+    an unguarded recipe reading as guarded.
+    """
+    bullet = _fail_bullet_slice(_doc())
+    assert len(bullet) > 400, "the `fail` verdict bullet is missing or was renamed"
+
+
+def test_exhaustion_recipe_checkpoints_before_deferring() -> None:
+    """Push the WIP, *then* hand the ticket over — the order is load-bearing.
+
+    Deferring first names a branch that may not be on ``origin`` yet, so the
+    human the hold summons can be pointed at work that is only in a container
+    about to be torn down.
+    """
+    bullet = _fail_bullet_slice(_doc())
+    positions = []
+    for command in _EXHAUSTION_RECIPE:
+        assert command in bullet, (
+            f"the exhaustion recipe must name `{command}` — it is how an "
+            "orchestrator that has run out of cycles preserves the work and puts "
+            "the ticket on operator hold (#329)"
+        )
+        positions.append(bullet.index(command))
+    assert positions == sorted(positions), (
+        "the exhaustion recipe must order "
+        + " before ".join(f"`{c}`" for c in _EXHAUSTION_RECIPE)
+    )
+
+
+def test_the_automated_path_names_no_budget_resetting_command() -> None:
+    """The `fail` bullet must not reach for cancel/resume — that is the human's call."""
+    bullet = _fail_bullet_slice(_doc())
+    found = [command for command in _BUDGET_RESETTING if command in bullet]
+    assert not found, (
+        "the automated exhaustion path names budget-resetting command(s) "
+        f"{found} — cancel + resume opens a new budget window and resets both "
+        "breakers, so an unattended loop reaching for it can grant itself "
+        "unlimited cycles. They belong under *Recovering from a breaker trip*, "
+        "which a human enters deliberately (#329)."
+    )
+
+
+def test_teeth_the_recipe_rules_fail_on_a_pre_329_bullet() -> None:
+    """Positive control over both rules, on the wording this ticket replaced.
+
+    The pre-#329 bullet ended at "stop and escalate to the human" and named no
+    recipe at all, so the ordering rule must reject it. The second sample is the
+    subtler regression the ordering rule alone would miss: a bullet that *does*
+    carry a recipe, but the human-authorised one.
+    """
+    pre_329 = (
+        "- **`fail`** — fix the listed `issues`, then re-run `harness review`. "
+        "On a breaker refusal, stop and escalate to the human."
+    )
+    assert not all(command in pre_329 for command in _EXHAUSTION_RECIPE), (
+        "the pre-#329 bullet named no exhaustion recipe, so the ordering rule "
+        "must not be satisfiable by it"
+    )
+
+    wrong_recipe = (
+        "- **`fail`** — on exhaustion, `harness checkpoint`, then `harness cancel "
+        "<run_id>` and `harness start <TICKET> --resume` to keep going. "
+        "harness defer is not needed."
+    )
+    assert [c for c in _BUDGET_RESETTING if c in wrong_recipe], (
+        "the sample must name a budget-resetting command, or it does not "
+        "exercise the rule it is the control for"
+    )

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.3.7
+// guidance:hook-guidance-freshness@0.4.1
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -101,10 +101,11 @@ function main() {
     // commands/harness.md until CAL-764 registered it; the mechanism still guards
     // any genuinely repo-owned file.) Identify them without naming any repo fact:
     // a non-member that carries no `guidance:` header AND is not a `.json` is
-    // repo-owned, so skip it. The `.json` carve-out matters because settings
-    // JSON is the one *headerless* distributable type (the registry version is
-    // authoritative) — a new, unregistered settings file must still draw the
-    // register reminder. A non-member that carries a header is likewise a new
+    // repo-owned, so skip it. The `.json` carve-out matters because JSON is the
+    // *headerless* distributable type (the registry version is authoritative):
+    // `settings/*.json`, and since #302 `hooks/package.json` too — a new,
+    // unregistered file of either kind must still draw the register reminder.
+    // A non-member that carries a header is likewise a new
     // guidance file not yet registered — keep checking it. Meta files
     // (registry.yaml, BOOTSTRAP.md) are always checked (isDist is false for
     // them), so a malformed registry that drops its own meta entry can't silence
@@ -147,11 +148,15 @@ function main() {
     }
     if (!recently(D_GENERIC)) {
       mark(D_GENERIC);
+      // The changelog entry is derived from the commit at release (#324, ADR
+      // 0014), so there is no artifact to nag for — the commit body IS the
+      // entry. Pointing anywhere else would send an author to a path that no
+      // longer exists.
       const where = relPath.endsWith(".json")
-        ? "bump its version in registry.yaml (JSON carries no header) and add a fragment at changelog.d/<ticket>.md"
+        ? "bump its version in registry.yaml (JSON carries no header) and describe the change in the commit body"
         : isMeta
-          ? "bump its version in both the file header and the registry `meta:` block, and add a fragment at changelog.d/<ticket>.md"
-          : "bump its version in both the file header and registry.yaml, and add a fragment at changelog.d/<ticket>.md";
+          ? "bump its version in both the file header and the registry `meta:` block, and describe the change in the commit body"
+          : "bump its version in both the file header and registry.yaml, and describe the change in the commit body";
       return done(`[GUIDANCE-FRESHNESS] You edited a version-stamped file (${relPath}). Before finishing: ${where}. ` +
         `An un-bumped edit is invisible to repos that installed it.`);
     }
@@ -176,4 +181,22 @@ function done(additionalContext) {
   process.stdout.write(JSON.stringify(out));
 }
 
-try { main(); } catch { process.stdout.write(JSON.stringify({ continue: true })); }
+/**
+ * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * approving payload still goes out, but stderr says this hook did not run, so a
+ * disarmed hook is distinguishable from a clean pass-through. Built from hook-owned
+ * constants and `err.message` only — never the payload, which is untrusted text.
+ * Inlined per hook: a shared module would be a load-time dependency whose own failure
+ * is the class being reported on.
+ */
+function failOpen(reason, err) {
+  const cause = err && err.message ? String(err.message) : String(err || "no detail");
+  process.stderr.write(
+    `[GUIDANCE-FRESHNESS] fail-open: ${reason}: ${cause.replace(/\s+/g, " ").slice(0, 200)}\n`
+  );
+}
+
+try { main(); } catch (err) {
+  failOpen("crashed before it could decide", err);
+  process.stdout.write(JSON.stringify({ continue: true }));
+}

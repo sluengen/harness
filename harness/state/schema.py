@@ -78,12 +78,14 @@ assert IN_FLIGHT_STATUSES <= RUN_STATUSES
 #: A **denylist**, where :data:`IN_FLIGHT_STATUSES` is an allowlist, because the
 #: two sets differ in which direction can grow. The retired set is *closed* —
 #: the engine is deleted, so nothing can write a new name into it — while the
-#: verb model's names do grow: ``start`` writes ``''``, ``defer`` writes
-#: ``'defer'``, ``release`` writes ``'release'``. An allowlist would therefore
-#: drop a future verb's runs out of the denominator with nothing failing.
+#: verb model's names do grow. An allowlist would therefore drop a future
+#: verb's runs out of the denominator with nothing failing.
 #:
-#: This is the discriminator, **not** ``worktree_path IS NOT NULL``: ``defer``
-#: and ``release`` write terminal run rows and create no worktree, so that
-#: column answers "did this run have a worktree" and drops 8 live verb-model
-#: rows.
+#: This is the discriminator, **not** ``worktree_path IS NOT NULL``: the
+#: ``'defer'`` / ``'release'`` rows already on disk are terminal and carry no
+#: worktree, so that column answers "did this run have a worktree" and drops 8
+#: verb-model rows. Those two names are **historical** — #338 stopped both
+#: verbs writing run rows at all, so ``start``'s ``''`` is now the only name a
+#: live verb writes — but the rows they already wrote are exactly what makes
+#: the distinction still matter to a reader.
 RETIRED_ENGINE_WORKFLOWS: frozenset[str] = frozenset({"build", "build-codex"})

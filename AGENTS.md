@@ -1,7 +1,7 @@
-<!-- guidance:process-harness@0.4.9 -->
+<!-- guidance:process-harness@0.6.0 -->
 # How work happens here
 
-This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, Linear workspace, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
+This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
 
 There is a single surface and a single process. What used to be a `standard` vs `harness` *profile* split is retired: repos differ by **per-repo configuration** (`CONTEXT.md` `layers:`), not by a profile. The guidance files referenced below (`skills/`, `agents/`, `commands/`) are version-stamped; do not rewrite their content here — point to them.
 
@@ -13,21 +13,22 @@ A repo turns capabilities on or off in its `CONTEXT.md` `layers:` block. The pro
 |---|---|---|
 | `feature_specs` | The as-built record is a **feature spec** in `specs/features/` (use `templates/feature.md`); the reviewer records what shipped there. | The as-built record is the **design doc / `SPEC.md`** — an infrastructure repo's behaviour *is* its design, so the design spec is the canonical record. |
 | `design_system` | Frontend work uses the repo's design system; the `design-system` skill applies. | No design system; `design-system` does not engage. (`ux-design` is **not** gated by this layer — it applies wherever there is a user-facing surface.) |
-| `linear` | Linear is the task queue and front door. | The repo's own tracker stands in for the Linear steps. |
+
+**The tracker is a field, not a layer.** `CONTEXT.md`'s top-level `tracker:` (`linear` | `github` | `none`) is the single switch for whether a tracker is wired and which backend, and the `tracker` skill is the backend-neutral protocol every lifecycle step routes through. It is deliberately not in the table above: a layer turns a capability on or off, whereas this selects between backends.
 
 This repo's settings are in its `CONTEXT.md`. `design_system` is off wherever there is no design system. `feature_specs` is a per-repo choice about the **shape of the as-built record**: a **product** repo typically turns it on; an infrastructure tool may leave it off and let its design docs stand as the record. The harness itself sets `feature_specs: true` — it dogfoods the feature-spec record it publishes.
 
 ## The shape of a task
 
-Work is spec-driven with minimal ceremony. Three specs serve three moments (`spec-authoring`): a **proposal spec** (`specs/proposals/`) for an idea not yet confirmed, a **change spec** (the Linear issue) for one piece of work, and the **as-built record** — a feature spec (`feature_specs` on) or the design doc / `SPEC.md` (`feature_specs` off). The full flow is in `spec-driven-development`; the short version:
+Work is spec-driven with minimal ceremony. Three specs serve three moments (`spec-authoring`): a **proposal spec** (`specs/proposals/`) for an idea not yet confirmed, a **change spec** (the tracker issue) for one piece of work, and the **as-built record** — a feature spec (`feature_specs` on) or the design doc / `SPEC.md` (`feature_specs` off). The full flow is in `spec-driven-development`; the short version:
 
 0. If the work is unconfirmed or too big for one change, `/propose` it first and get it decided. Small, clear work skips this.
-1. The Linear issue is the front door. Open it, move it to In Progress. (Linear is the queue — there is no `manifest.yaml`.)
+1. The tracker issue is the front door. Open it, move it to In Progress. Route every tracker operation through the `tracker` skill, which reads `CONTEXT.md`'s `tracker:` field and dispatches to the matching provider recipe. (The tracker is the queue — there is no `manifest.yaml`.)
 2. Read the relevant as-built record before changing behaviour — the feature spec, or `SPEC.md` / `specs/` for an infra repo. It is the contract.
 3. Write a change spec into the issue: problem, approach, **design** (data model / interface / scenarios), acceptance criteria, out of scope (`spec-authoring`).
 4. Branch into a worktree (`worktree-isolation`) — never build on the default branch. Build test-first (`test-driven-development`), in scope (`code-quality`), against the principles (`engineering-principles`).
-5. Hand to review. The reviewer checks output and process (`review-discipline`), runs the verification gate independently, and — on PASS — records what shipped (to `specs/features/` when `feature_specs` is on, otherwise updates the design spec).
-6. Ship per the repo's branch model (`CONTEXT.md`), close the Linear issue.
+5. Hand to review. The reviewer checks output and process (`review-discipline`), records what shipped (to `specs/features/` when `feature_specs` is on, otherwise updates the design spec) **into the candidate**, and only then runs the verification gate independently and decides — the tree the verdict covers is the tree that merges (`review-discipline`'s *final-evidence ordering* rule).
+6. Ship per the repo's branch model (`CONTEXT.md`), close the issue.
 
 The load-bearing rules throughout — non-negotiable, and written out here so they bind even if no skill file gets opened:
 
@@ -48,7 +49,7 @@ A ticket can be driven two ways within the one surface — the choice is per-inv
 
 Use the option your repo provides; its `CONTEXT.md` says which. A repo without the harness app uses the agent-led option — `/build` is available everywhere.
 
-**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it is the **source** of the canonical `/build` command and carries its full body for distribution, but drives its *own* tickets with `/harness run` (whose `review` already does the Codex review) — or `/start → /review → /ship` as a backup — and does **not** invoke `/build` on its own tickets. This rule is specific to the harness repo; elsewhere `/build` is the normal agent-led option.
+**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it remains the source of the canonical `/build` command. During the interim harness pause, it drives its own tickets with agent-led `/build` (or `/start → /review → /ship` when attended), exactly as every consuming repo does. `/build` carries the assurance stages, isolated agents, and evidence requirements that formerly depended on the harness loop; it does not carry a wall-clock budget or ledger machinery. An operator must explicitly end the pause before `/harness run` returns as this repo's default. This rule applies elsewhere, where `/build` remains the normal agent-led option.
 
 ## Skills (the durable rules)
 
@@ -64,7 +65,7 @@ Use the option your repo provides; its `CONTEXT.md` says which. A repo without t
 | `systematic-debugging` | Any failing test or bug. |
 | `writing-quality` | Specs, decisions, any prose. |
 | `worktree-isolation` | Any multi-commit work. |
-| `linear` | Reading and updating Linear. |
+| `tracker` | Any tracker operation — the backend-neutral protocol. Dispatches to `linear` or `github-issues`. |
 | `assessment-craft` | The methodology for any `/assess` pass (the steward). |
 | `guidance-coherence` | Domain standards for the `/assess system` scope (guidance coherence). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |

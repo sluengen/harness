@@ -6,10 +6,12 @@
 
 ## Context
 
-ADR 0005 left an admitted asymmetry: `review:<tier>` is a control signal (the
-verb constructs the engine subprocess and passes `--model`), but `build:<tier>`
-is a recorded judgement only, because the orchestrating session *is* the
-builder and no verb-owned seam exists to swap its model per ticket. Its
+ADR 0005 left an admitted asymmetry: `review:<tier>` was a control signal (the
+verb constructs the engine subprocess and passes `--model`), while `build:<tier>`
+was a recorded judgement only, because the orchestrating session *is* the
+builder and no verb-owned seam exists to swap its model per ticket. (Both labels
+were retired by #321; the asymmetry is what motivated this ADR, not a live
+mechanism.) Its
 consequences section anticipated that wiring the build dimension "would need
 its own deterministic seam (e.g. a dispatch step)".
 
@@ -33,17 +35,53 @@ contract, `engine_timeout_seconds` ceiling, Claude-only in-container per ADR
 0002) against the run's worktree and ticket, and produces the change spec's
 technical design.
 
+> **Amended 2026-08-02 (#294) — the engine protocol, not the policy.** Two
+> clauses of that first sentence no longer hold. The engine's output channel is
+> a **file**, not the `SUBMIT:` contract: inheriting `review`'s wire format cost
+> `design` 12.5% of its attempts against `review`'s 0.24%, because the same
+> format was carrying a 14–17 KB document instead of a fixed 100-character
+> verdict. And it is no longer **read-only** — it holds write capability for
+> that one file and nothing else, which is a narrower and rule-enforced control
+> where plan mode was a broad cooperative one. Everything this ADR actually
+> decides — unconditional, Opus, the artifact is the change spec's Design
+> section, `review` enforces it, failure degrades and records — is untouched;
+> `specs/features/verb-model.md` carries the as-built protocol.
+
 Four resolved dimensions:
 
-- **Unconditional, not label-gated.** The design stage runs for **every**
+> **Amended 2026-08-07 (#352) — the policy, not the protocol.** Two of the four
+> dimensions below no longer hold as written. The stage is **no longer
+> unconditional**: an issue carries its intent as an `assurance:<level>` label,
+> `start` snapshots the resolved level on the run, and only `complex` requires a
+> design. And a *failed* attempt **no longer satisfies `review`** on such a run —
+> it is refused with `design_not_usable`. What is unchanged is why the stage
+> exists (context segmentation, Opus, the artifact is the change spec's Design
+> section) and that `review` is where it is enforced. The reasoning is in
+> `specs/proposals/assurance-led-lifecycle.md`; the as-built policy is in
+> `specs/features/verb-model.md`, and the vocabulary lives in one module,
+> `harness/assurance.py`.
+>
+> Two guard rails came with it. Everything unresolved fails safe to `simple`,
+> the level that still requires a review — a label is third-party input, so the
+> most a hostile or mistaken one can buy is skipping the *design* stage, never
+> the review, the verify-gate evidence check, or `close`'s SHA-bound gate. And
+> `trivial` — the level that *would* skip review — is recognized but rewritten
+> to `simple` at the boundary, because the deterministic certification that
+> makes skipping a review safe is a later increment and is not built. The
+> trivial fast path has **not** shipped.
+
+- **Unconditional, not label-gated.** *(Superseded by the #352 amendment above:
+  conditional on issue-carried assurance.)* The design stage runs for **every**
   ticket, regardless of judged difficulty. The rationale is context
   segmentation as much as tier: the design happens in a fresh, dedicated
   engine context, uncontaminated by the build session's orchestration state.
-  The engine model is **Opus for all runs initially**; a lower tier (e.g. a
-  `design:<tier>` label defaulting to `opus`, on the dimension-generic
-  `resolve_model_tier` seam, `harness/cli/review_protocol.py:179`) is an
-  anticipated refinement, deliberately not built now. `build:<tier>` /
-  `review:<tier>` semantics from ADR 0005 are untouched.
+  The engine model is **Opus for all runs initially**; a lower tier was an
+  anticipated refinement, deliberately not built. That refinement was described
+  as a `design:<tier>` label hanging off the dimension-generic resolver in
+  `harness/cli/review_protocol.py`; #321 deleted that resolver along with ADR
+  0005's own labels, so the seam it would have hung off no longer exists. A
+  configurable design model would now follow `review`'s shape — one value in
+  `CONTEXT.md`'s `loop:` block — and is still not built.
 - **The artifact is the change spec's Design section, not a new artifact
   class.** The verb posts the design to the ticket as a marked comment (the
   reclaim/handoff marker pattern) and returns it in bounded `DesignOutput`
@@ -56,7 +94,9 @@ Four resolved dimensions:
   pass. When a design exists, `review` passes it to the review engine as
   context, so the fix loop converges on conformance to the design rather than
   re-deriving intent each cycle.
-- **Failure degrades and records.** A design-engine failure (timeout, infra
+- **Failure degrades and records.** *(Narrowed by the #352 amendment above: it
+  holds where the run's assurance does not require a design; a `complex` run is
+  refused `design_not_usable`.)* A design-engine failure (timeout, infra
   error) is recorded as the design event and the build proceeds without a
   design; enforcement checks that a design was *attempted and recorded*, not
   that it succeeded. An infra flake never wedges the unattended queue, and
@@ -82,7 +122,8 @@ Four resolved dimensions:
 
 ## Consequences
 
-- Every run pays one Opus engine call at design time; the counterfactual —
+- Every run pays one Opus engine call at design time — until #352, which is the
+  cost that motivated making the stage conditional. The counterfactual —
   design-by-rejection burning review cycles — is the expensive path this
   removes on hard tickets, and trivial tickets buy context segmentation.
 - `review` gains a refusal reason (`no_design`); enforcement must ship
@@ -90,6 +131,6 @@ Four resolved dimensions:
   satisfy — the proposal's breakdown is sequential for this reason.
 - The build dimension gets its deterministic seam: top-tier thinking happens
   in a verb-owned subprocess, and the Sonnet session executes against its
-  output. `build:<tier>` stays a pure judged-difficulty record.
+  output. `build:<tier>` stayed a pure judged-difficulty record until #321 removed it.
 - The mechanics land through the proposal's breakdown tickets; this ADR is
   the policy record.

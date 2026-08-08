@@ -1,4 +1,4 @@
-<!-- guidance:template-context@0.1.13 -->
+<!-- guidance:template-context@0.1.18 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
@@ -48,13 +48,34 @@ commands:
   test_one: "{e.g. pytest path::test_name}"
   verify:  "{the canonical combined gate, if the repo has one — e.g. bash scripts/verify.sh — or omit}"
   run:     "{e.g. docker compose up}"
+assurance:
+  # Optional. Required only to honour assurance:trivial. The command inspects
+  # the staged diff, prints certified paths/reason, and exits non-zero for any
+  # path or risk outside the repo's versioned allowlist.
+  trivial_certify: "{e.g. bash scripts/certify-trivial.sh — or omit}"
 branches:
   integration: {e.g. dev}      # feature branches base from and merge here
   release: {e.g. main}         # how production is fed
+# The autonomous loop's spend bounds, read by the harness engine. Values are
+# bare integers, never {e.g. …} placeholders — the reader matches digits only, so
+# a placeholder silently falls back to the code default while reading to a human
+# as though it were set. Shipped equal to those defaults, so deleting a line
+# changes nothing until you retune it. Only relevant if this repo self-hosts the
+# harness routine loops.
+loop:
+  max_review_cycles: 5           # how many review→fix cycles a run may SPEND — the review after them is refused. The stop policy these numbers tune lives in `skills/review-discipline/SKILL.md`; this block is only its numbers.
+  unconditional_review_cycles: 3 # how many of those run with no convergence judgment required. Keep it at or below `max_review_cycles`; the loader clamps rather than erroring.
+  wall_clock_budget_minutes: 110 # the longest a legitimate **unattended** run may take — since ADR 0011 it bounds that mode alone, an attended run being bounded by the operator and, for reclamation, by `attended_idle_minutes` below. ALSO `harness reclaim --stale`'s staleness threshold for an unattended run — one quantity seen from two directions (a run refused at review but spared reclamation would be alive on the board and unable to finish), so this single line moves both.
+  attended_idle_minutes: 480     # `harness reclaim --stale`'s staleness threshold for a run started `--attended`. A longer threshold, not an exemption: a session paused on a question to the operator touches none of the liveness clocks, so the wall clock above would revert its ticket underneath them — while a session abandoned overnight is still reclaimed by morning. Keep it at or above `wall_clock_budget_minutes`.
+  untracked_file_limit: 1000     # how far past its own git index a run worktree may drift before `harness review` refuses to spawn an engine over it — a worktree carrying thousands of untracked files (a stray `.venv`, a build tree) drowns the review engine's tool use, and the observed signature is a review that burns the whole `engine_timeout_seconds` ceiling and returns `engine_timeout` having reviewed nothing. The refusal is instant and costs no review cycle. Coarse on purpose: raise it if your gate legitimately leaves a large untracked tree in the worktree, or set `0` to disable the check entirely.
+  engine_timeout_seconds: 900    # per-subprocess ceiling for BOTH engines, review and design — a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Raise it if a legitimately slow engine is being killed; sit it at or below any external ops kill so the clean exit wins. Retune it against your own ledger, not this number: if *successful* runs are finishing near the ceiling it is clipping real work and should go up, whereas if they are not, a timeout is a hung engine and a bigger ceiling only spends more per dead attempt.
+  probe_max_entries: 3           # how many mutations `harness review`'s probe stage may run per review (#363): the engine proposes edits to the code under review, each is applied to a throwaway worktree at the reviewed SHA and the suite is run against it, and a survivor comes back as a finding. A mutation table certifies only what its author thought to mutate, and the author is the person being reviewed. Costs one baseline suite run plus one per entry, so keep it small; set `0` to disable the stage entirely.
+  probe_budget_seconds: 720      # ceiling on that probe subprocess, clamped to `engine_timeout_seconds` above — one review's added cost can never exceed one engine's ceiling. Lower it if probing is eating the loop; do NOT raise `engine_timeout_seconds` to buy a probe more time.
+  review_model: opus            # the alias the claude review engine runs on, for every ticket. Not a bound like the keys above — one value, one edit to change, and read as a plain string alias rather than a two-value enum: an enum makes a third alias a code change and coerces a typo to the default, hiding the mistake behind a review that quietly ran the wrong model. An unrecognized alias reaches the claude CLI and fails loudly there. `harness review --model <alias>` overrides it for host/testing. Pick it for the verdict quality your repo needs; a larger model is generally slower, so weigh it against `engine_timeout_seconds` above.
 conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:
-  linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"
+  linear_cli: "{exact invocation, e.g. python -m tools.linear — or 'GraphQL via curl'}"   # tracker: linear only
   # Custom/renamed-state UUID overrides live here; the linear skill resolves standard states by type at runtime
 paths:
   source: {e.g. app/}
@@ -62,7 +83,8 @@ paths:
   proposals: specs/proposals/       # proposal specs (pre-Linear, unconfirmed/large ideas)
   feature_specs: specs/features/    # canonical, as-built feature specs (decisions embedded inline)
   infrastructure: {e.g. specs/infrastructure.md — or omit}   # reference spec
-  architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here)
+  architecture: {e.g. specs/architecture.md — or omit}       # architecture-principles reference spec (cross-cutting decisions live here, unless one clears the bar stated on `decisions:` below)
+  decisions: {e.g. specs/decisions/ — or omit}               # optional, repo-relative: a directory of architecture decision records. Declaring it IS the switch — there is no strategy setting. Declare it only for decisions that are cross-cutting, consequential and expensive to reverse (branch topology, tracker architecture, security posture, certification invariants); omit it and every decision is embedded in the spec it governs, which is the default. The architecture index above owns placement, numbering and supersession for it
   design_system: {path or external repo — or omit}
 # Optional. Gravity-well files where state/branching/rendering accumulate — when a
 # planned or actual diff touches one, the change spec and the review carry a
@@ -75,8 +97,8 @@ architecture_watchlist:               # optional — omit entirely if this repo 
     - {e.g. app/screens/BigScreen.tsx}
     - {e.g. src/orchestrator/*.py}
 env:
-  file: {e.g. .env}            # file to source before Linear/tooling; MUST be gitignored, never committed
-  linear_token: LINEAR_API_KEY # the var holding the Linear API token; omit only if tracker: none
+  file: {e.g. .env}            # file to source before tracker/tooling calls; MUST be gitignored, never committed
+  linear_token: LINEAR_API_KEY # tracker: linear only — the var holding the Linear API token; read from the environment/.env, never from CONTEXT.md; omit unless tracker: linear
   github_token: GITHUB_TOKEN   # tracker: github only — the var holding the GitHub token (repo + project scopes); read from the environment/.env, never from CONTEXT.md; omit unless tracker: github
 ```
 

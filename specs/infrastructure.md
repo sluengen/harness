@@ -1,6 +1,6 @@
 ---
 spec: infrastructure
-last_updated: 2026-07-21
+last_updated: 2026-08-07
 ---
 
 # Infrastructure
@@ -17,7 +17,8 @@ N/A — no owned or custom domains. The documentation page is served from the Gi
 
 | Service | Platform | Source | Notes |
 |---|---|---|---|
-| CI (verification gate) | GitHub Actions | `.github/workflows/ci.yml` | Runs `scripts/verify.sh` (ruff → mypy → pytest → CLI smoke → landing-page drift guard) on push/PR to `main` and `dev`. The `push: dev` trigger verifies each merged state (incl. the close verb's direct pushes) and catches merge skew between concurrently-landed runs. `ubuntu-latest`, `uv`, Python 3.11, 10-minute job timeout |
+| CI (verification gate) | GitHub Actions | `.github/workflows/ci.yml` | `lint-and-test` runs `scripts/verify.sh` (ruff → mypy → pytest in two stages, `-m docker` serial then `-m "not docker"` across the runner's cores under one coverage floor on the union, #358 → CLI smoke → landing-page drift guard → design-token drift guard → release-cadence report) on push/PR to `main` and `dev`. The `push: dev` trigger verifies each merged state (incl. the close verb's direct pushes) and catches merge skew between concurrently-landed runs. `ubuntu-latest`, `uv`, Python 3.11, 20-minute job timeout |
+| CI (release cadence) | GitHub Actions | `.github/workflows/ci.yml` | `release-cadence` runs `scripts/cadence.py check` **only** on a PR into `main` — the release (#350). Its own job, not a step in `lint-and-test`, so a cadence breach (an overdue release) blocks the release without halting unrelated changes; the gate merely reports the same bounds. 5-minute job timeout |
 | Local execution (primary) | Docker — the `~/bin/harness` wrapper | `docker/` | Builds the `harness:dev` image; mounts CWD as `/workspace`; each verb is a one-shot `docker run`. See `docker/README.md` |
 | Local execution (alternate) | Native — `uv tool install .` | repo root | Installs the `harness` console script on PATH; credentials must be set manually. Use when Docker is unavailable |
 | Container registry | — | — | Not yet published; the image is built locally as `harness:dev` (override with `HARNESS_IMAGE`). GHCR publish is tracked in **CAL-623** |

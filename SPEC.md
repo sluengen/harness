@@ -261,7 +261,7 @@ the autonomous dispatcher itself is deferred until the Build loop is built.)
 ```
 # Audited verbs — one-shot, ledger-backed; the orchestrating agent calls these
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json]   # --resume: a reclaimed ticket with a checkpoint-pushed WIP branch continues from it (fetch + base the worktree on it); falls back to a clean start (CAL-739)
-harness design            [--run-id <id>] [--model <alias>] [--repo <p>] [--db <p>] [--json]   # the design stage between start and implement (ADR 0007): a read-only Opus engine produces the change spec's Design section, recorded as a marked ticket comment + a `design` ledger event. --model overrides the unconditional Opus default (host/testing)
+harness design            [--run-id <id>] [--model <alias>] [--repo <p>] [--db <p>] [--json]   # the design stage between start and implement (ADR 0007): a dedicated Opus engine produces the change spec's Design section — written to one file outside the worktree, the only path it can write (#294) — recorded as a marked ticket comment + a `design` ledger event. --model overrides the unconditional Opus default (host/testing)
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
@@ -277,18 +277,19 @@ harness worktrees cleanup                 [--age <duration>] [--merged] [--force
 
 # Ops
 harness cancel    <run-id>                    # abandon an in-flight run (close without merge)
-harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--undo] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold (default from `loop.wall_clock_budget_minutes`, shared with review's wall-clock breaker — #260; idle = tracker updatedAt, the ledger's last activity, AND the run worktree's newest tracked-file mtime — #254), reporting a third outcome `closable` for an idle run whose clean worktree HEAD already carries a gate-evidenced passing review — it was never stranded, only unfinished, so it is left open for `close` rather than reverted (#255); --undo reverses a reclaim confirmed to be a false positive (ticket back to In Progress, label dropped, run row re-opened)
-harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a defer event (CAL-1143)
-harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); record a release event (#193)
+harness reclaim   [<run-id>] [--ticket <id>] [--stale --project <name> [--older-than <dur>]] [--undo] [--db <p>] [--json]   # revert a stranded ticket to Todo + reconcile the ledger; --stale sweeps the project's In-Progress tickets idle past the threshold (default from `loop.wall_clock_budget_minutes`, shared with review's wall-clock breaker — #260, or `loop.attended_idle_minutes` for a run started `--attended` — #297; idle = tracker updatedAt, the ledger's last activity, AND the run worktree's newest tracked-file mtime — #254), reporting a third outcome `closable` for an idle run whose clean worktree HEAD already carries a gate-evidenced passing review — it was never stranded, only unfinished, so it is left open for `close` rather than reverted (#255); --undo reverses a reclaim confirmed to be a false positive (ticket back to In Progress, label dropped, run row re-opened)
+harness defer     <ticket> --reason <text> [--reason-file <p>] [--db <p>] [--json]   # triage: post a comment + additively apply the `decision` label on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (CAL-1143, #338)
+harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (#193, #338)
 harness doctor                                # system health checks
 harness version                           [--json]
+harness serve                             [--socket <p>] [--image <tag>]   # the persistent runtime host (ADR 0012, #307): bind a local unix socket and spawn each verb as a one-shot container, holding no run state. Foreground; the client falls back to a direct spawn when the socket is unreachable
 
 # Promotion lifecycle — move dev -> staging -> main (ADR 0003); v1 surface, mechanics land per CAL-1114+
 harness promote start     [--repo <p>] [--from <b>] [--to <b>] [--json]   # open a promotion: merge --from into --to and classify
 harness promote continue  [--promotion-id <id>] [--repo <p>] [--json]   # resume an agent_may_fix promotion after one bounded repair
 harness promote status    [--promotion-id <id>] [--repo <p>] [--json]   # read a promotion by id: typed ledger view
 harness promote pr        [--promotion-id <id>] [--repo <p>] [--json]   # success finalizer: push the promotion branch + open the PR (gated)
-harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a Linear ticket
+harness promote escalate  [--repo <p>] [--json]   # non-success terminal: file/update a tracker ticket
 ```
 
 There is no `harness promote verify` in v1: the gate runs inside `start` / `continue`, never a standalone pause point (ADR 0003; rationale in [`cli-surface.md`](specs/features/cli-surface.md)).
@@ -399,9 +400,9 @@ Explicit list of things this project does **not** do, even on request:
 - Full DAG engine. v1 is linear + loop. DAG comes only when a real workflow needs it and a YAML hack would be uglier than parallel-step support.
 - Web UI / dashboard. CLI + JSON output is enough.
 - Workflow visual builder.
-- Long-running daemon / server. The CLI runs, completes, exits. State persists in SQLite.
+- Long-running daemon / server. The CLI runs, completes, exits. State persists in SQLite. **Bounded exception — ADR [0012](specs/decisions/0012-persistent-runtime-host.md):** a persistent host-side process brokers credentials, keeps the image fresh, and constructs verb containers. It holds **no run state** — it is a credential broker, a spawner, and a timer, nothing more; anything that outlives a request and describes a run has exceeded the carve-out and belongs in the ledger. Every verb is still a one-shot container that runs, completes, and exits, which is what bounds the exception.
 - Multi-tenancy / multi-project state in one DB. One DB per project mount.
-- Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them.
+- Built-in scheduling. Cron / launchd / systemd does that. The harness is invoked by them. **Bounded exception — ADR [0012](specs/decisions/0012-persistent-runtime-host.md):** the same runtime host runs the harness's *own* periodic maintenance (`reclaim --stale`, `worktrees cleanup`) on a timer. It runs no user-defined work, and each sweep is an ordinary one-shot verb invocation recorded in the ledger like any other.
 - LLM-driven workflow generation.
 - General-purpose agent framework. The harness is a set of deterministic verbs an agent calls, not a framework that runs agents. If a use case wants an autonomous agent that spawns its own work, this isn't the tool.
 

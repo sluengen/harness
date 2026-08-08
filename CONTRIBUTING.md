@@ -23,6 +23,66 @@ If you do open a PR:
 - **Stay in scope and test-first.** The repo builds test-first and runs a gate —
   `uv run --extra dev pytest`, plus `ruff` and `mypy`. See [`CONTEXT.md`](./CONTEXT.md)
   for the exact commands and [`CLAUDE.md`](./CLAUDE.md) for how work happens here.
+- **Use the tiers for the fast loop.** Every test is assigned a dependency tier
+  at collection — `unit` (nothing outside the process), `guard` (reads the
+  checked-out tree) or `integration` (a real repo or worktree, the
+  SQLite ledger, a spawned process, or a whole verb through `CliRunner`). Run
+  `uv run --extra dev pytest -m "unit or guard"` while iterating: ~2,900 tests
+  in about nine seconds, against roughly four minutes to run the whole suite
+  serially. Add `-m integration` — or `-m "integration and not docker"` without a
+  daemon — for the rest. The tier is *derived* from your module's imports, so
+  there is no marker to write; if a `unit`-tier test of yours spawns a process it
+  fails with `TierViolationError`, and [`tests/_tiers.py`](./tests/_tiers.py)
+  explains the escape hatch. **A tier selection is still not a gate run** —
+  `bash scripts/verify.sh` runs everything, and only that counts as verification.
+  It does so in two stages: the tests sharing the `harness:test` Docker image tag
+  run serially, and the rest run across your cores (about a minute on eight),
+  under one coverage floor measured on the union. Set `HARNESS_TEST_WORKERS` to
+  override the worker count — `HARNESS_TEST_WORKERS=0` runs in the controller,
+  which is how you reproduce a failure that only appears under parallelism.
+- **Prove a new guard by mutating what it guards.** A test written after the
+  code, or one that was green the moment it was born, has not been shown to
+  measure anything. `scripts/mutate.py` runs that proof: you write a TOML table
+  of exact edits, each declaring the pytest node ids it must kill, and the
+  harness applies them one at a time against a pristine tree.
+
+  ```bash
+  uv run python scripts/mutate.py check --table <table>.toml   # lands? costs nothing
+  uv run python scripts/mutate.py run   --table <table>.toml   # baseline, then each entry
+  ```
+
+  Each entry carries an `id`, the `file` it edits, the exact `old` and `new`
+  text, the `kills` it predicts, an optional `note`, and — see below — an
+  optional `observe`.
+
+  It compares the observed failure set to your prediction by **equality**:
+  exactly the predicted set is `killed`, the only pass, and anything else is
+  `mispredicted`, which is how a collection-breaker's several hundred failures
+  stop reading as the kill they resemble. A run that could not complete is
+  `errored`, never a verdict.
+
+  Killing nothing is where it gets interesting, because that is **not** by itself
+  evidence of a weak guard — it is equally an edit that changed nothing, and
+  #209 spent two re-derivations learning the difference the expensive way. So an
+  entry may declare `observe`, argv appended to this interpreter and run inside
+  the tree. On a would-be survivor it runs on both trees and the digests decide:
+  differ → `survived`, printed `SURVIVED (LIVE)`, a real gap in the guard; match
+  → `inert`, a defect in your table rather than in the guard. With no `observe`
+  you get `SURVIVED (UNPROVEN)` — nobody has shown the edit was live, so it is
+  not evidence of anything and must not be cited as though it were.
+
+  Exit `0` when every entry killed as predicted, `1` when some did not, and `4`
+  when at least one was `inert`. `4` dominates `1`: "your table proved nothing"
+  is the louder answer, and it calls for different work.
+
+  It refuses before it writes a byte, in this order: a malformed **table**, a
+  **containment** failure (the wrong tree), a **landing** failure (`old` absent
+  or ambiguous), a red **baseline**, a mistyped **prediction**, and an unusable
+  **observable** (nondeterministic, or already failing on the pristine tree). It
+  backs up every target before touching any and restores only from those
+  backups. The table stays outside the repo — only the mechanism is versioned.
+  Full rationale in the module docstring.
+
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing

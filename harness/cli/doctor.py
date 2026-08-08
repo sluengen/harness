@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import typer
 
-from harness.state import store
+from harness.cli._repo import REPO_OPTION
 
 # size: one cohesive health-check module — each `check_*` function is a small,
 # independent, injectable probe (auth, git, engines, gh, ...) plus the single
@@ -179,11 +179,13 @@ def check_git_version(
     )
 
 
-def check_db(db_path: Path | None = None) -> tuple[str, str]:
-    """Pass if harness.db exists and is readable; warn if not found."""
-    if db_path is None:
-        db_path = Path.cwd() / store.DEFAULT_DB_PATH
+def check_db(db_path: Path) -> tuple[str, str]:
+    """Pass if harness.db exists and is readable; warn if not found.
 
+    The path is required: since #306 the command resolves it once, through the
+    one repo seam, and hands it down. A ``None`` default here would be a second
+    ambient read of the working directory — the bug class ADR 0012 retires.
+    """
     if db_path.exists():
         try:
             # Probe readability with a single byte — the file only needs to be
@@ -358,7 +360,7 @@ def check_gh(gh_probe: EngineProbe | None = None) -> tuple[str, str]:
     return ("PASS", f"gh runs ({gh_probe.path})")
 
 
-def check_verify_config(repo_root: Path | None = None) -> tuple[str, str]:
+def check_verify_config(repo_root: Path) -> tuple[str, str]:
     """WARN when the repo's ``CONTEXT.md`` configures no ``verify:`` gate command.
 
     Under the CAL-1082 evidence model ``review`` records an unconfigured gate
@@ -372,8 +374,6 @@ def check_verify_config(repo_root: Path | None = None) -> tuple[str, str]:
     """
     from harness.gate import load_gate_command
 
-    if repo_root is None:
-        repo_root = Path.cwd()
     command = load_gate_command(repo_root)
     if command:
         return ("PASS", f"verify gate configured: {command}")
@@ -492,14 +492,17 @@ def check_wrapper(
 
 
 def doctor_command(
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
 ) -> None:
     """Run system health checks."""
     from harness.cli._query_common import _resolve_db_path
+    from harness.cli._repo import repo_arg_or_cwd
 
-    db_path = _resolve_db_path(db)
+    repo_root = repo_arg_or_cwd(repo)
+    db_path = _resolve_db_path(db, repo_root)
 
     typer.echo("harness doctor")
     typer.echo("==============")
@@ -511,7 +514,7 @@ def doctor_command(
         ("db", check_db(db_path)),
         ("reviewer", check_reviewer()),
         ("gh", check_gh()),
-        ("verify", check_verify_config()),
+        ("verify", check_verify_config(repo_root)),
         ("cli", check_cli()),
         ("wrapper", check_wrapper()),
     ]

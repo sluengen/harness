@@ -93,10 +93,9 @@ class Tracker(Protocol):
     async def create_issue(
         self,
         *,
-        team_key: str,
-        project_name: str | None,
         title: str,
         description: str,
+        project: str | None,
     ) -> dict[str, str]: ...
 
 

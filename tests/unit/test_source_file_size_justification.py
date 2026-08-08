@@ -19,12 +19,12 @@ as ``test_retired_spec_cites`` (CAL-633) and ``test_guidance_footprint``
 Scope and discriminator:
 
 * **Every tracked Python tree, at a ceiling per tree** (``_TREE_CEILINGS``).
-  ``harness/`` and ``scripts/`` answer to the 500-line hard limit; ``tests/``
-  answers to Part B's declarative ceiling (1.5x, so 750), because a test
-  module's length is substantially *case enumeration* against one surface's
-  acceptance criteria rather than accreted logic. A raised ceiling, not an
-  exemption: it keeps firing when a test module runs away, where an exemption
-  never fires again.
+  ``harness/``, ``scripts/``, and ``templates/`` answer to the 500-line hard
+  limit; ``tests/`` answers to Part B's declarative ceiling (1.5x, so 750),
+  because a test module's length is substantially *case enumeration* against
+  one surface's acceptance criteria rather than accreted logic. A raised
+  ceiling, not an exemption: it keeps firing when a test module runs away,
+  where an exemption never fires again.
 
   This scope is #275. The guard originally covered ``harness/`` only and
   deferred ``tests/`` in this very docstring — "a separate decision, not assumed
@@ -108,11 +108,12 @@ _DECLARATIVE_CEILING = _HARD_LIMIT * 3 // 2
 #: the ceiling — a raised ceiling keeps firing on runaway growth where an
 #: exemption never fires again.
 #:
-#: ``scripts/`` answers to the hard limit like ``harness/``: build-time tooling
-#: is ordinary logic.
+#: ``scripts/`` and ``templates/`` answer to the hard limit like ``harness/``:
+#: build-time tooling and generators are ordinary logic.
 _TREE_CEILINGS = {
     "harness": _HARD_LIMIT,
     "scripts": _HARD_LIMIT,
+    "templates": _HARD_LIMIT,
     "tests": _DECLARATIVE_CEILING,
 }
 

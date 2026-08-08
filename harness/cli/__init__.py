@@ -13,6 +13,7 @@ are split across modules for readability:
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
 * :mod:`harness.cli.promote`  — ``harness promote start / continue / status / pr / escalate``
+* :mod:`harness.cli.serve`    — ``harness serve`` (the ADR 0012 runtime host)
 
 Exit codes:
 - 0   command succeeded
@@ -42,6 +43,7 @@ from harness.cli.query import (
 from harness.cli.reclaim import reclaim_command
 from harness.cli.release import release_command
 from harness.cli.review import review_command
+from harness.cli.serve import serve_command
 from harness.cli.start import start_command
 from harness.cli.version import version_command
 from harness.cli.worktrees import worktrees_app
@@ -63,6 +65,9 @@ def _root() -> None:
 
 # Top-level read commands.
 app.command(name="version", help="Print harness version.")(version_command)
+app.command(name="serve", help="Run the persistent runtime host (unix socket, one-shot verb containers).")(  # noqa: E501
+    serve_command
+)
 app.command(name="status", help="Print a run's terminal-state summary.")(
     status_command
 )
@@ -76,10 +81,10 @@ app.command(name="cancel", help="Abandon an in-flight run (close without merge).
 app.command(name="reclaim", help="Reclaim a stranded run: revert its ticket to Todo and reconcile the ledger.")(  # noqa: E501
     reclaim_command
 )
-app.command(name="defer", help="Defer a not-yet-actionable ticket: comment + additive `decision` label + a ledger event.")(  # noqa: E501
+app.command(name="defer", help="Defer a not-yet-actionable ticket: comment + additive `decision` label + assign the operator.")(  # noqa: E501
     defer_command
 )
-app.command(name="release", help="Release a held ticket: write the resolution into the change spec + remove the hold label + unassign + a ledger event.")(  # noqa: E501
+app.command(name="release", help="Release a held ticket: write the resolution into the change spec + remove the hold label + unassign the operator.")(  # noqa: E501
     release_command
 )
 app.command(name="doctor", help="Run system health checks.")(doctor_command)
@@ -90,7 +95,7 @@ app.command(name="stats", help="Aggregate statistics over the run ledger (read-o
 app.command(name="start", help="Open a run: fetch ticket, transition to In Progress, create worktree.")(  # noqa: E501
     start_command
 )
-app.command(name="design", help="Produce the run's Design section with a read-only Opus engine; record it on the ticket and the ledger.")(  # noqa: E501
+app.command(name="design", help="Produce the run's Design section with a dedicated Opus engine; record it on the ticket and the ledger.")(  # noqa: E501
     design_command
 )
 app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501

@@ -1,4 +1,4 @@
-<!-- guidance:template-proposal@0.1.2 -->
+<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: {short-slug}
 status: draft            # draft | under-decision | accepted | shipped | rejected | split
@@ -35,7 +35,7 @@ What must be decided before this becomes work, and by whom. A cross-cutting deci
 
 ## Breakdown
 
-The change specs this proposal would spawn once accepted. Each should be shippable on its own and become a Linear issue (`spec-authoring` → change spec).
+The change specs this proposal would spawn once accepted. Each should be shippable on its own and become a tracker issue (`spec-authoring` → change spec).
 
 1. {change} — {one-line scope}
 2. {change} — {one-line scope}
@@ -46,4 +46,4 @@ What could go wrong, what is not yet understood, what would invalidate the recom
 
 ---
 
-**Lifecycle.** A proposal ends in one explicit state: **accepted** (spawn the change specs as Linear issues; record its decisions in the relevant specs), **rejected** (keep this file as the record of why), or **split** (replace with smaller proposals). It does not sit half-decided. Lives in `specs/proposals/`.
+**Lifecycle.** A proposal ends in one explicit state: **accepted** (spawn the change specs as tracker issues; record its decisions in the relevant specs), **rejected** (keep this file as the record of why), or **split** (replace with smaller proposals). It does not sit half-decided. Lives in `specs/proposals/`.

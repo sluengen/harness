@@ -32,14 +32,36 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 from harness._git import NETWORK_GIT_TIMEOUT_SECONDS, run_git, teardown_worktree
 from harness.worktree import worktree_path
 
 __all__ = [
     "CloseMergeError",
+    "CloseMergeReason",
     "merge_run_branch",
     "worktree_porcelain",
+]
+
+#: The machine-readable failure vocabulary this module raises — named once, here,
+#: where the raise sites are, so ``close`` can propagate a reason rather than
+#: recompute one (#300). Every ``reason=`` on a :class:`CloseMergeError`
+#: construction in this module must be a literal member: mypy strict enforces it
+#: for the package, and ``test_cli_close.py``'s totality guard enforces it
+#: against the source text, so a computed reason cannot slip past unnoticed.
+#:
+#: The set is deliberately disjoint from ``close``'s ticket-transition reasons.
+#: That asymmetry is load-bearing: a member of this vocabulary means the merge
+#: did **not** land, while a ticket-transition reason means it did.
+CloseMergeReason = Literal[
+    "git_status_failed",
+    "network_timeout",
+    "fetch_failed",
+    "merge_conflict",
+    "merge_failed",
+    "push_rejected",
+    "worktree_create_failed",
 ]
 
 #: The suffix appended to a run id to name its throwaway close-merge worktree, so
@@ -59,7 +81,9 @@ class CloseMergeError(RuntimeError):
     stays resumable; every other reason is a git or push failure.
     """
 
-    def __init__(self, message: str, *, reason: str, conflict: bool = False) -> None:
+    def __init__(
+        self, message: str, *, reason: CloseMergeReason, conflict: bool = False
+    ) -> None:
         super().__init__(message)
         self.reason = reason
         self.conflict = conflict

@@ -48,13 +48,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from harness._git import run_git, worktree_toplevel_matches
+from harness._git import tracked_paths
 from harness._time import parse_iso_z
+from harness.cli._runs import resolve_attended
 from harness.state import store
 
 __all__ = [
@@ -63,13 +63,6 @@ __all__ = [
     "open_run_liveness",
     "worktree_last_activity",
 ]
-
-#: Ceiling (seconds) for the ``git ls-files`` probe. Matches the bound
-#: ``_git_worktree_branches`` puts on its own local ``git worktree list``: a local
-#: call does not reach a remote, but the Build routine runs this sweep as a
-#: pre-flight every tick, so a wedged git must degrade to "no opinion" rather
-#: than hang the loop the sweep exists to unblock.
-_LS_FILES_TIMEOUT_SECONDS = 15
 
 
 @dataclass(frozen=True)
@@ -87,11 +80,20 @@ class RunLiveness:
     makes the predicate unreachable for a ticket whose liveness lookup returned
     ``None`` — no ledger, or no open run. That is condition 1 of the predicate
     enforced by construction instead of by a repeated ``if``.
+
+    ``attended`` (#297) rides here for the same structural reason. It is not a
+    fourth liveness signal — it selects the *threshold* the three clocks above
+    are compared against — but it must describe the same run they do, and taking
+    it off this row is what makes describing a different one unrepresentable. It
+    is also unreachable exactly when there is no open run, which is precisely the
+    case ADR 0011 requires to resolve *unattended*: unknown falls to the bounded
+    default by construction rather than by an ``if``.
     """
 
     last_activity: datetime
     worktree_path: Path | None
     run_id: str
+    attended: bool
 
 
 async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
@@ -106,12 +108,19 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
     ``started_at`` is load-bearing rather than a belt-and-braces extra — ``start``
     emits no event, so it is the **only** liveness signal a run has before its
     first ``design`` / ``checkpoint``.
+
+    ``inputs_json`` is projected on the same row rather than fetched by a second
+    query (#297): one connection per tracker-stale candidate on a path the Build
+    routine runs every tick, and — the structural half — two queries can return
+    two different rows, so the mode could end up describing a run the clocks do
+    not.
     """
     if not db_path.exists():
         return None
     async with store.connect(db_path) as conn:
         cur = await conn.execute(
-            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path, r.run_id "
+            "SELECT r.started_at, MAX(e.timestamp), r.worktree_path, r.run_id, "
+            "r.inputs_json "
             "FROM runs r "
             "LEFT JOIN events e ON e.run_id = r.run_id "
             "WHERE r.ticket = ? AND r.status = 'open'",
@@ -130,6 +139,10 @@ async def open_run_liveness(db_path: Path, ticket: str) -> RunLiveness | None:
         last_activity=max(stamps),
         worktree_path=Path(str(raw_path)) if raw_path else None,
         run_id=str(row[3]),
+        # ``resolve_attended`` is total and strict — only the JSON literal
+        # ``true`` declares attendance — so this cannot raise and every
+        # ambiguous value fails toward the wall clock, never away from it.
+        attended=resolve_attended(None if row[4] is None else str(row[4])),
     )
 
 
@@ -142,33 +155,18 @@ def worktree_last_activity(worktree: Path) -> datetime | None:
     Build routine's pre-flight: a probe that can wedge the loop is worse than a
     probe that occasionally has nothing to say.
 
-    ``None`` is returned when the path is not a directory; when it is not itself a
-    git top-level (see below); when ``git ls-files`` fails or times out; or when
-    the index is empty.
-
-    The top-level check is the load-bearing guard, not defensive padding. ``git``
-    walks *up* from a directory whose worktree registration was pruned, so
-    ``ls-files`` there would report the **main checkout's** index — whose files
-    the operator is almost always editing — and the sweep would spare every stale
-    ticket while looking like it still worked.
+    Enumeration is :func:`harness._git.tracked_paths`, which owns the ``None``
+    contract above — not a directory, not a git top-level, ``ls-files`` failed or
+    timed out, or an empty index — and the load-bearing top-level anchor behind
+    it. It moved there in #359 when ``review``'s polluted-worktree guard became
+    its second caller; what stays here is this signal's own question, the newest
+    mtime among those paths.
     """
-    if not worktree.is_dir() or not worktree_toplevel_matches(worktree):
-        return None
-    try:
-        proc = run_git(
-            worktree, "ls-files", "-z", timeout=_LS_FILES_TIMEOUT_SECONDS
-        )
-    except (OSError, subprocess.SubprocessError):
-        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
-        return None
-    if proc.returncode != 0:
+    names = tracked_paths(worktree)
+    if names is None:
         return None
     newest: float | None = None
-    # ``-z`` is NUL-terminated, so a newline in a tracked filename cannot forge a
-    # second entry. The trailing separator yields one empty field — skip it.
-    for name in proc.stdout.split("\0"):
-        if not name:
-            continue
+    for name in names:
         with contextlib.suppress(OSError):
             # A tracked path that is deleted or unreadable in the working tree is
             # simply not a signal; it must not abort the whole probe.
