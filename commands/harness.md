@@ -1,4 +1,4 @@
-<!-- guidance:harness@0.7.0 -->
+<!-- guidance:harness@0.8.0 -->
 # /harness — Harness pipeline commands
 
 Commands for driving the **harness pipeline itself**. `/harness run` is the canonical end-to-end build process for this repo: an agent-orchestrated loop over the four harness verbs (`start`, `design`, `review`, `close`). It is distinct from the agent-led backup flow (`/start`, `/review`, `/ship`), which you run when a task does not fit this shape.
@@ -16,10 +16,11 @@ This is **not** a wrapper that hands the ticket to a black-box workflow. *You* �
 ### Usage
 
 - `/harness run <ISSUE-ID>` — orchestrate the build loop for the given Linear ticket
+- `/harness run <ISSUE-ID> --codex-only` — run every engine stage through Codex and never invoke Claude
 
 ### Prerequisites
 
-`harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, set it up per the harness app's Docker-wrapper instructions — one `chmod +x` and a `PATH` line in `.zshrc`. Each verb runs as a one-shot container exactly as the wrapper does: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. You shell out to the verbs from your session — you do **not** run inside a verb container.
+In default mode, `harness` must be on your `PATH` as the Docker wrapper (`~/bin/harness`). If it isn't yet, set it up per the harness app's Docker-wrapper instructions — one `chmod +x` and a `PATH` line in `.zshrc`. Each default-mode verb runs as a one-shot container: CWD mounted as the workspace, `LINEAR_API_KEY` read from `.env`. In `--codex-only` mode use a native install instead, as described below.
 
 `LINEAR_API_KEY` must be in a `.env` file at the target repo root (gitignored). The wrapper reads it automatically — no `source .env` needed.
 
@@ -31,6 +32,8 @@ LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxx   # from linear.app → Settings → API
 > **No Linear CLI is installed**, and you do not call Linear directly in this loop anyway — the verbs do. (`start` transitions the ticket to In Progress; `close` transitions it Done.) Do not search for a `linear` binary or hand-roll GraphQL mutations to move ticket state.
 
 > **Claude auth is automatic.** The wrapper extracts the OAuth token from the macOS Keychain on each invocation. No `ANTHROPIC_API_KEY` or manual token setup needed.
+
+> **`--codex-only` is native-only for now.** Run a native `harness` install and authenticate with `codex login`; confirm readiness with `harness doctor --engine codex`. Do not use the Docker wrapper for this mode: Codex's sandbox remains blocked there until the targeted seccomp work in #314 ships. This strict flag is distinct from ADR 0013's future `/harness run --codex` capacity toggle: it promises that no stage will invoke Claude.
 
 ### The loop
 
@@ -54,10 +57,11 @@ Parse it. **Record `run_id`** (you need it for `status`, `review`, and `close`).
 **Step 1.5 — `design`.** Before writing a line, produce the run's technical design:
 
 ```bash
-harness design --run-id <run_id>            # [--repo .] [--model <alias>]
+harness design --run-id <run_id>                    # default mode
+harness design --run-id <run_id> --engine codex     # --codex-only mode
 ```
 
-A dedicated **Opus** engine studies the worktree and the ticket in a fresh context — writing its design to one file outside the worktree, the only path it can write (#294) — uncontaminated by your orchestration state — and produces the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it in three places: the ticket, as a marked comment; the ledger, as a `design` event carrying the design's content hash and the `grounded_sha` it studied; and stdout, as `DesignOutput`:
+In default mode a dedicated **Opus** engine studies the worktree and writes through one scoped, verb-owned output file (#294). In `--codex-only` mode Codex studies the same inputs with no model-writable path; its CLI captures the final response into the verb-owned file. Both run in a fresh context, uncontaminated by orchestration state, and produce the change spec's Design section (data model, interface/contract, scenarios, security, test strategy). The verb records it on the ticket, in a ledger `design` event carrying its content hash and `grounded_sha`, and on stdout as `DesignOutput`. Codex omits `model` when it uses its configured default:
 
 ```json
 { "run_id": "...", "design_markdown": "### Data model\n...", "design_hash": "...",
@@ -72,11 +76,11 @@ Adoption is deliberately hard to earn, so the engine still runs on most resumed 
 
 **Implement against that design** — that is the whole point of the stage (ADR 0007): top-tier thinking happens in a verb-owned subprocess and your session executes against its output, instead of designing by rejection across `(fix → review)*` cycles. **Save `design_markdown` to a file** and pass it to `review` as `--design-file` (Step 3) so the review engine sees the same design. **Stage that file inside the repo tree** (e.g. under the worktree) — the `~/bin/harness` wrapper mounts only the invoking CWD into each verb's container, so a host-only path like `/tmp` never resolves there. `review` refuses a `--design-file` outside that mount up front (`reason=design_file_outside_workspace`, AC-2 #247) rather than silently reviewing design-blind.
 
-**The stage is conditional on the run's assurance.** `start` resolves the issue's `assurance:<level>` label once and snapshots the answer, and `design` reads that snapshot: only a `complex` run requires a design. Where it is not required the verb exits **0** having invoked no engine and written nothing, emitting the same `DesignOutput` key set with `status: "not_required"` and an empty `design_markdown` — so branch on `status`, and pass **no** `--design-file` to Step 3. The level is on `start`'s output as `assurance` (with `assurance_reason` saying why), so you never re-read the issue to find out. `--model` is accepted and ignored on the skip path.
+**The stage is conditional on the run's assurance.** `start` resolves the issue's `assurance:<level>` label once and snapshots the answer, and `design` reads that snapshot: only a `complex` run requires a design. Where it is not required the verb exits **0** having invoked no engine and written nothing, with `status: "not_required"` and an empty `design_markdown` — so branch on `status`, and pass **no** `--design-file` to Step 3. Codex still omits `model` when using its configured default, including on this skip path. The level is on `start`'s output as `assurance` (with `assurance_reason` saying why), so you never re-read the issue to find out. `--model` is accepted and ignored on the skip path.
 
 The level to expect: an unlabelled issue, conflicting labels, an unrecognized `assurance:*` value, and a run opened before this shipped all resolve to `simple`, which requires no design. `trivial` is recognized and **upgraded to `simple`** — the deterministic certification path that would let a run skip the LLM review has not shipped, so no run can bypass review.
 
-**Failure degrades and records (ADR 0007 D4).** Every way the stage can fail to produce a design — a killed engine, an engine that cannot be spawned, a design delivered on neither output channel (`reason=no_design_output`), an unreadable ticket spec — records a `design` event with `status="failed"` and a stable `reason`, posts no comment, and exits **3**. That is not a stop: **proceed to implement without a design**. On a run that does not require one, a *failed* attempt still **satisfies** `review`, so an infra flake costs the run its design but never its ability to ship, and re-running in a loop chasing a green one buys nothing. On a **`complex`** run it does not: `review` refuses it with `design_not_usable`, so there one clean re-run of `harness design` is the remedy (the latest event is authoritative and nothing is mutated). If it keeps failing, the run's assurance is what to revisit with the operator — not the gate.
+**Failure degrades and records (ADR 0007 D4).** Every way the stage can fail to produce a design — a killed engine, an engine that cannot be spawned, a design delivered on neither output channel (`reason=no_design_output`), an unreadable ticket spec — records a `design` event with `status="failed"` and a stable `reason`, posts no comment, and exits **3**. Two of those tags are Codex-only and each points somewhere different from the ticket: `codex_usage_limit` is the exhausted tier (top it up, or use `--engine claude`), and `design_not_recognized` is a final message carrying none of the requested Design sections — usually a change spec too thin to design against, and worth reading the recorded `submit_excerpt` before re-running. That is not a stop: **proceed to implement without a design**. On a run that does not require one, a *failed* attempt still **satisfies** `review`, so an infra flake costs the run its design but never its ability to ship, and re-running in a loop chasing a green one buys nothing. On a **`complex`** run it does not: `review` refuses it with `design_not_usable`, so there one clean re-run of `harness design` is the remedy (the latest event is authoritative and nothing is mutated). If it keeps failing, the run's assurance is what to revisit with the operator — not the gate.
 
 **`review` refuses a `complex` run whose design stage did not deliver** — exit `5`, before any engine is invoked and with no verdict recorded, `reason=no_design` when the run recorded no attempt and `reason=design_not_usable` when it recorded one that did not succeed. It mirrors `no_gate_evidence`: silence is not a pass. A run whose assurance requires no design is not refused for lacking one — that is the ordinary shape, and it is what the skip above produces.
 
@@ -97,6 +101,7 @@ This is the load-bearing half of run reclamation (proposal `stale-run-reclamatio
 ```bash
 harness review --run-id <run_id>                  # [--repo .] — engine defaults to claude
 harness review --run-id <run_id> --engine codex   # cross-model review — host-only (see below)
+harness review --run-id <run_id> --engine codex --no-fallback  # --codex-only mode
 ```
 
 **You run the gate; the verb enforces and records the evidence.** Run `CONTEXT.md` → `verify:` in the worktree, capture its output to a file, and hand the result to `review`:
@@ -143,7 +148,9 @@ The selected engine (`--engine claude|codex`, **default `claude`**) reviews the 
 
 `claude` is the default because it is available on the standard tier and auto-compacts, so the gate does not degrade to a false `fail` when the Codex tier is depleted; `--engine codex` stays available for a cross-model second opinion. If an explicit `--engine codex` run hits an exhausted tier, the verb falls back **once** to Claude: `engine` then reads `claude`, the ledger event records `fallback_from: "codex"`, and the verdict stays *available* rather than a false `fail`. An ordinary (non-usage-limit) Codex failure does **not** fall back — a real review failure stays a visible `fail`.
 
-**In-container, the review engine is Claude; `--engine codex` is host-only** (the harness's in-container-review-engine decision, ADR 0002). Because you drive `/harness run` through the `~/bin/harness` Docker wrapper, `harness review` runs in the unprivileged `harness:dev` container, where Codex's `bwrap` sandbox cannot open a user namespace and a `--engine codex` review degrades. The container is deliberately kept unprivileged — it reviews untrusted diffs — so a genuine cross-model Codex pass is a **host-side** run (native `harness` install, where `bwrap` and `~/.codex` auth work), not an in-container one. In the verb loop here, review on Claude. **ADR 0013 amends the reason and decides to end it**: the wall was measured to be the seccomp profile alone, not the capability grant, so the container gets a targeted profile rather than staying Codex-less. Until that profile ships, the above holds — and note the host-side escape hatch is unreachable from this loop, which always runs through the wrapper.
+In `--codex-only` mode every initial review and every fix-loop review carries `--engine codex --no-fallback`. A depleted Codex tier then exits as infrastructure with `reason=codex_usage_limit`; stop and restore Codex capacity rather than retrying through Claude. An inherited review or adopted design can retain older Claude provenance from its source run, but performs no engine invocation and therefore does not violate the operational promise.
+
+**Default mode is in-container and reviews on Claude; `--codex-only` is native and host-side** (ADR 0002 as amended by ADR 0013). The default `/harness run` uses the unprivileged Docker wrapper, where Codex's `bwrap` sandbox cannot yet open a user namespace. The strict mode deliberately selects the native install, where Codex auth and sandboxing work, so its host-side path is reachable without Claude. ADR 0013 chooses a targeted seccomp profile to bring Codex into the wrapper later; until #314 ships, do not cross these two invocation paths.
 
 **The claude engine's model is one configured value** (#321): `CONTEXT.md`'s `loop.review_model`, default `sonnet`, the same for every ticket. `review` reads it off the loop budget it already loads and passes it to the claude engine as `--model <alias>`; codex is unaffected, since it ignores `--model`. Pass `--model <alias>` yourself to override it (host/testing only). ADR 0005's per-ticket `review:<tier>` label was retired for it — the label was never once set, and reading it cost a tracker round-trip on every review — so a `review:*` label still on an issue is inert.
 

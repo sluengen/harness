@@ -8,7 +8,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import typer
 
@@ -95,6 +95,32 @@ def check_auth(
         "none of ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, or ~/.claude/ found "
         "— see README §Authentication",
     )
+
+
+def check_codex_auth(
+    run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[str, str]:
+    """Pass only when the Codex CLI reports an active login."""
+    if run is None:
+        run = subprocess.run
+    try:
+        result = run(
+            ["codex", "login", "status"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return (
+            "FAIL",
+            "could not run `codex login status` — install Codex and authenticate",
+        )
+    if result.returncode != 0:
+        return (
+            "FAIL",
+            "Codex is not authenticated — run `codex login` before Codex-only work",
+        )
+    return ("PASS", "Codex login active")
 
 
 def check_git(
@@ -259,6 +285,7 @@ def _probe_engine(
 def check_reviewer(
     claude_probe: EngineProbe | None = None,
     codex_probe: EngineProbe | None = None,
+    engine: Literal["claude", "codex"] = "claude",
 ) -> tuple[str, str]:
     """Report whether the review engines can actually *run*, not just resolve on PATH.
 
@@ -280,10 +307,26 @@ def check_reviewer(
     Pass an :class:`EngineProbe` for either to force a branch in tests; ``None``
     runs the real probe.
     """
-    if claude_probe is None:
-        claude_probe = _probe_engine("claude")
     if codex_probe is None:
         codex_probe = _probe_engine("codex")
+
+    if engine == "codex":
+        if codex_probe.outcome == "absent":
+            return (
+                "FAIL",
+                "codex not found on PATH — the selected Codex review engine "
+                "cannot run",
+            )
+        if codex_probe.outcome == "cannot_run":
+            return (
+                "FAIL",
+                f"codex at {codex_probe.path} is on PATH but its liveness probe "
+                "(`codex --version`) could not run here",
+            )
+        return ("PASS", f"codex runs ({codex_probe.path})")
+
+    if claude_probe is None:
+        claude_probe = _probe_engine("claude")
 
     # claude — the default engine — is fatal in every failure mode.
     if claude_probe.outcome == "absent":
@@ -496,6 +539,11 @@ def doctor_command(
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db)."
     ),
+    engine: Literal["claude", "codex"] = typer.Option(  # noqa: B008
+        "claude",
+        "--engine",
+        help="Engine whose authentication and liveness must be ready.",
+    ),
 ) -> None:
     """Run system health checks."""
     from harness.cli._query_common import _resolve_db_path
@@ -508,11 +556,11 @@ def doctor_command(
     typer.echo("==============")
 
     checks: list[tuple[str, tuple[str, str]]] = [
-        ("auth", check_auth()),
+        ("auth", check_codex_auth() if engine == "codex" else check_auth()),
         ("git", check_git()),
         ("git-version", check_git_version()),
         ("db", check_db(db_path)),
-        ("reviewer", check_reviewer()),
+        ("reviewer", check_reviewer(engine=engine)),
         ("gh", check_gh()),
         ("verify", check_verify_config(repo_root)),
         ("cli", check_cli()),

@@ -31,22 +31,17 @@ wire format (``malformed_submit`` 8, ``no_submit`` 2, of 80) against ``review``'
 apart in size. One run lost 12m44s of Opus and a complete 31 KB design because
 a single closing brace never arrived.
 
-So the design's channel is **a file**, and there is no escaping, no bracket
-depth, and no single-line constraint left to lose. ``review``'s SUBMIT contract
-is deliberately untouched: it fits its payload.
+So the design's primary channel is **a file**, and there is no escaping, no
+bracket depth, and no single-line constraint left to lose. Claude receives a
+scoped grant to its verb-owned file; Codex stays read-only while its CLI writes
+the final message to that file. ``review``'s SUBMIT contract is deliberately
+untouched: it fits its payload.
 
-Two deliberate differences from the review protocol, both from ADR 0007, are
-unchanged by that:
-
-* **Claude only.** ADR 0002 keeps the in-container engine unprivileged, where
-  Codex's ``bwrap`` sandbox cannot start; design has no codex variant at all,
-  so there is no ``Engine`` union and no per-engine branch to build.
-* **Opus unconditionally.** The model is a constant here. ADR 0007 named a
-  future ``design:<tier>`` label as an anticipated refinement, hanging off the
-  dimension-generic resolver ``review_protocol`` carried; #321 deleted that
-  resolver along with the per-ticket tiers, so there is no such seam to inherit.
-  A configurable design model would follow ``review``'s shape instead — one
-  value in ``CONTEXT.md``'s ``loop:`` block — and is not built.
+Two deliberate differences from the review protocol remain. Design returns
+Markdown rather than a ``SUBMIT:`` verdict, and its engine channels are not
+interchangeable: Claude alone retains the nonce-marked stdout recovery detector;
+Codex accepts only the CLI-owned ``--output-last-message`` file. Claude defaults
+to Opus; Codex records no model when it uses its own configured default.
 """
 
 from __future__ import annotations
@@ -54,7 +49,13 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
+
+from harness.cli.design_sections import (
+    DESIGN_SECTIONS,
+    carries_design_sections,
+    render_section_briefs,
+)
 
 __all__ = [
     "DESIGN_MODEL_DEFAULT",
@@ -66,19 +67,20 @@ __all__ = [
     "FALLBACK_END_MARKER",
     "STDOUT_EXCERPT_MAX_CHARS",
     "DesignChannel",
+    "DesignEngine",
     "build_design_cmd",
     "build_design_prompt",
     "build_stdout_excerpt",
+    "carries_design_sections",
     "design_content_hash",
     "normalize_design",
     "parse_design_fallback",
 ]
 
-# The design engine's model. Opus for every run, per ADR 0007: the design
-# stage's value is top-tier thinking in a context uncontaminated by the build
-# session's orchestration state, so the tier is unconditional rather than
-# label-gated. A cheaper tier stays an anticipated refinement, not a seam built
-# on speculation.
+DesignEngine = Literal["claude", "codex"]
+
+# The Claude design engine's model. Codex uses its configured default unless the
+# caller explicitly supplies a model.
 DESIGN_MODEL_DEFAULT = "opus"
 
 #: The file the engine writes its design to, inside a per-invocation directory
@@ -122,56 +124,18 @@ FALLBACK_END_MARKER = "END-HARNESS-DESIGN"
 # change removes by construction, along with the token to anchor on.)
 STDOUT_EXCERPT_MAX_CHARS = 1_000
 
-# The sections a design must carry, in order. Three come from
-# ``templates/change.md``'s Design block — the artifact is that block, not a
-# new artifact class (ADR 0007) — and Security and Test strategy from the
-# ``architecture`` skill's "what a design produces". Single-sourced here and
-# rendered into the prompt, so the list cannot drift from what is asked for.
-DESIGN_SECTIONS: tuple[str, ...] = (
-    "Data model",
-    "Interface / contract",
-    "Scenarios",
-    "Security",
-    "Test strategy",
-)
-
-_SECTION_BRIEFS: dict[str, str] = {
-    "Data model": (
-        "Entities, fields, relationships, and invariants that change. Note any "
-        "migration."
-    ),
-    "Interface / contract": (
-        "Endpoints, commands, or component contracts: request/response shapes, "
-        "status and error cases, auth rules."
-    ),
-    "Scenarios": (
-        "Behaviour in scenarios where it is non-obvious or edge cases are easy "
-        "to forget, as GIVEN {precondition} WHEN {action} THEN {outcome}."
-    ),
-    "Security": (
-        "The trust boundaries this change touches, the validation at each, and "
-        "what data is exposed to whom."
-    ),
-    "Test strategy": (
-        "What to test, the key edge cases, and the integration points — enough "
-        "that an implementer can write the first failing test from it."
-    ),
-}
-
-
 class DesignChannel(NamedTuple):
     """Where one design engine invocation puts its output.
 
-    ``path`` is the absolute file the engine writes and the verb reads. It lies
-    **outside** the run's worktree, so nothing the design stage does can leave
-    an untracked file behind and trip ``close``'s ``dirty_worktree`` gate, and
-    ``cwd=worktree_path`` stays what it was.
+    ``path`` is the absolute file the verb reads. Claude writes it through its
+    scoped grant; for Codex, the CLI writes the model's final message there. It
+    lies **outside** the run's worktree, so the stage leaves no untracked file
+    behind to trip ``close``'s ``dirty_worktree`` gate.
 
-    ``nonce`` marks the stdout fallback's block. It is the allocated directory's
-    own random suffix rather than a second random value: one source of
-    randomness for the location and the markers means they cannot disagree about
-    which invocation they belong to, and a block left over from another run
-    cannot be adopted by this one.
+    ``nonce`` marks Claude's stdout fallback block; Codex never consumes that
+    channel. It is the allocated directory's own random suffix rather than a
+    second random value, so the location and markers cannot disagree about
+    which Claude invocation they belong to.
 
     Both are allocated **by the verb**, never supplied by a flag, the ticket, or
     the environment — see the security note in :func:`build_design_cmd`.
@@ -189,8 +153,7 @@ _PROMPT_TEMPLATE = """\
 You are the architect for the ticket below. Study this worktree and produce its
 technical design. You design; you do not implement — do not edit, create, or
 delete any file in this worktree, and do not write code beyond short
-illustrative snippets inside the design itself. The one file you may write is
-the output file named below.
+illustrative snippets inside the design itself.
 
 Ticket: {ticket_title}
 
@@ -209,6 +172,12 @@ Aim to keep the whole Design section under about {target_chars:,} characters.
 Prefer density over completeness: a design an implementer can act on beats an
 exhaustive one.
 
+{delivery}
+"""
+
+_CLAUDE_DELIVERY_TEMPLATE = """\
+The one file you may write is the output file named below.
+
 When you have finished, write the Design section — and nothing else — to this
 absolute path:
 
@@ -223,21 +192,31 @@ between these two marker lines, each alone on its own line:
 {end_marker} {nonce}
 """
 
+_CODEX_DELIVERY = """\
+Return only the Design section Markdown as your final response. Do not wrap it
+in a code fence and do not include commentary before or after it. The Codex CLI
+collects that final response; do not write any file yourself.
+"""
+
 
 def build_design_prompt(
-    ticket_title: str, ticket_description: str, *, channel: DesignChannel
+    ticket_title: str,
+    ticket_description: str,
+    *,
+    channel: DesignChannel,
+    engine: DesignEngine = "claude",
 ) -> str:
     """Build the design engine's prompt for one ticket.
 
     The prompt states four things the engine cannot infer: the **posture**
     (design, not implement), the **shape** of the output (the five
     :data:`DESIGN_SECTIONS`, rendered from the single list above), its **size**
-    (:data:`DESIGN_TARGET_CHARS`), and the **channel** — write the section to
-    ``channel.path`` and keep stdout silent, falling back to a marked block on
-    stdout only if that write is refused. The ticket is interpolated verbatim —
-    it is the spec the design answers to.
+    (:data:`DESIGN_TARGET_CHARS`), and the engine-specific **channel**. Claude
+    writes ``channel.path`` and has a nonce-marked stdout fallback; Codex returns
+    only the Markdown as its final response for the CLI to collect. The ticket
+    is interpolated verbatim — it is the spec the design answers to.
 
-    The fallback exists for one failure this repo's test suite structurally
+    Claude's fallback exists for one failure this repo's test suite structurally
     cannot catch: no test spawns a real ``claude``, so a permission-config
     regression — a CLI upgrade changing how rules are matched, say — would take
     the stage from working to producing nothing at all, with no failing test
@@ -250,18 +229,23 @@ def build_design_prompt(
     damage an injection attempt inside it can do is the engine's capability —
     see :func:`build_design_cmd` for what that is and what it is not.
     """
-    section_brief = "\n\n".join(
-        f"### {section}\n{_SECTION_BRIEFS[section]}" for section in DESIGN_SECTIONS
+    section_brief = render_section_briefs()
+    delivery = (
+        _CLAUDE_DELIVERY_TEMPLATE.format(
+            out_path=channel.path,
+            begin_marker=FALLBACK_BEGIN_MARKER,
+            end_marker=FALLBACK_END_MARKER,
+            nonce=channel.nonce,
+        )
+        if engine == "claude"
+        else _CODEX_DELIVERY
     )
     return _PROMPT_TEMPLATE.format(
         ticket_title=ticket_title,
         ticket_description=ticket_description,
         section_brief=section_brief,
         target_chars=DESIGN_TARGET_CHARS,
-        out_path=channel.path,
-        begin_marker=FALLBACK_BEGIN_MARKER,
-        end_marker=FALLBACK_END_MARKER,
-        nonce=channel.nonce,
+        delivery=delivery,
     )
 
 
@@ -397,28 +381,26 @@ def _permission_settings(channel: DesignChannel) -> str:
 
 
 def build_design_cmd(
-    *, model: str = DESIGN_MODEL_DEFAULT, channel: DesignChannel
+    *,
+    model: str | None = DESIGN_MODEL_DEFAULT,
+    channel: DesignChannel,
+    engine: DesignEngine = "claude",
 ) -> list[str]:
-    """Build the design engine invocation — ``claude -p`` scoped to one writable file.
+    """Build a read-contained design engine invocation.
 
-    **This replaced plan mode (#294), and it is the narrower of the two.** Plan
-    mode is a cooperative, mode-level restriction: the container's bind mount at
-    ``/workspace`` is read-write and the engine's ``cwd`` is the worktree, so
-    nothing in the filesystem stopped a write — the mode did. What runs now
-    refuses every capability by default and grants exactly one rule-level
-    exception: edit ``channel.path``, a single absolute file outside the
-    worktree. Measured in the container: the design path was written, a probe
-    write into the worktree was refused, and ``git status --porcelain`` came back
-    empty.
+    The two engines reach the same file through different security boundaries.
+    Claude replaced plan mode in #294: it refuses capabilities by default and
+    receives exactly one rule-level exception to edit ``channel.path``. Codex
+    runs with ``--sandbox read-only`` and receives no model-writable path; its
+    CLI owns ``--output-last-message`` and writes the final response after the
+    turn.
 
-    Be precise about what that is. It is an **agent-layer control, not a
-    filesystem boundary** — the mount is still read-write, and this configures
-    the engine rather than confining it. The docstring this replaced claimed the
-    engine "carries no edit, write, or bypass capability", which was the kind of
-    overclaim #294 was filed against; the honest statement is that one path is
-    writable by configuration and nothing else is.
+    Claude's grant is an **agent-layer control, not a filesystem boundary** —
+    the mount is still read-write, and the settings configure the engine rather
+    than confining it. Codex's model sandbox is a separate boundary and remains
+    read-only even though the parent CLI can write its owned output file.
 
-    ``--add-dir`` names the output directory as an accessible working directory.
+    For Claude, ``--add-dir`` names the output directory as an accessible working directory.
     Measured on the same run: the ``Edit`` grant alone is sufficient in claude
     2.1.220, so this is defence-in-depth against a future CLI that also enforces
     the working-directory boundary for writes — not the thing that makes the
@@ -429,16 +411,32 @@ def build_design_cmd(
     no flag, no ticket field, no environment variable — that can steer it at a
     file the caller did not intend.
 
-    Claude is the only engine (ADR 0002 / 0007) — there is no codex variant to
-    select. ``model`` defaults to :data:`DESIGN_MODEL_DEFAULT` and is passed on
-    every run; the parameter exists for a host-side override in testing, not
-    for per-ticket tier resolution, which ADR 0007 leaves unbuilt.
+    Claude defaults ``model`` to :data:`DESIGN_MODEL_DEFAULT`. Codex omits the
+    model flag when ``model`` is ``None``, preserving its configured default and
+    avoiding invented Claude/Opus provenance.
     """
-    return [
+    if engine == "codex":
+        cmd = [
+            "codex",
+            "exec",
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--output-last-message",
+            str(channel.path),
+        ]
+        if model is not None:
+            cmd.extend(["--model", model])
+        return [*cmd, "-"]
+
+    cmd = [
         "claude",
         "-p",
-        "--model",
-        model,
+    ]
+    if model is not None:
+        cmd.extend(["--model", model])
+    return [
+        *cmd,
         "--add-dir",
         str(channel.path.parent),
         "--settings",

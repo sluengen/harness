@@ -140,6 +140,11 @@ def _seed_source_design(
     *,
     status: str = "ok",
     design_hash: str | None = _PRIOR_HASH,
+    engine: str = "claude",
+    # ``object`` rather than ``str | None`` so a test can seed the malformed
+    # payload a hand-edited or older-schema ledger row could hold. The reader is
+    # documented to never raise, and only a non-string can prove it.
+    model: object = "opus",
 ) -> None:
     """A closed predecessor run for the same ticket, carrying its design event."""
     run_sync(
@@ -150,8 +155,7 @@ def _seed_source_design(
     data: dict[str, Any] = {
         "run_id": _SOURCE_RUN_ID,
         "status": status,
-        "engine": "claude",
-        "model": "opus",
+        "engine": engine,
         "designed_at": "2026-07-29T10:00:00Z",
         # Carried on **both** shapes deliberately. A real ``failed`` event has no
         # ``design_hash`` — but seeding it that way makes the failed-source test
@@ -161,6 +165,8 @@ def _seed_source_design(
         "design_hash": design_hash,
         "grounded_sha": _PRIOR_GROUNDED_SHA,
     }
+    if model is not None:
+        data["model"] = model
     if status != "ok":
         data["reason"] = "engine_timeout"
         data["detail"] = "killed"
@@ -281,6 +287,23 @@ def test_adopts_the_prior_design_field_by_field(repo: Path, db_path: Path) -> No
     assert data["engine"] == "claude"
     assert data["model"] == "opus"
     assert "reason" not in data
+
+
+def test_adopt_preserves_absent_codex_model_provenance(
+    repo: Path, db_path: Path
+) -> None:
+    _seed_resumed_run(db_path, repo)
+    _seed_source_design(db_path, engine="codex", model=None)
+
+    result = _invoke(
+        repo, db_path, _EngineSpy(), _tracker_stub(_prior_comment())
+    )
+
+    assert result.exit_code == 0, result.output
+    adopted = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID][0]
+    assert adopted["data"]["engine"] == "codex"
+    assert "model" not in adopted["data"]
+    assert "model" not in json.loads(result.stdout)
 
 
 def test_adopt_spawns_no_engine_subprocess(repo: Path, db_path: Path) -> None:
