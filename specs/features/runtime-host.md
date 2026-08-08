@@ -1,8 +1,8 @@
 ---
 feature: runtime-host
 status: implemented
-last_updated: 2026-08-06
-tickets: ["#307", "#308"]
+last_updated: 2026-08-08
+tickets: ["#307", "#308", "#370"]
 ---
 
 # Runtime host (live)
@@ -239,6 +239,62 @@ whose row is not on the ledger. Enabling concurrency is therefore blocked on mor
 than a lock-timeout setting. The measurement lives in the ticket rather than in
 the suite: it is a one-time result, and as a permanent test it would be slow and
 inherently flaky.
+
+### The second measurement: where a failing verb's payload went (#370)
+
+A failing verb captured over the socket carried its `{"error": ...}` object
+locally and, on the GitHub runner, reported `['start', '1', '--json'] exited 1:
+b''`. Because the socket's whole design is that the container writes to the
+*caller's own* file descriptor, "the transport drops the payload on the runner"
+was a live hypothesis against this record, and #369's diagnosis had already been
+misread twice for want of an answer. #370 settled it by measurement rather than
+inference.
+
+**The capture, not the transport, was the blind spot.** `_capture` in
+`tests/integration/test_serve_socket.py` opened a real fd for stdout and
+`/dev/null` for stderr. Every failure route out of a verb *other* than
+`run_verb`'s `--json` writer — a non-`VerbError` traceback, a failure under
+`docker/entrypoint.sh`'s `set -euo pipefail`, `uv run`'s own diagnostics — writes
+to stderr and exits non-zero, and each produces exactly (exit 1, empty stdout).
+The observation `b''` therefore could not distinguish a payload that was written
+and lost from one that was never written. Both streams now get a real fd, and
+`tests/_capture.py`'s `Capture.diagnosis` renders both with their exact bytes
+including the empty ones, so an unread stream can no longer read as an empty one.
+
+**The result, read off the runner** ([CI
+31242012837](https://github.com/sluengen/harness/actions/runs/31242012837)): the
+container's stderr carried a full traceback ending in `PermissionError: [Errno
+13] Permission denied: '/workspace/.harness'`, raised by `db_path.parent.mkdir`
+inside `harness/state/store.py`'s `init_db`. That is not a `VerbError`, so
+`run_verb`'s `--json` branch never ran and stdout was **legitimately empty**. The
+transport lost nothing: every byte the verb produced was delivered to the
+descriptor the caller passed, and thrown away by a capture that had opened
+`/dev/null` for it. The socket is exonerated, and #307's byte-identity property
+above is unaffected.
+
+Two things follow, and both shipped or were filed rather than left as inference:
+
+- **The writing end was fixed.** An unexpected exception under `--json` now emits
+  the uniform payload on stdout as well as its traceback on stderr — the [verb
+  model](verb-model.md) records that contract. The same CI job now reports
+  `stdout: b'{"error": "PermissionError: ...", "reason": "unexpected_error"}'`
+  ([CI 31242459008](https://github.com/sluengen/harness/actions/runs/31242459008)).
+- **The cause the measurement exposed is a different defect**, filed as #380 and
+  *not* fixed here: the image runs as uid 1000 while the runner's bind-mounted
+  fixture repo is owned by uid 1001, so the container cannot create `.harness/`
+  inside it. `docker/Dockerfile`'s comment states the assumption that fails —
+  Docker Desktop maps bind-mount ownership to the run-time uid, a native Linux
+  daemon does not — which is why it reproduces only in CI. That job stays red
+  until #380 lands; what changed is that it now names its own cause on the first
+  read.
+
+**`Capture.contract` is deliberately narrow.** The two comparisons that assert
+#307's AC-1 (`over_socket` vs `directly`, and before vs after a host restart) are
+`(exit code, stdout)` and stay so. Reading stderr for diagnosis is not a licence
+to widen a byte-identity claim onto a stream carrying per-environment noise — a
+credential-resolution note, a docker warning — which would make a passing test
+depend on the host it ran on. The claim's strength is unchanged in both
+directions: neither comparison was weakened, and neither was extended.
 
 ## Security boundary
 
