@@ -70,6 +70,16 @@ Four resolved dimensions:
 > makes skipping a review safe is a later increment and is not built. The
 > trivial fast path has **not** shipped.
 
+> **Amended 2026-08-08 — the design engine is selectable natively.** A required
+> design may run through `claude` (the default, with the configured Opus model)
+> or `codex`. Codex runs read-only and returns only the design Markdown as its
+> final response; the CLI writes that response to a verb-owned temporary file
+> through `--output-last-message`. The ledger records `channel=last_message`
+> and no model when Codex uses its own configured default. Claude retains the
+> scoped writable-file channel and marked stdout fallback unchanged. This
+> native engine union supports strict Codex-only operation without claiming the
+> Docker sandbox work in ADR 0013 has shipped.
+
 - **Unconditional, not label-gated.** *(Superseded by the #352 amendment above:
   conditional on issue-carried assurance.)* The design stage runs for **every**
   ticket, regardless of judged difficulty. The rationale is context
