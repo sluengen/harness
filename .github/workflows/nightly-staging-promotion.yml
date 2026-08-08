@@ -1,0 +1,87 @@
+name: Nightly staging promotion
+
+# GitHub Actions schedules are UTC. Australia/Brisbane is UTC+10 year-round, so
+# 14:00 UTC is midnight local time. Scheduled workflows are read from the default
+# branch; this job explicitly checks out `dev`, the branch it promotes.
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Do not cancel an in-flight candidate: it may be running the verification
+  # gate, and a second candidate would race its guarded staging ref update.
+  group: nightly-dev-to-staging
+  cancel-in-progress: false
+
+# The finalizer can advance only the derived staging ref through `harness
+# promote pr`; it has no pull-request, package, OIDC, or broader grant.
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          # The canonical gate reads history when checking feature-spec currency.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install promotion caller
+        run: uv sync --extra dev --frozen
+
+      # `promote start` creates the candidate with `git merge --no-ff`; Actions
+      # runners do not provide a repository-local author by default.
+      - name: Configure promotion commit author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Promote the gated candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          promotion_json="$RUNNER_TEMP/promotion.json"
+          uv run harness promote start --repo . --from dev --to staging > "$promotion_json"
+
+          promotion_id="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["promotion_id"])' "$promotion_json")"
+          status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
+          if [ "$status" != "gate_pending" ]; then
+            cat "$promotion_json"
+            echo "::error::Promotion $promotion_id stopped at $status; no automated repair is permitted."
+            exit 1
+          fi
+
+          worktree="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["worktree_path"])' "$promotion_json")"
+          gate_log="$RUNNER_TEMP/promotion-gate-$promotion_id.log"
+          set +e
+          (
+            cd "$worktree"
+            bash scripts/verify.sh
+          ) > "$gate_log" 2>&1
+          gate_exit=$?
+          set -e
+
+          uv run harness promote continue --repo . --promotion-id "$promotion_id" \
+            --gate-exit "$gate_exit" --gate-log "$gate_log" > "$promotion_json"
+          status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
+          if [ "$status" != "pr_ready" ]; then
+            cat "$promotion_json"
+            echo "::error::Promotion $promotion_id stopped at $status; staging was not advanced."
+            exit 1
+          fi
+
+          uv run harness promote pr --repo . --promotion-id "$promotion_id"
