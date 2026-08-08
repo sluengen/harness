@@ -69,10 +69,18 @@ def init_repo(path: Path) -> Path:
     fixture stays true to the *contract* ("this is a repository root") rather
     than to one implementation of the check. ``init`` needs no user identity —
     only ``commit`` does — so this stays cheap and hermetic.
+
+    The branch is stated, not inherited (#369). ``git init`` alone takes its
+    branch from the *host's* ``init.defaultBranch``, which made a sibling
+    fixture pass locally and fail in CI for two days. No consumer of this helper
+    reads the branch name today, so the value is free; what matters is that the
+    suite means the same thing on every host that runs it. ``dev`` is this
+    repo's integration branch, so a repo handed to a verb that resolves a base
+    branch already resolves.
     """
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["git", "init", "-q"],
+        ["git", "init", "-q", "-b", "dev"],
         cwd=path,
         check=True,
         capture_output=True,

@@ -43,7 +43,8 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _init_repo(repo: Path) -> None:
-    _git(repo, "init", "-q")
+    # Branch stated, not inherited from the host's `init.defaultBranch` (#369).
+    _git(repo, "init", "-q", "-b", "dev")
 
 
 def test_lists_tracked_files(tmp_path: Path) -> None:

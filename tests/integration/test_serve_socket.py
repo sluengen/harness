@@ -100,15 +100,28 @@ def image() -> str:
     return IMAGE_TAG
 
 
+#: The fixture's integration branch, written into its ``CONTEXT.md`` *and*
+#: created by its ``git init`` — one constant, because the two drifting apart is
+#: precisely the defect (#369). The fixture used to declare ``integration: main``
+#: and then let ``git init`` take whatever the host's ``init.defaultBranch``
+#: said. On a host defaulting to ``main`` it agreed with itself by luck; on the
+#: CI runner it did not, and ``start`` — which resolves its base through
+#: ``resolve_base_branch`` — got ``fatal: invalid reference: main``. That kept CI
+#: red on every push to ``dev`` for two days while the local gate stayed green.
+_INTEGRATION_BRANCH = "main"
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     """A ``tracker: none`` git repo, so verbs run with no network and no tracker."""
     repo = tmp_path / "ws"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "init", "-q", "-b", _INTEGRATION_BRANCH], cwd=repo, check=True
+    )
     (repo / "CONTEXT.md").write_text(
         "```yaml\nrepo:\n  name: ws\ntracker: none\nbranches:\n"
-        "  integration: main\n```\n"
+        f"  integration: {_INTEGRATION_BRANCH}\n```\n"
     )
     (repo / "README.md").write_text("fixture\n")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)

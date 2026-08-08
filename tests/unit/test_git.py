@@ -45,7 +45,8 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A throwaway git repo with exactly one commit."""
-    _git(tmp_path, "init", "-q")
+    # Branch stated, not inherited from the host's `init.defaultBranch` (#369).
+    _git(tmp_path, "init", "-q", "-b", "dev")
     _git(tmp_path, "config", "user.email", "t@example.com")
     _git(tmp_path, "config", "user.name", "Test")
     (tmp_path / "f.txt").write_text("x\n")
