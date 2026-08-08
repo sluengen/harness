@@ -211,3 +211,16 @@ def test_repo_context_describes_agent_neutral_orchestration() -> None:
     assert "orchestrating agent session" in context
     assert "single Claude session" not in context
     assert "orchestrating Claude session" not in context
+
+
+def test_harness_command_defines_strict_native_codex_only_mode() -> None:
+    """The agent-led loop must carry strict engine flags through every stage."""
+    command = _text(HARNESS_COMMAND)
+
+    assert "/harness run <ISSUE-ID> --codex-only" in command
+    assert "harness doctor --engine codex" in command
+    assert "harness design --run-id <run_id> --engine codex" in command
+    assert "harness review --run-id <run_id> --engine codex --no-fallback" in command
+    assert "native-only" in command.lower()
+    assert "#314" in command
+    assert "never invoke Claude" in command

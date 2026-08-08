@@ -222,6 +222,7 @@ __all__ = [
     "EXIT_BREAKER_TRIPPED",
     "EXIT_GATE_FAILED",
     "SANDBOX_INIT_REASON",
+    "CODEX_USAGE_LIMIT_REASON",
     "GATE_FAILED_REASON",
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
@@ -377,6 +378,10 @@ EXIT_GATE_FAILED = 5
 # Stable, machine-readable ``reason`` carried on the infra-failure error JSON.
 SANDBOX_INIT_REASON = "sandbox_init_failure"
 
+#: Codex could not review because the authenticated account exhausted its tier.
+#: This is observable only when the caller disables the legacy Claude fallback.
+CODEX_USAGE_LIMIT_REASON = "codex_usage_limit"
+
 # Machine-readable ``reason`` for a red verify gate (CAL-1082).
 GATE_FAILED_REASON = "gate_failed"
 
@@ -509,6 +514,14 @@ def review_command(
             "(#177); ignored on the codex engine."
         ),
     ),
+    fallback: bool = typer.Option(  # noqa: B008
+        True,
+        "--fallback/--no-fallback",
+        help=(
+            "Allow the codex engine to fall back to Claude on a Codex usage "
+            "limit (default: on). Disable for strict Codex-only operation."
+        ),
+    ),
     gate_exit: int | None = typer.Option(
         None,
         "--gate-exit",
@@ -559,6 +572,7 @@ def review_command(
                 db_path=db_path,
                 engine=engine,
                 model=model,
+                fallback=fallback,
                 gate_exit=gate_exit,
                 gate_log=gate_log,
                 design_file=design_file,
@@ -850,6 +864,7 @@ async def _run_review(
     db_path: Path,
     engine: Engine,
     model: str | None = None,
+    fallback: bool = True,
     gate_exit: int | None = None,
     gate_log: Path | None = None,
     design_file: Path | None = None,
@@ -899,6 +914,7 @@ async def _run_review(
             worktree_path=worktree_path,
             engine=engine,
             model=model,
+            fallback=fallback,
             gate_exit=gate_exit,
             gate_log=gate_log,
             design_file=design_file,
@@ -927,6 +943,7 @@ async def _review_resolved_run(
     worktree_path: str,
     engine: Engine,
     model: str | None,
+    fallback: bool,
     gate_exit: int | None,
     gate_log: Path | None,
     design_file: Path | None,
@@ -1275,6 +1292,13 @@ async def _review_resolved_run(
         )
 
     if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
+        if not fallback:
+            raise _ReviewError(
+                "Codex usage limit reached; strict Codex-only review cannot "
+                "fall back to Claude.",
+                EXIT_INFRA_FAILURE,
+                reason=CODEX_USAGE_LIMIT_REASON,
+            )
         fallback_from = "codex"
         engine_used = "claude"
         result = await _invoke_engine(
