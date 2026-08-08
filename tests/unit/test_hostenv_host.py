@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from harness.hostenv import host as host_module
+from harness.hostenv import spawn
 from harness.hostenv.credentials import AgentCredential
 from harness.hostenv.host import (
     GitIdentity,
@@ -472,6 +474,96 @@ def test_no_provider_forwards_an_agent_that_is_not_live(host_factory: object) ->
         "the liveness probe is a subprocess — it must not run when there is no socket"
     )
     assert without_socket.ssh_agent_forwarding() is None
+
+
+# -- the container user: the third platform-specific spawn concern (#380) ----
+
+
+def _pinned_ids(monkeypatch: pytest.MonkeyPatch, uid: int, gid: int) -> None:
+    """Make every provider read ``uid``/``gid`` as the invoking user's.
+
+    Patched on the module's ``os`` rather than read live, because a live read is
+    exactly what cannot discriminate: on any uid-1000 box — which is most of them,
+    and is what the image bakes — a provider returning the constant 1000 and a
+    provider returning the invoking uid produce the same answer.
+    """
+    monkeypatch.setattr(host_module.os, "getuid", lambda: uid)
+    monkeypatch.setattr(host_module.os, "getgid", lambda: gid)
+
+
+def test_only_macos_leaves_the_container_on_the_images_baked_uid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One override, and it is macOS's — the inverse of the ssh-agent split.
+
+    There, macOS is the exception because its host path is unusable inside the
+    VM. Here it is the exception because its daemon has already solved the
+    problem: Docker Desktop remaps bind-mount ownership to whatever uid the
+    container runs as, so the image's baked 1000 owns the mount by construction.
+    Every daemon sharing the host's kernel namespace reports the host's real
+    ownership instead, and there the container must *be* the invoking user.
+    """
+    _pinned_ids(monkeypatch, 4242, 4243)
+
+    users = {
+        provider.name: provider.container_user()
+        for provider in (
+            MacOSHost(name="macos", env={}),
+            LinuxHost(name="linux", env={}),
+            WslHost(name="wsl", env={}),
+        )
+    }
+
+    pinning = {name for name, user in users.items() if user is not None}
+    assert "linux" in pinning, (
+        "no provider pins the container's uid, so the discrimination below holds "
+        "over an empty set — the table collapsing to all-None must be red"
+    )
+    assert pinning == {"linux", "wsl"}, (
+        f"providers leaving the container on the image's baked uid are "
+        f"{sorted(set(users) - pinning)} — only macOS may, because only there "
+        f"does the daemon remap mount ownership"
+    )
+
+
+def test_the_linux_provider_pins_the_invoking_uid_not_a_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The uid comes from the *caller*, not from a second copy of the image's.
+
+    This is the assertion the whole ticket turns on. A provider hardcoding 1000
+    would satisfy every structural test above and still fail on the one host that
+    matters — the CI runner, and any Linux operator who is not the first account
+    on the machine.
+    """
+    _pinned_ids(monkeypatch, 4242, 4243)
+
+    user = LinuxHost(name="linux", env={}).container_user()
+
+    assert user == spawn.ContainerUser(uid=4242, gid=4243)
+    assert user is not None and user.spec() == "4242:4243", (
+        "the emitted spelling must be uid:gid in that order — reversed, the "
+        "container runs as a user that owns nothing"
+    )
+
+
+def test_a_root_invocation_is_refused_rather_than_spawned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Running the harness as root must not hand the container root.
+
+    The container runs untrusted content, so "not root" is a property to keep
+    rather than a default to inherit from the caller. Refused where the object is
+    built, so a provider cannot carry an unsafe user as far as spawn time.
+    """
+    _pinned_ids(monkeypatch, 0, 0)
+
+    with pytest.raises(spawn.UnsafeContainerUser) as raised:
+        LinuxHost(name="linux", env={}).container_user()
+
+    assert "0" in str(raised.value), (
+        "the refusal must name the uid it refused — it is the whole remediation"
+    )
 
 
 # -- AC-4: the /mnt/c case has a decided, documented behaviour ---------------

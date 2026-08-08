@@ -113,17 +113,46 @@ _HOST_EMITTED = {
     "--network": 0,
     "--cap-add": 0,
 }
+
+#: The same table for a host that pins the container's uid (#380) — every native
+#: daemon does, and only macOS does not. Without this second row the escape scan
+#: would run exclusively against the construction that emits **no** ``--user``,
+#: which is the one case where "the caller's ``--user`` did not reach the option
+#: region" is true for lack of anything to collide with.
+_HOST_EMITTED_WHEN_USER_PINNED = {**_HOST_EMITTED, "--user": 1}
+
 _ESCAPE_TOKENS = sorted(_HOST_EMITTED)
+
+#: A uid/gid pair that is nobody's on this machine, so a value read back out of
+#: the argv can only have come from what was passed in. The two differ, so a
+#: construction emitting one field twice is red here rather than plausible.
+_PINNED_UID, _PINNED_GID = 1001, 1002
 
 
 @pytest.mark.parametrize("token", _ESCAPE_TOKENS)
-def test_a_hostile_verb_argument_lands_after_the_image(token: str) -> None:
+@pytest.mark.parametrize(
+    ("pinned", "emitted"),
+    [
+        pytest.param(False, _HOST_EMITTED, id="baked-uid"),
+        pytest.param(True, _HOST_EMITTED_WHEN_USER_PINNED, id="pinned-uid"),
+    ],
+)
+def test_a_hostile_verb_argument_lands_after_the_image(
+    token: str, pinned: bool, emitted: dict[str, int]
+) -> None:
     """A caller token that *looks* like a docker option is a verb argument.
 
     This is the mechanism behind AC-4: position, not sanitization. Rejecting the
     token by name would be a blocklist that the next docker flag defeats.
+
+    Run against both constructions the providers produce — with and without a
+    pinned container user — because the two differ in the option region, and a
+    scan of one says nothing about the other.
     """
-    argv = _argv(argv=["start", token, "/:/host"])
+    container_user = (
+        spawn.ContainerUser(uid=_PINNED_UID, gid=_PINNED_GID) if pinned else None
+    )
+    argv = _argv(argv=["start", token, "/:/host"], container_user=container_user)
     options, command = _split_at_image(argv)
 
     assert token in command, f"{token!r} was dropped rather than forwarded to the verb"
@@ -132,9 +161,9 @@ def test_a_hostile_verb_argument_lands_after_the_image(token: str) -> None:
     # workspace mount), so the claim is not "absent from the argv" but "the
     # caller's occurrence is not in the region docker parses as options".
     assert command.count(token) == 1
-    assert options.count(token) == _HOST_EMITTED[token], (
+    assert options.count(token) == emitted[token], (
         f"{token!r} appears {options.count(token)}× in the docker-option region, "
-        f"but the host emits it {_HOST_EMITTED[token]}× — a caller value reached it"
+        f"but the host emits it {emitted[token]}× — a caller value reached it"
     )
 
 
@@ -217,6 +246,129 @@ def test_the_pinned_environment_is_pinned_by_value() -> None:
 def test_a_tty_is_requested_only_when_the_caller_has_one() -> None:
     assert "-it" not in _argv(tty=False)
     assert "-it" in _argv(tty=True)
+
+
+# ---------------------------------------------------------------------------
+# The container user (#380) — the third platform-specific spawn concern.
+#
+# On a native daemon a bind mount carries the host's real ownership, so a
+# container running as the image's baked uid 1000 cannot write a repo owned by
+# anyone else: every mutating verb died inside ``store.init_db``. The uid is
+# therefore the provider's to choose, and lands here as ``--user uid:gid``.
+# ---------------------------------------------------------------------------
+
+
+def test_the_container_user_is_emitted_in_the_option_region_when_pinned() -> None:
+    """``--user`` is a docker option, so it must sit before the image.
+
+    Emitted after it, the two tokens would be arguments to ``harness start`` —
+    which is precisely what makes the caller's own ``--user`` harmless, and would
+    make the host's own inert.
+    """
+    argv = _argv(container_user=spawn.ContainerUser(uid=_PINNED_UID, gid=_PINNED_GID))
+    options, command = _split_at_image(argv)
+
+    assert options.count("--user") == 1, (
+        f"the host's --user is not in the docker-option region: {options}"
+    )
+    assert options[options.index("--user") + 1] == f"{_PINNED_UID}:{_PINNED_GID}", (
+        "the emitted user must carry both fields — a bare uid leaves the group "
+        "at the image's baked one, which owns nothing on the host"
+    )
+    assert "--user" not in command
+
+    assert "--user" not in _argv(container_user=None), (
+        "a host whose daemon remaps mount ownership (macOS) must emit no --user "
+        "at all — pinning one there changes the operator's daily driver to buy "
+        "nothing"
+    )
+
+
+def test_a_hostile_user_flag_does_not_displace_the_hosts_own() -> None:
+    """The collision case: a caller naming ``--user`` while the host pins one.
+
+    Until #380 the escape table could pin ``"--user": 0`` because the host never
+    emitted it, so this token was the *easiest* of the seven to keep clean. Now
+    there are two ``--user`` tokens in the argv and only their position separates
+    "the host chose the privilege" from "the caller did".
+    """
+    argv = _argv(
+        argv=["start", "--user", "0:0"],
+        container_user=spawn.ContainerUser(uid=_PINNED_UID, gid=_PINNED_GID),
+    )
+    options, command = _split_at_image(argv)
+
+    assert options.count("--user") == 1, (
+        f"the caller's --user reached the docker-option region: {options}"
+    )
+    assert options[options.index("--user") + 1] == f"{_PINNED_UID}:{_PINNED_GID}", (
+        "the option region's --user is not the host's — the caller displaced it"
+    )
+    assert command.count("--user") == 1 and "0:0" in command, (
+        f"the caller's tokens were dropped rather than forwarded to the verb: {command}"
+    )
+
+
+def test_no_construction_can_emit_a_root_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No provider, on any uid, can produce a container running as root.
+
+    Dropping privilege is what CAL-1008 bought and what ADR 0013's threat model
+    rests on: this container runs untrusted ticket and diff content through LLM
+    agents. Pinning the *invoking* uid would hand that back the moment an
+    operator ran the harness under ``sudo``, so the refusal is at construction
+    and this walks every provider across a uid range that includes 0.
+    """
+    users: list[spawn.ContainerUser | None] = []
+    for uid in (0, 1, 501, 1000, 4242):
+        monkeypatch.setattr(host_module.os, "getuid", lambda uid=uid: uid)
+        monkeypatch.setattr(host_module.os, "getgid", lambda uid=uid: uid)
+        for provider in (
+            host_module.MacOSHost(name="macos", env={}),
+            host_module.LinuxHost(name="linux", env={}),
+            host_module.WslHost(name="wsl", env={}),
+        ):
+            try:
+                users.append(provider.container_user())
+            except spawn.UnsafeContainerUser:
+                continue
+
+    pinned = [user for user in users if user is not None]
+    assert pinned, (
+        "no provider produced a container user at all, so the scan below has "
+        "nothing to scan and would pass for lack of subjects"
+    )
+
+    for user in pinned:
+        options, _ = _split_at_image(_argv(container_user=user))
+        emitted = options[options.index("--user") + 1]
+        assert not emitted.startswith("0:"), (
+            f"a provider emitted {emitted!r} — the container would run as root"
+        )
+
+
+def test_home_is_pinned_by_value_to_the_credential_mount_root() -> None:
+    """``HOME`` is pinned rather than left to docker's passwd lookup.
+
+    Docker resolves ``HOME`` from ``/etc/passwd``, and a numeric uid with no
+    entry there — which every pinned host uid is — gets ``HOME=/``. ``uv`` then
+    tries to initialise its cache at ``/.cache/uv`` and the verb dies before it
+    starts. Pinned on every platform, not only where ``--user`` is: two
+    mechanisms for one property is how the two drift.
+    """
+    argv = _argv()
+    mounts = [argv[i + 1] for i, tok in enumerate(argv) if tok == "-v"]
+
+    assert f"HOME={spawn.CONTAINER_HOME}" in argv, (
+        f"HOME is not pinned by value; the argv env is "
+        f"{[tok for tok in argv if '=' in tok]}"
+    )
+    assert [m for m in mounts if m.split(":")[1].startswith(f"{spawn.CONTAINER_HOME}/")], (
+        f"the credential mounts do not land under the pinned HOME: {mounts} — "
+        f"the container's home and the directory its credentials arrive in must "
+        f"be the same place"
+    )
 
 
 # ---------------------------------------------------------------------------

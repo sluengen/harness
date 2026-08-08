@@ -122,12 +122,14 @@ def _spawn_directly(
         # much later as an in-container 401.
         sys.stderr.write(f"harness: {unsupported}\n")
         return 2
-    except spawn.WorkspaceNotEquivalent as not_equivalent:
-        # The same contract for the same reason (#308): a repo the provider cannot
-        # mount equivalently stops here rather than running against a path that
-        # means something else inside the container. Refusing on both paths with
-        # the same code is what stops the fallback being the lenient one.
-        sys.stderr.write(f"harness: {not_equivalent}\n")
+    except (spawn.WorkspaceNotEquivalent, spawn.UnsafeContainerUser) as refused:
+        # The same contract for the same reason (#308, #380): a repo the provider
+        # cannot mount equivalently — or a caller whose uid the container must not
+        # take, i.e. root — stops here rather than running against a path that
+        # means something else inside the container, or handing untrusted content
+        # a root container. Refusing on both paths with the same code is what
+        # stops the fallback being the lenient one.
+        sys.stderr.write(f"harness: {refused}\n")
         return 2
 
     docker_argv = spawn.build_docker_argv(
@@ -139,6 +141,7 @@ def _spawn_directly(
         tty=_is_a_tty(stdio[0]),
         ssh_agent=resolved.ssh_agent,
         mount=resolved.workspace_mount,
+        container_user=resolved.container_user,
         wrapper_status=env.get("HARNESS_WRAPPER_STATUS", ""),
         git_identity=resolved.git_identity,
     )

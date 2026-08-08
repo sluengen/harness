@@ -292,12 +292,84 @@ def test_both_paths_construct_the_same_container(
                 ("git_identity", "git_identity"),
                 ("ssh_agent", "ssh_agent"),
                 ("workspace_mount", "mount"),
+                ("container_user", "container_user"),
             )
         },
     )
 
     # The stub records "$*" — docker's own argv minus argv[0].
     assert fallback == " ".join(server_side[1:])
+
+
+class _PinningHost:
+    """A provider that pins a container uid nobody on this machine has (#380).
+
+    Written as a stub rather than driven through a real provider because the
+    property under test is only observable where the provider pins *something*,
+    and on the machine this is most often run — macOS — no real provider does:
+    Docker Desktop remaps mount ownership, so ``MacOSHost`` returns ``None`` and
+    a fallback that dropped the argument entirely would look identical.
+    """
+
+    def __init__(self) -> None:
+        from harness.hostenv import spawn
+
+        self.name = "pinning"
+        self.env: dict[str, str] = {}
+        self.diagnostics: list[str] = []
+        self.user = spawn.ContainerUser(uid=4242, gid=4243)
+
+    def agent_credential(self) -> None:
+        return None
+
+    def tracker_credentials(self, workdir: Path) -> object:
+        from harness.hostenv.credentials import TrackerCredentials
+
+        return TrackerCredentials(linear_api_key=None, github_token=None, sources={})
+
+    def git_identity(self) -> object:
+        from harness.hostenv.host import GitIdentity
+
+        return GitIdentity(name="Op", email="op@example.test")
+
+    def ssh_agent_forwarding(self) -> None:
+        return None
+
+    def workspace_mount(self, repo: Path) -> object:
+        from harness.hostenv import spawn
+
+        return spawn.WorkspaceMount.default(repo)
+
+    def container_user(self) -> object:
+        return self.user
+
+
+def test_the_fallback_pins_the_container_user_the_provider_chose(
+    tmp_path: Path,
+    repo: Path,
+    socket_path: Path,
+    stub_docker: Path,
+    stdio: tuple[int, int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fallback carries the provider's uid, not the image's baked one (#380).
+
+    The argument is what makes a mutating verb able to write a repo the invoking
+    user owns on a native daemon. Dropped from this call site, the socket path
+    would still be correct and the fallback — which runs on exactly the days the
+    socket is broken — would fail every write with a bare ``PermissionError``.
+    """
+    from harness.hostenv import host as host_module
+
+    monkeypatch.setattr(host_module, "detect_host", lambda **_: _PinningHost())
+
+    client.run(repo=repo, argv=["status", "R1"], env=_env(tmp_path, socket_path), stdio=stdio)
+
+    spawned = _spawns(stub_docker)
+    assert spawned, "nothing was spawned — the assertion below would be vacuous"
+    assert "--user 4242:4243" in spawned[0], (
+        f"the provider's container user did not reach docker: {spawned[0]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -393,12 +465,49 @@ def test_the_entrypoint_rejects_a_missing_separator() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #308 — a repo the provider refuses is refused on *this* path too.
+# #308, #380 — a request the provider refuses is refused on *this* path too.
 #
 # The fallback runs on exactly the days the socket is broken, so a refusal it
 # does not implement is a refusal that disappears when it is most needed. This is
-# the same argument that makes both paths share `build_docker_argv`.
+# the same argument that makes both paths share `build_docker_argv`. Two
+# conditions reach the fallback's one `except`, and each gets its own case: a
+# repo that cannot be mounted equivalently, and a caller whose uid the container
+# must not take.
 # ---------------------------------------------------------------------------
+
+
+def test_a_root_invocation_stops_before_docker_is_touched(
+    tmp_path: Path,
+    repo: Path,
+    socket_path: Path,
+    stub_docker: Path,
+    stdio: tuple[int, int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#380's refusal branch, on the path that has no server to refuse for it.
+
+    Root is refused rather than forwarded because "the container does not run as
+    root" is a property the image bought, not a default to inherit from whoever
+    invoked the harness. As with its sibling below, the assertion that matters is
+    that docker was never invoked.
+    """
+    from harness.hostenv import host as host_module
+
+    monkeypatch.setattr(host_module.os, "getuid", lambda: 0)
+    monkeypatch.setattr(host_module.os, "getgid", lambda: 0)
+    monkeypatch.setattr(
+        host_module, "detect_host", lambda **_: host_module.LinuxHost(name="linux", env={})
+    )
+
+    code = client.run(
+        repo=repo, argv=["start", "380"], env=_env(tmp_path, socket_path), stdio=stdio
+    )
+
+    assert code == 2
+    assert _spawns(stub_docker) == [], (
+        "a container was spawned as root — the refusal must land before docker "
+        "is touched, not after"
+    )
 
 
 def test_a_repo_the_provider_refuses_stops_before_docker_is_touched(

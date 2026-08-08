@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 
 from harness.cli import serve as serve_module
-from harness.hostenv import client, container_env
+from harness.hostenv import client, container_env, spawn
 from harness.hostenv import host as host_module
 from harness.hostenv.credentials import AgentCredential, TrackerCredentials
 from harness.hostenv.host import GitIdentity, HostPlatform
@@ -486,6 +486,27 @@ def test_no_agent_socket_is_forwarded_when_the_variable_is_unset(
         "an `ssh-add -l` subprocess ran with no socket to check — that is a "
         "per-request cost buying nothing"
     )
+
+
+def test_the_resolver_carries_the_providers_container_user(
+    rotating: RotatingHost,
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The third spawn concern is the provider's answer, not the resolver's (#380).
+
+    ``ContainerEnv`` defaults the field to ``None`` so the resolver's own tests
+    can build one without a provider — which is precisely why a resolver that
+    forgot to populate it would look correct on macOS, where ``None`` is also the
+    right answer. The ids are pinned to a pair nobody on this machine has, so the
+    value can only have come from the provider.
+    """
+    monkeypatch.setattr(host_module.os, "getuid", lambda: 4242)
+    monkeypatch.setattr(host_module.os, "getgid", lambda: 4243)
+
+    resolved = container_env.resolve_container_env(repo, host=rotating)
+
+    assert resolved.container_user == spawn.ContainerUser(uid=4242, gid=4243)
 
 
 def test_the_resolved_git_identity_reaches_the_container(

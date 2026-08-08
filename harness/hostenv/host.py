@@ -5,12 +5,13 @@ express that: it reaches straight for ``security find-generic-password``, which
 exists only on macOS. This module puts an interface between the harness and the
 host so the *store* can vary while the rest does not.
 
-**Three things vary, and no more.** ``agent_credential`` (the store), and since
-#308 ``ssh_agent_forwarding`` and ``workspace_mount`` (the two spawn concerns).
-Tracker-credential resolution, git identity and bounded execution are identical on
-every host, so they live once on the ABC — duplicating them against no evidence of
-divergence would let the WSL provider's unverified status contaminate logic that is
-not platform-dependent at all. Per-request assembly on top of these providers is
+**Four things vary, and no more.** ``agent_credential`` (the store), the three
+spawn concerns — ``ssh_agent_forwarding`` and ``workspace_mount`` since #308,
+``container_user`` since #380. Tracker-credential resolution, git identity and
+bounded execution are identical on every host, so they live once on the ABC —
+duplicating them against no evidence of divergence would let the WSL provider's
+unverified status contaminate logic that is not platform-dependent at all.
+Per-request assembly on top of these providers is
 :mod:`harness.hostenv.container_env`, one layer up.
 """
 
@@ -18,9 +19,10 @@ not platform-dependent at all. Per-request assembly on top of these providers is
 # the detection that selects among them. #308 pushed this over the ceiling and paid
 # it back by extracting the layer above (per-request assembly → container_env.py,
 # 101 lines), which is the only split here that does not separate a class from the
-# interface it implements. What remains sits ~3 lines over and is deliberately not
-# cut further: splitting `WslHost` out would need `detect_host` to import it back,
-# and a lazy import to break that cycle buys nothing but a lower number.
+# interface it implements. #380 added the third spawn concern (two short methods,
+# one per platform answer), leaving it ~37 lines over and still not worth cutting:
+# splitting `WslHost` out would need `detect_host` to import it back, and a lazy
+# import to break that cycle buys nothing but a lower number.
 
 from __future__ import annotations
 
@@ -43,6 +45,7 @@ from harness.hostenv.credentials import (
 )
 from harness.hostenv.spawn import (
     DOCKER_DESKTOP_AGENT_SOCKET,
+    ContainerUser,
     SshAgentForwarding,
     WorkspaceMount,
     WorkspaceNotEquivalent,
@@ -259,6 +262,17 @@ class HostPlatform(ABC):
         """
         return WorkspaceMount.default(repo)
 
+    def container_user(self) -> ContainerUser | None:
+        """The uid/gid this container must run as, or ``None`` for the image's own.
+
+        The default holds wherever the daemon shares the host's kernel namespace:
+        a bind mount then carries the host's *real* ownership, so a container
+        running as the image's baked uid 1000 cannot write a repo owned by anyone
+        else — every mutating verb dies in ``store.init_db``. The container must
+        *be* the invoking user, and only the host knows who that is.
+        """
+        return ContainerUser(uid=os.getuid(), gid=os.getgid())
+
     def git_identity(self) -> GitIdentity:
         """Resolve the commit identity from global git config, with defaults.
 
@@ -323,6 +337,18 @@ class MacOSHost(HostPlatform):
             probed=socket_path,
             group_add=("0",),
         )
+
+    def container_user(self) -> ContainerUser | None:
+        """None: Docker Desktop has already solved this one.
+
+        It remaps bind-mount ownership to whatever uid the container runs as, so
+        the image's baked 1000 owns the mount by construction and a repo owned by
+        any host uid is writable. The exception is macOS's for the *opposite*
+        reason it is the exception for ssh-agent forwarding — there its host path
+        is unusable inside the VM; here its daemon needs no help. Pinning a uid
+        anyway would change the operator's daily driver to buy nothing.
+        """
+        return None
 
 
 class LinuxHost(HostPlatform):

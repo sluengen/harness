@@ -2,7 +2,7 @@
 feature: runtime-host
 status: implemented
 last_updated: 2026-08-08
-tickets: ["#307", "#308", "#370"]
+tickets: ["#307", "#308", "#370", "#380"]
 ---
 
 # Runtime host (live)
@@ -279,14 +279,39 @@ Two things follow, and both shipped or were filed rather than left as inference:
   model](verb-model.md) records that contract. The same CI job now reports
   `stdout: b'{"error": "PermissionError: ...", "reason": "unexpected_error"}'`
   ([CI 31242459008](https://github.com/sluengen/harness/actions/runs/31242459008)).
-- **The cause the measurement exposed is a different defect**, filed as #380 and
-  *not* fixed here: the image runs as uid 1000 while the runner's bind-mounted
-  fixture repo is owned by uid 1001, so the container cannot create `.harness/`
-  inside it. `docker/Dockerfile`'s comment states the assumption that fails —
-  Docker Desktop maps bind-mount ownership to the run-time uid, a native Linux
-  daemon does not — which is why it reproduces only in CI. That job stays red
-  until #380 lands; what changed is that it now names its own cause on the first
-  read.
+- **The cause the measurement exposed was a different defect**, filed as #380 and
+  fixed there rather than here: the image ran as uid 1000 while the runner's
+  bind-mounted fixture repo is owned by another uid, so the container could not
+  create `.harness/` inside it. `docker/Dockerfile`'s comment stated the
+  assumption that fails — Docker Desktop maps bind-mount ownership to the
+  run-time uid, a native Linux daemon does not — which is why it reproduced only
+  in CI.
+
+  **#380 resolved it** by giving the provider seam a third spawn concern: the host
+  pins `--user <uid>:<gid>` to the invoking user wherever the daemon shares its
+  kernel namespace, and `MacOSHost` alone declines, because there the daemon
+  already remaps ownership. `HOME` is pinned by value alongside it and the image's
+  `/home/harness` is `1777`, both measured necessary and neither sufficient alone.
+  `test_a_mutating_verbs_contract_is_unaltered_by_the_socket` passes on the runner
+  as of [CI 31245840169](https://github.com/sluengen/harness/actions/runs/31245840169).
+  The mechanism belongs to the provider seam, so [host-platform](host-platform.md)
+  owns the record; what matters here is that **the non-root property this record's
+  security boundary rests on is preserved and narrowed, not traded away**. The
+  pinned uid comes from the host, never from the request, and `uid == 0` is refused
+  at construction — over the socket as `REPO_NOT_ALLOWED`, through the fallback as
+  exit 2, before docker is touched — so a `serve` process started under `sudo`
+  refuses rather than handing untrusted content a root container. On a native
+  daemon the container now runs with *less* authority than before, as a user who
+  owns only the repo they were handed.
+
+  Fixing the docker stage also un-shadowed a latent failure in the stage after it.
+  `scripts/verify.sh` runs `-m docker` first under `set -euo pipefail`, so from
+  #307 until #380 the parallel stage never executed on Linux at all, and
+  `test_wrapper_is_shellcheck_clean` — which skips on the macOS host, where
+  shellcheck is absent — had never run anywhere. It fails on SC2155 at
+  `docker/harness-wrapper.sh:304`, a line #307 wrote and #380 does not touch.
+  Filed as its own follow-up; noted here because "the docker stage is green and
+  the job is still red" is otherwise a confusing state to inherit.
 
 **`Capture.contract` is deliberately narrow.** The two comparisons that assert
 #307's AC-1 (`over_socket` vs `directly`, and before vs after a host restart) are
