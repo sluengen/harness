@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-07
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339", "#338", "#359"]
+last_updated: 2026-08-08
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#321", "#355", "#347", "#339", "#338", "#359", "#378"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -79,6 +79,8 @@ The **publication** past those two gates landed with CAL-1117, on a new `harness
 - **The release hop** (`--to main`) is unchanged: `push_promotion_branch` pushes **only** the promotion branch via an explicit `<branch>:<branch>` refspec (never the target), the PR title/body are assembled from **deterministic facts** read from git (the `origin/<to>..<gated_sha>` commit range, the Linear IDs in those subjects, the changed `specs/` paths, and the captured gate evidence — ADR 0003 "PR authority"), the PR opens into the target through the `gh` CLI (harness-owned, not orchestrator-owned), and the `pr_url` + terminal `pr_opened` state are recorded. Merging it stays a human/CI act.
 
 A push or `gh` failure surfaces as a structured refusal (`push_failed` / `pr_create_failed` / `direct_push_refused`), never a bare traceback.
+
+The repository's **nightly staging caller** (`.github/workflows/nightly-staging-promotion.yml`, #378) drives only this lifecycle; it runs at 14:00 UTC (midnight Australia/Brisbane) and can also be manually dispatched. A single non-cancelling `nightly-dev-to-staging` concurrency group prevents two candidates from racing the derived ref. The job checks out full `dev` history with only `contents: write`, configures a repository-local bot author for `promote start`'s merge commit, creates the `dev` → `staging` candidate, and accepts only `gate_pending`. It runs the canonical `scripts/verify.sh` in that returned worktree, reports its captured exit code and log through `promote continue`, and calls `promote pr` only when the result is `pr_ready`. Any other lifecycle state exits non-zero; the workflow contains no repair path or direct `git push`.
 
 The **escalation path** — the non-success terminal — landed with CAL-1118, on a new `harness/promotion_escalation.py` module (the content half — the analogue of `promotion_pr.build_pr_body` for the escalate step, pure builders, no tracker I/O). `promote escalate --promotion-id <id>` files or updates a tracker ticket carrying the promotion evidence: the id, status, endpoints, promotion branch/worktree to inspect, the live conflict files (read from the worktree — best-effort, empty when clean or torn down), the captured gate summary, and the next human action keyed on the blocking status. Escalation is **idempotent** (ADR 0003): a promotion not yet linked to a ticket gets a fresh Todo issue, while one already carrying an `escalation_ticket` is **commented on** instead of duplicated; either way the row records the ticket id and the terminal `escalated` state. The stored identifier is **opaque** — a Linear key or a GitHub issue number — and is never parsed, only handed back to `post_comment`.
 
