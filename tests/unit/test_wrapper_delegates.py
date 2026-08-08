@@ -1,16 +1,23 @@
-"""Static guards over ``docker/harness-wrapper.sh``'s source.
+"""Guards over ``docker/harness-wrapper.sh``.
 
-Three of them, all reading the shim's own text and none needing it to run:
+Most read the shim's own text:
 
-* **the port ban** (#305) — none of the logic that moved to ``harness.hostenv``
-  still executes in the shell;
+* **the port ban and what it leaves behind** (#305, #307) — no ported logic still
+  executing in the shell, no credential name in its code, no ``eval``;
 * **the size ratchet** (:data:`EXECUTABLE_LINE_CEILING`) — the shim may not grow
   back into the thing it was cut down from;
 * **the masking guard** (#383) — no command the wrapper runs may hide behind a
   declaring builtin's exit status.
 
-They share a subject and a technique, which is why they share a module. The port
-ban came first and the docstring below is its statement.
+One **runs** the wrapper instead —
+:func:`test_an_interpreter_that_cannot_import_the_client_fails_with_the_remedy`
+— because a preflight that never executes is the kind that passes while the real
+path traceback-crashes. Its exception is stated here rather than left to be
+inferred: a reader who took "these all read the source" for the module's rule
+would file the next execution test somewhere else, or delete the ``subprocess``
+import as vestigial.
+
+The port ban came first and the docstring below is its statement.
 
 **AC-2: the wrapper delegates the ported logic rather than duplicating it (#305).**
 A port that leaves the old bash in place is not a port — it is a second
