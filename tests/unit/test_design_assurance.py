@@ -171,6 +171,8 @@ def _design_output_path(cmd: list[str]) -> Path:
     in — the same rule ``test_cli_design.py::_design_path`` follows — so this
     stub writes where the *real* engine would be told to.
     """
+    if "--output-last-message" in cmd:
+        return Path(cmd[cmd.index("--output-last-message") + 1])
     return Path(cmd[cmd.index("--add-dir") + 1]) / design_protocol.DESIGN_OUT_FILENAME
 
 
@@ -183,7 +185,14 @@ def _tracker_stub() -> Any:
     return stub
 
 
-def _invoke(repo: Path, db_path: Path, runner: Any, tracker: Any) -> Any:
+def _invoke(
+    repo: Path,
+    db_path: Path,
+    runner: Any,
+    tracker: Any,
+    *,
+    engine: str | None = None,
+) -> Any:
     argv = [
         "design",
         "--repo",
@@ -194,6 +203,8 @@ def _invoke(repo: Path, db_path: Path, runner: Any, tracker: Any) -> Any:
         _RUN_ID,
         "--json",
     ]
+    if engine is not None:
+        argv += ["--engine", engine]
     with (
         mock.patch.object(design_mod, "_default_runner", runner),
         mock.patch.object(design_tracker_mod, "tracker_client", return_value=tracker),
@@ -310,6 +321,24 @@ def test_a_complex_run_still_invokes_the_engine(repo: Path, db_path: Path) -> No
     assert DESIGN_MARKER in tracker.post_comment.await_args.args[1]
 
 
+def test_a_complex_codex_run_uses_codex_and_records_its_channel(
+    repo: Path, db_path: Path
+) -> None:
+    _seed_open_run(db_path, repo, assurance="complex")
+    runner = _CountingRunner()
+
+    result = _invoke(
+        repo, db_path, runner, _tracker_stub(), engine="codex"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert runner.calls == 1
+    event = _design_events(db_path)[0]
+    assert event["engine"] == "codex"
+    assert event["channel"] == "last_message"
+    assert "model" not in event
+
+
 def test_the_skip_precedes_the_adopt_path(repo: Path, db_path: Path) -> None:
     """The placement the design calls for: skip before adopt, not after.
 
@@ -341,3 +370,39 @@ def test_the_skip_precedes_the_adopt_path(repo: Path, db_path: Path) -> None:
     assert json.loads(result.stdout)["status"] == "not_required"
     assert consulted["called"] is False
     assert _design_events(db_path) == []
+
+
+def test_codex_omits_model_on_the_skip_path(repo: Path, db_path: Path) -> None:
+    """The skip path must not manufacture provenance it does not have.
+
+    ``verb-model.md`` and ``commands/harness.md`` both state Codex omits
+    ``model`` "including on this skip path"; the skip hardcoded an empty string,
+    so ``--engine codex --json`` on a ``simple`` run emitted ``"model": ""`` —
+    the invented empty provenance the run-ledger spec says this stops producing.
+    """
+    _seed_open_run(db_path, repo, assurance="simple")
+
+    result = _invoke(repo, db_path, _CountingRunner(), _tracker_stub(), engine="codex")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "not_required"
+    assert "model" not in payload
+    assert set(payload) == _DESIGN_OUTPUT_KEYS - {"model"}
+
+
+def test_claude_keeps_its_six_key_skip_shape(repo: Path, db_path: Path) -> None:
+    """The control for the test above: the default path is untouched.
+
+    ``--model`` stays "accepted and ignored" here, so the value is the empty
+    string rather than the resolved default — a skipped stage naming a model
+    would assert an engine choice that was never acted on.
+    """
+    _seed_open_run(db_path, repo, assurance="simple")
+
+    result = _invoke(repo, db_path, _CountingRunner(), _tracker_stub(), engine="claude")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert set(payload) == _DESIGN_OUTPUT_KEYS
+    assert payload["model"] == ""

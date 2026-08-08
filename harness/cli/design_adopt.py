@@ -107,14 +107,33 @@ async def resolve_adoption(
             run_id=run_id,
             status="ok",
             engine=str(payload.get("engine") or ""),
-            model=str(payload.get("model") or ""),
+            model=_optional_str(payload, "model"),
             designed_at=str(payload.get("designed_at") or ""),
             invoked_at=invoked_at,
             design_hash=parsed.design_hash,
-            grounded_sha=payload.get("grounded_sha"),
+            grounded_sha=_optional_str(payload, "grounded_sha"),
             inherited_from=source_run_id,
         ),
     )
+
+
+def _optional_str(payload: dict[str, Any], key: str) -> str | None:
+    """A nullable string field read out of a ledger payload, or ``None``.
+
+    A payload is JSON, so any key can hold any type, while the two fields this
+    guards are typed ``str | None``. Passing a value straight through made a
+    malformed row a pydantic ``ValidationError` — an unclassified exit 1 out of
+    the one reader whose entire contract is that anything it cannot use declines
+    to the engine path. The sibling fields built with ``str(... or "")`` were
+    already total over any JSON value; this gives the nullable pair the same
+    property without inventing an empty string for them.
+
+    Anything that is not a string reads as absent provenance, which is the
+    honest interpretation: the source event records nothing this reader can
+    carry, and a design's provenance is not worth guessing at.
+    """
+    value = payload.get(key)
+    return value if isinstance(value, str) else None
 
 
 async def _read_source_design_event(

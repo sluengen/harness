@@ -54,8 +54,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Every verb resolves `--repo` through the HARNESS_WORKSPACE_ROOTS
+          # allowlist, which fails closed: unset means no allowed roots, so the
+          # verb refuses the path with exit 2 before it does anything. The Docker
+          # wrapper (~/bin/harness) pins that allowlist for a developer; a runner
+          # has no wrapper, so the job pins it here, once, for all three calls.
+          export HARNESS_WORKSPACE_ROOTS="$GITHUB_WORKSPACE"
+
           promotion_json="$RUNNER_TEMP/promotion.json"
-          uv run harness promote start --repo . --from dev --to staging > "$promotion_json"
+          uv run harness promote start --repo "$GITHUB_WORKSPACE" --from dev --to staging > "$promotion_json"
 
           promotion_id="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["promotion_id"])' "$promotion_json")"
           status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
@@ -75,7 +82,7 @@ jobs:
           gate_exit=$?
           set -e
 
-          uv run harness promote continue --repo . --promotion-id "$promotion_id" \
+          uv run harness promote continue --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id" \
             --gate-exit "$gate_exit" --gate-log "$gate_log" > "$promotion_json"
           status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
           if [ "$status" != "pr_ready" ]; then
@@ -84,4 +91,4 @@ jobs:
             exit 1
           fi
 
-          uv run harness promote pr --repo . --promotion-id "$promotion_id"
+          uv run harness promote pr --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id"
