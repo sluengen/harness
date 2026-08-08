@@ -91,20 +91,39 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 import typer
 from pydantic import BaseModel
 
 from harness._git import rev_parse_head
 from harness._time import elapsed_ms, iso_z
+from harness.assurance import design_precondition
 from harness.cli._engine import EngineTimeoutError, run_engine_subprocess
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
-from harness.cli._runs import resolve_open_run
+from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
+from harness.cli._runs import read_run_assurance, resolve_attended, resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.review_inherit import InheritedReview, resolve_inheritance
+from harness.cli.review_pollution import (
+    measure_worktree_pollution,
+    pollution_refusal_message,
+)
+from harness.cli.review_probe import (
+    SENTINEL_FILENAME,
+    ProbeOutcome,
+    build_probe_feedback,
+    combine_issues,
+    combine_verdict,
+    demonstrated_ids,
+    read_probe_report,
+    render_probe_table,
+    screen_proposals,
+    survivors,
+)
 from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
     MALFORMED_SUBMIT_SENTINEL,
@@ -120,25 +139,33 @@ from harness.cli.review_protocol import (
     is_sandbox_blocked_defer,
     is_sandbox_init_failure,
     resolve_design_gate,
-    resolve_model_tier,
     scan_submit_line,
 )
 from harness.cli.review_telemetry import record_terminal_refusal
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
+    DESIGN_STATUS_KEY,
     MALFORMED_SUBMIT_REASON,
     NO_SUBMIT_REASON,
     REVIEW_INHERITED_FROM_PATH,
     REVIEW_OUTCOME_OK,
     REVIEW_OUTCOME_PATH,
+    REVIEW_REFUSAL_REASON_PATH,
+    REVIEW_REVIEWED_SHA_PATH,
+    ProbeEntryRecord,
     ReviewEventData,
 )
 from harness.gate import GATE_NOT_CONFIGURED_REASON, load_gate_command, read_gate_log_tail
 from harness.loop_budget import (
+    REPEAT_ENGINE_TIMEOUT_REASON,
+    LoopBudget,
     convergence_check_required,
+    cycles_exhausted,
     evaluate_breakers,
+    evaluate_repeat_timeout,
     load_loop_budget,
 )
+from harness.probe_tree import ProbeTreeError, create_probe_tree, snapshot_tree, teardown_probe_tree
 from harness.state import store
 from harness.tracker import tracker_client
 from harness.tracker_errors import (
@@ -148,14 +175,11 @@ from harness.tracker_errors import (
 )
 from harness.workspace import WorkspaceNotAllowed, allowed_roots, resolve_within_allowlist
 
-# The dimension resolve_model_tier reads for this verb (#177) — the review-tier
-# label family (``review:<tier>``), independent of the build-tier family the
-# ticket also carries as recorded judgement, which no verb consumes.
-_REVIEW_TIER_DIMENSION = "review"
-
 # size: the review verb — one cohesive orchestration on a single asyncio event
 # loop: run resolution, the ledger-backed spend breakers (cycle ceiling +
-# wall-clock; CAL-906), the verify-gate evidence check (CAL-1082), HEAD-bound SHA
+# wall-clock, the latter unattended-only since #296, whose mode input this verb
+# reads off the run row alongside started_at; CAL-906), the verify-gate evidence
+# check (CAL-1082), HEAD-bound SHA
 # capture, the usage-limit → Claude fallback (CAL-702), event emission, and the
 # best-effort In-Review / In-Progress tracker transitions (CAL-1103).  The pure
 # engine-protocol layer — the prompt, the SUBMIT scanner, the per-engine command
@@ -178,6 +202,13 @@ _REVIEW_TIER_DIMENSION = "review"
 # *decision* is already in harness.loop_budget (pure) and the gate in
 # harness.gate, so this holds only their call sites — splitting them further
 # would fragment the verb, not clarify it.
+# Extraction considered and DEFERRED at #296: that ticket threads one keyword
+# argument through the existing breaker call site and adds one column to one
+# private single-row read (_read_breaker_inputs) — no new concept in the file.
+# The only candidate seam, "the run facts the breaker block reads", would move
+# ~20 lines into a module with exactly one importer; it becomes a seam when a
+# second verb needs the same projection, and `reclaim --stale` (#297) projects
+# its own rows for its own reasons.
 __all__ = [
     "review_command",
     "ReviewOutput",
@@ -195,6 +226,7 @@ __all__ = [
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
     "DESIGN_FILE_OUTSIDE_WORKSPACE_REASON",
+    "RUN_WORKTREE_MUTATED_REASON",
 ]
 
 # The engine-protocol surface (prompt, SUBMIT scanner, engine identity, command
@@ -217,10 +249,18 @@ class ReviewOutput(BaseModel):
     surface to hold the printed JSON to the minimal verdict the agent needs.
 
     ``convergence_check_required`` is a bounded advisory (CAL-906): ``True`` when
-    this fail lands past the unconditional review→fix cycles and below the
-    ceiling, so the build agent must assess whether the fixes are converging
+    this fail precedes a cycle outside the unconditional window and inside the
+    budget, so the build agent must assess whether the fixes are converging
     before spending another cycle. It is a single bool — no engine reasoning —
     so it does not breach the context-economy guarantee.
+
+    ``cycles_exhausted`` (#329) is its terminal counterpart: ``True`` when this
+    fail consumed the last review→fix cycle the run may spend. The two partition
+    the fails — one asks for a judgment, the other says there is nothing left to
+    judge — so the orchestrator stops here, preserves the WIP, and puts the
+    ticket on operator hold rather than spending an implement pass on a cycle the
+    verb will refuse. The exit-4 refusal remains the deterministic backstop for
+    an orchestrator that ignores it.
     """
 
     verdict: Verdict
@@ -229,6 +269,16 @@ class ReviewOutput(BaseModel):
     run_id: str
     engine: Engine
     convergence_check_required: bool = False
+    cycles_exhausted: bool = False
+    #: The probe stage's two numbers (#363): how many reviewer-proposed
+    #: mutations actually ran, and how many the suite failed to catch. Two
+    #: integers are not engine reasoning, so the context-economy guarantee is
+    #: intact — and they are what an orchestrator needs to read a `fail` whose
+    #: findings are prefixed `[probe:<id>]` without going to the ledger. Zero on
+    #: every path where no stage ran, which `probe_status` on the event
+    #: disambiguates.
+    probes_run: int = 0
+    probes_survived: int = 0
 
 
 class _ReviewError(VerbError):
@@ -276,8 +326,14 @@ async def _default_runner(
         raise _ReviewError(
             f"review engine exceeded its {exc.timeout:.0f}s timeout and was killed; "
             "this is an environment/infra failure (a hung engine never reviewed "
-            "the diff), not a code-review verdict. Raise engine_timeout_seconds "
-            "in CONTEXT.md's loop: block if the engine legitimately needs longer.",
+            "the diff), not a code-review verdict. The usual cause is a hung "
+            "engine, and one re-run against this same HEAD is worth trying — but "
+            f"a second timeout at this SHA is refused ({REPEAT_ENGINE_TIMEOUT_REASON}) "
+            "instead of retried, because repeated attempts at an unchanged tree "
+            "return one identical answer at full cost each. Only if the ledger "
+            "shows this engine *finishing* just past the ceiling, rather than "
+            "hanging at it, is engine_timeout_seconds in CONTEXT.md's loop: block "
+            "the thing to change.",
             EXIT_INFRA_FAILURE,
             reason=ENGINE_TIMEOUT_REASON,
         ) from None
@@ -338,6 +394,19 @@ NO_GATE_EVIDENCE_REASON = "no_gate_evidence"
 # ``EXIT_GATE_FAILED`` — same response shape (fix the input, review again).
 DESIGN_FILE_OUTSIDE_WORKSPACE_REASON = "design_file_outside_workspace"
 
+# Machine-readable ``reason`` for a run worktree that has drifted far past its
+# own git index (#359). Shares ``EXIT_GATE_FAILED`` with the three refusals above
+# — same response shape, and the same thing to do about it: fix the input and
+# review again. A sixth exit code would say something new to an orchestrator that
+# has nothing new to do.
+#
+# Distinct from :data:`ENGINE_TIMEOUT_REASON` in both the exit code (5, not 3)
+# and the tag, and that distinctness is the point rather than a formality: a
+# polluted tree *presents* as an engine timeout, so a shared tag would leave an
+# operator reading the ledger unable to tell "the engine hung" from "we refused
+# to let it".
+POLLUTED_WORKTREE_REASON = "polluted_worktree"
+
 # Machine-readable ``reason`` for a review engine killed by the subprocess
 # timeout (CAL-1004). Like the sandbox-init wall, a killed engine never reviewed
 # the diff, so this is infra (``EXIT_INFRA_FAILURE``), not a code-review verdict:
@@ -393,48 +462,29 @@ async def _invoke_engine(
         raise _ReviewError(f"reviewer invocation failed: {exc}", 1) from exc
 
 
-async def _resolve_review_model(
-    repo_root: Path, ticket: str | None, explicit_model: str | None
-) -> str:
-    """Resolve the claude-engine ``--model`` alias for this review (#177).
-
-    An explicit ``--model`` wins outright. Otherwise, resolve the ticket's
-    ``review:<tier>`` label via :func:`resolve_model_tier` (default
-    ``sonnet``). Best-effort: a tracker-less run, an unresolvable tracker
-    config, or a fetch failure all degrade to the default rather than blocking
-    the review — the tier is an optimization the review can run without, not
-    part of the recorded verdict (mirroring ``_park_ticket``'s tolerance for
-    tracker hiccups).
-    """
-    if explicit_model is not None:
-        return explicit_model
-    if ticket is None:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    try:
-        client = tracker_client(repo_root)
-    except TrackerConfigError:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    if client is None:
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    try:
-        issue = await client.fetch_issue(ticket)
-    except (TrackerNotFound, TrackerRequestError):
-        return resolve_model_tier([], _REVIEW_TIER_DIMENSION)
-    labels = issue.get("labels") or []
-    return resolve_model_tier(labels, _REVIEW_TIER_DIMENSION)
-
-
 # ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
 
 
+class _HeadUnderReview:
+    """The SHA this invocation is about, once the verb has read it (#347).
+
+    Mutable and single-field by design: it is written once, immediately after
+    ``rev_parse_head``, and read only by the terminal-refusal handler, which sits
+    outside the frame that captured it. Everything before the capture leaves it
+    ``None``, which is exactly the pre-HEAD refusals whose rows must stay as they
+    were.
+    """
+
+    __slots__ = ("sha",)
+
+    def __init__(self) -> None:
+        self.sha: str | None = None
+
+
 def review_command(
-    repo: Path = typer.Option(  # noqa: B008
-        Path("."),
-        "--repo",
-        help="Worktree root to review (resolves the open run by worktree_path). Defaults to CWD.",
-    ),
+    repo: Path | None = REPO_OPTION,
     run_id: str | None = typer.Option(
         None,
         "--run-id",
@@ -498,7 +548,7 @@ def review_command(
     fresh green evidence — see :mod:`harness.gate` for why the gate runs on your
     side and not in here.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     output = run_verb(
@@ -513,6 +563,7 @@ def review_command(
                 gate_log=gate_log,
                 design_file=design_file,
                 runner=_default_runner,
+                probe_runner=_default_probe_runner,
             )
         ),
         json_output=json_output,
@@ -522,6 +573,269 @@ def review_command(
         typer.echo(output.model_dump_json())
     else:
         typer.echo(f"{output.verdict} ({output.reviewed_sha}) — {len(output.issues)} issue(s)")
+
+
+# ---------------------------------------------------------------------------
+# The probe stage (#363) — the reviewer's mutation budget.
+#
+# The *judgment* is pure and lives in harness.cli.review_probe; the throwaway
+# tree and the identity check are git mechanics in harness.probe_tree. What is
+# here is the impure middle: spawn the mutation harness under the configured
+# ceiling, and map every way it can end onto a recorded status.
+# ---------------------------------------------------------------------------
+
+#: The engine broke the one contract granting it execute rests on: it left the
+#: reviewed worktree changed. Classified as INFRA, like the sandbox wall and the
+#: timeout, because the reason is the same — the engine did not do the thing it
+#: was asked to do, so no verdict it produced is trustworthy. It is not a code
+#: review ``fail``: the diff was never the problem.
+RUN_WORKTREE_MUTATED_REASON = "run_worktree_mutated"
+
+#: ``scripts/mutate.py``, relative to the **primary checkout** — never the probe
+#: tree. Only the *tree* comes from the reviewed SHA; the instrument that judges
+#: it must not be swappable by the branch under review.
+_MUTATE_SCRIPT = Path("scripts") / "mutate.py"
+
+
+class _ProbeStage(NamedTuple):
+    """What the probe stage did, reduced to what the event records."""
+
+    status: str
+    proposed: int = 0
+    dropped: int = 0
+    outcomes: tuple[ProbeOutcome, ...] = ()
+    duration_ms: int = 0
+
+
+async def _default_probe_runner(
+    *,
+    cmd: list[str],
+    stdin: str,
+    env: dict[str, str],
+    cwd: Path | None,
+    timeout: float | None = None,
+) -> RunResult:
+    """Spawn the mutation harness on the shared bounded driver.
+
+    The same :func:`~harness.cli._engine.run_engine_subprocess` both engine verbs
+    use, for the one property that makes AC-4's budget a *bound* rather than a
+    convention: the subprocess is killed at ``timeout`` and reaped. A mutation
+    can induce an infinite loop, so an unbounded probe stage would be a new way
+    to hang a run — which is precisely the failure the review timeout exists for.
+
+    A separate seam from ``_default_runner`` even though the shape is identical:
+    tests must be able to stub the engine and the probe independently, and
+    "the engine was never spawned" is an assertion this change needs to make.
+    """
+    return await run_engine_subprocess(cmd=cmd, stdin=stdin, env=env, cwd=cwd, timeout=timeout)
+
+
+async def _run_probe_stage(
+    *,
+    repo_root: Path,
+    run_id: str,
+    reviewed_sha: str,
+    raw_probes: list[Any] | None,
+    budget: LoopBudget,
+    probe_runner: Runner,
+) -> _ProbeStage:
+    """Run the reviewer's proposed mutations against a throwaway tree.
+
+    **Every path degrades.** The stage returns a status and the review keeps the
+    first pass's verdict; nothing here can refuse a run. That is ADR 0007 D4's
+    posture for the design stage applied to an instrument that is strictly more
+    optional than a design: probing is evidence-gathering, and an instrument that
+    can wedge the thing it observes is worse than no instrument.
+
+    The one thing it does **not** do is touch the run worktree. The probe tree is
+    a different directory at the reviewed SHA, so the tree under review is
+    untouched by construction rather than by care.
+    """
+    started = iso_z()
+    if budget.probe_max_entries <= 0:
+        return _ProbeStage(status="disabled")
+    script = repo_root / _MUTATE_SCRIPT
+    if not script.is_file():
+        # A consuming repo, or one whose checkout predates the harness. Not an
+        # error: the harness cannot mutate what a repo has no instrument for,
+        # exactly as it cannot run a gate it has no toolchain for.
+        return _ProbeStage(status="no_instrument")
+
+    try:
+        probe_tree = await asyncio.to_thread(create_probe_tree, repo_root, run_id, reviewed_sha)
+    except ProbeTreeError as exc:
+        typer.echo(f"warning: probe stage skipped — {exc}", err=True)
+        return _ProbeStage(status="tree_failed")
+
+    try:
+        sentinel_text = f"{run_id} {reviewed_sha}"
+        (probe_tree / SENTINEL_FILENAME).write_text(sentinel_text + "\n", encoding="utf-8")
+        screened = await asyncio.to_thread(
+            screen_proposals, raw_probes, tree=probe_tree, cap=budget.probe_max_entries
+        )
+        if screened.dropped:
+            typer.echo(
+                "warning: probe entries dropped — "
+                + "; ".join(f"{i}: {r}" for i, r in screened.dropped),
+                err=True,
+            )
+        if not screened.kept:
+            return _ProbeStage(
+                status="none_proposed",
+                proposed=screened.proposed,
+                dropped=len(screened.dropped),
+                duration_ms=elapsed_ms(started, iso_z()) or 0,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="harness-probe-") as scratch:
+            scratch_dir = Path(scratch)
+            table_path = scratch_dir / "probe.toml"
+            report_path = scratch_dir / "report.json"
+            table_path.write_text(
+                render_probe_table(
+                    screened.kept,
+                    sentinel_file=SENTINEL_FILENAME,
+                    sentinel_text=sentinel_text,
+                ),
+                encoding="utf-8",
+            )
+            cmd = [
+                sys.executable,
+                str(script),
+                "run",
+                "--table",
+                str(table_path),
+                "--tree",
+                str(probe_tree),
+                "--json",
+                str(report_path),
+                "--work-dir",
+                str(scratch_dir / "work"),
+                "--timeout",
+                str(budget.probe_budget_seconds),
+            ]
+            try:
+                result = await probe_runner(
+                    cmd=cmd,
+                    stdin="",
+                    env=dict(os.environ),
+                    cwd=repo_root,
+                    timeout=float(budget.probe_budget_seconds),
+                )
+            except EngineTimeoutError:
+                return _ProbeStage(
+                    status="timeout",
+                    proposed=screened.proposed,
+                    dropped=len(screened.dropped),
+                    duration_ms=elapsed_ms(started, iso_z()) or 0,
+                )
+            status = _probe_status_for(result)
+            outcomes: tuple[ProbeOutcome, ...] = ()
+            if status == "ran":
+                outcomes = _read_probe_report_file(report_path)
+                if not outcomes:
+                    status = "error"
+            return _ProbeStage(
+                status=status,
+                proposed=screened.proposed,
+                dropped=len(screened.dropped),
+                outcomes=outcomes,
+                duration_ms=elapsed_ms(started, iso_z()) or 0,
+            )
+    finally:
+        await asyncio.to_thread(teardown_probe_tree, repo_root, probe_tree)
+
+
+def _refuse_if_worktree_moved(worktree: Path, before: str | None) -> None:
+    """Refuse if the run worktree changed while an untrusted actor had control.
+
+    Honest about its reach, per the rule ``design``'s own write grant states of
+    itself: this detects what **git can see** — a tracked edit, a deletion, an
+    untracked addition, HEAD moving — and not a write inside a gitignored path.
+    It is a detector at the boundary, not the boundary. ``close``'s two conjuncts
+    stay the enforcement, which is why the worst case remains a wedged run rather
+    than a laundered merge.
+
+    Skips when either snapshot is unknown. A failed ``git status`` is not
+    evidence of a write, and manufacturing a refusal out of a failed probe would
+    stop runs for a reason nothing observed.
+    """
+    if before is None:
+        return
+    after = snapshot_tree(worktree)
+    if after is None or after == before:
+        return
+    raise _ReviewError(
+        f"the run worktree at {worktree} changed while the review engine had "
+        f"control. The reviewer runs read-only and the probe stage works in a "
+        f"separate throwaway tree, so nothing in this verb should have written "
+        f"here — the tree that would merge is no longer the tree that was "
+        f"reviewed. No verdict was recorded. Inspect `git status` in the "
+        f"worktree, restore it to the reviewed commit, and review again.",
+        EXIT_INFRA_FAILURE,
+        reason=RUN_WORKTREE_MUTATED_REASON,
+    )
+
+
+def _refusal_reason(stderr: str) -> str:
+    """The refusal tag the mutation harness printed, or ``unknown``.
+
+    Its contract is a stable first-line ``refused (<reason>): <message>``, and
+    the tag exists precisely so a caller can branch on *which* rule refused
+    rather than matching prose. Reading it is not scraping a human summary — the
+    thing this module refuses to do with ``render()`` — it is reading the one
+    machine-readable field a non-zero exit has room for.
+
+    Falls back to ``unknown`` rather than raising: a status is an observation,
+    and an observation that can fail the thing it observes is worse than a
+    coarse one.
+    """
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("refused (") and "):" in stripped:
+            return stripped[len("refused (") : stripped.index("):")]
+    return "unknown"
+
+
+def _probe_status_for(result: RunResult) -> str:
+    """Map the mutation harness's exit code onto a recorded status.
+
+    Its contract (0 all killed / 1 not / 2 refused / 3 runner unavailable / 4 at
+    least one inert) is a *table verdict*, and every one of those is a legitimate
+    outcome of asking a reviewer for mutations — 0, 1 and 4 all produced a report
+    to read. Only 2 and 3 did not.
+
+    A refusal carries *which* rule refused, taken from the harness's own stable
+    tag rather than invented here — ``table`` / ``containment`` / ``landing`` /
+    ``baseline`` / ``prediction`` / ``observable``. The distinction is the whole
+    diagnostic value of the status: ``refused:prediction`` says the reviewer
+    named a node id outside the selection (a defect in its proposal, and the
+    measurement that decides whether a probing reviewer is worth its cost),
+    while ``refused:baseline`` says the tree was already red and says nothing
+    about the reviewer at all.
+
+    ``unavailable`` (exit 3) is the one worth naming separately rather than
+    folding into ``error``, because it is the expected in-container outcome: the
+    verb's image is built ``--no-dev`` and carries no pytest, the same catch-22
+    :mod:`harness.gate` records for the verify gate. A host-side install runs the
+    stage; the container degrades and says so, rather than reporting a failure
+    that reads like a defect in the diff.
+    """
+    if result.returncode in (0, 1, 4):
+        return "ran"
+    if result.returncode == 2:
+        return f"refused:{_refusal_reason(result.stderr)}"
+    if result.returncode == 3:
+        return "unavailable"
+    return "error"
+
+
+def _read_probe_report_file(path: Path) -> tuple[ProbeOutcome, ...]:
+    """Read the harness's ``--json`` report; ``()`` when it is not readable."""
+    try:
+        return read_probe_report(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return ()
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +854,7 @@ async def _run_review(
     gate_log: Path | None = None,
     design_file: Path | None = None,
     runner: Runner,
+    probe_runner: Runner,
 ) -> ReviewOutput:
     """Resolve the run, then drive the review, recording **every** terminal path.
 
@@ -568,6 +883,14 @@ async def _run_review(
     # every terminal event now carries, and the reference point that makes a slow
     # refusal distinguishable from a fast one.
     invoked_at = iso_z()
+    # The one fact the handler below needs that it cannot see (#347): HEAD is
+    # captured deep inside the body, and a refusal raised after that point must
+    # record which tree it was about. A one-field carrier rather than
+    # ``_ReviewError.extra`` — ``extra`` is merged into the *printed* error JSON,
+    # so using it would widen the CLI contract at every post-HEAD raise site for
+    # a ledger-only need, and would put the burden back on each site to remember,
+    # which is the very failure this single-handler split exists to prevent.
+    head = _HeadUnderReview()
     try:
         return await _review_resolved_run(
             repo_root=repo_root,
@@ -580,7 +903,9 @@ async def _run_review(
             gate_log=gate_log,
             design_file=design_file,
             runner=runner,
+            probe_runner=probe_runner,
             invoked_at=invoked_at,
+            head=head,
         )
     except _ReviewError as exc:
         await record_terminal_refusal(
@@ -589,6 +914,7 @@ async def _run_review(
             reason=exc.reason,
             detail=str(exc),
             invoked_at=invoked_at,
+            reviewed_sha=head.sha,
         )
         raise
 
@@ -605,7 +931,9 @@ async def _review_resolved_run(
     gate_log: Path | None,
     design_file: Path | None,
     runner: Runner,
+    probe_runner: Runner,
     invoked_at: str,
+    head: _HeadUnderReview | None = None,
 ) -> ReviewOutput:
     """Drive the review flow for an already-resolved run; raise on failure.
 
@@ -618,6 +946,22 @@ async def _review_resolved_run(
     # Moving a read is behaviour-preserving: every refusal keeps its position.
     ticket = await _read_ticket(db_path, resolved_run_id)
     design_event = await _read_latest_design_event(db_path, resolved_run_id)
+    # The run's assurance snapshot (#352) — read once, here, beside the other two
+    # hoisted ledger reads. It decides whether the design stage was required at
+    # all, which both the inheritance resolver below and the design gate at 1b
+    # need; the *decision* is harness.assurance's, never this verb's.
+    assurance = await read_run_assurance(db_path, resolved_run_id)
+
+    # Whether the design stage lets this review proceed — the ledger-keyed half
+    # of the gate, and the only half the short-circuit below needs. Resolved
+    # from the policy directly rather than through ``resolve_design_gate``,
+    # because that also reads ``--design-file``, and reading it here would open
+    # a caller-supplied path *before* the workspace-allowlist refusal at 1b —
+    # the containment AC-2 (#247) exists for. The refusal's position is not the
+    # property; not opening the file is.
+    design_precondition_result = design_precondition(
+        assurance, None if design_event is None else design_event.get(DESIGN_STATUS_KEY)
+    )
 
     # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
     #       from a preserved WIP branch and its HEAD is the exact commit a
@@ -647,7 +991,11 @@ async def _review_resolved_run(
         run_id=resolved_run_id,
         ticket=ticket,
         worktree_path=Path(worktree_path),
-        design_recorded=design_event is not None,
+        # Not "did it record a design?" but "may it review without one?" (#352).
+        # A ``simple`` run legitimately has no design event, and gating on the
+        # event's presence would make such a run decline inheritance forever,
+        # waiting for a ``no_design`` refusal that can no longer fire.
+        design_precondition_met=design_precondition_result.satisfied,
         gate_exit=gate_exit,
         created_at=iso_z(),
     )
@@ -663,13 +1011,14 @@ async def _review_resolved_run(
     #     orchestrator stops and escalates rather than spinning the fix loop.
     budget = load_loop_budget(repo_root)
     prior_review_count = await _count_review_events(db_path, resolved_run_id)
-    started_at = await _read_started_at(db_path, resolved_run_id)
-    if started_at is not None:
+    breaker_inputs = await _read_breaker_inputs(db_path, resolved_run_id)
+    if breaker_inputs.started_at is not None:
         trip = evaluate_breakers(
             prior_review_count=prior_review_count,
-            started_at=started_at,
+            started_at=breaker_inputs.started_at,
             now=datetime.now(UTC),
             budget=budget,
+            attended=breaker_inputs.attended,
         )
         if trip is not None:
             raise _ReviewError(trip.message, EXIT_BREAKER_TRIPPED, reason=trip.reason)
@@ -720,7 +1069,7 @@ async def _review_resolved_run(
             ) from exc
 
     design_gate = resolve_design_gate(
-        design_event, await asyncio.to_thread(_read_design_file, design_file)
+        assurance, design_event, await asyncio.to_thread(_read_design_file, design_file)
     )
     if design_gate.refusal_reason is not None:
         raise _ReviewError(
@@ -779,6 +1128,78 @@ async def _review_resolved_run(
         reviewed_sha = await asyncio.to_thread(rev_parse_head, Path(worktree_path))
     except Exception as exc:  # noqa: BLE001
         raise _ReviewError(f"failed to read HEAD for worktree {worktree_path}: {exc}", 1) from exc
+    if head is not None:
+        head.sha = reviewed_sha
+
+    # 2a. The third spend breaker, and the only one keyed on the tree (#347).
+    #     An engine that has already hung twice at *this* SHA is not asked a
+    #     third time: run 01KZ67FRV3HZRZ8CMAHBYBP4QT spent four ~725s attempts
+    #     against one pushed SHA for four identical answers, ~44% of the
+    #     unattended wall-clock budget, and finished only because the tree then
+    #     changed. Repetition against a byte-identical tree gathers no evidence.
+    #
+    #     It sits HERE, not with the two breakers in 1a, only because it needs
+    #     HEAD — and before the tracker park below, so a bounded-out run leaves
+    #     its ticket where it stopped, exactly like the other two. Exit 4 rather
+    #     than the timeout's own exit 3 is the point of the refusal: exit 3's
+    #     documented orchestrator response is "just re-run", which is the loop
+    #     being closed, whereas exit 4's is "stop and escalate".
+    #
+    #     Fail-open by construction: the count comes from the ledger, so rows
+    #     predating #347 (which carry no ``reviewed_sha``) match no HEAD and read
+    #     as zero. A guard that stops a run rests only on evidence the ledger
+    #     actually holds.
+    repeat_trip = evaluate_repeat_timeout(
+        timeouts_at_sha=await _count_engine_timeouts_at_sha(
+            db_path, resolved_run_id, reviewed_sha
+        ),
+        reviewed_sha=reviewed_sha,
+        budget=budget,
+    )
+    if repeat_trip is not None:
+        raise _ReviewError(repeat_trip.message, EXIT_BREAKER_TRIPPED, reason=repeat_trip.reason)
+
+    # 2a'. Refuse a run worktree that has drifted far past its own git index
+    #      (#359). A worktree carrying thousands of untracked files drowns the
+    #      review engine's tool use: #208 arrived here with 3,555 files against
+    #      578 tracked, burned the whole engine ceiling and returned
+    #      ``engine_timeout`` having reviewed nothing; the tree cleaned to 586/578
+    #      and the very next review returned a real verdict. #205 identified that
+    #      cause and fixed it with a rule an operator has to keep ("never gate in
+    #      the run worktree"); this is the same rule as a mechanism, turning a
+    #      silent 720-second burn into an instant refusal that states its remedy.
+    #
+    #      Placed HERE for four reasons, each of which fixes one edge of the slot:
+    #      after the inherit short-circuit (that path spawns no engine, so a
+    #      polluted tree is irrelevant to it and refusing would block a review
+    #      that costs nothing); after every cheaper pre-engine check, since a
+    #      directory walk is the most expensive of them and a bounded-out,
+    #      undesigned or red-gated run should be refused on *that*; after the HEAD
+    #      capture just above, so the refusal row carries ``reviewed_sha`` and an
+    #      operator reading the ledger sees ``engine_timeout`` and
+    #      ``polluted_worktree`` against the same tree — the #208 correlation made
+    #      legible; and before the tracker park below, so a refused run leaves its
+    #      ticket where it stopped, exactly like every other pre-engine refusal.
+    #
+    #      Fail-open by construction, like the repeat-timeout breaker above: the
+    #      measurement is ``None`` for every case it cannot answer (the check
+    #      disabled, a path that is not a git top-level, a wedged or failed
+    #      ``ls-files``, an empty index) and review proceeds. A guard that stops a
+    #      run may rest only on evidence it actually gathered — and the failure it
+    #      prevents is expensive but recoverable, whereas refusing a legitimate
+    #      review is not.
+    pollution = await asyncio.to_thread(
+        measure_worktree_pollution,
+        Path(worktree_path),
+        limit=budget.untracked_file_limit,
+    )
+    if pollution is not None and pollution.refuses:
+        raise _ReviewError(
+            pollution_refusal_message(pollution),
+            EXIT_GATE_FAILED,
+            reason=POLLUTED_WORKTREE_REASON,
+            extra={"worktree_pollution": pollution.as_payload()},
+        )
 
     # 2b. Park the ticket In Review before the engine runs (CAL-1103) — the queue
     #     shows "reviewing" while the (possibly long) engine works. Deliberately
@@ -788,10 +1209,26 @@ async def _review_resolved_run(
     #     the review (the verdict is the record; the transition is bookkeeping).
     await _park_ticket(repo_root, ticket, to="in_review")
 
-    # 2c. Resolve the claude-engine model tier (#177): an explicit --model
-    #     wins, else the ticket's review:<tier> label, default sonnet. Codex
-    #     ignores it — see _invoke_engine / _build_cmd.
-    resolved_model = await _resolve_review_model(repo_root, ticket, model)
+    # 2b'. Snapshot the run worktree before control passes to the engine (#363).
+    #      Until this change nothing the engine produced could reach the tree —
+    #      it runs read-only, and that was the third defence behind `close`'s
+    #      SHA-bound pass and its dirty-worktree refusal. Granting the reviewer a
+    #      way to cause execution removes that third defence, so the other two
+    #      become load-bearing in a way they were not, and this makes the wedge
+    #      surface where it happened rather than at the end of the run.
+    #
+    #      ``None`` when git cannot answer, and the comparison is then skipped:
+    #      the same fail-open asymmetry the pollution check above states, for the
+    #      same reason — a guard that stops a run may rest only on evidence it
+    #      actually gathered.
+    worktree_before = await asyncio.to_thread(snapshot_tree, Path(worktree_path))
+
+    # 2c. Resolve the claude-engine model (#321): an explicit --model wins, else
+    #     CONTEXT.md's loop.review_model (default sonnet). Codex ignores it —
+    #     see _invoke_engine / _build_cmd. ``budget`` is already loaded for the
+    #     breakers above, so this reads no file and makes no network call; the
+    #     retired per-ticket tier (ADR 0005) made a tracker round-trip here.
+    resolved_model = model if model is not None else budget.review_model
 
     # 3. Run the reviewer. On an explicit ``--engine codex`` whose tier is
     #    exhausted, fall back ONCE to the Claude engine (CAL-702): a depleted
@@ -806,7 +1243,9 @@ async def _review_resolved_run(
     engine_timeout = budget.engine_timeout_seconds
     # Built once (#212) so the usage-limit fallback below re-runs the identical
     # prompt, design context included.
-    prompt = build_review_prompt(design_gate.design_markdown)
+    prompt = build_review_prompt(
+        design_gate.design_markdown, probe_cap=budget.probe_max_entries
+    )
     result = await _invoke_engine(
         runner,
         engine,
@@ -902,6 +1341,81 @@ async def _review_resolved_run(
             reason=SANDBOX_INIT_REASON,
         )
 
+    # 4b-i. The engine has had control of a worktree it is not allowed to write.
+    #       Check that before anything else uses its output (#363). Classified as
+    #       INFRA rather than as a `fail`: the engine broke the contract its
+    #       execute grant rests on, so no verdict it produced is trustworthy —
+    #       the same reason the sandbox wall and the timeout are infra, and the
+    #       same cost (no review cycle, ticket left In Review).
+    _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    # 4b-ii. The probe stage: run the mutations the reviewer proposed against a
+    #        throwaway tree at the reviewed SHA. Deliberately AFTER the infra
+    #        classifications above — an engine that never delivered a verdict has
+    #        proposed nothing worth running — and after the identity check, so a
+    #        misbehaving engine is never handed a second opportunity.
+    #
+    #        Every path degrades: the stage records what happened and the first
+    #        pass's verdict stands. Probing gathers evidence, and an instrument
+    #        that can wedge the thing it observes is worse than no instrument
+    #        (ADR 0007 D4's posture for the design stage, which is strictly less
+    #        optional than this one).
+    probe = await _run_probe_stage(
+        repo_root=repo_root,
+        run_id=resolved_run_id,
+        reviewed_sha=reviewed_sha,
+        raw_probes=parsed.probes,
+        budget=budget,
+        probe_runner=probe_runner,
+    )
+    # The probe tree is a different directory, but an `observe` is arbitrary
+    # Python running as the invoking user (mutate.py says so plainly), so the
+    # tree under review is re-checked after the stage as well as after the
+    # engine.
+    _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    # 4b-iii. The second pass, iff something survived. A fresh engine invocation
+    #         under its own ceiling, told what its proposals did and what it
+    #         already concluded, and asked to revise. It cannot propose more:
+    #         `build_review_prompt` takes the feedback block *instead of* the
+    #         request, so one review spends the budget once.
+    #
+    #         The combination is computed here, never trusted to that pass — a
+    #         monotone max, so an engine just told its own proposals mostly
+    #         failed cannot soften into withdrawing a finding about the diff.
+    survived = survivors(probe.outcomes)
+    second_verdict: str | None = None
+    second_issues: list[str] | None = None
+    if survived:
+        try:
+            second = await _invoke_engine(
+                runner,
+                engine_used,
+                Path(worktree_path),
+                prompt=build_review_prompt(
+                    design_gate.design_markdown,
+                    probe_feedback=build_probe_feedback(
+                        probe.outcomes,
+                        first_verdict=parsed.verdict,
+                        first_issues=tuple(parsed.issues),
+                    ),
+                ),
+                timeout=engine_timeout,
+                model=resolved_model,
+            )
+            second_parsed = scan_submit_line(second.stdout)
+            if second_parsed.submit_failure is None:
+                second_verdict, second_issues = second_parsed.verdict, second_parsed.issues
+        except _ReviewError as exc:
+            # A second pass that times out or walls costs the review its probe
+            # findings, never its verdict. Raising here would let an optional
+            # enrichment fail a review the first pass already completed.
+            typer.echo(f"warning: probe second pass did not complete: {exc}", err=True)
+        _refuse_if_worktree_moved(Path(worktree_path), worktree_before)
+
+    final_verdict = cast("Verdict", combine_verdict(parsed.verdict, second_verdict))
+    final_issues = combine_issues(parsed.issues, second_issues)
+
     # 4c. The convergence advisory (CAL-906): this review is cycle
     #     ``prior_review_count + 1``. A fail past the unconditional window and
     #     below the ceiling tells the build agent to assess whether the fixes are
@@ -909,7 +1423,15 @@ async def _review_resolved_run(
     #     reasoning — surfaced on both the printed verdict and the ledger event.
     needs_convergence_check = convergence_check_required(
         cycles_completed=prior_review_count + 1,
-        verdict=parsed.verdict,
+        verdict=final_verdict,
+        budget=budget,
+    )
+    # 4d. The terminal signal (#329): this fail spent the last cycle the run may
+    #     spend. Computed from the same cycle count, so the pair cannot disagree
+    #     about which cycle this is.
+    budget_exhausted = cycles_exhausted(
+        cycles_completed=prior_review_count + 1,
+        verdict=final_verdict,
         budget=budget,
     )
 
@@ -924,10 +1446,11 @@ async def _review_resolved_run(
     event_data = ReviewEventData(
         run_id=resolved_run_id,
         reviewed_sha=reviewed_sha,
-        verdict=parsed.verdict,
-        issues=parsed.issues,
+        verdict=final_verdict,
+        issues=final_issues,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
+        cycles_exhausted=budget_exhausted,
         created_at=created_at,
         gate_ran=gate_ran,
         design_context=design_gate.design_markdown is not None,
@@ -937,6 +1460,15 @@ async def _review_resolved_run(
         gate_reason=gate_reason,
         gate_output_tail=gate_output_tail,
         fallback_from=fallback_from,
+        # #293: the model the engine actually ran with, so review latency is
+        # readable against ``design``'s and across a tier change. Keyed off
+        # ``engine_used`` rather than the requested ``engine`` — the same
+        # distinction ``engine=engine_used`` + ``fallback_from`` already draws:
+        # a usage-limit fallback re-invokes claude with this same alias, and
+        # codex ignores --model, so recording one there would assert a model
+        # was in force when none was. ``resolved_model`` is the object passed
+        # to the engine above, not a re-resolution of the ticket's label.
+        model=resolved_model if engine_used == "claude" else None,
         commit_message=parsed.commit_message,
         deferred_brief=parsed.deferred_brief,
         # #262: the latency pair. ``outcome`` is deliberately NOT passed — it is
@@ -948,6 +1480,20 @@ async def _review_resolved_run(
         # field is ``outcome`` rather than ``design``'s ``status``.)
         invoked_at=invoked_at,
         duration_ms=elapsed_ms(invoked_at, created_at),
+        # #363. `probe_status` carries the degradations as well as the successes
+        # — six of its eight values are ways the stage did not produce a report —
+        # because none of them may change a verdict, so "did it run, and if not
+        # why" has to be answerable from the ledger rather than from stderr.
+        probe_status=probe.status,
+        probe_proposed=probe.proposed,
+        probe_dropped=probe.dropped,
+        probe_entries=[ProbeEntryRecord(**o.as_payload()) for o in probe.outcomes] or None,
+        probe_demonstrated=list(demonstrated_ids(probe.outcomes)) or None,
+        probe_duration_ms=probe.duration_ms,
+        # Absent unless a stage ran at all: `False` on a repo that disabled
+        # probing would assert that a pass which was never possible did not
+        # happen.
+        probe_second_pass=(second_verdict is not None) if survived else None,
     ).model_dump(exclude_none=True)
 
     emitter = EventEmitter(db_path)
@@ -964,7 +1510,7 @@ async def _review_resolved_run(
     #     Progress (CAL-1103). AFTER the review event is recorded, so a transition
     #     failure can never lose the verdict (AC-4). ``pass``/``defer`` leave it In
     #     Review for ``close`` or a follow-up.
-    if parsed.verdict == "fail":
+    if final_verdict == "fail":
         await _park_ticket(repo_root, ticket, to="in_progress")
 
     # 6. Return ONLY the bounded verdict — the engine's stdout stays inside the
@@ -972,12 +1518,15 @@ async def _review_resolved_run(
     #    verdict (``claude`` after a fallback); ``fallback_from`` lives on the
     #    ledger event, off the printed contract (CAL-702).
     return ReviewOutput(
-        verdict=parsed.verdict,
-        issues=parsed.issues,
+        verdict=final_verdict,
+        issues=final_issues,
         reviewed_sha=reviewed_sha,
         run_id=resolved_run_id,
         engine=engine_used,
         convergence_check_required=needs_convergence_check,
+        cycles_exhausted=budget_exhausted,
+        probes_run=len(probe.outcomes),
+        probes_survived=len(survived),
     )
 
 
@@ -1079,6 +1628,45 @@ async def _count_review_events(db_path: Path, run_id: str) -> int:
     return int(row[0]) if row is not None else 0
 
 
+async def _count_engine_timeouts_at_sha(db_path: Path, run_id: str, sha: str) -> int:
+    """Count this run's ``engine_timeout`` refusals recorded **at ``sha``** (#347).
+
+    The input to :func:`~harness.loop_budget.evaluate_repeat_timeout`, and the
+    reason ``reviewed_sha`` had to reach the refusal payload: a fresh verb
+    invocation has no in-process memory of the previous one, so "has the engine
+    already hung at this exact tree?" is answerable only from the ledger.
+
+    No ``outcome`` predicate is needed. :class:`~harness.events.payloads.ReviewEventData`
+    has no ``reason`` field at all, so matching on the reason path already
+    excludes every verdict row — the same property that lets ``close`` key its
+    failure reads on :data:`~harness.events.payloads.CLOSE_REASON_PATH` alone.
+    Nor does it count the repeat *refusals* themselves: those carry
+    ``repeat_engine_timeout``, so the decision is idempotent — a run that refuses
+    once refuses again on the same evidence rather than on evidence it generated.
+
+    A missing DB counts as zero, as :func:`_count_review_events` does. This guard
+    protects budget, not integrity, so absent evidence must let the engine run.
+    """
+    if not db_path.exists():
+        return 0
+    async with (
+        store.connect(db_path) as conn,
+        conn.execute(
+            "SELECT COUNT(*) FROM events WHERE run_id = ? AND event_type = 'review' "
+            "AND json_extract(data_json, ?) = ? AND json_extract(data_json, ?) = ?",
+            (
+                run_id,
+                REVIEW_REFUSAL_REASON_PATH,
+                ENGINE_TIMEOUT_REASON,
+                REVIEW_REVIEWED_SHA_PATH,
+                sha,
+            ),
+        ) as cur,
+    ):
+        row = await cur.fetchone()
+    return int(row[0]) if row is not None else 0
+
+
 async def _read_latest_design_event(db_path: Path, run_id: str) -> dict[str, Any] | None:
     """The payload of the run's most recent ``design`` event, or ``None``.
 
@@ -1133,31 +1721,47 @@ def _read_design_file(design_file: Path | None) -> str | None:
         return ""
 
 
-async def _read_started_at(db_path: Path, run_id: str) -> datetime | None:
-    """Read the run's ``started_at`` as an aware datetime, or ``None``.
+class _BreakerInputs(NamedTuple):
+    """The two run-row facts :func:`evaluate_breakers` needs from this verb."""
+
+    started_at: datetime | None
+    attended: bool
+
+
+async def _read_breaker_inputs(db_path: Path, run_id: str) -> _BreakerInputs:
+    """Read the run's ``started_at`` and declared attendance mode.
 
     ``runs.started_at`` is written with a plain ``.isoformat()`` (offset form, no
     trailing ``Z``); ``datetime.fromisoformat`` round-trips it (and also accepts
     the trailing-``Z`` form historical/seeded rows may carry, on Python 3.11+).
     A missing row or an unparseable value yields ``None`` so the wall-clock
     breaker degrades to "do not trip" rather than erroring the verb.
+
+    ``attended`` comes from the same row's ``inputs_json`` (#296, ADR 0011),
+    resolved through the shared :func:`~harness.cli._runs.resolve_attended` —
+    never by testing the column's truthiness here. That helper is where the
+    value is validated, and it fails closed on every ambiguity, so a corrupt or
+    hand-edited ledger can only ever make a run *more* bounded. Both facts come
+    off one row in one read: a second query would be a second copy of the
+    row-missing degrade rule to keep in step with this one.
     """
     if not db_path.exists():
-        return None
+        return _BreakerInputs(None, False)
     async with (
         store.connect(db_path) as conn,
         conn.execute(
-            "SELECT started_at FROM runs WHERE run_id = ?",
+            "SELECT started_at, inputs_json FROM runs WHERE run_id = ?",
             (run_id,),
         ) as cur,
     ):
         row = await cur.fetchone()
     if row is None or row[0] is None:
-        return None
+        return _BreakerInputs(None, False)
+    attended = resolve_attended(row[1])
     try:
-        return datetime.fromisoformat(str(row[0]))
+        return _BreakerInputs(datetime.fromisoformat(str(row[0])), attended)
     except ValueError:
-        return None
+        return _BreakerInputs(None, attended)
 
 
 # ---------------------------------------------------------------------------

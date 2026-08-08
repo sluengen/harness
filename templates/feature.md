@@ -1,9 +1,9 @@
-<!-- guidance:template-feature@0.2.0 -->
+<!-- guidance:template-feature@0.5.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
-last_updated: YYYY-MM-DD
-linear: [CAL-NNN]          # Linear issues that shaped this feature
+last_updated: YYYY-MM-DD    # day of the last commit that changed this file — bump it on every content edit
+tickets: [<id>, ...]       # tracker issues that shaped this feature
 ---
 
 # {Feature name}
@@ -42,10 +42,12 @@ What the feature deliberately does not do, and edge cases known to be unhandled.
 
 Consequential decisions that shaped this feature, recorded inline (`templates/decision.md`): context, decision, alternatives rejected, consequences. Superseded decisions are updated in place with a dated note. Omit if the feature carries none.
 
+A cross-cutting decision the repo filed in its configured `paths.decisions` directory is **linked** here, never copied — one canonical record, so superseding it leaves this spec correct (`spec-authoring`).
+
 ## Cross-references
 
 - specs/features/{related-feature}.md
 
 ---
 
-**Editing rule.** This file is written by the **reviewer**, not the builder, when a Linear issue touching the feature lands — based on what the diff actually does, as the last commit before merge. The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (`spec-driven-development`).
+**Editing rule.** This file is written by the **reviewer**, not the builder, when a tracker issue touching the feature lands — based on what the diff actually does, and committed into the candidate *before* the certifying gate and the verdict, so the review covers it (`review-discipline`'s *final-evidence ordering* rule). The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (`spec-driven-development`).

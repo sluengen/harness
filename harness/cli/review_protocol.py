@@ -32,16 +32,23 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from harness.assurance import DESIGN_NOT_USABLE_REASON as _DESIGN_NOT_USABLE_REASON
+from harness.assurance import NO_DESIGN_REASON as _NO_DESIGN_REASON
+from harness.assurance import Assurance, design_precondition
 from harness.cli._engine import Runner, RunResult
 from harness.cli.design_protocol import design_content_hash
+from harness.cli.review_probe import build_probe_request
 from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 
 # size: the review engine's protocol layer — one cohesive body of *pure* engine
 # knowledge, split out of the verb in CAL-1107 and kept together because every
 # part of it answers the same question (what does this engine's output mean?):
 # the prompt and its design-context block, the SUBMIT scanner, the per-engine
-# command builder, the three empirically-derived failure detectors, and the
-# per-ticket model-tier resolver. Length here is overwhelmingly the *evidence*
+# command builder, and the three empirically-derived failure detectors. (The
+# per-ticket model-tier resolver was the fourth until #321 retired it: the model
+# is now one configured value the verb reads off its already-loaded
+# ``LoopBudget``, which is not engine knowledge and needs no home here.)
+# Length here is overwhelmingly the *evidence*
 # for the empirical parts — the captured stderr each detector matches, and why
 # each match is narrow — which is the one thing that must not be trimmed, since
 # without it a future reader cannot tell a real engine quirk from a guess.
@@ -57,7 +64,6 @@ __all__ = [
     "DesignContextReason",
     "DesignGate",
     "Engine",
-    "ModelTier",
     "NO_DESIGN_REASON",
     "RunResult",
     "Runner",
@@ -67,7 +73,6 @@ __all__ = [
     "build_review_prompt",
     "resolve_design_gate",
     "scan_submit_line",
-    "resolve_model_tier",
     "is_codex_usage_limit",
     "is_sandbox_init_failure",
     "is_sandbox_blocked_defer",
@@ -94,11 +99,6 @@ Verdict = Literal["pass", "fail", "defer"]
 # cross-model second opinion.
 Engine = Literal["claude", "codex"]
 DEFAULT_ENGINE: Engine = "claude"
-
-# The two per-ticket model tiers (#177, ADR 0005): a GitHub label of the shape
-# ``<dimension>:<tier>`` — e.g. ``review:opus`` — records the tier for the
-# ``build`` or ``review`` dimension. Absence defaults to ``sonnet``.
-ModelTier = Literal["sonnet", "opus"]
 
 
 # :class:`RunResult` and :data:`Runner` describe the *driver's* contract, not this
@@ -159,7 +159,12 @@ SUBMIT: {"verdict": "pass", "issues": []}
 _REVIEW_PROMPT = _REVIEW_INTRO + _SUBMIT_CONTRACT
 
 
-def build_review_prompt(design_markdown: str | None = None) -> str:
+def build_review_prompt(
+    design_markdown: str | None = None,
+    *,
+    probe_cap: int = 0,
+    probe_feedback: str | None = None,
+) -> str:
     """The review prompt, with the run's design as context when there is one.
 
     Without a design this is byte-identical to the pre-#212 prompt, so a run
@@ -167,23 +172,45 @@ def build_review_prompt(design_markdown: str | None = None) -> str:
     as it always did. With one, the design is embedded **verbatim** between the
     framing and the ``SUBMIT`` contract — never summarised, since the point is
     that the engine reviews conformance to what was actually designed.
+
+    ``probe_cap`` (#363) is ``loop.probe_max_entries``: when positive, the mutation
+    budget's brief is appended, asking the engine to propose up to that many
+    entries. At ``0`` — the stage's off switch — the block is omitted entirely
+    and the prompt is byte-identical to what it was before, so a repo that
+    disables probing pays nothing for it, not even the tokens spent asking for
+    proposals the verb would discard.
+
+    ``probe_feedback`` is the *second* pass's block, and it **replaces** the
+    request rather than accompanying it: the second pass is asked to revise its
+    verdict in the light of outcomes it already proposed, not to propose more.
+    Allowing both would let one review spend the budget twice.
+
+    Either block sits **before** the ``SUBMIT`` contract for the same reason the
+    design block does: the contract stays the last thing the engine reads.
     """
-    if design_markdown is None:
-        return _REVIEW_PROMPT
-    design_block = _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
-    return _REVIEW_INTRO + design_block + _SUBMIT_CONTRACT
+    probe_block = probe_feedback or (build_probe_request(probe_cap) if probe_cap > 0 else "")
+    design_block = (
+        ""
+        if design_markdown is None
+        else _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
+    )
+    return _REVIEW_INTRO + design_block + probe_block + _SUBMIT_CONTRACT
 
 
 # ---------------------------------------------------------------------------
 # The design gate (#212, ADR 0007 D3/D4) — pure decision, no ledger, no I/O
 # ---------------------------------------------------------------------------
 
-#: The run recorded no design attempt at all. Mirrors ``no_gate_evidence``:
-#: silence is not a pass, and the refusal names the verb that satisfies it.
-#: This is the *only* refusal the design stage produces — see
-#: :func:`resolve_design_gate` for why a failure to supply the design itself is
-#: a degradation rather than a second refusal.
-NO_DESIGN_REASON = "no_design"
+#: The design stage's refusals, re-exported from :mod:`harness.assurance` where
+#: they are defined (#352) — *whether* the stage is required is the assurance
+#: policy's decision, and one home for the tag keeps this module's mapping and
+#: that decision from drifting. ``NO_DESIGN_REASON`` mirrors ``no_gate_evidence``
+#: (silence is not a pass); ``DESIGN_NOT_USABLE_REASON`` is its #352 counterpart
+#: for a run that required a design and recorded an attempt that did not succeed.
+#: Failing to *supply* the design text is neither: it degrades — see
+#: :func:`resolve_design_gate`.
+NO_DESIGN_REASON = _NO_DESIGN_REASON
+DESIGN_NOT_USABLE_REASON = _DESIGN_NOT_USABLE_REASON
 
 #: Why a review proceeded WITHOUT design context, when it did (AC-1, #247) —
 #: recorded alongside ``design_context`` so "did the linkage stop working, and
@@ -215,28 +242,39 @@ class DesignGate(BaseModel):
 
 
 def resolve_design_gate(
-    event: dict[str, Any] | None, supplied_design: str | None
+    assurance: Assurance, event: dict[str, Any] | None, supplied_design: str | None
 ) -> DesignGate:
-    """Decide the design gate from the run's latest ``design`` event.
+    """Decide the design gate from the run's assurance and latest ``design`` event.
 
-    ``event`` is that event's payload (``None`` when the run has none), and
-    ``supplied_design`` the text read from ``--design-file`` — ``None`` only
-    when no path was given, and the empty string when one was given but could
-    not be read, so an unreadable file is reported rather than passed over as
-    though nothing was supplied.
+    ``assurance`` is the level the run was opened under (#352) — the only thing
+    that decides whether the stage is *required*. ``event`` is the latest design
+    event's payload (``None`` when the run has none), and ``supplied_design`` the
+    text read from ``--design-file`` — ``None`` only when no path was given, and
+    the empty string when one was given but could not be read, so an unreadable
+    file is reported rather than passed over as though nothing was supplied.
+
+    **Requirement and context are separate questions, answered in that order.**
+    Whether a missing or failed design *refuses* is
+    :func:`harness.assurance.design_precondition`'s answer and is delegated to it
+    whole, so this module carries no second copy of the policy. Everything below
+    that refusal is about the design *text* — which is enrichment, and degrades.
 
     Five outcomes, each recorded on the returned :class:`DesignGate` as
     ``context_reason`` (:data:`DesignContextReason`, AC-1 #247) when no design
     reaches the engine — a ``None`` reason means the last outcome, the design
     applied:
 
-    * **no event** → refuse :data:`NO_DESIGN_REASON`. The design stage runs on
-      every run (ADR 0007 D1), so its absence means it was skipped.
-    * **a ``failed`` event** → proceed with no context, reason
-      ``"design_failed"``. D4 is explicit that the check is *attempted and
-      recorded*, not *succeeded*; there is no design to review against, and
-      any text supplied for one is ignored, since no recorded hash could
-      authenticate it.
+    * **the run requires a design and has none** → refuse
+      :data:`NO_DESIGN_REASON`; **requires one and its attempt failed** → refuse
+      :data:`DESIGN_NOT_USABLE_REASON`. Both come from the assurance policy.
+    * **a ``failed`` event on a run that does not require one** → proceed with no
+      context, reason ``"design_failed"``. This is ADR 0007 D4's original
+      degradation, now narrowed to the levels that do not require the stage:
+      there is no design to review against, and any text supplied for one is
+      ignored, since no recorded hash could authenticate it.
+    * **no event on a run that does not require one** → proceed with no context,
+      reason ``"not_supplied"``. That is the ordinary shape after #352, since
+      ``harness design`` skips the stage entirely for such a run.
     * **an ``ok`` event + no text supplied** → proceed with no context, reason
       ``"not_supplied"``.
     * **an ``ok`` event + text that could not be read** (the empty-string
@@ -265,19 +303,16 @@ def resolve_design_gate(
     event (``design_context``), so whether a review actually saw the design is
     auditable from the ledger rather than from console noise.
     """
-    if event is None:
+    status = None if event is None else event.get(DESIGN_STATUS_KEY)
+    precondition = design_precondition(assurance, status)
+    if not precondition.satisfied:
         return DesignGate(
-            refusal_reason=NO_DESIGN_REASON,
-            refusal_message=(
-                "this run has no recorded design attempt. ADR 0007 makes the "
-                "design stage part of every run (start → design → implement → "
-                "review → close); run `harness design --run-id <id>` and review "
-                "again. No engine was invoked and no verdict was recorded — "
-                "silence is not a pass. A design attempt that *failed* also "
-                "satisfies this check, so an engine flake never wedges the run."
-            ),
+            refusal_reason=precondition.refusal_reason,
+            refusal_message=precondition.refusal_message,
         )
-    if event.get(DESIGN_STATUS_KEY) != "ok":
+    if event is None:
+        return DesignGate(context_reason="not_supplied")
+    if status != "ok":
         return DesignGate(context_reason="design_failed")
     if supplied_design is None:
         return DesignGate(context_reason="not_supplied")
@@ -327,6 +362,13 @@ class _Parsed(BaseModel):
     commit_message: str | None = None
     deferred_brief: str | None = None
     submit_failure: str | None = None
+    #: The raw ``probes`` array as the engine emitted it (#363) — deliberately
+    #: unvalidated here. Screening needs the probe tree on disk to check that a
+    #: proposed ``file`` exists and that ``old`` lands exactly once, which is I/O
+    #: this pure module does not do. ``None`` when the key was absent or was not
+    #: a list, which is indistinguishable on purpose: both mean "no usable
+    #: proposal", and neither is a protocol failure.
+    probes: list[Any] | None = None
 
 
 def scan_submit_line(stdout: str) -> _Parsed:
@@ -338,9 +380,11 @@ def scan_submit_line(stdout: str) -> _Parsed:
     sentinel issue **and** ``submit_failure`` set to that sentinel, which is how
     the verb tells "produced no verdict" from "rejected the diff" (#270).
 
-    Which sentinel mirrors :func:`~harness.cli.design_protocol.parse_design_submit`:
-    :data:`MALFORMED_SUBMIT_SENTINEL` when a ``SUBMIT:`` line was seen but none
-    parsed, else :data:`NO_SUBMIT_SENTINEL`.  Scanning does not stop at the first
+    Which sentinel: :data:`MALFORMED_SUBMIT_SENTINEL` when a ``SUBMIT:`` line
+    was seen but none parsed, else :data:`NO_SUBMIT_SENTINEL`. (``design``
+    classified this failure first and this parser mirrored it; since #294 gave
+    ``design`` a file as its output channel, this is the only ``SUBMIT`` parser
+    left and there is nothing left to mirror.)  Scanning does not stop at the first
     bad line — a stray ``SUBMIT:`` in the engine's reasoning must not mask the
     real submission at the end — so malformed is reported only when no valid line
     was found anywhere.
@@ -365,43 +409,19 @@ def scan_submit_line(stdout: str) -> _Parsed:
         issues = [str(i) for i in raw_issues] if isinstance(raw_issues, list) else []
         commit_message = payload.get("commit_message")
         deferred_brief = payload.get("deferred_brief")
+        probes = payload.get("probes")
         return _Parsed(
             verdict=verdict,
             issues=issues,
             commit_message=commit_message if isinstance(commit_message, str) else None,
             deferred_brief=deferred_brief if isinstance(deferred_brief, str) else None,
+            probes=probes if isinstance(probes, list) else None,
         )
 
     # No parseable SUBMIT line — report which failure it was, on both the legacy
     # ``issues`` shape and the ``submit_failure`` discriminator the verb reads.
     sentinel = MALFORMED_SUBMIT_SENTINEL if saw_submit_line else NO_SUBMIT_SENTINEL
     return _Parsed(verdict="fail", issues=[sentinel], submit_failure=sentinel)
-
-
-# ---------------------------------------------------------------------------
-# Per-ticket model tiering (#177, ADR 0005)
-# ---------------------------------------------------------------------------
-
-
-def resolve_model_tier(labels: list[str], dimension: str) -> ModelTier:
-    """Resolve the ``dimension`` model tier off ``labels``, default ``sonnet``.
-
-    Scans for a label of the shape ``<dimension>:<tier>`` (case-insensitive,
-    e.g. ``review:opus``). The first match whose tier is a recognized
-    :data:`ModelTier` wins; an absent family, or a label carrying an
-    unrecognized tier value, both fall through to the ``sonnet`` default — the
-    top tier is opt-in, never inferred.  Pure and dimension-agnostic: the
-    ``build`` and ``review`` families never cross-contaminate because each
-    reads only its own ``<dimension>:`` prefix.
-    """
-    prefix = f"{dimension}:"
-    for label in labels:
-        if not label.lower().startswith(prefix):
-            continue
-        tier = label[len(prefix) :].strip().lower()
-        if tier in ("sonnet", "opus"):
-            return tier  # type: ignore[return-value]
-    return "sonnet"
 
 
 # ---------------------------------------------------------------------------
@@ -420,14 +440,14 @@ def _build_cmd(engine: Engine, *, model: str | None = None) -> list[str]:
     * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
       it may read files / run read-only git, but carries no edit/write/bypass
       capability). ``model``, when given, is appended as ``--model <alias>``
-      (#177): the review-tier control signal, resolved from the ticket's
-      ``review:<tier>`` label or an explicit override.
+      (#321): the repo's configured ``loop.review_model``, or an explicit
+      ``--model`` override.
     * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox
       (matching the published ``commands/build.md`` Codex-engine guidance), reading
       the prompt from ``-`` (stdin).  This replaces the earlier
       ``--dangerously-bypass-approvals-and-sandbox`` full-access invocation.
-      ``model`` is ignored here — the review tier is a claude-only control
-      signal (ADR 0005); the codex command is unaffected by it.
+      ``model`` is ignored here — the alias is a claude-only control signal;
+      the codex command is unaffected by it.
     """
     if engine == "claude":
         cmd = ["claude", "-p", "--permission-mode", "plan"]

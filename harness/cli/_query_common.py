@@ -4,7 +4,7 @@ The ``status`` / ``logs`` / ``events`` / ``runs`` commands live in sibling
 ``query_*`` modules; this module holds the small pieces they share so no
 concern owns another's helper:
 
-* :func:`_resolve_db_path` — the ``--db`` resolution every command performs.
+* :func:`_resolve_db_path` — the ``--db`` / ``--repo`` resolution every command performs.
 * :func:`_safe_json_loads` — tolerant JSON decode for the row/event blobs.
 * :func:`_resolve_run_id` — the positional-vs-``--run-id`` resolution
   ``status`` / ``logs`` / ``events`` share (#245).
@@ -22,15 +22,26 @@ from typing import Any
 
 import typer
 
+from harness.cli._repo import repo_arg_or_cwd
 from harness.state import store
 
 
-def _resolve_db_path(db: Path | None) -> Path:
-    """Either the explicit ``--db`` or the default
-    ``$cwd/.harness/harness.db``."""
+def _resolve_db_path(db: Path | None, repo: Path | None = None) -> Path:
+    """Either the explicit ``--db``, or ``.harness/harness.db`` under ``--repo``.
+
+    ``--db`` wins outright and resolves **silently**: when it is given the
+    working directory decides nothing, so the implicit-repo deprecation (#306)
+    would be warning about an ambiguity that is not there. It fires only on the
+    path where the CWD is genuinely the answer — neither flag given.
+
+    The plain ``<repo>/.harness/`` join is deliberate, not an oversight: the
+    read commands never had the verbs' ``resolve_ledger_root`` walk-up, and
+    giving them one here would change what ``harness status`` resolves to from
+    inside a worktree — a behaviour change this ticket is not buying.
+    """
     if db is not None:
         return db
-    return Path.cwd() / store.DEFAULT_DB_PATH
+    return repo_arg_or_cwd(repo) / store.DEFAULT_DB_PATH
 
 
 def _safe_json_loads(raw: Any) -> Any:

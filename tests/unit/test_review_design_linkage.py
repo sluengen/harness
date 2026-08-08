@@ -46,7 +46,6 @@ like ``test_review_verify_gate.py``.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import subprocess
@@ -65,6 +64,7 @@ from harness.cli.review_protocol import build_review_prompt, resolve_design_gate
 from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY, DesignEventData
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._ledger import seed_design_event
 
 cli_runner = CliRunner()
@@ -103,15 +103,23 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+def _seed_run(
+    db_path: Path,
+    repo: Path,
+    *,
+    started_at: datetime | None = None,
+    assurance: str = "complex",
+) -> str:
+    """An open run at ``assurance`` (#352).
 
-
-def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) -> str:
+    Defaults to ``complex`` because this module is the *enforcement* half of
+    the design linkage and enforcement is live only where a design is
+    required. The four tests below that assert a **failed** attempt still
+    lets review proceed pass ``simple``: that degradation (ADR 0007 D4) was
+    narrowed by #352 to the levels owing no design, not removed, and the
+    parameter is what keeps both halves asserted here rather than one of them
+    quietly disappearing.
+    """
     async def _insert() -> None:
         await store.init_db(db_path)
         async with store.connect(db_path) as conn:
@@ -119,8 +127,8 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
                 "INSERT INTO runs ("
                 "run_id, workflow_name, workflow_version, status, state_json, "
                 "inputs_json, base_branch, worktree_path, worktree_branch, "
-                "ticket, started_at, pid"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ticket, started_at, pid, assurance"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     _RUN_ID,
                     "",
@@ -134,11 +142,15 @@ def _seed_run(db_path: Path, repo: Path, *, started_at: datetime | None = None) 
                     "212",
                     (started_at or datetime.now(UTC)).isoformat(),
                     1234,
+                    # #352: this module is the *enforcement* half of the design
+                    # linkage, and enforcement is live only at the level that
+                    # requires a design. See :func:`_seed_run`'s docstring.
+                    assurance,
                 ),
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
     return _RUN_ID
 
 
@@ -162,7 +174,7 @@ def _seed_reviews(db_path: Path, count: int) -> None:
                 )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _capturing_runner(stdout: str, prompts: list[str]) -> Any:
@@ -213,7 +225,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +268,7 @@ def test_no_design_refusal_names_the_verb_that_satisfies_it(
 
 def test_failed_design_event_satisfies_the_check(repo: Path, db_path: Path) -> None:
     """Attempted-and-recorded, not succeeded — an infra flake never wedges a run."""
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, status="failed")
     prompts: list[str] = []
 
@@ -271,7 +283,7 @@ def test_failed_design_event_ignores_a_supplied_design_file(
     repo: Path, db_path: Path
 ) -> None:
     """No ``ok`` event means no recorded hash — so nothing authenticates the file."""
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, status="failed")
     prompts: list[str] = []
 
@@ -399,7 +411,7 @@ def test_a_design_backed_review_records_that_it_saw_the_design(
 
 
 def test_a_failed_design_records_no_design_context(repo: Path, db_path: Path) -> None:
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, status="failed")
 
     result = _invoke(repo, db_path, _capturing_runner(_PASS_LINE, []))
@@ -510,7 +522,7 @@ def test_the_latest_design_event_is_authoritative(repo: Path, db_path: Path) -> 
 
 def test_a_failed_redesign_supersedes_an_earlier_ok(repo: Path, db_path: Path) -> None:
     """The newest event wins in both directions, so the check cannot be stale."""
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, design_hash=design_content_hash(_DESIGN),
                  timestamp="2026-07-26T00:00:00Z")
     _seed_design(db_path, status="failed", timestamp="2026-07-26T01:00:00Z")
@@ -572,7 +584,7 @@ def test_gate_evidence_still_refuses_once_a_design_is_recorded(
 ) -> None:
     """The design check does not swallow the gate refusal behind it."""
     (repo / "CONTEXT.md").write_text('```yaml\nrepo:\n  name: t\nverify: "true"\n```\n')
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, status="failed")
     prompts: list[str] = []
 
@@ -631,13 +643,13 @@ def test_the_design_verb_hashes_through_the_shared_helper() -> None:
 
 
 def test_resolve_design_gate_refuses_when_no_event_exists() -> None:
-    gate = resolve_design_gate(None, None)
+    gate = resolve_design_gate("complex", None, None)
     assert gate.refusal_reason == review_mod.NO_DESIGN_REASON
     assert gate.design_markdown is None
 
 
 def test_resolve_design_gate_passes_a_failed_attempt_without_context() -> None:
-    gate = resolve_design_gate({"status": "failed", "reason": "engine_timeout"}, _DESIGN)
+    gate = resolve_design_gate("simple", {"status": "failed", "reason": "engine_timeout"}, _DESIGN)
     assert gate.refusal_reason is None
     assert gate.design_markdown is None
     assert gate.warning is None
@@ -645,14 +657,14 @@ def test_resolve_design_gate_passes_a_failed_attempt_without_context() -> None:
 
 def test_resolve_design_gate_matches_the_recorded_hash() -> None:
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, _DESIGN)
+    gate = resolve_design_gate("complex", event, _DESIGN)
     assert gate.refusal_reason is None
     assert gate.design_markdown == _DESIGN
 
 
 def test_resolve_design_gate_drops_context_on_a_hash_mismatch() -> None:
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, "something else")
+    gate = resolve_design_gate("complex", event, "something else")
     assert gate.refusal_reason is None
     assert gate.design_markdown is None
     assert gate.warning is not None
@@ -667,27 +679,41 @@ def test_resolve_design_gate_ignores_the_concurrency_detection_fields() -> None:
         "invoked_at": "2026-07-28T00:00:00Z",
         "concurrent_prior_at": "2026-07-28T00:00:02Z",
     }
-    gate = resolve_design_gate(event, _DESIGN)
+    gate = resolve_design_gate("complex", event, _DESIGN)
     assert gate.refusal_reason is None
     assert gate.design_markdown == _DESIGN
 
 
-def test_no_design_is_the_only_refusal_the_design_gate_produces() -> None:
-    """Enforcement refuses; context degrades — one refusal, not two."""
+def test_the_design_gate_refuses_only_on_the_stage_never_on_its_context() -> None:
+    """Enforcement refuses; context degrades — the split, restated for #352.
+
+    Superseded from ``test_no_design_is_the_only_refusal_the_design_gate_produces``,
+    whose *name* was the claim: #352 gives the gate a second refusal
+    (``design_not_usable``), so "one refusal, not two" is now false while the
+    property it stood for is unchanged. That property is about **which half**
+    refuses: failing to supply, read, or authenticate the design *text* is
+    enrichment and always degrades, no matter the level, because dropping it
+    already achieves the safe outcome. Only the stage itself can refuse.
+
+    The failed-attempt row runs at ``simple`` deliberately: at ``complex`` that
+    event is a refusal now, and it is a refusal about the *stage*, which is the
+    boundary this test draws rather than a counterexample to it.
+    """
     ok = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    for event, supplied in (
-        (ok, None),
-        (ok, "wrong"),
-        ({"status": "ok"}, _DESIGN),
-        ({"status": "failed"}, _DESIGN),
+    for assurance, event, supplied in (
+        ("complex", ok, None),          # not supplied
+        ("complex", ok, "wrong"),       # hash mismatch
+        ("complex", ok, ""),            # unreadable
+        ("complex", {"status": "ok"}, _DESIGN),   # no recorded hash to check against
+        ("simple", {"status": "failed"}, _DESIGN),  # a failed attempt, where none is owed
     ):
-        assert resolve_design_gate(event, supplied).refusal_reason is None
+        assert resolve_design_gate(assurance, event, supplied).refusal_reason is None
 
 
 def test_resolve_design_gate_is_quiet_when_no_design_was_supplied() -> None:
     """Not supplying one is normal; only a supplied-but-unusable design warns."""
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, None)
+    gate = resolve_design_gate("complex", event, None)
     assert gate.refusal_reason is None
     assert gate.design_markdown is None
     assert gate.warning is None
@@ -695,7 +721,7 @@ def test_resolve_design_gate_is_quiet_when_no_design_was_supplied() -> None:
 
 def test_resolve_design_gate_distrusts_an_ok_event_with_no_recorded_hash() -> None:
     """Fail-safe: an ``ok`` event that cannot authenticate a design is not trusted."""
-    gate = resolve_design_gate({"status": "ok"}, _DESIGN)
+    gate = resolve_design_gate("complex", {"status": "ok"}, _DESIGN)
     assert gate.design_markdown is None
     assert gate.warning is not None
 
@@ -707,18 +733,18 @@ def test_resolve_design_gate_distrusts_an_ok_event_with_no_recorded_hash() -> No
 
 def test_resolve_design_gate_reason_is_none_on_success() -> None:
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, _DESIGN)
+    gate = resolve_design_gate("complex", event, _DESIGN)
     assert gate.context_reason is None
 
 
 def test_resolve_design_gate_reason_is_design_failed_for_a_failed_attempt() -> None:
-    gate = resolve_design_gate({"status": "failed", "reason": "engine_timeout"}, _DESIGN)
+    gate = resolve_design_gate("simple", {"status": "failed", "reason": "engine_timeout"}, _DESIGN)
     assert gate.context_reason == "design_failed"
 
 
 def test_resolve_design_gate_reason_is_not_supplied_when_no_file_was_given() -> None:
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, None)
+    gate = resolve_design_gate("complex", event, None)
     assert gate.context_reason == "not_supplied"
 
 
@@ -726,20 +752,20 @@ def test_resolve_design_gate_reason_is_unreadable_for_an_os_error() -> None:
     """``_read_design_file`` maps an unreadable path to the empty string —
     distinct from a wrong-but-present text, which is a hash mismatch instead."""
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, "")
+    gate = resolve_design_gate("complex", event, "")
     assert gate.context_reason == "unreadable"
     assert gate.warning is not None
 
 
 def test_resolve_design_gate_reason_is_hash_mismatch_for_wrong_text() -> None:
     event = {"status": "ok", "design_hash": design_content_hash(_DESIGN)}
-    gate = resolve_design_gate(event, "something else")
+    gate = resolve_design_gate("complex", event, "something else")
     assert gate.context_reason == "hash_mismatch"
     assert gate.warning is not None
 
 
 def test_resolve_design_gate_reason_is_hash_mismatch_when_no_hash_was_recorded() -> None:
-    gate = resolve_design_gate({"status": "ok"}, _DESIGN)
+    gate = resolve_design_gate("complex", {"status": "ok"}, _DESIGN)
     assert gate.context_reason == "hash_mismatch"
 
 
@@ -767,7 +793,7 @@ def test_the_design_gate_reads_the_keys_the_model_writes() -> None:
 
     assert DESIGN_STATUS_KEY in payload
     assert DESIGN_HASH_KEY in payload
-    assert resolve_design_gate(payload, _DESIGN).design_markdown == _DESIGN
+    assert resolve_design_gate("complex", payload, _DESIGN).design_markdown == _DESIGN
 
 
 # ---------------------------------------------------------------------------
@@ -785,7 +811,7 @@ def test_a_duration_bearing_failed_design_still_satisfies_the_check(
     a timed-out engine's recorded attempt must let the review proceed exactly as
     an untimed one did, which is what makes the telemetry safe to collect at all.
     """
-    _seed_run(db_path, repo)
+    _seed_run(db_path, repo, assurance="simple")
     _seed_design(db_path, status="failed", duration_ms=600_000)
     prompts: list[str] = []
 

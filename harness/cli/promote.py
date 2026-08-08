@@ -50,13 +50,22 @@ The command keeps the name ``pr`` (the locked v1 surface; there is deliberately 
 mechanism.
 
 CAL-1118 now wires ``escalate`` — the non-success terminal path. It files (or, when
-the promotion is already linked, comments on) a Linear ticket carrying the promotion
+the promotion is already linked, comments on) a tracker ticket carrying the promotion
 evidence — id, endpoints, branch/worktree, conflict files, gate summary, next action
 (the content is rendered by the sibling :mod:`harness.promotion_escalation`; the
-Linear I/O is :meth:`harness.linear.LinearClient.create_issue` / ``post_comment``) —
-then records the escalation ticket id and the terminal ``escalated`` state. Missing
-Linear credentials return a structured ``blocked`` result rather than a raw failure.
-The whole ``promote`` surface is now wired; no subcommand remains a stub.
+tracker I/O goes through the :class:`~harness.tracker.Tracker` seam) — then records
+the escalation ticket id and the terminal ``escalated`` state. Tracker configuration
+that prevents escalation returns a structured ``blocked`` result rather than a raw
+failure, and a tracker-less repo returns ``no_tracker`` carrying the evidence it
+cannot file. The whole ``promote`` surface is now wired; no subcommand remains a stub.
+
+Since #328 the backend is resolved **only** through
+:func:`~harness.tracker.tracker_client`, like every other writing verb: this module
+constructs no backend client and catches no backend-specific error, so escalation
+works on whichever backend ``CONTEXT.md`` → ``tracker:`` selects instead of on
+Linear alone. That contract is guarded by
+``test_promote_reaches_the_tracker_through_the_seam``, the named pin beside the
+tree-wide backend-neutrality scan every ``harness/cli/`` module now faces (#339).
 
 The five subcommands are the real orchestrator **pause points**:
 
@@ -68,7 +77,7 @@ The five subcommands are the real orchestrator **pause points**:
 * ``pr``       — the success finalizer: push the promotion branch and open the PR
   from deterministic facts (gated — refused unless the promotion is ``pr_ready``
   with fresh gate evidence), then record ``pr_opened``.
-* ``escalate`` — the non-success terminal path: file/update a Linear ticket with
+* ``escalate`` — the non-success terminal path: file/update a tracker ticket with
   the evidence and mark the promotion ``escalated``.
 
 There is deliberately **no ``verify`` command**: the gate is not a harness verb at
@@ -96,16 +105,13 @@ from harness import promotion as mechanics
 from harness import repo_config
 from harness._git import teardown_worktree
 from harness._time import iso_z
-from harness.cli._repo import resolve_repo_root_or_exit, resolve_verb_db_path
+from harness.cli._repo import (
+    REPO_OPTION,
+    resolve_repo_argument,
+    resolve_verb_db_path,
+)
 from harness.gate import load_gate_command
 from harness.identity import generate_run_id
-from harness.linear import (
-    LinearClient,
-    LinearConfigError,
-    LinearNotFound,
-    LinearRequestError,
-    linear_api_key,
-)
 from harness.promotion_escalation import build_escalation_body, build_escalation_title
 from harness.promotion_gate import classify_gate_failure, evidence_from_report
 from harness.promotion_pr import (
@@ -119,6 +125,12 @@ from harness.promotion_pr import (
 )
 from harness.state import promotions
 from harness.state.promotions import Promotion, PromotionStatus
+from harness.tracker import tracker_client
+from harness.tracker_errors import (
+    TrackerConfigError,
+    TrackerNotFound,
+    TrackerRequestError,
+)
 
 #: The ``harness promote pr`` gate-refusal reasons — the machine-readable enum an
 #: orchestrator branches on when a PR is refused. ``gate_not_satisfied``: the
@@ -145,17 +157,24 @@ _STUB_EXIT = 2
 
 
 def _read_or_not_found(
-    command: str, promotion_id: str, repo: Path, db: Path | None
+    command: str, promotion_id: str, repo_root: Path, db: Path | None
 ) -> promotions.Promotion:
     """Read a promotion by id from the ledger, or exit 2 with a ``not_found`` marker.
 
     The shared read prologue for the ledger-backed subcommands (``status`` /
-    ``pr``): resolve ``--repo``/``--db`` the way the verbs do, read the promotion,
-    and — when there is no such promotion — emit a structured ``not_found`` an
-    orchestrator can tell apart from a real error, exiting with the stub/refusal
-    code. Returns the promotion on success.
+    ``pr`` / ``escalate``): read the promotion, and — when there is no such
+    promotion — emit a structured ``not_found`` an orchestrator can tell apart
+    from a real error, exiting with the stub/refusal code. Returns the promotion
+    on success.
+
+    Takes an **already-resolved** ``repo_root`` rather than the raw ``--repo``
+    (#306). Resolving here would put the repo seam inside a shared helper that
+    two of its three callers *also* enter directly for their own ``repo_root``,
+    so an omitted ``--repo`` emitted the deprecation warning twice for one
+    invocation. "Exactly one warning" is a property of the call graph, and this
+    signature is what holds it: the seam belongs to the command function, which
+    hands the result down.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
     if promotion is None:
@@ -264,9 +283,7 @@ def _classify_gate(
 
 @promote_app.command("start", help="Open a promotion: merge --from into --to and classify.")
 def start_command(
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root to promote within."
-    ),
+    repo: Path | None = REPO_OPTION,
     from_branch: str = typer.Option(
         "dev", "--from", help="Source branch to promote from (default: dev)."
     ),
@@ -293,7 +310,7 @@ def start_command(
     ),
 ) -> None:
     """Open a promotion: create the worktree/branch, attempt the merge, classify (CAL-1115)."""
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
 
     # 1. Refresh the remote refs and validate the pair BEFORE any state — an
@@ -375,9 +392,7 @@ def continue_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to resume."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the open promotion."
-    ),
+    repo: Path | None = REPO_OPTION,
     gate_exit: int | None = typer.Option(
         None,
         "--gate-exit",
@@ -406,7 +421,7 @@ def continue_command(
     Either way the gate runs host-side and is reported via ``--gate-exit`` /
     ``--gate-log`` (the ``review`` boundary), never executed by the verb.
     """
-    repo_root = resolve_repo_root_or_exit(repo)
+    repo_root = resolve_repo_argument(repo)
     db_path = resolve_verb_db_path(db, repo_root)
     promotion = asyncio.run(promotions.read_promotion(promotion_id, db_path=db_path))
     if promotion is None:
@@ -491,9 +506,7 @@ def status_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to read."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
     ),
@@ -502,7 +515,8 @@ def status_command(
     ),
 ) -> None:
     """Report a promotion's lifecycle state by id — the typed ledger view (CAL-1114)."""
-    promotion = _read_or_not_found("status", promotion_id, repo, db)
+    repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("status", promotion_id, repo_root, db)
     typer.echo(promotion.model_dump_json())
 
 
@@ -511,9 +525,7 @@ def pr_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to open a PR for."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
-    ),
+    repo: Path | None = REPO_OPTION,
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
     ),
@@ -522,7 +534,8 @@ def pr_command(
     ),
 ) -> None:
     """Open the promotion PR — gated (CAL-1114), then push + create the PR (CAL-1117)."""
-    promotion = _read_or_not_found("pr", promotion_id, repo, db)
+    repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("pr", promotion_id, repo_root, db)
 
     # AC-4: PR creation is refused unless the promotion is pr_ready with a gated
     # SHA. The refusal is CAL-1114's; only the push past it is CAL-1117's.
@@ -546,8 +559,8 @@ def pr_command(
     # pushed. If the promotion branch tip has moved past the gated SHA, the
     # evidence is stale — refuse rather than push an ungated commit. An
     # unresolvable branch (already cleaned up) is not treated as stale here; the
-    # push itself (CAL-1117) will handle a missing branch.
-    repo_root = resolve_repo_root_or_exit(repo)
+    # push itself (CAL-1117) will handle a missing branch. ``repo_root`` is the
+    # one resolved above, never a second resolve — see _read_or_not_found (#306).
     live_head = (
         mechanics.branch_head(repo_root, promotion.promotion_branch)
         if promotion.promotion_branch
@@ -701,20 +714,17 @@ def _reescalation_comment(body: str) -> str:
 
 
 @promote_app.command(
-    "escalate", help="File/update a Linear ticket and mark the promotion escalated."
+    "escalate", help="File/update a tracker ticket and mark the promotion escalated."
 )
 def escalate_command(
     promotion_id: str = typer.Option(
         ..., "--promotion-id", help="Id of the promotion to escalate."
     ),
-    repo: Path = typer.Option(
-        Path("."), "--repo", help="Repo root of the promotion."
-    ),
-    team: str | None = typer.Option(
-        None, "--team", help="Linear team key (default: CONTEXT.md repo.linear)."
-    ),
+    repo: Path | None = REPO_OPTION,
     project: str | None = typer.Option(
-        None, "--project", help="Linear project name (default: CONTEXT.md repo.project)."
+        None,
+        "--project",
+        help="Tracker project scope (default: CONTEXT.md repo.project; may be unset).",
     ),
     db: Path | None = typer.Option(
         None, "--db", help="Path to harness.db (defaults to .harness/harness.db under --repo)."
@@ -723,19 +733,40 @@ def escalate_command(
         True, "--json", help="Emit machine-readable JSON (always on)."
     ),
 ) -> None:
-    """Escalate a blocked promotion: file or update a Linear ticket, mark it
+    """Escalate a blocked promotion: file or update a tracker ticket, mark it
     ``escalated`` (CAL-1118). Idempotent — a promotion already linked to an
-    escalation ticket is commented on, not duplicated (AC-2)."""
-    promotion = _read_or_not_found("escalate", promotion_id, repo, db)
-    repo_root = resolve_repo_root_or_exit(repo)
+    escalation ticket is commented on, not duplicated (AC-2).
+
+    The tracker is resolved through :func:`~harness.tracker.tracker_client`, the
+    same seam every other writing verb uses, so the terminal works on whichever
+    backend ``CONTEXT.md`` → ``tracker:`` names (#328). This verb never constructs
+    a backend client and never catches a backend-specific error.
+    """
+    repo_root = resolve_repo_argument(repo)
+    promotion = _read_or_not_found("escalate", promotion_id, repo_root, db)
     db_path = resolve_verb_db_path(db, repo_root)
 
-    # AC-4: missing Linear credentials → a structured `blocked` result (never a
-    # raw traceback). The promotion row is left untouched — escalation did not
-    # happen, so its state must not advance to `escalated`.
+    # The scope is nullable (#174/#248): the flag overrides CONTEXT.md's
+    # repo.project, and unset means the backend's natural queue rather than an
+    # error. There is no team to resolve here — that is a Linear-only fact, and it
+    # now lives inside the Linear client as config (#328).
+    project_name = project or repo_config.repo_project(repo_root)
+
+    # The body is rendered before the client is resolved, so the `no_tracker`
+    # refusal below can carry the evidence it cannot file anywhere.
+    title = build_escalation_title(promotion)
+    body = build_escalation_body(
+        promotion, conflict_files=_promotion_conflict_files(promotion)
+    )
+
+    # AC-4: tracker configuration that prevents escalation → a structured
+    # `blocked` result (never a raw traceback), on either backend: a missing
+    # credential, an absent `github:` block, or a Linear client with no team. The
+    # promotion row is left untouched — escalation did not happen, so its state
+    # must not advance to `escalated`.
     try:
-        api_key = linear_api_key()
-    except LinearConfigError as exc:
+        client = tracker_client(repo_root)
+    except TrackerConfigError as exc:
         _refuse(
             "blocked",
             str(exc),
@@ -744,34 +775,31 @@ def escalate_command(
             status=promotion.status,
         )
 
-    # Resolve the escalation target — the flags override CONTEXT.md's
-    # repo.linear / repo.project defaults (the Grounding: team/project come from
-    # CONTEXT.md). A project is optional (the issue still files without one); a
-    # team is required, since `issueCreate` cannot place an issue without it.
-    team_key = team or repo_config.repo_linear_team(repo_root)
-    project_name = project or repo_config.repo_project(repo_root)
-    if team_key is None:
+    if client is None:
+        # `tracker: none` — there is nowhere to file. The refusal carries the
+        # rendered evidence because nothing else will: the promotion row does not
+        # store it, and with no tracker the operator *is* the escalation target.
+        # Recording the terminal `escalated` with a null ticket is the wrong
+        # alternative — `escalated` means a ticket is waiting for a human.
         _refuse(
-            "unresolved_target",
-            "no Linear team to escalate into — pass --team or set repo.linear in "
-            "CONTEXT.md",
+            "no_tracker",
+            "this repo runs tracker-less (CONTEXT.md tracker: none) — there is no "
+            "tracker to escalate into; the evidence is in this payload",
             command="promote escalate",
             promotion_id=promotion_id,
+            status=promotion.status,
+            escalation_title=title,
+            escalation_body=body,
         )
 
-    body = build_escalation_body(
-        promotion, conflict_files=_promotion_conflict_files(promotion)
-    )
-    client = LinearClient(api_key=api_key)
     try:
         if promotion.escalation_ticket is None:
             # AC-1: first escalation — file a Todo issue carrying the evidence.
             created = asyncio.run(
                 client.create_issue(
-                    team_key=team_key,
-                    project_name=project_name,
-                    title=build_escalation_title(promotion),
+                    title=title,
                     description=body,
+                    project=project_name,
                 )
             )
             ticket_id = created["identifier"]
@@ -780,12 +808,23 @@ def escalate_command(
         else:
             # AC-2: already linked — comment on the existing ticket, no duplicate.
             ticket_id = promotion.escalation_ticket
-            asyncio.run(
-                client.post_comment(ticket_id, _reescalation_comment(body))
-            )
+            asyncio.run(client.post_comment(ticket_id, _reescalation_comment(body)))
             escalation_url = None
             action = "updated"
-    except (LinearNotFound, LinearRequestError) as exc:
+    except TrackerConfigError as exc:
+        # A config gap can surface here as well as at the factory: a backend owns
+        # facts a neutral verb must not pre-check, so it raises when it first needs
+        # one — `LinearClient.create_issue` does exactly this for a client with no
+        # team. Both points are the same `blocked` terminal; catching only the
+        # factory left this one exiting 1 with a raw traceback.
+        _refuse(
+            "blocked",
+            str(exc),
+            command="promote escalate",
+            promotion_id=promotion_id,
+            status=promotion.status,
+        )
+    except (TrackerNotFound, TrackerRequestError) as exc:
         _refuse(
             "escalation_failed",
             str(exc),

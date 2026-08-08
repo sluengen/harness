@@ -57,14 +57,15 @@ REVIEW_OUTCOME_FAILED = "failed"
 #: together in the aggregate they exist to make readable.
 REVIEW_UNEXPECTED_REASON = "unexpected_error"
 
-#: The two ways **either** engine verb can fail to get a verdict out of its
-#: engine's ``SUBMIT`` contract. ``design`` had them first; ``review`` classifies
-#: the same failure the same way from #270, which makes this the second copy and
-#: therefore the moment to extract (``code-quality``'s extract-on-the-second-copy
-#: rule). They live here, beside the outcome discriminators, so the two verbs
-#: cannot drift into two spellings of one fact — the same reason
-#: :data:`REVIEW_UNEXPECTED_REASON` and :data:`CLOSE_UNEXPECTED_REASON` share a
-#: value rather than each declaring their own.
+#: The two ways ``review`` can fail to get a verdict out of its engine's
+#: ``SUBMIT`` contract. ``design`` had them first and ``review`` adopted them in
+#: #270, which is why they live here rather than in ``review_protocol``; since
+#: #294 gave ``design`` a file as its output channel, ``review`` is the only
+#: consumer and these tags describe its contract alone. They stay here — beside
+#: the other shared telemetry literals and the outcome discriminators — rather
+#: than moving back, because the aggregate readers of ``$.reason`` treat every
+#: verb's tags as one vocabulary, and churning a stable string's home buys
+#: nothing.
 #:
 #: They are kept **distinct from each other** because they mean different things
 #: to an operator reading the ledger: ``no_submit`` says the engine never reached
@@ -104,6 +105,32 @@ CLOSE_OUTCOME_FAILED = "failed"
 #: Same value as ``review``'s deliberately: one vocabulary across the telemetry
 #: family, so a cross-verb aggregate reads one literal.
 CLOSE_UNEXPECTED_REASON = "unexpected_error"
+
+
+class ProbeEntryRecord(BaseModel):
+    """One reviewer-proposed mutation's outcome, as it reaches the ledger (#363).
+
+    **Ids, outcomes, counts and durations only.** The mutation itself is an exact
+    source substring of the tree under review, and a ``review`` event is read
+    into a ticket, so ``old``/``new`` never travel and neither does anything the
+    mutation harness captured. ``id`` is the handle the reviewer's own finding
+    cites by (``[probe:<id>]``), which is what makes a finding traceable to the
+    experiment that produced it.
+
+    ``live`` is the liveness fork #365 added to the mutation harness: an
+    observable that *moved* between the pristine and the mutated tree. It is the
+    difference between a demonstrated gap and a mutation that may simply have
+    evaluated to the original value, which four of #336's twenty entries did —
+    so recording ``survived`` without it would put the ledger back where that
+    ticket found it.
+    """
+
+    id: str
+    outcome: str
+    live: bool
+    predicted: int
+    observed: int
+    duration_ms: int
 
 
 class ReviewEventData(BaseModel):
@@ -177,6 +204,45 @@ class ReviewEventData(BaseModel):
     the source's like every other field describing that review — an inherited
     pass runs no engine, so minting a fresh duration for it would record time
     nothing spent.
+
+    ``model`` (#293) is what makes that latency pair *interpretable*: #177 made
+    the claude engine's model a per-ticket tier, and the verb resolved one and
+    then dropped it, so a review duration could not be read against ``design``'s
+    (pinned to opus) or against itself across a tier change. It is the alias the
+    engine was actually invoked with — the same object handed to ``--model``,
+    never a re-derivation from the ticket's label, which a mid-review label edit
+    would answer differently from what ran.
+
+    It is present **iff** ``engine`` is ``claude``. ``engine`` is already
+    ``engine_used``, so that pairing holds across the usage-limit fallback for
+    free: the claude re-invocation's alias is what gets recorded. Codex ignores
+    ``--model`` entirely, so an alias recorded there would assert a model was in
+    force when none was. Nothing enforces the pairing in code — it is a
+    writer-site invariant pinned by test, exactly as ``fallback_from``'s
+    "present iff a hop happened" is.
+
+    A **missing** key is deliberately ambiguous between "codex, no model in
+    force" and "written before this field existed"; ``engine`` disambiguates
+    them, since a ``claude`` row with no ``model`` can only be pre-#293. Nothing
+    backfills (ADR 0009), matching how ``gate_ran`` handled the same situation.
+    A reader must therefore treat ``NULL`` as *unknown*, never ``COALESCE`` it
+    to a default — that would recreate the very confound this field removes.
+
+    ``cycles_exhausted`` (#329) records that this fail consumed the last
+    review→fix cycle the run may spend — the terminal counterpart to
+    ``convergence_check_required``, computed from the same cycle count so the two
+    can never disagree about which cycle the event describes. It carries a
+    default, unlike its sibling, because ~900 historical ``review`` rows were
+    written before the field existed; reading one back as ``False`` states what
+    was in fact true of it, since under the pre-#329 semantics no event was ever
+    written on an exhausted budget — the refusal came first and recorded no
+    verdict. Nothing gates on it (audit and orchestration, like
+    ``convergence_check_required``); the exit-4 refusal remains the enforcement.
+
+    The refusal shape carries no ``model``, an accepted gap: the terminal-refusal
+    writer is called from an outer handler where the resolved alias is not in
+    scope, and most refusals (a breaker, ``no_gate_evidence``, ``no_design``, a
+    red gate) ran no engine and would record nothing anyway.
     """
 
     run_id: str
@@ -187,6 +253,7 @@ class ReviewEventData(BaseModel):
     convergence_check_required: bool
     created_at: str
     gate_ran: bool
+    cycles_exhausted: bool = False
     outcome: str = REVIEW_OUTCOME_OK
     invoked_at: str | None = None
     duration_ms: int | None = None
@@ -197,9 +264,50 @@ class ReviewEventData(BaseModel):
     gate_reason: str | None = None
     gate_output_tail: str | None = None
     fallback_from: str | None = None
+    #: ``str``, not the tier ``Literal``: an explicit ``harness review --model``
+    #: passes through unconstrained, and the field records what was *passed*.
+    #: :class:`DesignEventData`'s ``model`` is ``str`` for the same reason.
+    model: str | None = None
     commit_message: str | None = None
     deferred_brief: str | None = None
     inherited_from: str | None = None
+    #: The probe stage (#363). All optional and absent on every row written
+    #: before it existed, so a reader treats absence as *unknown* rather than as
+    #: zero — nothing backfills ~900 historical rows (ADR 0009).
+    #:
+    #: ``probe_status`` is the discriminator and carries the degradations as
+    #: well as the successes, which is the point: this stage may fail in half a
+    #: dozen ways and none of them may change a verdict, so "did it run, and if
+    #: not why" has to be a ledger question rather than a console-noise one —
+    #: the same argument ``design_context_reason`` (#247) makes.
+    probe_status: str | None = None
+    #: What the engine emitted, before screening, against what was screened out.
+    #: The pair is the measurement the proposal names as deciding whether the
+    #: follow-up (#364) is worth building: if the reviewer's proposals are mostly
+    #: no-ops and duplicates of the builder's own table, the
+    #: independent-counterparty premise is wrong.
+    probe_proposed: int | None = None
+    probe_dropped: int | None = None
+    probe_entries: list[ProbeEntryRecord] | None = None
+    #: The ids whose survival was *demonstrated* — a live observable, not merely
+    #: a green suite. This is the ledger's answer to "was this finding
+    #: demonstrated or argued", which is the distinction the whole change exists
+    #: to make recordable.
+    probe_demonstrated: list[str] | None = None
+    #: Wall clock of the whole stage, the quantity AC-4 bounds and AC-5 samples.
+    probe_duration_ms: int | None = None
+    #: Whether a second engine pass ran *and* returned a verdict. ``False``
+    #: covers both "no survivor to show it" and "it produced no SUBMIT line",
+    #: which are told apart by ``probe_status`` plus the demonstrated set.
+    #:
+    #: Optional rather than a defaulted ``bool``, unlike ``gate_ran`` and
+    #: ``design_context`` which it otherwise resembles: those describe stages
+    #: every run has, so ``False`` means something on every row. A repo with
+    #: ``probe_max_entries: 0`` has no probe stage at all, and a defaulted bool
+    #: would put a key on each of its review events asserting that a pass which
+    #: was never possible did not happen. Absent means *no stage*;
+    #: ``probe_status`` says which kind of no.
+    probe_second_pass: bool | None = None
 
 
 class ReviewRefusalEventData(BaseModel):
@@ -215,13 +323,26 @@ class ReviewRefusalEventData(BaseModel):
     ``review`` and discriminates on ``outcome``, exactly as ``design`` does on
     ``status``. What differs from ``design`` is the *shape* of the split:
     ``design``'s two shapes fit one model because only two optional fields vary,
-    whereas the fields a refusal cannot have — ``reviewed_sha``, ``verdict``,
-    ``issues``, ``engine``, ``gate_ran`` — are precisely the ones the close gate
-    and the inherit resolver read. Loosening those to ``str | None`` on
+    whereas the fields a refusal cannot have — ``verdict``, ``issues``,
+    ``engine``, ``gate_ran`` — are precisely the ones the close gate and the
+    inherit resolver read. Loosening those to ``str | None`` on
     :class:`ReviewEventData` to accommodate a shape that never carries them would
     re-open the CAL-1012 hazard the typed contract exists to close: nothing would
     then catch a *success* written without the SHA the gate binds to. So the
     required fields stay required, and the refusal shape lives here.
+
+    ``reviewed_sha`` is the **one** of those fields a refusal can carry, and
+    since #347 does: optional here, still required on :class:`ReviewEventData`,
+    so the hazard above is untouched. It is present iff the refusal was raised at
+    or after ``review``'s HEAD capture — the engine timeout, the sandbox wall,
+    the two SUBMIT-protocol failures — and absent on every pre-HEAD refusal (both
+    spend breakers, ``no_design``, ``no_gate_evidence``, ``gate_failed``), whose
+    recorded bytes are unchanged because ``exclude_none=True`` drops the key. It
+    exists so a *repeated* engine timeout is answerable from the ledger: without
+    a SHA on the row, "has this engine already hung at this exact tree?" cannot be
+    asked, and the loop re-buys an identical ~720s answer indefinitely. Carrying
+    it does not widen the close gate, which keys on ``$.verdict`` — a key this
+    shape still omits.
 
     Carrying **no ``verdict`` key** is what keeps the close gate exactly as wide
     as it was: :func:`~harness.cli._review_gate.certify_head` filters
@@ -248,6 +369,7 @@ class ReviewRefusalEventData(BaseModel):
     created_at: str
     invoked_at: str | None = None
     duration_ms: int | None = None
+    reviewed_sha: str | None = None
 
 
 class CheckpointEventData(BaseModel):
@@ -296,6 +418,16 @@ class CloseEventData(BaseModel):
     the **verb's** own latency and is not ``runs.duration_ms`` (#261), which
     measures the whole run's life from ``started_at``: one answers "how long
     does closing take", the other "how long did this ticket take".
+
+    ``retries`` and ``retried_reasons`` (#301) record what ``close``'s bounded
+    retry absorbed. ``retries`` defaults to ``0`` and is always written, so it is
+    a scalar a stats reader can ``json_extract`` and aggregate — including over
+    rows predating the field, which retried nothing because nothing retried.
+    ``retried_reasons`` is the ordered log behind that count and is omitted
+    entirely when empty (``exclude_none=True``), keeping the common close's
+    payload the shape it already had. The count alone would not separate a flaky
+    push race from a degrading tracker, which is the observation the pair exists
+    to support.
     """
 
     run_id: str
@@ -305,6 +437,8 @@ class CloseEventData(BaseModel):
     outcome: str = CLOSE_OUTCOME_OK
     invoked_at: str | None = None
     duration_ms: int | None = None
+    retries: int = 0
+    retried_reasons: list[str] | None = None
 
 
 class CloseFailureEventData(BaseModel):
@@ -354,6 +488,12 @@ class CloseFailureEventData(BaseModel):
     to; ADR 0009 accepts the gap rather than paying for it with synthetic
     ``runs`` rows. It is the one hole in the denominator, so the measured rate is
     *per resolved-run close attempt*.
+
+    ``retries`` / ``retried_reasons`` (#301) carry the same meaning they do on
+    :class:`CloseEventData`, and matter most here: a failure that exhausted the
+    retry spent three attempts on the same wall of a degrading tracker, and
+    without the count it would be indistinguishable from a single clean refusal.
+    A gate refusal is upstream of the retry, so its rows always read ``0``.
     """
 
     run_id: str
@@ -367,6 +507,8 @@ class CloseFailureEventData(BaseModel):
     merged_sha: str | None = None
     invoked_at: str | None = None
     duration_ms: int | None = None
+    retries: int = 0
+    retried_reasons: list[str] | None = None
 
 
 class DeferEventData(BaseModel):
@@ -427,14 +569,26 @@ class DesignEventData(BaseModel):
     inherited design as a *failed* attempt and silently drop it.
 
     ``submit_excerpt`` and ``stdout_chars`` (#277) are additive to the
-    ``failed`` shape and appear only when ``reason`` is ``no_submit`` or
-    ``malformed_submit`` — the engine's own output, bounded, so a SUBMIT-parse
-    failure is diagnosable from the ledger rather than being one more tally
-    mark. The other failure reasons (``engine_timeout``, ``engine_error``,
-    ``no_ticket_spec``) have no engine stdout in hand to quote and must stay
-    absent rather than record an empty one. They are kept out of ``detail``
-    deliberately: that field is human remediation prose, this is bounded
-    evidence with a different reader.
+    ``failed`` shape and appear only when ``reason`` is ``no_design_output``
+    (before #294, ``no_submit`` / ``malformed_submit``) — the engine's own
+    output, bounded, so a failure to deliver is diagnosable from the ledger
+    rather than being one more tally mark. The other failure reasons
+    (``engine_timeout``, ``engine_error``, ``no_ticket_spec``) have no engine
+    stdout in hand to quote and must stay absent rather than record an empty
+    one. They are kept out of ``detail`` deliberately: that field is human
+    remediation prose, this is bounded evidence with a different reader.
+
+    ``channel`` and ``design_chars`` (#294) are additive to the ``ok`` shape and
+    set only when the engine actually ran, so an ADR 0008 adopted event
+    (``inherited_from``) carries neither — no engine, no channel. ``channel`` is
+    ``'file'`` when the design arrived on its contracted channel and ``'stdout'``
+    when only the fallback delivered it; the second value is the alarm, since no
+    test in the suite can prove the engine's scoped write capability still works
+    against the installed CLI, and without recording which channel answered a
+    permission regression would look exactly like normal operation.
+    ``design_chars`` is the design's length — the measuring instrument for
+    ``DESIGN_TARGET_CHARS``, since ``harness stats`` cannot show a distribution
+    nobody records.
 
     ``invoked_at`` and ``concurrent_prior_at`` (#236) are set on both shapes,
     the concurrent-invocation detector's evidence: ``invoked_at`` is when this
@@ -459,6 +613,8 @@ class DesignEventData(BaseModel):
     inherited_from: str | None = None
     submit_excerpt: str | None = None
     stdout_chars: int | None = None
+    channel: str | None = None
+    design_chars: int | None = None
 
 
 class ReleaseEventData(BaseModel):
@@ -544,6 +700,23 @@ if REVIEW_OUTCOME_PATH != _REVIEW_REFUSAL_OUTCOME_PATH:  # pragma: no cover - im
     raise ValueError(
         "the review success and refusal payloads must discriminate on the same "
         f"field: {REVIEW_OUTCOME_PATH} != {_REVIEW_REFUSAL_OUTCOME_PATH}"
+    )
+
+#: The ``reason`` tag on the refusal shape (#347). :class:`ReviewEventData` has
+#: no ``reason`` field at all, so a query matching this path already excludes
+#: every verdict row without needing an ``outcome`` predicate — the same reason
+#: :data:`CLOSE_REASON_PATH` is derived from the failure shape alone.
+REVIEW_REFUSAL_REASON_PATH = _field_path(ReviewRefusalEventData, "reason")
+
+#: ``reviewed_sha`` is written by both review shapes (#347), so — like the
+#: ``outcome`` discriminator above — the path is derived from one and
+#: cross-asserted against the other. A drift here would make the repeated-timeout
+#: guard silently count zero and re-open the retry loop it exists to close.
+_REVIEW_REFUSAL_REVIEWED_SHA_PATH = _field_path(ReviewRefusalEventData, "reviewed_sha")
+if REVIEW_REVIEWED_SHA_PATH != _REVIEW_REFUSAL_REVIEWED_SHA_PATH:  # pragma: no cover - import guard
+    raise ValueError(
+        "the review success and refusal payloads must name the reviewed SHA with "
+        f"the same field: {REVIEW_REVIEWED_SHA_PATH} != {_REVIEW_REFUSAL_REVIEWED_SHA_PATH}"
     )
 
 #: The ``outcome`` discriminator (#263) on the ``close`` payloads, derived and

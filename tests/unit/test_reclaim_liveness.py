@@ -37,8 +37,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from harness import _git
 from harness.cli import reclaim_liveness
 from harness.state import store
+from tests._asyncutil import run_sync
 from tests._gitutil import init_repo
 from tests._reclaim import (
     fetch_events,
@@ -46,7 +48,6 @@ from tests._reclaim import (
     invoke,
     iso_minutes_ago,
     make_sweep_stub,
-    run_sync,
     seed_checkpoint,
     seed_run,
     seed_worktree,
@@ -91,7 +92,7 @@ def test_stale_sweep_spares_a_run_whose_ledger_is_fresh(tmp_path: Path) -> None:
     stub.apply_label.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     assert fetch_row(db, "R216")["status"] == "open"  # type: ignore[index]
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["skipped"] == ["216"]
 
@@ -119,7 +120,7 @@ def test_stale_sweep_spares_a_freshly_started_run_with_no_events(
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_not_awaited()
     assert fetch_row(db, "RFRESH")["status"] == "open"  # type: ignore[index]
-    assert json.loads(result.output)["skipped"] == ["217"]
+    assert json.loads(result.stdout)["skipped"] == ["217"]
 
 
 def test_stale_sweep_still_reclaims_when_the_ledger_is_also_stale(
@@ -143,7 +144,7 @@ def test_stale_sweep_still_reclaims_when_the_ledger_is_also_stale(
     stub.transition_to_unstarted.assert_awaited_once_with("218")
     assert fetch_row(db, "RDEAD")["status"] == "cancelled"  # type: ignore[index]
     assert fetch_events(db, "RDEAD", "workflow_failed")[0]["reason"] == "reclaimed"
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "218"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "218"
 
 
 def test_stale_sweep_reclaims_when_ledger_has_no_open_run_for_the_ticket(
@@ -166,7 +167,7 @@ def test_stale_sweep_reclaims_when_ledger_has_no_open_run_for_the_ticket(
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("219")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "219"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "219"
 
 
 def test_stale_sweep_reclaims_when_no_ledger_exists(tmp_path: Path) -> None:
@@ -180,7 +181,7 @@ def test_stale_sweep_reclaims_when_no_ledger_exists(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("220")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "220"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "220"
 
 
 def test_stale_sweep_ledger_liveness_respects_a_custom_threshold(
@@ -210,7 +211,7 @@ def test_stale_sweep_ledger_liveness_respects_a_custom_threshold(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["skipped"] == ["221"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["222"]
 
@@ -238,7 +239,7 @@ def test_stale_sweep_partitions_tracker_stale_tickets_by_ledger(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["scanned"] == 2
     assert payload["skipped"] == ["223"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["224"]
@@ -263,7 +264,7 @@ def test_stale_sweep_does_not_consult_the_ledger_for_a_fresh_ticket(
         stub,
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["225"]
+    assert json.loads(result.stdout)["skipped"] == ["225"]
 
 
 # ===========================================================================
@@ -310,7 +311,7 @@ def test_stale_sweep_spares_a_run_whose_worktree_is_fresh(tmp_path: Path) -> Non
     stub.apply_label.assert_not_awaited()
     stub.post_comment.assert_not_awaited()
     assert fetch_row(db, "R254")["status"] == "open"  # type: ignore[index]
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reclaimed"] == []
     assert payload["skipped"] == ["254"]
 
@@ -331,7 +332,7 @@ def test_stale_sweep_reclaims_when_the_worktree_is_also_stale(tmp_path: Path) ->
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("301")
     assert fetch_row(db, "RWDEAD")["status"] == "cancelled"  # type: ignore[index]
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "301"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "301"
 
 
 def test_stale_sweep_reclaims_when_the_run_recorded_no_worktree_path(
@@ -354,7 +355,7 @@ def test_stale_sweep_reclaims_when_the_run_recorded_no_worktree_path(
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("302")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "302"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "302"
 
 
 def test_stale_sweep_reclaims_when_the_worktree_path_is_absent(tmp_path: Path) -> None:
@@ -436,7 +437,7 @@ def test_stale_sweep_is_not_fooled_by_an_enclosing_repository(tmp_path: Path) ->
     )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("305")
-    assert json.loads(result.output)["reclaimed"][0]["ticket"] == "305"
+    assert json.loads(result.stdout)["reclaimed"][0]["ticket"] == "305"
 
 
 def test_stale_sweep_reclaims_when_the_worktree_index_is_empty(tmp_path: Path) -> None:
@@ -504,14 +505,14 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_times_out(
               started_at=iso_minutes_ago(240))
     stub = make_sweep_stub([{"identifier": "308", "updated_at": iso_minutes_ago(300)}])
 
-    real_run_git = reclaim_liveness.run_git
+    real_run_git = _git.run_git
 
     def _wedge(cwd: Path, *args: str, **kwargs: Any) -> Any:
         if args[:1] == ("ls-files",):
             raise subprocess.TimeoutExpired(cmd="git ls-files", timeout=15)
         return real_run_git(cwd, *args, **kwargs)
 
-    with patch.object(reclaim_liveness, "run_git", _wedge):
+    with patch.object(_git, "run_git", _wedge):
         result = invoke(
             ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
             stub,
@@ -537,7 +538,7 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_fails(tmp_path: Path) -> N
               started_at=iso_minutes_ago(240))
     stub = make_sweep_stub([{"identifier": "309", "updated_at": iso_minutes_ago(300)}])
 
-    real_run_git = reclaim_liveness.run_git
+    real_run_git = _git.run_git
 
     def _fail(cwd: Path, *args: str, **kwargs: Any) -> Any:
         if args[:1] == ("ls-files",):
@@ -547,7 +548,7 @@ def test_stale_sweep_reclaims_when_the_ls_files_probe_fails(tmp_path: Path) -> N
             )
         return real_run_git(cwd, *args, **kwargs)
 
-    with patch.object(reclaim_liveness, "run_git", _fail):
+    with patch.object(_git, "run_git", _fail):
         result = invoke(
             ["reclaim", "--stale", "--project", "Harness", "--json", "--db", str(db)],
             stub,
@@ -588,7 +589,7 @@ def test_stale_sweep_worktree_liveness_respects_a_custom_threshold(
         stub,
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["scanned"] == 2
     assert payload["skipped"] == ["310"]
     assert [r["ticket"] for r in payload["reclaimed"]] == ["311"]
@@ -617,7 +618,7 @@ def test_stale_sweep_does_not_probe_a_tracker_fresh_ticket(tmp_path: Path) -> No
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["312"]
+    assert json.loads(result.stdout)["skipped"] == ["312"]
 
 
 def test_stale_sweep_does_not_probe_when_the_ledger_is_already_fresh(
@@ -640,7 +641,7 @@ def test_stale_sweep_does_not_probe_when_the_ledger_is_already_fresh(
             stub,
         )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["skipped"] == ["313"]
+    assert json.loads(result.stdout)["skipped"] == ["313"]
 
 
 def test_stale_sweep_does_not_probe_when_there_is_no_open_run(tmp_path: Path) -> None:
@@ -659,3 +660,76 @@ def test_stale_sweep_does_not_probe_when_there_is_no_open_run(tmp_path: Path) ->
         )
     assert result.exit_code == 0, result.output
     stub.transition_to_unstarted.assert_awaited_once_with("314")
+
+
+# ===========================================================================
+# #297: the declared mode rides on the same row as the three clocks
+# ===========================================================================
+
+
+def _liveness(db: Path, ticket: str) -> reclaim_liveness.RunLiveness | None:
+    """``open_run_liveness`` driven directly — the projection under test."""
+    return run_sync(reclaim_liveness.open_run_liveness(db, ticket))
+
+
+def test_the_projection_reads_a_declared_attended_row(tmp_path: Path) -> None:
+    """An attended run's mode reaches the sweep off the *same* row as its clocks.
+
+    Unit-level on ``open_run_liveness`` rather than only through the verb: a
+    wiring mistake — projecting the wrong column, or forgetting the parse — is
+    localised here instead of surfacing three layers up as a mysterious
+    reclamation.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-ATT", status="open", ticket="ATT-1", attended=True)
+
+    liveness = _liveness(db, "ATT-1")
+
+    assert liveness is not None
+    assert liveness.attended is True
+    assert liveness.run_id == "R-ATT"
+
+
+def test_the_projection_reads_an_undeclared_row_as_unattended(tmp_path: Path) -> None:
+    """The ``"{}"`` every pre-#295 row holds means unattended, as it always did."""
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-UNATT", status="open", ticket="UNATT-1")
+
+    liveness = _liveness(db, "UNATT-1")
+
+    assert liveness is not None
+    assert liveness.attended is False
+
+
+def test_the_projection_reads_a_hand_edited_row_as_unattended(tmp_path: Path) -> None:
+    """A corrupted or hand-edited ``inputs_json`` fails *toward* the bound.
+
+    Declaring attendance is what buys the longer threshold, so every ambiguous
+    value must resolve unattended — the strictness ``resolve_attended`` owns
+    (#295), exercised here at the seam that now consumes it. A ``bool()``-style
+    parse would read ``"true"`` as a declaration.
+    """
+    db = tmp_path / "harness.db"
+    seed_run(db, run_id="R-BAD", status="open", ticket="BAD-1")
+
+    async def _corrupt() -> None:
+        async with store.connect(db) as conn:
+            await conn.execute(
+                "UPDATE runs SET inputs_json = ? WHERE run_id = ?", ('"true"', "R-BAD")
+            )
+            await conn.commit()
+
+    run_sync(_corrupt())
+
+    liveness = _liveness(db, "BAD-1")
+
+    assert liveness is not None
+    assert liveness.attended is False
+
+
+def test_the_projection_has_no_opinion_without_an_open_run(tmp_path: Path) -> None:
+    """No open row → ``None``, so there is no mode to inherit (AC-5's seam)."""
+    db = tmp_path / "harness.db"
+    run_sync(store.init_db(db))
+
+    assert _liveness(db, "ABSENT-1") is None

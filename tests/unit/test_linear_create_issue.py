@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from harness.linear import LinearClient, LinearNotFound, LinearRequestError
+from harness.linear import (
+    LinearClient,
+    LinearConfigError,
+    LinearNotFound,
+    LinearRequestError,
+)
 
 _TEAM_NODE = {
     "id": "team-uuid",
@@ -53,9 +58,9 @@ async def test_create_issue_resolves_team_todo_project_and_returns_identifier(
         )
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
-    client = LinearClient(api_key="fake-key")
+    client = LinearClient(api_key="fake-key", team="CAL")
     result = await client.create_issue(
-        team_key="CAL", project_name="Harness v3", title="T", description="D"
+        project="Harness v3", title="T", description="D"
     )
 
     assert result == {"identifier": "CAL-9999", "url": "https://linear.app/x/CAL-9999"}
@@ -80,9 +85,9 @@ async def test_create_issue_without_project_omits_project_id(
         return _create_reply(issue={"identifier": "CAL-1", "url": "u"})
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
-    client = LinearClient(api_key="fake-key")
+    client = LinearClient(api_key="fake-key", team="CAL")
     await client.create_issue(
-        team_key="CAL", project_name=None, title="T", description="D"
+        project=None, title="T", description="D"
     )
     assert captured["projectId"] is None
 
@@ -97,10 +102,10 @@ async def test_create_issue_unknown_team_raises_not_found(
         return _team_reply(node=None)
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
-    client = LinearClient(api_key="fake-key")
+    client = LinearClient(api_key="fake-key", team="NOPE")
     with pytest.raises(LinearNotFound):
         await client.create_issue(
-            team_key="NOPE", project_name=None, title="T", description="D"
+            project=None, title="T", description="D"
         )
 
 
@@ -113,10 +118,10 @@ async def test_create_issue_unknown_project_raises_request_error(
         return _team_reply()
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
-    client = LinearClient(api_key="fake-key")
+    client = LinearClient(api_key="fake-key", team="CAL")
     with pytest.raises(LinearRequestError):
         await client.create_issue(
-            team_key="CAL", project_name="Ghost Project", title="T", description="D"
+            project="Ghost Project", title="T", description="D"
         )
 
 
@@ -131,8 +136,33 @@ async def test_create_issue_unsuccessful_mutation_raises_request_error(
         return _create_reply(success=False, issue=None)
 
     monkeypatch.setattr(LinearClient, "_request", fake_request)
-    client = LinearClient(api_key="fake-key")
+    client = LinearClient(api_key="fake-key", team="CAL")
     with pytest.raises(LinearRequestError):
         await client.create_issue(
-            team_key="CAL", project_name=None, title="T", description="D"
+            project=None, title="T", description="D"
         )
+
+
+async def test_create_issue_without_a_configured_team_raises_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A client built with no team (``repo.linear`` unset) refuses before any request.
+
+    Since #328 the team is client config rather than a call argument, so this is
+    where a missing one surfaces — a ``LinearConfigError`` (⊂ ``TrackerConfigError``)
+    raised *lazily*, from inside ``create_issue``. That is what a neutral caller
+    must map to its ``blocked`` refusal; the pin also asserts **no request was
+    fired**, since a config gap must not reach the network.
+    """
+    requested: list[str] = []
+
+    async def fake_request(query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        requested.append(query)
+        return {}
+
+    client = LinearClient(api_key="fake-key")  # no team
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    with pytest.raises(LinearConfigError, match="repo.linear"):
+        await client.create_issue(project=None, title="T", description="D")
+    assert requested == []

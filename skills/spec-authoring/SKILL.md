@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.9.2 -->
+<!-- guidance:spec-authoring@0.12.0 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -12,10 +12,10 @@ How to write a spec that is actionable, consistent, and complete — including t
 | Spec | Answers | Lives in | When |
 |---|---|---|---|
 | **Proposal spec** | "Should we do this, and how big is it?" | `specs/proposals/<slug>.md` | Before it is confirmed work — needs a decision, carries real unknowns, or is too large to be one change |
-| **Change spec** | "What exactly will this one piece of work do?" | The Linear issue | While the work is in flight |
+| **Change spec** | "What exactly will this one piece of work do?" | The tracker issue | While the work is in flight |
 | **Feature spec** | "What does the product do today?" | `specs/features/<feature>.md` | Permanent, as-built record |
 
-They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (Linear issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
+They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (tracker issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
 
 ## Reference specs — standing documentation
 
@@ -34,12 +34,18 @@ Some specs are not tied to a task. They document a stable part of the system and
 
 ## Decisions live in the spec they govern
 
-**There is no separate `decisions/` folder and no standalone ADRs.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
+**Embedded is the default.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
 
-- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences).
+- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences). This holds everywhere: a decision that governs one feature stays in that feature's spec, whatever else the repo configures.
 - A **cross-cutting** decision (governs many features) → recorded in the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
 
-Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding a decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice. (See `architecture` for when a choice is decision-worthy.)
+Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding an embedded decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice; where a repo declares `paths.decisions`, its own architecture index owns supersession for the records filed there. (See `architecture` for when a choice is decision-worthy.)
+
+**A repo may configure a decision directory, and that configuration is the only switch.** Where a repo declares `paths.decisions` in its `CONTEXT.md`, that directory is the home for its architecture decision records; a repo that declares none has no `decisions/` folder and no standalone ADRs — embedded, exclusively. There is no separate strategy setting to keep in step: the optional path is the whole signal.
+
+A configured directory holds only decisions that are **cross-cutting, consequential, and expensive to reverse** — branch topology, tracker architecture, security posture, certification invariants. A decision that merely touches **several files** does not clear that bar, and one that governs a single feature never does; both stay embedded. Each qualifying decision has **one canonical record**: the feature specs it affects link to it and must not restate its reasoning, so superseding the record leaves them correct.
+
+Placement, numbering, and supersession *inside* that directory are the repo's own convention — defer to its **architecture index** (the architecture-principles spec, or the decisions index in `CONTEXT.md`) rather than assuming one. Universal guidance names the `paths.decisions` key and stops there.
 
 ## Proposal spec
 
@@ -56,7 +62,7 @@ A proposal's outcome is explicit: **accepted** (spawns change specs; records its
 
 ## Change spec
 
-A single, concrete piece of work. The Linear issue is its home (`linear`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
+A single, concrete piece of work. The tracker issue is its home (`tracker`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
 
 **The capture on-ramp.** A bug or tweak noticed in actual use does not start here from a blank change spec — `/bug` / `/tweak` capture it straight into `templates/adjustment.md`, a capture-optimized change spec pre-framed for the moment of noticing (As-built / Desired / From actual use / Acceptance criteria). `/start` extends it with Grounding and the full Design section above at build time; it is an on-ramp to this form, not a competing artifact.
 
@@ -64,7 +70,7 @@ A single, concrete piece of work. The Linear issue is its home (`linear`). Secti
 
 **Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `CONTEXT.md` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
 
-**Model tiering (conditional).** Where the ticket is driven through `harness review` (a repo self-hosting the harness verb loop — skip this where it does not apply), set both a **`build`** and a **`review`** tier label at spec-authoring time, when the shape of the work is already understood: `sonnet` (the default, and the usual choice) or `opus` for work that genuinely warrants the top tier. The two are independent — a trivial build can still deserve a careful review, or vice versa — and are consumed differently: **`review`** is a control signal `harness review` reads deterministically off the label and passes to the claude engine as `--model`; **`build`** is a *judged-difficulty record* only — no verb reads it, since the orchestrating session is the builder and cannot deterministically swap its own model per ticket — kept so a completed run can be interrogated against it later. Leaving either label unset is a legitimate choice, not an omission: it is exactly the Sonnet default. The **design stage is not one of these dimensions**: where the harness verb loop drives the ticket, `harness design` runs a top-tier engine for **every** run (ADR 0007) — unconditional, verb-owned, and unaffected by both labels. The author still writes the change spec's Design section to the depth the *decision* needs, but the build's technical design is produced per run in a fresh engine context rather than by the implementing session inline, so a thin Design section on a filed ticket is no longer the failure mode it was.
+**The design stage is not yours to size (conditional).** Where the harness verb loop drives the ticket, `harness design` runs a top-tier engine in a fresh, verb-owned context. Whether it runs at all is the issue's **assurance** level, not your judgment while writing: only work labelled for the highest level requires a design, and everything unlabelled resolves to the level that requires none. Write the change spec's Design section to the depth the *decision* needs and no further — where the stage does run, the build's technical design is produced per run rather than by the implementing session inline, so a thin Design section on a filed ticket is not the failure mode it once was; where it does not, the change is one whose design was never going to be the hard part. (This paragraph previously also instructed the author to set a per-ticket `build:` / `review:` model tier at spec-authoring time; those labels were retired in #321, and the model the review engine runs on is now one value in the repo's `CONTEXT.md`, set by whoever tunes the loop rather than by the spec's author.)
 
 **Lifecycle sweep (conditional).** For any state-changing operation — a create / update / delete, or anything that mutates stored state — enumerate the **derived artifacts** of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state, per artifact, what happens to it. "Unaffected" is an acceptable answer; silence is not. This is the sweep that catches the write path that ships its primary mutation but drops a derived artifact — a stale cache, an unrevoked share token, a count left un-decremented — the defect class review keeps finding one artifact at a time. Do it at design time, in the change spec, where it is cheapest; a change that mutates no stored state has no sweep to do, so say so and move on.
 
@@ -72,11 +78,13 @@ A single, concrete piece of work. The Linear issue is its home (`linear`). Secti
 
 **File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`code-quality` Part C — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
 
-**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the Linear issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
+**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
 
 ## Feature spec
 
 The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (`spec-driven-development`). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
+
+An as-built record must not enumerate a set the code owns — a class family, a command surface, or a reason vocabulary. Name the module that owns it and stop; or, where the list genuinely aids the reader, pair it with a guard that derives the set from the code and fails when the two disagree. A prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member.
 
 ## Quality bar
 

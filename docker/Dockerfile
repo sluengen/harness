@@ -131,8 +131,25 @@ ENV PYTHONUNBUFFERED=1 \
 # No `chown` of /opt/harness is needed: `uv sync` writes the venv world-readable
 # (drwxr-xr-x) and UV_NO_SYNC=1 makes `uv run` read-only at runtime, so uid 1000
 # can execute it as-is (a `chown -R` would only duplicate the venv into a fat
-# extra layer). The mounted /workspace is writable because Docker Desktop maps
-# bind-mount ownership to the run-time uid; per-user scratch goes under $HOME.
+# extra layer).
+#
+# The mounted /workspace is writable under one of two conditions, and stating
+# only the second is how this went wrong (#380). Either the host pins `--user` to
+# the uid that owns the mount — what every daemon sharing the host's kernel
+# namespace now gets, because there a bind mount carries the host's real
+# ownership — or the daemon remaps that ownership to the run-time uid, which is
+# macOS's Docker Desktop and nobody else's. Written as the unconditional
+# Docker Desktop claim, this comment described one platform's accident as the
+# image's contract, and every mutating verb on a native daemon died with
+# PermissionError on a repo owned by any uid but 1000.
+#
+# $HOME is therefore 1777 rather than useradd's 0700: pinned to an arbitrary uid
+# the container has no passwd entry, so it gets no pre-made home, and 0700 leaves
+# it neither traversable (both :ro credential mounts unreadable) nor writable
+# (`uv` cannot create its cache, so no verb starts). Sticky, /tmp's semantics.
+# World-writable is a boundary between principals and this container has one:
+# one uid, one process, one verb, nothing running afterwards to plant a file for.
+# Per-user scratch still goes under $HOME.
 #
 # uid is fixed at 1000 and $HOME is /home/harness so the wrapper mounts host
 # credentials under the user's home (/home/harness/.ssh, /home/harness/.codex) —
@@ -140,7 +157,8 @@ ENV PYTHONUNBUFFERED=1 \
 # this user, so mounts MUST NOT target /root/... The ~/bin/harness wrapper in
 # docker/README.md mounts to /home/harness/... to match.
 # ---------------------------------------------------------------------------
-RUN useradd --create-home --uid 1000 --shell /bin/bash harness
+RUN useradd --create-home --uid 1000 --shell /bin/bash harness \
+    && chmod 1777 /home/harness
 USER harness
 
 # One image, two entrypoints: the script dispatches `agent <TICKET>` (headless

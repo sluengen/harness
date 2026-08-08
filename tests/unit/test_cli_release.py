@@ -14,12 +14,14 @@ Contract under test:
 
 * ``harness release <ticket> --resolution <text>`` appends a ``## Resolution``
   section to the issue body (``update_issue_body``), removes the hold label
-  (``remove_label``, default ``decision``), unassigns the operator
-  (``unassign_viewer``), then records a ``release`` event; exits 0.
+  (``remove_label``, default ``decision``), and unassigns the operator
+  (``unassign_viewer``); exits 0. Since #338 it writes **nothing** to the
+  runs/events ledger — the tracker issue is the canonical record. The ledger
+  half of that contract is in ``test_held_ticket.py``; what stays here is the
+  CLI-level surface.
 * It binds to a ticket on this repo's Build queue (``repo.project``): a ticket
   not found, or found but on another project, is refused (exit 2) with a
-  structured ``reason`` — no body write, no label removal, no unassign, no
-  event.
+  structured ``reason`` — no body write, no label removal, no unassign.
 * A tracker-less repo (``layers.linear: false``) degrades to a clean no-op,
   consistent with the other verbs.
 * ``--resolution-file`` supplies a long body; exactly one of ``--resolution`` /
@@ -30,33 +32,22 @@ Contract under test:
 
 from __future__ import annotations
 
-import asyncio
 import json
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
-from harness._time import iso_z
 from harness.cli import app
-from harness.cli import release as release_mod
 from harness.state import store
 from harness.tracker_queue import QueueMembership
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
 _BUILD_PROJECT = "Harness v3"
 _EXISTING_BODY = "## Context\n\nSome context.\n\n## Goal\n\nDo the thing.\n"
-
-
-def _run_sync(coro: object) -> object:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)  # type: ignore[arg-type]
-    finally:
-        loop.close()
 
 
 def _write_context(
@@ -124,7 +115,7 @@ def _fetch_release_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _run_sync(_select())  # type: ignore[return-value]
+    return run_sync(_select())
 
 
 # ===========================================================================
@@ -158,15 +149,13 @@ def test_release_succeeds_on_an_unscoped_repo(tmp_path: Path, monkeypatch: Any) 
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["outcome"] == "released"
     assert payload["project"] is None
     stub.update_issue_body.assert_awaited_once()
     stub.remove_label.assert_awaited_once()
     stub.unassign_viewer.assert_awaited_once()
-    events = _fetch_release_events(db)
-    assert len(events) == 1
-    assert events[0]["project"] is None
+    assert _fetch_release_events(db) == []
 
 
 
@@ -184,7 +173,7 @@ def test_release_unscoped_refuses_a_ticket_off_the_queue(
     )
 
     assert result.exit_code == 2, result.output
-    assert json.loads(result.output)["reason"] == "not_on_build_queue"
+    assert json.loads(result.stdout)["reason"] == "not_on_build_queue"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
     stub.unassign_viewer.assert_not_awaited()
@@ -235,11 +224,11 @@ def test_release_unscoped_records_the_tickets_own_project(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == "Design System"
-    assert _fetch_release_events(db)[0]["project"] == "Design System"
+    assert json.loads(result.stdout)["project"] == "Design System"
+    assert _fetch_release_events(db) == []
 
 
-def test_release_scoped_records_the_configured_project_not_the_tickets(
+def test_release_scoped_reports_the_configured_project_not_the_tickets(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     _write_context(tmp_path)
@@ -252,16 +241,16 @@ def test_release_scoped_records_the_configured_project_not_the_tickets(
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["project"] == _BUILD_PROJECT
-    assert _fetch_release_events(db)[0]["project"] == _BUILD_PROJECT
+    assert json.loads(result.stdout)["project"] == _BUILD_PROJECT
+    assert _fetch_release_events(db) == []
 
 
 # ===========================================================================
-# AC: happy path — body write + label removal + unassign + release event
+# AC: happy path — body write + label removal + unassign, and no ledger row
 # ===========================================================================
 
 
-def test_release_writes_resolution_removes_label_unassigns_and_records_event(
+def test_release_writes_resolution_removes_label_and_unassigns(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     _write_context(tmp_path)
@@ -289,10 +278,7 @@ def test_release_writes_resolution_removes_label_unassigns_and_records_event(
     (unassign_ticket,) = stub.unassign_viewer.await_args.args
     assert unassign_ticket == "CAL-193"
 
-    events = _fetch_release_events(db)
-    assert len(events) == 1
-    assert events[0]["ticket"] == "CAL-193"
-    assert events[0]["needs"] == "decision"
+    assert _fetch_release_events(db) == []
 
 
 def test_release_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
@@ -306,11 +292,12 @@ def test_release_json_success_output(tmp_path: Path, monkeypatch: Any) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["ticket"] == "CAL-193"
     assert payload["outcome"] == "released"
     assert payload["project"] == _BUILD_PROJECT
-    assert payload["run_id"]
+    assert "run_id" in payload
+    assert payload["run_id"] is None
 
 
 def test_release_order_is_body_then_label_then_unassign(
@@ -354,8 +341,7 @@ def test_release_needs_input_removes_input_label(tmp_path: Path, monkeypatch: An
     assert result.exit_code == 0, result.output
     _, label_arg = stub.remove_label.await_args.args
     assert label_arg == "input"
-    events = _fetch_release_events(db)
-    assert events[0]["needs"] == "input"
+    assert _fetch_release_events(db) == []
 
 
 def test_release_rejects_unknown_needs_kind(tmp_path: Path, monkeypatch: Any) -> None:
@@ -390,7 +376,7 @@ def test_release_refuses_ticket_not_found(tmp_path: Path, monkeypatch: Any) -> N
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "ticket_not_found"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
@@ -409,7 +395,7 @@ def test_release_refuses_ticket_on_another_project(tmp_path: Path, monkeypatch: 
     )
 
     assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["reason"] == "not_on_build_queue"
     stub.update_issue_body.assert_not_awaited()
     stub.remove_label.assert_not_awaited()
@@ -505,88 +491,20 @@ def test_release_replaces_an_existing_resolution_section(
 
 
 # ===========================================================================
-# #264 — the verb's own latency, in the ledger's typed duration column
+# A refused release writes nothing — and since #338, neither does a successful one
 # ===========================================================================
+#
+# #264 gave the ``release`` event a typed ``duration_ms`` column and this file
+# pinned it. #338 retired the event, so that telemetry is **gone**, not moved —
+# the same accepted cost recorded in ``test_cli_defer.py``. The refusal case
+# below survives on its own merit: it pins that the membership gate still
+# stands before the resolution is written.
 
 
-def _event_durations(db_path: Path, event_type: str) -> list[int | None]:
-    """The ``events.duration_ms`` **column** for every row of ``event_type``.
-
-    Reads the column, never ``json_extract(data_json, ...)``: the duration has
-    one home, and a test that passed against the payload would be asserting the
-    wrong place.
-    """
-    if not db_path.exists():
-        return []
-
-    async def _select() -> list[int | None]:
-        async with store.connect(db_path) as conn:
-            cur = await conn.execute(
-                "SELECT duration_ms FROM events WHERE event_type = ? ORDER BY id",
-                (event_type,),
-            )
-            rows = await cur.fetchall()
-        return [None if r[0] is None else int(r[0]) for r in rows]
-
-    return _run_sync(_select())  # type: ignore[return-value]
-
-
-def _pin_clock(monkeypatch: Any, elapsed_ms: int) -> None:
-    """Hand ``release`` its ``invoked_at`` then a reading ``elapsed_ms`` later.
-
-    Distinct successive readings on purpose (#261's lesson): a constant stub
-    cannot tell one clock read from two, so the duration would pass vacuously
-    at 0 against an implementation that simply read the clock twice at the end.
-    """
-    start = datetime(2026, 7, 31, 8, 0, 0, tzinfo=UTC)
-    readings = iter([iso_z(start), iso_z(start + timedelta(milliseconds=elapsed_ms))])
-    monkeypatch.setattr(
-        release_mod, "iso_z", lambda *_a, **_k: next(readings, iso_z(start))
-    )
-
-def test_release_records_its_duration_in_the_event_column(
+def test_release_refusal_writes_nothing(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """AC-1: the ``release`` event carries the verb's latency as whole ms.
-
-    The window spans the body write, the label removal and the unassign — the
-    three tracker round-trips a release actually spends its time on.
-    """
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    _pin_clock(monkeypatch, 2500)
-
-    result = _invoke(
-        ["release", "CAL-193", "--resolution", "Go with option A.", "--db", str(db)],
-        tmp_path, _make_stub(), monkeypatch,
-    )
-
-    assert result.exit_code == 0, result.output
-    assert _event_durations(db, "release") == [2500]
-    assert isinstance(_event_durations(db, "release")[0], int)
-
-
-def test_release_payload_gains_no_duration_key(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """One quantity, one home — the payload's key set is unchanged by #264."""
-    _write_context(tmp_path)
-    db = tmp_path / "harness.db"
-    _pin_clock(monkeypatch, 2500)
-
-    _invoke(
-        ["release", "CAL-193", "--resolution", "Go with option A.", "--db", str(db)],
-        tmp_path, _make_stub(), monkeypatch,
-    )
-
-    (payload,) = _fetch_release_events(db)
-    assert "duration_ms" not in payload
-
-
-def test_release_refusal_records_no_event_and_no_duration(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """A refused release writes nothing at all — #264 adds no refusal row.
+    """A refused release performs no tracker write and no ledger write.
 
     Like ``defer``, ``release`` has no non-success event path, so it needs no
     ADR 0009 ``outcome`` field to discriminate one from another.
@@ -604,4 +522,7 @@ def test_release_refusal_records_no_event_and_no_duration(
     )
 
     assert result.exit_code == 2, result.output
-    assert _event_durations(db, "release") == []
+    stub.update_issue_body.assert_not_awaited()
+    stub.remove_label.assert_not_awaited()
+    stub.unassign_viewer.assert_not_awaited()
+    assert _fetch_release_events(db) == []

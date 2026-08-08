@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from harness.hostenv import host, spawn
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DOCKERFILE = PROJECT_ROOT / "docker" / "Dockerfile"
 DOCKER_README = PROJECT_ROOT / "docker" / "README.md"
@@ -104,6 +106,115 @@ def test_dockerfile_user_is_not_root() -> None:
 
 
 # ---------------------------------------------------------------------------
+# #380 — the image is usable by whatever uid the host pins it to.
+#
+# These two are *source* invariants, and the evidence is elsewhere: the image
+# actually running as an arbitrary uid is asserted against a real container in
+# ``tests/integration/test_docker.py``, which skips without a daemon. Re-reading
+# the Dockerfile proves only that the text says so — which is worth having as the
+# always-on half, and worth nothing on its own.
+# ---------------------------------------------------------------------------
+
+
+def _chmod_modes(dockerfile: str, path: str) -> list[str]:
+    """Every mode a ``chmod`` in ``dockerfile`` applies to exactly ``path``."""
+    return re.findall(rf"chmod\s+([0-7]{{3,4}})\s+{re.escape(path)}(?:\s|$)", dockerfile)
+
+
+def _writability_comment(dockerfile: str) -> str:
+    """The comment block that explains why the mounted workspace is writable.
+
+    Whole contiguous ``#`` blocks, selected by the subject they mention rather
+    than by line number, so the explanation can move or be rewritten without the
+    guard following it around — and so it may be written as prose across lines
+    instead of squeezed onto the one line carrying the keyword.
+    """
+    blocks: list[list[str]] = [[]]
+    for line in dockerfile.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            blocks[-1].append(stripped.lstrip("#").strip())
+        elif blocks[-1]:
+            blocks.append([])
+    return " ".join(
+        " ".join(block)
+        for block in blocks
+        if any("writable" in line.lower() for line in block)
+    )
+
+
+def test_the_container_home_is_reachable_by_an_arbitrary_uid() -> None:
+    """``$HOME`` must be traversable *and* writable by a uid with no passwd entry.
+
+    ``useradd --create-home`` leaves it ``drwx------``, which is uid 1000's alone.
+    Under any other pinned uid that home is not even traversable, so both ``:ro``
+    credential mounts under it are unreadable — and ``uv`` cannot create its cache
+    there, so no verb starts at all. Both were measured; the traversal fix alone
+    (``0711``) was measured insufficient.
+
+    The path is read from the module that emits the mounts, so a home that moved
+    without this moving is a failure rather than a guard quietly watching an empty
+    directory.
+    """
+    modes = _chmod_modes(_dockerfile(), spawn.CONTAINER_HOME)
+
+    assert modes, (
+        f"no chmod in docker/Dockerfile targets {spawn.CONTAINER_HOME}, which "
+        f"useradd creates mode 0700 — reachable by uid 1000 and by nobody else"
+    )
+    others = [int(mode[-1]) for mode in modes]
+    assert any(other & 0o7 == 0o7 for other in others), (
+        f"{spawn.CONTAINER_HOME} is chmod'd {modes}, which does not grant "
+        f"read+write+traverse to other — an arbitrary uid gets neither the "
+        f"credential mounts nor a writable cache"
+    )
+
+
+def test_the_dockerfile_states_the_condition_for_workspace_writability() -> None:
+    """AC-3: the comment states *why* ``/workspace`` is writable, not merely that.
+
+    It used to assert Docker Desktop's ownership remapping as though it were
+    general. It is not: that is one platform's answer, and the reason this held
+    only by accident everywhere else. The mechanism token is read out of the
+    production argv and the exempt platform out of the provider that declines to
+    pin a user, so renaming either breaks this guard instead of leaving it
+    agreeing with a comment that has quietly stopped being true.
+    """
+    # Nothing is run here — only the argv is read — so the image is the
+    # production default rather than the tag the docker modules share. Naming
+    # that tag, even in a comment, files a module into the gate's serial docker
+    # stage (#358 AC-2), and this one is always-on and builds nothing.
+    argv = spawn.build_docker_argv(
+        repo=PROJECT_ROOT,
+        argv=["version"],
+        image="harness:dev",
+        env_names=[],
+        home=Path("/home/op"),
+        container_user=spawn.ContainerUser(uid=1001, gid=1001),
+    )
+    flag = argv[argv.index("1001:1001") - 1]
+    remapping_host = host.detect_host(platform="darwin")
+
+    assert flag.startswith("--"), f"derived {flag!r}, which is not the option token"
+    assert remapping_host.container_user() is None, (
+        "no platform declines to pin a container user any more, so the comment "
+        "has only one condition to state and this guard is reading for two"
+    )
+
+    comment = _writability_comment(_dockerfile())
+    assert comment, "docker/Dockerfile no longer says anything about writability"
+    assert flag in comment, (
+        f"the writability comment does not name {flag!r}, the mechanism that "
+        f"actually makes the mount writable on a native daemon:\n  {comment}"
+    )
+    assert remapping_host.name.lower() in comment.lower(), (
+        f"the writability comment does not name {remapping_host.name!r} as the "
+        f"platform whose daemon remaps ownership, so it reads as a general claim "
+        f"— which is the assertion that was true only by accident:\n  {comment}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # CAL-1123 — the wrapper is a real, versioned, lintable file
 # ---------------------------------------------------------------------------
 
@@ -143,27 +254,30 @@ def test_wrapper_is_bash_syntax_clean() -> None:
     )
 
 
-def test_wrapper_builds_tty_flags_without_command_substitution() -> None:
-    """AC1/AC2 (CAL-1150): the ``-it`` flags are assembled via a bash array —
-    the shellcheck-clean idiom the file already uses for ``SSH_AGENT_ARGS`` —
-    not an unquoted ``$(...)`` command substitution (SC2046). This guards the fix
-    on hosts where shellcheck itself is unavailable (the always-on host): ``bash
-    -n`` does not catch SC2046, so without this a future edit could silently
-    reintroduce the warning. The array preserves the TTY behaviour: ``-it`` is
-    passed when stdin is a terminal and omitted otherwise."""
-    wrapper = _wrapper()
-    assert '$([[ -t 0 ]] && echo' not in wrapper, (
-        "the SC2046-prone `$([[ -t 0 ]] && echo \"-it\")` command substitution must "
-        "be gone — it word-splits unquoted (shellcheck SC2046)"
+def test_the_tty_flag_is_conditional_and_never_an_empty_argument() -> None:
+    """CAL-1150's property, retargeted by #307 to where the flags are now built.
+
+    The original shape was bash-specific: an unquoted ``$([[ -t 0 ]] && echo
+    "-it")`` word-splits (shellcheck SC2046), so the wrapper assembled a
+    ``TTY_ARGS`` array with the set-or-empty-safe expansion instead. Construction
+    moved into ``harness.hostenv.spawn``, where that hazard cannot exist — a list
+    has no word-splitting — so what survives is the **behaviour** the array
+    protected: ``-it`` when stdin is a terminal, and *no* argument at all
+    otherwise. An empty-string argument would reach docker as a bogus positional.
+    """
+    interactive = _verb_container_argv(tty=True)
+    piped = _verb_container_argv(tty=False)
+
+    assert "-it" in interactive
+    assert "-it" not in piped
+    assert "" not in piped, (
+        "an empty argument reached the docker argv — the empty case must pass "
+        "nothing, not a blank string"
     )
-    assert "TTY_ARGS=(" in wrapper, (
-        "the wrapper must build the -it flags in a TTY_ARGS array, mirroring "
-        "SSH_AGENT_ARGS"
+    assert len(interactive) == len(piped) + 1, (
+        "the two invocations differ by more than the tty flag"
     )
-    assert '${TTY_ARGS[@]+"${TTY_ARGS[@]}"}' in wrapper, (
-        "TTY_ARGS must expand with the set-or-empty-safe array idiom "
-        '${TTY_ARGS[@]+\"${TTY_ARGS[@]}\"}, so an empty array passes no argument'
-    )
+
 
 
 def test_shellcheck_skip_is_visible_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,14 +341,59 @@ def test_readme_references_wrapper_and_does_not_embed_it() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _macos_forwarding(socket_path: str) -> object:
+    """The agent forwarding ``MacOSHost`` produces for a live agent (#308).
+
+    Built through the real provider rather than hand-written. The properties below
+    were the wrapper's proven macOS behaviour, and #308 moved *where the decision
+    is made* without changing what macOS does — so asserting them over the
+    provider's own output is what makes them evidence of that, rather than a
+    restatement of the constants they came from.
+    """
+    from harness.hostenv import host as host_module
+
+    macos = host_module.MacOSHost(name="macos", env={"SSH_AUTH_SOCK": socket_path})
+    macos.ssh_agent_is_live = lambda: True  # type: ignore[method-assign]
+    forwarding = macos.ssh_agent_forwarding()
+    assert forwarding is not None
+    return forwarding
+
+
+def _verb_container_argv(**overrides: object) -> list[str]:
+    """The real ``docker run`` argv for a verb container.
+
+    **Retargeted by #307.** These properties were asserted as text in
+    ``docker/harness-wrapper.sh`` until the wrapper stopped constructing its own
+    container; construction now lives in ``harness.hostenv.spawn``, shared by the
+    socket path and the client's fallback. Reading the built argv is the stronger
+    form of the same assertion — it exercises the construction rather than
+    searching a file for a spelling.
+    """
+    from harness.hostenv import spawn
+
+    kwargs: dict[str, object] = {
+        "repo": Path("/work/repo"),
+        "argv": ["status", "R1"],
+        "image": "harness:dev",
+        "env_names": ("GITHUB_TOKEN",),
+        "home": Path("/home/op"),
+        "ssh_agent": _macos_forwarding("/tmp/agent.sock"),
+    }
+    kwargs.update(overrides)
+    return spawn.build_docker_argv(**kwargs)  # type: ignore[arg-type]
+
+
 def test_wrapper_mounts_ssh_under_nonroot_home() -> None:
     """``~/.ssh`` is mounted under /home/harness (reachable by the non-root user)."""
-    assert '"$HOME/.ssh":/home/harness/.ssh:ro' in _wrapper()
+    assert "/home/op/.ssh:/home/harness/.ssh:ro" in _verb_container_argv()
 
 
 def test_wrapper_ssh_known_hosts_path_matches_user_home() -> None:
     """GIT_SSH_COMMAND points known_hosts at the non-root user's ~/.ssh."""
-    assert "UserKnownHostsFile=/home/harness/.ssh/known_hosts" in _wrapper()
+    assert any(
+        "UserKnownHostsFile=/home/harness/.ssh/known_hosts" in arg
+        for arg in _verb_container_argv()
+    )
 
 
 def test_no_secret_is_mounted_under_root_home() -> None:
@@ -247,26 +406,24 @@ def test_no_secret_is_mounted_under_root_home() -> None:
         )
 
 
-def _ssh_forwarding_block(wrapper: str) -> str:
-    """Return the populated ``SSH_AGENT_ARGS=( ... )`` array literal (the one that
-    forwards the agent socket), or "" if absent."""
-    for block in re.findall(r"SSH_AGENT_ARGS=\((.*?)\)", wrapper, re.DOTALL):
-        if "/ssh-auth.sock:/ssh-agent" in block:
-            return block
-    return ""
-
-
 def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
     """Docker Desktop forwards the agent socket as ``srw-rw---- root root``; the
     container runs uid 1000 (non-root, CAL-1008), so it can only ``connect()`` to
-    the group-rw socket via group 0. The forwarding block must add ``--group-add
-    0`` next to the socket mount — without it every ``git push`` over SSH (close /
-    checkpoint) fails ``Permission denied (publickey)`` on a healthy host agent."""
-    block = _ssh_forwarding_block(_wrapper())
-    assert block, "no populated SSH_AGENT_ARGS block found in docker/harness-wrapper.sh"
-    assert "--group-add 0" in block, (
-        "the ssh-agent forwarding block must include '--group-add 0' so the "
-        "non-root container user can reach the root-owned, group-rw agent socket"
+    the group-rw socket via group 0. Forwarding the socket must add ``--group-add
+    0`` — without it every ``git push`` over SSH (close / checkpoint) fails
+    ``Permission denied (publickey)`` on a healthy host agent."""
+    forwarding = _verb_container_argv()
+    assert "/run/host-services/ssh-auth.sock:/ssh-agent" in forwarding, (
+        "the agent socket was not mounted"
+    )
+    assert "--group-add" in forwarding and "0" in forwarding, (
+        "forwarding the ssh-agent must add '--group-add 0' so the non-root "
+        "container user can reach the root-owned, group-rw agent socket"
+    )
+
+    assert "--group-add" not in _verb_container_argv(ssh_agent=None), (
+        "group 0 was joined with no agent socket to reach — the grant must be "
+        "scoped to the case that needs it"
     )
 
 
@@ -278,7 +435,7 @@ def test_wrapper_joins_group_0_to_reach_forwarded_socket() -> None:
 def test_wrapper_mounts_codex_readonly() -> None:
     """``~/.codex`` is mounted :ro — nothing in-container writes it (Claude is the
     in-container engine; codex is host-only, ADR 0002), so read-only is safe."""
-    assert '"$HOME/.codex":/home/harness/.codex:ro' in _wrapper()
+    assert "/home/op/.codex:/home/harness/.codex:ro" in _verb_container_argv()
 
 
 # ---------------------------------------------------------------------------
@@ -344,13 +501,55 @@ def _mounting_seams() -> dict[str, str]:
     }
 
 
-def test_the_seam_derivation_finds_both_known_mounting_seams() -> None:
+def test_the_seam_derivation_still_finds_the_declarative_seam() -> None:
     """The derived guard below is only as good as its subject set: a derivation
-    that silently matched nothing would pass while enforcing nothing."""
+    that silently matched nothing would pass while enforcing nothing.
+
+    **The wrapper left this set in #307** and its absence is now correct rather
+    than a regression: it no longer builds a container, so it mounts nothing. That
+    makes this floor thinner than it was, which is why the *programmatic* seam has
+    its own behavioural guard immediately below — the two together still cover
+    every way a host tree reaches ``/workspace``.
+    """
     seams = _mounting_seams()
-    assert {"harness-wrapper.sh", "docker-compose.yml"} <= set(seams), (
-        "the /workspace-mount derivation no longer finds both known invocation "
-        f"seams (found {sorted(seams)}) — fix the derivation, not the assertion"
+    assert "docker-compose.yml" in seams, (
+        "the /workspace-mount derivation no longer finds the compose seam "
+        f"(found {sorted(seams)}) — fix the derivation, not the assertion"
+    )
+    assert "harness-wrapper.sh" not in seams, (
+        "the wrapper mounts a host tree again — construction belongs to "
+        "harness.hostenv.spawn, which both spawn paths share"
+    )
+
+
+def test_the_programmatic_seam_mounts_at_workspace_and_pins_bytecode() -> None:
+    """The seam the text derivation cannot see, asserted behaviourally.
+
+    ``harness.hostenv.spawn`` builds its mount from constants, so no substring
+    search of the source would find ``:/workspace`` — and a guard that cannot see
+    the live seam is a guard over nothing. Reading the constructed argv is the
+    honest instrument, and it covers **both** spawn paths at once, since they
+    share this construction.
+    """
+    argv = _verb_container_argv()
+
+    assert any(arg.endswith(":/workspace") for arg in argv), (
+        "the spawner no longer mounts the repo at /workspace — that mount is what "
+        "makes the verbs repo-agnostic (CAL-675)"
+    )
+    assert "PYTHONDONTWRITEBYTECODE=1" in argv, (
+        "the spawner mounts a host tree but does not pin PYTHONDONTWRITEBYTECODE=1, "
+        "so container-authored bytecode lands in the mount and false-reddens the "
+        "next host gate run (#278)"
+    )
+    assert "PYTHONDONTWRITEBYTECODE" not in argv, (
+        "the bare form forwards the *host's* value, and a host exporting it empty "
+        "silently disables the protection — CPython treats only a non-empty value "
+        "as on. Pin the literal."
+    )
+    assert "HARNESS_WORKSPACE_ROOTS=/workspace" in argv, (
+        "the in-container allowlist must be pinned to the mount point, never "
+        "forwarded from a host-side value that is meaningless in the container"
     )
 
 
@@ -382,3 +581,77 @@ def test_bytecode_suppression_is_pinned_not_forwarded_from_the_host() -> None:
                 f"docker/{name} forwards PYTHONDONTWRITEBYTECODE from the host "
                 "instead of pinning it to 1; an empty host value would disable it"
             )
+
+
+# ---------------------------------------------------------------------------
+# #308 AC-3 — no bearer push credential reaches the review container.
+# ---------------------------------------------------------------------------
+
+
+def test_no_push_credential_reaches_the_review_container() -> None:
+    """A bearer push credential must not be handed to the verb that reads a diff.
+
+    **Read the history before reading this as a port.** CAL-622 shipped a
+    tokenized-https push fallback — ``GIT_CONFIG_*`` ``insteadOf`` rules plus a
+    credential helper supplying ``x-access-token``, scoped to ``close`` and
+    deliberately withheld from ``review``. That mechanism lived in
+    ``harness/launcher.py``, which CAL-712 deleted with the workflow engine; its
+    only surviving description is ``specs/retired/hermes-orchestration.md``. So
+    this is **not** a port of a live feature, and a reader who assumes it is will
+    mistake this for a vacuous pass. Today ``close`` pushes over ssh.
+
+    What survives is the *intent*, and it is worth guarding because the reasoning
+    still holds: ``review`` runs an engine over an untrusted diff, so a bearer
+    token in its environment is exfiltratable by the thing it is reviewing. This
+    is the regression guard that fails the day one is reintroduced there.
+
+    ``GITHUB_TOKEN`` is the deliberate exception and is *not* a push credential
+    here — it is the **tracker** credential this repo's GitHub backend needs to
+    comment on the issue, so scoping it to ``close`` would break ``review``. It
+    crosses **by name** (``-e GITHUB_TOKEN``), so its value never enters the argv
+    and never reaches ``ps``; that distinction is the assertion below.
+
+    The forwarded set is read from **production** (``client.FORWARDED_ENV_NAMES``)
+    rather than supplied by this test. Passing a literal here would scan a list the
+    test itself wrote, so the ban would hold no matter what production forwarded —
+    the vacuous shape #181 records. Pointing it at the real tuple is what makes the
+    day someone adds a push credential to it the day this test fails.
+    """
+    from harness.hostenv.client import FORWARDED_ENV_NAMES
+
+    argv = _verb_container_argv(argv=["review", "R1"], env_names=FORWARDED_ENV_NAMES)
+
+    banned = ("GH_TOKEN", "GIT_CONFIG_", "insteadOf", "credential.helper")
+    for token in argv:
+        for pattern in banned:
+            assert pattern not in token, (
+                f"the review container's argv carries {token!r}, which matches the "
+                f"bearer-push-credential pattern {pattern!r} — review reads an "
+                f"untrusted diff and must not hold a credential that can push"
+            )
+
+    assert "GITHUB_TOKEN" in argv, (
+        "the tracker credential must still be forwarded — review comments on the issue"
+    )
+    assert not any(tok.startswith("GITHUB_TOKEN=") for tok in argv), (
+        "GITHUB_TOKEN was passed by value; its secret would be visible in ps"
+    )
+
+
+def test_the_push_credential_ban_would_catch_a_reintroduced_one() -> None:
+    """The negative control: the ban above must be able to fail.
+
+    Every banned pattern is absent from today's argv, so the test passes whether
+    or not its predicate discriminates anything — the shape #181 records. This
+    runs the same predicate over an argv that *does* carry a push credential and
+    asserts it is caught, so a ban that had been narrowed to nothing fails here.
+    """
+    banned = ("GH_TOKEN", "GIT_CONFIG_", "insteadOf", "credential.helper")
+    reintroduced = _verb_container_argv(
+        argv=["review", "R1"], env_names=("GITHUB_TOKEN", "GH_TOKEN")
+    )
+
+    assert any(pattern in token for token in reintroduced for pattern in banned), (
+        "the ban matched nothing in an argv that carries GH_TOKEN — the predicate "
+        "no longer discriminates, so the guard above is vacuous"
+    )

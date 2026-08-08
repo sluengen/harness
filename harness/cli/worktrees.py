@@ -67,7 +67,11 @@ from harness._git import (
 )
 from harness._time import iso_z, parse_iso_z
 from harness.cli._duration import _parse_duration
-from harness.cli._repo import resolve_verb_db_path
+from harness.cli._repo import (
+    REPO_OPTION_HELP,
+    repo_arg_or_cwd,
+    resolve_verb_db_path,
+)
 from harness.close_merge import CloseMergeError, worktree_porcelain
 from harness.identity import WORKTREES_SUBDIR
 from harness.state import store
@@ -148,16 +152,18 @@ def _git_worktree_branches(repo_root: Path) -> dict[Path, str]:
 
 @worktrees_app.command("list", help="List worktrees under .worktrees/harness/.")
 def list_command(
-    repo_root: Path = typer.Option(
-        Path("."),
+    repo: Path | None = typer.Option(
+        None,
+        "--repo",
         "--repo-root",
-        help="Repo root containing .worktrees/harness/.",
+        help=REPO_OPTION_HELP,
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON."
     ),
 ) -> None:
     """List worktrees discovered under ``<repo_root>/.worktrees/harness/``."""
+    repo_root = repo_arg_or_cwd(repo)
     items = _discover_worktrees(repo_root)
     if json_output:
         typer.echo(json.dumps(items, default=str))
@@ -307,10 +313,11 @@ def _merge_veto(
     "cleanup", help="Remove worktrees matching the supplied filters."
 )
 def cleanup_command(
-    repo_root: Path = typer.Option(
-        Path("."),
+    repo: Path | None = typer.Option(
+        None,
+        "--repo",
         "--repo-root",
-        help="Repo root containing .worktrees/harness/.",
+        help=REPO_OPTION_HELP,
     ),
     age: str | None = typer.Option(
         None, "--age", help="Remove worktrees older than this (e.g. 30m / 12h / 7d)."
@@ -336,6 +343,7 @@ def cleanup_command(
     ),
 ) -> None:
     """Remove worktrees matching ``--age`` / ``--merged``."""
+    repo_root = repo_arg_or_cwd(repo)
     items = _discover_worktrees(repo_root)
     if not items:
         typer.echo("(no worktrees)")

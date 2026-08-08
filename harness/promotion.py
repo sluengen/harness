@@ -264,9 +264,11 @@ def create_promotion_worktree(
     )
     if result.returncode != 0:
         # Never leave a half-created directory behind (mirrors WorktreeNode).
-        if path.exists():
-            run_git(repo_root, "worktree", "remove", "--force", str(path))
-            run_git(repo_root, "worktree", "prune")
+        # Scoped to the path this call was creating: it clears that admin entry
+        # whether or not the directory got as far as existing, and no other. A
+        # repo-wide `git worktree prune` here deregistered every worktree outside
+        # the container mount (#371).
+        run_git(repo_root, "worktree", "remove", "--force", str(path))
         raise PromotionMechanicsError(
             f"git worktree add failed for promotion branch {branch_name!r}: "
             f"{result.stderr.strip()}",

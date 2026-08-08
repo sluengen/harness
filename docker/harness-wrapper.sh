@@ -201,8 +201,11 @@ print(int(datetime.datetime.fromisoformat(s).timestamp()))
 
 # Only guard the default tag. An explicit HARNESS_IMAGE is the caller's to
 # manage: rebuilding a deliberately-pinned tag off this tree would clobber it.
+# Resolved unconditionally: the host-environment helper below needs it to locate
+# the harness package even when an explicit HARNESS_IMAGE skips the guard.
+_source_root=$(_wrapper_source_root)
+
 if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
-  _source_root=$(_wrapper_source_root)
   # Advance the checkout BEFORE measuring it, so the comparison below reads the
   # ref the loop actually ships to (#286). `|| true` is load-bearing under
   # `set -euo pipefail`: no sync outcome may abort the wrapper.
@@ -237,144 +240,75 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   fi
 fi
 
-# Pull LINEAR_API_KEY from the shell or a local .env file. The trailing `|| true`
-# is load-bearing under `set -euo pipefail` (issue #171): when .env exists but has
-# no matching line, `grep` exits 1 and the pipeline would abort the whole wrapper
-# — so a repo whose .env omits this key (e.g. a github-only repo) could not run any
-# verb. Guarded, a no-match yields an empty value and the container's own error (if
-# the credential is genuinely required) reports it cleanly instead.
-if [[ -z "${LINEAR_API_KEY:-}" && -f "$(pwd)/.env" ]]; then
-  LINEAR_API_KEY=$(grep -E '^(export[[:space:]]+)?LINEAR_API_KEY=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
-  export LINEAR_API_KEY
-fi
-
-# Pull GITHUB_TOKEN (the GitHub tracker backend's credential, CAL-1105) the same
-# way — shell first, else a local .env — so a `tracker: github` repo authenticates
-# inside the container exactly as `tracker: linear` does with LINEAR_API_KEY. The
-# `|| true` is essential here (issue #171): removing the static token from .env
-# (the intended #170 state) leaves .env with no GITHUB_TOKEN line, so an unguarded
-# grep would abort the wrapper before the `gh auth token` fallback below runs.
-if [[ -z "${GITHUB_TOKEN:-}" && -f "$(pwd)/.env" ]]; then
-  GITHUB_TOKEN=$(grep -E '^(export[[:space:]]+)?GITHUB_TOKEN=' "$(pwd)/.env" | head -1 | cut -d= -f2- | tr -d '\r' || true)
-  export GITHUB_TOKEN
-fi
-
-# Fresh-token fallback (issue #170). A `gh` OAuth token rotates (~8h) and `gh`
-# auto-refreshes it from the keyring, so a *static* GITHUB_TOKEN (a `.env` snapshot
-# or a stale exported value) goes stale — which silently breaks the UNATTENDED
-# Build loop, where no human is present to refresh it. When the token is still
-# unset and `gh` is logged in on the host, fetch a fresh one each invocation, the
-# same way the Claude OAuth token is pulled from the Keychain above. Precedence is
-# env → .env → gh, so a consuming repo's long-lived PAT in `.env` still wins.
-if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
-  GITHUB_TOKEN=$(gh auth token 2>/dev/null || true)
-  export GITHUB_TOKEN
-fi
-
-# Workspace allowlist (CAL-584): the verbs reject any --repo outside
-# HARNESS_WORKSPACE_ROOTS, failing closed when it is unset. The wrapper always
-# mounts CWD as /workspace, so /workspace is the only valid root *inside the
-# container*. Do NOT forward a host-side value: a host path (e.g. an exported
-# HARNESS_WORKSPACE_ROOTS=/Users/me/Code for native runs) is meaningless in the
-# container and would reject the mounted repo, breaking cross-repo runs. Pin it.
-
-# Pull the Claude OAuth token from the macOS Keychain (containers can't read the
-# Keychain directly). The stored access token is short-lived (a few hours), so
-# passing it verbatim long after `claude /login` makes every in-container `claude`
-# call 401 — which surfaces as a false `review` failure (CAL-941). So read the
-# token AND its expiry, and if the token is missing or within 5 min of expiring,
-# trigger the Claude CLI's own refresh host-side (`claude -p ok` makes the CLI
-# exchange the stored refreshToken and write a fresh token back to the Keychain),
-# then re-read. Both are forwarded (CLAUDE_CODE_OAUTH_EXPIRES_AT too) so
-# `harness doctor` can flag a stale token instead of failing silently in review.
-if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  _read_claude_token() {
-    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-      | python3 -c "import sys,json;d=json.load(sys.stdin)['claudeAiOauth'];t=d.get('accessToken') or '';print(t, int(d.get('expiresAt') or 0)) if t else None" 2>/dev/null
-  }
-  read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
-  _now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
-  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || "${CLAUDE_CODE_OAUTH_EXPIRES_AT:-0}" -le "$((_now_ms + 300000))" ]]; then
-    if command -v claude >/dev/null 2>&1; then
-      # macOS ships no `timeout`; use it (or coreutils `gtimeout`) when present.
-      if command -v timeout >/dev/null 2>&1; then _t=(timeout 60)
-      elif command -v gtimeout >/dev/null 2>&1; then _t=(gtimeout 60)
-      else _t=(); fi
-      ${_t[@]+"${_t[@]}"} claude -p ok >/dev/null 2>&1 || true
-      read -r CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT < <(_read_claude_token) || true
-    fi
-  fi
-  export CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_OAUTH_EXPIRES_AT
-fi
-
-# Forward the host ssh-agent for `git push` over SSH (the close verb).
-# Docker Desktop bridges the host agent into the container at the fixed in-VM
-# path /run/host-services/ssh-auth.sock. That path exists ONLY inside the Docker
-# VM — it is never present on the macOS host — so we must NOT test for it here:
-# the old `[[ -S /run/host-services/ssh-auth.sock ]]` gate ran host-side, was
-# always false, and silently disabled forwarding (forcing the tokenized-https
-# fallback on every close). Gate on the host actually having a reachable agent
-# holding a key, and let Docker Desktop supply the socket at mount time. Falls
-# back to no-agent on hosts without one.
+# Everything below here used to be this wrapper's real work: resolving
+# credentials and git identity, then hand-rolling a `docker run` with a dozen
+# mounts and `-e` flags. #307 moved both into `harness.hostenv`, which the
+# control-socket client drives:
 #
-# The forwarded socket is `srw-rw---- root root` inside the container. The image
-# runs as `harness` (uid 1000, CAL-1008), which is not root and not in group
-# root, so it cannot connect() to it: every `git push` over SSH fails
-# `Permission denied (publickey)` with an otherwise healthy host agent. The
-# socket is group-rw, so join group 0 to reach it. This does NOT weaken CAL-1008:
-# /root stays mode 700, no mounted credential is group-root, and the only
-# group-0-writable paths are /tmp, /var/tmp and /run/lock, already 1777.
-# Mounting the key instead is a dead end — on macOS it is passphrase-protected in
-# the Keychain and unusable from the mounted file (see "SSH credentials" above).
-SSH_AGENT_ARGS=()
-if [[ -n "${SSH_AUTH_SOCK:-}" ]] && ssh-add -l >/dev/null 2>&1; then
-  SSH_AGENT_ARGS=(
-    -v /run/host-services/ssh-auth.sock:/ssh-agent
-    -e SSH_AUTH_SOCK=/ssh-agent
-    --group-add 0
-  )
+#   * `harness.hostenv.spawn` is the one home for container construction, shared
+#     by `harness serve` and by the client's own fallback — two copies would be
+#     two security postures, and the fallback runs on exactly the days the socket
+#     is broken.
+#   * Credentials are resolved per request by the host providers and handed to
+#     docker through the subprocess `env=`. No credential value passes through
+#     this shell any more, so the quoting, temp-file and NUL-record handling that
+#     the `hostenv env` import needed is gone rather than made safe.
+#
+# What stays in shell, deliberately: the image-freshness guard and the
+# source-checkout sync above. Their whole job includes detecting "this wrapper has
+# no checkout behind it" (the detached-copy deployment, CAL-1153) — which is
+# exactly the state in which checkout-resident Python cannot be imported. A guard
+# that cannot fire in the deployment it was written for is not a guard.
+#
+# Interpreter ladder: an explicit override, then the checkout's own venv, then a
+# bare `python3` pointed at the checkout. The venv step is load-bearing rather
+# than defensive — macOS system `python3` is frequently 3.9, below what the
+# package needs.
+_HOST_PY=()
+if [[ -n "${HARNESS_HOST_PYTHON:-}" ]]; then
+  _HOST_PY=("$HARNESS_HOST_PYTHON")
+elif [[ -n "${_source_root:-}" && -x "${_source_root:-}/.venv/bin/python" ]]; then
+  _HOST_PY=("$_source_root/.venv/bin/python")
+elif command -v python3 >/dev/null 2>&1; then
+  _HOST_PY=(python3)
 fi
 
-# Allocate a TTY only for an interactive stdin. Built as an array so the empty
-# case passes NO argument (an unquoted `$(…)` command substitution would word-split
-# — shellcheck SC2046 — and a quoted "" would pass a bogus empty argument to
-# `docker run`). Mirrors the SSH_AGENT_ARGS idiom above.
-TTY_ARGS=()
-if [[ -t 0 ]]; then
-  TTY_ARGS=(-it)
+# A hard stop, not a warning. Before #307 a missing interpreter cost only
+# credential resolution and the wrapper still ran its own `docker run`; now the
+# client *is* the runtime, so continuing would mean re-implementing container
+# construction here — the second posture this rewire exists to delete. Failing
+# with the fix in the message is the honest answer.
+#
+# Both failures are checked, because they are different deployments with the same
+# remedy: no interpreter at all, and an interpreter that cannot import the package
+# (the detached-copy install, CAL-1153, where there is no checkout to import from
+# and no native `uv tool install` either). Left to `exec`, the second arrives as a
+# bare ModuleNotFoundError naming neither the cause nor the fix.
+_PY_HINT="set HARNESS_HOST_PYTHON to a Python 3.11+ interpreter with the harness package importable, or symlink this wrapper into its checkout (see docker/README.md)."
+if [[ ${#_HOST_PY[@]} -eq 0 ]]; then
+  echo "harness: no usable host Python found, and one is now required — the wrapper delegates to harness.hostenv.client, which builds and runs the verb container." >&2
+  echo "harness: $_PY_HINT" >&2
+  exit 1
+fi
+if ! PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
+  "${_HOST_PY[@]}" -c 'import harness.hostenv.client' 2>/dev/null; then
+  echo "harness: ${_HOST_PY[*]} cannot import harness.hostenv.client, which the wrapper now delegates to." >&2
+  echo "harness: $_PY_HINT" >&2
+  exit 1
 fi
 
-# PYTHONDONTWRITEBYTECODE=1 below is load-bearing, not hygiene (#278). The repo
-# is bind-mounted read-write at /workspace, so any Python the container runs
-# leaves `__pycache__/*.pyc` in the HOST tree whose embedded source paths are the
-# container's. CPython validates a cache entry against the source's mtime and
-# size, not its content, so the next host-side gate run loads those entries and
-# anything using `inspect.getsource` / `linecache` fails with "could not get
-# source code" — a false red on the gate that certifies a review. Pinned to the
-# literal `1`, never forwarded as a bare `-e PYTHONDONTWRITEBYTECODE`: CPython
-# treats only a NON-EMPTY value as on, so a host exporting it empty would
-# silently disable the protection (the same reason HARNESS_WORKSPACE_ROOTS is
-# pinned). It is set here rather than as a Dockerfile `ENV` because the staleness
-# guard above compares the image against `git log -1 --format=%ct -- harness/` —
-# a path a docker/-only change never touches — so an image-level default would
-# not take effect until something unrelated forced a rebuild.
-exec docker run --rm ${TTY_ARGS[@]+"${TTY_ARGS[@]}"} \
-  -v "$(pwd)":/workspace \
-  -w /workspace \
-  -v "$HOME/.ssh":/home/harness/.ssh:ro \
-  -v "$HOME/.codex":/home/harness/.codex:ro \
-  ${SSH_AGENT_ARGS[@]+"${SSH_AGENT_ARGS[@]}"} \
-  -e LINEAR_API_KEY \
-  -e GITHUB_TOKEN \
-  -e HARNESS_WORKSPACE_ROOTS=/workspace \
-  -e PYTHONDONTWRITEBYTECODE=1 \
-  -e "HARNESS_WRAPPER_STATUS=$(_wrapper_status)" \
-  -e CLAUDE_CODE_OAUTH_TOKEN \
-  -e CLAUDE_CODE_OAUTH_EXPIRES_AT \
-  -e 'GIT_SSH_COMMAND=ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/harness/.ssh/known_hosts' \
-  -e "GIT_AUTHOR_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
-  -e "GIT_AUTHOR_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
-  -e "GIT_COMMITTER_NAME=$(git config --global user.name 2>/dev/null || echo 'Harness')" \
-  -e "GIT_COMMITTER_EMAIL=$(git config --global user.email 2>/dev/null || echo 'harness@local')" \
-  "$IMAGE" \
-  "$@"
+# The status string is computed here because it describes *this wrapper* — whether
+# it is a symlink into a checkout or a detached copy — which is knowable only from
+# the shell that resolved it. The client reads it from the environment and pins it
+# into the container by value.
+#
+# Assigned and exported on two lines, and not as lint hygiene: `export NAME="$(f)"`
+# is one command whose exit status is *export's*, and export's status does not
+# carry the substitution's — so `set -e` above could not see `_wrapper_status`
+# fail, and the verb ran with a silently empty status. Split, the assignment
+# carries the function's own status and a failure stops the script (SC2155, #383).
+HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
+export HARNESS_WRAPPER_STATUS
+
+exec env PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
+  "${_HOST_PY[@]}" -m harness.hostenv.client "$(pwd)" -- "$@"

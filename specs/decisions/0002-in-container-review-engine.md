@@ -1,6 +1,6 @@
 # ADR 0002 — The in-container review engine is Claude; `--engine codex` is a host-only option
 
-- **Status:** Accepted
+- **Status:** Accepted; premise amended 2026-08-04 by ADR [0013](0013-codex-engines-in-container.md)
 - **Date:** 2026-07-02 (CAL-925)
 - **Source:** CAL-925 (this decision); relates to CAL-866 (the original bwrap finding) and ADR [0001](0001-cloud-runnable-harness-loop.md) (which already recorded the same constraint for the cloud loop).
 
@@ -18,6 +18,39 @@ Two ways forward were weighed:
 
 - **(a) Make the sandbox work in-container** — install/allow `bubblewrap` and grant the container the user-namespace + seccomp privileges its `bwrap` needs (e.g. `CAP_SYS_ADMIN`, `--privileged`, or a custom seccomp profile), or run Codex under a different working sandbox mode.
 - **(b) Accept Claude-only reviews in-container** — formally document the in-container review engine as Claude, and treat `--engine codex` as a **host-only / cross-model** option.
+
+> **Amended 2026-08-04 (#315) — the cost, not the conclusion.** Option (a)'s cost
+> above is wrong as measured. Against `harness:dev`, codex-cli 0.146.0 (still
+> shipping `codex-resources/bwrap`, no landlock subcommand) and Docker server
+> 29.6.2:
+>
+> | Container config | Result |
+> |---|---|
+> | baseline, as the wrapper runs it | `unshare -U` → `Operation not permitted`; bwrap fails (CAL-866) |
+> | `--cap-add SYS_ADMIN`, default seccomp | userns created, then `bwrap: pivot_root: Operation not permitted` |
+> | `--security-opt seccomp=unconfined`, no cap-add | userns created, bwrap **rc=0** |
+>
+> The gate is the **seccomp profile alone**. `CAP_SYS_ADMIN` — the grant the
+> "Why (b), not (a)" security argument below is actually about — is neither
+> sufficient (`pivot_root` is still denied) nor required. Two syscall families do
+> all the blocking: `unshare`/`clone` carrying `CLONE_NEWUSER`, and `pivot_root`.
+> So the bundle option (a) was costed at ("`CAP_SYS_ADMIN`, `--privileged`, or a
+> custom seccomp profile") overstates it: a *targeted* profile, with the
+> capability set untouched, clears the wall on its own.
+>
+> One consequence recorded below is also wrong: "The cross-model value is
+> **recoverable on the host when wanted**" describes an act nobody performs.
+> Every tick runs through the `~/bin/harness` wrapper, so the documented escape
+> hatch is unreachable from the only path that runs.
+>
+> The decision the corrected premise produced is ADR
+> [0013](0013-codex-engines-in-container.md): Codex runs in-container behind a
+> targeted seccomp profile with no capability grant.
+>
+> **This amendment corrects a premise; it grants nothing.** The Decision below
+> stands as the record of what was chosen on the uncorrected premise, and the
+> profile itself has not shipped — it is #314. Until it does, `--engine codex`
+> really does still degrade in-container, exactly as this ADR describes.
 
 ## Decision
 

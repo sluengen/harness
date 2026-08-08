@@ -20,9 +20,7 @@ tests pin the two guarantees the ticket's acceptance criteria state:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -53,15 +51,7 @@ from harness.events.payloads import (
     _field_path,
 )
 from harness.state import store
-
-
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
+from tests._asyncutil import run_sync
 
 # ---------------------------------------------------------------------------
 # The models reproduce the exact payloads the verbs emit today.
@@ -97,6 +87,7 @@ def test_review_event_data_required_keys() -> None:
         "issues": [],
         "engine": "claude",
         "convergence_check_required": False,
+        "cycles_exhausted": False,
         "created_at": "2026-06-10T00:00:00Z",
         "gate_ran": False,
         "design_context": False,
@@ -154,7 +145,7 @@ def test_review_event_data_omits_unset_optionals() -> None:
         gate_ran=True,
     ).model_dump(exclude_none=True)
 
-    for optional in ("fallback_from", "commit_message", "deferred_brief"):
+    for optional in ("fallback_from", "commit_message", "deferred_brief", "model"):
         assert optional not in dumped
     # The gate optionals behave the same way: unset stays absent, so a payload
     # never claims an exit code for a gate that reported none.
@@ -177,6 +168,7 @@ def test_review_event_data_includes_set_optionals() -> None:
         fallback_from="codex",
         commit_message="msg",
         deferred_brief="brief",
+        model="opus",
     ).model_dump(exclude_none=True)
 
     assert dumped["fallback_from"] == "codex"
@@ -184,6 +176,59 @@ def test_review_event_data_includes_set_optionals() -> None:
     assert dumped["deferred_brief"] == "brief"
     assert dumped["gate_command"] == "bash scripts/verify.sh"
     assert dumped["gate_exit_code"] == 0
+    assert dumped["model"] == "opus"
+
+
+def test_review_event_data_reads_a_pre_293_row_back_as_unknown_model() -> None:
+    """AC-4 (#293): no backfill, expressed as a test rather than as prose.
+
+    A row written before the field existed validates with ``model is None``, and
+    a re-dump reproduces it **without inventing the key** — so the absence keeps
+    reading as *unknown*, never as a default. That is the property that stops a
+    later analysis pass from ``COALESCE``-ing the very confound this field
+    exists to remove.
+    """
+    pre_existing = {
+        "run_id": "R1",
+        "reviewed_sha": "abc123",
+        "verdict": "pass",
+        "issues": [],
+        "engine": "claude",
+        "convergence_check_required": False,
+        "created_at": "2026-06-10T00:00:00Z",
+        "gate_ran": True,
+    }
+
+    parsed = ReviewEventData(**pre_existing)
+
+    assert parsed.model is None
+    assert "model" not in parsed.model_dump(exclude_none=True)
+
+
+def test_review_event_data_reads_a_pre_329_row_back_as_not_exhausted() -> None:
+    """#329: the historical rows validate, and read as what was true of them.
+
+    ``cycles_exhausted`` carries a default where its sibling advisory does not,
+    because rows predating it exist. ``False`` is not a convenient guess: under
+    the pre-#329 semantics the refusal fired *before* the last allowed cycle
+    could record a verdict, so no historical ``review`` row was ever written on
+    an exhausted budget. Unlike ``model``'s absence, this one is not ambiguous,
+    which is why it takes a default rather than staying optional.
+    """
+    pre_existing = {
+        "run_id": "R1",
+        "reviewed_sha": "abc123",
+        "verdict": "fail",
+        "issues": ["x"],
+        "engine": "claude",
+        "convergence_check_required": True,
+        "created_at": "2026-06-10T00:00:00Z",
+        "gate_ran": True,
+    }
+
+    parsed = ReviewEventData(**pre_existing)
+
+    assert parsed.cycles_exhausted is False
 
 
 def test_review_event_data_omits_design_context_reason_by_default() -> None:
@@ -320,6 +365,11 @@ def test_close_event_data_keys() -> None:
         "merged_sha": "s",
         "closed_at": "t",
         "outcome": CLOSE_OUTCOME_OK,
+        # #301: always written, so a stats reader can aggregate it as a scalar
+        # — including over rows predating the field, which retried nothing.
+        # ``retried_reasons`` stays absent while empty, keeping the common
+        # close's payload the shape it already had.
+        "retries": 0,
     }
 
 
@@ -341,6 +391,11 @@ def test_close_failure_event_data_keys() -> None:
         "reason": "stale_review",
         "detail": "passing review is stale",
         "created_at": "t",
+        # #301: a gate refusal is upstream of the retry, so its rows always
+        # read zero — the field is present regardless, so "nothing retried" and
+        # "written before the field existed" are the same row rather than a
+        # NULL a reader has to interpret.
+        "retries": 0,
     }
 
 
@@ -477,7 +532,7 @@ def _seed_run(db_path: Path, run_id: str) -> None:
             )
             await conn.commit()
 
-    _sync(_insert())
+    run_sync(_insert())
 
 
 def _emit_review_via_model(
@@ -500,7 +555,7 @@ def _emit_review_via_model(
             run_id=run_id, event_type="review", data=data
         )
 
-    _sync(_emit())
+    run_sync(_emit())
 
 
 def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
@@ -509,7 +564,7 @@ def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "pass")
 
-    assert _sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
+    assert run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
 
 
 def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
@@ -518,7 +573,7 @@ def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "fail")
 
-    result = _sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
+    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
     assert result is not None and result[0] == "no_passing_review"
 
 
@@ -528,7 +583,7 @@ def test_close_gate_stale_when_sha_moved(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "oldsha", "pass")
 
-    result = _sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
+    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
     assert result is not None and result[0] == "stale_review"
 
 

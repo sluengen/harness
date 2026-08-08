@@ -134,6 +134,15 @@ async def _migrate(db_path: Path) -> None:
         discarded it; this column makes it durable. Nullable by design: ``NULL``
         is the clean-start signal, and every pre-migration run reads it, so
         those runs keep re-designing exactly as before.
+    #352: ``runs.assurance TEXT`` / ``runs.assurance_reason TEXT`` — the
+        assurance level ``harness start`` resolved from the issue's labels and
+        the tag saying why it resolved that way (``harness/assurance.py``).
+        Snapshotted once at ``start`` and never mutated, so the stages a run is
+        required to pay for cannot change under it when someone edits a label
+        mid-run. Both nullable: ``NULL`` is what every row written before this
+        migration carries, and ``coerce_assurance`` reads it as ``simple`` — the
+        level that still requires a review — so legacy runs need no backfill and
+        behave exactly as they did.
     """
     async with aiosqlite.connect(db_path) as conn:
         await conn.execute("PRAGMA journal_mode = WAL")
@@ -142,6 +151,8 @@ async def _migrate(db_path: Path) -> None:
             "ALTER TABLE runs ADD COLUMN ticket TEXT",
             "ALTER TABLE runs ADD COLUMN worktree_path TEXT",
             "ALTER TABLE runs ADD COLUMN resumed_from TEXT",
+            "ALTER TABLE runs ADD COLUMN assurance TEXT",
+            "ALTER TABLE runs ADD COLUMN assurance_reason TEXT",
         ):
             try:
                 await conn.execute(ddl)

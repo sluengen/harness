@@ -25,7 +25,7 @@ ADR 0009).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from harness._time import elapsed_ms, iso_z
@@ -53,10 +53,18 @@ class CloseAttempt:
     invariant exists to prevent), and the SHA is deliberately not put *into*
     ``extra``, which ``run_verb`` merges into the printed JSON this change holds
     fixed.
+
+    ``absorbed`` (#301) is the ordered log of transient failures the bounded
+    retry hid, appended to by :func:`~harness.cli.close_retry.call_with_retry`.
+    It rides this object for the same reason ``merged_sha`` does: the landed path
+    and the terminal handler must read one record, so a close that exhausted its
+    retry reports the same count as one that recovered. Bounded at two entries
+    per retried step by the retry's own attempt cap.
     """
 
     invoked_at: str
     merged_sha: str | None = None
+    absorbed: list[str] = field(default_factory=list)
 
 
 #: The verb's gate-refusal exit code (``close.py``'s documented contract): the
@@ -92,6 +100,7 @@ async def record_terminal_close(
     detail: str,
     merged_sha: str | None,
     invoked_at: str,
+    absorbed: list[str] | None = None,
 ) -> None:
     """Append the ``close`` event for a terminal path that did not land the close.
 
@@ -109,6 +118,11 @@ async def record_terminal_close(
             ``None``. Written only to the ledger, so the printed refusal JSON is
             unchanged.
         invoked_at: When the verb began work on this run, for the duration.
+        absorbed: The transient failures the bounded retry hid before this path
+            was reached (#301), in order. ``None`` and the empty list both record
+            ``retries: 0`` with no reason list — a caller that never entered a
+            retry says the same thing as one whose retries all succeeded first
+            try, because both absorbed nothing.
 
     ``merged_sha``'s presence is what keeps #233's "a ``close`` event means the
     tracker was confirmed Done" claim as narrow as it was: a reader keying on the
@@ -128,6 +142,8 @@ async def record_terminal_close(
         merged_sha=merged_sha,
         invoked_at=invoked_at,
         duration_ms=elapsed_ms(invoked_at, created_at),
+        retries=len(absorbed or []),
+        retried_reasons=list(absorbed) if absorbed else None,
     ).model_dump(exclude_none=True)
 
     await emit_observation(db_path, run_id=run_id, event_type="close", data=data)

@@ -20,7 +20,6 @@ AC-transport-rollback: a transport failure (e.g. timeout) leaves zero side effec
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -32,7 +31,9 @@ import pytest
 from typer.testing import CliRunner
 
 from harness.cli import app
+from harness.cli.start import StartOutput
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -128,23 +129,15 @@ async def _fetch_all_runs(db_path: Path) -> list[dict[str, Any]]:
         conn.row_factory = None  # raw tuples
         async with conn.execute(
             "SELECT run_id, ticket, status, base_branch, worktree_path, "
-            "worktree_branch, started_at, resumed_from FROM runs"
+            "worktree_branch, started_at, resumed_from, inputs_json FROM runs"
         ) as cur:
             cols = [d[0] for d in cur.description]  # type: ignore[union-attr]
             rows = await cur.fetchall()
     return [dict(zip(cols, row, strict=True)) for row in rows]
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def fetch_runs(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_all_runs(db_path))
+    return run_sync(_fetch_all_runs(db_path))
 
 
 async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
@@ -159,7 +152,7 @@ async def _fetch_all_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def fetch_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_all_events(db_path))
+    return run_sync(_fetch_all_events(db_path))
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +160,6 @@ def fetch_events(db_path: Path) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     """AC-1: one ``runs`` row with status=open and all required fields."""
     stub = _make_linear_stub()
@@ -197,7 +189,6 @@ def test_ac1_creates_one_open_run_row(repo: Path, db_path: Path) -> None:
     assert len(row["run_id"]) == 26
 
 
-@pytest.mark.slow
 def test_start_emits_no_event_open_run_is_the_runs_row(
     repo: Path, db_path: Path
 ) -> None:
@@ -243,7 +234,6 @@ def _repo_on(tmp_path: Path, branch: str, integration: str | None) -> Path:
     return repo_root
 
 
-@pytest.mark.slow
 def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
     """AC-1: a repo whose CONTEXT.md says ``integration: main`` opens the worktree
     off ``main`` when ``start`` is called with no ``--base``."""
@@ -264,7 +254,6 @@ def test_base_resolves_to_configured_integration_branch(tmp_path: Path) -> None:
     assert rows[0]["base_branch"] == "main"
 
 
-@pytest.mark.slow
 def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
     """AC-3: a repo configured ``integration: dev`` still opens off ``dev`` — the
     existing behaviour is preserved for the common case."""
@@ -283,7 +272,6 @@ def test_base_integration_dev_is_unchanged(tmp_path: Path) -> None:
     assert fetch_runs(db)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
     """An explicit ``--base`` overrides the configured integration branch."""
     repo_root = _repo_on(tmp_path, "main", integration="main")
@@ -310,7 +298,6 @@ def test_explicit_base_flag_still_wins(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac2_transitions_ticket_to_in_progress(repo: Path, db_path: Path) -> None:
     """AC-2: Linear mutation called with the canonical ticket identifier."""
     stub = _make_linear_stub()
@@ -332,7 +319,6 @@ def test_ac2_transitions_ticket_to_in_progress(repo: Path, db_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac3_worktree_created_at_expected_path(repo: Path, db_path: Path) -> None:
     """AC-3: worktree dir exists and is on the expected harness/<run_id> branch."""
     stub = _make_linear_stub()
@@ -430,7 +416,6 @@ def test_incoherent_tracker_config_rejected_before_side_effects(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_ac5_json_output_schema_new_run(repo: Path, db_path: Path) -> None:
     """AC-5: new-run JSON output parses and validates against StartOutput schema."""
     from harness.cli.start import StartOutput
@@ -466,7 +451,6 @@ def test_ac5_json_output_schema_new_run(repo: Path, db_path: Path) -> None:
     assert "nodes" not in ticket
 
 
-@pytest.mark.slow
 def test_ac5_json_output_schema_existing_run(repo: Path, db_path: Path) -> None:
     """AC-5: existing-run JSON output parses and validates against StartOutput schema."""
     from harness.cli.start import StartOutput
@@ -502,7 +486,6 @@ def test_ac5_json_output_schema_existing_run(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_context_economy_compact_blob(repo: Path, db_path: Path) -> None:
     """Context economy: output is bounded and contains only agent-relevant fields."""
     # Simulate a fat Linear response that the LinearClient normalises
@@ -542,7 +525,6 @@ def test_context_economy_compact_blob(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_duplicate_ticket_refused(repo: Path, db_path: Path) -> None:
     """A second ``harness start`` for the same ticket surfaces the existing run."""
     stub = _make_linear_stub()
@@ -575,7 +557,6 @@ def test_duplicate_ticket_refused(repo: Path, db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_canonical_identifier_dedupes_mixed_case(repo: Path, db_path: Path) -> None:
     """A lowercase alias then the canonical spelling must not open two runs.
 
@@ -614,7 +595,6 @@ def test_canonical_identifier_dedupes_mixed_case(repo: Path, db_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_description_truncated_at_max_chars(repo: Path, db_path: Path) -> None:
     """AC-description-bound: oversized description is capped at TICKET_DESCRIPTION_MAX_CHARS."""
     from harness.cli.start import TICKET_DESCRIPTION_MAX_CHARS, StartOutput
@@ -1022,7 +1002,6 @@ def test_worktree_failure_leaves_no_db_row_and_no_transition(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_db_failure_removes_worktree_and_no_transition(
     repo: Path, db_path: Path
 ) -> None:
@@ -1058,7 +1037,6 @@ def test_db_failure_removes_worktree_and_no_transition(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_transition_failure_rolls_back_worktree_and_db_row(
     repo: Path, db_path: Path
 ) -> None:
@@ -1089,7 +1067,6 @@ def test_transition_failure_rolls_back_worktree_and_db_row(
     assert remaining == [], f"expected no worktrees after transition failure, got {remaining}"
 
 
-@pytest.mark.slow
 def test_unconfirmed_transition_rolls_back_same_as_a_raised_request_error(
     repo: Path, db_path: Path
 ) -> None:
@@ -1126,7 +1103,6 @@ def test_unconfirmed_transition_rolls_back_same_as_a_raised_request_error(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_timeout_during_transition_rolls_back(repo: Path, db_path: Path) -> None:
     """A transport failure (timeout, surfaced as LinearRequestError) rolls back all state."""
     from harness.linear import LinearRequestError
@@ -1158,7 +1134,6 @@ def test_timeout_during_transition_rolls_back(repo: Path, db_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> None:
     """Without --db, the DB file is created inside --repo, not the caller's CWD."""
     stub = _make_linear_stub()
@@ -1190,7 +1165,6 @@ def test_default_db_resolves_relative_to_repo(repo: Path, tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
     """The open run row leaves ``pid`` NULL.
 
@@ -1216,7 +1190,7 @@ def test_start_does_not_write_pid(repo: Path, db_path: Path) -> None:
             row = await cur.fetchone()
         return row[0] if row is not None else "no-row"
 
-    assert _sync(_fetch_pid()) is None
+    assert run_sync(_fetch_pid()) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1324,7 +1298,6 @@ def _worktree_head(worktree_path: Path) -> str:
     ).stdout.strip()
 
 
-@pytest.mark.slow
 def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> None:
     """AC-1: a `reclaimed` ticket with a pushed WIP branch resumes from it — the
     new worktree continues from the WIP tip, while `base_branch` stays `dev`."""
@@ -1353,7 +1326,6 @@ def test_resume_continues_from_preserved_branch(repo: Path, db_path: Path) -> No
     stub.fetch_resume_branch.assert_awaited_once_with("CAL-570")
 
 
-@pytest.mark.slow
 def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None:
     """CAL-923: a proactively handed-off ticket (still In Progress, no `reclaimed`
     label, so `fetch_resume_branch` finds nothing) resumes the SAME ticket from its
@@ -1382,7 +1354,6 @@ def test_resume_continues_from_handoff_branch(repo: Path, db_path: Path) -> None
     stub.fetch_handoff_branch.assert_awaited_once_with("CAL-570")
 
 
-@pytest.mark.slow
 def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) -> None:
     """AC-2: `--resume` on a ticket with no preserved branch starts clean off dev."""
     dev_sha = _git(repo, "rev-parse", "dev").stdout.strip()
@@ -1403,7 +1374,6 @@ def test_resume_with_no_durable_wip_restarts_clean(repo: Path, db_path: Path) ->
     assert fetch_runs(db_path)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_resume_records_the_recovered_branch_on_the_run(
     repo: Path, db_path: Path
 ) -> None:
@@ -1430,7 +1400,6 @@ def test_resume_records_the_recovered_branch_on_the_run(
     assert fetch_runs(db_path)[0]["resumed_from"] == wip_branch
 
 
-@pytest.mark.slow
 def test_resume_that_falls_back_records_no_resumed_from(
     repo: Path, db_path: Path
 ) -> None:
@@ -1455,7 +1424,6 @@ def test_resume_that_falls_back_records_no_resumed_from(
     assert fetch_runs(db_path)[0]["resumed_from"] is None
 
 
-@pytest.mark.slow
 def test_plain_start_records_no_resumed_from(repo: Path, db_path: Path) -> None:
     """#258: an ordinary start (no ``--resume``) records ``NULL`` — the common path."""
     stub = _make_resume_stub("harness/should-not-be-used")
@@ -1472,7 +1440,6 @@ def test_plain_start_records_no_resumed_from(repo: Path, db_path: Path) -> None:
     assert fetch_runs(db_path)[0]["resumed_from"] is None
 
 
-@pytest.mark.slow
 def test_resume_falls_back_clean_when_branch_does_not_fetch(
     repo: Path, db_path: Path
 ) -> None:
@@ -1503,7 +1470,6 @@ def test_resume_falls_back_clean_when_branch_does_not_fetch(
     assert fetch_runs(db_path)[0]["base_branch"] == "dev"
 
 
-@pytest.mark.slow
 def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> None:
     """Without `--resume`, start never calls fetch_resume_branch — a plain start
     is unchanged (an ordinary interactive run pays no resume cost)."""
@@ -1528,7 +1494,6 @@ def test_no_resume_flag_never_probes_for_a_branch(repo: Path, db_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_resume_on_open_run_returns_it_unchanged_without_probing_branches(
     repo: Path, db_path: Path
 ) -> None:
@@ -1565,7 +1530,6 @@ def test_resume_on_open_run_returns_it_unchanged_without_probing_branches(
     stub.fetch_handoff_branch.assert_not_awaited()
 
 
-@pytest.mark.slow
 def test_cancel_then_resume_opens_a_new_run_from_the_preserved_branch(
     repo: Path, db_path: Path
 ) -> None:
@@ -1779,7 +1743,7 @@ def test_find_open_run_surfaces_db_read_failure(repo: Path, db_path: Path) -> No
     boom = aiosqlite.OperationalError("database is locked")
     with patch("harness.cli.start.store.connect", side_effect=boom):  # noqa: SIM117
         with pytest.raises(_StartError) as excinfo:
-            _sync(_find_open_run(db_path, "CAL-570"))
+            run_sync(_find_open_run(db_path, "CAL-570"))
 
     assert "database is locked" in str(excinfo.value), (
         "the underlying DB error must be carried in the surfaced message"
@@ -1805,9 +1769,9 @@ def test_find_open_run_returns_none_for_uninitialized_db(
             await conn.execute("CREATE TABLE unrelated (x)")
             await conn.commit()
 
-    _sync(_make_db_without_runs_table())
+    run_sync(_make_db_without_runs_table())
 
-    assert _sync(_find_open_run(db_path, "CAL-570")) is None
+    assert run_sync(_find_open_run(db_path, "CAL-570")) is None
 
 
 def test_delete_run_row_warns_when_rollback_fails(
@@ -1832,7 +1796,7 @@ def test_delete_run_row_warns_when_rollback_fails(
         patch("harness.cli.start.typer.echo") as mock_echo,
     ):
         # Best-effort: a failed rollback must NOT propagate.
-        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+        run_sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
 
     mock_echo.assert_called_once()
     args, kwargs = mock_echo.call_args
@@ -1868,10 +1832,129 @@ def test_delete_run_row_silent_on_successful_rollback(
             await conn.commit()
 
     _seed_open_run_result = _seed_open_run()
-    _sync(_seed_open_run_result)
+    run_sync(_seed_open_run_result)
 
     with patch("harness.cli.start.typer.echo") as mock_echo:
-        _sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
+        run_sync(start_mod._delete_run_row(db_path, "01TESTRUNID"))
 
     mock_echo.assert_not_called()
     assert fetch_runs(db_path) == [], "the row must be deleted on a clean rollback"
+
+
+# ---------------------------------------------------------------------------
+# Declared attendance — #295 / ADR 0011
+#
+# `start` carries the mode; nothing reads it yet (#296 review's breaker, #297
+# the --stale sweep). These lock the carrier so those two land against a
+# contract that cannot have drifted underneath them.
+# ---------------------------------------------------------------------------
+
+
+def test_start_attended_records_the_declared_mode(repo: Path, db_path: Path) -> None:
+    """AC-1: ``--attended`` is recorded on the run row.
+
+    Read back through the shared resolver rather than by string comparison, so
+    this asserts the contract #296 / #297 will consume — not the byte shape,
+    which is `attendance_inputs_json`'s own business.
+    """
+    from harness.cli._runs import resolve_attended
+
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--attended", "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert resolve_attended(fetch_runs(db_path)[0]["inputs_json"]) is True
+
+
+def test_plain_start_records_todays_exact_inputs_json(repo: Path, db_path: Path) -> None:
+    """AC-2: no flag writes the byte-identical value ``start`` wrote before #295.
+
+    A **pin**, not a test written after the fact: it passed before the change
+    and its whole job is to fail if the edit that added the flag altered the
+    default path. Asserted on the raw stored string — the parsed form would
+    still pass if the column started carrying ``{"attended": false}``, which is
+    exactly the drift this forbids (absent key, not an explicit false, is what
+    every pre-existing row means).
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert fetch_runs(db_path)[0]["inputs_json"] == "{}"
+
+
+@pytest.mark.parametrize("declared", [True, False])
+def test_json_output_names_the_resolved_mode(
+    repo: Path, db_path: Path, declared: bool
+) -> None:
+    """AC-4: the machine surface carries ``attended`` on both paths.
+
+    Present rather than omitted when false — the orchestrator confirms the
+    recorded mode by reading a field, never by inferring it from absence.
+    """
+    stub = _make_linear_stub()
+    argv = ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"]
+    if declared:
+        argv.append("--attended")
+
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        result = cli_runner.invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["attended"] is declared
+    # The schema assertion travels with it (the AC-5 pattern above).
+    assert StartOutput.model_validate(payload).attended is declared
+
+
+def test_attended_cannot_be_declared_onto_an_already_open_run(
+    repo: Path, db_path: Path
+) -> None:
+    """ADR 0011: attendance is fixed at ``start``.
+
+    A repeat ``start --attended`` against a run opened without it surfaces the
+    existing run reporting the **recorded** mode, and writes nothing. This is
+    the case most likely to be implemented as "flag wins" by accident — which
+    would let an unattended run be upgraded out of the spend ceiling by a second
+    invocation, with no new row to show for it.
+    """
+    stub = _make_linear_stub()
+    with (
+        patch("harness.tracker.LinearClient", return_value=stub),
+        patch("harness.tracker.linear_api_key", return_value="test-key"),
+    ):
+        first = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path), "--json"],
+        )
+        assert first.exit_code == 0, first.output
+
+        second = cli_runner.invoke(
+            app,
+            ["start", "CAL-570", "--repo", str(repo), "--db", str(db_path),
+             "--attended", "--json"],
+        )
+
+    assert second.exit_code == 0, second.output
+    rows = fetch_runs(db_path)
+    assert len(rows) == 1, "a repeat start must not open a second run"
+    assert rows[0]["inputs_json"] == "{}", "the stored mode must not be upgraded in place"
+    assert json.loads(second.output)["attended"] is False

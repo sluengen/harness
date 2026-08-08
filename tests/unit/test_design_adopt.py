@@ -19,7 +19,6 @@ call, wrongly adopting hands the session a design for code that is not there.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import unittest.mock as mock
@@ -30,12 +29,13 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from harness.cli import app
+from harness.cli import app, design_protocol
 from harness.cli import design as design_mod
 from harness.cli import design_tracker as design_tracker_mod
 from harness.cli.design_protocol import design_content_hash
 from harness.design_marker import format_design_comment
 from harness.state import store
+from tests._asyncutil import run_sync
 
 cli_runner = CliRunner()
 
@@ -48,7 +48,9 @@ _PRIOR_DESIGN = "### Data model\n\nThe design the dead run produced.\n"
 _PRIOR_HASH = design_content_hash(_PRIOR_DESIGN)
 _PRIOR_GROUNDED_SHA = "a" * 40
 
-_FRESH_DESIGN = "### Data model\n\nA freshly engineered design.\n"
+# No trailing newline: a design collected from either channel is normalized
+# (trimmed), so a fixture carrying one would not round-trip to its own hash.
+_FRESH_DESIGN = "### Data model\n\nA freshly engineered design."
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +87,6 @@ def db_path(repo: Path) -> Path:
     return repo / ".harness" / "harness.db"
 
 
-def _sync(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 async def _insert_run(
     db_path: Path,
     run_id: str,
@@ -107,8 +101,12 @@ async def _insert_run(
             "INSERT INTO runs ("
             "run_id, workflow_name, workflow_version, status, state_json, "
             "inputs_json, base_branch, worktree_path, worktree_branch, ticket, "
-            "started_at, resumed_from"
-            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?)",
+            "started_at, resumed_from, assurance"
+            # #352: ``complex`` — adoption is a *design* path, so it only arises
+            # on a run whose assurance requires the stage. A run that requires no
+            # design has nothing to adopt, which is asserted in
+            # ``test_design_assurance.py`` rather than by neutering this suite.
+            ") VALUES (?, '', 0, ?, '{}', '{}', 'dev', ?, ?, ?, ?, ?, 'complex')",
             (
                 run_id,
                 status,
@@ -124,7 +122,7 @@ async def _insert_run(
 
 def _seed_resumed_run(db_path: Path, repo: Path, *, resumed_from: str | None = _WIP_BRANCH) -> None:
     """The run under test: open, worktree == repo, resumed (or not) as given."""
-    _sync(_insert_run(db_path, _RUN_ID, str(repo), status="open", resumed_from=resumed_from))
+    run_sync(_insert_run(db_path, _RUN_ID, str(repo), status="open", resumed_from=resumed_from))
 
 
 async def _insert_design_event(db_path: Path, run_id: str, data: dict[str, Any]) -> None:
@@ -144,7 +142,7 @@ def _seed_source_design(
     design_hash: str | None = _PRIOR_HASH,
 ) -> None:
     """A closed predecessor run for the same ticket, carrying its design event."""
-    _sync(
+    run_sync(
         _insert_run(
             db_path, _SOURCE_RUN_ID, "/gone", status="closed", resumed_from=None
         )
@@ -166,7 +164,7 @@ def _seed_source_design(
     if status != "ok":
         data["reason"] = "engine_timeout"
         data["detail"] = "killed"
-    _sync(_insert_design_event(db_path, _SOURCE_RUN_ID, data))
+    run_sync(_insert_design_event(db_path, _SOURCE_RUN_ID, data))
 
 
 async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
@@ -191,7 +189,7 @@ async def _fetch_design_events(db_path: Path) -> list[dict[str, Any]]:
 
 
 def design_events(db_path: Path) -> list[dict[str, Any]]:
-    return _sync(_fetch_design_events(db_path))
+    return run_sync(_fetch_design_events(db_path))
 
 
 def _prior_comment(design: str = _PRIOR_DESIGN, *, design_hash: str = _PRIOR_HASH) -> str:
@@ -216,13 +214,16 @@ class _EngineSpy:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def __call__(self, **kwargs: Any) -> design_mod.RunResult:
+    async def __call__(self, *, cmd: list[str], **kwargs: Any) -> design_mod.RunResult:
         self.calls += 1
-        return design_mod.RunResult(
-            stdout="SUBMIT: " + json.dumps({"design_markdown": _FRESH_DESIGN}),
-            stderr="",
-            returncode=0,
+        # The design leaves on the file channel since #294; writing it is what
+        # makes a *declined* adoption reach a normal ``ok`` event rather than
+        # degrading, so this spy tells "adopted" from "re-designed" by content.
+        out = (
+            Path(cmd[cmd.index("--add-dir") + 1]) / design_protocol.DESIGN_OUT_FILENAME
         )
+        out.write_text(_FRESH_DESIGN, encoding="utf-8")
+        return design_mod.RunResult(stdout="", stderr="", returncode=0)
 
 
 def _tracker_stub(design_comment: str | None) -> Any:
@@ -373,7 +374,7 @@ def test_adoption_records_only_a_design_event_leaving_the_budget_untouched(
     """
     _seed_resumed_run(db_path, repo)
     _seed_source_design(db_path)
-    _sync(
+    run_sync(
         _insert_review_event(db_path, _SOURCE_RUN_ID)
     )  # the predecessor had burnt a cycle
 
@@ -407,7 +408,7 @@ def _event_types(db_path: Path, run_id: str) -> list[str]:
         ):
             return [str(r[0]) for r in await cur.fetchall()]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _review_events(db_path: Path) -> list[dict[str, Any]]:
@@ -422,7 +423,7 @@ def _review_events(db_path: Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    return _sync(_fetch())
+    return run_sync(_fetch())
 
 
 def _invoke_review(repo: Path, db_path: Path, design_file: Path) -> Any:
@@ -465,6 +466,28 @@ def test_declines_when_the_run_did_not_resume(repo: Path, db_path: Path) -> None
     data = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID][0]["data"]
     assert "inherited_from" not in data
     assert data["design_hash"] == design_content_hash(_FRESH_DESIGN)
+
+
+def test_an_adopted_event_records_no_output_channel(
+    repo: Path, db_path: Path
+) -> None:
+    """No engine ran, so there is no channel to name (#294).
+
+    ``channel`` exists to say how *this* invocation's engine delivered its
+    design. An adoption ran none — it recovered the design from the ticket — so
+    recording ``'file'`` would assert a write that never happened, and recording
+    ``'stdout'`` would raise a permission alarm out of nothing.
+    """
+    _seed_resumed_run(db_path, repo)
+    _seed_source_design(db_path)
+
+    result = _invoke(repo, db_path, _EngineSpy(), _tracker_stub(_prior_comment()))
+
+    assert result.exit_code == 0, result.output
+    data = [e for e in design_events(db_path) if e["run_id"] == _RUN_ID][0]["data"]
+    assert data["inherited_from"], "this test is only meaningful on the adopt path"
+    assert "channel" not in data
+    assert "design_chars" not in data
 
 
 def test_declines_when_the_ticket_carries_no_design_comment(
@@ -555,7 +578,7 @@ def test_adoption_never_inherits_from_another_ticket(repo: Path, db_path: Path) 
     ticket is not an adoption source — inheritance follows the change spec."""
     _seed_resumed_run(db_path, repo)
     _seed_source_design(db_path)
-    _sync(_reassign_ticket(db_path, _SOURCE_RUN_ID, "999"))
+    run_sync(_reassign_ticket(db_path, _SOURCE_RUN_ID, "999"))
     engine = _EngineSpy()
 
     result = _invoke(repo, db_path, engine, _tracker_stub(_prior_comment()))

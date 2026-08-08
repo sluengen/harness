@@ -1,12 +1,15 @@
 """Top-level pytest configuration.
 
-Registers custom markers used by integration tests, and keeps the suite
-hermetic against a real ``LINEAR_API_KEY`` in the environment.
+Registers custom markers used by integration tests, assigns every collected
+test its dependency tier, and keeps the suite hermetic against a real
+``LINEAR_API_KEY`` in the environment.
 """
 
 from __future__ import annotations
 
 import pytest
+
+from tests._tiers import apply_tier_markers, deny_boundaries
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -16,6 +19,35 @@ def pytest_configure(config: pytest.Config) -> None:
         "docker: integration tests that build and run a docker image "
         "(skip if docker is unavailable).",
     )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Assign each collected test the tier its module's dependencies imply.
+
+    Derived rather than declared, so ``-m unit`` / ``-m "unit or guard"`` /
+    ``-m integration`` select honestly without a marker line in 250 modules —
+    the rationale, the boundary definitions and the escape hatch all live in
+    :mod:`tests._tiers`. This hook runs before pytest's own ``-m`` deselection,
+    which is what makes a derived marker selectable at all.
+    """
+    apply_tier_markers(items)
+
+
+@pytest.fixture(autouse=True)
+def _deny_out_of_process_boundaries(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail a ``unit``-tier test that spawns a process or opens a database.
+
+    The runtime half of the tier guarantee. :func:`tests._tiers.classify` is
+    structural and cannot see a boundary a test reaches through *production*
+    code; this makes that miss loud instead of letting the fast tier quietly
+    acquire a git, ledger or process dependency. ``guard`` and ``integration``
+    tests are untouched — a guard reaching the tracked set through
+    ``git ls-files`` is exactly what its tier permits.
+    """
+    if request.node.get_closest_marker("unit") is not None:
+        deny_boundaries(monkeypatch)
 
 
 @pytest.fixture(autouse=True)
@@ -34,3 +66,11 @@ def _hermetic_linear_key(monkeypatch: pytest.MonkeyPatch) -> None:
     is transparent to them.
     """
     monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+
+
+# ``pytester`` is enabled here because a root conftest is the only place pytest
+# accepts ``pytest_plugins``. It exists for one test — the end-to-end proof in
+# ``tests/unit/test_tiers.py`` that a derived tier marker is actually selectable
+# by ``-m``, which is the affordance #336 delivers and which no assertion about
+# ``add_marker`` alone can demonstrate. The nested runs are in-process.
+pytest_plugins = ["pytester"]
