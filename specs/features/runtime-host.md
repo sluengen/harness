@@ -2,7 +2,7 @@
 feature: runtime-host
 status: implemented
 last_updated: 2026-08-08
-tickets: ["#307", "#308", "#370", "#380"]
+tickets: ["#307", "#308", "#370", "#380", "#383"]
 ---
 
 # Runtime host (live)
@@ -308,10 +308,14 @@ Two things follow, and both shipped or were filed rather than left as inference:
   `scripts/verify.sh` runs `-m docker` first under `set -euo pipefail`, so from
   #307 until #380 the parallel stage never executed on Linux at all, and
   `test_wrapper_is_shellcheck_clean` — which skips on the macOS host, where
-  shellcheck is absent — had never run anywhere. It fails on SC2155 at
+  shellcheck is absent — had never run anywhere. It failed on SC2155 at
   `docker/harness-wrapper.sh:304`, a line #307 wrote and #380 does not touch.
-  Filed as its own follow-up; noted here because "the docker stage is green and
-  the job is still red" is otherwise a confusing state to inherit.
+  **#383 fixed it** by splitting that `export` from its assignment, which is a
+  behaviour change rather than lint hygiene: the old line masked a failing
+  `_wrapper_status` under the wrapper's own `set -e`. The wrapper contract in
+  [host-platform](host-platform.md) owns that record. Noted here because "the
+  docker stage is green and the job is still red" was otherwise a confusing state
+  to inherit, and this is where that state was first written down.
 
 **`Capture.contract` is deliberately narrow.** The two comparisons that assert
 #307's AC-1 (`over_socket` vs `directly`, and before vs after a host restart) are

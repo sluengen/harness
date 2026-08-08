@@ -301,7 +301,14 @@ fi
 # it is a symlink into a checkout or a detached copy — which is knowable only from
 # the shell that resolved it. The client reads it from the environment and pins it
 # into the container by value.
-export HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
+#
+# Assigned and exported on two lines, and not as lint hygiene: `export NAME="$(f)"`
+# is one command whose exit status is *export's*, and export's status does not
+# carry the substitution's — so `set -e` above could not see `_wrapper_status`
+# fail, and the verb ran with a silently empty status. Split, the assignment
+# carries the function's own status and a failure stops the script (SC2155, #383).
+HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
+export HARNESS_WRAPPER_STATUS
 
 exec env PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
   "${_HOST_PY[@]}" -m harness.hostenv.client "$(pwd)" -- "$@"
