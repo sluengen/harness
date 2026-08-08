@@ -9,6 +9,11 @@ non-zero ``--gate-exit`` before invoking an engine, and five consecutive
 unattended build ticks shipped nothing. Every blocked ticket both had not caused
 the condition and could not fix it.
 
+That fragment count is gone with the system it measured (#324, ADR 0014) — the
+changelog is derived from commits, so there is no pending directory to count.
+The reasoning above is kept because it is what sets the *remaining* bounds'
+home: they are here, not in the gate, for the same reason.
+
 The discriminator, worth stating because it generalises past this file: ask what
 a *single change* can do about the assertion.
 
@@ -39,7 +44,7 @@ Only the release fold moves a value here, and it moves it in the same commit
 that folds — the rule is unchanged from when these constants lived in
 ``tests/unit/test_changelog_rotation.py``, only the file changed.
 
-Stdlib only. Reads two subjects under ``--repo-root``; never writes, never
+Stdlib only. Reads one subject under ``--repo-root``; never writes, never
 deletes, makes no network call and spawns no subprocess.
 """
 
@@ -50,8 +55,6 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-
-from changelog_fragments import FRAGMENT_DIRNAME, fragment_paths
 
 __all__ = [
     "BOUNDS",
@@ -66,11 +69,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: ``CHANGELOG.md``'s ceilings — a **ratchet**, not a headroom budget.
 #:
-#: Entries do not accumulate here: a change writes ``changelog.d/<ticket>.md``
-#: and only the release fold touches this file, so between releases it does not
-#: change at all. That is what lets the bounds be *may-not-grow*. They are the
-#: measurement at the #322 drain baseline (7 lines / 388 bytes) plus the same
-#: small stated allowance the #267 baseline used (+4 lines / +577 bytes).
+#: Entries do not accumulate here: since #324 a change writes no changelog
+#: artifact at all and only the release assembly touches this file, so between
+#: releases it does not change. That is what lets the bounds be *may-not-grow*.
+#: They are the measurement at the #322 drain baseline (7 lines / 388 bytes)
+#: plus the same small stated allowance the #267 baseline used (+4 lines /
+#: +577 bytes).
 #:
 #: **Re-baselined downward at #322**, from 160 lines / 46,500 bytes — the
 #: measurement at #267, when the root still carried 12 entries the rotation had
@@ -81,20 +85,14 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 #: raised to accommodate the section, which is what landing 76 KB in the root
 #: would have required.
 #:
-#: They are cadence bounds because of how they *breach*: the fold inserts a
-#: released section, and the tree then sits over the ratchet until the same
-#: commit re-baselines it. The per-change hazard they used to catch in passing —
-#: a direct append under ``## [Unreleased]`` — is now caught in the gate by
+#: They are cadence bounds because of how they *breach*: the release assembly
+#: inserts a released section, and the tree then sits over the ratchet until the
+#: same commit re-baselines it. The per-change hazard they catch in passing — a
+#: direct append under ``## [Unreleased]`` — is also caught in the gate by
 #: ``test_unreleased_window_carries_no_new_entries``, which is base-independent
 #: and has no accumulated-state component. See that test for the pairing.
 _ROOT_BYTE_BOUND = 965
 _ROOT_LINE_BOUND = 11
-
-#: Too **many** pending fragments means a release is overdue. (A single overlong
-#: fragment is a different kind of problem entirely — the diff that adds it can
-#: always shorten it — so that bound stays in the gate as
-#: ``test_each_fragment_is_byte_bounded``.)
-_FRAGMENT_COUNT_BOUND = 40
 
 
 @dataclass(frozen=True)
@@ -153,19 +151,6 @@ class CadenceBound:
         return line
 
 
-def _count_fragments(repo_root: Path) -> int:
-    """Pending entries in the unreleased window.
-
-    Reuses ``changelog_fragments.fragment_paths`` rather than re-enumerating —
-    a second listing here would drift from the one the fold consumes. A missing
-    directory is zero pending, not an error: #324 deletes the fragment system,
-    and this bound should then read 0 and pass rather than fail closed.
-    """
-    if not (repo_root / FRAGMENT_DIRNAME).is_dir():
-        return 0
-    return len(fragment_paths(repo_root))
-
-
 def _changelog_bytes(repo_root: Path) -> int:
     return len((repo_root / "CHANGELOG.md").read_bytes())
 
@@ -178,17 +163,6 @@ def _changelog_lines(repo_root: Path) -> int:
 #: The single home of every cadence bound. ``RELEASING.md``'s table and its doc
 #: guard derive from this tuple; nothing retypes a value.
 BOUNDS: tuple[CadenceBound, ...] = (
-    CadenceBound(
-        name="changelog-fragments",
-        subject=f"{FRAGMENT_DIRNAME}/ fragments",
-        unit="files",
-        bound=_FRAGMENT_COUNT_BOUND,
-        remedy=(
-            "a release is overdue: cut one (RELEASING.md), whose fold empties "
-            "the directory"
-        ),
-        measure=_count_fragments,
-    ),
     CadenceBound(
         name="changelog-bytes",
         subject="CHANGELOG.md size",

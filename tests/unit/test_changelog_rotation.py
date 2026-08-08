@@ -19,10 +19,12 @@ These tests are the executable form of the acceptance criteria:
   What stays here is the per-change half — see the next bullet.
 * **The unreleased window carries no new entries** — the base-independent
   replacement for what the byte/line ratchet used to catch *in passing*: a
-  change appending under ``## [Unreleased]`` instead of writing a fragment. It
-  is a genuine correctness bound (only a diff can raise the count, and that diff
-  can always fix it), and it holds wherever the suite runs — including the
-  environments where ``changelog_fragments.py require`` must abstain.
+  change appending under ``## [Unreleased]``. It is a genuine correctness bound
+  (only a diff can raise the count, and that diff can always fix it), and it
+  holds wherever the suite runs. Since #324 it is the **only** per-change
+  changelog guard: the fragment system that gave a change somewhere else to
+  write is deleted, and a release derives its entries from the commit range, so
+  this window stays empty between releases rather than being emptied by a fold.
 * **Archive exists** — the released history lives in a git-tracked
   ``CHANGELOG-archive/<year>.md`` carrying every moved entry, and is gone from
   the root; the root points at it.
@@ -46,30 +48,25 @@ _ARCHIVE = _REPO_ROOT / _ARCHIVE_DIR / "2026.md"
 #: How many ``### `` entries may sit under ``## [Unreleased]``.
 #:
 #: The per-change half of what the retired byte/line ratchet used to do. Since
-#: #267 an entry is written as ``changelog.d/<ticket>.md`` and this window does
-#: not grow; a change that appends here instead is the conflict class #267
-#: removed, re-appearing. Only a diff can raise this count, and the diff that
-#: raised it can always fix it (move the text into a fragment) — that is what
-#: makes it a **correctness** bound and keeps it in the gate, unlike the size
-#: ratchets #350 moved to ``scripts/cadence.py``.
+#: #324 a change writes **no** changelog artifact — the release derives its
+#: entries from the commit range (ADR 0014) — so this window does not grow at
+#: all between releases, and a change that appends here is re-opening the shared
+#: insertion point ADR 0010 removed. Only a diff can raise this count, and the
+#: diff that raised it can always fix it (put the text in the commit body, where
+#: the release reads it from) — that is what makes it a **correctness** bound and
+#: keeps it in the gate, unlike the size ratchets #350 moved to
+#: ``scripts/cadence.py``.
 #:
-#: This is the base-independent half of the guard pair. Its sibling,
-#: ``scripts/changelog_fragments.py require``, is the direct check but must
-#: abstain where the merge base is unknowable (a shallow CI checkout, a detached
-#: ``promote`` worktree); this holds wherever the suite runs.
+#: It was the base-independent half of a pair, and is now the whole of it: its
+#: sibling ``scripts/changelog_fragments.py require`` needed a merge base and
+#: abstained where one could not be resolved (a shallow CI checkout, a detached
+#: ``promote`` worktree). This holds wherever the suite runs, which is why it is
+#: the half that survived the deletion.
 #:
-#: **It only ever moves down.** The release fold and rotation empty the window,
-#: so re-baselining this constant is housekeeping that can never block anyone —
-#: the property that disqualifies it from being a cadence bound.
+#: **It only ever moves down.** The release rotation empties the window, so
+#: re-baselining this constant is housekeeping that can never block anyone — the
+#: property that disqualifies it from being a cadence bound.
 _UNRELEASED_ENTRY_COUNT = 0
-
-#: A single overlong fragment is the entry-length problem ``RELEASING.md``'s
-#: per-entry budget has always named. It stays in the gate: the diff that adds
-#: an over-long fragment is the one that can shorten it. (The *count* bound over
-#: the same directory is cadence, not correctness, and lives in
-#: ``scripts/cadence.py`` — #350.)
-_FRAGMENT_DIRNAME = "changelog.d"
-_FRAGMENT_BYTE_BOUND = 3_000
 
 #: Distinctive strings from *released* entries — they must live in the archive
 #: and be gone from the root. These sentinels pin the **rotation boundary**, so
@@ -123,56 +120,21 @@ def _unreleased_window() -> list[str]:
 
 
 def test_unreleased_window_carries_no_new_entries() -> None:
-    """A change writes a fragment; it does not append here.
+    """A change records its entry in its commit; it does not append here.
 
-    The base-independent half of the guard pair — it holds in the environments
-    where ``changelog_fragments.py require`` abstains (a shallow checkout, a
-    detached ``promote`` worktree), which is why there are two guards and
-    neither subsumes the other.
+    The base-independent guard, and since #324 the only per-change changelog
+    guard: its former sibling ``changelog_fragments.py require`` needed a merge
+    base and abstained without one (a shallow checkout, a detached ``promote``
+    worktree). This holds wherever the suite runs.
     """
     entries = [line for line in _unreleased_window() if line.startswith("### ")]
     assert len(entries) <= _UNRELEASED_ENTRY_COUNT, (
         f"CHANGELOG.md's [Unreleased] window holds {len(entries)} entries — over "
-        f"the {_UNRELEASED_ENTRY_COUNT} this file is pinned at. Since #267 a "
-        f"change does not append here: write {_FRAGMENT_DIRNAME}/<ticket>.md "
-        "instead — see RELEASING.md 'Changelog fragments'. "
-        "The release fold empties this window, so this constant is only ever "
-        "re-baselined downward."
-    )
-
-
-# ---------------------------------------------------------------------------
-# The unreleased window moved to changelog.d/ — so the bound moved with it.
-# ---------------------------------------------------------------------------
-
-
-def _fragment_paths() -> list[Path]:
-    directory = _REPO_ROOT / _FRAGMENT_DIRNAME
-    return sorted(
-        p
-        for p in directory.iterdir()
-        if p.is_file() and p.suffix == ".md" and p.name != "README.md"
-    )
-
-
-def test_each_fragment_is_byte_bounded() -> None:
-    """The per-entry budget, enforced where entries now live.
-
-    ``RELEASING.md`` has asked for ~1,000-byte entries since the fold ran on
-    nine consecutive ticks without buying durable headroom. Asking was not
-    enough — the newest entries ran 2,000–3,000 bytes each. This is that budget
-    with teeth, set at the point where an entry is unambiguously an essay.
-    """
-    oversized = {
-        p.name: len(p.read_bytes())
-        for p in _fragment_paths()
-        if len(p.read_bytes()) > _FRAGMENT_BYTE_BOUND
-    }
-    assert not oversized, (
-        f"these fragments are over the {_FRAGMENT_BYTE_BOUND:,}-byte per-entry "
-        f"budget: {oversized}. Reasoning longer than that belongs in the change "
-        "spec, the commit body, or the review record — where it already lives in "
-        "full, and where nobody pays a context tax to skip it."
+        f"the {_UNRELEASED_ENTRY_COUNT} this file is pinned at. Since #324 a "
+        "change does not append here at all: write the entry as the commit body, "
+        "which is what the release assembles from (ADR 0014). The release "
+        "rotation empties this window, so this constant is only ever re-baselined "
+        "downward."
     )
 
 

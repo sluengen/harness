@@ -159,8 +159,8 @@ The table, in TOML — ``'''literal'''`` strings need no escaping, and ``old``/
 ``new`` are exact source substrings full of quotes and backslashes::
 
     select = ["-m", "unit or guard"]
-    sentinel_file = "changelog.d/360.md"
-    sentinel_text = "a shared mutation harness"
+    sentinel_file = "scripts/cadence.py"
+    sentinel_text = "Release-cadence bounds"
 
     [[mutation]]
     id = "memo-read-key"
