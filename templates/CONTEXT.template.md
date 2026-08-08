@@ -48,6 +48,11 @@ commands:
   test_one: "{e.g. pytest path::test_name}"
   verify:  "{the canonical combined gate, if the repo has one — e.g. bash scripts/verify.sh — or omit}"
   run:     "{e.g. docker compose up}"
+assurance:
+  # Optional. Required only to honour assurance:trivial. The command inspects
+  # the staged diff, prints certified paths/reason, and exits non-zero for any
+  # path or risk outside the repo's versioned allowlist.
+  trivial_certify: "{e.g. bash scripts/certify-trivial.sh — or omit}"
 branches:
   integration: {e.g. dev}      # feature branches base from and merge here
   release: {e.g. main}         # how production is fed

@@ -74,8 +74,8 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.1, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.0, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.2.1, profiles: [harness] }
-  agents/architect.md:                { id: architect,                version: 0.3.0, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.3.0, profiles: [harness] }
+  agents/architect.md:                { id: architect,                version: 0.4.0, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.2.2, profiles: [harness] }
 
   # --- commands ---
@@ -85,7 +85,7 @@ files:
   commands/ship.md:                   { id: ship,                     version: 0.3.0, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.8.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 0.6.4, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.7.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.8.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
   # same invocation drives any repo's own branch names (#189).

@@ -49,7 +49,7 @@ A ticket can be driven two ways within the one surface — the choice is per-inv
 
 Use the option your repo provides; its `CONTEXT.md` says which. A repo without the harness app uses the agent-led option — `/build` is available everywhere.
 
-**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it is the **source** of the canonical `/build` command and carries its full body for distribution, but drives its *own* tickets with `/harness run` (whose `review` already does the Codex review) — or `/start → /review → /ship` as a backup — and does **not** invoke `/build` on its own tickets. This rule is specific to the harness repo; elsewhere `/build` is the normal agent-led option.
+**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it remains the source of the canonical `/build` command. During the interim harness pause, it drives its own tickets with agent-led `/build` (or `/start → /review → /ship` when attended), exactly as every consuming repo does. `/build` carries the assurance stages, isolated agents, and evidence requirements that formerly depended on the harness loop; it does not carry a wall-clock budget or ledger machinery. An operator must explicitly end the pause before `/harness run` returns as this repo's default. This rule applies elsewhere, where `/build` remains the normal agent-led option.
 
 ## Skills (the durable rules)
 
