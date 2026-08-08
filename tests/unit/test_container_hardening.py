@@ -321,6 +321,82 @@ def test_wrapper_is_shellcheck_clean() -> None:
     )
 
 
+#: An ``export NAME=`` whose value is a command substitution, in code rather than
+#: in a comment. Anchored to the line start (after indentation) so prose quoting
+#: the pattern — this file's own docstrings included — cannot trip it, and written
+#: over both substitution spellings because a rewrite reaching for backticks is
+#: the same defect in older clothes.
+_MASKING_EXPORT = re.compile(
+    r"^\s*export\s+[A-Za-z_][A-Za-z0-9_]*=[^#]*(?:\$\(|`)", re.MULTILINE
+)
+
+
+def _masking_exports(script: str) -> list[str]:
+    """Every line of ``script`` that exports the result of a command it runs."""
+    return [line.strip() for line in script.splitlines() if _MASKING_EXPORT.match(line)]
+
+
+def test_no_export_masks_the_status_of_the_command_it_runs() -> None:
+    """AC-2: the wrapper never lets ``export`` swallow a failure (#383).
+
+    ``export NAME="$(f)"`` takes **export's** exit status, which is always 0, so
+    under the wrapper's ``set -euo pipefail`` a failing ``f`` does not stop the
+    script — it spawns a container with an empty value and no complaint. This is
+    what SC2155 names, and the reason the fix is a real behaviour change rather
+    than a lint appeasement.
+
+    This guard exists *beside* :func:`test_wrapper_is_shellcheck_clean` rather
+    than behind it, because that one can be satisfied by silencing the warning:
+    a ``# shellcheck disable=SC2155`` above the line makes shellcheck exit 0 and
+    changes nothing about the masking. This reads the code, so the only way to
+    satisfy it is to separate the declaration from the assignment. It also runs
+    where shellcheck is absent, which is every developer host here and the
+    reason the defect went unobserved from #307 until #380 (`verify.sh` is
+    ``set -euo pipefail`` with the docker stage first, so a red docker stage
+    aborted before this file's stage ever ran on the runner).
+    """
+    offenders = _masking_exports(_wrapper())
+
+    assert not offenders, (
+        "docker/harness-wrapper.sh exports the result of a command it runs, so "
+        "that command's failure is swallowed by export's own exit status:\n  "
+        + "\n  ".join(offenders)
+        + "\nSplit it: `NAME=\"$(f)\"` on one line, `export NAME` on the next."
+    )
+
+
+def test_the_masking_predicate_discriminates_on_synthetic_source() -> None:
+    """The oracle, proven against source written for it rather than trusted.
+
+    A guard asserting the absence of a pattern passes just as green when its
+    pattern matches nothing at all, so the positive cases are what stop this
+    becoming a test that cannot fail. The ``shellcheck disable`` case is the one
+    that matters most: it is precisely the shape that satisfies the linter while
+    leaving the defect in place, and it must still be caught here.
+    """
+    caught = (
+        'export HARNESS_WRAPPER_STATUS="$(_wrapper_status)"',
+        "export FOO=$(date)",
+        "  export INDENTED=\"$(uname)\"",
+        "export LEGACY=`uname`",
+        '# shellcheck disable=SC2155\nexport SILENCED="$(_wrapper_status)"',
+    )
+    allowed = (
+        'STATUS="$(_wrapper_status)"\nexport STATUS',
+        'export LITERAL="harness"',
+        "export PATH=/opt/git/bin:$PATH",
+        '# a comment about export FOO="$(bar)" is documentation, not code',
+        '  echo "export INLINE=\\"$(f)\\"" > /tmp/generated',
+    )
+
+    for source in caught:
+        assert _masking_exports(source), f"predicate missed a masking export: {source!r}"
+    for source in allowed:
+        assert not _masking_exports(source), (
+            f"predicate condemned a legitimate line: {source!r}"
+        )
+
+
 def test_readme_references_wrapper_and_does_not_embed_it() -> None:
     """AC2: docker/README.md references the versioned wrapper file for
     installation rather than embedding the full script as prose. The tell-tale

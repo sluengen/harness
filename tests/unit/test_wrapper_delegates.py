@@ -63,7 +63,20 @@ CREDENTIAL_NAMES = (
 #: the interpreter/import preflight — the wrapper cannot degrade past a missing
 #: client any more, so it must fail with the remedy instead of an import traceback
 #: (:func:`test_an_interpreter_that_cannot_import_the_client_fails_with_the_remedy`).
-EXECUTABLE_LINE_CEILING = 123
+#:
+#: Raised 123 → 124 by #383, the **first** upward move and the one shape that
+#: warrants one: the added line is `export HARNESS_WRAPPER_STATUS` split off from
+#: its own assignment, so it carries no logic at all — it is one statement written
+#: as two commands, because the single-command form takes *export's* exit status
+#: and silently swallowed a failing `_wrapper_status` under `set -e`. What this
+#: ratchet exists to stop is ported logic creeping back "one line at a time under
+#: a different spelling"; a correctness fix that adds a line of pure formatting is
+#: the case where the proxy and the property it stands for come apart, and
+#: contorting the fix onto one line with a `;` to keep the number would be
+#: optimising the measure over the thing measured. The rule is otherwise
+#: unchanged, and this is not licence for the next raise: anything that adds a
+#: *branch, a command, or a value* belongs in `harness.hostenv`, which is tested.
+EXECUTABLE_LINE_CEILING = 124
 
 
 def executable_lines(text: str) -> list[str]:
