@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -124,6 +125,67 @@ def test_codex_generator_is_idempotent() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_codex_generator_migrates_old_symlink_surface(tmp_path: Path) -> None:
+    """Initial bootstrap/update-guidance must replace the old Codex command shape."""
+
+    repo = tmp_path / "consumer"
+    (repo / "agents").mkdir(parents=True)
+    (repo / "commands").mkdir()
+    (repo / "skills" / "code-quality").mkdir(parents=True)
+    (repo / "templates").mkdir()
+    (repo / ".codex" / "agents").mkdir(parents=True)
+
+    shutil.copy2(CODEX_GENERATOR, repo / "templates" / "generate_codex_artifacts.py")
+    (repo / "agents" / "dev.md").write_text(
+        "---\n"
+        "name: dev\n"
+        "description: Build changes\n"
+        "---\n"
+        "# Dev\n\n"
+        "Use skills/code-quality/SKILL.md.\n"
+    )
+    (repo / "commands" / "build.md").write_text("# /build\n\nBuild the ticket.\n")
+    (repo / "skills" / "code-quality" / "SKILL.md").write_text(
+        "---\n"
+        "name: code-quality\n"
+        "description: Use while implementing.\n"
+        "---\n"
+        "# Code Quality\n"
+    )
+    (repo / ".codex" / "agents" / "stale.toml").write_text("name = \"stale\"\n")
+    (repo / ".codex" / "skills").symlink_to(Path("../skills"))
+    (repo / ".codex" / "commands").symlink_to(Path("../commands"))
+
+    result = subprocess.run(
+        ["python3", "templates/generate_codex_artifacts.py"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / ".codex" / "agents" / "dev.toml").exists()
+    assert not (repo / ".codex" / "agents" / "stale.toml").exists()
+    assert (repo / ".codex" / "skills").is_dir()
+    assert not (repo / ".codex" / "skills").is_symlink()
+    assert (repo / ".codex" / "skills" / "code-quality").readlink() == Path(
+        "../../skills/code-quality"
+    )
+    assert (repo / ".codex" / "skills" / "command-build" / "SKILL.md").exists()
+    assert not (repo / ".codex" / "commands").exists()
+
+    check = subprocess.run(
+        ["python3", "templates/generate_codex_artifacts.py", "--check"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert check.returncode == 0, check.stdout + check.stderr
 
 
 def test_agent_led_commands_use_tool_neutral_entry_doc() -> None:
