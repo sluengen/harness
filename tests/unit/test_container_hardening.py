@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from harness.hostenv import host, spawn
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DOCKERFILE = PROJECT_ROOT / "docker" / "Dockerfile"
 DOCKER_README = PROJECT_ROOT / "docker" / "README.md"
@@ -100,6 +102,115 @@ def test_dockerfile_user_is_not_root() -> None:
     user = _last_user_directive(_dockerfile())
     assert user not in {None, "root", "0"}, (
         f"container must run non-root; USER resolves to {user!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# #380 — the image is usable by whatever uid the host pins it to.
+#
+# These two are *source* invariants, and the evidence is elsewhere: the image
+# actually running as an arbitrary uid is asserted against a real container in
+# ``tests/integration/test_docker.py``, which skips without a daemon. Re-reading
+# the Dockerfile proves only that the text says so — which is worth having as the
+# always-on half, and worth nothing on its own.
+# ---------------------------------------------------------------------------
+
+
+def _chmod_modes(dockerfile: str, path: str) -> list[str]:
+    """Every mode a ``chmod`` in ``dockerfile`` applies to exactly ``path``."""
+    return re.findall(rf"chmod\s+([0-7]{{3,4}})\s+{re.escape(path)}(?:\s|$)", dockerfile)
+
+
+def _writability_comment(dockerfile: str) -> str:
+    """The comment block that explains why the mounted workspace is writable.
+
+    Whole contiguous ``#`` blocks, selected by the subject they mention rather
+    than by line number, so the explanation can move or be rewritten without the
+    guard following it around — and so it may be written as prose across lines
+    instead of squeezed onto the one line carrying the keyword.
+    """
+    blocks: list[list[str]] = [[]]
+    for line in dockerfile.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            blocks[-1].append(stripped.lstrip("#").strip())
+        elif blocks[-1]:
+            blocks.append([])
+    return " ".join(
+        " ".join(block)
+        for block in blocks
+        if any("writable" in line.lower() for line in block)
+    )
+
+
+def test_the_container_home_is_reachable_by_an_arbitrary_uid() -> None:
+    """``$HOME`` must be traversable *and* writable by a uid with no passwd entry.
+
+    ``useradd --create-home`` leaves it ``drwx------``, which is uid 1000's alone.
+    Under any other pinned uid that home is not even traversable, so both ``:ro``
+    credential mounts under it are unreadable — and ``uv`` cannot create its cache
+    there, so no verb starts at all. Both were measured; the traversal fix alone
+    (``0711``) was measured insufficient.
+
+    The path is read from the module that emits the mounts, so a home that moved
+    without this moving is a failure rather than a guard quietly watching an empty
+    directory.
+    """
+    modes = _chmod_modes(_dockerfile(), spawn.CONTAINER_HOME)
+
+    assert modes, (
+        f"no chmod in docker/Dockerfile targets {spawn.CONTAINER_HOME}, which "
+        f"useradd creates mode 0700 — reachable by uid 1000 and by nobody else"
+    )
+    others = [int(mode[-1]) for mode in modes]
+    assert any(other & 0o7 == 0o7 for other in others), (
+        f"{spawn.CONTAINER_HOME} is chmod'd {modes}, which does not grant "
+        f"read+write+traverse to other — an arbitrary uid gets neither the "
+        f"credential mounts nor a writable cache"
+    )
+
+
+def test_the_dockerfile_states_the_condition_for_workspace_writability() -> None:
+    """AC-3: the comment states *why* ``/workspace`` is writable, not merely that.
+
+    It used to assert Docker Desktop's ownership remapping as though it were
+    general. It is not: that is one platform's answer, and the reason this held
+    only by accident everywhere else. The mechanism token is read out of the
+    production argv and the exempt platform out of the provider that declines to
+    pin a user, so renaming either breaks this guard instead of leaving it
+    agreeing with a comment that has quietly stopped being true.
+    """
+    # Nothing is run here — only the argv is read — so the image is the
+    # production default rather than the tag the docker modules share. Naming
+    # that tag, even in a comment, files a module into the gate's serial docker
+    # stage (#358 AC-2), and this one is always-on and builds nothing.
+    argv = spawn.build_docker_argv(
+        repo=PROJECT_ROOT,
+        argv=["version"],
+        image="harness:dev",
+        env_names=[],
+        home=Path("/home/op"),
+        container_user=spawn.ContainerUser(uid=1001, gid=1001),
+    )
+    flag = argv[argv.index("1001:1001") - 1]
+    remapping_host = host.detect_host(platform="darwin")
+
+    assert flag.startswith("--"), f"derived {flag!r}, which is not the option token"
+    assert remapping_host.container_user() is None, (
+        "no platform declines to pin a container user any more, so the comment "
+        "has only one condition to state and this guard is reading for two"
+    )
+
+    comment = _writability_comment(_dockerfile())
+    assert comment, "docker/Dockerfile no longer says anything about writability"
+    assert flag in comment, (
+        f"the writability comment does not name {flag!r}, the mechanism that "
+        f"actually makes the mount writable on a native daemon:\n  {comment}"
+    )
+    assert remapping_host.name.lower() in comment.lower(), (
+        f"the writability comment does not name {remapping_host.name!r} as the "
+        f"platform whose daemon remaps ownership, so it reads as a general claim "
+        f"— which is the assertion that was true only by accident:\n  {comment}"
     )
 
 

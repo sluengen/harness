@@ -528,6 +528,75 @@ def test_a_repo_the_provider_cannot_mount_equivalently_is_refused(
     )
 
 
+def test_the_socket_path_pins_the_container_user_the_provider_chose(
+    running_server: serve.VerbServer,
+    repo: Path,
+    stub_docker: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#380: the provider's uid reaches the container the *server* spawns.
+
+    Stated on this path as well as on the fallback, because the two build their
+    argv from the same function and pass its arguments from two different call
+    sites — and a dropped argument here is invisible on macOS, where the provider
+    pins nothing at all. The ids come from a real ``LinuxHost`` reading a patched
+    ``os.getuid``, which is what a native daemon's operator gets.
+    """
+    from harness.hostenv import host as host_module
+
+    monkeypatch.setattr(host_module.os, "getuid", lambda: 4242)
+    monkeypatch.setattr(host_module.os, "getgid", lambda: 4243)
+    monkeypatch.setattr(
+        host_module, "detect_host", lambda **_kwargs: host_module.LinuxHost(name="linux", env={})
+    )
+
+    response = _verb(running_server, repo, ["status", "R1"])
+
+    assert response.ok, f"refused: {response.reason} {response.error}"
+    assert "--user 4242:4243" in _spawns(stub_docker)[0][1], (
+        f"the provider's container user did not reach docker: {_spawns(stub_docker)}"
+    )
+
+
+def test_a_root_invocation_is_refused_on_the_wire_not_spawned(
+    running_server: serve.VerbServer,
+    repo: Path,
+    stub_docker: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#380: a server running as root refuses rather than pinning uid 0.
+
+    The refusal belongs beside the sibling above for the same reason: caught
+    inside ``spawn`` it would answer ``ok=true, exit_code=2``, which on the wire
+    is a verb that ran and failed. Nothing ran. It reuses ``REPO_NOT_ALLOWED``
+    rather than growing a wire reason for a refusal whose exit code is the same
+    2 — the precedent ``UnsupportedHost`` already set here.
+
+    Driven through the real ``LinuxHost`` with the invoking uid patched to 0,
+    rather than a hand-written raiser: what is under test is that the *provider's*
+    refusal reaches the wire, and a stub that raises on demand would pass against
+    a provider that never refuses at all.
+    """
+    from harness.hostenv import host as host_module
+
+    monkeypatch.setattr(host_module.os, "getuid", lambda: 0)
+    monkeypatch.setattr(host_module.os, "getgid", lambda: 0)
+    monkeypatch.setattr(
+        host_module, "detect_host", lambda **_kwargs: host_module.LinuxHost(name="linux", env={})
+    )
+
+    response = _verb(running_server, repo, ["status"])
+
+    assert response.reason == protocol.Reason.REPO_NOT_ALLOWED
+    assert "0" in (response.error or ""), (
+        f"the refusal must name the uid it refused: {response.error!r}"
+    )
+    assert _spawns(stub_docker) == [], (
+        "a container was spawned for a caller the provider refused — untrusted "
+        "content would be running as root"
+    )
+
+
 def test_a_colon_bearing_repo_is_still_refused_after_the_check_moved(
     running_server: serve.VerbServer, tmp_path: Path, stub_docker: Path
 ) -> None:

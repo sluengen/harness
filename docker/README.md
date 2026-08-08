@@ -85,11 +85,24 @@ CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "Claude Code-credent
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['claudeAiOauth']['accessToken'])")
 
 docker run --rm -it \
+  --user "$(id -u):$(id -g)" -e HOME=/home/harness \
   -v "$(pwd)":/workspace -w /workspace \
   -e CLAUDE_CODE_OAUTH_TOKEN \
   harness:dev \
   start CAL-123
 ```
+
+> **Why `--user` and `HOME`** ([#380](https://github.com/sluengen/harness/issues/380)).
+> On any daemon sharing the host's kernel — every native Linux install — the
+> bind mount carries the host's real ownership, so a container left on the
+> image's baked uid 1000 cannot write a repo owned by anyone else and every
+> mutating verb dies with `PermissionError` on `.harness/`. Pinning your own ids
+> fixes that; `HOME` must come with it, because docker resolves `HOME` from
+> `/etc/passwd` and a uid with no entry there gets `/`, where `uv` cannot create
+> its cache. On macOS Docker Desktop remaps mount ownership and neither flag is
+> needed — but both are harmless there, so the same line works everywhere. The
+> `~/bin/harness` wrapper and `harness serve` do all of this for you; these are
+> the recipes for running without them.
 
 > **Do not mount `~/.claude` read-only.** Claude Code writes session state
 > to that directory during execution. A `:ro` mount causes silent stalls
@@ -116,6 +129,7 @@ tickets that enable it to establish, not something to grant ahead of them.
 
 ```bash
 docker run --rm -it \
+  --user "$(id -u):$(id -g)" -e HOME=/home/harness \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.codex":/home/harness/.codex:ro \
   -e CLAUDE_CODE_OAUTH_TOKEN \
@@ -149,6 +163,7 @@ docker build -t harness:dev -f docker/Dockerfile .
 # In another terminal — open a run against your-repo.
 cd /abs/path/to/your-repo
 docker run --rm -it \
+  --user "$(id -u):$(id -g)" -e HOME=/home/harness \
   -v "$(pwd)":/workspace -w /workspace \
   -v "$HOME/.claude":/home/harness/.claude:ro \
   -e LINEAR_API_KEY \
@@ -157,7 +172,7 @@ docker run --rm -it \
   start CAL-123
 ```
 
-(Replace the `-v "$HOME/.claude":/home/harness/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above. The mount targets `/home/harness` because the container runs as the non-root `harness` user — see [Thin shell wrapper](#thin-shell-wrapper-binharness).)
+(Replace the `-v "$HOME/.claude":/home/harness/.claude:ro` line with `-e CLAUDE_CODE_OAUTH_TOKEN` or `-e ANTHROPIC_API_KEY` per the [Authentication](#authentication) section above. The mount targets `/home/harness` because the container runs as an unprivileged user whose home that is — see [Thin shell wrapper](#thin-shell-wrapper-binharness) and the `--user` note under [Authentication](#authentication).)
 
 ### Via compose
 
@@ -335,12 +350,21 @@ directory with no flags or env-var setup.
   instead (`~/src/<repo>`). There is no override flag; WSL support is validated
   on a real Windows host in
   [#313](https://github.com/sluengen/harness/issues/313).
-- **Non-root user** — the container runs as the unprivileged `harness` user
-  (uid 1000), not root (CAL-1008), so an in-container compromise is not root over
-  the mounted repo or credentials. Host credentials are therefore mounted under
-  that user's home (`/home/harness/.ssh`, `/home/harness/.codex`) — reachable by
-  a non-root process — **not** `/root/...`, which is mode `700` and unreadable to
-  it.
+- **Non-root user** — the container never runs as root (CAL-1008), so an
+  in-container compromise is not root over the mounted repo or credentials.
+  *Which* unprivileged user it is depends on the platform
+  ([#380](https://github.com/sluengen/harness/issues/380)): the host pins
+  `--user <your uid>:<your gid>` wherever the daemon shares its kernel — a bind
+  mount there carries the host's real ownership, and a container running as the
+  image's baked uid 1000 could not write the repo it was handed — while on macOS
+  no user is pinned, because Docker Desktop remaps mount ownership to the
+  run-time uid and the baked 1000 already owns the mount. Running the harness
+  itself as root is **refused**, not forwarded. Host credentials are mounted
+  under `/home/harness` either way (`/home/harness/.ssh`, `/home/harness/.codex`)
+  — the image makes that directory reachable by whatever uid is pinned, and
+  `HOME` is set to it by value, because docker resolves `HOME` from
+  `/etc/passwd` and a pinned uid has no entry there. Never `/root/...`, which is
+  mode `700` and unreadable to any of them.
 - **TTY detection** — passes `-it` only when stdin is a real terminal, so the
   same wrapper works in scripts and CI.
 - **Container construction is Python, not bash** ([#307](https://github.com/sluengen/harness/issues/307)).

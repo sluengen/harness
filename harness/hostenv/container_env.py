@@ -23,7 +23,7 @@ from pathlib import Path
 from harness.hostenv import host as host_module
 from harness.hostenv.credentials import AgentCredential
 from harness.hostenv.host import HostPlatform, UnsupportedHost
-from harness.hostenv.spawn import SshAgentForwarding, WorkspaceMount
+from harness.hostenv.spawn import ContainerUser, SshAgentForwarding, WorkspaceMount
 
 __all__ = [
     "ContainerEnv",
@@ -56,6 +56,11 @@ class ContainerEnv:
     #: The repo bind mount the provider allows for this request. ``None`` only in
     #: the resolver's own tests; production callers always carry the provider's.
     workspace_mount: WorkspaceMount | None = None
+    #: The uid/gid the container runs as (#380). ``None`` on a host whose daemon
+    #: remaps bind-mount ownership — macOS — where the image's baked uid already
+    #: owns the mount. Defaulted here so a test can build a ``ContainerEnv``
+    #: without a provider; production always carries the provider's answer.
+    container_user: ContainerUser | None = None
 
 
 def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
@@ -98,19 +103,23 @@ def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) ->
             values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
             values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
 
-    # Both spawn concerns are the provider's since #308. The liveness gate is
-    # unchanged — it now lives inside `ssh_agent_forwarding`, so the gate and the
-    # mount source are one decision rather than two that can disagree.
+    # All three spawn concerns are the provider's — two since #308, the container
+    # user since #380. The liveness gate is unchanged: it lives inside
+    # `ssh_agent_forwarding`, so the gate and the mount source are one decision
+    # rather than two that can disagree.
     #
-    # `workspace_mount` can refuse (WorkspaceNotEquivalent), which propagates: a
-    # repo that cannot be mounted equivalently must stop here, where the message
-    # names the path and the remedy, rather than running against a directory that
-    # does not mean what the caller thinks.
+    # Two of the three can refuse — `workspace_mount` with WorkspaceNotEquivalent,
+    # `container_user` with UnsafeContainerUser — and both propagate. A repo that
+    # cannot be mounted equivalently, or a caller running as root, must stop here
+    # where the message names the cause and the remedy, rather than running
+    # against a directory that does not mean what the caller thinks or handing
+    # untrusted content a root container.
     identity = host.git_identity()
     return ContainerEnv(
         values=values,
         ssh_agent=host.ssh_agent_forwarding(),
         workspace_mount=host.workspace_mount(Path(workdir)),
+        container_user=host.container_user(),
         git_identity={
             "GIT_AUTHOR_NAME": identity.name,
             "GIT_AUTHOR_EMAIL": identity.email,

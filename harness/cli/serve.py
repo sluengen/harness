@@ -183,9 +183,20 @@ class _Handler(socketserver.BaseRequestHandler):
         # (#308) — under WSL a Windows-filesystem path cannot — and the mount
         # object owns the ``:`` refusal that was hand-inlined here. One home, and
         # both land before docker is touched.
+        #
+        # The container user is asked for here too (#380), for the same reason and
+        # not for its value: a server running as root cannot be given a container
+        # to run as root, and the refusal belongs where every other pre-spawn
+        # refusal is — before docker is touched, on the wire, with a reason.
         try:
-            host.detect_host(platform=sys.platform).workspace_mount(repo)
-        except (spawn.WorkspaceNotEquivalent, spawn.UnsafeRepoPath) as exc:
+            detected = host.detect_host(platform=sys.platform)
+            detected.workspace_mount(repo)
+            detected.container_user()
+        except (
+            spawn.WorkspaceNotEquivalent,
+            spawn.UnsafeRepoPath,
+            spawn.UnsafeContainerUser,
+        ) as exc:
             refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
             return
         except host.UnsupportedHost as exc:
@@ -293,11 +304,15 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         except host.UnsupportedHost as unsupported:
             _log_to_stderr(f"credential resolution failed: {unsupported}")
             return 2
-        except spawn.WorkspaceNotEquivalent as not_equivalent:
-            # The provider refuses this repo (#308) — a Windows-filesystem path
-            # under WSL, today. Refused here for the same reason an unsupported
-            # host is: nothing is spawned, and the message names the remedy.
-            _log_to_stderr(f"workspace refused: {not_equivalent}")
+        except (spawn.WorkspaceNotEquivalent, spawn.UnsafeContainerUser) as refused:
+            # The provider refuses this request (#308, #380) — a Windows-filesystem
+            # path under WSL, or a uid the container must not take. Refused here
+            # for the same reason an unsupported host is: nothing is spawned, and
+            # the message names the remedy. The handler refuses both earlier, on
+            # the wire; this is the backstop for a caller reaching `spawn`
+            # directly, where an escaping exception would kill the request thread
+            # with no answer at all.
+            _log_to_stderr(f"spawn refused: {refused}")
             return 2
 
         docker_argv = spawn.build_docker_argv(
@@ -308,6 +323,7 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
             home=Path(self.env.get("HOME", str(Path.home()))),
             ssh_agent=resolved.ssh_agent,
             mount=resolved.workspace_mount,
+            container_user=resolved.container_user,
             git_identity=resolved.git_identity,
         )
         stdin, stdout, stderr = (fds + [0, 1, 2])[:3]

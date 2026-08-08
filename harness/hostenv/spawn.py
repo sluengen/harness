@@ -28,10 +28,25 @@ structure, so each is refused outright — the repo path by
 :meth:`WorkspaceMount.validate`, the socket by
 :meth:`SshAgentForwarding.__post_init__`.
 
+The container's uid, in the option region since #380, is a third value there but
+not a third exception: it is a pair of **integers** the host read from
+``os.getuid()``, so there is no text for a separator to hide in. It is refused
+for what it *means* — uid 0 — rather than for what it could inject.
+
 **Stdlib only.** ``harness.hostenv`` runs on the host under a bare ``python3``
 before any container exists — see the package docstring and
 ``tests/unit/test_hostenv_stdlib_only.py``.
 """
+
+# size: the option region and the values allowed into it are one subject. Each of
+# the three provider-supplied objects here (the mount, the agent socket, the
+# container user) is refused *at construction* precisely so a provider cannot
+# carry a bad value to spawn time — which only works while the refusal and the
+# emission are the same module. Splitting the value objects out would put the
+# validation on one side of an import edge and the argv on the other, and the
+# whole point of one home is that the two cannot drift. #380 pushed it ~48 lines
+# over; the module docstring is the boundary that would have to move before the
+# code does.
 
 from __future__ import annotations
 
@@ -43,10 +58,12 @@ from pathlib import Path
 __all__ = [
     "AGENT_SOCKET_TARGET",
     "CONTAINER_HOME",
+    "ContainerUser",
     "DOCKER_DESKTOP_AGENT_SOCKET",
     "RepoMismatch",
     "SshAgentForwarding",
     "UnsafeAgentSocket",
+    "UnsafeContainerUser",
     "UnsafeRepoPath",
     "WORKSPACE_MOUNT",
     "WorkspaceMount",
@@ -287,6 +304,64 @@ class UnsafeAgentSocket(Exception):  # noqa: N818 — mirrors UnsafeRepoPath
         )
 
 
+class UnsafeContainerUser(Exception):  # noqa: N818 — mirrors UnsafeAgentSocket
+    """The container would run as root, or as an id that is not one at all.
+
+    Dropping privilege is the property CAL-1008 bought and ADR 0013's threat
+    model rests on: this container runs untrusted ticket and diff content through
+    LLM agents. Taking the *invoking* uid gives that away the moment an operator
+    runs the harness under ``sudo``, so uid 0 is refused rather than forwarded.
+    """
+
+    def __init__(self, label: str, value: object) -> None:
+        self.label = label
+        self.value = value
+        super().__init__(
+            f"container {label} {value!r} cannot be used: the verb container runs "
+            f"untrusted content and must not run as root, and its ids must be "
+            f"non-negative integers"
+        )
+
+
+@dataclass(frozen=True)
+class ContainerUser:
+    """The uid/gid the verb container runs as, or the image's baked user if absent.
+
+    Held as ``int``s, never as text. That is what makes this value safe in the
+    docker-option region without content validation: the two *string* values that
+    sit there — the mount source and the agent socket — are checked for ``:``
+    because they are host-derived text, whereas :meth:`spec` renders integers the
+    host read from ``os.getuid()``, a token that cannot carry a space, a flag, or
+    a second field. Nothing caller-derived reaches here.
+    """
+
+    uid: int
+    gid: int
+
+    def __post_init__(self) -> None:
+        # Validated at construction, exactly as ``SshAgentForwarding`` is: a
+        # provider must not be able to build an unusable object and carry it as
+        # far as spawn time, where the failure is one step from docker and many
+        # steps from whatever chose the value.
+        for label, value in (("uid", self.uid), ("gid", self.gid)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise UnsafeContainerUser(label, value)
+        # ``gid == 0`` is deliberately allowed: on a host whose operator's primary
+        # group is 0 that is a privilege they already hold, and refusing it would
+        # hard-fail an account nobody configured wrongly. uid 0 is the security
+        # property; group 0 is not.
+        if self.uid == 0:
+            raise UnsafeContainerUser("uid", self.uid)
+
+    def spec(self) -> str:
+        """The ``--user`` value: both fields, always.
+
+        A bare uid leaves the container's *group* at the image's baked one, which
+        owns nothing on the host — half the mismatch this exists to end.
+        """
+        return f"{self.uid}:{self.gid}"
+
+
 class RepoMismatch(Exception):  # noqa: N818 — mirrors WorkspaceNotAllowed
     """``argv`` names a ``--repo`` other than the one being mounted.
 
@@ -362,6 +437,7 @@ def build_docker_argv(
     tty: bool = False,
     ssh_agent: SshAgentForwarding | None = None,
     mount: WorkspaceMount | None = None,
+    container_user: ContainerUser | None = None,
     wrapper_status: str = "",
     git_identity: Mapping[str, str] | None = None,
 ) -> list[str]:
@@ -381,12 +457,14 @@ def build_docker_argv(
     image. That position is the whole of AC-4's enforcement; see the module
     docstring.
 
-    ``ssh_agent`` and ``mount`` are **provider-supplied** (#308): both were macOS
-    constants inlined here, and both are the platform-specific half of the spawn.
-    ``None`` means, respectively, *this host has no live agent to forward* and
-    *use today's default mapping*. The mount is validated unconditionally before
-    a token is emitted — that assertion is the backstop under the client's
-    direct-spawn fallback, which has no earlier check.
+    ``ssh_agent``, ``mount`` and — since #380 — ``container_user`` are
+    **provider-supplied**: each was a macOS constant inlined here, and each is a
+    platform-specific half of the spawn. ``None`` means, respectively, *this host
+    has no live agent to forward*, *use today's default mapping*, and *this
+    host's daemon remaps bind-mount ownership, so the image's baked uid is
+    already the owner*. The mount is validated unconditionally before a token is
+    emitted — that assertion is the backstop under the client's direct-spawn
+    fallback, which has no earlier check.
     """
     repo = Path(repo)
     # Both refusals now live on the mount object — the one place that knows what a
@@ -398,6 +476,13 @@ def build_docker_argv(
     out = ["docker", "run", "--rm"]
     if tty:
         out.append("-it")
+
+    if container_user is not None:
+        # In the option region, and therefore *before* the image: the caller's own
+        # `--user` lands after it, where it is an argument to a harness verb. Two
+        # `--user` tokens can appear in one argv and only their position separates
+        # the privilege the host chose from the one a ticket asked for.
+        out += ["--user", container_user.spec()]
 
     out += [
         "-v",
@@ -437,6 +522,15 @@ def build_docker_argv(
         "PYTHONDONTWRITEBYTECODE=1",
         "-e",
         f"GIT_SSH_COMMAND={_GIT_SSH_COMMAND}",
+        # Docker resolves HOME from /etc/passwd, and a numeric `--user` with no
+        # entry there gets `HOME=/` — so `uv run` dies initialising its cache at
+        # `/.cache/uv` before the verb starts. Pinned on **every** platform, not
+        # only where a user is pinned: emitting it conditionally would make "the
+        # container's home is CONTAINER_HOME" true by a passwd lookup on macOS
+        # and by an env var elsewhere, and two mechanisms for one property is how
+        # this drifts from the credential mounts that target the same directory.
+        "-e",
+        f"HOME={CONTAINER_HOME}",
     ]
     if wrapper_status:
         out += ["-e", f"HARNESS_WRAPPER_STATUS={wrapper_status}"]
