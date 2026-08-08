@@ -1,5 +1,18 @@
-"""AC-2: the wrapper delegates the ported logic rather than duplicating it (#305).
+"""Static guards over ``docker/harness-wrapper.sh``'s source.
 
+Three of them, all reading the shim's own text and none needing it to run:
+
+* **the port ban** (#305) — none of the logic that moved to ``harness.hostenv``
+  still executes in the shell;
+* **the size ratchet** (:data:`EXECUTABLE_LINE_CEILING`) — the shim may not grow
+  back into the thing it was cut down from;
+* **the masking guard** (#383) — no command the wrapper runs may hide behind a
+  declaring builtin's exit status.
+
+They share a subject and a technique, which is why they share a module. The port
+ban came first and the docstring below is its statement.
+
+**AC-2: the wrapper delegates the ported logic rather than duplicating it (#305).**
 A port that leaves the old bash in place is not a port — it is a second
 implementation that drifts. The `~/bin/harness` wrapper has already rotted this
 way once: a detached copy missed CAL-1008's credential-path fix for 12 days.
@@ -477,9 +490,10 @@ _DECLARING_BUILTINS = ("export", "readonly", "declare", "typeset", "local")
 
 #: A declaring builtin whose value is a command substitution, in code rather than
 #: in a comment. Matched per line via ``.match``, so the position anchor is the
-#: start of each line and ``\s*`` is what tolerates indentation; the wrapper's own
-#: comment beside the fixed line quotes this pattern, and the leading-``#`` case in
-#: :func:`_masking_declarations` is what keeps it from tripping on it.
+#: start of each line and ``\s*`` is what tolerates indentation. That anchoring is
+#: also the whole of the code/prose discrimination: a declaring builtin must be
+#: the line's first word, so the wrapper's own comment beside the fixed line —
+#: which quotes this pattern — cannot reach it.
 #:
 #: The value is scanned with ``(?:(?!\s#).)*`` rather than ``[^#]*``: the point is
 #: to stop at a **trailing comment**, and a trailing comment is a ``#`` preceded by
@@ -496,12 +510,17 @@ _MASKING_DECLARATION = re.compile(
 
 
 def _masking_declarations(script: str) -> list[str]:
-    """Every line of ``script`` that declares a variable from a command it runs."""
+    """Every line of ``script`` that declares a variable from a command it runs.
+
+    There is deliberately no comment-stripping step. One was written and then
+    removed as dead: :data:`_MASKING_DECLARATION` is applied with ``match``, so a
+    declaring builtin must be the line's first word, and no comment line can
+    reach the pattern at all. A skip that never changes an answer is not a
+    safeguard — it is a claim about the predicate that the predicate does not
+    need, and the next reader would maintain it as though it did.
+    """
     return [
-        stripped
-        for line in script.splitlines()
-        if not (stripped := line.strip()).startswith("#")
-        and _MASKING_DECLARATION.match(line)
+        line.strip() for line in script.splitlines() if _MASKING_DECLARATION.match(line)
     ]
 
 
@@ -518,15 +537,20 @@ def test_no_declaration_masks_the_status_of_the_command_it_runs() -> None:
     wrapper uses most, so the predicate covers all five rather than the one
     occurrence that prompted it.
 
-    This guard exists *beside* :func:`test_wrapper_is_shellcheck_clean` rather
-    than behind it, because that one can be satisfied by silencing the warning:
-    a ``# shellcheck disable=SC2155`` above the line makes shellcheck exit 0 and
-    changes nothing about the masking. This reads the code, so the only way to
-    satisfy it is to separate the declaration from the assignment. It also runs
-    where shellcheck is absent, which is every developer host here and the
-    reason the defect went unobserved from #307 until #380 (`verify.sh` is
-    ``set -euo pipefail`` with the docker stage first, so a red docker stage
-    aborted before this file's stage ever ran on the runner).
+    This guard backs up rather than duplicates
+    ``tests/unit/test_container_hardening.py``'s
+    ``test_wrapper_is_shellcheck_clean``, because that one is satisfiable by
+    silencing it: a ``# shellcheck disable=SC2155`` above the line makes
+    shellcheck exit 0 and changes nothing about the masking. This reads the code,
+    so the only way to satisfy it is to separate the declaration from the
+    assignment. It also runs where shellcheck is absent, which is every developer
+    host here — the other half of why the defect went unobserved from #307 until
+    #380, the first half being that ``verify.sh`` is ``set -euo pipefail`` with
+    the docker stage first, so a red docker stage aborted before the stage
+    carrying either guard ever ran on the runner. The two halves of one argument
+    now sit in two modules; ``test_container_hardening.py`` owns the container's
+    security boundary and this module owns the shim's shape, and shell
+    correctness belongs cleanly to neither.
     """
     offenders = _masking_declarations(WRAPPER.read_text())
 
@@ -573,8 +597,9 @@ def test_the_masking_predicate_discriminates_on_synthetic_source() -> None:
         # No substitution at all.
         'export LITERAL="harness"',
         "export PATH=/opt/git/bin:$PATH",
-        # The leading-`#` skip: prose quoting the pattern is documentation, and
-        # the wrapper's own comment beside the fixed line does exactly this.
+        # The `.match` anchor: a declaring builtin must be the line's first
+        # word, so prose quoting the pattern is documentation rather than code —
+        # which the wrapper's own comment beside the fixed line relies on.
         '# a comment about export FOO="$(bar)" is documentation, not code',
         # `[^#]*`: a trailing comment mentioning a substitution does not make the
         # assignment before it a masking one.

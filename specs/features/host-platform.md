@@ -365,23 +365,10 @@ both are earned.
   that the `/workspace`-writability comment names the mechanism token the production
   argv actually emits and names the platform whose daemon remaps ownership, so it can no
   longer read as the unconditional Docker Desktop claim it used to be. Both are source
-  re-reads and neither is the evidence; the docker-marked tests below are.
-  Since #383 it also holds the exit-status rule above:
-  `test_no_declaration_masks_the_status_of_the_command_it_runs` reads the wrapper for
-  a declaring builtin — `export`, `readonly`, `declare`, `typeset`, `local`, with or
-  without flags — whose value is a command substitution in either spelling. All five
-  mask identically; the guard covers all five rather than the one occurrence that
-  prompted it, because `local` is the spelling the wrapper reaches for most and
-  scanning `export` alone would have left the likeliest next occurrence to CI. It
-  sits beside `test_wrapper_is_shellcheck_clean` rather than behind it, because a
-  `# shellcheck disable=SC2155` makes that one pass while leaving the masking, and it
-  skips outright where shellcheck is absent. Its predicate is proven on synthetic
-  source (`test_the_masking_predicate_discriminates_on_synthetic_source`), including
-  the `disable`-directive shape and the four extra builtins, and every negative case
-  names the part of the pattern it pins. Two spellings stay outside it and are
-  shellcheck's to catch in CI: a declaration reached past a `;` or a `then` on the
-  same line, and one whose value carries a space-then-`#` before the substitution —
-  the value scan stops there because that is what a trailing comment looks like.
+  re-reads and neither is the evidence; the docker-marked tests below are. It also
+  holds `test_wrapper_is_shellcheck_clean`, which skips outright where shellcheck is
+  absent — the other half of #383's argument lives a module away, under
+  `test_wrapper_delegates.py` below.
 - `tests/unit/test_cli_serve.py`, `tests/unit/test_hostenv_client.py` — a refused repo is
   refused on **both** spawn paths with nothing spawned, and since #380 a root invocation
   is too; and the provider's container user reaches docker on **both**, which matters
@@ -405,5 +392,26 @@ both are earned.
   covers `container_env.py` automatically, because the set is derived over the package.
 - `tests/unit/test_wrapper_delegates.py` — AC-2, with a negative control proving the
   predicate distinguishes a live call from a comment describing one.
+  Since #383 it also holds the exit-status rule above, put here rather than beside
+  the shellcheck run because every guard in this module scans the wrapper's own
+  source for a shape that must not appear in it, and because it has to be read
+  against `EXECUTABLE_LINE_CEILING` in the same file — the bound the fix's extra
+  line had to argue with.
+  `test_no_declaration_masks_the_status_of_the_command_it_runs` reads the wrapper for
+  a declaring builtin — `export`, `readonly`, `declare`, `typeset`, `local`, with or
+  without flags — whose value is a command substitution in either spelling. All five
+  mask identically; the guard covers all five rather than the one occurrence that
+  prompted it, because `local` is the spelling the wrapper reaches for most and
+  scanning `export` alone would have left the likeliest next occurrence to CI. It
+  stands beside the shellcheck run rather than behind it, because a
+  `# shellcheck disable=SC2155` makes that one pass while leaving the masking, and
+  that one does not run at all where shellcheck is absent. Its predicate is proven on
+  synthetic source (`test_the_masking_predicate_discriminates_on_synthetic_source`),
+  including the `disable`-directive shape and the four extra builtins, and every
+  negative case names the part of the pattern it pins. Two spellings stay outside it
+  and are shellcheck's to catch in CI: a declaration reached past a `;` or a `then`
+  on the same line, and one whose value carries a space-then-`#` before the
+  substitution — the value scan stops there because that is what a trailing comment
+  looks like.
 - `tests/unit/test_wrapper_image_staleness.py`, `tests/unit/test_wrapper_source_sync.py` —
   pass **unmodified**, which is what shows the port changed no wrapper behaviour.
