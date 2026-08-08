@@ -47,6 +47,46 @@ from tests._gitutil import tracked_files_under, tracked_py_sources
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: The name the gate's changelog-fragment stage printed. Banned from live prose
+#: because a stage list that names a stage the gate does not run is a false
+#: description of the canonical gate, in the files an agent session reads first.
+_RETIRED_STAGE = "changelog fragment guard"
+
+#: Trees that record what was believed or shipped at a moment, not what is
+#: currently asserted. Exempt by *category* rather than by filename, so a new
+#: proposal or assessment is covered the day it lands rather than the day
+#: someone extends a list.
+_HISTORICAL_PREFIXES = (
+    "CHANGELOG.md",
+    "CHANGELOG-archive/",
+    "specs/decisions/",
+    "specs/proposals/",
+    "specs/retired/",
+    "assessments/",
+    "LOG.md",
+)
+
+#: The one live document still describing the deleted mechanism, deliberately.
+#: ``RELEASING.md``'s changelog section is #325's subject — this ticket's Out of
+#: scope reserves it, and item 4 of ADR 0014's breakdown ships "with or
+#: immediately after" item 3, never before. The exemption is paired with
+#: :func:`test_the_releasing_exemption_is_still_load_bearing`, which fails once
+#: #325 lands, so it cannot outlive the reason for it.
+_PENDING_REWRITE = "RELEASING.md"
+
+
+def _live_markdown() -> list[Path]:
+    """Tracked ``.md`` files that make standing claims, not historical ones."""
+    live = []
+    for path in sorted(tracked_files_under(".")):
+        if path.suffix != ".md":
+            continue
+        relpath = str(path.relative_to(_REPO_ROOT))
+        if relpath.startswith(_HISTORICAL_PREFIXES):
+            continue
+        live.append(path)
+    return live
+
 #: This module names the deleted module in order to look for it, so it is its
 #: own worst offender and must never be its own subject.
 _SELF = _REPO_ROOT / "tests" / "unit" / "test_changelog_fragment_system_retired.py"
@@ -205,6 +245,68 @@ def test_the_gate_no_longer_invokes_the_fragment_guard() -> None:
     assert offending == [], (
         f"scripts/verify.sh still invokes the deleted fragment guard: "
         f"{offending}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC-1 — no live document describes the gate as still running the stage.
+# ---------------------------------------------------------------------------
+
+
+def test_no_live_document_names_the_retired_gate_stage() -> None:
+    """No standing prose lists ``changelog fragment guard`` as a gate stage.
+
+    Deleting the stage from ``scripts/verify.sh`` while two stage lists still
+    recite it leaves a false description of the canonical gate in the files an
+    agent reads first — ``CONTEXT.md``'s ``commands.verify`` comment and
+    ``specs/infrastructure.md``'s CI row both carried it, and nothing pinned
+    either. It is the same defect this change's own freshness-hook assertion
+    forbids: a description naming something that does not exist is worse than
+    none, because it is believed.
+    """
+    offenders = [
+        str(path.relative_to(_REPO_ROOT))
+        for path in _live_markdown()
+        if _RETIRED_STAGE in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], (
+        f"these live documents still list the retired {_RETIRED_STAGE!r} as a "
+        f"stage of scripts/verify.sh: {offenders}. The gate no longer runs it."
+    )
+
+
+def test_no_live_document_points_a_reader_at_the_deleted_script() -> None:
+    """Only ``RELEASING.md`` may still name ``scripts/changelog_fragments.py``.
+
+    Every other live document must describe the gate and the release path as
+    they are. ``RELEASING.md`` is exempt for exactly as long as #325 takes.
+    """
+    offenders = [
+        str(path.relative_to(_REPO_ROOT))
+        for path in _live_markdown()
+        if str(path.relative_to(_REPO_ROOT)) != _PENDING_REWRITE
+        and _SCRIPT in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], (
+        f"these live documents send a reader to {_SCRIPT}, which is deleted: "
+        f"{offenders}. Only {_PENDING_REWRITE} may, until #325 rewrites it."
+    )
+
+
+def test_the_releasing_exemption_is_still_load_bearing() -> None:
+    """The exemption above dies with the reason for it.
+
+    An exemption nobody re-checks is how a guard goes quiet: once #325 rewrites
+    ``RELEASING.md``, the carve-out would sit there permitting a reference that
+    is no longer made, and the next document to reintroduce one could be moved
+    under it without argument. So the carve-out asserts its own necessity — when
+    #325 lands, this test fails and the exemption must be deleted with it.
+    """
+    releasing = (_REPO_ROOT / _PENDING_REWRITE).read_text(encoding="utf-8")
+    assert _SCRIPT in releasing, (
+        f"{_PENDING_REWRITE} no longer names {_SCRIPT}, so #325 has landed and "
+        f"the {_PENDING_REWRITE} exemption in this module is now dead. Delete "
+        "the exemption and the two tests that reference it."
     )
 
 

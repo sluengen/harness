@@ -30,7 +30,7 @@ commands:
   typecheck: "uv run --extra dev mypy harness"
   test:    "uv run --extra dev pytest"
   test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
-  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest (two stages since #358: `-m docker` serial, then `-m "not docker"` across the host's cores, one coverage floor on the union) → CLI smoke → landing-page drift guard → design-token drift guard → changelog fragment guard → release-cadence report (report-only: never fails the gate, #350). Run before merge/tag.
+  verify:  "bash scripts/verify.sh"   # canonical gate: ruff → mypy → pytest (two stages since #358: `-m docker` serial, then `-m "not docker"` across the host's cores, one coverage floor on the union) → CLI smoke → landing-page drift guard → design-token drift guard → release-cadence report (report-only: never fails the gate, #350). Run before merge/tag.
   run:     "harness start <ISSUE-ID> → design → review → close"   # verb loop; drive via /harness run. ~/bin/harness Docker wrapper — see docker/README.md
 branches:
   integration: dev      # feature branches base from here and merge back here
