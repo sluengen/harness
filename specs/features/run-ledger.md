@@ -2,7 +2,7 @@
 feature: run-ledger
 status: implemented
 last_updated: 2026-08-08
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#321", "#347", "#338", "#352"]
+tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#318", "#321", "#347", "#338", "#352"]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -56,7 +56,7 @@ The remaining statuses (`pending` / `running` / `completed` / `failed` / `stalle
 
 The gate's load-bearing datum — the SHA a passing review was bound to — is **not** a `runs` column. `harness review` appends a `review` event whose `data_json` carries `{ run_id, reviewed_sha, verdict, issues, engine, created_at, outcome }` (and optional `commit_message` / `deferred_brief` / `inherited_from` / `invoked_at` / `duration_ms`). `engine` records which review engine produced the verdict (`claude` | `codex`, CAL-701). When an explicit `--engine codex` run hits an exhausted tier, the verb falls back once to Claude (CAL-702): `engine` then reads `claude` and an optional `fallback_from: "codex"` records the substitution, so the gate stays *available* without the fallback ever being silent.
 
-An optional `model` (#293) records the alias the engine was actually invoked with, so a review's `duration_ms` is interpretable — `design` pins one model and records it, while review's was resolved and then dropped. Since #321 the alias comes from `CONTEXT.md`'s `loop.review_model` rather than the ticket; the field's meaning is unchanged, only its provenance. It is present **iff** `engine` is `claude`: `engine` is already the engine that ran, so the pairing survives the fallback (the claude re-invocation's alias is what lands), and codex ignores `--model`, so recording one there would assert a model that was never in force. Nothing backfills, so an absent key means *unknown or not applicable* — never a default — and `engine` is what tells the two apart.
+An optional `model` (#293, #318) records an alias the engine was actually invoked with. Claude design resolves an omitted value to Opus and records it; Codex design omits the field when it uses its configured default and records an explicit `--model` value when supplied. Adoption preserves that absence rather than manufacturing an empty string. Review's Claude alias comes from `CONTEXT.md`'s `loop.review_model` since #321 and is present when Claude actually ran, including a fallback from Codex; Codex review records no model because its review command ignores `--model`. Nothing backfills, so an absent key means *unknown or not applicable* — never a default — and `engine` provides the interpretation.
 
 #### Every terminal path is recorded, so the ledger has a denominator (#262)
 

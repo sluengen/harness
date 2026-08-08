@@ -602,7 +602,7 @@ class DesignEventData(BaseModel):
     run_id: str
     status: str
     engine: str
-    model: str
+    model: str | None = None
     designed_at: str
     design_hash: str | None = None
     grounded_sha: str | None = None

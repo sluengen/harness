@@ -254,6 +254,7 @@ def _invoke(
     runner: Any,
     *,
     engine: str | None = None,
+    fallback: bool = True,
     model: str | None = None,
     linear_stub: Any | None = None,
     tracker_stub: Any | None = None,
@@ -271,6 +272,8 @@ def _invoke(
     ]
     if engine is not None:
         argv += ["--engine", engine]
+    if not fallback:
+        argv += ["--no-fallback"]
     if model is not None:
         argv += ["--model", model]
     with mock.patch.object(review_mod, "_default_runner", runner):
@@ -1132,6 +1135,40 @@ def test_ac1_codex_usage_limit_falls_back_to_claude(repo: Path, db_path: Path) -
     event = fetch_review_events(db_path)[0]["data"]
     assert event["engine"] == "claude"
     assert event["fallback_from"] == "codex"
+
+
+def test_codex_usage_limit_without_fallback_is_explicit_infra(
+    repo: Path, db_path: Path
+) -> None:
+    """Strict Codex mode never invokes Claude and names the exhausted tier."""
+    run_id = _seed_open_run(db_path, repo)
+    order: list[str] = []
+    runner = _make_engine_runner(
+        {
+            "codex": review_mod.RunResult(
+                stdout="", stderr=_REAL_CODEX_USAGE_LIMIT_STDERR, returncode=1
+            ),
+            # Present only to make an accidental fallback observable.
+            "claude": review_mod.RunResult(
+                stdout='SUBMIT: {"verdict": "pass", "issues": []}\n',
+                stderr="",
+                returncode=0,
+            ),
+        },
+        order,
+    )
+
+    result = _invoke(
+        repo, db_path, run_id, runner, engine="codex", fallback=False
+    )
+
+    assert result.exit_code == review_mod.EXIT_INFRA_FAILURE, result.output
+    assert order == ["codex"]
+    assert json.loads(result.output)["reason"] == review_mod.CODEX_USAGE_LIMIT_REASON
+    event = fetch_review_events(db_path)[0]["data"]
+    assert event["reason"] == review_mod.CODEX_USAGE_LIMIT_REASON
+    assert "verdict" not in event
+    assert "fallback_from" not in event
 
 
 # AC-2: a non-limit Codex failure does NOT fall back — verdict fail, engine codex.
