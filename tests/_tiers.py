@@ -141,6 +141,10 @@ _CLI_SYMBOL = ("typer.testing", "CliRunner")
 HELPER_BOUNDARIES: dict[str, frozenset[str]] = {
     # Stdlib-only asyncio plumbing; imports no harness and no tests module.
     "tests._asyncutil": frozenset(),
+    # A spawned verb's exit code and both output streams, plus the pure renderer
+    # that reports a failed one (#370). Holds bytes and formats them; the
+    # spawning itself belongs to the caller, so it crosses nothing.
+    "tests._capture": frozenset(),
     # Typer app introspection. Imports ``typer`` only, and its call sites
     # import ``harness.cli`` inside their own function bodies.
     "tests._cliutil": frozenset(),

@@ -42,6 +42,7 @@ import pytest
 
 from harness.cli import serve
 from harness.hostenv import client
+from tests._capture import Capture
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE_TAG = "harness:test"
@@ -157,22 +158,31 @@ def _verb_json(
     """Run a verb and parse its JSON stdout."""
     import json
 
-    code, data = _capture(repo=repo, argv=argv, socket_at=socket_at, image=image)
-    assert code == 0, f"{argv} exited {code}: {data!r}"
-    return json.loads(data.decode())
+    captured = _capture(repo=repo, argv=argv, socket_at=socket_at, image=image)
+    assert captured.code == 0, captured.diagnosis(argv)
+    return json.loads(captured.stdout.decode())
 
 
-def _capture(
-    *, repo: Path, argv: list[str], socket_at: Path, image: str
-) -> tuple[int, bytes]:
-    """Run one verb through :mod:`harness.hostenv.client`, capturing raw stdout.
+def _capture(*, repo: Path, argv: list[str], socket_at: Path, image: str) -> Capture:
+    """Run one verb through :mod:`harness.hostenv.client`, capturing both streams.
 
     Real file descriptors, because the whole point of the socket path is that
     the container writes to the caller's own fd — a pipe here is what makes the
     two paths comparable at all.
+
+    **Both** streams get one (#370). stderr went to ``/dev/null`` until then, and
+    that is where every failure route out of a verb other than ``run_verb``'s
+    ``--json`` path writes: a non-``VerbError`` traceback, a failure under
+    ``entrypoint.sh``'s ``set -euo pipefail``, ``uv run``'s own diagnostics. All
+    of them produce (non-zero exit, empty stdout), so a capture reading stdout
+    alone reported the CI failure as ``b''`` — indistinguishable from a verb that
+    genuinely said nothing, and unattributable for two days because of it. The
+    real-fd construction is unchanged; there is simply a second one now.
     """
     out = Path(tempfile.mkstemp(dir="/tmp")[1])
+    err = Path(tempfile.mkstemp(dir="/tmp")[1])
     out_fd = os.open(out, os.O_WRONLY | os.O_TRUNC)
+    err_fd = os.open(err, os.O_WRONLY | os.O_TRUNC)
     devnull = os.open(os.devnull, os.O_RDWR)
     try:
         code = client.run(
@@ -183,14 +193,16 @@ def _capture(
                 "HARNESS_CONTROL_SOCKET": str(socket_at),
                 "HARNESS_IMAGE": image,
             },
-            stdio=(devnull, out_fd, devnull),
+            stdio=(devnull, out_fd, err_fd),
         )
     finally:
         os.close(out_fd)
+        os.close(err_fd)
         os.close(devnull)
-    data = out.read_bytes()
+    captured = Capture(code=code, stdout=out.read_bytes(), stderr=err.read_bytes())
     out.unlink(missing_ok=True)
-    return code, data
+    err.unlink(missing_ok=True)
+    return captured
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +223,14 @@ def test_a_read_verbs_stdout_is_identical_over_the_socket_and_directly(
         image=image,
     )
 
-    assert over_socket[1], "no stdout captured — the comparison would be vacuous"
-    assert over_socket == directly, (
+    assert over_socket.stdout, (
+        "no stdout captured — the comparison would be vacuous.\n"
+        f"{over_socket.diagnosis(['version'])}"
+    )
+    assert over_socket.contract == directly.contract, (
         "the socket path altered a read verb's stdout or exit code:\n"
-        f"  socket: {over_socket!r}\n  direct: {directly!r}"
+        f"  socket: {over_socket.diagnosis(['version'])}\n"
+        f"  direct: {directly.diagnosis(['version'])}"
     )
 
 
@@ -283,7 +299,7 @@ def test_a_verb_still_runs_after_the_host_process_is_restarted(
     first = _capture(
         repo=workspace, argv=["runs"], socket_at=server.socket_path, image=image
     )
-    assert first[0] == 0
+    assert first.code == 0, first.diagnosis(["runs"])
 
     server.shutdown()
     server.server_close()
@@ -306,9 +322,11 @@ def test_a_verb_still_runs_after_the_host_process_is_restarted(
     finally:
         restarted.shutdown()
 
-    assert second == first, (
+    assert second.contract == first.contract, (
         "a verb behaved differently after the host process was restarted — the "
-        "host is carrying state a restart destroyed"
+        "host is carrying state a restart destroyed:\n"
+        f"  before: {first.diagnosis(['runs'])}\n"
+        f"  after:  {second.diagnosis(['runs'])}"
     )
 
 
@@ -325,15 +343,15 @@ def test_an_unreachable_socket_still_runs_every_verb(
     workspace: Path, image: str
 ) -> None:
     """AC-3 against real containers rather than a stub."""
-    code, data = _capture(
+    captured = _capture(
         repo=workspace,
         argv=["version"],
         socket_at=Path("/tmp/definitely-not-a-socket"),
         image=image,
     )
 
-    assert code == 0
-    assert b"harness" in data.lower()
+    assert captured.code == 0, captured.diagnosis(["version"])
+    assert b"harness" in captured.stdout.lower(), captured.diagnosis(["version"])
 
 
 def test_the_socket_refuses_a_repo_outside_the_allowlist(
