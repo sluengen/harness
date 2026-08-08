@@ -14,7 +14,7 @@ Identify the branch, its ticket, the change spec, and the canonical spec(s) in `
 Reflect the handoff on the board.
 
 ### 3. Run the reviewer
-Dispatch the `reviewer` agent. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings.
+Dispatch the `reviewer` agent in a fresh context. Supply the ticket, change spec, design artifact for `complex` work, diff, verification output, and visual evidence for a user-facing change; do not supply the implementer's conversation. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings. `trivial` work instead requires its conservative deterministic certification; an ineligible diff upgrades to `simple` rather than bypassing review.
 
 ### 4. Act on the verdict
 - **PASS:** the reviewer has already recorded what shipped to the **as-built record** (`specs/features/<feature>.md`, or the design doc / `SPEC.md` where `feature_specs` is off) — committed *into* the candidate before the certifying gate ran, per `review-discipline`'s *final-evidence ordering* rule, so the verdict covers it and the branch is not touched again. The report names the `reviewed_sha` that verdict binds to. When the diff touches a user-facing surface this is **gated**, not optional — a behaviour change that lands with neither a record update nor a recorded **deferral** (naming the reason) is a FAIL, not a PASS (`review-discipline`, the as-built-record gate). When the surface has no as-built record yet, this ticket creates it — a surface may not accumulate a second shipped ticket without one. The change is then ready for `/ship`.
