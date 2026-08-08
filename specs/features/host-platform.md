@@ -2,7 +2,7 @@
 feature: host-platform
 status: partial
 last_updated: 2026-08-08
-tickets: ["#305", "#308", "#380"]
+tickets: ["#305", "#308", "#380", "#383"]
 ---
 
 # Host platform abstraction
@@ -268,6 +268,19 @@ runtime, so there is nothing left to degrade to short of re-implementing contain
 construction in bash; a missing interpreter is now a hard exit naming
 `HARNESS_HOST_PYTHON`.
 
+**The shim runs under `set -euo pipefail`, and no command it runs may hide behind a
+builtin's exit status (#383).** The wrapper computes one value the client cannot —
+`HARNESS_WRAPPER_STATUS`, the symlink/copy/detached/drifted verdict `harness doctor`
+reports — and until #383 it computed it as `export NAME="$(_wrapper_status)"`. That is
+a single command whose status is `export`'s, so a failing `_wrapper_status` never
+reached `set -e`: the wrapper carried on and spawned the container with an empty
+verdict, which `doctor` then reads as "no wrapper mediated this". Assignment and
+`export` are now separate commands, so the probe's own status stops the wrapper. The
+rule generalises past this one line, which is why a source guard holds it rather than
+the shellcheck run alone — shellcheck's SC2155 is satisfiable by a `disable` directive
+that leaves the masking in place, and it does not run on a host without shellcheck
+installed, which is every developer machine here.
+
 ## Data model
 
 No persisted state: no ledger table, no schema, no migration. `AgentCredential`,
@@ -353,6 +366,15 @@ both are earned.
   argv actually emits and names the platform whose daemon remaps ownership, so it can no
   longer read as the unconditional Docker Desktop claim it used to be. Both are source
   re-reads and neither is the evidence; the docker-marked tests below are.
+  Since #383 it also holds the exit-status rule above:
+  `test_no_export_masks_the_status_of_the_command_it_runs` reads the wrapper for an
+  `export NAME=` whose value is a command substitution. It sits beside
+  `test_wrapper_is_shellcheck_clean` rather than behind it, because a
+  `# shellcheck disable=SC2155` makes that one pass while leaving the masking, and it
+  skips outright where shellcheck is absent. Its predicate is proven on synthetic
+  source (`test_the_masking_predicate_discriminates_on_synthetic_source`), including
+  the `disable`-directive shape. It reads `export` only, so the same masking spelled
+  `local`, `declare -x`, or `readonly` is still shellcheck's to catch.
 - `tests/unit/test_cli_serve.py`, `tests/unit/test_hostenv_client.py` — a refused repo is
   refused on **both** spawn paths with nothing spawned, and since #380 a root invocation
   is too; and the provider's container user reaches docker on **both**, which matters

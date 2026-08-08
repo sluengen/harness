@@ -321,29 +321,55 @@ def test_wrapper_is_shellcheck_clean() -> None:
     )
 
 
-#: An ``export NAME=`` whose value is a command substitution, in code rather than
-#: in a comment. Anchored to the line start (after indentation) so prose quoting
-#: the pattern — this file's own docstrings included — cannot trip it, and written
-#: over both substitution spellings because a rewrite reaching for backticks is
-#: the same defect in older clothes.
-_MASKING_EXPORT = re.compile(
-    r"^\s*export\s+[A-Za-z_][A-Za-z0-9_]*=[^#]*(?:\$\(|`)", re.MULTILINE
+#: The builtins that declare a variable and therefore supply the *statement's*
+#: exit status, hiding the substitution's. ``export`` is the one the wrapper hit,
+#: but ``local`` is the commonest spelling of this defect and the wrapper is full
+#: of it, so scanning for ``export`` alone would leave the likeliest next
+#: occurrence to CI — which is precisely the reliance this guard exists to remove.
+_DECLARING_BUILTINS = ("export", "readonly", "declare", "typeset", "local")
+
+#: A declaring builtin whose value is a command substitution, in code rather than
+#: in a comment. Matched per line via ``.match``, so the position anchor is the
+#: start of each line and ``\s*`` is what tolerates indentation; the wrapper's own
+#: comment beside the fixed line quotes this pattern, and the leading-``#`` case in
+#: :func:`_masking_declarations` is what keeps it from tripping on it.
+#:
+#: The value is scanned with ``(?:(?!\s#).)*`` rather than ``[^#]*``: the point is
+#: to stop at a **trailing comment**, and a trailing comment is a ``#`` preceded by
+#: whitespace. Excluding every ``#`` also stops at the one inside ``${BASE#prefix}``
+#: and misses the substitution after it — a real spelling, and the miss is pinned
+#: by a positive control rather than left to be discovered. Both substitution
+#: spellings are covered because a rewrite reaching for backticks is the same
+#: defect in older clothes.
+_MASKING_DECLARATION = re.compile(
+    r"\s*(?:" + "|".join(_DECLARING_BUILTINS) + r")"
+    r"(?:\s+-[A-Za-z]+)*"
+    r"\s+[A-Za-z_][A-Za-z0-9_]*=(?:(?!\s#).)*(?:\$\(|`)"
 )
 
 
-def _masking_exports(script: str) -> list[str]:
-    """Every line of ``script`` that exports the result of a command it runs."""
-    return [line.strip() for line in script.splitlines() if _MASKING_EXPORT.match(line)]
+def _masking_declarations(script: str) -> list[str]:
+    """Every line of ``script`` that declares a variable from a command it runs."""
+    return [
+        stripped
+        for line in script.splitlines()
+        if not (stripped := line.strip()).startswith("#")
+        and _MASKING_DECLARATION.match(line)
+    ]
 
 
-def test_no_export_masks_the_status_of_the_command_it_runs() -> None:
-    """AC-2: the wrapper never lets ``export`` swallow a failure (#383).
+def test_no_declaration_masks_the_status_of_the_command_it_runs() -> None:
+    """AC-2: the wrapper never lets a declaring builtin swallow a failure (#383).
 
-    ``export NAME="$(f)"`` takes **export's** exit status, which is always 0, so
-    under the wrapper's ``set -euo pipefail`` a failing ``f`` does not stop the
-    script — it spawns a container with an empty value and no complaint. This is
-    what SC2155 names, and the reason the fix is a real behaviour change rather
-    than a lint appeasement.
+    ``export NAME="$(f)"`` is one command, and its exit status is **export's** —
+    which does not carry the substitution's. Under the wrapper's ``set -euo
+    pipefail`` a failing ``f`` therefore does not stop the script; it spawns a
+    container with an empty value and no complaint. This is what SC2155 names,
+    and the reason the fix is a real behaviour change rather than a lint
+    appeasement. ``local``, ``readonly``, ``declare`` and ``typeset`` mask
+    identically, and ``local`` is both the commonest spelling and the one the
+    wrapper uses most, so the predicate covers all five rather than the one
+    occurrence that prompted it.
 
     This guard exists *beside* :func:`test_wrapper_is_shellcheck_clean` rather
     than behind it, because that one can be satisfied by silencing the warning:
@@ -355,11 +381,11 @@ def test_no_export_masks_the_status_of_the_command_it_runs() -> None:
     ``set -euo pipefail`` with the docker stage first, so a red docker stage
     aborted before this file's stage ever ran on the runner).
     """
-    offenders = _masking_exports(_wrapper())
+    offenders = _masking_declarations(_wrapper())
 
     assert not offenders, (
-        "docker/harness-wrapper.sh exports the result of a command it runs, so "
-        "that command's failure is swallowed by export's own exit status:\n  "
+        "docker/harness-wrapper.sh declares a variable from a command it runs, so "
+        "that command's failure is swallowed by the builtin's own exit status:\n  "
         + "\n  ".join(offenders)
         + "\nSplit it: `NAME=\"$(f)\"` on one line, `export NAME` on the next."
     )
@@ -373,6 +399,10 @@ def test_the_masking_predicate_discriminates_on_synthetic_source() -> None:
     becoming a test that cannot fail. The ``shellcheck disable`` case is the one
     that matters most: it is precisely the shape that satisfies the linter while
     leaving the defect in place, and it must still be caught here.
+
+    Each negative case names the piece of the predicate it exists to pin, so a
+    later simplification that deletes one has something to fail against — an
+    ``allowed`` entry no part of the pattern is responsible for is decoration.
     """
     caught = (
         'export HARNESS_WRAPPER_STATUS="$(_wrapper_status)"',
@@ -380,19 +410,42 @@ def test_the_masking_predicate_discriminates_on_synthetic_source() -> None:
         "  export INDENTED=\"$(uname)\"",
         "export LEGACY=`uname`",
         '# shellcheck disable=SC2155\nexport SILENCED="$(_wrapper_status)"',
+        # The four spellings that mask identically. `local` is the one the
+        # wrapper actually reaches for, which is why scanning `export` alone
+        # would have left the likeliest next occurrence to CI.
+        '  local VERSIONED="$(_wrapper_source_root)"',
+        'readonly PINNED="$(uname)"',
+        'declare -x DECLARED="$(uname)"',
+        'typeset -x TYPESET="$(uname)"',
+        # `[^#]*` must not stop at a `#` that is part of the value.
+        'export TRIMMED="${BASE#prefix}$(uname)"',
     )
     allowed = (
+        # The fix's own shape.
         'STATUS="$(_wrapper_status)"\nexport STATUS',
+        # No substitution at all.
         'export LITERAL="harness"',
         "export PATH=/opt/git/bin:$PATH",
+        # The leading-`#` skip: prose quoting the pattern is documentation, and
+        # the wrapper's own comment beside the fixed line does exactly this.
         '# a comment about export FOO="$(bar)" is documentation, not code',
+        # `[^#]*`: a trailing comment mentioning a substitution does not make the
+        # assignment before it a masking one.
+        'export LITERAL="harness"  # unlike $(uname), this is fixed',
+        # The declaring builtin must be the first word: a substitution inside
+        # some other command's arguments is not a masked declaration.
         '  echo "export INLINE=\\"$(f)\\"" > /tmp/generated',
+        # A bare assignment is the correct form and must stay legal even for a
+        # name that looks like a declaration keyword's.
+        'local_value="$(uname)"',
     )
 
     for source in caught:
-        assert _masking_exports(source), f"predicate missed a masking export: {source!r}"
+        assert _masking_declarations(source), (
+            f"predicate missed a masking declaration: {source!r}"
+        )
     for source in allowed:
-        assert not _masking_exports(source), (
+        assert not _masking_declarations(source), (
             f"predicate condemned a legitimate line: {source!r}"
         )
 

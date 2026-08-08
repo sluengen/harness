@@ -56,26 +56,35 @@ CREDENTIAL_NAMES = (
 )
 
 #: A may-not-grow ratchet on the shim. The removed blocks were ~60 lines; without a
-#: bound, logic creeps back in under a different spelling one line at a time. Only
-#: ever re-baselined *downward* — raising it is the drift this guard exists to stop.
+#: bound, logic creeps back in under a different spelling one line at a time.
+#: Re-baselined *downward* as a rule, with **one** recorded exception — #383, stated
+#: below along with the test the next raise has to pass.
 #: Re-baselined 165 → 123 by #307, which removed the env-import block and the
 #: hand-rolled ``docker run`` (158 → 116 lines) and then spent 7 of that back on
 #: the interpreter/import preflight — the wrapper cannot degrade past a missing
 #: client any more, so it must fail with the remedy instead of an import traceback
 #: (:func:`test_an_interpreter_that_cannot_import_the_client_fails_with_the_remedy`).
 #:
-#: Raised 123 → 124 by #383, the **first** upward move and the one shape that
-#: warrants one: the added line is `export HARNESS_WRAPPER_STATUS` split off from
-#: its own assignment, so it carries no logic at all — it is one statement written
-#: as two commands, because the single-command form takes *export's* exit status
-#: and silently swallowed a failing `_wrapper_status` under `set -e`. What this
-#: ratchet exists to stop is ported logic creeping back "one line at a time under
-#: a different spelling"; a correctness fix that adds a line of pure formatting is
-#: the case where the proxy and the property it stands for come apart, and
-#: contorting the fix onto one line with a `;` to keep the number would be
-#: optimising the measure over the thing measured. The rule is otherwise
-#: unchanged, and this is not licence for the next raise: anything that adds a
-#: *branch, a command, or a value* belongs in `harness.hostenv`, which is tested.
+#: Raised 123 → 124 by #383, the **first** upward move. The added line is
+#: `export HARNESS_WRAPPER_STATUS`, split off from its own assignment because the
+#: single-command form takes *export's* status and swallowed a failing
+#: `_wrapper_status` under `set -e`. The pair performs exactly what the one line
+#: performed: no branch, no new effect, no value the wrapper did not already
+#: compute.
+#:
+#: The alternative was real and was measured, not dismissed: `NAME="$(f)"; export
+#: NAME` on one line is shellcheck-clean, semantically identical, and holds 123.
+#: It was rejected because the `;` would exist solely to satisfy a counter, and
+#: saying so honestly in the wrapper means writing "joined onto one line to keep a
+#: line-count ratchet" — a worse artifact than an argued raise. 124 bounds the
+#: ~60 lines of ported logic this exists to keep out exactly as tightly as 123.
+#:
+#: **The test the next raise must pass**, since the value of this bound is that it
+#: is hard to argue past and the first exception must not become a foothold: a
+#: raise is permitted only for a line that performs **no operation the wrapper did
+#: not already perform**. A line adding a branch, the effect of a command the
+#: wrapper was not already running, or a value it was not already computing
+#: belongs in `harness.hostenv`, which is tested.
 EXECUTABLE_LINE_CEILING = 124
 
 

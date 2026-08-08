@@ -303,10 +303,10 @@ fi
 # into the container by value.
 #
 # Assigned and exported on two lines, and not as lint hygiene: `export NAME="$(f)"`
-# is one command whose exit status is *export's*, which is always 0, so `set -e`
-# above cannot see `_wrapper_status` fail and the verb runs with a silently empty
-# status. Split, the assignment carries the function's own status and a failure
-# stops the script (SC2155, #383).
+# is one command whose exit status is *export's*, and export's status does not
+# carry the substitution's — so `set -e` above could not see `_wrapper_status`
+# fail, and the verb ran with a silently empty status. Split, the assignment
+# carries the function's own status and a failure stops the script (SC2155, #383).
 HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
 export HARNESS_WRAPPER_STATUS
 
