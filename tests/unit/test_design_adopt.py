@@ -141,7 +141,10 @@ def _seed_source_design(
     status: str = "ok",
     design_hash: str | None = _PRIOR_HASH,
     engine: str = "claude",
-    model: str | None = "opus",
+    # ``object`` rather than ``str | None`` so a test can seed the malformed
+    # payload a hand-edited or older-schema ledger row could hold. The reader is
+    # documented to never raise, and only a non-string can prove it.
+    model: object = "opus",
 ) -> None:
     """A closed predecessor run for the same ticket, carrying its design event."""
     run_sync(

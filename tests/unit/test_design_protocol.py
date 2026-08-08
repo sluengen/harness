@@ -42,6 +42,7 @@ from harness.cli.design_protocol import (
     build_design_cmd,
     build_design_prompt,
     build_stdout_excerpt,
+    carries_design_sections,
     normalize_design,
     parse_design_fallback,
 )
@@ -442,3 +443,64 @@ def test_a_31kb_braced_design_survives_a_lost_end_marker() -> None:
     design = _hostile_design()
     stdout = f"{FALLBACK_BEGIN_MARKER} {NONCE}\n{design}"
     assert parse_design_fallback(stdout, NONCE) == design
+
+
+# ---------------------------------------------------------------------------
+# AC-7 — the Codex channel's structural floor
+# ---------------------------------------------------------------------------
+#
+# Claude's file exists only if the model deliberately wrote to the one path it
+# was granted, so the file existing *is* the signal that a design was produced.
+# Codex has no such signal: ``--output-last-message`` is written by the CLI on
+# every completed turn, so a refusal or a clarifying question lands in the same
+# file a design would.  :func:`carries_design_sections` is what stands in for
+# the missing signal — the floor below which a final message is not a design.
+#
+# The floor is **one** recognized section heading, not all five, and that
+# threshold is load-bearing in both directions: a real design may legitimately
+# omit a section (``_DESIGN`` in ``test_cli_design.py`` carries two), while
+# ordinary prose carries none.  The pair of tests below pin it from each side,
+# so raising the threshold to two or lowering it to zero fails here.
+
+
+def test_one_recognized_section_heading_is_enough() -> None:
+    """The floor is one, pinned from below: raising it to two fails here."""
+    assert carries_design_sections("### Data model\n\nNo change.\n") is True
+
+
+def test_prose_carrying_no_section_heading_is_not_a_design() -> None:
+    """The case the floor exists for: Codex answering instead of designing."""
+    text = (
+        "The ticket description is empty, so there is nothing to design against. "
+        "Tell me what behaviour you want and I will produce the design section."
+    )
+    assert carries_design_sections(text) is False
+
+
+def test_every_declared_section_name_is_recognized() -> None:
+    """Derived from ``DESIGN_SECTIONS`` — the list the prompt itself is built from.
+
+    Derived rather than listed so a sixth section added to the prompt cannot
+    ship with the recognizer silently blind to it.  The floor assertion below
+    is the one from #168: a derivation that dies returns an empty set and
+    ``all()`` over nothing is vacuously green.
+    """
+    assert len(DESIGN_SECTIONS) >= 5
+    assert "Data model" in DESIGN_SECTIONS
+    assert all(carries_design_sections(f"## {name}\n\nBody.\n") for name in DESIGN_SECTIONS)
+
+
+def test_a_bold_line_counts_as_a_section_heading() -> None:
+    """A real observed shape: models emit ``**Data model**`` as often as ``### ``."""
+    assert carries_design_sections("**Interface / contract**\n\nOne new flag.\n") is True
+
+
+def test_a_section_name_in_running_prose_is_not_a_heading() -> None:
+    """The narrowing's control: the name must be the whole line, not a mention.
+
+    Without this a refusal that says "I need the data model first" would read as
+    a design.  Mutation-checked: dropping the whole-line anchor from the pattern
+    turns this green→red.
+    """
+    text = "I cannot produce this until you tell me what the data model should be."
+    assert carries_design_sections(text) is False

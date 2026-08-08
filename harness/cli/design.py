@@ -100,6 +100,7 @@ from harness.cli.design_protocol import (
     build_design_cmd,
     build_design_prompt,
     build_stdout_excerpt,
+    carries_design_sections,
     design_content_hash,
     normalize_design,
     parse_design_fallback,
@@ -111,6 +112,10 @@ from harness.cli.design_tracker import (
     post_design_comment,
     read_run_ticket,
 )
+from harness.cli.review_protocol import (
+    CODEX_USAGE_LIMIT_REASON as _CODEX_USAGE_LIMIT_REASON,
+)
+from harness.cli.review_protocol import is_codex_usage_limit
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import DesignEventData
 from harness.loop_budget import load_loop_budget
@@ -168,6 +173,22 @@ NO_TICKET_SPEC_REASON = "no_ticket_spec"
 # after the change from the 12.5% wire-format baseline before it, instead of
 # summing them into a rate that can only be read as a trend.
 NO_DESIGN_OUTPUT_REASON = "no_design_output"
+
+# Codex delivered a final message that is not a design (see
+# ``carries_design_sections``). Distinct from ``no_design_output`` because the
+# two have different remedies and the ledger is queried for exactly that: "the
+# engine wrote nothing" points at the channel, while "the engine answered
+# something else" points at the ticket the prompt was built from — most often a
+# change spec too thin to design against. It cannot arise on the Claude channel,
+# whose deliberate scoped write is its own evidence.
+UNRECOGNIZED_DESIGN_REASON = "design_not_recognized"
+
+#: An exhausted Codex tier, named identically to ``review``'s classification of
+#: the same wall — re-exported from the protocol module that owns the detector.
+#: Without it a depleted tier reached the ledger as ``no_design_output``, which
+#: reads as "the engine ran and designed nothing" and sends the operator to look
+#: at the ticket rather than at the billing page.
+CODEX_USAGE_LIMIT_REASON = _CODEX_USAGE_LIMIT_REASON
 
 #: ``DesignOutput.status`` for a run whose assurance does not require the stage
 #: (#352). A third value beside ``ok`` and ``failed``, and deliberately **not** a
@@ -413,7 +434,14 @@ async def _run_design(
             design_markdown="",
             design_hash="",
             grounded_sha="",
-            model="",
+            # Not ``resolved_model``: ``--model`` is accepted and ignored here, so
+            # naming one would assert an engine choice nothing acted on. Claude
+            # keeps the empty string that preserves its historical six-key shape;
+            # Codex omits the key entirely (``exclude_none``), the same absent
+            # provenance it records everywhere else it uses its configured
+            # default, rather than the manufactured empty string this change is
+            # meant to stop producing.
+            model="" if engine == "claude" else None,
             status=DESIGN_NOT_REQUIRED_STATUS,
         )
 
@@ -527,8 +555,43 @@ async def _run_engine_and_collect(
                 ENGINE_ERROR_REASON, f"the design engine could not be run: {exc}"
             ) from exc
 
+        # An exhausted tier is infrastructure, not a design failure, and is
+        # classified before either channel is read — on this wall Codex writes no
+        # file and prints nothing, so the untagged path below would record it as
+        # ``no_design_output``: the same tag as an engine that ran fine and
+        # produced nothing. ``review`` already draws this line; drawing it here
+        # too is what makes the strict Codex-only mode's promise hold across both
+        # verbs rather than only the one. It still degrades and records (ADR 0007
+        # D4) — the exit code is unchanged, only the reason is now true.
+        if engine == "codex" and is_codex_usage_limit(result.stderr, result.returncode):
+            raise _DesignNotProducedError(
+                CODEX_USAGE_LIMIT_REASON,
+                "the Codex tier is exhausted, so no design was produced; this is "
+                "an infrastructure wall rather than a design failure — top up the "
+                "tier or run design with --engine claude",
+                submit_excerpt=build_stdout_excerpt(result.stderr),
+                stdout_chars=len(result.stdout),
+            )
+
         from_file = normalize_design(await asyncio.to_thread(_read_design_file, channel.path))
         if from_file is not None:
+            # The Codex channel needs a floor the Claude channel does not: its CLI
+            # writes ``--output-last-message`` on every completed turn, so a
+            # refusal or a clarifying question arrives in the same file a design
+            # would, whereas Claude's file exists only because the model used its
+            # one scoped write grant. Without this, any final message was hashed,
+            # posted to the ticket as the Design section, recorded ``status="ok"``
+            # and accepted by ``review``'s design gate — which made the
+            # degrade-and-record path unreachable on this engine.
+            if engine == "codex" and not carries_design_sections(from_file):
+                raise _DesignNotProducedError(
+                    UNRECOGNIZED_DESIGN_REASON,
+                    "the codex design engine's final message carries none of the "
+                    "requested Design sections, so it is not a design; the ticket "
+                    "is usually too thin to design against",
+                    submit_excerpt=build_stdout_excerpt(from_file),
+                    stdout_chars=len(from_file),
+                )
             channel_name = (
                 DESIGN_CHANNEL_LAST_MESSAGE
                 if engine == "codex"

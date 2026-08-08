@@ -68,6 +68,7 @@ __all__ = [
     "RunResult",
     "Runner",
     "Verdict",
+    "CODEX_USAGE_LIMIT_REASON",
     "MALFORMED_SUBMIT_SENTINEL",
     "NO_SUBMIT_SENTINEL",
     "build_review_prompt",
@@ -478,6 +479,11 @@ def _build_cmd(engine: Engine, *, model: str | None = None) -> list[str]:
 # The URLs and the reset date vary run-to-run; the lowercased phrase below is the
 # invariant core. On a usage limit stdout is empty and the process exits 1.
 _CODEX_USAGE_LIMIT_MARKER = "you've hit your usage limit"
+
+#: The ledger's name for that wall. Homed next to the detector, not in a verb,
+#: because both ``review`` and ``design`` classify the same condition and two
+#: spellings of it would split the one thing the reason field is queried for.
+CODEX_USAGE_LIMIT_REASON = "codex_usage_limit"
 
 
 def is_codex_usage_limit(stderr: str, returncode: int) -> bool:

@@ -1487,3 +1487,186 @@ def test_design_latency_is_one_query_over_the_column(
         return None if row is None or row[0] is None else int(row[0])
 
     assert run_sync(_worst()) == 1_500_000
+
+
+# ---------------------------------------------------------------------------
+# Codex: an exhausted tier is named, and a non-design final message is refused
+# ---------------------------------------------------------------------------
+#
+# Both close gaps between what the strict Codex-only mode promises and what it
+# did.  ``review --no-fallback`` already classifies an exhausted tier as
+# infrastructure; ``design`` read neither returncode nor stderr, so the same
+# wall arrived on the ledger as ``no_design_output`` — indistinguishable from an
+# engine that ran fine and designed nothing.  And because the Codex CLI writes
+# ``--output-last-message`` on *every* completed turn, any final message at all
+# was being hashed, posted to the ticket as the Design section, and recorded
+# ``status="ok"`` — so the degrade-and-record path (ADR 0007 D4) was unreachable
+# on this engine.
+
+#: The stderr a depleted Codex tier really emits, copied from the fixture
+#: ``test_cli_review.py`` pins for the same classifier.  Both verbs reading the
+#: one marker is the point: a wall that ``review`` calls infrastructure cannot
+#: be something ``design`` calls a bad design.
+_REAL_CODEX_USAGE_LIMIT_STDERR = (
+    "OpenAI Codex v0.137.0\n"
+    "--------\n"
+    "ERROR: You've hit your usage limit. Upgrade to Pro "
+    "(https://chatgpt.com/explore/pro), visit "
+    "https://chatgpt.com/codex/settings/usage to purchase more credits or try "
+    "again at Jun 18th, 2026 8:18 PM.\n"
+)
+
+
+def test_codex_usage_limit_is_recorded_as_its_own_reason(
+    repo: Path, db_path: Path
+) -> None:
+    """An exhausted tier is infrastructure, and the ledger says so by name."""
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(None, stderr=_REAL_CODEX_USAGE_LIMIT_STDERR, returncode=1),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    data = design_events(db_path)[0]["data"]
+    assert data["status"] == "failed"
+    assert data["reason"] == design_mod.CODEX_USAGE_LIMIT_REASON
+
+
+def test_the_design_and_review_verbs_name_an_exhausted_tier_identically(
+    repo: Path, db_path: Path
+) -> None:
+    """One string for one condition, read off ``review``'s own constant.
+
+    Asserted against the constant ``review`` exposes rather than a literal: two
+    verbs classifying the same wall under two spellings is exactly the ledger
+    noise the reason field exists to prevent.
+
+    Deliberately ``==`` and not ``is``: ``codex_usage_limit`` is identifier-shaped,
+    so CPython interns it and an ``is`` check would pass against two *independent*
+    literals — proving the single-sourcing it looks like it proves.
+    """
+    from harness.cli import review as review_mod
+
+    assert design_mod.CODEX_USAGE_LIMIT_REASON == review_mod.CODEX_USAGE_LIMIT_REASON
+
+
+def test_an_ordinary_codex_failure_is_still_no_design_output(
+    repo: Path, db_path: Path
+) -> None:
+    """The narrowing's control: only the usage-limit marker gets the new reason.
+
+    Without this the classifier could match every non-zero exit and the test
+    above would still pass, turning every real Codex failure into a reported
+    billing problem.
+    """
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(None, stderr="ERROR: stream disconnected before completion\n", returncode=1),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    assert design_events(db_path)[0]["data"]["reason"] == design_mod.NO_DESIGN_OUTPUT_REASON
+
+
+def test_a_codex_final_message_that_is_not_a_design_is_refused(
+    repo: Path, db_path: Path
+) -> None:
+    """The CLI writes that file on every turn; only a design may pass as one."""
+    _seed_open_run(db_path, repo)
+    tracker = _tracker_stub()
+    chatter = (
+        "The ticket description is empty, so there is nothing to design against. "
+        "Tell me what behaviour you want and I will write the Design section."
+    )
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner(chatter),
+        engine="codex",
+        tracker_stub=tracker,
+    )
+
+    assert result.exit_code == design_mod.EXIT_DESIGN_FAILED
+    data = design_events(db_path)[0]["data"]
+    assert data["status"] == "failed"
+    assert data["reason"] == design_mod.UNRECOGNIZED_DESIGN_REASON
+    # The load-bearing half: the refusal is what keeps a chat reply off the
+    # ticket, out of the design hash, and out of ``review``'s design gate.
+    tracker.post_comment.assert_not_awaited()
+    assert "channel" not in data
+
+
+def test_the_refused_final_message_is_kept_as_evidence(
+    repo: Path, db_path: Path
+) -> None:
+    """A degraded attempt's only evidence is what the engine said instead (#277)."""
+    _seed_open_run(db_path, repo)
+
+    _invoke(
+        repo,
+        db_path,
+        _make_runner("I need more detail before I can design this."),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    data = design_events(db_path)[0]["data"]
+    assert "I need more detail" in data["submit_excerpt"]
+
+
+def test_a_codex_design_carrying_one_section_is_accepted(
+    repo: Path, db_path: Path
+) -> None:
+    """The floor is one heading, pinned at the verb: a real design may omit sections.
+
+    ``_DESIGN`` carries two of the five.  Raising the floor to "all five" would
+    reject it — and every other design fixture in this suite — so this is what
+    keeps the new check from quietly narrowing the verb to perfect designs only.
+    """
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner("### Scenarios\n\nGIVEN a run WHEN it designs THEN it records.\n"),
+        engine="codex",
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert design_events(db_path)[0]["data"]["status"] == "ok"
+
+
+def test_claudes_file_channel_is_not_subject_to_the_structural_floor(
+    repo: Path, db_path: Path
+) -> None:
+    """The asymmetry is deliberate, and this is the test that states it.
+
+    Claude's file exists only because the model used the one write grant it was
+    given, at a path only this invocation knows — the write *is* the signal.
+    Codex's file is written by its CLI whatever the turn produced, so it needs a
+    substitute signal.  Applying the floor to Claude would add a new way for the
+    default path to reject a design it accepts today.
+    """
+    _seed_open_run(db_path, repo)
+
+    result = _invoke(
+        repo,
+        db_path,
+        _make_runner("A design with no recognized section headings at all."),
+        tracker_stub=_tracker_stub(),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert design_events(db_path)[0]["data"]["status"] == "ok"

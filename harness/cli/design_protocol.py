@@ -51,6 +51,12 @@ import json
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+from harness.cli.design_sections import (
+    DESIGN_SECTIONS,
+    carries_design_sections,
+    render_section_briefs,
+)
+
 __all__ = [
     "DESIGN_MODEL_DEFAULT",
     "DESIGN_OUT_FILENAME",
@@ -65,6 +71,7 @@ __all__ = [
     "build_design_cmd",
     "build_design_prompt",
     "build_stdout_excerpt",
+    "carries_design_sections",
     "design_content_hash",
     "normalize_design",
     "parse_design_fallback",
@@ -116,43 +123,6 @@ FALLBACK_END_MARKER = "END-HARNESS-DESIGN"
 # token to catch a payload that spanned lines — a JSON-specific failure this
 # change removes by construction, along with the token to anchor on.)
 STDOUT_EXCERPT_MAX_CHARS = 1_000
-
-# The sections a design must carry, in order. Three come from
-# ``templates/change.md``'s Design block — the artifact is that block, not a
-# new artifact class (ADR 0007) — and Security and Test strategy from the
-# ``architecture`` skill's "what a design produces". Single-sourced here and
-# rendered into the prompt, so the list cannot drift from what is asked for.
-DESIGN_SECTIONS: tuple[str, ...] = (
-    "Data model",
-    "Interface / contract",
-    "Scenarios",
-    "Security",
-    "Test strategy",
-)
-
-_SECTION_BRIEFS: dict[str, str] = {
-    "Data model": (
-        "Entities, fields, relationships, and invariants that change. Note any "
-        "migration."
-    ),
-    "Interface / contract": (
-        "Endpoints, commands, or component contracts: request/response shapes, "
-        "status and error cases, auth rules."
-    ),
-    "Scenarios": (
-        "Behaviour in scenarios where it is non-obvious or edge cases are easy "
-        "to forget, as GIVEN {precondition} WHEN {action} THEN {outcome}."
-    ),
-    "Security": (
-        "The trust boundaries this change touches, the validation at each, and "
-        "what data is exposed to whom."
-    ),
-    "Test strategy": (
-        "What to test, the key edge cases, and the integration points — enough "
-        "that an implementer can write the first failing test from it."
-    ),
-}
-
 
 class DesignChannel(NamedTuple):
     """Where one design engine invocation puts its output.
@@ -259,9 +229,7 @@ def build_design_prompt(
     damage an injection attempt inside it can do is the engine's capability —
     see :func:`build_design_cmd` for what that is and what it is not.
     """
-    section_brief = "\n\n".join(
-        f"### {section}\n{_SECTION_BRIEFS[section]}" for section in DESIGN_SECTIONS
-    )
+    section_brief = render_section_briefs()
     delivery = (
         _CLAUDE_DELIVERY_TEMPLATE.format(
             out_path=channel.path,

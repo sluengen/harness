@@ -125,6 +125,9 @@ from harness.cli.review_probe import (
     survivors,
 )
 from harness.cli.review_protocol import (
+    CODEX_USAGE_LIMIT_REASON as _CODEX_USAGE_LIMIT_REASON,
+)
+from harness.cli.review_protocol import (
     DEFAULT_ENGINE,
     MALFORMED_SUBMIT_SENTINEL,
     NO_DESIGN_REASON,
@@ -380,7 +383,9 @@ SANDBOX_INIT_REASON = "sandbox_init_failure"
 
 #: Codex could not review because the authenticated account exhausted its tier.
 #: This is observable only when the caller disables the legacy Claude fallback.
-CODEX_USAGE_LIMIT_REASON = "codex_usage_limit"
+#: Re-exported, not defined: ``design`` classifies the same wall, so the string
+#: is single-sourced beside the detector that recognizes it.
+CODEX_USAGE_LIMIT_REASON = _CODEX_USAGE_LIMIT_REASON
 
 # Machine-readable ``reason`` for a red verify gate (CAL-1082).
 GATE_FAILED_REASON = "gate_failed"

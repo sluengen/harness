@@ -370,3 +370,39 @@ def test_the_skip_precedes_the_adopt_path(repo: Path, db_path: Path) -> None:
     assert json.loads(result.stdout)["status"] == "not_required"
     assert consulted["called"] is False
     assert _design_events(db_path) == []
+
+
+def test_codex_omits_model_on_the_skip_path(repo: Path, db_path: Path) -> None:
+    """The skip path must not manufacture provenance it does not have.
+
+    ``verb-model.md`` and ``commands/harness.md`` both state Codex omits
+    ``model`` "including on this skip path"; the skip hardcoded an empty string,
+    so ``--engine codex --json`` on a ``simple`` run emitted ``"model": ""`` —
+    the invented empty provenance the run-ledger spec says this stops producing.
+    """
+    _seed_open_run(db_path, repo, assurance="simple")
+
+    result = _invoke(repo, db_path, _CountingRunner(), _tracker_stub(), engine="codex")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "not_required"
+    assert "model" not in payload
+    assert set(payload) == _DESIGN_OUTPUT_KEYS - {"model"}
+
+
+def test_claude_keeps_its_six_key_skip_shape(repo: Path, db_path: Path) -> None:
+    """The control for the test above: the default path is untouched.
+
+    ``--model`` stays "accepted and ignored" here, so the value is the empty
+    string rather than the resolved default — a skipped stage naming a model
+    would assert an engine choice that was never acted on.
+    """
+    _seed_open_run(db_path, repo, assurance="simple")
+
+    result = _invoke(repo, db_path, _CountingRunner(), _tracker_stub(), engine="claude")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert set(payload) == _DESIGN_OUTPUT_KEYS
+    assert payload["model"] == ""
