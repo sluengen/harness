@@ -36,11 +36,19 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 _STEP = "- name: Promote the gated candidate"
 
 
-def _promotion_run_block() -> list[str]:
-    """The promotion step's ``run:`` block, dedented to the lines bash receives."""
-    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
-    step = next(i for i, line in enumerate(lines) if line.strip() == _STEP)
-    run = next(i for i in range(step, len(lines)) if lines[i].strip() == "run: |")
+def _promotion_run_block(lines: list[str]) -> list[str]:
+    """The promotion step's ``run:`` block, dedented to the lines bash receives.
+
+    Both lookups assert rather than ``next(...)`` bare: a renamed step used to
+    raise ``StopIteration`` naming nothing, leaving whoever renamed it to work
+    out from scratch what this module had been looking for (#391).
+    """
+    steps = [i for i, line in enumerate(lines) if line.strip() == _STEP]
+    assert steps, f"the workflow has no step whose name is {_STEP!r} — renamed or removed?"
+    step = steps[0]
+    runs = [i for i in range(step, len(lines)) if lines[i].strip() == "run: |"]
+    assert runs, f"the step {_STEP!r} has no `run: |` block to read the export out of"
+    run = runs[0]
     indent = len(lines[run]) - len(lines[run].lstrip())
     body: list[str] = []
     for line in lines[run + 1 :]:
@@ -60,11 +68,17 @@ def _exported_allowlist_and_repo_argument(
     ``workspace`` the way the runner points it at the checkout.
     """
     exports = [line for line in block if line.startswith("export ")]
-    repo_argument = next(
-        parts[parts.index("--repo") + 1]
+    # The bound check is not defensive padding: `--repo` may legally be the last
+    # token on a line, its argument folded onto the next one (#391). This helper
+    # only ever needs one argument to expand, so it takes an unwrapped one and
+    # says so plainly rather than raising IndexError from inside a comprehension.
+    repo_arguments = [
+        parts[index + 1]
         for line in block
-        if "--repo" in (parts := line.split())
-    )
+        if "--repo" in (parts := line.split()) and (index := parts.index("--repo")) + 1 < len(parts)
+    ]
+    assert repo_arguments, "no line in the promotion block passes --repo an argument to expand"
+    repo_argument = repo_arguments[0]
     script = "\n".join(
         [
             *exports,
@@ -98,7 +112,7 @@ def test_the_exported_allowlist_admits_the_workflows_own_repo_argument(
     workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The workflow's export makes its ``--repo`` argument resolve to the checkout."""
-    block = _promotion_run_block()
+    block = _promotion_run_block(WORKFLOW.read_text(encoding="utf-8").splitlines())
     assert [line for line in block if line.startswith("export ")], (
         "the promotion step exports nothing, so there is no allowlist to test"
     )
@@ -116,7 +130,7 @@ def test_without_the_export_the_same_argument_is_refused(
     workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Negative control: the allowlist, not the argument, is what admits the path."""
-    full = _promotion_run_block()
+    full = _promotion_run_block(WORKFLOW.read_text(encoding="utf-8").splitlines())
     block = [line for line in full if not line.startswith("export ")]
     assert len(block) < len(full), "nothing was stripped, so this controls for nothing"
 
@@ -126,3 +140,42 @@ def test_without_the_export_the_same_argument_is_refused(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(expanded, {WORKSPACE_ROOTS_ENV: roots})
+
+
+# --- The locators say what they were looking for (#391) -----------------------
+#
+# These read no real workflow. They pin that the two lookups above fail with a
+# message naming their target, so renaming the step in the workflow costs the
+# next author a sentence rather than a bare `StopIteration` traceback.
+
+
+def test_a_missing_promotion_step_names_the_step_it_looked_for() -> None:
+    """AC-4: a renamed or removed step is named, not reported as StopIteration."""
+    with pytest.raises(AssertionError) as refused:
+        _promotion_run_block(
+            ["      - name: Promote something else", "        run: |", "          true"]
+        )
+
+    assert _STEP in str(refused.value)
+
+
+def test_a_promotion_step_with_no_run_block_names_what_was_missing() -> None:
+    """AC-4: the second lookup explains itself the same way the first does."""
+    with pytest.raises(AssertionError) as refused:
+        _promotion_run_block([f"      {_STEP}", "        uses: actions/checkout@v4"])
+
+    assert "run: |" in str(refused.value)
+
+
+def test_a_block_whose_repo_argument_is_wrapped_says_so(workspace: Path) -> None:
+    """A `--repo` folded onto the next line leaves nothing to expand, and says which."""
+    with pytest.raises(AssertionError) as refused:
+        _exported_allowlist_and_repo_argument(
+            [
+                'export HARNESS_WORKSPACE_ROOTS="$GITHUB_WORKSPACE"',
+                "uv run harness promote pr --repo",
+            ],
+            workspace,
+        )
+
+    assert "--repo" in str(refused.value)
