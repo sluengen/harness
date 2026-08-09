@@ -16,6 +16,12 @@ physical line never derived it at all, so every per-call assertion below simply
 never saw it. Each derived call still reports the line number of its **first**
 physical line, which is the one an author can go and find.
 
+The derivation is also indifferent to flag *order* (#393). Its verb span used to
+stop at the first character outside ``[a-z -]``, so a ``--repo`` written after
+any flag carrying a quote, a ``$``, a digit or an underscore escaped it — in the
+wrapped and the single-line form alike, which is what showed line-basedness was
+never that hole's cause.
+
 The property is a module-level function rather than a test body because the
 coverage tests below feed it synthetic sources. They exist to pin *this* body's
 behaviour, so they have to call it; a second copy of the rule written for them
@@ -36,9 +42,29 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 
-#: A ``harness <verb…> --repo <arg>`` invocation. The verb is captured only so a
-#: failure names the call site; the ``--repo`` argument is what is asserted on.
-_REPO_RESOLVING_CALL = re.compile(r"harness\s+(?P<verb>[a-z][a-z \-]*?)\s+--repo\s+(?P<arg>\S+)")
+#: A ``harness <verb…> [flags…] --repo <arg>`` invocation. The verb is captured
+#: only so a failure names the call site; the ``--repo`` argument is what is
+#: asserted on. The span between the two is deliberately in two parts (#393):
+#:
+#: * the **verb** is a greedy run of whitespace-separated words that do not begin
+#:   with ``-``, so the captured name stays the subcommand path. Greedy is what
+#:   stops it collapsing to ``promote`` and losing the known-call-site floor.
+#: * the **flags** are any further tokens, stopping at a shell command separator
+#:   and at a fresh ``harness`` invocation. Both bounds keep each ``--repo``
+#:   attributed to the call that actually passes it — the separator because the
+#:   next command's flags are not this one's, and the lookahead because folding
+#:   can put two ``harness`` calls on one logical line.
+#:
+#: ``#`` is deliberately absent from the separator set: ``${BASE#prefix}`` and a
+#: quoted ``"issue #383"`` both carry a bare ``#``, and treating it as a boundary
+#: is the mistake #383 paid for. The cost is that a commented-out invocation is
+#: still derived — over-derivation, which reddens CI rather than hiding a call.
+_REPO_RESOLVING_CALL = re.compile(
+    r"harness"
+    r"(?P<verb>(?:\s+[a-z][a-z-]*)+)"
+    r"(?:\s+(?!harness\b)[^\s&|;]+)*?"
+    r"\s+--repo\s+(?P<arg>\S+)"
+)
 
 #: The allowlist assignment the promotion step must export before any verb runs.
 _ALLOWLIST_EXPORT_PREFIX = "export HARNESS_WORKSPACE_ROOTS="
@@ -81,11 +107,31 @@ def _logical_lines(lines: list[str]) -> list[tuple[int, str]]:
 
 
 def _repo_resolving_calls(lines: list[str]) -> list[tuple[int, str, str]]:
-    """Derive every call site as ``(line number, verb, --repo argument)``.
+    """Derive call sites as ``(line number, verb, --repo argument)``.
 
     ``finditer`` rather than ``search``: folding can bring two chained calls onto
     one logical line, and deriving only the first would be a coverage hole that
     the folding itself introduced.
+
+    What this covers, stated as what it is rather than as "every call site" — the
+    claim it carried before #393, which was false of the implementation beneath
+    it. A call site is derived when it is written as ``harness`` followed by one
+    or more subcommand words, then any run of tokens carrying no shell command
+    separator and opening no fresh ``harness`` invocation, then ``--repo`` and
+    its argument. So flag *order* does not matter, nor whether a backslash
+    continuation splits the invocation across physical lines, nor whether the
+    binary is named by path — ``/usr/bin/harness promote pr --repo …`` is derived
+    and attributed to itself.
+
+    What is **not** derived, each pinned by ``_UNDERIVED_SHAPES`` rather than
+    stated here and trusted: a ``--repo`` supplied through a shell variable
+    instead of written at the call site; the ``--repo=<arg>`` spelling, which
+    carries no whitespace for the pattern to match on (a real escape, filed
+    separately, not #393's subject); and a ``--repo`` belonging to a *different*
+    command after a separator, which is a refusal to guess rather than a gap.
+
+    Over-derivation, which fails closed: a commented-out invocation is derived,
+    and so is a token merely ending in ``harness`` such as ``myharness``.
     """
     return [
         (number, match.group("verb").strip(), match.group("arg"))
@@ -176,6 +222,30 @@ _EXPORT = f'{_ALLOWLIST_EXPORT_PREFIX}"$GITHUB_WORKSPACE"'
 #: shape that escaped the derivation entirely before #391.
 _WRAPPED_HEAD = "uv run harness promote status \\"
 
+#: Flags written between the verb and ``--repo``, one per character class the
+#: pre-#393 verb span could not cross: a quote and a ``$``, a digit, and an
+#: underscore. The hole was never about one spelling, so neither is its guard.
+_INTERVENING_FLAGS = ['--promotion-id "$id"', "--gate-exit 0", "--gate_log run.log"]
+
+#: Shapes ``_repo_resolving_calls``' docstring names as **not** derived, and the
+#: near-neighbours it names as derived. Parametrized so the residual list
+#: measures itself rather than being read: #393 first shipped a residual clause
+#: that was simply false of the code beneath it, and reading is what missed it.
+_UNDERIVED_SHAPES = [
+    "uv run harness promote pr $REPO_FLAG",
+    'uv run harness promote pr --repo="$GITHUB_WORKSPACE"',
+    "uv run harness promote start && some_tool --repo /tmp",
+]
+
+#: The anti-vacuity companion. Without it every case above would also pass
+#: against a ``_step`` that produced nothing derivable at all.
+_DERIVED_SHAPES = [
+    "uv run harness promote pr --repo /tmp",
+    "/usr/bin/harness promote pr --repo /tmp",
+    "uv run harness promote start && harness promote pr --repo /tmp",
+    'uv run harness promote pr --note "issue #383" --repo /tmp',
+]
+
 
 def _step(*body: str) -> list[str]:
     """A promotion ``run:`` block carrying ``body``, indented as the workflow is."""
@@ -213,6 +283,151 @@ def test_a_wrapped_call_is_reported_at_its_first_physical_line() -> None:
         _assert_every_call_runs_under_an_exported_allowlist(lines)
 
     assert f"line {_line_of(lines, _WRAPPED_HEAD)}" in str(refused.value)
+
+
+@pytest.mark.parametrize("flag", _INTERVENING_FLAGS)
+def test_a_repo_argument_written_after_another_flag_is_derived_and_refused(flag: str) -> None:
+    """AC-1: flag *order* is not an escape route either, on one physical line.
+
+    #391 closed the line-based hole; this is the reach-based one it left. The
+    verb span stopped at the first character outside ``[a-z -]``, so any flag
+    carrying a quote, a ``$``, a digit or an underscore ended the match before
+    ``--repo`` was ever reached.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, f"uv run harness promote status {flag} --repo /tmp")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+@pytest.mark.parametrize("flag", _INTERVENING_FLAGS)
+def test_a_repo_argument_after_another_flag_on_a_continuation_line_is_refused(flag: str) -> None:
+    """AC-1, in the workflow's own wrapping idiom: the two holes compose.
+
+    Measured identical in both forms during #391's review, which is what showed
+    line-basedness was never this one's cause.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, f"uv run harness promote status {flag} \\", "  --repo /tmp")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+def test_a_refused_call_names_only_its_subcommand_path() -> None:
+    """AC-2: widening the span must not fold the intervening flags into the verb.
+
+    Asserted on a *synthetic* source rather than the workflow, deliberately. All
+    three real call sites write ``--repo`` directly after the verb, so they
+    derive identically under the two-part span and under the cheaper degradation
+    that simply lets the verb run to ``--repo`` — a check over the real file
+    could not tell the two apart and would be decoration. The difference is only
+    ever visible where a flag intervenes, and it is visible in the one place the
+    verb is *for*: the message that sends an author to the call site.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, 'uv run harness promote status --id "$x" --repo /tmp')
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "`harness promote status` at line" in str(refused.value)
+
+
+def test_a_repo_argument_is_attributed_to_its_own_harness_invocation() -> None:
+    """AC-2: the widened span may not reach across a *later* ``harness``.
+
+    Two chained invocations where only the second carries ``--repo``. A span
+    that crossed the second ``harness`` would still refuse the argument — but
+    blame the first call for it, which is precisely the per-call attribution
+    ``finditer`` was added for in #391.
+    """
+    lines = _step(
+        _EXPORT,
+        _GOOD_CALL,
+        "uv run harness promote status && uv run harness promote pr --repo /tmp",
+    )
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "`harness promote pr`" in str(refused.value)
+
+
+def test_a_call_on_the_final_continuation_line_is_derived() -> None:
+    """AC-3: the trailing-buffer flush in ``_logical_lines`` is load-bearing.
+
+    A source whose last physical line still ends in a backslash leaves the fold
+    buffered. Without the flush the whole invocation is dropped and the guard
+    goes green on a call it never saw — the silent direction, which is the one
+    this module exists to close.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, "uv run harness promote pr \\", "  --repo /tmp \\")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+@pytest.mark.parametrize("shape", _UNDERIVED_SHAPES)
+def test_a_shape_the_docstring_calls_underived_really_is(shape: str) -> None:
+    """AC-4: every clause of the stated coverage is measured, not asserted in prose.
+
+    A docstring is the one part of a guard nothing runs. #393 exists partly
+    because the previous one overclaimed; its own first draft then *under*
+    claimed, naming a by-path invocation as underived when it is derived. Both
+    directions are the same defect — a coverage statement no test can falsify.
+    """
+    assert _repo_resolving_calls(_step(shape)) == []
+
+
+@pytest.mark.parametrize("shape", _DERIVED_SHAPES)
+def test_a_shape_the_docstring_calls_derived_really_is(shape: str) -> None:
+    """The companion floor: the cases above must fail to derive for their own reason.
+
+    Every ``== []`` above is satisfied by a derivation that has stopped working
+    altogether, so each underived shape is paired with the nearest shape that
+    must still be found — including the by-path invocation the first draft got
+    backwards, and a genuine second ``harness`` call after a separator.
+    """
+    assert _repo_resolving_calls(_step(shape))
+
+
+def test_a_second_harness_call_behind_no_separator_is_attributed_to_itself() -> None:
+    """The ``(?!harness\\b)`` lookahead, on the one shape the separator bound misses.
+
+    Found by a *survivor*: once the flag span stopped at ``&``, ``;`` and ``|``,
+    dropping the lookahead killed nothing, because every chained shape then under
+    test was separator-chained. It is not redundant — it is what a trailing
+    comment needs, and ``#`` is deliberately not a separator (see the pattern).
+    Without it the argument is blamed on ``promote pr``, the call that does not
+    pass it; with it the commented-out ``promote status`` answers for its own.
+    """
+    commented_out = "uv run harness promote pr # harness promote status --repo /tmp"
+    lines = _step(_EXPORT, _GOOD_CALL, commented_out)
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "`harness promote status` at line" in str(refused.value)
+
+
+def test_another_commands_repo_flag_is_not_attributed_to_the_harness_call() -> None:
+    """The flag span may not cross a shell command separator.
+
+    The widening's own new failure class: the pre-#393 verb span could not cross
+    ``&``, ``;`` or ``|`` either, so letting the flag run past one would hand a
+    *different* command's ``--repo`` to the harness call and redden the workflow
+    over an argument no verb ever sees. ``#`` is deliberately **not** a stop
+    character — ``${BASE#prefix}`` and a quoted ``"issue #383"`` both carry a
+    bare one, and #383 is the tick that paid for treating ``#`` as a boundary.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, "uv run harness promote start && some_tool --repo /tmp")
+
+    _assert_every_call_runs_under_an_exported_allowlist(lines)
 
 
 def test_a_wrapped_call_naming_the_allowlisted_root_is_accepted() -> None:
