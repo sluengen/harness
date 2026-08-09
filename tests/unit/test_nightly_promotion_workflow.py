@@ -49,17 +49,20 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 #: * the **verb** is a greedy run of whitespace-separated words that do not begin
 #:   with ``-``, so the captured name stays the subcommand path. Greedy is what
 #:   stops it collapsing to ``promote`` and losing the known-call-site floor.
-#: * the **flags** are any further tokens, none of which may open a fresh
-#:   ``harness`` invocation — that lookahead is what keeps each ``--repo``
-#:   attributed to its own call once folding puts two on one logical line.
+#: * the **flags** are any further tokens, stopping at a shell command separator
+#:   and at a fresh ``harness`` invocation. Both bounds keep each ``--repo``
+#:   attributed to the call that actually passes it — the separator because the
+#:   next command's flags are not this one's, and the lookahead because folding
+#:   can put two ``harness`` calls on one logical line.
 #:
-#: Residual: a token that merely *ends* in ``harness`` (``/usr/bin/harness``)
-#: does not close the span, so a chain written that way would blame the earlier
-#: call. Nothing in this repo invokes it by path.
+#: ``#`` is deliberately absent from the separator set: ``${BASE#prefix}`` and a
+#: quoted ``"issue #383"`` both carry a bare ``#``, and treating it as a boundary
+#: is the mistake #383 paid for. The cost is that a commented-out invocation is
+#: still derived — over-derivation, which reddens CI rather than hiding a call.
 _REPO_RESOLVING_CALL = re.compile(
     r"harness"
     r"(?P<verb>(?:\s+[a-z][a-z-]*)+)"
-    r"(?:\s+(?!harness\b)\S+)*?"
+    r"(?:\s+(?!harness\b)[^\s&|;]+)*?"
     r"\s+--repo\s+(?P<arg>\S+)"
 )
 
@@ -113,13 +116,22 @@ def _repo_resolving_calls(lines: list[str]) -> list[tuple[int, str, str]]:
     What this covers, stated as what it is rather than as "every call site" — the
     claim it carried before #393, which was false of the implementation beneath
     it. A call site is derived when it is written as ``harness`` followed by one
-    or more subcommand words, then any run of tokens not opening another
-    ``harness`` invocation, then ``--repo`` and its argument — so flag *order* no
-    longer matters, and neither does whether a backslash continuation splits the
-    invocation across physical lines. What is still not derived: an invocation
-    naming the binary by path, one whose ``--repo`` is supplied through a shell
-    variable rather than written at the call site, and one assembled across a
-    pipe or command substitution the fold does not join.
+    or more subcommand words, then any run of tokens carrying no shell command
+    separator and opening no fresh ``harness`` invocation, then ``--repo`` and
+    its argument. So flag *order* does not matter, nor whether a backslash
+    continuation splits the invocation across physical lines, nor whether the
+    binary is named by path — ``/usr/bin/harness promote pr --repo …`` is derived
+    and attributed to itself.
+
+    What is **not** derived, each pinned by ``_UNDERIVED_SHAPES`` rather than
+    stated here and trusted: a ``--repo`` supplied through a shell variable
+    instead of written at the call site; the ``--repo=<arg>`` spelling, which
+    carries no whitespace for the pattern to match on (a real escape, filed
+    separately, not #393's subject); and a ``--repo`` belonging to a *different*
+    command after a separator, which is a refusal to guess rather than a gap.
+
+    Over-derivation, which fails closed: a commented-out invocation is derived,
+    and so is a token merely ending in ``harness`` such as ``myharness``.
     """
     return [
         (number, match.group("verb").strip(), match.group("arg"))
@@ -214,6 +226,25 @@ _WRAPPED_HEAD = "uv run harness promote status \\"
 #: pre-#393 verb span could not cross: a quote and a ``$``, a digit, and an
 #: underscore. The hole was never about one spelling, so neither is its guard.
 _INTERVENING_FLAGS = ['--promotion-id "$id"', "--gate-exit 0", "--gate_log run.log"]
+
+#: Shapes ``_repo_resolving_calls``' docstring names as **not** derived, and the
+#: near-neighbours it names as derived. Parametrized so the residual list
+#: measures itself rather than being read: #393 first shipped a residual clause
+#: that was simply false of the code beneath it, and reading is what missed it.
+_UNDERIVED_SHAPES = [
+    "uv run harness promote pr $REPO_FLAG",
+    'uv run harness promote pr --repo="$GITHUB_WORKSPACE"',
+    "uv run harness promote start && some_tool --repo /tmp",
+]
+
+#: The anti-vacuity companion. Without it every case above would also pass
+#: against a ``_step`` that produced nothing derivable at all.
+_DERIVED_SHAPES = [
+    "uv run harness promote pr --repo /tmp",
+    "/usr/bin/harness promote pr --repo /tmp",
+    "uv run harness promote start && harness promote pr --repo /tmp",
+    'uv run harness promote pr --note "issue #383" --repo /tmp',
+]
 
 
 def _step(*body: str) -> list[str]:
@@ -339,6 +370,64 @@ def test_a_call_on_the_final_continuation_line_is_derived() -> None:
         _assert_every_call_runs_under_an_exported_allowlist(lines)
 
     assert "--repo /tmp" in str(refused.value)
+
+
+@pytest.mark.parametrize("shape", _UNDERIVED_SHAPES)
+def test_a_shape_the_docstring_calls_underived_really_is(shape: str) -> None:
+    """AC-4: every clause of the stated coverage is measured, not asserted in prose.
+
+    A docstring is the one part of a guard nothing runs. #393 exists partly
+    because the previous one overclaimed; its own first draft then *under*
+    claimed, naming a by-path invocation as underived when it is derived. Both
+    directions are the same defect — a coverage statement no test can falsify.
+    """
+    assert _repo_resolving_calls(_step(shape)) == []
+
+
+@pytest.mark.parametrize("shape", _DERIVED_SHAPES)
+def test_a_shape_the_docstring_calls_derived_really_is(shape: str) -> None:
+    """The companion floor: the cases above must fail to derive for their own reason.
+
+    Every ``== []`` above is satisfied by a derivation that has stopped working
+    altogether, so each underived shape is paired with the nearest shape that
+    must still be found — including the by-path invocation the first draft got
+    backwards, and a genuine second ``harness`` call after a separator.
+    """
+    assert _repo_resolving_calls(_step(shape))
+
+
+def test_a_second_harness_call_behind_no_separator_is_attributed_to_itself() -> None:
+    """The ``(?!harness\\b)`` lookahead, on the one shape the separator bound misses.
+
+    Found by a *survivor*: once the flag span stopped at ``&``, ``;`` and ``|``,
+    dropping the lookahead killed nothing, because every chained shape then under
+    test was separator-chained. It is not redundant — it is what a trailing
+    comment needs, and ``#`` is deliberately not a separator (see the pattern).
+    Without it the argument is blamed on ``promote pr``, the call that does not
+    pass it; with it the commented-out ``promote status`` answers for its own.
+    """
+    commented_out = "uv run harness promote pr # harness promote status --repo /tmp"
+    lines = _step(_EXPORT, _GOOD_CALL, commented_out)
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "`harness promote status` at line" in str(refused.value)
+
+
+def test_another_commands_repo_flag_is_not_attributed_to_the_harness_call() -> None:
+    """The flag span may not cross a shell command separator.
+
+    The widening's own new failure class: the pre-#393 verb span could not cross
+    ``&``, ``;`` or ``|`` either, so letting the flag run past one would hand a
+    *different* command's ``--repo`` to the harness call and redden the workflow
+    over an argument no verb ever sees. ``#`` is deliberately **not** a stop
+    character — ``${BASE#prefix}`` and a quoted ``"issue #383"`` both carry a
+    bare one, and #383 is the tick that paid for treating ``#`` as a boundary.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, "uv run harness promote start && some_tool --repo /tmp")
+
+    _assert_every_call_runs_under_an_exported_allowlist(lines)
 
 
 def test_a_wrapped_call_naming_the_allowlisted_root_is_accepted() -> None:
