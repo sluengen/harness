@@ -22,6 +22,13 @@ any flag carrying a quote, a ``$``, a digit or an underscore escaped it — in t
 wrapped and the single-line form alike, which is what showed line-basedness was
 never that hole's cause.
 
+And to how the flag is joined to its argument (#394). Typer and click accept
+``--repo=<arg>`` as readily as the spaced form, and that spelling carries no
+whitespace, so a pattern requiring ``--repo\\s+`` derived nothing from it at all
+— the silent direction again, and the third distinct way one flag could go
+unseen. Each of the three was a different property of the same pattern, which is
+why the coverage claim below is executable rather than prose.
+
 The property is a module-level function rather than a test body because the
 coverage tests below feed it synthetic sources. They exist to pin *this* body's
 behaviour, so they have to call it; a second copy of the rule written for them
@@ -59,11 +66,19 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 #: quoted ``"issue #383"`` both carry a bare ``#``, and treating it as a boundary
 #: is the mistake #383 paid for. The cost is that a commented-out invocation is
 #: still derived — over-derivation, which reddens CI rather than hiding a call.
+#:
+#: ``--repo`` is joined to its argument by whitespace **or** a single ``=``
+#: (#394), the two spellings click accepts. The alternation is deliberately
+#: ``(?:\s+|=)`` rather than a character class: ``[\s=]+`` would also swallow
+#: ``--repo = /tmp`` and ``--repo =/tmp``, where click reads the argument as
+#: ``=`` and ``=/tmp`` respectively — so the guard would assert against a value
+#: no verb receives. The ``=`` is consumed, never captured, or every correctly
+#: written glued call would be refused for an argument it does not pass.
 _REPO_RESOLVING_CALL = re.compile(
     r"harness"
     r"(?P<verb>(?:\s+[a-z][a-z-]*)+)"
     r"(?:\s+(?!harness\b)[^\s&|;]+)*?"
-    r"\s+--repo\s+(?P<arg>\S+)"
+    r"\s+--repo(?:\s+|=)(?P<arg>\S+)"
 )
 
 #: The allowlist assignment the promotion step must export before any verb runs.
@@ -120,18 +135,22 @@ def _repo_resolving_calls(lines: list[str]) -> list[tuple[int, str, str]]:
     separator and opening no fresh ``harness`` invocation, then ``--repo`` and
     its argument. So flag *order* does not matter, nor whether a backslash
     continuation splits the invocation across physical lines, nor whether the
-    binary is named by path — ``/usr/bin/harness promote pr --repo …`` is derived
-    and attributed to itself.
+    flag is joined to its argument by whitespace or by ``=`` (#394), nor whether
+    the binary is named by path — ``/usr/bin/harness promote pr --repo …`` is
+    derived and attributed to itself.
 
     What is **not** derived, each pinned by ``_UNDERIVED_SHAPES`` rather than
     stated here and trusted: a ``--repo`` supplied through a shell variable
-    instead of written at the call site; the ``--repo=<arg>`` spelling, which
-    carries no whitespace for the pattern to match on (a real escape, filed
-    separately, not #393's subject); and a ``--repo`` belonging to a *different*
-    command after a separator, which is a refusal to guess rather than a gap.
+    instead of written at the call site; and a ``--repo`` belonging to a
+    *different* command after a separator, which is a refusal to guess rather
+    than a gap.
 
     Over-derivation, which fails closed: a commented-out invocation is derived,
-    and so is a token merely ending in ``harness`` such as ``myharness``.
+    and so is a token merely ending in ``harness`` such as ``myharness``. #394
+    adds one more — a call passing ``--repo`` *twice* is attributed to the first
+    spelling written, where click would take the last. Both are refused unless
+    both are the allowlisted root, so the only reachable cost is reddening CI
+    over a call that would in fact have run.
     """
     return [
         (number, match.group("verb").strip(), match.group("arg"))
@@ -233,8 +252,13 @@ _INTERVENING_FLAGS = ['--promotion-id "$id"', "--gate-exit 0", "--gate_log run.l
 #: that was simply false of the code beneath it, and reading is what missed it.
 _UNDERIVED_SHAPES = [
     "uv run harness promote pr $REPO_FLAG",
-    'uv run harness promote pr --repo="$GITHUB_WORKSPACE"',
     "uv run harness promote start && some_tool --repo /tmp",
+    # The nearest neighbour of the shape #394 closed, measured rather than
+    # assumed: an *empty* glued value has nothing for ``\S+`` to capture, so it
+    # escapes exactly as the whole glued spelling used to. Unchanged by #394
+    # rather than left by it — the pre-change pattern missed it too — and it is
+    # the fail-open direction, so it is stated here instead of being discovered.
+    "uv run harness promote pr --repo= /tmp",
 ]
 
 #: The anti-vacuity companion. Without it every case above would also pass
@@ -244,6 +268,11 @@ _DERIVED_SHAPES = [
     "/usr/bin/harness promote pr --repo /tmp",
     "uv run harness promote start && harness promote pr --repo /tmp",
     'uv run harness promote pr --note "issue #383" --repo /tmp',
+    # Moved up from ``_UNDERIVED_SHAPES`` by #394: the ``=`` spelling Typer and
+    # click accept as readily as the spaced one. This entry *is* that ticket's
+    # red-first evidence, so it stays here rather than being folded into the
+    # tests below.
+    'uv run harness promote pr --repo="$GITHUB_WORKSPACE"',
 ]
 
 
@@ -310,6 +339,71 @@ def test_a_repo_argument_after_another_flag_on_a_continuation_line_is_refused(fl
     line-basedness was never this one's cause.
     """
     lines = _step(_EXPORT, _GOOD_CALL, f"uv run harness promote status {flag} \\", "  --repo /tmp")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+def test_a_repo_argument_glued_by_an_equals_sign_is_derived_and_refused() -> None:
+    """AC-1: ``--repo=<arg>`` is the same flag, and the guard has to see it (#394).
+
+    Typer and click accept the glued spelling as readily as the spaced one, and
+    it carries no whitespace at all — so a pattern keyed on ``--repo\\s+`` derived
+    nothing from it and every per-call assertion below simply never ran. Silent,
+    and in the direction this module exists to close: the argument reaches the
+    runner, where an unallowlisted root is an exit-2 refusal from the verb.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, "uv run harness promote status --repo=/tmp")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+def test_a_glued_repo_argument_on_a_continuation_line_is_refused() -> None:
+    """AC-1, in the workflow's own wrapping idiom: the two spellings compose.
+
+    The folding of #391 and the gluing of #394 are independent, so the wrapped
+    form needs its own case rather than being argued from the single-line one —
+    the same reasoning that gave flag order two tests in #393.
+    """
+    lines = _step(_EXPORT, _GOOD_CALL, "uv run harness promote status \\", "  --repo=/tmp")
+
+    with pytest.raises(AssertionError) as refused:
+        _assert_every_call_runs_under_an_exported_allowlist(lines)
+
+    assert "--repo /tmp" in str(refused.value)
+
+
+def test_a_glued_call_naming_the_allowlisted_root_is_accepted() -> None:
+    """AC-3: the ``=`` is *consumed*, not captured — so a correct call still passes.
+
+    The discriminator between widening the pattern and merely making it refuse
+    everything glued. A form that kept the separator inside the group would
+    derive ``=$GITHUB_WORKSPACE``, which matches no allowlisted root, and the
+    guard would redden the workflow over a call written exactly as intended.
+    Refusing the bad shape proves nothing about that; only accepting the good
+    one does.
+    """
+    _assert_every_call_runs_under_an_exported_allowlist(
+        _step(_EXPORT, _GOOD_CALL, f"uv run harness promote pr --repo={_ALLOWED_REPO_ARG}")
+    )
+
+
+def test_a_repeated_repo_flag_is_attributed_to_the_first_spelling_written() -> None:
+    """The one over-derivation #394 opens, pinned rather than described.
+
+    Admitting ``=`` means a glued ``--repo`` written *before* a spaced one now
+    matches first, while click resolves a repeated option to the **last** value.
+    So the guard can refuse a call click would have run correctly. It is the
+    fail-closed direction — a loud CI red over a nonsense invocation nothing in
+    this repo writes — and stating it in prose is what #393 proved insufficient.
+    """
+    repeated = f"uv run harness promote pr --repo=/tmp --repo {_ALLOWED_REPO_ARG}"
+    lines = _step(_EXPORT, _GOOD_CALL, repeated)
 
     with pytest.raises(AssertionError) as refused:
         _assert_every_call_runs_under_an_exported_allowlist(lines)
