@@ -1,9 +1,9 @@
 <!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: promotion-guard-instrument
-status: under-decision
+status: accepted
 date: 2026-08-11
-related: [specs/features/cli-surface.md, specs/decisions/0012-persistent-runtime-host.md]
+related: [specs/features/cli-surface.md, specs/decisions/0012-persistent-runtime-host.md, specs/architecture-principles.md]
 ---
 
 # Proposal: replace the nightly promotion guard's text-derivation instrument
@@ -69,22 +69,25 @@ D is not recommended. It would work, but it pays for a test-instrument problem w
 
 ## Open decisions
 
-| Decision | Who decides | Recorded in |
+| Decision | Resolved | Recorded in |
 |---|---|---|
-| C+B, or A alone as an intermediate? | user | this proposal; then `specs/features/cli-surface.md` |
-| Is moving the nightly path acceptable now, given it first succeeded on 2026-08-09? | user | this proposal |
-| Does the workflow→script move become a general rule for `run:` blocks carrying logic, or a one-off here? | user / architect | `specs/infrastructure.md` if general |
+| C+B, or A alone as an intermediate? | **C+B** — extract to a script, then verify by execution | this proposal; `specs/architecture-principles.md` |
+| Is moving the nightly path acceptable now? | **Yes** | this proposal |
+| Extraction as a general rule, or a one-off? | **General** — a `run:` block carrying logic moves to `scripts/` | `specs/architecture-principles.md` → *CI logic lives in a script* |
 
 ## Breakdown
 
-Assuming C+B:
+**Decided 2026-08-11: C+B, moving the nightly path is acceptable, and the extraction rule is general.**
 
-1. **Extract `scripts/promotion-step.sh`** — move the export, three verb calls, and status checks out of the workflow; step becomes `bash scripts/promotion-step.sh`. Behaviour-identical; no logic change.
-2. **Single-source the `--repo` flag inside that script** — define once, expand three times. Depends on 1, and is what the current guard forbids.
-3. **Replace the guard with an executable test** — stub `harness` on `PATH`, run the script with a synthetic workspace, assert every recorded invocation resolves inside the allowlist. Retires `_REPO_RESOLVING_CALL` and its residual lists.
-4. **Reduce the workflow's own text guard** — assert the step invokes only the wrapper and passes no bare `harness` call. Small, and what remains of the original guard.
+The first draft of this breakdown listed extraction, single-sourcing, the executable test, and the reduced text guard as four independent items. That was wrong, and the coupling is worth stating because it is the same fact the proposal turns on: moving the three calls out of the YAML makes the *current* guard derive nothing from the workflow, so its anti-vacuity floor fires. The instrument must be swapped in the same change that moves the code — there is no ordering in which extraction lands first and green.
 
-Taking A alone collapses this to items 2 and 4 against the workflow rather than a script.
+1. **Swap the instrument** — extract `scripts/promotion-step.sh` (export, three verb calls, status checks; behaviour-identical), replace `_REPO_RESOLVING_CALL` and its residual lists with an executable test that stubs `harness` on `PATH` and asserts every recorded invocation resolves inside the allowlist, and reduce the workflow's own text guard to "invokes the wrapper and carries no bare `harness` call". Atomic by the coupling above.
+2. **Single-source the `--repo` flag** — define once inside the script, expand at each call. Depends on 1, and is the payoff: it is what the old instrument forbade, and it is safe the moment the test asserts argv rather than text.
+3. **Generalize the rule** — record the extraction principle in `specs/architecture-principles.md` (done at acceptance) and add a guard that a workflow `run:` block does not accrete logic, so this does not regrow elsewhere.
+
+Item 2 is the change that removes the defect class; items 1 and 3 are what make it landable and keep it landed.
+
+Filed 2026-08-11: **#396** (item 1, `assurance:complex`), **#397** (item 2, `assurance:simple`, blocked on #396), **#398** (item 3, `assurance:simple`).
 
 ## Risks / unknowns
 
