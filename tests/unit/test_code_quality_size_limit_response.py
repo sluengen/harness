@@ -35,10 +35,29 @@ Acceptance criteria (this ticket):
   not one of them, naming the inlining of a named unit back into its caller,
   and ties it to Part B's *Compose, don't inline*. Proven by
   :func:`test_reducing_the_count_in_place_is_not_one_of_them`.
-* **AC-3** — The subsection gives the reviewer the instrument: read the diff
+* **AC-3** — The same paragraph gives the reviewer the instrument: read the diff
   that brought the file under the limit, not just the new count, and treat a
   green gate bought by merging named units as a finding. Proven by
   :func:`test_the_reviewer_reads_the_diff_that_brought_the_file_under`.
+
+All three assert against the **answer paragraph**, never the whole subsection.
+Measured on review: delete the rule outright and add one ordinary sentence in
+its place — "a reviewer comparing the walker's report against the linter's diff
+will reach the same finding twice" — and a section-scoped AC-3 stays green.
+``diff`` and ``finding`` are commonplace in a Part C section about guards.
+
+Two anchors are polarity and quantifier rather than vocabulary, because a
+substring guard over prose is otherwise blind to a rule rewritten into its own
+opposite: ``never answered`` and ``in exactly two ways`` each survive every
+deletion the table probes while the rule they carry is inverted or opened up.
+
+**Acknowledged limit.** A sentence *added* inside the answer paragraph that
+blesses the shave outright ("where neither is convenient, deleting lines until
+the file fits is an acceptable third answer") leaves every anchor here intact
+and is not detectable by any substring predicate. This guard pins that the rule
+is stated and stated the right way round; that it is not contradicted two
+sentences later is reviewer judgment, which is the same presence-mechanized /
+substance-judged line Part C draws for the ``size:`` marker itself.
 """
 
 from __future__ import annotations
@@ -86,12 +105,19 @@ def _paragraphs() -> list[str]:
 
 
 def _answer_paragraph() -> str:
-    """The one paragraph stating how a tripped limit may be answered."""
-    candidates = [p for p in _paragraphs() if "split" in p.lower()]
+    """The one paragraph stating how a tripped limit may be answered.
+
+    Selected on the whole phrase, not the bare word ``split``: this is a section
+    about splitting files, so ``split`` alone is generic there. An unrelated
+    sentence elsewhere in the subsection — "where the walker and the linter
+    split the tree between them" — would otherwise be selected as a second
+    answer paragraph and fail this guard for a reason that is not the rule.
+    """
+    candidates = [p for p in _paragraphs() if "split the file by concern" in p.lower()]
     assert candidates, (
-        "the size subsection must carry a paragraph naming *splitting the file* as "
-        "a legitimate answer to a tripped limit (#399) — none of its paragraphs "
-        "mentions splitting at all"
+        "the size subsection must carry a paragraph naming *splitting the file by "
+        "concern* as a legitimate answer to a tripped limit (#399) — none of its "
+        "paragraphs does"
     )
     assert len(candidates) == 1, (
         "the answer rule must live in one paragraph, not be spread across "
@@ -105,6 +131,14 @@ def test_a_tripped_limit_has_exactly_two_legitimate_answers() -> None:
     """The subsection names both legitimate answers, together (AC-1)."""
     paragraph = _answer_paragraph()
     lower = paragraph.lower()
+    # The quantifier is the load-bearing half: an enumeration that stops being
+    # exhaustive readmits the shave as an unlisted third answer while both named
+    # answers survive verbatim.
+    assert "in exactly two ways" in lower, (
+        "the answer paragraph must say a tripped limit is answered in *exactly two* "
+        "ways — an open-ended list of answers is not a rule, and the third answer "
+        "it leaves room for is the one this rule exists to forbid"
+    )
     assert "size:" in lower, (
         "the answer paragraph must name recording the `size:` exemption as the "
         "second legitimate answer, alongside splitting — naming only the split "
@@ -120,6 +154,14 @@ def test_reducing_the_count_in_place_is_not_one_of_them() -> None:
     """The same paragraph forbids shaving the count, and says why (AC-2)."""
     paragraph = _answer_paragraph()
     lower = paragraph.lower()
+    # Polarity, not vocabulary. Flipping ``never`` to ``sometimes`` inverts the
+    # rule into permission for the exact exploit it forbids while leaving every
+    # other anchor in this test intact.
+    assert re.search(r"never\s+answered", lower), (
+        "the answer paragraph must state that a size limit is *never* answered by "
+        "reducing the count — a paragraph that merely discusses reducing it in "
+        "place carries the same words and the opposite rule"
+    )
     assert "in place" in lower, (
         "the answer paragraph must state that a size limit is never answered by "
         "reducing the line count *in place* — the exploit a line-count gate is "
@@ -146,10 +188,16 @@ def test_reducing_the_count_in_place_is_not_one_of_them() -> None:
 
 def test_the_reviewer_reads_the_diff_that_brought_the_file_under() -> None:
     """The subsection gives the reviewer a diff-reading instrument (AC-3)."""
-    section = _size_section()
-    lower = section.lower()
-    # Word-boundary: the subsection already says "checked differently", so a bare
-    # "diff" substring is satisfied before this rule is written at all.
+    paragraph = _answer_paragraph()
+    lower = paragraph.lower()
+    # Scoped to the answer paragraph, not the subsection: `diff` and `finding`
+    # are commonplace in a Part C section about guards, reviewers and findings,
+    # so a section-wide assertion is satisfied by prose that is not this rule —
+    # measured, by deleting the rule and adding one ordinary sentence in its
+    # place, which left a section-scoped version of this test green.
+    #
+    # Word-boundary on `diff`: the subsection already says "checked differently",
+    # so a bare substring is satisfied before this rule is written at all.
     assert re.search(r"\bdiff\b", lower), (
         "the size subsection must tell the reviewer to read the *diff* that brought "
         "a file under the limit, not just its new count — the count alone cannot "
