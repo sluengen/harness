@@ -74,10 +74,17 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 #: ``=`` and ``=/tmp`` respectively — so the guard would assert against a value
 #: no verb receives. The ``=`` is consumed, never captured, or every correctly
 #: written glued call would be refused for an argument it does not pass.
+#:
+#: The flag span is **greedy**, which is what makes a repeated ``--repo``
+#: resolve to the *last* one written — the value click itself uses. Laziness
+#: resolved it to the first, so ``--repo "$GITHUB_WORKSPACE" --repo /tmp`` went
+#: green on a call that exits 2 on the runner. That was already true of the
+#: all-spaced spelling before #394; admitting ``=`` would have extended it to a
+#: second spelling, which is how it was found.
 _REPO_RESOLVING_CALL = re.compile(
     r"harness"
     r"(?P<verb>(?:\s+[a-z][a-z-]*)+)"
-    r"(?:\s+(?!harness\b)[^\s&|;]+)*?"
+    r"(?:\s+(?!harness\b)[^\s&|;]+)*"
     r"\s+--repo(?:\s+|=)(?P<arg>\S+)"
 )
 
@@ -139,18 +146,19 @@ def _repo_resolving_calls(lines: list[str]) -> list[tuple[int, str, str]]:
     the binary is named by path — ``/usr/bin/harness promote pr --repo …`` is
     derived and attributed to itself.
 
+    A call passing ``--repo`` more than once resolves to the **last** one, in
+    either spelling — the value click itself uses for a non-multiple option, so
+    the guard asserts against the argument the verb will actually receive.
+
     What is **not** derived, each pinned by ``_UNDERIVED_SHAPES`` rather than
     stated here and trusted: a ``--repo`` supplied through a shell variable
-    instead of written at the call site; and a ``--repo`` belonging to a
-    *different* command after a separator, which is a refusal to guess rather
-    than a gap.
+    instead of written at the call site; a glued ``--repo=`` with an *empty*
+    value, which leaves nothing for the argument span to capture; and a
+    ``--repo`` belonging to a *different* command after a separator, which is a
+    refusal to guess rather than a gap.
 
     Over-derivation, which fails closed: a commented-out invocation is derived,
-    and so is a token merely ending in ``harness`` such as ``myharness``. #394
-    adds one more — a call passing ``--repo`` *twice* is attributed to the first
-    spelling written, where click would take the last. Both are refused unless
-    both are the allowlisted root, so the only reachable cost is reddening CI
-    over a call that would in fact have run.
+    and so is a token merely ending in ``harness`` such as ``myharness``.
     """
     return [
         (number, match.group("verb").strip(), match.group("arg"))
@@ -393,22 +401,53 @@ def test_a_glued_call_naming_the_allowlisted_root_is_accepted() -> None:
     )
 
 
-def test_a_repeated_repo_flag_is_attributed_to_the_first_spelling_written() -> None:
-    """The one over-derivation #394 opens, pinned rather than described.
+#: A repeated ``--repo`` whose **last** occurrence is not the allowlisted root,
+#: in both spellings. click resolves a non-multiple option to the last value, so
+#: every one of these exits 2 on the runner and the guard has to refuse it.
+_REPEATED_ENDING_UNALLOWLISTED = [
+    f"uv run harness promote pr --repo={_ALLOWED_REPO_ARG} --repo /tmp",
+    f"uv run harness promote pr --repo {_ALLOWED_REPO_ARG} --repo /tmp",
+]
 
-    Admitting ``=`` means a glued ``--repo`` written *before* a spaced one now
-    matches first, while click resolves a repeated option to the **last** value.
-    So the guard can refuse a call click would have run correctly. It is the
-    fail-closed direction — a loud CI red over a nonsense invocation nothing in
-    this repo writes — and stating it in prose is what #393 proved insufficient.
+#: The same shapes with the orderings swapped: the last occurrence *is* the
+#: allowlisted root, so click passes it and the guard must accept.
+_REPEATED_ENDING_ALLOWLISTED = [
+    f"uv run harness promote pr --repo=/tmp --repo {_ALLOWED_REPO_ARG}",
+    f"uv run harness promote pr --repo /tmp --repo {_ALLOWED_REPO_ARG}",
+]
+
+
+@pytest.mark.parametrize("repeated", _REPEATED_ENDING_UNALLOWLISTED)
+def test_a_repeated_repo_flag_resolves_to_the_last_one_written(repeated: str) -> None:
+    """The flag span is greedy, so attribution matches click's last-wins (#394).
+
+    A lazy span resolved a repeated ``--repo`` to the **first** occurrence, which
+    is the wrong end: click passes the last. So a call ending in an
+    unallowlisted root went green here and exited 2 on the runner — the silent
+    direction this module exists to close.
+
+    The all-spaced case in this list was already wrong before #394; admitting
+    ``=`` would have extended the same hole to a second spelling, which is how it
+    was found. Both are pinned, so neither end of the class can reopen.
     """
-    repeated = f"uv run harness promote pr --repo=/tmp --repo {_ALLOWED_REPO_ARG}"
     lines = _step(_EXPORT, _GOOD_CALL, repeated)
 
     with pytest.raises(AssertionError) as refused:
         _assert_every_call_runs_under_an_exported_allowlist(lines)
 
     assert "--repo /tmp" in str(refused.value)
+
+
+@pytest.mark.parametrize("repeated", _REPEATED_ENDING_ALLOWLISTED)
+def test_a_repeated_repo_flag_ending_in_the_allowlisted_root_is_accepted(repeated: str) -> None:
+    """The companion direction: last-wins, not merely "refuse anything repeated".
+
+    Without this, a derivation that flagged every repeated ``--repo`` regardless
+    of value would satisfy the test above while refusing calls click runs
+    correctly — the same reason the glued spelling needs an accept-direction
+    case as well as a refuse-direction one.
+    """
+    _assert_every_call_runs_under_an_exported_allowlist(_step(_EXPORT, _GOOD_CALL, repeated))
 
 
 def test_a_refused_call_names_only_its_subcommand_path() -> None:
