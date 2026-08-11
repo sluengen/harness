@@ -29,7 +29,7 @@ from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 
 def _part_c() -> str:

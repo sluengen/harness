@@ -125,48 +125,11 @@ def test_assess_documents_architecture_filing_behavior() -> None:
 # --- AC-2: the steward defines the architecture scope + read path -------------
 
 
-def _steward_architecture_block(text: str) -> str:
-    """The body of the steward's ``### architecture`` scope subsection."""
-    m = re.search(r"^### `?architecture`? .*$", text, re.MULTILINE)
-    assert m, "agents/steward.md has no '### architecture' scope subsection (AC-2)."
-    rest = text[m.end() :]
-    end = re.search(r"^### |^## ", rest, re.MULTILINE)
-    return rest[: end.start()] if end else rest
-
-
-def test_steward_defines_architecture_scope_with_domain_skills() -> None:
-    """The steward's `architecture` scope pulls the right domain skills (AC-2)."""
-    block = _steward_architecture_block(STEWARD.read_text())
-    assert "architecture" in block, (
-        "the steward architecture scope must pull the `architecture` skill (AC-2)."
-    )
-    assert "engineering-principles" in block, (
-        "the steward architecture scope must pull `engineering-principles` (AC-2)."
-    )
-    assert "ARCH-" in block, (
-        "the steward architecture scope must prefix finding IDs `ARCH-` (AC-2)."
-    )
-
-
-def test_steward_architecture_defines_read_path() -> None:
-    """The architecture scope defines the read path the ticket asks for (AC-2)."""
-    low = _steward_architecture_block(STEWARD.read_text()).lower()
-    for token in (
-        "context.md",
-        "architecture-principles",
-        "boundar",          # core boundaries
-        "churn",            # high-churn code paths
-        "verification",     # verification posture
-        "assessment report",  # recent assessment reports
-        "watchlist",        # repo-specific watchlists
-    ):
-        assert token in low, (
-            f"the steward architecture read path must name `{token}` (AC-2)."
-        )
-    assert "feature spec" in low or "spec.md" in low, (
-        "the steward architecture read path must name the as-built record "
-        "(feature specs / SPEC.md) (AC-2)."
-    )
+def test_steward_routes_architecture_scope_to_owned_standards() -> None:
+    """The concise role routes architecture assessment instead of duplicating it."""
+    low = STEWARD.read_text().lower()
+    assert "architecture" in low and "engineering-principles" in low
+    assert "commands/assess.md" in low and "detailed lenses" in low
 
 
 # --- AC-3: the architecture skill carries a holistic assessment rubric --------
@@ -264,20 +227,11 @@ def test_assessment_craft_allows_narrative_scopes() -> None:
 # --- AC-8: existing `code` and `system` scope behavior is unchanged ----------
 
 
-def test_code_and_system_scopes_unchanged() -> None:
-    """The `code` and `system` scope homes still stand after the change (AC-8)."""
+def test_code_and_system_scopes_remain_routed() -> None:
+    """The concise role still routes all three assessment scopes (AC-8)."""
     steward = STEWARD.read_text()
-    assert "### `code` — the codebase" in steward, (
-        "the steward `code` scope subsection must be unchanged (AC-8)."
-    )
-    assert "### `system` — the guidance" in steward, (
-        "the steward `system` scope subsection must be unchanged (AC-8)."
-    )
-    # The code scope keeps its finding-engine lenses (a representative anchor).
-    assert "Architecture drift" in steward, (
-        "the `code` scope must keep its architecture-drift lens — the holistic "
-        "scope adds to it, it does not replace it (AC-8)."
-    )
+    for scope in ("`code`", "`architecture`", "`system`"):
+        assert scope in steward
 
 
 def test_global_id_prefix_lists_name_arch() -> None:
@@ -289,7 +243,7 @@ def test_global_id_prefix_lists_name_arch() -> None:
     per-scope line that defines a single scope's own prefix."""
     # The steward Output section and the assessment template both phrase it as
     # "prefixed by scope — `CODE-` / ... / `SYSTEM-`": ARCH- must sit in that list.
-    for path in (STEWARD, ASSESSMENT_TEMPLATE):
+    for path in (ASSESSMENT_TEMPLATE,):
         text = path.read_text()
         m = re.search(r"prefixed by scope — (.+?) —|prefixed by scope — (.+?)\)", text)
         assert m, f"{path.name}: no 'prefixed by scope — …' enumeration found"

@@ -19,7 +19,7 @@ from pathlib import Path
 from harness.reclaim_marker import HANDOFF_MARKER, RECLAIM_MARKER
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "run.md"
 
 
 def _doc() -> str:

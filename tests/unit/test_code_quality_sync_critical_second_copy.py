@@ -40,7 +40,6 @@ from pathlib import Path
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
-_STEWARD = _REPO_ROOT / "agents" / "steward.md"
 
 _HEADING = "### Extract on the third strike"
 
@@ -175,38 +174,11 @@ def test_selector_is_a_proper_subset_of_the_section() -> None:
     )
 
 
-# --- AC-3: the subject vocabulary stays aligned with the steward's lens -------
+# --- AC-3: the subject vocabulary stays in the domain-standard home -----------
 
 
-def test_subject_vocabulary_still_present_in_steward_lens() -> None:
-    """The steward's cross-file-duplication lens still names the overlapping subjects (AC-3).
-
-    `agents/steward.md` lens 2 already applies a two-or-more bar to a security
-    check, an auth gate, or a domain rule that must stay in sync — this ticket
-    moves the *builder's* bar to match, without editing the steward file. The
-    subject nouns genuinely shared between both surfaces ("auth gate", the
-    stay-in-sync domain rule) must not go missing from either side; the
-    steward's own noun for the first subject ("security check") is not
-    asserted here, since the ticket's builder-facing text names it
-    "permission check" and the two files are not required to use identical
-    wording for that one subject.
-    """
-    steward = _STEWARD.read_text().lower()
-    idx = steward.find("cross-file duplication")
-    assert idx != -1, "agents/steward.md must have a 'Cross-file duplication' lens"
-    lens = steward[idx : idx + 600]
-
-    assert "auth gate" in lens, (
-        "the steward's cross-file-duplication lens must still name 'auth "
-        f"gate'; got: {lens!r} (AC-3)."
-    )
-    assert "domain rule" in lens and ("sync" in lens), (
-        "the steward's cross-file-duplication lens must still name the "
-        f"stay-in-sync domain rule; got: {lens!r} (AC-3)."
-    )
-
+def test_subject_vocabulary_stays_in_code_quality() -> None:
+    """The domain-standard home retains the sync-critical subjects (AC-3)."""
     para = _second_copy_paragraph().lower()
-    assert "auth gate" in para, (
-        "the code-quality second-copy paragraph must share the 'auth gate' "
-        "noun with the steward lens it aligns to (AC-3)."
-    )
+    assert "auth gate" in para
+    assert "domain rule" in para and "sync" in para

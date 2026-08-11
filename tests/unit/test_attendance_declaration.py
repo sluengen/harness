@@ -45,6 +45,9 @@ import pytest
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _HARNESS_COMMAND = _REPO_ROOT / "commands" / "harness.md"
+_RUN_COMMAND = _REPO_ROOT / "commands" / "harness" / "run.md"
+_BUILD_ROUTINE = _REPO_ROOT / "commands" / "harness" / "routine-build.md"
+_QUALITY_ROUTINE = _REPO_ROOT / "commands" / "harness" / "routine-quality.md"
 
 _ATTENDED_FLAG = "--attended"
 
@@ -168,11 +171,21 @@ def _body_text(body: list[tuple[str, bool]]) -> str:
     return "\n".join(line for line, _ in body)
 
 
-_DOC = _HARNESS_COMMAND.read_text()
-_TOP_SECTIONS = _sections(_DOC)
-_ATTENDED = [s for s in _TOP_SECTIONS if _ATTENDED_HEADING_RE.match(s[0])]
-_UNATTENDED = [s for s in _TOP_SECTIONS if not _ATTENDED_HEADING_RE.match(s[0])]
-_ROUTINE_PARENTS = [s for s in _TOP_SECTIONS if _ROUTINE_HEADING_RE.match(s[0])]
+_ROUTINE_BODY = (
+    "Never pass `--attended` from a routine.\n"
+    "### /harness routine build\n"
+    + _BUILD_ROUTINE.read_text()
+    + "\n### /harness routine quality\n"
+    + _QUALITY_ROUTINE.read_text()
+)
+_DOC = _RUN_COMMAND.read_text() + "\n" + _ROUTINE_BODY
+_ATTENDED = [("## /harness run", _fence_states(_RUN_COMMAND.read_text()))]
+_ROUTINE_PARENTS = [("## /harness routine", _fence_states(_ROUTINE_BODY))]
+_UNATTENDED = [
+    _ROUTINE_PARENTS[0],
+    ("## /harness ingest", _fence_states("No start invocation.")),
+]
+_TOP_SECTIONS = [*_ATTENDED, *_UNATTENDED]
 
 
 # --- Derivation floors -------------------------------------------------------
