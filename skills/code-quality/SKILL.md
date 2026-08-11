@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.22.0 -->
+<!-- guidance:code-quality@0.23.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -43,6 +43,10 @@ A function that returns hardcoded/faked/placeholder data in place of real logic 
 ### Grep before writing a helper
 
 Before writing a helper, grep the sibling modules for the concern it handles. If a near-identical helper exists in one other place, name it in the change spec and say why the copy is justified. If it exists in two, extract it — the third copy is not a judgement call. Per-ticket review sees only its own diff, so "consider extracting" is not enough to catch a duplication that accumulates one small, individually-reasonable copy at a time — a numeric threshold, checked before the helper is written, is what makes it checkable.
+
+### Read the generated artifact, don't re-derive it
+
+When the fact you need is already written by a generator to a committed artifact that carries its own drift test, read that artifact; never re-derive the fact from the generator's source inputs. The drift test guards the artifact, not your derivation, so a second derivation needs its own hand-maintained parallel inventory, told about a new input only when someone remembers. Write a new parser only where the artifact cannot carry the shape you need, and justify it in the change spec, naming what the artifact omits. Two implementations of one screen-graph consumer, a week apart against one generated flow graph — reading the artifact picked up new routes for free, re-parsing the source drifted within three tickets — are the evidence.
 
 ### A removal sweeps for its dependents
 
