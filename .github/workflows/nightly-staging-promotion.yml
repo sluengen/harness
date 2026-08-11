@@ -2,7 +2,9 @@ name: Nightly staging promotion
 
 # GitHub Actions schedules are UTC. Australia/Brisbane is UTC+10 year-round, so
 # 14:00 UTC is midnight local time. Scheduled workflows are read from the default
-# branch; this job explicitly checks out `dev`, the branch it promotes.
+# branch; this job explicitly checks out `dev`, the branch it promotes — and that
+# checkout is also where the promotion step's script comes from, so this file and
+# the shell it invokes are read from different refs (scripts/promotion-step.sh).
 on:
   schedule:
     - cron: "0 14 * * *"
@@ -51,44 +53,9 @@ jobs:
 
       - name: Promote the gated candidate
         shell: bash
-        run: |
-          set -euo pipefail
-
-          # Every verb resolves `--repo` through the HARNESS_WORKSPACE_ROOTS
-          # allowlist, which fails closed: unset means no allowed roots, so the
-          # verb refuses the path with exit 2 before it does anything. The Docker
-          # wrapper (~/bin/harness) pins that allowlist for a developer; a runner
-          # has no wrapper, so the job pins it here, once, for all three calls.
-          export HARNESS_WORKSPACE_ROOTS="$GITHUB_WORKSPACE"
-
-          promotion_json="$RUNNER_TEMP/promotion.json"
-          uv run harness promote start --repo "$GITHUB_WORKSPACE" --from dev --to staging > "$promotion_json"
-
-          promotion_id="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["promotion_id"])' "$promotion_json")"
-          status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
-          if [ "$status" != "gate_pending" ]; then
-            cat "$promotion_json"
-            echo "::error::Promotion $promotion_id stopped at $status; no automated repair is permitted."
-            exit 1
-          fi
-
-          worktree="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["worktree_path"])' "$promotion_json")"
-          gate_log="$RUNNER_TEMP/promotion-gate-$promotion_id.log"
-          set +e
-          (
-            cd "$worktree"
-            bash scripts/verify.sh
-          ) > "$gate_log" 2>&1
-          gate_exit=$?
-          set -e
-
-          uv run harness promote continue --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id" \
-            --gate-exit "$gate_exit" --gate-log "$gate_log" > "$promotion_json"
-          status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
-          if [ "$status" != "pr_ready" ]; then
-            cat "$promotion_json"
-            echo "::error::Promotion $promotion_id stopped at $status; staging was not advanced."
-            exit 1
-          fi
-
-          uv run harness promote pr --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id"
+        # The step's logic lives in the script so a test can execute it rather
+        # than read it (specs/architecture-principles.md -> CI logic lives in a
+        # script, not in a `run:` block; proposal promotion-guard-instrument).
+        # Nothing may be appended here: `::error::` annotations are interpreted
+        # only on the step's own stdout, so a `| tee` would silence them.
+        run: bash scripts/promotion-step.sh
