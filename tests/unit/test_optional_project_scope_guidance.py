@@ -47,6 +47,8 @@ from harness.repo_config import repo_project
 REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
 HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+BUILD_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-build.md"
+QUALITY_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-quality.md"
 TEMPLATE = REPO_ROOT / "templates" / "CONTEXT.template.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
@@ -94,17 +96,14 @@ def test_work_discovery_queue_states_scope_conditionally() -> None:
 
 
 def test_work_discovery_queue_is_tracker_neutral() -> None:
-    """AC-1: the unset branch is tracker-neutral — it names the Linear team and
-    the GitHub board as the two backends' natural full scope, and no longer says
-    'one Linear project'."""
+    """AC-1: the unset branch delegates the provider's natural scope to tracker."""
     body = _section(SKILL.read_text(), "The queue")
     low = body.lower()
-    assert "one linear project" not in low, (
-        "the queue section must drop the 'one Linear project' wording (#175 AC-1)."
+    assert "linear" not in low and "github" not in low, (
+        "the active queue policy must not embed provider-specific scope (#401)."
     )
-    assert "team" in low and "board" in low, (
-        "the unset branch must name both the Linear team and the GitHub board as "
-        "the per-backend full queue (#175 AC-1)."
+    assert "configured provider" in low and "tracker" in low, (
+        "the unset branch must delegate natural full-scope resolution to tracker."
     )
 
 
@@ -125,7 +124,7 @@ def test_build_routine_documents_unscoped_path() -> None:
     """AC-2: the Build routine resolves scope from ``CONTEXT`` and documents the
     unscoped path — a ``harness reclaim --stale`` with no ``--project`` and a
     whole-queue pick — when ``repo.project`` is absent."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     low = body.lower()
     assert "repo.project" in body, (
         "the Build routine must name `repo.project` as the runtime scope lever "
@@ -156,7 +155,7 @@ def test_build_routine_keeps_scoped_path() -> None:
     """AC-2 boundary: the scoped path is preserved — the reclaim pre-flight still
     shows ``--project`` for the ``repo.project``-set case (the existing reclaim
     guard depends on it)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     assert "reclaim --stale --project" in body, (
         "the Build routine must retain the scoped `reclaim --stale --project` for "
         "the `repo.project`-set case (#175 AC-2)."
@@ -166,7 +165,7 @@ def test_build_routine_keeps_scoped_path() -> None:
 def test_scope_note_is_tracker_neutral() -> None:
     """AC-2: the routine's scope note drops 'one Linear project' and the stale
     'Harness v3' project name."""
-    text = HARNESS_COMMAND.read_text()
+    text = BUILD_ROUTINE.read_text()
     assert "one Linear project" not in text, (
         "the routine scope note must drop 'one Linear project' (#175 AC-2)."
     )
@@ -191,13 +190,11 @@ def test_guidance_stamps_bumped() -> None:
         f"work-discovery must be bumped past 0.3.0, got {ms.group(0)} (#175 AC-3)."
     )
 
-    cmd = HARNESS_COMMAND.read_text()
-    mc = re.search(r"guidance:harness@(\d+)\.(\d+)\.(\d+)", cmd)
+    cmd = BUILD_ROUTINE.read_text()
+    mc = re.search(r"guidance:harness-routine-build@(\d+)\.(\d+)\.(\d+)", cmd)
     assert mc, "commands/harness.md must carry a guidance stamp."
     cmd_ver = tuple(int(g) for g in mc.groups())
-    assert cmd_ver > (0, 2, 1), (
-        f"harness command must be bumped past 0.2.1, got {mc.group(0)} (#175 AC-3)."
-    )
+    assert cmd_ver >= (0, 1, 0)
 
     reg = REGISTRY.read_text()
     sk_str = ".".join(str(n) for n in sk_ver)
@@ -209,7 +206,7 @@ def test_guidance_stamps_bumped() -> None:
         reg,
     ), f"registry row for work-discovery must be version {sk_str} (#175 AC-3)."
     assert re.search(
-        r"commands/harness\.md:\s*\{[^}]*version:\s*"
+            r"commands/harness/routine-build\.md:\s*\{[^}]*version:\s*"
         + re.escape(cmd_str)
         + r"[^}]*\}",
         reg,
@@ -307,7 +304,7 @@ def test_quality_routine_documents_unscoped_idle_arm_filing() -> None:
     """#176 AC-2: the ``/harness routine quality`` idle arm states where
     ``/assess`` findings file when unscoped — the tracker's default backlog with
     no project (proposal D4)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine quality")
+    body = QUALITY_ROUTINE.read_text()
     assert body, "commands/harness.md must carry a '/harness routine quality' section."
     low = body.lower()
     assert re.search(r"idle arm|idle-arm", low), (

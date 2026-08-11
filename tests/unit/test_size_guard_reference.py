@@ -349,9 +349,14 @@ def test_code_quality_declarative_ceiling_claim_matches_the_shipped_constant() -
     higher declarative-file ceiling from Part B' is true only if the shipped
     reference actually defines that constant — asserting both halves is the
     point, since either alone can drift back into the gap this ticket closes."""
-    skill = (_REPO_ROOT / "skills" / "code-quality" / "SKILL.md").read_text(
-        encoding="utf-8"
+    path = (
+        _REPO_ROOT
+        / "skills"
+        / "code-quality"
+        / "references"
+        / "specialized-verification.md"
     )
+    skill = path.read_text(encoding="utf-8")
     assert "the higher declarative-file ceiling from Part B" in skill
     ns = _extract_reference()
     assert "DECLARATIVE_CEILING" in ns

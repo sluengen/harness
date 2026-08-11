@@ -226,7 +226,7 @@ def test_automode_sanctions_the_routine_deferral_write() -> None:
     )
     assert "queue" in clause.lower(), (
         "the deferral clause must state its bound: the queue the routine pulls "
-        "from. An unbounded 'may write to Linear' is a wider grant (CAL-1087)."
+        "from. An unbounded tracker write is a wider grant (CAL-1087)."
     )
     assert "assign" in clause.lower(), (
         "CAL-1167: the deferral now assigns the ticket to the operator — the "
@@ -243,7 +243,7 @@ def test_automode_sanctions_the_routine_deferral_write() -> None:
 def test_automode_sanctions_assess_finding_filing() -> None:
     """CAL-1087: `/assess` step 2 files every finding and insight as an issue —
     the assessment's entire output. A finding it cannot file is lost."""
-    clause = _clause_containing("/assess", "Creating Linear issues")
+    clause = _clause_containing("/assess", "Creating tracker issues")
     assert clause, (
         "autoMode.allow must sanction filing an `/assess` pass's findings as "
         "issues — the step its own guidance instructs (CAL-1087)."
@@ -264,7 +264,7 @@ def test_automode_assess_filing_clause_targets_todo_with_its_bounds() -> None:
     assessment's **severity bar** at filing time and the merge-time **review
     gate** before anything ships; the clause must state both, and it must no
     longer frame every filing as landing in a human-triaged holding state."""
-    clause = _clause_containing("/assess", "Creating Linear issues")
+    clause = _clause_containing("/assess", "Creating tracker issues")
     assert clause, "the assess-filing clause must exist (CAL-1087/CAL-1168)."
     assert "Todo" in clause, (
         "the filing clause must name Todo as the target — the operator decided "

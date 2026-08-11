@@ -35,7 +35,7 @@ ADR = REPO_ROOT / "specs" / "decisions" / "0002-in-container-review-engine.md"
 CORRECTION = REPO_ROOT / "specs" / "decisions" / "0013-codex-engines-in-container.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 README = REPO_ROOT / "README.md"
-HARNESS_CMD = REPO_ROOT / "commands" / "harness.md"
+HARNESS_CMD = REPO_ROOT / "commands" / "harness" / "run.md"
 REVIEWER = REPO_ROOT / "agents" / "reviewer.md"
 VERB_MODEL = REPO_ROOT / "specs" / "features" / "verb-model.md"
 ARCH_PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
@@ -99,22 +99,20 @@ def test_adr_cites_the_ticket() -> None:
 # --- The three named docs state the contract --------------------------------
 
 
-def test_harness_command_states_codex_host_only() -> None:
-    """commands/harness.md states the in-container engine is Claude; codex host-only."""
+def test_harness_run_states_codex_host_only() -> None:
+    """The selected run workflow states the active engine location contract."""
     text = _read(HARNESS_CMD)
     assert _host_only(text) and "codex" in text.lower(), (
-        "commands/harness.md must document --engine codex as host-only"
+        "commands/harness/run.md must document --engine codex as host-only"
     )
 
 
-def test_reviewer_agent_states_codex_host_only() -> None:
-    """agents/reviewer.md states the in-container engine is Claude; codex host-only."""
+def test_reviewer_agent_does_not_duplicate_engine_history() -> None:
+    """The concise reviewer role routes method and omits workflow engine history."""
     text = _read(REVIEWER)
     low = text.lower()
-    assert _host_only(text) and "codex" in low and "claude" in low, (
-        "agents/reviewer.md must state the in-container engine is Claude and "
-        "--engine codex is host-only"
-    )
+    assert "review-discipline" in low
+    assert "host-only" not in low and "bwrap" not in low
 
 
 def test_verb_model_states_codex_host_only() -> None:
@@ -167,8 +165,8 @@ def test_readme_review_verb_names_claude_default() -> None:
     )
 
 
-def test_context_review_verb_names_claude_default() -> None:
-    """CONTEXT's `review` verb bullet names Claude as the default engine, not Codex."""
+def test_context_review_verb_points_to_current_engine_provenance() -> None:
+    """Compact CONTEXT routes engine details to the active as-built record."""
     bullet = _review_verb_bullet(_read(CONTEXT))
     assert bullet, "CONTEXT.md must describe the `review` verb in a bold bullet"
     low = bullet.lower()
@@ -176,9 +174,7 @@ def test_context_review_verb_names_claude_default() -> None:
         "CONTEXT `review` bullet says 'run Codex' — the default engine is Claude "
         "(`--engine codex` is host-only, ADR 0002)"
     )
-    assert "claude" in low and "default" in low, (
-        "CONTEXT `review` bullet must name Claude as the default review engine"
-    )
+    assert "specs/features/verb-model.md" in bullet
 
 
 # --- #315: every standing claim carries the correcting record (ADR 0013) -----
@@ -346,8 +342,7 @@ def test_claim_derivation_finds_the_known_sites() -> None:
     expected = {
         "CONTEXT.md",
         "README.md",
-        "agents/reviewer.md",
-        "commands/harness.md",
+        "commands/harness/run.md",
         "docker/README.md",
         "specs/features/verb-model.md",
         "specs/decisions/0002-in-container-review-engine.md",

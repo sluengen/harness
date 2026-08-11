@@ -33,12 +33,13 @@ properties the acceptance criteria require.
 
 from __future__ import annotations
 
-import posixpath
 import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+BUILD_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-build.md"
+QUALITY_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-quality.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 MIRRORS = [REPO_ROOT / name for name in ("AGENTS.md", "CLAUDE.md", "GEMINI.md")]
@@ -92,7 +93,7 @@ def _section(text: str, heading_substr: str) -> str:
 
 def test_build_routine_command_present() -> None:
     """``/harness routine build`` is a versioned section of ``commands/harness.md``."""
-    text = HARNESS_COMMAND.read_text()
+    text = BUILD_ROUTINE.read_text()
     assert re.search(r"^#+ .*/harness routine build", text, re.MULTILINE), (
         "commands/harness.md must carry a `/harness routine build` command "
         "section — the versioned hourly Build loop (CAL-705 AC-1)."
@@ -101,7 +102,7 @@ def test_build_routine_command_present() -> None:
 
 def test_quality_routine_command_present() -> None:
     """``/harness routine quality`` is a versioned section of ``commands/harness.md``."""
-    text = HARNESS_COMMAND.read_text()
+    text = QUALITY_ROUTINE.read_text()
     assert re.search(r"^#+ .*/harness routine quality", text, re.MULTILINE), (
         "commands/harness.md must carry a `/harness routine quality` command "
         "section — the versioned Quality loop (CAL-705 AC-1)."
@@ -111,7 +112,7 @@ def test_quality_routine_command_present() -> None:
 def test_build_routine_documents_primary_and_fallback() -> None:
     """AC-1: the Build routine names a harness-tooled primary and an
     agent-orchestrated fallback (the ``/harness run`` vs ``/build`` duality)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     assert "/harness run" in body, (
         "the Build routine must name `/harness run` as its primary surface "
         "(CAL-705 AC-1)."
@@ -132,7 +133,7 @@ def test_build_routine_documents_primary_and_fallback() -> None:
 def test_quality_routine_wires_deep_assess() -> None:
     """AC-2: the Quality routine runs ``/assess code`` on idle and
     ``/assess code --deep`` for the weekly arm (depends on B1, now shipped)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine quality")
+    body = QUALITY_ROUTINE.read_text()
     assert "/assess code --deep" in body, (
         "the Quality routine must wire `/assess code --deep` for the weekly arm "
         "(CAL-705 AC-2)."
@@ -143,7 +144,7 @@ def test_quality_routine_wires_deep_assess() -> None:
     )
 
 
-# --- AC-3: the process doc + mirrors reference the routines; no registry entry
+# --- AC-3: process docs route to individually registered routine references
 
 
 def test_process_doc_and_mirrors_reference_routines() -> None:
@@ -169,24 +170,13 @@ def test_process_doc_mirrors_byte_identical() -> None:
     )
 
 
-def test_routine_commands_stay_out_of_registry() -> None:
-    """AC-3 boundary: the routine commands ride inside ``commands/harness.md`` as
-    *sections* and gain no ``registry.yaml`` ``files:`` entry of their own.
-    ``commands/harness.md`` is itself one registered surface unit since CAL-764
-    (``test_harness_command_distributed.py``); the routines are documented inside
-    that single file, not as separate distributable command files, so no
-    ``routine``-keyed entry should appear in the copy-list."""
-    offenders = [
-        k
-        for k in _registry_file_keys()
-        if "routine" in posixpath.normpath(k)
-    ]
-    assert not offenders, (
-        f"{offenders!r} add a separate routine command to registry.yaml's files: "
-        "block — the routine commands are sections of commands/harness.md (one "
-        "registered surface unit), not standalone distributable files, so they "
-        "must not gain their own registry entry (CAL-705 AC-3; CAL-764)."
-    )
+def test_routine_command_references_are_registered() -> None:
+    """Each directly routed routine is a distributable, versioned surface unit."""
+    keys = set(_registry_file_keys())
+    assert {
+        "commands/harness/routine-build.md",
+        "commands/harness/routine-quality.md",
+    } <= keys
 
 
 # --- AC-4: routines are local-trigger only ----------------------------------
@@ -195,12 +185,12 @@ def test_routine_commands_stay_out_of_registry() -> None:
 def test_routines_documented_local_trigger_only() -> None:
     """AC-4: the routine surface documents that a routine is local-trigger only —
     a cloud routine cannot reach the local ``~/bin/harness`` wrapper."""
-    text = HARNESS_COMMAND.read_text()
+    text = BUILD_ROUTINE.read_text() + "\n" + QUALITY_ROUTINE.read_text()
     # Scope the check to the `## /harness routine` parent section (its preamble
     # holds the shared note and both `### build`/`### quality` subsections) — not
     # the whole file. An unrelated `~/bin/harness` mention elsewhere in
     # commands/harness.md must not let this pass vacuously (reviewer note).
-    blob = _section(text, "## /harness routine")
+    blob = text
     assert blob, (
         "no `## /harness routine` parent section found in commands/harness.md — "
         "the routine surface must exist to carry the local-trigger note (CAL-705 AC-4)."
@@ -239,7 +229,7 @@ def test_build_routine_runs_reclaim_preflight() -> None:
     number the sweep does not use. The guard therefore requires the config key
     and **forbids** the literal.
     """
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     assert "harness reclaim --stale" in body, (
         "the Build routine must run `harness reclaim --stale` as its pre-flight "
         "step 0, before picking the next ticket (CAL-737 AC-1)."
@@ -262,7 +252,7 @@ def test_build_routine_runs_reclaim_preflight() -> None:
 def test_build_routine_reclaim_runs_first_with_rationale() -> None:
     """CAL-737 AC-2: the reclaim pre-flight is documented BEFORE the pick step,
     with its rationale (unblock the backlog) and its idempotency (safe each tick)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     reclaim_at = body.find("harness reclaim --stale")
     pick_at = body.lower().find("pick the next ticket")
     assert reclaim_at != -1, (
@@ -288,15 +278,15 @@ def test_build_routine_fallback_documents_equivalent_preflight() -> None:
     """CAL-737 AC-3: where the harness tool is unavailable (the ``/build``
     fallback), the routine documents the equivalent Linear-keyed pre-flight,
     routed through the ``linear`` skill (no embedded GraphQL — CAL-731)."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     low = body.lower()
     assert "equivalent" in low and "pre-flight" in low, (
         "the Build routine must document the *equivalent* pre-flight for the "
         "`/build` fallback where the harness tool is unavailable (CAL-737 AC-3)."
     )
-    assert "`linear` skill" in body, (
-        "the fallback pre-flight must route through the `linear` skill rather "
-        "than embedding Linear GraphQL (CAL-737 AC-3; CAL-731 invariant)."
+    assert "`tracker` skill" in body, (
+        "the fallback pre-flight must route through the backend-neutral tracker "
+        "skill rather than embedding a provider API recipe."
     )
 
 
@@ -310,7 +300,7 @@ def test_build_routine_fallback_documents_equivalent_preflight() -> None:
 
 def test_build_routine_runs_worktree_cleanup_preflight() -> None:
     """CAL-767: the Build pre-flight runs the worktree+branch housekeeping sweep."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     assert "harness worktrees cleanup" in body, (
         "the Build routine must run `harness worktrees cleanup` in its pre-flight "
         "so worktree directories and branches are reclaimed each tick rather than "
@@ -342,7 +332,7 @@ def test_build_routine_resumes_reclaimed_ticket_from_preserved_branch() -> None:
     """CAL-739 AC-1: the Build pick logic resumes a `reclaimed` ticket from its
     preserved WIP branch via `harness start --resume`, instead of a clean branch
     off `dev`."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     assert "--resume" in body, (
         "the Build routine must wire `harness start --resume` so a re-picked "
         "`reclaimed` ticket continues from its preserved WIP branch (CAL-739 AC-1)."
@@ -356,7 +346,7 @@ def test_build_routine_resumes_reclaimed_ticket_from_preserved_branch() -> None:
 def test_build_routine_resume_documents_clean_fallback() -> None:
     """CAL-739 AC-2: the routine documents that with no durable WIP, `--resume`
     falls back to a normal clean start."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = BUILD_ROUTINE.read_text()
     low = body.lower()
     assert "fall back" in low or "fallback" in low or "falls back" in low, (
         "the resume wiring must document the clean-restart fallback when no "
@@ -377,7 +367,7 @@ def test_build_routine_resume_documents_clean_fallback() -> None:
 
 
 def _build_routine_body() -> str:
-    return _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    return BUILD_ROUTINE.read_text()
 
 
 def test_build_routine_drains_closable_runs() -> None:
@@ -507,4 +497,3 @@ def test_build_routine_drops_the_superseded_classifier_only_claim() -> None:
         "something. A body that contradicts itself is the coherence failure "
         "these guards exist to prevent (#256)."
     )
-

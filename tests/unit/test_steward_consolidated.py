@@ -113,13 +113,13 @@ def test_guidance_coherence_skill_exists_with_seven_checks() -> None:
         "skills/guidance-coherence/SKILL.md must exist — the system-scope domain standard (CAL-704)"
     )
     text = GUIDANCE_COHERENCE.read_text()
+    lower = text.lower()
     assert re.search(r"<!-- guidance:guidance-coherence@\d+\.\d+\.\d+ -->", text), (
         "the skill must carry a 'guidance:guidance-coherence@<version>' header"
     )
     assert re.search(r"^name:\s*guidance-coherence\s*$", text, re.MULTILINE), (
         "the skill frontmatter must declare 'name: guidance-coherence'"
     )
-    lower = text.lower()
     for check in (
         "version integrity",
         "boundary",          # universal/repo-specific boundary
@@ -148,9 +148,9 @@ def test_registry_lists_guidance_coherence() -> None:
 def test_assess_documents_scopes_and_deep() -> None:
     """``/assess`` documents the ``code``/``system`` scopes and the ``--deep`` modifier."""
     text = ASSESS.read_text()
+    lower = text.lower()
     assert "--deep" in text, "commands/assess.md must document the '--deep' modifier (CAL-704)"
     assert "steward" in text, "commands/assess.md must dispatch the single 'steward' agent"
-    lower = text.lower()
     assert "code" in lower and "system" in lower, (
         "commands/assess.md must document the 'code' and 'system' scopes"
     )
@@ -159,7 +159,6 @@ def test_assess_documents_scopes_and_deep() -> None:
 def test_steward_routes_each_scope_to_its_domain_skills() -> None:
     """The steward names the domain skills each scope pulls just-in-time (AC-3)."""
     text = STEWARD.read_text()
-    lower = text.lower()
     # The code scope pulls the code-domain standards.
     code_skills = (
         "code-quality",
@@ -173,12 +172,11 @@ def test_steward_routes_each_scope_to_its_domain_skills() -> None:
     assert "guidance-coherence" in text, (
         "steward.md (system scope) must pull 'guidance-coherence'"
     )
-    # --deep adds the three broad lenses.
-    assert "--deep" in text, "steward.md must document the '--deep' scope"
-    assert "coverage" in lower, "steward.md --deep must add a test-coverage-quantity lens"
-    assert "spec" in lower and "coherence" in lower, (
-        "steward.md --deep must add a spec/doc-coherence lens"
-    )
+    # The command owns --deep's detailed lenses; the role points there.
+    assess = ASSESS.read_text().lower()
+    assert "--deep" in text and "commands/assess.md" in text
+    assert "coverage" in assess
+    assert "spec" in assess and "coherence" in assess
 
 
 # --- AC-4: the design-system lens is layer-gated ----------------------------
@@ -186,9 +184,9 @@ def test_steward_routes_each_scope_to_its_domain_skills() -> None:
 
 def test_design_system_lens_is_layer_gated() -> None:
     """The design-system lens runs only when ``layers.design_system`` is on (AC-4)."""
-    text = STEWARD.read_text()
-    assert "design_system" in text, (
-        "steward.md must gate the design-system lens on the 'design_system' layer (CAL-704 AC-4)"
+    text = ASSESS.read_text().lower()
+    assert "design-system adherence" in text and "layer-gated" in text, (
+        "commands/assess.md must keep the design-system lens layer-gated"
     )
 
 

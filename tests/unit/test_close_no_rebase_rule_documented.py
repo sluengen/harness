@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-COMMAND_DOC = REPO_ROOT / "commands" / "harness.md"
+COMMAND_DOC = REPO_ROOT / "commands" / "harness" / "run.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 _HEADING = "#### Base movement needs no rebase"
@@ -100,10 +100,10 @@ def test_the_retired_prescription_is_gone_from_the_whole_file() -> None:
 
 def test_guidance_stamp_bumped_with_its_registry_entry() -> None:
     """The standing trap: a header bumped without its `registry.yaml` entry."""
-    m = re.search(r"guidance:harness@(\d+\.\d+\.\d+)", COMMAND_DOC.read_text())
+    m = re.search(r"guidance:harness-run@(\d+\.\d+\.\d+)", COMMAND_DOC.read_text())
     assert m, "commands/harness.md must carry a guidance version header"
     version = m.group(1)
-    pattern = re.escape("commands/harness.md") + r":\s*\{[^}]*\}"
+    pattern = re.escape("commands/harness/run.md") + r":\s*\{[^}]*\}"
     entry = re.search(pattern, REGISTRY.read_text())
     assert entry, "registry.yaml must have an entry for commands/harness.md"
     assert f"version: {version}" in entry.group(0), (

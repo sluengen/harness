@@ -29,7 +29,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARCHITECTURE = REPO_ROOT / "skills" / "architecture" / "SKILL.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
-REVIEW_DISCIPLINE = REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+REVIEW_DISCIPLINE = (
+    REPO_ROOT
+    / "skills"
+    / "review-discipline"
+    / "references"
+    / "diff-shape-checks.md"
+)
 CONTEXT_TEMPLATE = REPO_ROOT / "templates" / "CONTEXT.template.md"
 CHANGE_TEMPLATE = REPO_ROOT / "templates" / "change.md"
 STEWARD = REPO_ROOT / "agents" / "steward.md"
@@ -270,12 +276,11 @@ def test_review_discipline_flags_unhandled_watchlist_file() -> None:
 # --- the steward proposes/refreshes watchlist entries -------------------------
 
 
-def test_steward_proposes_watchlist_entries() -> None:
-    """The steward's architecture-drift lens proposes/refreshes watchlist entries
-    when it identifies a recurring gravity well."""
-    assert WATCHLIST_KEY in STEWARD.read_text(), (
-        "agents/steward.md must teach the architecture-drift lens to propose a "
-        "`architecture_watchlist` entry on a recurring gravity well."
+def test_architecture_skill_routes_steward_watchlist_recommendations() -> None:
+    """The domain skill, not the role prompt, owns watchlist recommendations."""
+    text = ARCHITECTURE.read_text()
+    assert WATCHLIST_KEY in text and "steward" in text.lower(), (
+        "the architecture skill must route steward findings into the watchlist"
     )
 
 

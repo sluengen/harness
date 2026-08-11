@@ -55,7 +55,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "routine-build.md"
 RUNBOOK = REPO_ROOT / "RUNBOOK.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
@@ -326,18 +326,16 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_6_0() -> None:
-    """Bumped by #192: the skill is stamped 0.6.0 (the return-path section) and
-    the registry row agrees (the surface-header parity guard enforces the
-    pairing; this pins the target)."""
+def test_work_discovery_version_is_0_7_0() -> None:
+    """Bumped by #401 for provider-neutral discovery; the registry row agrees."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.6.0" in text, (
-        "the skill stamp must be work-discovery@0.6.0 (#192 — the return-path section)."
+    assert "guidance:work-discovery@0.7.0" in text, (
+        "the skill stamp must be work-discovery@0.7.0 (#401 — provider neutrality)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.6\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.6.0 (#192)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.7\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.7.0 (#401)."
 
 
 # --- ADR 0006 / #191: the third hold kind, `input` --------------------------

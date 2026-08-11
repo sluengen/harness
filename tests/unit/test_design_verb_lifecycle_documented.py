@@ -37,7 +37,7 @@ import pytest
 from tests.unit.test_cli_surface_locked import _AUDITED_VERBS, _FENCE, _INVOCATION
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-COMMAND_DOC = REPO_ROOT / "commands" / "harness.md"
+COMMAND_DOC = REPO_ROOT / "commands" / "harness" / "run.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 README = REPO_ROOT / "README.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
@@ -674,7 +674,7 @@ def test_guidance_stamps_bumped_everywhere() -> None:
     `registry.yaml`'s own self-version left behind, which is itself recorded in
     two places — its header and its `meta:` entry)."""
     for rel, doc in (
-        ("commands/harness.md", COMMAND_DOC),
+        ("commands/harness/run.md", COMMAND_DOC),
         ("skills/spec-authoring/SKILL.md", SPEC_AUTHORING),
     ):
         version = _header_version(doc)

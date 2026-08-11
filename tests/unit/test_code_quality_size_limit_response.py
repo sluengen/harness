@@ -67,7 +67,7 @@ from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 _HEADING = "### A file over the hard limit is an auditable choice, not silent drift"
 
@@ -180,7 +180,8 @@ def test_reducing_the_count_in_place_is_not_one_of_them() -> None:
         "one, and naming it is what makes the trade visible"
     )
     # The cited Part B rule must actually exist, or the tie above points nowhere.
-    assert _PART_B_RULE in _SKILL.read_text(encoding="utf-8"), (
+    core = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+    assert _PART_B_RULE in core.read_text(encoding="utf-8"), (
         f"Part B must still carry {_PART_B_RULE!r}; the size-limit response rule "
         "cites it by name"
     )

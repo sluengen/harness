@@ -542,39 +542,18 @@ def test_context_engine_rationale_carries_no_refuted_speed_claim() -> None:
     )
 
 
-def test_context_engine_rationale_quotes_a_measured_tail_pair() -> None:
-    """The comment cites the measurement rather than gesturing at it (AC-2).
+def test_context_engine_rationale_points_to_canonical_provenance() -> None:
+    """The hot context points to evidence instead of copying its measurements.
 
-    Some one sentence must quote **both** engines' values for the same tail
-    statistic. The same-sentence rule is what stops the historical 600 → 720
-    clause from satisfying this by accident: it already contains ``561`` (design's
-    max) but says nothing about review's ``587``, so a half-pair drawn from two
-    unrelated clauses does not count as a citation.
+    The proposal remains the measured record and its table is parsed by the
+    guards above. ``CONTEXT.md`` owns the current value and direct pointers only;
+    requiring sample sizes or tail values inline would recreate the prose-
+    accretion ratchet issue #401 removes.
     """
-    table = _latency_table(_PROPOSAL.read_text(encoding="utf-8"))
     comment = _comment(_CONTEXT.read_text(encoding="utf-8"), "engine_timeout_seconds")
-
-    cited = [
-        statistic
-        for statistic in _TAIL_STATISTICS
-        if any(
-            _quotes_number(sentence, table["design"][statistic])
-            and _quotes_number(sentence, table["review"][statistic])
-            for sentence in _sentences(comment)
-        )
-    ]
-
-    assert cited, (
-        "CONTEXT.md's engine_timeout_seconds comment must quote both engines' "
-        "measured values for at least one tail statistic in a single sentence "
-        "— e.g. "
-        + ", ".join(
-            f"{s} {table['design'][s]}s vs {table['review'][s]}s"
-            for s in _TAIL_STATISTICS
-        )
-        + f" — so the next reader finds the evidence in place rather than "
-        f"re-deriving it from {_PROPOSAL.relative_to(_REPO_ROOT)}."
-    )
+    assert "specs/features/verb-model.md" in comment
+    assert _PROPOSAL.relative_to(_REPO_ROOT).as_posix() in comment
+    assert "q3" not in comment and "sample" not in comment and "n=" not in comment
 
 
 def test_context_engine_rationale_cites_the_rejected_proposal() -> None:

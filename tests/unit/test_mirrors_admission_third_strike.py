@@ -35,7 +35,13 @@ from pathlib import Path
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
-_REVIEW_DISCIPLINE = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+_REVIEW_DISCIPLINE = (
+    _REPO_ROOT
+    / "skills"
+    / "review-discipline"
+    / "references"
+    / "diff-shape-checks.md"
+)
 
 #: The three admission phrases the comment can carry, as the lower-cased stems
 #: the assertions match against. "in sync" is the stem of the keep/kept-in-sync
