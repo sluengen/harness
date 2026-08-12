@@ -37,6 +37,10 @@ def _registry_version(path: str) -> str:
     return match.group(1)
 
 
+def _as_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def _table_row(state: str) -> str:
     match = re.search(
         rf"^\| \*\*{re.escape(state)}\*\* \|(?P<row>.*)$",
@@ -59,8 +63,12 @@ def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
     assert _version(UPDATE_GUIDANCE, "update-guidance") == "1.0.0"
     assert _registry_version("commands/update-guidance.md") == "1.0.0"
 
+    # #407 bumped the registry to 0.5.131. Pinning that exact value would fail on
+    # every later registry edit, so assert the floor it published rather than a
+    # value that moves with unrelated work; the header/self-entry parity below is
+    # the property this test actually owns.
     registry_version = _version(REGISTRY, "registry")
-    assert registry_version == "0.5.131"
+    assert _as_tuple(registry_version) >= (0, 5, 131), registry_version
     assert _registry_version("registry.yaml") == registry_version
 
 
