@@ -1,4 +1,4 @@
-<!-- guidance:decision@0.1.0 -->
+<!-- guidance:decision@0.1.1 -->
 # /decision — drain the tickets held for a judgment call
 
 Usage: `/decision`

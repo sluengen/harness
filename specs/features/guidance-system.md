@@ -1,8 +1,8 @@
 ---
 feature: guidance-system
 status: implemented
-last_updated: 2026-08-11
-tickets: ["#401"]
+last_updated: 2026-08-12
+tickets: ["#401", "#407"]
 ---
 
 # Guidance system
@@ -59,6 +59,12 @@ Conditional references are one level deep. The topology guard discovers the refe
 Reviewer and steward agent bodies contain role, authority, supplied inputs, output expectations, and skill routing. Review method, assessment lenses, and repo-runtime engine history stay in their owning skills, commands, specs, and decisions.
 
 Every conditional reference is a normal versioned registry entry. The generator creates adapters only for top-level commands; the Codex command adapter points to the `/harness` router, and skill-directory exposure includes their reference directories. Generated agent TOML preserves the concise source role body.
+
+### Source-version integrity
+
+For an equal source and lock version, `/update-guidance` classifies a file as `current` or `LOCAL` only when the fetched source hash matches the locked hash. A mismatch is `SOURCE DRIFT` regardless of the consumer's on-disk state. It stops the entire update before apply, reports the file and source/locked hashes, and requires the source file and registry version to be repaired.
+
+`SOURCE DRIFT` leaves every installed file and `.guidance-lock.yaml` entry unchanged, including `source.ref`. It cannot enter conflict resolution or be accepted or overwritten locally.
 
 ### Measured active paths
 

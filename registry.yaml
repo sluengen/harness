@@ -1,4 +1,4 @@
-# guidance:registry@0.5.130
+# guidance:registry@0.5.131
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -87,7 +87,7 @@ files:
   commands/review.md:                 { id: review,                   version: 0.2.0, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.3.0, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.8.0, profiles: [harness] }
-  commands/update-guidance.md:        { id: update-guidance,          version: 0.6.4, profiles: [harness] }
+  commands/update-guidance.md:        { id: update-guidance,          version: 1.0.0, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.8.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
@@ -97,7 +97,7 @@ files:
   # judgment call (ADR 0006, #191/#192/#193). Delegates the clearable test and
   # the "released" definition to work-discovery's Return path section rather
   # than restating it; releases through the `harness release` verb.
-  commands/decision.md:                { id: decision,                 version: 0.1.0, profiles: [harness] }
+  commands/decision.md:                { id: decision,                 version: 0.1.1, profiles: [harness] }
   # The harness's own pipeline command — a distributed surface unit since CAL-764
   # (approach A): tracked by the registry and copied by the installer like any
   # other command, rather than hand-copied into each self-hosting repo. It sits
@@ -167,4 +167,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.5 }
-  registry.yaml:                      { id: registry,                 version: 0.5.130 }
+  registry.yaml:                      { id: registry,                 version: 0.5.131 }
