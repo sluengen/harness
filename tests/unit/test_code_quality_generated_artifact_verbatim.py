@@ -84,6 +84,11 @@ subsection having got shorter.
 * Row (a) and row (b) are indistinguishable to this guard: both surface as "the
   heading is missing". That is deliberate — a renamed heading is a rule this
   guard no longer covers, and failing loudly is the right answer to both.
+* AC-2 deliberately pins the exception and its change-spec obligation to one
+  sentence. Splitting the same meaning across two sentences is semantically
+  equivalent but produces a false red whose message reports a missing
+  obligation rather than the sentence coupling. That coupling catches a
+  half-dropped rewrite where the exception survives but its obligation does not.
 * Any rewrite that preserves the anchors while reversing the sense is invisible
   here, and this is the one class no anchor closes. Row (k) is its *mechanizable*
   member — a permission rewrite that drops the prohibition, which the polarity
@@ -93,10 +98,15 @@ subsection having got shorter.
   anchor inside the selected sentence and passes all three tests. So does the
   general case, also measured: a sentence *added* to the subsection that blesses
   re-derivation ("where reading the artifact is awkward, a second parser is
-  fine") leaves every selector and every anchor untouched. Killing
-  either would mean pinning the rule's exact wording, which turns any honest
-  rewording red. That stays reviewer judgment — the same presence-mechanized /
-  substance-judged line Part C draws for the ``size:`` marker.
+  fine") leaves every selector and every anchor untouched. The mechanism
+  sentence has the same limit. Measured, "the drift test guards the artifact,
+  not your derivation, so a second derivation needs a hand-maintained parallel
+  inventory of its own, but that parallel inventory is good enough" retains
+  ``not your derivation`` and ``parallel inventory`` while reversing the
+  mechanism, and it passes all three tests. Killing either class would mean
+  pinning the rule's exact wording, which turns any honest rewording red. That
+  stays reviewer judgment — the same presence-mechanized / substance-judged line
+  Part C draws for the ``size:`` marker.
 * AC-3 pins Part A membership, not the subsection's ordinal within Part A.
   Measured: relocating it from after *Grep before writing a helper* to just before
   *Carry-forward, not silent cleanup* leaves all three tests green. Ordering
