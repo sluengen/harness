@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@0.6.4 -->
+<!-- guidance:update-guidance@1.0.0 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -18,14 +18,17 @@ Read this repo's `.guidance-lock.yaml` → `source`. It records where this repo 
 **Migrate a legacy lock.** A pre-0.5 lock carries `source: { name, ref }` with no `repo`/`branch` (and `ref` may even be a retired-`agents`-repo SHA). All that is missing is *where the remote is*, so the migration is **non-destructive and metadata-only**: rewrite just the lock's `source:` block in place to `source: { repo: https://github.com/sluengen/harness.git, branch: main, ref: <unset> }` — this touches **no installed file**, so every LOCAL edit is preserved — then run `/update-guidance`, which classifies normally. The 3-way base is per-file (the locked version), **not** the old `ref`, so the unreachable agents-repo SHA is never fetched; the first clean pull sets a real `ref`. There is one bootstrap wrinkle: a consumer still on a pre-0.5 `/update-guidance` has no GitHub remote and cannot self-fetch *this* newer command (chicken-and-egg) — so install just the GitHub-aware `commands/update-guidance.md` once by hand (copy that single file from the source). Do **not** copy `registry.yaml` into the consumer root: its presence flips `guidance-freshness.js` into SOURCE mode and bypasses the consumer lock checks — the migrated command fetches the registry from the remote itself. (Re-running [`BOOTSTRAP.md`](../BOOTSTRAP.md) also works but **overwrites locally-edited installed guidance** — step 2 copies over any header-carrying file — so commit or stash those edits first and reconcile them afterward via the CONFLICT flow, or just prefer the metadata-only lock edit above.) In practice the only pre-0.5 install is the harness itself — now the source, with no consumer lock — so this path is currently unexercised.
 
 ### 2. Classify every installed file
-For each file in the lock, compute its current on-disk hash and compare three things — the lock version, the source version, and whether the on-disk hash still matches the lock hash:
+For each file in the lock, compute the fetched source hash and current on-disk hash. Compare four things: the lock version, the source version, whether the source hash matches the lock hash, and whether the on-disk hash matches the lock hash.
 
 | State | Condition | Action |
 |---|---|---|
-| **current** | source version == lock version, hash matches | nothing |
-| **PULL** | source version > lock version, hash matches lock | copy the new version in, update the lock |
-| **LOCAL** | versions equal, hash differs from lock | the repo edited it — leave it; suggest pushing the change upstream |
-| **CONFLICT** | source version > lock version AND hash differs | show a 3-way diff (base = source at the file's *locked* version); let the user choose |
+| **current** | source version == lock version, source hash == lock, on-disk hash == lock | nothing |
+| **SOURCE DRIFT** | source version == lock version, source hash != lock, regardless of the on-disk hash | stop |
+| **PULL** | source version > lock version, on-disk hash == lock | copy the new version in, update the lock |
+| **LOCAL** | source version == lock version, source hash == lock, on-disk hash != lock | the repo edited it — leave it; suggest pushing the change upstream |
+| **CONFLICT** | source version > lock version AND on-disk hash != lock | show a 3-way diff (base = source at the file's *locked* version); let the user choose |
+
+**SOURCE DRIFT stops the entire update before apply.** Name every affected file, its source hash, and its locked hash. Require the operator to repair the source file and its registry version, then fetch again. SOURCE DRIFT is not a CONFLICT: do not offer to accept or overwrite it, even with confirmation.
 
 > A LOCAL edit that fixes a genuine guidance defect (not just a repo-specific customization) is the case `process/harness.md`'s "Updating the guidance" section routes upstream — draft a GitHub issue against the source repo instead of leaving it a permanent local divergence.
 
@@ -39,6 +42,8 @@ Never leave a registry-listed / on-disk file lock-untracked and ignored — one 
 Also report **new** files the source added to this profile (offer to install) and **removed** files (offer to delete).
 
 ### 3. Apply
+If any file is SOURCE DRIFT, leave every installed consumer file and every `.guidance-lock.yaml` entry unchanged. Leave `source.ref` unchanged. Stop before any pull, adoption, conflict resolution, derived-artifact regeneration, commit, or integration.
+
 Pull the clean PULLs automatically. For CONFLICTs, present the diff and ask. Never overwrite a LOCAL or CONFLICT file without confirmation. Never touch `CONTEXT.md` — it is repo-owned and not tracked as a distributable.
 
 **Re-derive the derived artifacts — mandatory, not optional.** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are three byte-identical copies of the profile's process doc; `.claude/settings.json` derives from `settings/<profile>.json`; and the repo-local `.codex/` discovery surface derives from `agents/*.md`, `skills/`, and `commands/`. They are **not** registry or lock entries — and that does **not** put them out of scope. Derived artifacts are *regenerated*, not tracked: whenever the process doc pulled an update, rewrite **all three** entry files from it. `CLAUDE.md` and `GEMINI.md` are no longer redirect shims — treating either as "just a pointer to `AGENTS.md`, so it's already fine" is the pre-triplication model and is wrong; a repo bootstrapped before triplication still has shims there, and this pass must replace them with the full content (the harness injects `CLAUDE.md` verbatim, so a stale one ships old guidance). For `.claude/settings.json`, regenerate it when the settings source updated — but if the repo merged local content into it (e.g. extra permissions), surface the change for a manual re-merge rather than clobbering it.
@@ -46,7 +51,7 @@ Pull the clean PULLs automatically. For CONFLICTs, present the diff and ask. Nev
 Regenerate the Codex-native layer when any `agents/*.md`, `skills/*/SKILL.md`, `commands/*.md`, or process entry file changes by running `templates/generate_codex_artifacts.py`. `.codex/agents/*.toml` must name current skill paths (`skills/<id>/SKILL.md`) and must not preserve stale Codex agent config from retired flat files; the generated Codex skills directory must expose repo skills and generated Codex command-skills so Codex gets the same repo-local surface Claude gets through `.claude/`.
 
 ### 4. Rewrite the lock
-Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled — including a file **adopted** out of step 2's registry-listed/on-disk/lock-untracked case, which gets a fresh lock entry the same as a first-time PULL — and write the full `source: { repo, branch, ref }` — carrying the `repo`/`branch` you used (including values filled by a step-1 legacy migration). Each file's lock entry is **self-contained**: its recorded version *is* its 3-way base for the next run (the source content at that version), so a partial pull — advancing some files while others stay LOCAL/CONFLICT — corrupts no base. `source.ref` is only an informational marker of the last fully-clean source tip: advance it to the fetched SHA when every file resolved cleanly, and leave it untouched while any CONFLICT/LOCAL remains. Leave LOCAL/CONFLICT entries as they are until resolved.
+Update `.guidance-lock.yaml` with the new versions and hashes for everything pulled — including a file **adopted** out of step 2's registry-listed/on-disk/lock-untracked case, which gets a fresh lock entry the same as a first-time PULL — and write the full `source: { repo, branch, ref }` — carrying the `repo`/`branch` you used (including values filled by a step-1 legacy migration). Each file's lock entry is **self-contained**: its recorded version *is* its 3-way base for the next run (the source content at that version), so a partial pull — advancing some files while others stay LOCAL/CONFLICT — corrupts no base. `source.ref` is only an informational marker of the last fully-clean source tip: advance it to the fetched SHA when every file resolved cleanly, and leave it untouched while any SOURCE DRIFT, CONFLICT, or LOCAL remains. Leave SOURCE DRIFT/LOCAL/CONFLICT entries as they are until resolved.
 
 ### 5. Verify
 **Verify the derived artifacts first:** `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` must be byte-identical to each other (`diff` them). If any differs, the step-3 re-derivation was skipped — regenerate it now; do not proceed with the three out of sync. Also run `templates/generate_codex_artifacts.py --check` to verify the generated Codex agents, skills directory, and command-skills are current.

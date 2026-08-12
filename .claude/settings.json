@@ -10,7 +10,9 @@
       "Bash(git push origin *:dev)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:docs.anthropic.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ],
     "deny": [
       "Bash(git push --force *)",

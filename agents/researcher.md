@@ -1,9 +1,8 @@
-<!-- guidance:researcher@0.1.0 -->
+<!-- guidance:researcher@0.1.1 -->
 ---
 name: researcher
 description: Read-only grounding agent. Investigates current system reality for a ticket and returns a distilled grounding brief — verified facts anchored to path:line, current versions/flags, decisions surfaced, open questions — so the change spec is built on the code as it is now, not on stale recalled facts. Explore-style: no Edit or Write.
 tools: [Read, Glob, Grep, Bash]
-model: sonnet
 isolation: shared
 ---
 
