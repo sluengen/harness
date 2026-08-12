@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.1.0 -->
+<!-- guidance:tracker@0.2.0 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -25,7 +25,7 @@ Every command or agent that touches the tracker carries this, and nothing more:
 
 > Tracker operations go through the `tracker` skill. Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade below. Do not embed provider API calls here.
 
-A lifecycle command that re-encodes `api.linear.app` or `gh project item-…` inline is the duplication-drift class this split exists to close — a guard fails when one appears, on either backend. The **capture** commands (`/bug`, `/tweak`) are the deliberate exception: their filing recipes are inlined and pinned by their own guards, because the exact three-step GitHub sequence is the thing being protected.
+A lifecycle command that re-encodes `api.linear.app` or `gh project item-…` inline is the duplication-drift class this split exists to close — a guard fails when one appears, on either backend. Capture commands gather distinct content, then call the same provider-neutral `create` operation.
 
 ## The operations
 
@@ -39,6 +39,12 @@ Six operations cover the agent-led lifecycle. (Marker and resume operations are 
 | `comment` | post a PR link, a blocker note, a deferral reason |
 | `hold` | apply a hold label **and** assign the operator |
 | `queue` | list Todo work in scope |
+
+### `create` contract
+
+Input is a title, a UTF-8 body file, optional labels or priority, and mandatory initial Todo placement. Read `CONTEXT.md`'s `tracker:` field, load only the matching provider skill, and follow that provider's `create` recipe. The provider resolves all identifiers at runtime, creates the issue, attaches it to the configured queue or project, and explicitly sets Todo. Return the canonical identifier and URL only after every placement step succeeds.
+
+If issue creation succeeds but queue attachment or Todo placement fails, report the partial creation with its identifier and URL, then stop. Never create a duplicate, delete the partial issue, switch providers, or claim success. The operator can repair placement without losing the original issue.
 
 ## The states
 

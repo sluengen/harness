@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_HARNESS_CMD = _REPO_ROOT / "commands" / "harness.md"
+_HARNESS_CMD = _REPO_ROOT / "commands" / "harness" / "run.md"
 
 
 # --- #299: the stop rule names the mode the wall clock bounds -----------------

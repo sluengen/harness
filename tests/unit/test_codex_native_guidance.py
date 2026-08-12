@@ -15,6 +15,7 @@ CODEX_SKILLS = REPO_ROOT / ".codex" / "skills"
 CODEX_GENERATOR = REPO_ROOT / "templates" / "generate_codex_artifacts.py"
 BUILD_COMMAND = REPO_ROOT / "commands" / "build.md"
 HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+HARNESS_RUN = REPO_ROOT / "commands" / "harness" / "run.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 
 
@@ -215,7 +216,7 @@ def test_repo_context_describes_agent_neutral_orchestration() -> None:
 
 def test_harness_command_defines_strict_native_codex_only_mode() -> None:
     """The agent-led loop must carry strict engine flags through every stage."""
-    command = _text(HARNESS_COMMAND)
+    command = _text(HARNESS_RUN)
 
     assert "/harness run <ISSUE-ID> --codex-only" in command
     assert "harness doctor --engine codex" in command

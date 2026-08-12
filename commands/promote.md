@@ -1,4 +1,4 @@
-<!-- guidance:promote@0.2.0 -->
+<!-- guidance:promote@0.3.0 -->
 # /promote — drive a promotion through the harness lifecycle
 
 Usage: `/promote <src> to <dst>`
@@ -131,7 +131,7 @@ on:
 | `blocked` | The promotion cannot proceed on infrastructure grounds (missing credentials, remote permission, unclean base, or a gate whose toolchain could not run) rather than a code decision. Escalate. |
 | **Terminal** `promoted` | Success on the **staging hop**: staging was advanced to the gated SHA. Nothing is pending. Stop. |
 | **Terminal** `pr_opened` | Success on the **release hop**: the branch is pushed and the PR is created, awaiting a human/CI merge. Stop. |
-| **Terminal** `escalated` | A Linear ticket carries the evidence. Stop. |
+| **Terminal** `escalated` | A tracker ticket carries the evidence. Stop. |
 | `cancelled` | A withdrawn or superseded promotion — recorded, never deleted, and never acted on by this loop. |
 
 `status` is the source of truth; the orchestrator reads these off the JSON, it
@@ -149,7 +149,7 @@ not**, under any orchestrator:
 - **Open, close, or merge a PR outside the harness.** PR creation is `harness
   promote pr`'s job; a PR opened outside it is off-ledger. The harness never
   auto-merges the release PR — that stays a human/CI act.
-- **Mutate Linear promotion state outside the harness.** Escalation tickets and
+- **Mutate tracker promotion state outside the harness.** Escalation tickets and
   their promotion links are `harness promote escalate`'s job; the outer agent
   does not create, transition, or comment on promotion tickets out of band.
 - **Mark a promotion done.** Terminal state (`promoted` / `pr_opened` /
@@ -183,9 +183,9 @@ moves to `needs_ticket`; the outer agent does not try a second repair.
 
 **Escalation** is a first-class terminal path, not an error. `harness promote
 escalate` files (or, when the promotion is already linked, comments on) a
-Linear ticket carrying the promotion id, source/target branches, conflict
+tracker ticket carrying the promotion id, source/target branches, conflict
 files, a bounded gate-output summary, and the branch/worktree to inspect — then
-records the `escalated` state. Missing Linear credentials return a structured
+records the `escalated` state. Missing tracker credentials return a structured
 `blocked` result rather than a raw failure, leaving the promotion row untouched
 so a human can supply the credentials and re-escalate.
 

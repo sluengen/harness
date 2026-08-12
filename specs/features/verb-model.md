@@ -1,7 +1,7 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-08-09
+last_updated: 2026-08-11
 tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#318", "#321", "#339", "#338", "#359", "#363", "#352", "#370"]
 ---
 
@@ -89,7 +89,7 @@ Claude retains a **stdout fallback** — the design between two nonce-marked lin
 
 The review fallback remains enabled by default for compatibility: an explicit Codex review that exhausts its authenticated tier falls back once to Claude and records `fallback_from="codex"`. `--no-fallback` turns that condition into exit 3 with `reason="codex_usage_limit"`, records no verdict, and never invokes Claude. Non-usage-limit Codex failures never fall back in either mode.
 
-**The claude engine's model is one configured value, the same for every ticket** (#321). It is `CONTEXT.md`'s `loop.review_model` (default `sonnet`, `harness/loop_budget.py`), read off the `LoopBudget` the verb has already loaded for its spend breakers — so resolving it costs no file read and no network call. The alias is appended to the claude command as `--model <alias>` (`_build_cmd`); the codex command is unaffected, since codex ignores `--model`. An explicit `harness review --model <alias>` overrides the configured value outright, for host/testing use.
+**The claude engine's model is one configured value, the same for every ticket** (#321). It is `CONTEXT.md`'s `loop.review_model` (default `opus`, `harness/loop_budget.py`), read off the `LoopBudget` the verb has already loaded for its spend breakers — so resolving it costs no file read and no network call. The alias is appended to the claude command as `--model <alias>` (`_build_cmd`); the codex command is unaffected, since codex ignores `--model`. An explicit `harness review --model <alias>` overrides the configured value outright, for host/testing use.
 
 The value is a **plain string**, not a two-value enum: a third alias is a one-line `CONTEXT.md` edit rather than a code change, and an unrecognized alias reaches the claude CLI and fails there instead of being silently coerced to the default — a review that quietly ran a different model from the one configured is the failure this shape refuses to hide. The loader admits only a bare token (`[A-Za-z0-9._-]+`), so a value carrying whitespace or a shell metacharacter falls back to the default rather than reaching an argv.
 

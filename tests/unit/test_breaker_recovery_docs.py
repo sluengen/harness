@@ -31,7 +31,7 @@ import pytest
 from harness.loop_budget import REVIEW_CYCLE_CEILING_REASON, WALL_CLOCK_BUDGET_REASON
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "run.md"
 
 _STEP3_HEADING = "**Step 3 — `review`.**"
 _STEP4_HEADING = "**Step 4 — `close`.**"

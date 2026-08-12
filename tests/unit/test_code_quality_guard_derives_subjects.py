@@ -75,7 +75,7 @@ from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 _HEADING = "### A guard derives its subjects; it does not list them"
 _SIZE_RULE = "### A file over the hard limit is an auditable choice, not silent drift"

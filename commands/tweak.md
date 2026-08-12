@@ -1,4 +1,4 @@
-<!-- guidance:tweak@0.1.0 -->
+<!-- guidance:tweak@0.2.0 -->
 # /tweak — capture a small upgrade, with an escape hatch to /propose
 
 Usage: `/tweak <description>`
@@ -47,39 +47,11 @@ No bespoke confirm gate otherwise — a clear tweak proceeds straight to Step 3.
 - **From actual use** — the situation that surfaced it
 - **Acceptance criteria** — specific, testable outcomes
 
-**Step 4 — file it (tracker-neutral).** Read `CONTEXT.md`'s `tracker:` field
-and file through the matching backend:
-
-- **`tracker: github`** — three steps, in order (skipping the middle one is
-  the item-add-no-status trap, tick #90 — a filed item lands with Status
-  unset and `work-discovery`'s Todo-scoped read never sees it):
-
-  ```bash
-  # 1. create the issue
-  gh issue create --repo <github.repo> --title "<title>" --body-file <path>
-
-  # 2. add it to the board (capture the returned item id)
-  gh project item-add <github.project number> --owner <github.project owner> \
-    --url <issue-url> --format json
-
-  # 3. resolve the Status field + Todo option, then set it explicitly
-  gh project field-list <github.project number> --owner <github.project owner> --format json
-  gh project item-edit --id <item-id> --field-id <status-field-id> \
-    --project-id <project-id> --single-select-option-id <todo-option-id>
-  ```
-
-  Resolve `<project-id>` via `gh project view <number> --owner <owner>
-  --format json` (its `.id`). None of these ids are stable across
-  repos — resolve them at runtime, the same rule the `linear` skill uses for
-  Linear's team/state/label ids.
-
-- **`tracker: linear`** — file through the `linear` skill's `issueCreate`
-  recipe (`projectId` mandatory — a project-less issue is invisible to the
-  Build queue). A new issue lands in the team's default state, which is often
-  **not** Todo — resolve the `unstarted` state by `type` (the skill's
-  "Resolving states by type" recipe) and move it explicitly with
-  `issueUpdate`, the same way a filed-item's Status must be set explicitly on
-  GitHub.
+**Step 4 — file it.** Pass the title and UTF-8 body file to
+`tracker.create`, with any labels and mandatory initial Todo placement. The
+`tracker` skill reads `CONTEXT.md`, selects the configured provider, and owns
+creation plus queue placement. If it reports a partial creation, surface the
+identifier and URL and stop; never retry by creating a duplicate.
 
 ## Report
 

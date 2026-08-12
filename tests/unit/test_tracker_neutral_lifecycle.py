@@ -343,10 +343,7 @@ def test_the_tracker_skill_holds_no_provider_calls() -> None:
 #: correctly, and their inline recipes are pinned by their own guards — the
 #: three-step GitHub filing path in ``test_bug_command.py`` closes the
 #: item-add-no-status trap (tick #90), so relocating it would drop that lesson.
-EMBED_EXEMPT: dict[str, str] = {
-    "commands/bug.md": "capture on-ramp; its filing recipe is pinned by test_bug_command.py",
-    "commands/tweak.md": "capture on-ramp; its filing recipe is pinned by test_tweak_command.py",
-}
+EMBED_EXEMPT: dict[str, str] = {}
 
 
 def test_no_lifecycle_file_embeds_a_provider_call() -> None:

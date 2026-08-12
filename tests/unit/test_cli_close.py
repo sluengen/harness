@@ -745,8 +745,8 @@ def test_close_docstring_exit_codes_match_contract() -> None:
     )
 
 
-_COMMAND_DOC = Path(__file__).parent.parent.parent / "commands" / "harness.md"
-#: The paragraph in `commands/harness.md`'s gate-refusal section that classifies
+_COMMAND_DOC = Path(__file__).parent.parent.parent / "commands" / "harness" / "run.md"
+#: The paragraph in the activated `/harness run` gate-refusal section that classifies
 #: a step-6 failure. Sliced by the stable sentence it opens with, because the
 #: two recovery paragraphs *below* it already name `merge_conflict` and
 #: `push_rejected` for unrelated reasons — a section-wide containment check
@@ -757,7 +757,7 @@ _STEP_SIX_PARAGRAPH_OPENER = "There is no `dirty_base_checkout` refusal:"
 def _step_six_classification_paragraph() -> str:
     text = _COMMAND_DOC.read_text()
     assert _STEP_SIX_PARAGRAPH_OPENER in text, (
-        "commands/harness.md's gate-refusal section must still carry the "
+        "the activated /harness run guidance must still carry the "
         "paragraph classifying a merge conflict / rejected push"
     )
     start = text.index(_STEP_SIX_PARAGRAPH_OPENER)
@@ -766,7 +766,7 @@ def _step_six_classification_paragraph() -> str:
 
 
 def test_command_doc_states_step_six_failures_carry_a_reason() -> None:
-    """`commands/harness.md` no longer claims a step-6 failure has no reason (#300 AC-6).
+    """The activated run guidance does not claim a step-6 failure has no reason (#300 AC-6).
 
     The doc is the orchestrating session's operating instruction: while it said
     a conflict and a lost push race carry "no `reason` key", an agent reading it
@@ -1953,7 +1953,7 @@ def _step_four_retry_paragraph() -> str:
     """
     text = _COMMAND_DOC.read_text()
     assert _STEP_FOUR_RETRY_SENTENCE in text, (
-        "commands/harness.md step 4 must state the collapsed decision tree "
+        "the activated /harness run step 4 must state the collapsed decision tree "
         "(#301 AC-11): the agent runs close once and escalates on non-zero"
     )
     start = text.index(_STEP_FOUR_RETRY_SENTENCE)

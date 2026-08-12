@@ -1,28 +1,32 @@
 """The nightly promotion's exported allowlist admits its own ``--repo`` argument (#390).
 
-Its sibling ``tests/unit/test_nightly_promotion_workflow.py`` is a text guard: it
-can show the workflow *says* something, never that the thing it says works. Every
-verb resolves ``--repo`` through :mod:`harness.workspace`, which fails closed —
-``HARNESS_WORKSPACE_ROOTS`` unset means *no* allowed roots, so every candidate is
-refused and the CLI exits 2. On a developer's box the Docker wrapper
+Every verb resolves ``--repo`` through :mod:`harness.workspace`, which fails
+closed — ``HARNESS_WORKSPACE_ROOTS`` unset means *no* allowed roots, so every
+candidate is refused and the CLI exits 2. On a developer's box the Docker wrapper
 (``~/bin/harness``) pins that allowlist; an Actions runner has no wrapper, so the
-workflow has to pin it itself.
+promotion has to pin it itself.
 
-So this module executes the workflow's own export line under ``bash``, in an
+So this module executes the promotion's own export line under ``bash``, in an
 environment scrubbed of ``HARNESS_WORKSPACE_ROOTS``, and feeds the two values it
 produces — the allowlist, and the expansion of the ``--repo`` argument — to the
 production :func:`~harness.workspace.resolve_repo_root`. Restating the allowlist
 rule in the test would assert nothing about the code that enforces it.
 
-Only the ``export`` lines are executed, never the whole block: the rest of it
-spawns real ``harness promote`` verbs against real branches. That is why *ordering*
-— the export preceding the first verb call — belongs to the text guard, which can
-see the whole block, and is not claimed here.
+Only the ``export`` lines are executed, never the whole file: the rest of it
+spawns real ``harness promote`` verbs against real branches. The whole file *is*
+executed, against stubbed verbs, by
+``tests/integration/test_promotion_step_script.py`` (#396) — which is also where
+ordering is now claimed, because recording the allowlist each verb actually saw
+makes "the export precedes the first call" an executed property rather than a
+textual one.
+
+Its source moved in #396 and nothing else did: the promotion's shell now lives in
+``scripts/promotion-step.sh`` rather than in a workflow ``run:`` block, so the
+locator is a file read instead of a YAML walk.
 """
 
 import os
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -30,24 +34,17 @@ import pytest
 from harness.workspace import WORKSPACE_ROOTS_ENV, WorkspaceNotAllowed, resolve_repo_root
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
-
-#: The step whose ``run:`` block holds the export and every verb call.
-_STEP = "- name: Promote the gated candidate"
+SCRIPT = REPO_ROOT / "scripts" / "promotion-step.sh"
 
 
-def _promotion_run_block() -> list[str]:
-    """The promotion step's ``run:`` block, dedented to the lines bash receives."""
-    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
-    step = next(i for i, line in enumerate(lines) if line.strip() == _STEP)
-    run = next(i for i in range(step, len(lines)) if lines[i].strip() == "run: |")
-    indent = len(lines[run]) - len(lines[run].lstrip())
-    body: list[str] = []
-    for line in lines[run + 1 :]:
-        if line.strip() and len(line) - len(line.lstrip()) <= indent:
-            break
-        body.append(line)
-    return textwrap.dedent("\n".join(body)).splitlines()
+def _promotion_step_lines() -> list[str]:
+    """The promotion's shell, as the lines bash receives them.
+
+    A file read rather than the YAML walk this was until #396: no step lookup, no
+    ``run: |`` lookup, no dedent. The floor that used to be those lookups' error
+    messages is now :func:`test_the_promotion_step_script_is_where_the_shell_lives`.
+    """
+    return SCRIPT.read_text(encoding="utf-8").splitlines()
 
 
 def _exported_allowlist_and_repo_argument(
@@ -60,11 +57,17 @@ def _exported_allowlist_and_repo_argument(
     ``workspace`` the way the runner points it at the checkout.
     """
     exports = [line for line in block if line.startswith("export ")]
-    repo_argument = next(
-        parts[parts.index("--repo") + 1]
+    # The bound check is not defensive padding: `--repo` may legally be the last
+    # token on a line, its argument folded onto the next one (#391). This helper
+    # only ever needs one argument to expand, so it takes an unwrapped one and
+    # says so plainly rather than raising IndexError from inside a comprehension.
+    repo_arguments = [
+        parts[index + 1]
         for line in block
-        if "--repo" in (parts := line.split())
-    )
+        if "--repo" in (parts := line.split()) and (index := parts.index("--repo")) + 1 < len(parts)
+    ]
+    assert repo_arguments, "no line in the promotion block passes --repo an argument to expand"
+    repo_argument = repo_arguments[0]
     script = "\n".join(
         [
             *exports,
@@ -97,8 +100,8 @@ def workspace(tmp_path: Path) -> Path:
 def test_the_exported_allowlist_admits_the_workflows_own_repo_argument(
     workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The workflow's export makes its ``--repo`` argument resolve to the checkout."""
-    block = _promotion_run_block()
+    """The promotion's export makes its ``--repo`` argument resolve to the checkout."""
+    block = _promotion_step_lines()
     assert [line for line in block if line.startswith("export ")], (
         "the promotion step exports nothing, so there is no allowlist to test"
     )
@@ -116,7 +119,7 @@ def test_without_the_export_the_same_argument_is_refused(
     workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Negative control: the allowlist, not the argument, is what admits the path."""
-    full = _promotion_run_block()
+    full = _promotion_step_lines()
     block = [line for line in full if not line.startswith("export ")]
     assert len(block) < len(full), "nothing was stripped, so this controls for nothing"
 
@@ -126,3 +129,43 @@ def test_without_the_export_the_same_argument_is_refused(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(WorkspaceNotAllowed):
         resolve_repo_root(expanded, {WORKSPACE_ROOTS_ENV: roots})
+
+
+# --- The locator's floor (#396) -----------------------------------------------
+#
+# The YAML walk this module used to do asserted its own two lookups, so a renamed
+# step failed by name. A file read has one way to go wrong, and this is it: name
+# the path, so a rename costs the next author a sentence rather than an
+# unexplained `FileNotFoundError` from inside a helper.
+
+
+def test_the_promotion_step_script_is_where_the_shell_lives() -> None:
+    """The source every test above reads exists and is not empty.
+
+    Without this, moving or emptying the script would fail the two tests above
+    from inside a helper, naming nothing — and an *empty* file would fail their
+    export floor as though the export had been deleted, which is a different
+    defect calling for different work.
+    """
+    assert SCRIPT.is_file(), (
+        f"{SCRIPT.relative_to(REPO_ROOT)} is where the nightly promotion's shell lives "
+        "(#396); if it moved, move this locator with it"
+    )
+    assert SCRIPT.read_text(encoding="utf-8").strip(), (
+        f"{SCRIPT.relative_to(REPO_ROOT)} is empty, so every assertion in this module "
+        "would be measuring nothing"
+    )
+
+
+def test_a_block_whose_repo_argument_is_wrapped_says_so(workspace: Path) -> None:
+    """A `--repo` folded onto the next line leaves nothing to expand, and says which."""
+    with pytest.raises(AssertionError) as refused:
+        _exported_allowlist_and_repo_argument(
+            [
+                'export HARNESS_WORKSPACE_ROOTS="$GITHUB_WORKSPACE"',
+                "uv run harness promote pr --repo",
+            ],
+            workspace,
+        )
+
+    assert "--repo" in str(refused.value)

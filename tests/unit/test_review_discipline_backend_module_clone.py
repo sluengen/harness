@@ -36,7 +36,7 @@ from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 _REGISTRY = _REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
@@ -143,5 +143,5 @@ def test_backend_module_clone_rule_is_in_stage_two() -> None:
 def test_review_discipline_header_matches_registry() -> None:
     """AC-3: header + registry version parity."""
     assert _header_version(_SKILL) == _registry_version(
-        "skills/review-discipline/SKILL.md"
+        "skills/review-discipline/references/diff-shape-checks.md"
     ), "review-discipline's guidance: header must match its registry.yaml version (#209 AC-3)."
