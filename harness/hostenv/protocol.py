@@ -73,6 +73,13 @@ class Reason(StrEnum):
     REPO_NOT_ALLOWED = "repo_not_allowed"
     REPO_MISMATCH = "repo_mismatch"
     SPAWN_FAILED = "spawn_failed"
+    #: The host cannot supply a usable agent credential (#309). A *named*
+    #: reason rather than a reuse of ``repo_not_allowed``: that string stretches
+    #: over "this host/repo combination cannot be served" and not over a
+    #: credential outage, and it is the audit line's only word for what happened
+    #: — attributing a credential event to the repo allowlist would mislead the
+    #: one record the socket keeps.
+    CREDENTIAL_UNAVAILABLE = "credential_unavailable"
 
 
 #: ``spawn_failed`` is the one refusal that is not the caller's fault — docker
@@ -84,6 +91,7 @@ _EXIT_FOR_REASON = {
     Reason.REPO_NOT_ALLOWED: 2,
     Reason.REPO_MISMATCH: 2,
     Reason.SPAWN_FAILED: 1,
+    Reason.CREDENTIAL_UNAVAILABLE: 2,
 }
 
 
@@ -219,11 +227,22 @@ def decode_response(raw: str | bytes) -> Response:
     try:
         if payload.get("ok"):
             return Response(ok=True, exit_code=int(payload["exit_code"]))
-        return Response(
-            ok=False,
-            reason=Reason(payload["reason"]),
-            error=payload.get("error"),
-        )
+        raw_reason = payload["reason"]
+        message = payload.get("error")
+        try:
+            reason = Reason(raw_reason)
+        except ValueError:
+            # A reason this client does not know is **not** a malformed frame:
+            # it is a well-formed refusal from a server whose vocabulary is
+            # newer (#309 added one). Raising BadRequest here would send the
+            # client down its "the verb may have run — the ledger is the
+            # record" path, which is the worst available answer for a refusal
+            # that spawned nothing. `reason=None` already maps to exit 1 in
+            # `exit_code_for`, and the server's own message is preserved with
+            # the unrecognised reason prefixed so the operator can still see
+            # what was refused.
+            return Response(ok=False, reason=None, error=f"{raw_reason}: {message}")
+        return Response(ok=False, reason=reason, error=message)
     except (KeyError, TypeError, ValueError) as exc:
         raise BadRequest(f"malformed response frame: {exc}") from exc
 

@@ -1,8 +1,8 @@
 ---
 feature: host-platform
 status: partial
-last_updated: 2026-08-08
-tickets: ["#305", "#308", "#380", "#383"]
+last_updated: 2026-08-13
+tickets: ["#305", "#308", "#309", "#380", "#383"]
 ---
 
 # Host platform abstraction
@@ -226,16 +226,41 @@ This is the case a blank credential used to turn into an in-container 401 much l
 - GIVEN a WSL host whose Claude credential store is not at the default path
 - WHEN a verb runs
 - THEN the credential is absent, a diagnostic **names the path searched**, and the verb
-  still runs — an absent store is not an unsupported host
+  still runs — an absent store is not an unsupported host, **nor is it a renewal
+  failure** (#309): the socket's credential refusal is keyed on a credential that is
+  present and stale, so a host with no Claude at all is never refused
 
 ### Credential resolution
+
+**This section states the rule for the *request-resolving* path** —
+`container_env.RequestRefreshingSource`, which is what the client's direct spawn,
+`python3 -m harness.hostenv env`, and any `VerbServer` built without a broker use.
+Since #309 it is no longer the only source; the brokered one is recorded in
+[runtime-host](runtime-host.md).
 
 The agent credential is refreshed when it is at or inside a five-minute window
 (`is_stale` uses `<=`, mirroring the bash `-le`): `claude -p ok` makes the CLI exchange
 its refresh token and rewrite its own store, then the store is re-read. A refresh that
 fails, hangs, or finds no CLI leaves the stale-but-present token in play — the
-container's own 401 is where that belongs (CAL-941). An already-exported
-`CLAUDE_CODE_OAUTH_TOKEN` short-circuits the whole path: no store read, no refresh.
+container's own 401 is where that belongs (CAL-941).
+
+That rule holds here **structurally, not by policy**:
+`container_env.AgentCredentialSource.refusal` is a concrete base method returning
+`None`, and `RequestRefreshingSource` does not override it, so this path has no branch
+that could refuse. A path with no scheduler and no second chance must ship what it has;
+the guard asserting it is `test_hostenv_broker.py::test_the_request_refreshing_source_has_no_branch_that_could_refuse`,
+which checks both the answer and the absence of the override.
+
+**The brokered path inverts this deliberately**, because once renewal is scheduled a
+credential still inside the window is evidence that renewal is failing rather than
+evidence of bad luck. The reasoning, the exact predicate and the rejected alternatives
+live in [runtime-host](runtime-host.md) — this file owns only the request-resolving
+half.
+
+An already-exported `CLAUDE_CODE_OAUTH_TOKEN` short-circuits the whole agent-credential
+path on **both** sources — no store read, no refresh, and no refusal — through the one
+predicate `container_env.agent_credential_is_needed`, which the resolver and the
+socket's pre-flight both consult rather than re-inlining.
 
 Tracker credentials resolve **env → `.env` → `gh auth token`**, per key, with `gh`
 consulted only for `GITHUB_TOKEN` and only when it is still unset (issue #170). A `.env`

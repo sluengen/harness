@@ -25,6 +25,15 @@ Both halves matter, and they fail differently:
 The tests below assert both against a fake provider that **rotates its token on
 every read**, so a cached implementation cannot pass: it would hand the second
 container the first container's token.
+
+**Scoped by #309, not weakened.** The *agent* credential is now brokered over
+the socket: a production ``harness serve`` renews it on a background thread and
+the request path reads no store. Everything else here is unchanged and still
+per-request — the tracker credentials (``.env`` lives in the *requested* repo,
+so they cannot be resolved once at bind time), the git identity, and the whole
+direct-spawn path including its refresh, which is CAL-941's rule and is
+asserted below byte-for-byte as it always was. Where the agent half went is
+named at the one test that changed.
 """
 
 from __future__ import annotations
@@ -298,7 +307,22 @@ def test_the_server_resolves_afresh_on_every_request(
     stdio: tuple[int, int, int],
     server_factory,
 ) -> None:
-    """The load-bearing case: one process, many verbs, a token that expires."""
+    """The load-bearing case: one process, many verbs, a credential that expires.
+
+    **Re-pointed by #309, deliberately.** This used to assert it of
+    ``CLAUDE_CODE_OAUTH_TOKEN``. That credential is now brokered over the
+    socket, so a *production* ``harness serve`` hands two requests the same
+    agent token on purpose — asserting rotation here would have become a claim
+    that production contradicts, kept alive only because this fixture builds a
+    ``VerbServer`` without a broker. The tracker credentials are still resolved
+    per request through the providers, on every path, so the rotating
+    discriminator moves to them and keeps meaning what it says.
+
+    The property this stopped asserting is not lost, it is asserted better:
+    ``tests/unit/test_serve_credential_brokering.py``'s AC-1 test observes the
+    call site directly, and ``test_a_stale_agent_token_is_refreshed_before_the_
+    container_is_spawned`` below still holds the client path's freshness rule.
+    """
     server = server_factory(repo)
 
     server.spawn(repo=repo, argv=["status", "R1"], fds=list(stdio))
@@ -306,10 +330,11 @@ def test_the_server_resolves_afresh_on_every_request(
 
     envs = spawned_envs(stub_docker)
     assert len(envs) == 2
-    assert envs[0]["CLAUDE_CODE_OAUTH_TOKEN"] != envs[1]["CLAUDE_CODE_OAUTH_TOKEN"], (
-        "the second verb ran with the first verb's agent token — a long-lived "
-        "server that caches credentials serves a stale token until it restarts"
+    assert envs[0]["GITHUB_TOKEN"] != envs[1]["GITHUB_TOKEN"], (
+        "the second verb ran with the first verb's tracker token — a long-lived "
+        "server that caches credentials serves a stale one until it restarts"
     )
+    assert envs[0]["LINEAR_API_KEY"] != envs[1]["LINEAR_API_KEY"]
 
 
 def test_a_stale_agent_token_is_refreshed_before_the_container_is_spawned(

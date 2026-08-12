@@ -302,3 +302,30 @@ def test_a_credential_value_is_never_written_into_a_diagnostic(tmp_path: Path) -
 
     assert credential is not None and credential.token == "super-secret-value"
     assert "super-secret-value" not in "\n".join(host.diagnostics)
+
+
+def test_a_credential_value_is_never_rendered_by_its_own_repr() -> None:
+    """The same rule as the diagnostic above, for the object rather than the log.
+
+    Until #309 this mattered less: an ``AgentCredential`` existed for the
+    duration of one ``spawn`` call. It now lives in a ``CredentialBroker`` for
+    the life of the ``serve`` process, reachable from ``repr(vars(server))`` and
+    from any traceback that renders host state — so the field is excluded from
+    the repr rather than trusted to stay out of one.
+
+    The floor matters as much as the ban: ``expires_at_ms`` must still appear.
+    It is not a secret — it is forwarded to the container as
+    ``CLAUDE_CODE_OAUTH_EXPIRES_AT`` — and it is the field an operator debugging
+    a ``credential_unavailable`` refusal needs. A repr emptied wholesale would
+    satisfy the ban and help nobody.
+    """
+    credential = AgentCredential(token="super-secret-value", expires_at_ms=NOW_MS)
+
+    rendered = repr(credential)
+
+    assert "super-secret-value" not in rendered, (
+        f"the credential value is rendered by its own repr: {rendered}"
+    )
+    assert str(NOW_MS) in rendered, (
+        f"the repr was emptied rather than narrowed: {rendered}"
+    )

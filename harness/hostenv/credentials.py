@@ -32,9 +32,17 @@ class AgentCredential:
     ``None`` rather than an ``AgentCredential`` carrying a blank token.
     ``expires_at_ms`` is ``0`` when the store omits it, which reads as *stale* and
     so triggers a refresh rather than trusting an unknown expiry.
+
+    ``token`` is kept **out of the repr** (#309). Until the broker existed this
+    object lived for the duration of one ``spawn`` call; it now lives in a
+    :class:`~harness.hostenv.broker.CredentialBroker` reachable from
+    ``repr(vars(server))`` and from any traceback that renders host state. The
+    repr is narrowed, not emptied — ``expires_at_ms`` is not a secret (it is
+    forwarded to the container as ``CLAUDE_CODE_OAUTH_EXPIRES_AT``) and is the
+    field an operator debugging a refusal actually needs.
     """
 
-    token: str
+    token: str = field(repr=False)
     expires_at_ms: int
 
     def is_stale(self, now_ms: int, window_ms: int = REFRESH_WINDOW_MS) -> bool:

@@ -1,8 +1,8 @@
 ---
 feature: runtime-host
 status: implemented
-last_updated: 2026-08-08
-tickets: ["#307", "#308", "#370", "#380", "#383"]
+last_updated: 2026-08-13
+tickets: ["#307", "#308", "#309", "#370", "#380", "#383"]
 ---
 
 # Runtime host (live)
@@ -113,7 +113,129 @@ programmatic seam gained its own behavioural guard alongside.
 provider that **rotates its token on every read** — a cached implementation hands
 the second container the first container's token and fails. Nothing resolved is
 retained: the value dies with the call, which keeps ADR 0012's "no run state" true
-of credentials too. Brokering with background renewal remains #309.
+of credentials too.
+
+**#309 scoped this rule; it did not weaken it.** Everything above stays true of the
+tracker credentials, the git identity and the three spawn concerns, on every path,
+and of the whole client direct-spawn path including its agent credential. The one
+exception is the **agent** credential over the socket, which a production `harness
+serve` now brokers — see [the credential broker](#the-credential-broker) below. The
+rotating-provider guard was re-pointed accordingly: it asserts rotation of
+`GITHUB_TOKEN` and `LINEAR_API_KEY`, because asserting it of
+`CLAUDE_CODE_OAUTH_TOKEN` had become a claim production deliberately contradicts,
+and it kept passing only because that fixture builds a `VerbServer` with no broker.
+The property it stopped asserting is asserted better, at the call site, by
+`tests/unit/test_serve_credential_brokering.py::test_the_brokered_request_path_reads_no_store_and_calls_no_refresh`;
+`test_a_stale_agent_token_is_refreshed_before_the_container_is_spawned` is unchanged
+and still holds the client path's freshness rule.
+
+### The credential broker
+
+ADR 0012 names the persistent host process *"a credential broker, a spawner, and a
+scheduler"*. #307 shipped the spawner and the scheduler;
+[`harness/hostenv/broker.py`](../../harness/hostenv/broker.py) is the broker, and it
+is a fifth stdlib-only module in that layer (it imports `container_env`, `host` and
+`credentials`, and nothing from `harness.cli`).
+
+**Where a request's agent credential comes from is a seam.**
+`container_env.AgentCredentialSource` has two implementations that answer opposite
+questions about refusing:
+
+| Source | Used by | Resolves on the request path | Can refuse |
+|---|---|---|---|
+| `container_env.RequestRefreshingSource` (the default) | the client's direct spawn, `python3 -m harness.hostenv env`, and any `VerbServer` built without a broker | yes — today's `resolve_agent_credential`, verbatim | **no, structurally** |
+| `broker.BrokeredSource` | a `VerbServer` from `serve.build_server`, i.e. production `harness serve` | **no** — the broker's own credential | yes |
+
+`AgentCredentialSource.refusal` is a concrete base method returning `None`, and
+`RequestRefreshingSource` does not override it. CAL-941's rule is therefore
+preserved on that path as *the absence of a branch* rather than as a policy
+sentence — see [host-platform](host-platform.md), which owns the request-resolving
+rule. `resolve_container_env` gained a `credentials=` keyword defaulting to that
+source, which is why `client.py` and `__main__.py` are a **zero diff** across #309.
+
+**The schedule is derived, not guessed.** A healthy credential is renewed
+`RENEWAL_LEAD_MS` = 20 minutes before expiry, because the longest a single engine
+call may run is `loop.engine_timeout_seconds` (900s) and the request path begins
+refusing inside `REFRESH_WINDOW_MS` (300s); 20 minutes therefore leaves any credential
+served in a healthy system at least fifteen minutes of life, which a twelve-minute
+`review` fits inside. `next_delay_ms` is a pure function of the last record: `VALID`
+wakes `RENEWAL_LEAD_MS` before expiry, `ABSENT` re-checks every 5 minutes so an
+operator running `claude` and `/login` is picked up without a restart, and `FAILED`
+retries every 60 seconds because the request path is refusing for as long as that
+state lasts. Every wake is floored at `MIN_RENEWAL_INTERVAL_MS` = 30s, which is what
+stops a store with an unknown expiry (`expires_at_ms == 0`, which reads as stale)
+spinning the thread.
+
+The load-bearing relation is asserted behaviourally rather than as a comparison of
+constants: `test_the_schedule_wakes_before_the_request_path_would_refuse` measures
+that `now + next_delay_ms(record, now) < expires_at_ms - REFRESH_WINDOW_MS`. That
+property is **bounded, not universal**, and the boundary is pinned by its own test:
+any floor makes the strict inequality false somewhere, and that somewhere is exactly
+`MIN_RENEWAL_INTERVAL_MS + REFRESH_WINDOW_MS` of remaining life, where the wake
+coincides with the first refusing moment.
+`test_at_the_derived_headroom_the_floor_governs_rather_than_the_lead` states that
+boundary rather than leaving it implicit; below it the credential is already being
+retried every 60 seconds, which is the regime the refusal exists for.
+
+**Lifecycle.** `build_server` detects the host, constructs the broker and calls
+`prime()` **synchronously before the socket serves**, so no request observes an
+unknown state and the first request cannot trigger a renewal. `prime()` is
+deliberately the same cycle as `renew_once()` — a priming path that differed would
+be a second code path exercised once per process. `serve_command` then calls
+`broker.start()`, which runs `while not sleeper(delay): renew_once()` on a
+`daemon=True` thread, and `broker.stop()` from its `finally`. `stop()` sets the
+event that *is* the default sleeper, so a thread in a twenty-minute wait returns
+immediately, then joins for `RENEWAL_JOIN_SECONDS` = 1.0 and no longer: a thread
+mid-`claude -p ok` is abandoned to die with the process. Shutdown is never blocked,
+for the same recorded reason `block_on_close` is off. `stop()` is safe on a broker
+that was never started and safe to call twice.
+
+The credential and its record are committed together under a `threading.Lock` held
+for the pointer swap only, **never across the refresh subprocess** — a request
+queueing behind a sixty-second `claude -p ok` is precisely the cost this ticket
+deleted. `snapshot()` returns both under one acquisition, because a reader taking
+them separately could pair a fresh credential with the previous cycle's verdict.
+
+**Three states, three answers.** A cycle records `VALID` (a usable credential is
+held), `ABSENT` (the store holds nothing) or `FAILED` (a credential is held and
+renewal did not take). An absent store spawns normally with no
+`CLAUDE_CODE_OAUTH_TOKEN` and is **never** refused; a present credential outside the
+window spawns with the broker's value; a present credential inside the window is
+refused. A `FAILED` record is logged **every** cycle rather than only on transition —
+it is the operator's one notice and the refusals it explains keep happening — while
+`VALID`/`ABSENT` log only on change, so a healthy broker does not write a line every
+twenty minutes. An exception escaping a cycle is caught by the loop, logged, and
+recorded as `FAILED`: it surfaces twice, as a line and as the next request's
+refusal, and nothing is swallowed. The broker and the request audit trail share one
+`log` sink, so an operator sees renewal failures in the same stream as the refusals
+they explain.
+
+**The failure predicate is the observable, never a subprocess status.**
+`HostPlatform.refresh_agent_credential` swallows everything and returns `None` — it
+can exit 0 and write nothing at all. So a cycle judges itself by **re-reading the
+store**, and the request-time predicate is re-evaluated against *current* time
+rather than trusting the last cycle's verdict:
+
+> Renewal failed ⇔ a credential is present **and** it satisfies `is_stale(now_ms)`
+> at the moment the request is evaluated.
+
+Re-evaluating is what stops a renewal thread that died, or a machine suspended for
+two hours, from keeping a `VALID` record serving an expired token. This is #302's
+rule: the acceptance criterion sits on the observable, not on a status that can fail
+silently open.
+
+**Tracker credentials stay per request.** `.env` is read from the *requested* repo,
+so a brokered tracker credential needs a cache keyed by repo path — per-repo state
+whose values are secrets, held across requests, for a credential with no expiry to
+schedule against. Worse on both the ADR 0012 axis and the security axis, for no
+measured gain. Rejected.
+
+**`build_server` returns `tuple[VerbServer, CredentialBroker | None]`.** The `None`
+is not defensive typing: on `UnsupportedHost` at detection there is genuinely no
+broker, and the constructor falls back to `RequestRefreshingSource` so the socket
+still binds and each request refuses at the existing per-request site with the
+existing message. Host detection failing is a degradation to yesterday's behaviour,
+not a new way for `serve` to die.
 
 ## The two properties that define it
 
@@ -142,9 +264,21 @@ refused.
 **It holds no run state.** ADR 0012: *"if the host process ever holds run state,
 it has exceeded the carve-out."* The close gate rests on the ledger being the
 only memory of a run, so a host caching run status would break that property
-while appearing to work. The server's entire mutable state after a request is
-`_repo_locks` — a mutex per resolved repo path, which names no run, ticket, verb
-or argv, and whose empty state after a restart is a correct one.
+while appearing to work. The server's entire state after a request is two
+attributes:
+
+- `_repo_locks` — a mutex per resolved repo path, which names no run, ticket, verb
+  or argv, and whose empty state after a restart is a correct one.
+- `credentials` — the `AgentCredentialSource` (#309). On the brokered path it
+  references a `CredentialBroker` holding one `AgentCredential` and one
+  `RenewalRecord`. It names no run, ticket, verb, argv or repo; a fresh broker after
+  a restart is a correct one; and — decisively — **nothing on the request path
+  writes it**. It is exactly the "credential broker" ADR 0012 names in the same
+  sentence as "spawner" and "scheduler".
+  `test_serve_credential_brokering.py::test_a_request_writes_nothing_into_the_broker`
+  holds it: it snapshots the record and `repr(vars(server))`, drives requests
+  carrying sentinel tickets, and asserts neither the record moved nor a sentinel was
+  retained.
 
 Two consequences follow that read as implementation detail and are not:
 
@@ -177,6 +311,48 @@ makes an outage invisible, which is exactly what ADR 0012 warns against. *launch
 socket activation* was rejected as macOS-only with no WSL equivalent. A shipped
 launchd/systemd unit belongs to the deployment ticket (#312). "Not running"
 surfaces instead as one stderr line from the client, and the verb still runs.
+
+**The brokered path refuses; the request-resolving path structurally cannot (#309).**
+CAL-941 recorded that a refresh which fails, hangs, or finds no CLI leaves the
+stale-but-present token in play, because refusing costs a call that would have
+worked while proceeding costs a 401 the container reports. That asymmetry **runs the
+other way once renewal is scheduled**: the broker already tried, with the whole
+inter-request interval to succeed, so a credential still inside the window is
+evidence that renewal is failing rather than evidence of bad luck. The token such a
+request would carry has under five minutes left, a `review` legitimately runs twelve,
+and the 401 then arrives mid-run having burned the wall-clock budget and reading as a
+review failure. Refusing at the boundary costs one verb the operator retries after
+`claude` + `/login`; proceeding costs a run.
+
+The rule is scoped **by source**, so CAL-941 is untouched where it was decided:
+`RequestRefreshingSource` has no scheduler and no second chance, and it keeps the old
+behaviour by having no code path that could refuse. *Rejected: invert CAL-941
+everywhere.* It would break exactly the deployment CAL-941 protects — a token five
+minutes from expiry, offline, with a verb that would have completed. *Rejected:
+refuse on `refresh_agent_credential`'s outcome.* It has none, and a subprocess that
+exits 0 without rewriting the store would still pass.
+
+**The refusal is keyed on credential state, never on which verb was asked.** A dead
+refresh token therefore refuses every verb over the socket, including ones that never
+needed the Claude credential. This is an accepted cost, taken deliberately over the
+alternative: *rejected — refuse only for verbs that need the agent credential*, which
+needs a hand-maintained "verbs needing Claude" mapping, the exact defect the retired
+`OPERATIONS` frozenset embodied and which *operation surface: derived, not an
+allowlist* above records as settled. There is no derivable source for "this verb calls
+the engine". The residual is bounded rather than open: the refusal names its own
+remedy, the broker retries every 60 seconds and recovers without a restart, and the
+client's direct-spawn fallback is unaffected because it uses the other source.
+
+**An absent credential is never a refusal, and an exported token short-circuits
+before the refusal is asked.** A host with no Claude at all must still run `status`
+and `worktrees cleanup`, so `ABSENT` spawns normally with no token — there is nothing
+to renew, so nothing failed to renew. And a caller who already exported
+`CLAUDE_CODE_OAUTH_TOKEN` is never asked the credential question at all. That
+short-circuit is one predicate, `container_env.agent_credential_is_needed`, consulted
+by `container_env.credential_refusal`, which is itself the **single** function called
+by both the socket's pre-flight and `resolve_container_env`. One function, two
+callers: a second copy of that ordering is a second thing to get wrong, and getting
+the order wrong means an exported token stops short-circuiting.
 
 **The mount stays `/workspace`, not ADR 0012's path-equivalent mount.**
 `runs.worktree_path` is recorded container-absolute as
@@ -336,8 +512,68 @@ else.
 
 Validation order, every step before `docker` is executed: single-message size cap
 → strict three-key schema → derived-verb lookup → allowlist and colon rejection on
-`repo` → `--repo` agreement. Secrets are resolved by the host and injected **by
-name** (`-e NAME`), so no value ever lands in an argv or in `ps` output.
+`repo` → mount and container-user equivalence → **credential availability (#309)** →
+`--repo` agreement. Secrets are resolved by the host and injected **by name**
+(`-e NAME`), so no value ever lands in an argv or in `ps` output.
+
+The credential step sits before `--repo` agreement so no argv work happens for a
+request that cannot run, and — like every step above it — it is observable as *no
+container was spawned*, which is what
+`test_a_failed_renewal_refuses_on_the_wire_before_docker` asserts rather than
+asserting the exit status. A caller reaching `VerbServer.spawn` directly, bypassing
+the handler, gets the same answer: `resolve_container_env` raises
+`CredentialRenewalFailed`, which `spawn` carries in the same backstop `except` chain
+as the two provider refusals (log, `return 2`).
+
+**A new wire reason, not a reused one.** `Reason.CREDENTIAL_UNAVAILABLE =
+"credential_unavailable"` maps to exit **2**, the invocation-refusal code every
+refusal but `spawn_failed` uses. Reusing `repo_not_allowed` was rejected on the
+`UnsafeContainerUser` precedent's own test — does the existing string still *describe*
+the refusal? It stretches over "this host/repo combination cannot be served" and not
+over a credential outage, and it would make the audit line — the socket's only record
+of who asked for what — attribute a credential event to the repo allowlist.
+`PROTOCOL_VERSION` is not bumped: a new refusal string is additive, not a frame
+change.
+
+**The skew that adding a reason creates was closed in the same change.** Before this,
+a client decoding an unknown reason hit `Reason(payload["reason"])` → `ValueError` →
+`BadRequest`, whose handler says *"the verb may have run. The ledger is the record."*
+— the worst available message for a refusal where nothing was spawned. `decode_response`
+now treats an unrecognised reason on an `ok=False` frame as a well-formed refusal from
+a newer server: `Response(ok=False, reason=None, error=f"{raw}: {message}")`, which
+`exit_code_for` already maps to 1, preserving the server's own message and claiming
+nothing ran. That frame moved out of the malformed-frame table and into its own test;
+a paired discriminator holds that known reasons still decode to their enum member, so
+a `decode_response` that gave up on every reason would fail.
+
+**What the broker changes about the security posture is memory residency, and only
+that.** The agent token used to exist in this process for the duration of one `spawn`
+call; it now lives in the broker continuously. That creates no new principal: the
+socket already grants operator-equivalent authority, so an attacker who can
+`connect()` can already obtain the credential's full effect without reading it, and an
+attacker who can read this process's memory holds the same uid and can read the
+Keychain item or credential file directly. Exactly one window widens — a core dump or
+process-memory scrape now yields the token at any moment rather than only during a
+spawn — and both stronger capabilities were already sufficient. Three properties keep
+the widening from becoming a leak, each held by a test rather than by convention:
+
+- **No value-carrying `__repr__` on the path.** `CredentialBroker`, `BrokeredSource`,
+  `AgentCredentialLease` and `RenewalRecord` render outcome and expiry only, and
+  `AgentCredential.token` is now `field(repr=False)`. The repr was **narrowed, not
+  emptied**: `expires_at_ms` still renders, is not a secret (it is forwarded as
+  `CLAUDE_CODE_OAUTH_EXPIRES_AT`), and is the field an operator debugging a refusal
+  needs — asserted as a floor alongside each ban.
+- **No value in any log line.** The renewal line names the outcome, `expires_at_ms`
+  and a `detail` describing what was observed; the audit line records
+  `refused=credential_unavailable`, the reason value and never the message.
+- **No value in argv.** Unchanged, and now guarded rather than assumed:
+  `ContainerEnv.values` gains no key, and
+  `test_every_credential_name_the_resolver_emits_is_one_the_argv_forwards` derives
+  the emitted set from a real `resolve_container_env` call under **both** sources and
+  asserts it is a subset of `client.FORWARDED_ENV_NAMES`. That closes the one way this
+  change could have blinded the existing review-container push-credential ban, which
+  scans that tuple and would go silent — not red — if the resolver started emitting
+  under a name the tuple does not carry.
 
 **One line per request is the audit trail**, written to stderr by default and
 redirectable by the host: timestamp, resolved verb, resolved repo, and the
@@ -356,10 +592,10 @@ as the wrapper does today, so there is no boundary to check. The container's own
 
 ## What is not here
 
-Credential brokering with background renewal (#309), periodic maintenance sweeps
-(#310), the reachability guard (#311), deployment via image and entrypoint
-(#312), and WSL validation on a real Windows host (#313). This record covers the
-process, the socket, the spawner, and the fallback. Platform-specific spawn
+Periodic maintenance sweeps (#310), the reachability guard (#311), deployment via
+image and entrypoint (#312), and WSL validation on a real Windows host (#313). This
+record covers the process, the socket, the spawner, the fallback, and the credential
+broker. Platform-specific spawn
 concerns **shipped in #308** and are recorded in
 [host-platform](host-platform.md), which owns the provider seam they extend.
 

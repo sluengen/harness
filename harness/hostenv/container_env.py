@@ -7,9 +7,29 @@ is a layer boundary, not a size cut: the import edge runs one way (this imports
 — the ``serve`` socket path and the client's direct-spawn fallback — want this
 whole layer and none of the provider internals.
 
-**Called per request, never cached.** A persistent ``harness serve`` outlives many
-Claude OAuth tokens, so bind time is the one moment whose environment is
-guaranteed to be stale later.
+**Called per request, never cached** — for the tracker credentials, the git
+identity and the three spawn concerns, on every path. A persistent
+``harness serve`` outlives many Claude OAuth tokens, so bind time is the one
+moment whose environment is guaranteed to be stale later.
+
+The **agent** credential is the one exception, and only over the socket (#309).
+Where it comes from is a seam — an :class:`AgentCredentialSource` — with two
+implementations that answer opposite questions about refusing:
+
+``RequestRefreshingSource``
+    The default, used by the client's direct spawn, ``python3 -m harness.hostenv
+    env``, and any ``VerbServer`` built without a broker. It resolves on the
+    request path exactly as this module always has, and it **cannot refuse** —
+    :meth:`AgentCredentialSource.refusal` is a concrete base method returning
+    ``None`` and this source does not override it. That is CAL-941's rule
+    expressed as the absence of a branch: a path with no scheduler and no second
+    chance must ship a stale-but-present token and let the container's own 401
+    report it.
+
+``harness.hostenv.broker.BrokeredSource``
+    Used by a production ``harness serve``. It resolves nothing on the request
+    path, and it **can** refuse, because the broker already tried ahead of time
+    with the whole inter-request interval to succeed.
 
 Stdlib only — see the package docstring.
 """
@@ -17,6 +37,7 @@ Stdlib only — see the package docstring.
 from __future__ import annotations
 
 import sys
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,11 +47,86 @@ from harness.hostenv.host import HostPlatform, UnsupportedHost
 from harness.hostenv.spawn import ContainerUser, SshAgentForwarding, WorkspaceMount
 
 __all__ = [
+    "AgentCredentialLease",
+    "AgentCredentialSource",
     "ContainerEnv",
+    "CredentialRenewalFailed",
+    "RequestRefreshingSource",
     "UnsupportedHost",
+    "agent_credential_is_needed",
+    "credential_refusal",
     "resolve_agent_credential",
     "resolve_container_env",
 ]
+
+
+class CredentialRenewalFailed(Exception):  # noqa: N818 — spec vocabulary, like UnsupportedHost
+    """The agent credential was owed a renewal that did not take.
+
+    Raised where the caller can still do something about it — before docker is
+    touched — so the operator sees ``run claude and /login`` rather than an
+    in-container 401 twelve minutes into a ``review``.
+    """
+
+
+@dataclass(frozen=True)
+class AgentCredentialLease:
+    """One request's answer about the agent credential. Never renders its value."""
+
+    credential: AgentCredential | None = None
+
+    def __repr__(self) -> str:
+        state = "present" if self.credential is not None else "absent"
+        return f"<AgentCredentialLease credential={state}>"
+
+
+class AgentCredentialSource(ABC):
+    """Where one request's agent credential comes from, and whether it may refuse."""
+
+    @abstractmethod
+    def agent_credential(self, host: HostPlatform) -> AgentCredentialLease:
+        """The credential to forward for this request, if there is one."""
+
+    def refusal(self, host: HostPlatform) -> str | None:
+        """Why this source would refuse *right now*, or ``None``. Free of I/O.
+
+        The base answer is ``None``, and :class:`RequestRefreshingSource` does
+        not override it: a source that resolves on the request path has nothing
+        to say ahead of one. Do not add an override here to "share" a refusal —
+        the absence of the branch is what keeps CAL-941 true of that path.
+        """
+        return None
+
+
+class RequestRefreshingSource(AgentCredentialSource):
+    """Today's behaviour, verbatim: read the store, refreshing first if stale."""
+
+    def agent_credential(self, host: HostPlatform) -> AgentCredentialLease:
+        return AgentCredentialLease(credential=resolve_agent_credential(host))
+
+
+def agent_credential_is_needed(host: HostPlatform) -> bool:
+    """``False`` when the caller already exported ``CLAUDE_CODE_OAUTH_TOKEN``.
+
+    The wrapper's ``if [[ -z ... ]]`` guard, extracted into one predicate so the
+    handler's pre-flight and the resolver cannot disagree about it — and so the
+    short-circuit is unforgeable rather than re-inlined at each site.
+    """
+    return not host.env.get("CLAUDE_CODE_OAUTH_TOKEN")
+
+
+def credential_refusal(host: HostPlatform, source: AgentCredentialSource) -> str | None:
+    """Why this request cannot run, or ``None``. The one predicate.
+
+    Called by ``harness serve``'s pre-flight (so the refusal lands on the wire
+    before docker is touched) **and** by :func:`resolve_container_env` (so a
+    caller reaching the resolver directly gets the same answer). One function,
+    two callers: a second copy of this ordering is a second thing to get wrong,
+    and getting the order wrong means an exported token stops short-circuiting.
+    """
+    if not agent_credential_is_needed(host):
+        return None
+    return source.refusal(host)
 
 
 @dataclass(frozen=True)
@@ -63,7 +159,12 @@ class ContainerEnv:
     container_user: ContainerUser | None = None
 
 
-def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) -> ContainerEnv:
+def resolve_container_env(
+    workdir: Path,
+    *,
+    host: HostPlatform | None = None,
+    credentials: AgentCredentialSource | None = None,
+) -> ContainerEnv:
     """Resolve one request's credentials and commit identity through the providers.
 
     **Called per request, never cached** (#307 design, *Interface / contract*).
@@ -76,9 +177,16 @@ def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) ->
     ``workdir`` is the **requested repo**, not the caller's cwd: ``.env`` lives in
     the target repo, and a persistent server's cwd is whatever shell started it.
 
+    ``credentials`` selects where the *agent* credential comes from. The default
+    is :class:`RequestRefreshingSource` — today's behaviour — so every caller
+    that does not pass one is unchanged, which is what keeps ``client.py`` and
+    ``__main__.py`` at a zero diff across #309.
+
     Raises :class:`UnsupportedHost` — deliberately, rather than returning empty
     values. A blank credential does not fail where it is produced; it fails much
-    later as an in-container 401 that reads as a review failure (CAL-941).
+    later as an in-container 401 that reads as a review failure (CAL-941). Raises
+    :class:`CredentialRenewalFailed` for the same reason, when the source is one
+    that can refuse.
     """
     # Reached through the module, not bound at import: `detect_host` is the seam
     # every provider test substitutes, and an import-bound reference would make
@@ -94,14 +202,24 @@ def resolve_container_env(workdir: Path, *, host: HostPlatform | None = None) ->
         values["GITHUB_TOKEN"] = tracker.github_token
 
     # An already-exported token short-circuits the whole agent-credential path: no
-    # store read, no `claude -p ok`. This is the wrapper's `if [[ -z ... ]]` guard
-    # preserved, and it is what lets the wrapper's own tests run without touching a
-    # real Keychain.
-    if not host.env.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        credential = resolve_agent_credential(host)
-        if credential is not None:
-            values["CLAUDE_CODE_OAUTH_TOKEN"] = credential.token
-            values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(credential.expires_at_ms)
+    # store read, no `claude -p ok`, and no refusal. This is the wrapper's
+    # `if [[ -z ... ]]` guard preserved, and it is what lets the wrapper's own
+    # tests run without touching a real Keychain. It is asked first, through the
+    # same predicate the socket's pre-flight uses.
+    #
+    # No new name enters `values` here. That is what makes AC-4 hold by
+    # construction: every credential this resolver can emit is already a member
+    # of `client.FORWARDED_ENV_NAMES`, so the review container's
+    # push-credential ban still scans the whole set.
+    source = credentials if credentials is not None else RequestRefreshingSource()
+    refusal = credential_refusal(host, source)
+    if refusal is not None:
+        raise CredentialRenewalFailed(refusal)
+    if agent_credential_is_needed(host):
+        lease = source.agent_credential(host)
+        if lease.credential is not None:
+            values["CLAUDE_CODE_OAUTH_TOKEN"] = lease.credential.token
+            values["CLAUDE_CODE_OAUTH_EXPIRES_AT"] = str(lease.credential.expires_at_ms)
 
     # All three spawn concerns are the provider's — two since #308, the container
     # user since #380. The liveness gate is unchanged: it lives inside
