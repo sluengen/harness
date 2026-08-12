@@ -10,9 +10,9 @@ trap (tick #90) where a filed item lands with Status unset and
 ``work-discovery``'s Todo-scoped read never sees it.
 
 This guard pins the command's shape: it exists, carries a matching registered
-version, names the shared template, has no escape hatch, and documents both
-tracker backends' filing steps (github's three-step create/add/set-status, and
-linear's explicit move off the default state).
+version, names the shared template, has no escape hatch, and delegates filing
+and explicit Todo placement to the tracker skill's provider-neutral ``create``
+operation. Provider commands belong only in their provider skills.
 """
 
 from __future__ import annotations
@@ -77,26 +77,21 @@ def test_has_no_escape_hatch_step() -> None:
     )
 
 
-def test_documents_github_filing_closing_the_item_add_no_status_trap() -> None:
+def test_delegates_filing_and_todo_placement_to_tracker_create() -> None:
     text = COMMAND.read_text()
-    assert "gh issue create" in text, (
-        "commands/bug.md must document the github create step."
-    )
-    assert "gh project item-add" in text, (
-        "commands/bug.md must document the github add-to-board step."
-    )
-    assert "gh project item-edit" in text and "single-select-option-id" in text, (
-        "commands/bug.md must document explicitly setting Status=Todo via "
-        "`gh project item-edit --single-select-option-id`, closing the "
-        "item-add-no-status trap (tick #90)."
+    assert "tracker.create" in text and "Todo" in text, (
+        "commands/bug.md must delegate filing and explicit Todo placement to "
+        "the tracker skill's provider-neutral create operation."
     )
 
 
-def test_documents_linear_filing_path() -> None:
+def test_contains_no_provider_recipe() -> None:
     text = COMMAND.read_text()
-    assert "linear" in text.lower(), (
-        "commands/bug.md must document the `tracker: linear` filing path too "
-        "(the command is tracker-neutral)."
+    forbidden = ("gh issue", "gh project", "issueCreate", "issueUpdate", "api.linear.app")
+    offenders = [token for token in forbidden if token in text]
+    assert not offenders, (
+        f"commands/bug.md inlines provider recipe tokens {offenders!r}; provider "
+        "commands belong only in the selected provider skill."
     )
 
 

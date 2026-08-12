@@ -196,14 +196,14 @@ def test_ac4_states_forbidden_outer_agent_actions() -> None:
         "AC-4: commands/promote.md states no prohibition ('must not') on the outer agent"
     )
     # The three forbidden actions: direct target-branch push, PR creation outside
-    # the harness, and Linear promotion mutation outside the harness.
+    # the harness, and tracker promotion mutation outside the harness.
     assert "push" in doc, "AC-4: direct target-branch push is not forbidden"
-    assert "linear" in doc, "AC-4: out-of-band Linear mutation is not forbidden"
+    assert "tracker" in doc, "AC-4: out-of-band tracker mutation is not forbidden"
     assert re.search(r"\bpr\b|pull request", doc), (
         "AC-4: out-of-band PR creation is not forbidden"
     )
     assert "outside" in doc, (
-        "AC-4: the prohibition does not frame the PR/Linear actions as 'outside the harness'"
+        "AC-4: the prohibition does not frame PR/tracker actions as 'outside the harness'"
     )
 
 

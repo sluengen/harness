@@ -34,7 +34,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 
 def _code_quality_text() -> str:
@@ -88,15 +88,14 @@ def test_security_contract_rule_requires_negative_fixture() -> None:
     )
 
 
-def test_security_contract_rule_in_part_c() -> None:
-    """AC-3 (placement): the subsection sits in Part C — Verification,
-    beside 'A measurable criterion needs a measuring test'."""
+def test_security_contract_rule_in_specialized_part_c() -> None:
+    """AC-3 (placement): the subsection sits in the conditional Part C reference."""
     section = _part_c_section().lower()
     assert "security-contract test asserts the predicate, not the name" in section, (
         "the security-contract-predicate rule must live in 'Part C — "
         "Verification' (#183 AC-3 placement)."
     )
-    assert "a measurable criterion needs a measuring test" in section, (
-        "sanity check: Part C must still contain the sibling "
-        "'measurable criterion' subsection this rule sits beside."
+    core = (REPO_ROOT / "skills" / "code-quality" / "SKILL.md").read_text()
+    assert "references/specialized-verification.md" in core, (
+        "the hot code-quality skill must link the conditional verification reference"
     )

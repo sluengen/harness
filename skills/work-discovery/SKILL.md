@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.6.0 -->
+<!-- guidance:work-discovery@0.7.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -21,10 +21,9 @@ Work off the Build queue defined in `CONTEXT.md`. Its scope is set by the
 **optional** `repo.project` — resolve it at runtime, never hardcode it:
 
 - **`repo.project` set** — scope to that one project: the named Build queue.
-- **`repo.project` unset** — the whole tracker queue. What "the whole queue"
-  means is the backend's own natural full scope: for a `tracker: linear` repo,
-  the team named in `repo.linear`; for a `tracker: github` repo, the board
-  itself (which already *is* the full queue).
+- **`repo.project` unset** — the configured provider's natural full queue.
+  Resolve that scope through the `tracker` skill rather than naming a backend
+  address here.
 
 Consider only tickets marked **Todo**: an **In Progress** ticket is either live
 or already handled by the routine's reclaim pre-flight, and **In Review** is
@@ -37,7 +36,7 @@ From the Todo list, pick the single next most logical ticket to start, weighing:
 
 - **ID number.** Tickets are often filed in the order they need to be done, so a
   lower ID usually comes first — a weak default, overridden by the two below.
-- **Dependencies.** A ticket blocked by unfinished work in Linear is not next,
+- **Dependencies.** A ticket blocked by unfinished tracker work is not next,
   however low its ID. Prefer a ticket whose blockers are done.
 - **Priority.** A higher-priority ticket outranks a lower one when neither is
   blocked.
@@ -75,7 +74,8 @@ spec needs problem, approach, and acceptance criteria.
   comment, applies the label, assigns the operator, and records the decision in
   the audit trail, so triage is an audited action like the lifecycle verbs
   rather than a hand-rolled tracker write. Where there is no such verb, make the
-  comment + label + assignment through the `linear` skill directly.
+  comment + label + assignment through the `tracker` skill's provider-neutral
+  operations.
 
 ## When a tracker write is refused
 
@@ -102,11 +102,9 @@ reaches a human, and a human can grant it.
 ## Held tickets — work a human holds
 
 A ticket a human holds is not the loop's to pick. **The primary signal is
-assignment: skip any ticket assigned to a human, in any state.** Agents
-authenticate with the operator's API key and have no Linear identity of their
-own, so an assignee at all means a person has taken the ticket — a first-class
-field every Linear view surfaces, and the operator's "my issues" is their
-worklist for free. A held ticket re-enters the queue when the human unassigns it.
+assignment: skip any ticket assigned to a human, in any state.** Assignment is
+the provider-neutral ownership signal; a held ticket re-enters the queue when
+the human unassigns it.
 
 The labels say *why* it is held, not *whether* to skip: `decision` — a judgment
 call is pending; `input` — the operator must supply something the run cannot;

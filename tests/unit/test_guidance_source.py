@@ -309,7 +309,7 @@ def test_registry_lists_skills() -> None:
 
 
 def test_registry_skill_paths_are_nested() -> None:
-    """Skill paths are the Agent Skills ``skills/<id>/SKILL.md`` shape (D2; CAL-658).
+    """Skill roots and their one-level references use the nested Agent Skills shape.
 
     D2 was reversed (2026-06-13) from the flat ``skills/<id>.md`` to the
     directory-per-skill ``skills/<id>/SKILL.md`` structure — the source's shape,
@@ -318,10 +318,11 @@ def test_registry_skill_paths_are_nested() -> None:
     discovery expects ``skills/*/SKILL.md``, so the registry must use it too.
     """
     skill_paths = [p for p in _registry_files() if p.startswith("skills/")]
-    bad = [p for p in skill_paths if not re.fullmatch(r"skills/[\w-]+/SKILL\.md", p)]
+    allowed = r"skills/[\w-]+/(?:SKILL\.md|references/[\w-]+\.md)"
+    bad = [p for p in skill_paths if not re.fullmatch(allowed, p)]
     assert not bad, (
-        f"skill paths must be the Agent Skills shape skills/<id>/SKILL.md (D2, "
-        f"reversed 2026-06-13; CAL-658), not the flat skills/<id>.md: {bad}"
+        "skill paths must be roots or one-level registered references beneath "
+        f"skills/<id>; invalid paths: {bad}"
     )
 
 

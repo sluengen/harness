@@ -41,7 +41,7 @@ from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "references" / "untrusted-fetch.md"
 
 
 def _fetch_section(text: str) -> str:
@@ -69,15 +69,15 @@ def test_fetch_subsection_exists() -> None:
     assert section.strip(), "the 'Fetching untrusted URLs' subsection is empty."
 
 
-def test_fetch_subsection_is_in_part_b() -> None:
-    """The subsection lives under Part B — Structure, not elsewhere (AC-1)."""
-    text = _CODE_QUALITY.read_text()
+def test_fetch_subsection_is_directly_linked_from_part_b() -> None:
+    """The conditional checklist remains reachable from Part B (AC-1)."""
+    core = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+    text = core.read_text()
     part_b = text.index("## Part B")
     part_c = text.index("## Part C", part_b)
-    heading = text.index("### Fetching untrusted URLs")
-    assert part_b < heading < part_c, (
-        "the 'Fetching untrusted URLs' subsection must sit inside Part B — "
-        "Structure (between Part B and Part C) (CAL-829 AC-1)."
+    link = text.index("references/untrusted-fetch.md")
+    assert part_b < link < part_c, (
+        "Part B must directly link the conditional untrusted-fetch checklist"
     )
 
 

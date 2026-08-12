@@ -1257,8 +1257,8 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 def test_ac6_harness_md_documents_engine_option() -> None:
-    text = (_REPO_ROOT / "commands" / "harness.md").read_text()
-    assert "--engine" in text, "commands/harness.md must document the --engine option"
+    text = (_REPO_ROOT / "commands" / "harness" / "run.md").read_text()
+    assert "--engine" in text, "the activated /harness run guidance must document --engine"
     assert "codex" in text and "claude" in text.lower()
 
 

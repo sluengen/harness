@@ -52,7 +52,7 @@ from harness.state import store
 from tests._asyncutil import run_sync
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
+HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "run.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 
 

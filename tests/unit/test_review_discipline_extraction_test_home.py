@@ -62,7 +62,7 @@ from tests.unit.test_review_discipline_watchlist_entry_currency import _sentence
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 
 # The neighbouring bullet. Its title must never appear inside our slice — if it
 # does, the slicer over-ran and the assertions below could be satisfied by

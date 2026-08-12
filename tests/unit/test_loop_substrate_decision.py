@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "harness-loop.yml"
 ADR = REPO_ROOT / "specs" / "decisions" / "0001-cloud-runnable-harness-loop.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
-HARNESS_CMD = REPO_ROOT / "commands" / "harness.md"
+HARNESS_CMD = REPO_ROOT / "commands" / "harness" / "routine-build.md"
 
 
 def _read(path: Path) -> str:

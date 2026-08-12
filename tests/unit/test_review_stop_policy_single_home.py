@@ -65,7 +65,7 @@ _POINTERS = (
     "agents/reviewer.md",
     "commands/build.md",
     "commands/review.md",
-    "commands/harness.md",
+    "commands/harness/run.md",
 )
 
 #: The CONTEXT keys the home must name, so a reader of the policy can find the

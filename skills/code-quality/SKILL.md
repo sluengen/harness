@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.20.0 -->
+<!-- guidance:code-quality@0.23.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -43,6 +43,10 @@ A function that returns hardcoded/faked/placeholder data in place of real logic 
 ### Grep before writing a helper
 
 Before writing a helper, grep the sibling modules for the concern it handles. If a near-identical helper exists in one other place, name it in the change spec and say why the copy is justified. If it exists in two, extract it — the third copy is not a judgement call. Per-ticket review sees only its own diff, so "consider extracting" is not enough to catch a duplication that accumulates one small, individually-reasonable copy at a time — a numeric threshold, checked before the helper is written, is what makes it checkable.
+
+### Read the generated artifact, don't re-derive it
+
+When the fact you need is already written by a generator to a committed artifact that carries its own drift test, read that artifact; never re-derive the fact from the generator's source inputs. The drift test guards the artifact, not your derivation, so a second derivation needs its own hand-maintained parallel inventory, told about a new input only when someone remembers. Write a new parser only where the artifact cannot carry the shape you need, and justify it in the change spec, naming what the artifact omits. Two implementations of one screen-graph consumer, a week apart against one generated flow graph — reading the artifact picked up new routes for free, re-parsing the source drifted within three tickets — are the evidence.
 
 ### A removal sweeps for its dependents
 
@@ -87,16 +91,14 @@ A comment that says a helper, component, or module **mirrors**, **duplicates**, 
 
 Top-level units are composers: they fetch, manage top-level state, and assemble smaller pieces. They do not inline 500 lines of rendering or 50 fields of form parsing. When a unit mixes two concerns, split by concern, named by the symbols that handle each.
 
-### Fetching untrusted URLs
+### Conditional checks
 
-The concrete application of `engineering-principles`' *Validate at boundaries, trust within* to the network-fetch boundary. When code issues a request to a URL drawn from untrusted content — a third-party page, a user-supplied link, a page-declared asset — the fetch itself is the boundary and the URL is hostile until proven otherwise. Before a batch or single fetch surface ships, it carries four checks:
-
-1. **Scheme allowlist.** Accept `http`/`https` only for any URL derived from untrusted content; reject `file:`, `data:`, `gopher:`, and every other scheme outright.
-2. **Host allowlist / reject internal addresses.** Refuse loopback, private, link-local, reserved, and cloud-metadata addresses (the SSRF surface) — an allowlist of expected hosts where one exists, an explicit denylist of those ranges otherwise.
-3. **Download size cap.** Stream the body and abort once it passes a byte cap; never buffer a whole untrusted response into memory.
-4. **Decompression / pixel cap; re-validate after redirects.** Bound the *decoded* size of compressed or media payloads (a decompression and pixel cap, not just the wire size), and re-run checks 1–2 on the final URL after every redirect — a redirect target is as untrusted as the original.
-
-The principle has one home in `engineering-principles`; this checklist is its build-time application at the fetch boundary, so the reviewer (`review-discipline`, which shares this file's bar) and the next fetch surface both get a concrete bar by default.
+When code fetches a URL derived from user input, third-party pages, or
+page-declared content, load [`skills/code-quality/references/untrusted-fetch.md`](references/untrusted-fetch.md).
+For security-control tests, files over the hard limit, guards over derived sets,
+cross-layer aggregates, or nullable narrowing, load
+[`skills/code-quality/references/specialized-verification.md`](references/specialized-verification.md)
+and apply only the matching section.
 
 ---
 
@@ -132,38 +134,6 @@ Skipping a step is not efficiency. It is claiming something you have not checked
 
 When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CONTEXT.md`).
 
-### A security-contract test asserts the predicate, not the name
-
-When a test proves a security control is in place — an RLS policy, an auth guard, a CSP directive, a permission grant — asserting that the control *exists* (by name, by presence in a list) proves only that someone typed the right string. Assert what it evaluates to: the policy's `USING`/`WITH CHECK` expression, the guard's refusal, the directive's value. Pair it with a negative fixture whose control is present but *wrong*, and watch the test fail.
-
 ### A green suite is only evidence if its inputs are real
 
 A passing test proves nothing when it feeds the code inputs or events no production path emits: it exercises a branch the live system never reaches and reports false confidence. Before a green run counts as evidence, confirm each test drives on what real code actually produces, not on synthesized data (`test-driven-development`).
-
-### A file over the hard limit is an auditable choice, not silent drift
-
-A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
-
-Marker *presence* and marker *substance* are checked differently, and only presence is mechanizable. **Presence** — that an over-limit file carries a `size:` marker or a ticket at all — should be checked by a repo test that walks the source tree, counts lines, and fails any over-limit file carrying neither, so the rule is enforced at the gate at commit time rather than waiting for a reviewer to remember it or the steward's next pass (the walker's config — limit, globs, the higher declarative-file ceiling from Part B — is set as constants the adopting repo edits in its copy, defaulting to the numbers here; a reference implementation ships in `templates/size-guard.md`). **Substance** — whether the `size:` reason names a real cohesion argument or is a rubber stamp — no test can score; that stays reviewer judgment, audited by the steward on assessment passes. Presence is mechanized; substance is judged. The tripwire's value is that the decision gets recorded, not that the file stays small — cohesion itself is reviewer judgment plus the architecture watchlist.
-
-Where a **linter** can enforce the limit, it should — reach for the walker only where none can. If the repo's linter already implements a file-length rule (`max-lines` in oxlint or ESLint), turn that rule on instead of writing the walker: it runs with the rest of lint on every commit, needs no repo-local code to maintain, and its escape hatch has a property the walker cannot offer. That hatch is the same auditable decision — an inline rule-`disable` carrying the `size: <reason>` justification — plus this: an **unused** disable is itself reported, so a file that shrinks back under the limit cannot silently keep its exemption. The walker is the fallback for a toolchain whose linter has no such rule, and the steward's assessment pass is the **backstop** only where neither mechanism can run. Ordering these the other way round is how a file 44% over the hard limit passes both a review and a green gate while the repo holds not one `size:` marker: an advisory pass that runs weekly is not enforcement.
-
-### A guard derives its subjects; it does not list them
-
-A repo test that enforces a rule across a *set* — of files, modules, or keys — must compute that set from the artifact that defines it: the registry the units register in, the constants module that declares them, `git ls-files`. Never a literal list in the test body. A hand-written list silently narrows to the surface that existed the day it was written, and the guard then reports green for everything added since — it passes because it stopped looking, not because it checked. Where the set genuinely cannot be derived, the test asserts its own completeness against the deriving source and fails when the two diverge.
-
-This is the drift with no symptom. An out-of-date list produces no failure, no warning, and no diff; it produces a green run over a shrinking fraction of the surface, and that fraction is invisible from the test's output. The shape repeats once you look for it: a command-boundary guard four modules behind across three separate additions, a payload-key guard that never saw a third reader module arrive, and tree-walking guards whose hand-rolled skip lists had to be replaced by the tracked file set. Each was green the whole time. The reviewer **rejects** a new or edited guard whose subject set is a literal, unless it carries the completeness assertion — and an assertion that a set is complete is worth only as much as the divergence it actually fails on.
-
-The same rule governs the guard's **matching predicate**. A derived subject set proves only that the guard *looked* at every unit; what counts as a hit is a second, independent place to narrow, and a hand-written predicate narrows a guard exactly as a hand-written subject list does. Every literal in the predicate — a variable name it anchors on, a separator or boundary it assumes, a shape it exempts — must be derived from the same defining artifact as the subject set, or justified in the change spec against the rule's **full** surface: name the units the literal excludes, and why the rule does not reach them. The tell is the one above, one level in — a green run over a shrinking fraction of the surface, invisible from the test's own output — except that here the guard enumerated everything and then recognised a subset. The reviewer **rejects** a guard whose predicate is narrower than the rule it claims to enforce.
-
-### Re-deriving what another layer owns is an auditable choice, not a default
-
-When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (Part B — Boundaries; `CONTEXT.md` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
-
-This is the duplication that review is least equipped to catch, because nothing is wrong yet when it lands. A re-derivation is correct in isolation and its change looks complete: the numbers agree on the day it ships. It turns into a defect only once a sibling surface renders the owning layer's number for the same quantity beside it — and then the two contradict each other while neither change is wrong on its face. The contradiction lives in the accumulation, so neither reviewer was positioned to see it, and it surfaces in an assessment pass long after both shipped. Spec time is the one point where a single person is looking at both layers, which is why the justification is owed there and not at review.
-
-### Narrowing a nullable is a whole-call-graph change, not a grep-and-replace
-
-When a change narrows a nullable at a boundary — coercing an absent or null value to a concrete one, or asserting it non-null — the worklist is every *transitive consumer* of that field, enumerated by following the type to its readers, not the callsites a grep for the coercion operator returns. A coercion and the reader it feeds are frequently in different files: grepping the operator finds where the value is narrowed; it does not find a downstream reader, one or more files away, that still assumes the old nullable contract and does arithmetic or a comparison on the coerced value.
-
-The type system enumerates the readers for free — widen or retype the field and follow what breaks to each consumer. A grep for the coercion is a starting point for that enumeration, never its boundary: the callsite that reads the narrowed value without knowing it was narrowed is exactly the one the operator search cannot see, and it is where the defect lands.

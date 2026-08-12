@@ -1,45 +1,92 @@
 """Contract guards for the deterministic nightly ``dev → staging`` promotion.
 
-Two properties, deliberately in two tests. The first pins the workflow's shape
-— schedule, concurrency, permissions, gate invocation, and the absence of any
-automated repair path (#378). The second pins that the verb calls inside it can
-resolve ``--repo`` at all: the workspace allowlist fails closed, so a runner
-that never exports ``HARNESS_WORKSPACE_ROOTS`` gets an exit-2 refusal from every
-verb (#390). It **derives** the call sites from the workflow text rather than
-listing them, so a verb call added later is covered the day it lands.
+The step's logic now lives in ``scripts/promotion-step.sh``, and what that logic
+*does* is proven by executing it against stubbed binaries in
+``tests/integration/test_promotion_step_script.py`` — the instrument swap of
+``specs/proposals/promotion-guard-instrument.md``, whose rule is recorded in
+``specs/architecture-principles.md`` (*CI logic lives in a script, not in a
+`run:` block*). Four tickets of regex (#390, #391, #393, #394) derived call sites
+out of shell text here; none of that survives, because a text guard could only
+ever show the workflow *said* something.
 
-Whether the exported allowlist actually admits the ``--repo`` argument is not a
-text property and is not asserted here — that is
-``tests/integration/test_nightly_promotion_workspace_allowlist.py``, which
-executes the workflow's own export line and feeds the result to the production
-resolver.
+What is left is the text no execution reaches: the workflow's schedule,
+concurrency and permissions; the pin that its promotion step invokes the wrapper
+and carries nothing else, plus the ban on a verb invoked from any *other* step,
+which is the one thing the deleted derivation covered that a step-scoped pin does
+not; and the ban on an automated repair path, applied to **both** promotion
+sources — extraction would otherwise leave a ``git push`` added to the script
+uncovered, since the ban used to read one file and the logic now lives in the
+other.
 """
 
-import re
+from __future__ import annotations
+
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
+SCRIPT = REPO_ROOT / "scripts" / "promotion-step.sh"
 
-#: A ``harness <verb…> --repo <arg>`` invocation. The verb is captured only so a
-#: failure names the call site; the ``--repo`` argument is what is asserted on.
-_REPO_RESOLVING_CALL = re.compile(r"harness\s+(?P<verb>[a-z][a-z \-]*?)\s+--repo\s+(?P<arg>\S+)")
+#: The step that runs the promotion. Located by name so a rename is a named
+#: failure rather than a guard that quietly stops checking anything.
+_STEP = "- name: Promote the gated candidate"
 
-#: The allowlist assignment the promotion step must export before any verb runs.
-_ALLOWLIST_EXPORT_PREFIX = "export HARNESS_WORKSPACE_ROOTS="
+#: The interpreter the step is allowed to name, and the only token permitted
+#: before the script path.
+_INTERPRETER = "bash"
 
-#: The one ``--repo`` argument the export admits: byte-identical to the root it
-#: allowlists, so no ``working-directory:`` or stray ``cd`` can make the two
-#: disagree.
-_ALLOWED_REPO_ARG = '"$GITHUB_WORKSPACE"'
+#: Both files the promotion's shell can live in. The ban below is parametrized
+#: over this pair rather than over the workflow alone: the logic moved, so a
+#: repair path added to the script is now the likelier regression, and the tie
+#: between "the script the ban covers" and "the script the workflow actually
+#: invokes" is asserted in
+#: :func:`test_the_promotion_step_carries_no_logic_of_its_own`, which derives the
+#: referenced path from the ``run:`` value and requires it to be :data:`SCRIPT`.
+_PROMOTION_SOURCES = (WORKFLOW, SCRIPT)
 
-#: A call site the derivation must find. Without it, a regex that stops matching
-#: yields an empty set and every assertion below passes vacuously.
-_KNOWN_CALL_SITE = "promote start"
+#: The three lifecycle calls the promotion drives, in order.
+_LIFECYCLE_CALLS = ("promote start", "promote continue", "promote pr")
 
 
-def test_nightly_promotion_workflow_is_a_bounded_deterministic_staging_hop() -> None:
-    """The scheduler gates a candidate and never contains an automated repair path."""
+def _promotion_step_lines(lines: list[str]) -> list[str]:
+    """The promotion step's own lines, from its ``- name:`` to the next sibling.
+
+    Asserts rather than indexing bare: a renamed or removed step must name what
+    was looked for, so whoever renamed it does not have to reconstruct it (#391).
+    """
+    starts = [i for i, line in enumerate(lines) if line.strip() == _STEP]
+    assert len(starts) == 1, (
+        f"the workflow must have exactly one step named {_STEP!r}; found {len(starts)} "
+        f"— renamed, removed, or duplicated?"
+    )
+    start = starts[0]
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    step = [lines[start]]
+    for line in lines[start + 1 :]:
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        step.append(line)
+    return step
+
+
+def _step_run_value(step: list[str]) -> str:
+    """The single ``run:`` value in ``step``, stripped.
+
+    Exactly one: a step that grew a second ``run:`` line has grown logic again,
+    which is the thing this module now exists to forbid.
+    """
+    runs = [line.strip() for line in step if line.strip().startswith("run:")]
+    assert len(runs) == 1, (
+        f"the promotion step must carry exactly one `run:`; found {len(runs)}: {runs}"
+    )
+    return runs[0][len("run:") :].strip()
+
+
+def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
+    """The scheduler's own shape: when it fires, that it cannot race itself, and
+    what it may write (#378). None of this is reachable by executing anything."""
     assert WORKFLOW.is_file(), "the nightly dev-to-staging promotion workflow must exist (#378)"
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -49,50 +96,105 @@ def test_nightly_promotion_workflow_is_a_bounded_deterministic_staging_hop() -> 
     assert "cancel-in-progress: false" in workflow
     assert "contents: write" in workflow
     assert "fetch-depth: 0" in workflow
-    assert 'harness promote start --repo "$GITHUB_WORKSPACE" --from dev --to staging' in workflow
     assert "git config user.name" in workflow and "git config user.email" in workflow
-    assert 'if [ "$status" != "gate_pending" ]' in workflow
-    assert 'cd "$worktree"' in workflow and "bash scripts/verify.sh" in workflow
-    assert 'harness promote continue --repo "$GITHUB_WORKSPACE"' in workflow
-    assert 'if [ "$status" != "pr_ready" ]' in workflow
-    assert 'harness promote pr --repo "$GITHUB_WORKSPACE"' in workflow
-    assert "git push" not in workflow
-    assert "agent_may_fix" not in workflow
 
 
-def test_every_verb_call_runs_under_an_already_exported_workspace_allowlist() -> None:
-    """Each derived ``--repo`` call site is preceded by the allowlist export (#390)."""
+def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
+    """The step invokes the wrapper and nothing else.
+
+    Three assertions whose conjunction pins the ``run:`` value exactly, without
+    any one of them restating another: the value is ``bash`` plus one token, that
+    token names a file that exists, and that file is :data:`SCRIPT` — the module
+    ``tests/integration/test_promotion_step_script.py`` actually executes. A
+    workflow pointing at some *other* script would be green on the first two and
+    is caught by the third; a workflow that grew ``| tee run.log`` is caught by
+    the first, and that matters beyond tidiness, because ``::error::``
+    annotations are interpreted only on the step's own stdout.
+    """
+    step = _promotion_step_lines(WORKFLOW.read_text(encoding="utf-8").splitlines())
+    value = _step_run_value(step)
+
+    tokens = value.split()
+    assert tokens[:1] == [_INTERPRETER] and len(tokens) == 2, (
+        f"the promotion step's `run:` must be `{_INTERPRETER} <script>` and nothing "
+        f"more (specs/architecture-principles.md → CI logic lives in a script); it is "
+        f"{value!r}"
+    )
+    referenced = REPO_ROOT / tokens[1]
+    assert referenced.is_file(), (
+        f"the promotion step invokes {tokens[1]}, which is not a file in this tree"
+    )
+    assert referenced == SCRIPT, (
+        f"the promotion step invokes {tokens[1]}, but the executed guard drives "
+        f"{SCRIPT.relative_to(REPO_ROOT)} — the workflow would be running shell no "
+        f"test covers"
+    )
+
+
+def test_no_verb_is_invoked_outside_the_extracted_script() -> None:
+    """No step invokes a verb; every verb call lives in the script.
+
+    The pin above is exact but *step*-scoped — it says what one step's ``run:``
+    value is, and a second step added anywhere else in the file is outside its
+    reach. The text derivation this module deleted read the whole workflow, so it
+    caught a verb invoked from any step; keeping that reach after narrowing the
+    executed guard onto one script takes a workflow-scoped ban. The class is not
+    hypothetical: this workflow holds ``contents: write``, a scheduled run is
+    read from the default branch so CI can never exercise it, and the four
+    tickets behind #396 were all about a ``--repo`` argument that left the
+    allowlist.
+
+    Comment lines are dropped first, because the ``permissions:`` block names
+    ``harness promote pr`` in prose. Whole lines only: in YAML a ``#`` inside a
+    quoted scalar is not a comment, so stripping from a mid-line ``#`` would let
+    a real call hide behind one. The cost of erring this way is a trailing
+    comment that mentions the wrapper, which can move to its own line.
+    """
     lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    shell = "\n".join(line for line in lines if not line.lstrip().startswith("#"))
 
-    calls = [
-        (number, match.group("verb").strip(), match.group("arg"))
-        for number, line in enumerate(lines, start=1)
-        if (match := _REPO_RESOLVING_CALL.search(line)) is not None
-    ]
-    # Floor: a derivation that silently stops matching must be red, not green.
-    assert calls, "no `harness … --repo` call site was derived from the workflow"
-    assert _KNOWN_CALL_SITE in {verb for _, verb, _ in calls}, (
-        f"the derivation lost its known call site `harness {_KNOWN_CALL_SITE}`; "
-        f"it found {sorted({verb for _, verb, _ in calls})}"
+    assert _step_run_value(_promotion_step_lines(lines)) in shell, (
+        "the comment strip removed the promotion step's own `run:` line, so the "
+        "ban below would be reading text that cannot run anything"
+    )
+    assert "harness" not in shell, (
+        "the workflow invokes a verb directly; every verb call belongs in "
+        f"{SCRIPT.relative_to(REPO_ROOT)}, where the executed guard covers what "
+        "it passes"
     )
 
-    exports = [
-        number
-        for number, line in enumerate(lines, start=1)
-        if line.strip().startswith(_ALLOWLIST_EXPORT_PREFIX)
-    ]
-    assert exports, (
-        f"the workflow never exports the workspace allowlist; without "
-        f"{_ALLOWLIST_EXPORT_PREFIX} every verb refuses with exit 2 — a runner has "
-        f"no ~/bin/harness wrapper to pin it"
+
+@pytest.mark.parametrize("source", _PROMOTION_SOURCES, ids=lambda path: path.name)
+def test_no_promotion_source_carries_a_repair_or_push_path(source: Path) -> None:
+    """Neither promotion source may push directly or license an automated repair.
+
+    Two files, because the extraction moved the shell out of the one the ban used
+    to read. The floor is the file itself: a ban over a missing or empty file
+    passes for the wrong reason.
+    """
+    assert source.is_file(), f"{source} is not a file, so the ban below checks nothing"
+    text = source.read_text(encoding="utf-8")
+    assert text.strip(), f"{source} is empty, so the ban below checks nothing"
+
+    assert "git push" not in text, (
+        f"{source.name} pushes directly; only `harness promote pr` may advance staging"
+    )
+    assert "agent_may_fix" not in text, (
+        f"{source.name} licenses an automated repair; the nightly stops instead (#378)"
     )
 
-    for number, verb, arg in calls:
-        assert min(exports) < number, (
-            f"`harness {verb}` at line {number} runs before the allowlist export at "
-            f"line {min(exports)}; the export has to precede the first verb call"
-        )
-        assert arg == _ALLOWED_REPO_ARG, (
-            f"`harness {verb}` at line {number} passes --repo {arg}, which is not the "
-            f"allowlisted root {_ALLOWED_REPO_ARG}"
-        )
+
+@pytest.mark.parametrize("call", _LIFECYCLE_CALLS)
+def test_the_script_drives_the_three_lifecycle_calls(call: str) -> None:
+    """A presence check, and deliberately no more.
+
+    What each call *passes* is proven by executing the script
+    (``tests/integration/test_promotion_step_script.py``); this only pins that the
+    file the workflow runs is still the promotion, so a script emptied to ``true``
+    fails here rather than leaving the executed guard asserting over an empty
+    invocation list.
+    """
+    assert SCRIPT.is_file(), f"{SCRIPT} must exist — the workflow invokes it"
+    assert call in SCRIPT.read_text(encoding="utf-8"), (
+        f"scripts/promotion-step.sh no longer drives `harness {call}`"
+    )

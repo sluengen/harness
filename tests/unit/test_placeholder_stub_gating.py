@@ -41,7 +41,13 @@ from pathlib import Path
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
-_REVIEW_DISCIPLINE = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+_REVIEW_DISCIPLINE = (
+    _REPO_ROOT
+    / "skills"
+    / "review-discipline"
+    / "references"
+    / "diff-shape-checks.md"
+)
 _REGISTRY = _REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
@@ -159,7 +165,7 @@ def test_code_quality_header_matches_registry() -> None:
 
 def test_review_discipline_header_matches_registry() -> None:
     assert _header_version(_REVIEW_DISCIPLINE) == _registry_version(
-        "skills/review-discipline/SKILL.md"
+        "skills/review-discipline/references/diff-shape-checks.md"
     ), (
         "review-discipline's guidance: header must match its registry.yaml "
         "version (#204 AC-3)."
