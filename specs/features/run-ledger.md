@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-08-08
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#318", "#321", "#347", "#338", "#352"]
+last_updated: 2026-08-14
+tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#310", "#318", "#321", "#347", "#338", "#352"]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -104,6 +104,14 @@ Two of those conditions exist because **the short-circuit may skip work, never a
 ### The promotion ledger — a sibling table (CAL-1114)
 
 The [promotion lifecycle](cli-surface.md#the-promotion-lifecycle-group) ([ADR 0003](../decisions/0003-promotion-lifecycle.md)) records its state in a **sibling `promotions` table** in the same per-project `.harness/harness.db`, owned by `harness/state/promotions.py`. It is deliberately separate from `runs`/`events`: `close` gates a ticket's integration into `dev`, promotion gates branch movement toward release, and the two lifecycles must not weaken each other — so a promotion is not a `runs` row. Each promotion is a `Promotion` (Pydantic, `extra="forbid"`) stored as a JSON blob keyed by `promotion_id`, with a denormalized `status` column for querying; it reads back by promotion id so an outer orchestrator can pause after the harness classifies a merge+gate attempt and resume by re-reading the state it left. The `Promotion` model carries the branch endpoints and promotion branch, the lifecycle `status` (`opened` / `pr_ready` / `agent_may_fix` / `needs_ticket` / `blocked` / `promoted` / `pr_opened` / `escalated` / `cancelled`), the `gated_sha` the PR gate reads, the bounded repair `attempts` count, the terminal `pr_url` / `escalation_ticket`, and a bounded `evidence` reference. The two hops have **distinct** terminal successes (CAL-1158): the staging hop lands the candidate on the target and is done (`promoted`), while the release hop's success is an open PR a human still merges (`pr_opened`) — collapsing them would record "a PR was opened" for a promotion that opened none, which is the kind of rounding-off an audit trail cannot do. The **PR gate** (`pr_gate_satisfied`) passes only for a `pr_ready` promotion carrying a gated SHA — the same evidence discipline this run ledger's review→close gate enforces, applied to release movement. The table is created lazily on first write; a read that predates any write returns `None`. The subcommands that surface it are in [cli-surface.md](cli-surface.md#the-promotion-lifecycle-group).
+
+### The maintenance sweep ledger — the second sibling table (#310)
+
+`harness serve`'s maintenance scheduler ([runtime-host.md](runtime-host.md)) records each timer-driven sweep in a **sibling `maintenance_sweeps` table** in the same per-project `.harness/harness.db`, owned by `harness/maintenance/ledger.py`, on the `promotions` precedent above: `id`, `swept_at`, a denormalized `outcome`, and the whole `MaintenanceSweep` (Pydantic, `extra="forbid"`) as a JSON blob. It is created lazily on first write and read only as "the newest row"; there is no id vocabulary to mint, because nothing fetches a sweep by id. `read_promotion`'s degradation is copied verbatim — an absent DB file and a DB carrying no sweeps table both read `None` rather than raising, since `harness doctor` calls it on repos that have never run the host process.
+
+**A sweep is not a run, and this is where that is enforced.** [ADR 0009](../decisions/0009-verb-attempt-telemetry.md) rejected a synthetic `runs` row for run-less telemetry because it *"would put non-run rows in the `runs` table at volume"*, and #338 then deleted the last one on the ground quoted above — it made a triage write indistinguishable from a build run in every ledger-backed view. A sweep fires every interval, per repo, forever, which is exactly that volume, and `harness runs` and `harness stats` scan `runs` unfiltered. ADR 0009's own criterion is what places this on the `promotions` side of the line: a sweep is not the run lifecycle observed more finely but housekeeping over a repo — it names no ticket, no worktree, no branch and no verdict, it has no `start`, no gate and no `close`, and it survives no run. `runs` and `events` are untouched, and that is **measured**: `test_maintenance_ledger.py::test_a_sweep_record_is_invisible_to_the_run_ledger_readers` captures `harness runs` and `harness stats --json` across a sweep write and requires byte-identical output, with floors on both sides so neither an empty reader nor a writer that wrote nothing can satisfy it. That is the assertion the rejected option would have failed.
+
+The outcome vocabulary is total by construction: `completed` (every step exited 0 — **including the no-op**, which is what makes "the sweep found nothing" distinguishable from "the sweep stopped running"), `skipped` (the verbs did not run; `detail` names why, e.g. `lock_contended`), and `failed` (a step exited non-zero, or the cycle raised; `detail` carries the exception type). Nothing is swallowed — each non-happy outcome is a durable row *and* a log line.
 
 ## Data model
 

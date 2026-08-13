@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-12
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#318", "#321", "#355", "#347", "#339", "#338", "#359", "#378", "#370", "#390", "#391", "#393", "#394", "#396"]
+last_updated: 2026-08-14
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#310", "#318", "#321", "#355", "#347", "#339", "#338", "#359", "#378", "#370", "#390", "#391", "#393", "#394", "#396"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -37,7 +37,7 @@ harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--olde
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (CAL-1143, CAL-1167, ADR 0006, #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
 harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (#193, the `defer` shape in reverse; #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
 harness worktrees cleanup                 [--repo <p>] [--age <duration>] [--merged] [--force] [--db <p>]   # remove stale worktrees (git/fs); --merged vetoes an in-flight/stashed/dirty run unless --force (#235)
-harness doctor                            [--engine <e>] [--repo <p>] [--db <p>]               # system health checks (read-only); --engine selects whose authentication and liveness are required, so `--engine codex` does not require Claude
+harness doctor                            [--engine <e>] [--repo <p>] [--db <p>]               # system health checks (read-only); --engine selects whose authentication and liveness are required, so `--engine codex` does not require Claude. Since #310 the checks include `sweeps`: the lag since this repo's newest recorded maintenance sweep against `loop.maintenance_interval_minutes`, reported `WARN` (never `FAIL`) when it is overdue or when nothing is recorded, and `PASS` with "disabled" when the interval is `0` — see [runtime-host.md](runtime-host.md)
 harness version                           [--json]
 harness serve                             [--socket <p>] [--image <tag>]         # the ADR 0012 runtime host: bind the control socket, spawn one-shot verb containers (#307)
 

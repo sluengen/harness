@@ -1,8 +1,8 @@
 ---
 feature: runtime-host
 status: implemented
-last_updated: 2026-08-13
-tickets: ["#307", "#308", "#309", "#370", "#380", "#383"]
+last_updated: 2026-08-14
+tickets: ["#307", "#308", "#309", "#310", "#370", "#380", "#383"]
 ---
 
 # Runtime host (live)
@@ -27,7 +27,13 @@ stdlib-only and cannot import `harness.cli` (`tests/unit/test_hostenv_stdlib_onl
 | [`harness/hostenv/protocol.py`](../../harness/hostenv/protocol.py) | stdlib-only | Frame encode/decode, socket-path precedence, refusal reasons, exit mapping. |
 | [`harness/hostenv/spawn.py`](../../harness/hostenv/spawn.py) | stdlib-only | The one home for `docker run` argv construction and the `--repo` rewrite. |
 | [`harness/hostenv/client.py`](../../harness/hostenv/client.py) | stdlib-only | Connect → send → relay → exit, falling back to a direct spawn. |
-| [`harness/cli/serve.py`](../../harness/cli/serve.py) | CLI | `harness serve`: derive the operation surface, hold the per-repo lock, bind the socket. |
+| [`harness/cli/serve.py`](../../harness/cli/serve.py) | CLI | `harness serve`: resolve the operation surface, hold the per-repo lock, bind the socket, start the broker and the sweep scheduler. |
+
+Two more CLI-layer modules arrived with #310: the surface derivation moved to
+[`harness/cli/serve_surface.py`](../../harness/cli/serve_surface.py) (a pure
+extraction, so `serve.py` had room for the scheduler's wiring inside the
+500-line rule), and the scheduler itself lives under `harness/maintenance/`
+— see [the maintenance scheduler](#the-maintenance-scheduler).
 
 `docker/harness-wrapper.sh` is the live caller. Its tail is now
 
@@ -132,7 +138,7 @@ and still holds the client path's freshness rule.
 ### The credential broker
 
 ADR 0012 names the persistent host process *"a credential broker, a spawner, and a
-scheduler"*. #307 shipped the spawner and the scheduler;
+scheduler"*. #307 shipped the spawner and #310 the scheduler (below);
 [`harness/hostenv/broker.py`](../../harness/hostenv/broker.py) is the broker, and it
 is a fifth stdlib-only module in that layer (it imports `container_env`, `host` and
 `credentials`, and nothing from `harness.cli`).
@@ -237,6 +243,154 @@ still binds and each request refuses at the existing per-request site with the
 existing message. Host detection failing is a degradation to yesterday's behaviour,
 not a new way for `serve` to die.
 
+### The maintenance scheduler
+
+ADR 0012 names three host roles. #307 shipped the spawner, #309 the broker, and
+#310 the scheduler: `harness serve` runs a daemon thread that sweeps every
+managed repo under its allowed roots on a timer and records each cycle, so the
+recurring reclamation a one-shot CLI has nowhere to put stops depending on
+somebody remembering. Three new modules, split where `broker.py` already splits
+— the pure schedule apart from the thread that obeys it:
+
+| Module | Role |
+|---|---|
+| [`harness/maintenance/schedule.py`](../../harness/maintenance/schedule.py) | Pure: `SweepConfig`, `next_delay_ms`, `sweep_lag_ms`, `sweep_overdue`. Integers in, one out; no clock, no I/O. |
+| [`harness/maintenance/ledger.py`](../../harness/maintenance/ledger.py) | The `maintenance_sweeps` sibling table, its Pydantic models, and `check_sweeps` — the predicate `harness doctor` reads. |
+| [`harness/maintenance/sweep.py`](../../harness/maintenance/sweep.py) | `sweepable_repos`, `sweep_steps`, and `MaintenanceScheduler` — the thread. |
+
+They live under `harness/maintenance/`, not `harness/hostenv/`: `ledger.py`
+needs `aiosqlite` and `pydantic`, and the stdlib-only guard over `hostenv` would
+rightly refuse them there.
+
+**One step, and the narrowing is deliberate.** The timer runs `reclaim --stale`
+and nothing else. The ticket's disk evidence — 34 orphaned worktree directories,
+427 MB — is reclaimed only by `worktrees cleanup --age`, and `--age` removes a
+directory by mtime *regardless of uncommitted work, by recorded design*
+([`harness/cli/worktrees.py`](../../harness/cli/worktrees.py): vetoing there
+would re-open the cruft leak CAL-767 closed). Putting it on a timer therefore
+contradicts #310's own criterion that no timer-driven sweep may remove a
+worktree holding uncommitted work, and changing what `--age` does was out of
+scope. So the scheduler ships with one step and the disk-reclamation half is
+filed separately, where an operator can decide whether an abandoned directory's
+uncommitted changes may be destroyed. Adding a second step later is one entry in
+`sweep_steps`.
+
+`reclaim --stale` is the profile a timer may drive: three independent clocks
+must *all* be stale before it reclaims, its false positive is reversible by
+`reclaim --undo`, and it **preserves** the worktree and the branch. What the
+timer runs lives in one function, `sweep_steps`, which both the executing path
+and the guards read — a guard that re-spelled the argv would be the change
+agreeing with itself — and the floor beside it (the table is non-empty and names
+the verb it runs) is what stops an empty table satisfying the property for every
+possible implementation.
+
+**The staleness threshold is delegated, not forwarded.** The sweep emits no
+`--older-than`, so `reclaim`'s existing resolution of
+`loop.wall_clock_budget_minutes` stays the one source (#260). An implementation
+that read the value and passed it along would be the second copy the criterion
+forbids, which is what the guard falsifies — measured against a repo configured
+with an unusual budget, so the absence is structural rather than an accident of
+`110` not appearing in the argv.
+
+**It spawns; it does not call.** Each step is a one-shot container through
+`VerbServer.spawn` — the second half of ADR 0012's decision sentence, *"Every
+verb remains a one-shot container"*, and not decoration: `reclaim` makes tracker
+network calls and mutates the ledger, and in-process a bug in it could not be
+bounded by a container exit. Going through `VerbServer.spawn` rather than
+building a second `docker run` is the rule the client fallback already follows,
+so the sweep is a third caller of one construction rather than a third security
+posture; the argv passes through the same `spawn.rewrite_repo_argument` the
+socket handler calls. The cost is stated rather than hidden: with the docker
+daemon down a step exits non-zero and the cycle records `failed`.
+
+**Which repos.** `allowed_roots()` is the one repo source — the allowlist is
+where a repo becomes reachable at all, so the timer can never touch a path a
+request cannot. A root is swept if it is itself a managed repo, otherwise its
+immediate children are; one level deep, never a walk, because a recursive
+descent reaches `.worktrees/` and every vendored submodule. Two conditions make
+a directory managed, each closing a distinct hazard: `.git` must be a
+**directory** (a `.git` *file* is a linked worktree, and sweeping a run's
+worktree as if it were a repo is the #214 defect on a timer —
+`workspace.is_git_top_level` accepts one on purpose and is deliberately not
+reused), and `.harness/` must already exist (`store.connect` creates its parent,
+so sweeping every checkout under a workspace root would *create* a ledger in
+repos the operator never asked the harness to manage; having a ledger is what
+makes a repo harness-managed). Overlapping roots are deduplicated, so a repo
+under two of them is swept and recorded once per cycle.
+
+**The repo lock is taken non-blocking, for the whole cycle.** One thread serves
+every repo, so blocking on a twelve-minute `review` in repo A would make repo
+B's sweep that much later, and per-repo isolation is what the lock exists to
+preserve. Contention writes a `skipped` / `lock_contended` row and the next wake
+retries — the lateness is a record rather than a silence, and real work always
+wins. This required `_repo_locks` to hold `threading.RLock`: the sweep holds the
+repo lock and then calls `spawn`, which takes the same lock across its
+subprocess, and with a plain `Lock` that is a thread deadlocking against itself,
+wedging with no error anywhere. Reentrancy is **per thread**, so the
+cross-thread serialization recorded under [Concurrency](#concurrency) is
+unchanged: the two overlap tests are its floor, and
+`test_a_repo_lock_held_by_one_thread_is_refused_to_another` pins that the
+widening did not become a global "always acquire". A third test observes the
+*release* from another thread, and that placement is load-bearing — a reentrant
+lock re-acquires on its own thread whether or not it was ever released, so the
+same assertion made on the acquiring thread would be vacuous.
+
+**The record is the schedule's only memory.** Every cycle writes one row into a
+`maintenance_sweeps` sibling table in that repo's own `.harness/harness.db`,
+**including a no-op** — which is the point: it is what makes "the sweep found
+nothing" distinguishable from "the sweep stopped running". `runs` and `events`
+are untouched, and that is measured rather than asserted (see the
+[run ledger](run-ledger.md)). The one deviation from the broker is that there is
+**no synchronous prime**: priming would put a `docker run` per repo in front of
+the socket bind, and no request depends on a sweep having happened. The first
+wake is derived from the ledger instead — a repo with a recorded sweep is due
+one interval after it, a repo never swept is due now, floored at one minute — so
+a fresh host sweeps shortly after start, a restarted host does not re-sweep a
+repo swept five minutes ago, and a crash-restart loop is bounded to one sweep
+per repo per minute.
+
+**Absence is observable, and it is a measured quantity.** `harness doctor` gains
+a `sweeps` check reporting the lag against the configured interval: `PASS` under
+one interval, `WARN` past it, and a third distinct message when nothing is
+recorded at all, naming the remedy (`harness serve` is probably not running).
+The comparison is strict, so a sweep that fired exactly one interval ago is due
+rather than late — a non-strict bound would make every healthy host warn once
+per interval and train an operator to ignore the check. `WARN`, never `FAIL`:
+`doctor` exits 1 on any FAIL and a repo whose host has never run `serve` is not
+broken, the treatment `check_db` already gives an absent ledger. A repo
+configured with `maintenance_interval_minutes: 0` reports `PASS` with
+"disabled", because making the escape hatch cost a permanent warning is the same
+as not having one. What the check reads is the newest row's *timestamp*: a host
+whose cycles are all failing is surfaced on the log line and in the row's
+`outcome`, not yet by this check.
+
+**The cadence is one `loop:` key.** `maintenance_interval_minutes` (default
+`60`) rides in `CONTEXT.md`'s `loop:` block on `review_model`'s precedent — it
+bounds no run, but it is configured in the same block and read on the same path,
+so the scheduler resolves one object rather than two. `60` is derived rather
+than guessed: `DEFAULT_WALL_CLOCK_BUDGET_MINUTES`' own comment reasons about an
+hourly tick, and this makes the in-process sweep the equivalent of the hourly
+Build-routine pre-flight `reclaim --stale` was written for. `0` disables sweeps
+for that repo, unclamped, on `untracked_file_limit`'s convention: a repo that
+runs `serve` for the spawner and the broker but drives reclamation from its own
+scheduler otherwise has no escape hatch short of not running the host process.
+The key is read **per cycle**, from each repo's own `CONTEXT.md`, because
+`serve` outlives many edits of it.
+
+**No new principal, and no new argv surface.** The sweep runs a verb the
+operator can already run, with credentials resolved per call by the same
+`resolve_container_env` every request uses, against repos already in the
+allowlist, at a cadence the operator configures. Nothing caller-derived reaches
+it: `sweep_steps` takes a resolved path and returns a wholly host-constructed
+argv, which is why the record stores that argv in full where the socket audit
+line deliberately records the verb and nothing else — there is no untrusted
+token, ticket title or `--reason` body that could land in it.
+
+**Where the host is containerized (#312), the record write is the open half.**
+The spawn half already goes through `spawn.build_docker_argv` and survives
+unchanged; writing a row into `<repo>/.harness/harness.db` from inside a
+container is the same mount question #312 owns. Noted, not built for.
+
 ## The two properties that define it
 
 **It spawns; it does not proxy.** The caller names a verb and a repo. The host
@@ -265,7 +419,7 @@ refused.
 it has exceeded the carve-out."* The close gate rests on the ledger being the
 only memory of a run, so a host caching run status would break that property
 while appearing to work. The server's entire state after a request is two
-attributes:
+attributes, and the scheduler beside it adds a third entry to the same account:
 
 - `_repo_locks` — a mutex per resolved repo path, which names no run, ticket, verb
   or argv, and whose empty state after a restart is a correct one.
@@ -279,6 +433,21 @@ attributes:
   holds it: it snapshots the record and `repr(vars(server))`, drives requests
   carrying sentinel tickets, and asserts neither the record moved nor a sentinel was
   retained.
+- `MaintenanceScheduler` (#310) — the roots it was built with, the log sink, a
+  stop event, its sleeper seam and its thread. That is process lifecycle and host
+  configuration; none of it names a run, ticket, verb, argv or repo. Nothing per
+  repo and nothing per cycle survives a cycle: the schedule is re-derived from
+  each repo's own recorded sweeps on **every wake** rather than cached, because a
+  `{repo → last swept}` dict would be the first thing here that describes work
+  rather than configuration, and it buys nothing a four-row SQLite read does not
+  already give. It could not describe a run even in principle — it never reads
+  `runs`, never reads `events`, never resolves a ticket and never holds a
+  `run_id`; which run is stale, which is attended and which is closable are
+  decided *inside* the spawned container by `reclaim`, against the ledger,
+  exactly as when a human runs the verb. **The host decides *when*, never
+  *what*.** A fresh scheduler after a restart is a correct one.
+  `test_maintenance_sweep.py::test_the_scheduler_holds_no_state_across_a_cycle`
+  holds it, with the planted-attribute floor beside it.
 
 Two consequences follow that read as implementation detail and are not:
 
@@ -300,7 +469,13 @@ first, so `promote start` and `worktrees cleanup` resolve as leaves. The retired
 launcher's hardcoded `OPERATIONS` frozenset went stale as soon as a verb was
 added and was six verbs behind by the time it was deleted. Derivation makes that
 drift structurally impossible, which leaves #311's guard as a floor rather than
-the mechanism.
+the mechanism. The derivation moved to its own module,
+[`harness/cli/serve_surface.py`](../../harness/cli/serve_surface.py), in #310 —
+one idea with one recorded decision, on the seam convention the `review_*` /
+`close_*` / `reclaim_*` modules follow. It is a pure move: `serve.py` re-exports
+both names, so the decision and its tests are unchanged. `operation_surface`
+still imports `harness.cli` *inside the function body*, because the host runs
+this code before any container exists.
 
 **Supervision: none in this ticket; the fallback is the visibility mechanism.**
 `harness serve` is a foreground process the operator starts. *Client-side
@@ -592,10 +767,14 @@ as the wrapper does today, so there is no boundary to check. The container's own
 
 ## What is not here
 
-Periodic maintenance sweeps (#310), the reachability guard (#311), deployment via
-image and entrypoint (#312), and WSL validation on a real Windows host (#313). This
-record covers the process, the socket, the spawner, the fallback, and the credential
-broker. Platform-specific spawn
+The reachability guard (#311), deployment via image and entrypoint (#312), and WSL
+validation on a real Windows host (#313). This record covers the process, the
+socket, the spawner, the fallback, the credential broker, and the maintenance
+scheduler. Reclaiming the accumulated worktree *directories* is not here either:
+#310 shipped the scheduler with `reclaim --stale` as its only step, and putting
+`worktrees cleanup --age` on the timer is filed separately because it carries an
+operator decision (see [the maintenance scheduler](#the-maintenance-scheduler)).
+Platform-specific spawn
 concerns **shipped in #308** and are recorded in
 [host-platform](host-platform.md), which owns the provider seam they extend.
 

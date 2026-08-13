@@ -98,6 +98,13 @@ _KEYS = (
     # template would document a number no repo bootstrapped from it can obtain.
     "probe_max_entries",
     "probe_budget_seconds",
+    # …and again for #310's ``maintenance_interval_minutes``, appended last for
+    # the same positional reason. It is the first knob here that configures the
+    # *host process* rather than a run: it is how often ``harness serve`` sweeps
+    # each repo it serves, and — like ``untracked_file_limit`` and
+    # ``probe_max_entries`` — ``0`` is its documented off switch, so the loader
+    # does not clamp it either.
+    "maintenance_interval_minutes",
 )
 
 _IDENTIFIER = re.compile(r"DEFAULT_[A-Z_]+")

@@ -42,6 +42,7 @@ loop:
   engine_timeout_seconds: 900    # Shared design/review subprocess ceiling; matches DEFAULT_ENGINE_TIMEOUT_SECONDS. Rationale and rejected split: specs/features/verb-model.md and specs/proposals/per-engine-timeout-ceiling.md.
   probe_max_entries: 3           # Maximum proposed mutations per review; 0 disables. Matches DEFAULT_PROBE_MAX_ENTRIES; evidence: specs/features/verb-model.md.
   probe_budget_seconds: 720      # Probe ceiling, clamped to engine_timeout_seconds; matches DEFAULT_PROBE_BUDGET_SECONDS.
+  maintenance_interval_minutes: 60 # How often `harness serve` sweeps each repo it serves; 0 disables. Matches DEFAULT_MAINTENANCE_INTERVAL_MINUTES; evidence: specs/features/runtime-host.md.
 conventions:
   commit_format: "type(scope): description — feat / fix / chore / docs / refactor / test / spec"
 paths:

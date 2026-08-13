@@ -548,6 +548,7 @@ def doctor_command(
     """Run system health checks."""
     from harness.cli._query_common import _resolve_db_path
     from harness.cli._repo import repo_arg_or_cwd
+    from harness.maintenance.ledger import check_repo_sweeps
 
     repo_root = repo_arg_or_cwd(repo)
     db_path = _resolve_db_path(db, repo_root)
@@ -560,6 +561,7 @@ def doctor_command(
         ("git", check_git()),
         ("git-version", check_git_version()),
         ("db", check_db(db_path)),
+        ("sweeps", check_repo_sweeps(repo_root, db_path)),
         ("reviewer", check_reviewer(engine=engine)),
         ("gh", check_gh()),
         ("verify", check_verify_config(repo_root)),

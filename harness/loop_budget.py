@@ -67,6 +67,7 @@ from typing import NamedTuple
 __all__ = [
     "DEFAULT_ATTENDED_IDLE_MINUTES",
     "DEFAULT_ENGINE_TIMEOUT_SECONDS",
+    "DEFAULT_MAINTENANCE_INTERVAL_MINUTES",
     "DEFAULT_MAX_REVIEW_CYCLES",
     "DEFAULT_PROBE_BUDGET_SECONDS",
     "DEFAULT_PROBE_MAX_ENTRIES",
@@ -232,6 +233,22 @@ DEFAULT_PROBE_MAX_ENTRIES = 3
 # outlast its own engine.
 DEFAULT_PROBE_BUDGET_SECONDS = 720
 
+# How often ``harness serve``'s maintenance scheduler sweeps each repo it serves
+# (#310, ADR 0012's third host role). **Derived, not guessed**: the wall-clock
+# constant directly above reasons about an *hourly tick* — "110 keeps the
+# hourly-tick property the old 90 had (a stale run is first caught at the
+# *second* tick after it starts)" — and a 60-minute sweep is the tick that
+# property is stated against. It also makes the in-process sweep the equivalent
+# of the hourly Build-routine pre-flight ``reclaim --stale`` was written for.
+#
+# ``0`` disables sweeps outright, on ``DEFAULT_UNTRACKED_FILE_LIMIT``'s
+# convention and its stated criterion — could a repo rightly want this off? A
+# repo that runs ``serve`` for the spawner and the credential broker but drives
+# reclamation from its own scheduler genuinely does, and without the key its
+# only escape hatch would be not running the host process at all. Unclamped for
+# the same reason: a floor of 1 would make the escape hatch unreachable.
+DEFAULT_MAINTENANCE_INTERVAL_MINUTES = 60
+
 
 class LoopBudget(NamedTuple):
     """The configured loop bounds for a run, read from CONTEXT.md's ``loop:`` block.
@@ -250,7 +267,10 @@ class LoopBudget(NamedTuple):
     ``review_model`` is none of those: it is not a bound at all but the alias the
     claude review engine is invoked with (#321). It rides here because it is
     configured in the same ``loop:`` block and read on the same path, so the verb
-    resolves one object rather than two.
+    resolves one object rather than two. ``maintenance_interval_minutes`` (#310)
+    rides here on that same ground: it bounds no run, it is how often
+    ``harness serve`` sweeps this repo, and reading it beside the staleness
+    threshold the sweep's own verb resolves keeps the two in one object.
 
     Each new field is **appended last** so every existing positional
     construction — including ``load_loop_budget``'s ``OSError`` fallback — keeps
@@ -267,6 +287,7 @@ class LoopBudget(NamedTuple):
     untracked_file_limit: int = DEFAULT_UNTRACKED_FILE_LIMIT
     probe_max_entries: int = DEFAULT_PROBE_MAX_ENTRIES
     probe_budget_seconds: int = DEFAULT_PROBE_BUDGET_SECONDS
+    maintenance_interval_minutes: int = DEFAULT_MAINTENANCE_INTERVAL_MINUTES
 
 
 class BreakerTrip(NamedTuple):
@@ -372,6 +393,11 @@ def load_loop_budget(repo_root: Path) -> LoopBudget:
         probe_budget_seconds=min(
             _read_int_key(text, "probe_budget_seconds", DEFAULT_PROBE_BUDGET_SECONDS),
             engine_timeout,
+        ),
+        # Un-clamped for the same reason as the two keys above: 0 is this key's
+        # documented "run no maintenance sweeps in this repo" value.
+        maintenance_interval_minutes=_read_int_key(
+            text, "maintenance_interval_minutes", DEFAULT_MAINTENANCE_INTERVAL_MINUTES
         ),
     )
 

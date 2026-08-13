@@ -21,11 +21,8 @@ the privilege and the env. The construction itself lives in
 :mod:`harness.hostenv.spawn`, shared with the client's fallback so the two paths
 cannot drift.
 
-**The operation surface is derived, not listed.** The retired launcher's
-hardcoded ``OPERATIONS`` frozenset went stale as soon as a verb was added, and
-six have been added since. Deriving it from the registered Typer app makes that
-drift structurally impossible; #311's guard is then a floor rather than the
-mechanism.
+**The operation surface is derived, not listed** — the derivation itself lives
+in :mod:`harness.cli.serve_surface`, extracted in #310.
 
 **Supervision is deliberately absent** (#307 Design). ``harness serve`` is a
 foreground process an operator starts. Client-side autostart was rejected: a verb
@@ -48,67 +45,21 @@ import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
 
+from harness.cli.serve_surface import operation_surface, resolve_verb
 from harness.hostenv import broker as broker_module
 from harness.hostenv import container_env, protocol, spawn
 from harness.hostenv import host as host_module
+from harness.maintenance import sweep as sweep_module
 from harness.workspace import (
     WorkspaceNotAllowed,
     resolve_within_allowlist,
 )
 
 __all__ = ["VerbServer", "build_server", "operation_surface", "serve_command"]
-
-
-def _leaves(command: Any, prefix: str = "") -> Iterator[str]:
-    """Every leaf invocation reachable from ``command``, space-joined.
-
-    Recurses through groups, so ``promote start`` and ``worktrees cleanup`` are
-    enumerated as leaves rather than collapsed into their group name. A
-    recursion that stopped at the top level would refuse every subcommand at
-    runtime while looking correct in a smoke test.
-    """
-    commands = getattr(command, "commands", None)
-    if commands:
-        for name, child in commands.items():
-            yield from _leaves(child, prefix=f"{prefix}{name} ")
-    else:
-        name = prefix.strip()
-        if name:
-            yield name
-
-
-def operation_surface() -> set[str]:
-    """The set of verb invocations this socket will accept.
-
-    Derived from the registered Typer app on every call rather than cached: the
-    app is fixed at import, and re-deriving costs a tree walk over a few dozen
-    commands while removing any question of a stale snapshot.
-
-    Imported inside the function body per the layering rule — ``harness.cli``
-    must not be imported at module scope by anything the host runs early.
-    """
-    import typer as _typer
-
-    from harness.cli import app
-
-    return set(_leaves(_typer.main.get_command(app)))
-
-
-def resolve_verb(argv: list[str], surface: set[str]) -> str | None:
-    """The registered invocation ``argv`` names, by longest prefix, or ``None``.
-
-    Longest-prefix first so ``worktrees cleanup`` resolves as itself rather than
-    as the group ``worktrees`` with a stray argument.
-    """
-    for length in (2, 1):
-        candidate = " ".join(argv[:length])
-        if candidate in surface:
-            return candidate
-    return None
 
 
 class _Handler(socketserver.BaseRequestHandler):
@@ -284,7 +235,16 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         #: been measured. Deliberately *per repo* rather than global — a
         #: ``status`` on one repo must not queue behind a twelve-minute
         #: ``review`` on another.
-        self._repo_locks: dict[str, threading.Lock] = {}
+        #:
+        #: **Reentrant** since #310, for one specific caller: the maintenance
+        #: sweep holds this lock for a cycle and then calls `spawn`, which takes
+        #: the same lock across its subprocess — a plain `Lock` is that thread
+        #: deadlocking against itself, wedging with no error anywhere.
+        #: Reentrancy is **per thread**, so the cross-thread serialization AC-5
+        #: asserts is unchanged; the two overlap tests are its floor and
+        #: `test_a_repo_lock_held_by_one_thread_is_refused_to_another` pins that
+        #: the widening did not become a global "always acquire".
+        self._repo_locks: dict[str, threading.RLock] = {}
         self._registry_lock = threading.Lock()
 
         #: One line per request — the socket's only audit trail. It grants
@@ -307,10 +267,29 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         super().__init__(str(self.socket_path), _Handler)
         os.chmod(self.socket_path, 0o600)
 
-    def _lock_for(self, repo: Path) -> threading.Lock:
+    def _lock_for(self, repo: Path) -> threading.RLock:
         key = str(repo)
         with self._registry_lock:
-            return self._repo_locks.setdefault(key, threading.Lock())
+            return self._repo_locks.setdefault(key, threading.RLock())
+
+    @contextlib.contextmanager
+    def try_repo_lock(self, repo: Path) -> Iterator[bool]:
+        """Take this repo's lock if it is free, yielding whether it was taken.
+
+        **Non-blocking, deliberately** (#310). The maintenance sweep runs one
+        thread across every repo, so blocking on a twelve-minute ``review`` in
+        repo A would delay repo B's sweep by that long, and per-repo isolation
+        is what the lock exists to preserve. It also makes contention
+        *observable* — a recorded ``skipped`` row rather than silent lateness —
+        and real work always wins, so a sweep never makes a verb wait.
+        """
+        lock = self._lock_for(repo)
+        acquired = lock.acquire(blocking=False)
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                lock.release()
 
     def spawn(self, *, repo: Path, argv: list[str], fds: list[int]) -> int:
         """Run one verb container against the caller's own file descriptors.
@@ -397,8 +376,10 @@ def build_server(
     image: str,
     log: Callable[[str], None] = _log_to_stderr,
     host: host_module.HostPlatform | None = None,
-) -> tuple[VerbServer, broker_module.CredentialBroker | None]:
-    """The production constructor: a server, and the broker feeding it (#309).
+) -> tuple[
+    VerbServer, broker_module.CredentialBroker | None, sweep_module.MaintenanceScheduler
+]:
+    """The production constructor: a server, the broker feeding it, and the sweeper.
 
     Priming happens **synchronously, before the socket serves**, so no request
     ever observes an unknown credential state and the first request cannot
@@ -414,6 +395,12 @@ def build_server(
     The broker and the request audit trail share one ``log`` sink, so an
     operator watching ``serve`` sees renewal failures in the same stream as the
     refusals they explain.
+
+    The maintenance scheduler (#310) is built on **both** paths, including the
+    undetectable-host fallback: sweeping needs no agent credential, so a host
+    that cannot broker one must still reclaim its stale runs. Like the broker's,
+    its thread is started by the caller, not here — a thread started in a
+    constructor would outlive a caller that only wanted a server.
     """
     detected = host
     if detected is None:
@@ -426,7 +413,7 @@ def build_server(
             )
             fallback = VerbServer(socket_path=socket_path, roots=roots, image=image)
             fallback.log = log
-            return fallback, None
+            return fallback, None, _sweeper(fallback, roots, log)
 
     broker = broker_module.CredentialBroker(detected, log=log)
     record = broker.prime()
@@ -443,7 +430,19 @@ def build_server(
         credentials=broker.source,
     )
     server.log = log
-    return server, broker
+    return server, broker, _sweeper(server, roots, log)
+
+
+def _sweeper(
+    server: VerbServer, roots: list[Path], log: Callable[[str], None]
+) -> sweep_module.MaintenanceScheduler:
+    """The sweeper for this server, over the roots the server itself serves.
+
+    One repo list, not two: the allowlist is where a repo becomes reachable at
+    all, so deriving the swept set from anywhere else would let the timer touch
+    a path a request cannot.
+    """
+    return sweep_module.MaintenanceScheduler(server=server, roots=roots, log=log)
 
 
 def serve_command(
@@ -472,10 +471,13 @@ def serve_command(
             err=True,
         )
 
-    server, broker = build_server(socket_path=path, roots=roots, image=image)
+    server, broker, sweeper = build_server(socket_path=path, roots=roots, image=image)
     typer.echo(f"harness serve: listening on {path}", err=True)
     if broker is not None:
         broker.start()
+    # After the listener is announced, like the broker: the socket is what the
+    # operator started this for, and a sweep must never sit in front of it.
+    sweeper.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:  # pragma: no cover — operator ^C
@@ -483,6 +485,7 @@ def serve_command(
     finally:
         if broker is not None:
             broker.stop()
+        sweeper.stop()
         server.server_close()
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
