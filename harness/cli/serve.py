@@ -45,20 +45,22 @@ import socketserver
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
-from harness.hostenv import container_env, host, protocol, spawn
+from harness.hostenv import broker as broker_module
+from harness.hostenv import container_env, protocol, spawn
+from harness.hostenv import host as host_module
 from harness.workspace import (
     WorkspaceNotAllowed,
     resolve_within_allowlist,
 )
 
-__all__ = ["VerbServer", "operation_surface", "serve_command"]
+__all__ = ["VerbServer", "build_server", "operation_surface", "serve_command"]
 
 
 def _leaves(command: Any, prefix: str = "") -> Iterator[str]:
@@ -189,7 +191,7 @@ class _Handler(socketserver.BaseRequestHandler):
         # to run as root, and the refusal belongs where every other pre-spawn
         # refusal is — before docker is touched, on the wire, with a reason.
         try:
-            detected = host.detect_host(platform=sys.platform)
+            detected = host_module.detect_host(platform=sys.platform)
             detected.workspace_mount(repo)
             detected.container_user()
         except (
@@ -199,8 +201,20 @@ class _Handler(socketserver.BaseRequestHandler):
         ) as exc:
             refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
             return
-        except host.UnsupportedHost as exc:
+        except host_module.UnsupportedHost as exc:
             refuse(protocol.Reason.REPO_NOT_ALLOWED, str(exc))
+            return
+
+        # 3b. The host must be able to supply a usable agent credential (#309).
+        #     Only a *brokered* source ever answers here — the default source
+        #     is structurally incapable of refusing (CAL-941); why the brokered
+        #     one inverts that is on `broker.BrokeredSource.refusal`. Placed
+        #     before `rewrite_repo_argument` so no argv work happens for a
+        #     request that cannot run, and — like every refusal above — before
+        #     docker is touched.
+        refusal = container_env.credential_refusal(detected, self.server.credentials)
+        if refusal is not None:
+            refuse(protocol.Reason.CREDENTIAL_UNAVAILABLE, refusal)
             return
 
         # 4. An explicit --repo in argv must name the repo actually being mounted.
@@ -249,11 +263,21 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         roots: list[Path],
         image: str,
         env: dict[str, str] | None = None,
+        credentials: container_env.AgentCredentialSource | None = None,
     ) -> None:
         self.socket_path = Path(socket_path)
         self.roots = list(roots)
         self.image = image
         self.env = dict(os.environ if env is None else env)
+
+        #: Where each request's agent credential comes from (#309). Public, like
+        #: `roots` / `image` / `log`, because the handler consults it. The
+        #: default is the request-refreshing source — today's behaviour — so a
+        #: server constructed directly is unchanged; `build_server` is what
+        #: substitutes the broker.
+        self.credentials: container_env.AgentCredentialSource = (
+            credentials if credentials is not None else container_env.RequestRefreshingSource()
+        )
 
         #: Per-repo mutex. AC-5: requests against one repo are serialized until
         #: parallel-writer behaviour against the ledger over a bind mount has
@@ -267,8 +291,10 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         #: operator-equivalent authority to anyone who can connect, so a request
         #: that left no record would be unattributable after the fact. Overridable
         #: so a host can route it somewhere durable; the default is stderr, where
-        #: a foreground process's operator already is.
-        self.log = _log_to_stderr
+        #: a foreground process's operator already is. Annotated as the callable
+        #: type rather than left to inference: `build_server` substitutes a sink
+        #: it shares with the credential broker, so the two write one stream.
+        self.log: Callable[[str], None] = _log_to_stderr
 
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(self.socket_path.parent, 0o700)
@@ -300,9 +326,18 @@ class VerbServer(socketserver.ThreadingUnixStreamServer):
         # `resolved` dies with the call, which is what keeps ADR 0012's "no run
         # state" true of credentials too.
         try:
-            resolved = container_env.resolve_container_env(repo)
-        except host.UnsupportedHost as unsupported:
+            resolved = container_env.resolve_container_env(
+                repo, credentials=self.credentials
+            )
+        except host_module.UnsupportedHost as unsupported:
             _log_to_stderr(f"credential resolution failed: {unsupported}")
+            return 2
+        except container_env.CredentialRenewalFailed as unrenewed:
+            # The same backstop the two provider refusals get below, for the
+            # same reason: the handler refuses this earlier and on the wire, so
+            # reaching it here means a caller went straight to `spawn`, where an
+            # escaping exception would kill the request thread with no answer.
+            _log_to_stderr(f"spawn refused: {unrenewed}")
             return 2
         except (spawn.WorkspaceNotEquivalent, spawn.UnsafeContainerUser) as refused:
             # The provider refuses this request (#308, #380) — a Windows-filesystem
@@ -355,6 +390,62 @@ def _forwarded_env_names() -> tuple[str, ...]:
     return FORWARDED_ENV_NAMES
 
 
+def build_server(
+    *,
+    socket_path: Path,
+    roots: list[Path],
+    image: str,
+    log: Callable[[str], None] = _log_to_stderr,
+    host: host_module.HostPlatform | None = None,
+) -> tuple[VerbServer, broker_module.CredentialBroker | None]:
+    """The production constructor: a server, and the broker feeding it (#309).
+
+    Priming happens **synchronously, before the socket serves**, so no request
+    ever observes an unknown credential state and the first request cannot
+    trigger a renewal. The renewal thread is started by the caller — ``serve``
+    does it once the listener is announced — because a thread started here would
+    outlive a caller that only wanted a server.
+
+    A host that cannot be detected is **not** a new way for ``serve`` to fail.
+    It falls back to the request-refreshing source with no broker, so the socket
+    still binds and each request refuses at the existing per-request site with
+    the existing message: a degradation to yesterday's behaviour, not an outage.
+
+    The broker and the request audit trail share one ``log`` sink, so an
+    operator watching ``serve`` sees renewal failures in the same stream as the
+    refusals they explain.
+    """
+    detected = host
+    if detected is None:
+        try:
+            detected = host_module.detect_host(platform=sys.platform)
+        except host_module.UnsupportedHost as unsupported:
+            log(
+                f"harness serve: {unsupported} Credentials will be resolved per "
+                f"request instead of brokered."
+            )
+            fallback = VerbServer(socket_path=socket_path, roots=roots, image=image)
+            fallback.log = log
+            return fallback, None
+
+    broker = broker_module.CredentialBroker(detected, log=log)
+    record = broker.prime()
+    if record.outcome is broker_module.RenewalOutcome.ABSENT:
+        log(
+            "harness serve: no agent credential in the host store; verbs will "
+            "run without one."
+        )
+
+    server = VerbServer(
+        socket_path=socket_path,
+        roots=roots,
+        image=image,
+        credentials=broker.source,
+    )
+    server.log = log
+    return server, broker
+
+
 def serve_command(
     socket_path: Annotated[
         Path | None,
@@ -381,13 +472,17 @@ def serve_command(
             err=True,
         )
 
-    server = VerbServer(socket_path=path, roots=roots, image=image)
+    server, broker = build_server(socket_path=path, roots=roots, image=image)
     typer.echo(f"harness serve: listening on {path}", err=True)
+    if broker is not None:
+        broker.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:  # pragma: no cover — operator ^C
         typer.echo("harness serve: shutting down", err=True)
     finally:
+        if broker is not None:
+            broker.stop()
         server.server_close()
         with contextlib.suppress(FileNotFoundError):
             path.unlink()

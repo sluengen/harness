@@ -176,6 +176,10 @@ OVERRIDES: dict[str, Tier] = {
     # Runs a real ``harness serve`` socket server in a thread; every verb it
     # answers spawns the stub ``docker`` binary the fixture puts on PATH.
     "tests/unit/test_cli_serve.py": "integration",
+    # Builds a ``harness serve`` through ``build_server`` and drives real
+    # requests over its socket; the ones the broker does not refuse spawn the
+    # stub ``docker`` binary on PATH.
+    "tests/unit/test_serve_credential_brokering.py": "integration",
     # Drive the host-environment client, which spawns ``docker`` (stubbed) to
     # reach the verb container.
     "tests/unit/test_hostenv_client.py": "integration",
