@@ -85,19 +85,19 @@ CREDENTIAL_NAMES = (
 #: client any more, so it must fail with the remedy instead of an import traceback
 #: (:func:`test_an_interpreter_that_cannot_import_the_client_fails_with_the_remedy`).
 #:
-#: Raised 123 → 124 by #383, the **first** upward move. The added line is
-#: `export HARNESS_WRAPPER_STATUS`, split off from its own assignment because the
-#: single-command form takes *export's* status and swallowed a failing
-#: `_wrapper_status` under `set -e`. The pair performs exactly what the one line
-#: performed: no branch, no new effect, no value the wrapper did not already
-#: compute.
+#: Raised 123 → 124 by #383, the **first** upward move, for the split
+#: `HARNESS_WRAPPER_STATUS` assignment-and-export. **That exception is now spent
+#: rather than inherited**: #312 moved the drift classification out of the shim
+#: into `harness.hostenv.deployment`, so the line the raise was argued about no
+#: longer exists and neither does the function it called. Leaving the argument
+#: standing would leave the next reader arguing from a line they cannot find.
 #:
-#: The alternative was real and was measured, not dismissed: `NAME="$(f)"; export
-#: NAME` on one line is shellcheck-clean, semantically identical, and holds 123.
-#: It was rejected because the `;` would exist solely to satisfy a counter, and
-#: saying so honestly in the wrapper means writing "joined onto one line to keep a
-#: line-count ratchet" — a worse artifact than an argued raise. 124 bounds the
-#: ~60 lines of ported logic this exists to keep out exactly as tightly as 123.
+#: Re-baselined 124 → 115 by #312, downward, which is this bound's normal
+#: direction. `_wrapper_status()` and its two-line export left (−16); a branch
+#: honouring a baked source root and three exports of values the client now
+#: classifies arrived (+7). The classification did not disappear — it moved
+#: somewhere a unit test can reach every verdict, which is what the paragraph
+#: below has always said the remedy is.
 #:
 #: **The test the next raise must pass**, since the value of this bound is that it
 #: is hard to argue past and the first exception must not become a foothold: a
@@ -105,7 +105,7 @@ CREDENTIAL_NAMES = (
 #: not already perform**. A line adding a branch, the effect of a command the
 #: wrapper was not already running, or a value it was not already computing
 #: belongs in `harness.hostenv`, which is tested.
-EXECUTABLE_LINE_CEILING = 124
+EXECUTABLE_LINE_CEILING = 115
 
 
 def executable_lines(text: str) -> list[str]:
@@ -173,7 +173,14 @@ def test_the_timeout_probe_survives_only_in_the_retained_sync_half() -> None:
         "`git fetch`, or an unreachable remote hangs the unattended loop"
     )
 
-    sync_block = code[code.index("_sync_source_checkout()") : code.index("_wrapper_status()")]
+    # Bounded by the sync function's own closing brace. The previous delimiter was
+    # the *next* function's name (`_wrapper_status()`), and #312 moved that logic
+    # into `harness.hostenv.deployment` — so the guard broke on a rename that had
+    # nothing to do with the property it protects. It broke loudly, which is the
+    # right direction; this removes the coupling rather than re-pointing it at the
+    # next neighbour along.
+    sync_start = code.index("_sync_source_checkout()")
+    sync_block = code[sync_start : code.index("\n}", sync_start)]
     for line in occurrences:
         assert line in sync_block, (
             f"a timeout probe appeared outside the retained sync half: {line.strip()!r}. "

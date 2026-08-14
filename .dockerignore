@@ -46,11 +46,14 @@ scripts/
 SPEC.md
 CLAUDE.md
 
-# The Dockerfile itself doesn't belong inside the image, but the entrypoint
-# dispatch script (decision #3 — one image, two entrypoints) is COPYed in, so
-# re-include just that one file from the otherwise-excluded docker/ tree.
+# The Dockerfile itself doesn't belong inside the image, but three files from
+# docker/ are COPYed in and are re-included from the otherwise-excluded tree: the
+# entrypoint (which dispatches the `verb` and `install` roles), the installer it
+# runs for `install`, and the versioned client that installer emits (#312).
 # Exclude the *contents* (docker/*), not the parent directory: excluding the
 # directory itself stops the classic builder descending into it, so the
-# !docker/entrypoint.sh re-include would never take effect.
+# re-includes would never take effect.
 docker/*
 !docker/entrypoint.sh
+!docker/install-client.sh
+!docker/harness-wrapper.sh

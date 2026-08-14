@@ -5,9 +5,13 @@ Asserts:
 1. The Docker image at ``docker/Dockerfile`` builds successfully from the repo
    root (this also exercises the ``.dockerignore`` re-include that puts
    ``docker/entrypoint.sh`` in the build context).
-2. The image's entrypoint runs a one-shot verb: a bare verb stays backward
-   compatible (``docker run --rm <image> version`` prints a ``harness`` version
-   string), and the explicit ``verb <args…>`` selector runs a one-shot verb.
+2. The image's entrypoint dispatches both its roles. The verb role: a bare verb
+   stays backward compatible (``docker run --rm <image> version`` prints a
+   ``harness`` version string), and the explicit ``verb <args…>`` selector runs a
+   one-shot verb. The ``install`` role (#312) emits the ``~/bin/harness`` client
+   on stdout — proven **against the built image**, because a producer that is
+   right in the checkout and absent from the image is exactly the failure the
+   ``.dockerignore`` re-include exists to prevent.
    (The launcher-socket ``agent`` mode was the deferred Hermes-dispatch
    scaffolding, removed in CAL-712.)
 3. The container runs as a **non-root** user (CAL-1008) — the runtime proof of
@@ -41,6 +45,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -167,6 +172,54 @@ def test_docker_verb_mode_runs_a_verb(built_image: str) -> None:
         f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
     assert "harness" in result.stdout, result.stdout
+
+
+def test_the_image_install_role_emits_a_client(built_image: str) -> None:
+    """``install`` emits a working client **from the built artifact** (#312).
+
+    Every other test of this role runs the producer out of the checkout, which
+    proves the script is right and says nothing about whether it is *in the
+    image*. The two ways this fails are both invisible to those tests: the
+    ``.dockerignore`` re-include missing, so the producer or its template never
+    enters the build context, and the ``COPY`` missing, so the entrypoint's branch
+    dispatches to a path that does not exist.
+
+    The body is compared byte-for-byte against ``docker/harness-wrapper.sh``,
+    which is also what proves the image is not carrying a second, stale copy of
+    the shim — the drift this whole design exists to remove.
+    """
+    result = _run(
+        ["docker", "run", "--rm", built_image, "install", "--source-root", "/srv/harness"],
+        timeout=60,
+    )
+
+    assert result.returncode == 0, _diagnosis(result)
+    assert result.stdout.startswith("#!/usr/bin/env bash\n"), _diagnosis(result)
+    assert "_harness_baked_source_root='/srv/harness'" in result.stdout, _diagnosis(result)
+    assert re.search(r"_harness_baked_client_version='[^']+\+\d{8}T\d{6}Z'", result.stdout), (
+        _diagnosis(result)
+    )
+
+    versioned = (REPO_ROOT / "docker" / "harness-wrapper.sh").read_text()
+    assert result.stdout.endswith(versioned), (
+        "the client emitted by the image is not the versioned shim verbatim — the "
+        "image is carrying a second shim source"
+    )
+
+
+def test_the_image_install_role_refuses_rather_than_emitting_a_broken_client(
+    built_image: str,
+) -> None:
+    """A refusal inside the container reaches the operator as exit 2 with an empty
+    stdout, so ``… install > ~/bin/harness`` cannot truncate a working client into
+    nothing on a bad argument."""
+    result = _run(
+        ["docker", "run", "--rm", built_image, "install", "--source-root", "relative"],
+        timeout=60,
+    )
+
+    assert result.returncode == 2, _diagnosis(result)
+    assert result.stdout == "", _diagnosis(result)
 
 
 def test_docker_runs_as_non_root(built_image: str) -> None:

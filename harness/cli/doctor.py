@@ -473,12 +473,19 @@ def check_wrapper(
     stale copy would be running the stale check.
 
     doctor runs *in-container*, where ``~/bin/harness`` is not mounted, so it
-    cannot read the on-PATH wrapper directly. The wrapper does the comparison
-    host-side (the one place both it and its versioned source are readable) and
-    forwards the verdict as ``HARNESS_WRAPPER_STATUS`` — ``symlink`` (a symlink
-    into the checkout), ``copy`` (a byte-identical copy, not yet drifted but it
-    will), ``drifted`` (a copy already behind its source), or ``detached`` (a
-    copy outside any checkout, with no source to track).
+    cannot read the on-PATH wrapper directly. The classification happens
+    host-side in :mod:`harness.hostenv.deployment` (the one place both the client
+    and its versioned source are readable) and its verdict arrives as
+    ``HARNESS_WRAPPER_STATUS`` — ``image`` (installed from the image, and the
+    only deployment carrying a pinned version), ``symlink`` (a symlink into the
+    checkout), ``copy`` (a byte-identical copy, not yet drifted but it will),
+    ``drifted`` (a copy already behind its source), or ``detached`` (a copy
+    outside any checkout, with no source to track).
+
+    ``HARNESS_CLIENT_VERSION`` carries the stamp an image install baked in, so
+    the version in effect is reported from a forwarded value rather than from the
+    shape of anything on ``PATH`` (#312, AC-1). A symlink install has no stamp:
+    its version follows the checkout, and the report says so.
 
     When the variable is **absent**, the wrapper predates this check — or doctor
     was not run through the wrapper at all. Those two are told apart by
@@ -496,8 +503,19 @@ def check_wrapper(
         in_container = Path("/.dockerenv").exists()
 
     status = env.get("HARNESS_WRAPPER_STATUS")
+    version = env.get("HARNESS_CLIENT_VERSION", "")
+    if status == "image":
+        # AC-1. The value is a stamp the install baked in and the client
+        # forwarded, so this line answers "which client is in effect" without
+        # reading a link target — which is the whole of AC-1, and the one
+        # question a symlink deployment cannot answer at all.
+        return ("PASS", f"client installed from the image, version {version}")
     if status == "symlink":
-        return ("PASS", "wrapper on PATH is symlinked to docker/harness-wrapper.sh")
+        return (
+            "PASS",
+            "wrapper on PATH is symlinked to docker/harness-wrapper.sh — its "
+            "version follows the checkout and is therefore unpinned",
+        )
     if status == "copy":
         return (
             "WARN",

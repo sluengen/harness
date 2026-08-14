@@ -33,7 +33,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.hostenv import container_env, host, protocol, spawn
+from harness.hostenv import container_env, deployment, host, protocol, spawn
 
 __all__ = [
     "DEFAULT_IMAGE",
@@ -132,6 +132,17 @@ def _spawn_directly(
         sys.stderr.write(f"harness: {refused}\n")
         return 2
 
+    # How this client got onto PATH, classified here rather than in the shim
+    # (#312). A pre-#312 shim exports its own verdict and no client path, so the
+    # classifier returns nothing and the forwarded value stands — that is the
+    # state every copy-install machine is in on merge day, and it must keep
+    # reporting exactly what it reported yesterday.
+    installed = deployment.classify(
+        client_path=env.get("HARNESS_CLIENT_PATH", ""),
+        source_root=env.get("HARNESS_SOURCE_ROOT", ""),
+        client_version=env.get("HARNESS_CLIENT_VERSION", ""),
+    )
+
     docker_argv = spawn.build_docker_argv(
         repo=repo,
         argv=argv,
@@ -142,7 +153,8 @@ def _spawn_directly(
         ssh_agent=resolved.ssh_agent,
         mount=resolved.workspace_mount,
         container_user=resolved.container_user,
-        wrapper_status=env.get("HARNESS_WRAPPER_STATUS", ""),
+        wrapper_status=installed.status or env.get("HARNESS_WRAPPER_STATUS", ""),
+        client_version=installed.version,
         git_identity=resolved.git_identity,
     )
     for note in resolved.diagnostics:

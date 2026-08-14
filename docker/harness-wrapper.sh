@@ -49,7 +49,24 @@ IMAGE="${HARNESS_IMAGE:-$DEFAULT_IMAGE}"
 # The versioned wrapper lives at <repo>/docker/harness-wrapper.sh and is symlinked
 # onto PATH, so its own resolved location — not $(pwd) — identifies the source to
 # compare against. $(pwd) is the *target* repo, which is frequently not this one.
+#
+# An IMAGE-INSTALLED client (#312) is not in a checkout at all: it is a stamped
+# copy emitted by `docker/install-client.sh`, which bakes the checkout it was
+# built for into `_harness_baked_source_root` above. Without that branch such a
+# client resolves its root to $HOME — where `_source_committed` comes back empty,
+# so the freshness guard silently disables itself, the source sync becomes a
+# no-op, and PYTHONPATH=$HOME cannot import the client at all. The naive
+# migration does not merely lose a guard; it breaks the wrapper outright.
+#
+# The baked value is a plain shell variable, NOT an environment variable, and
+# that is the point: a parent process can export anything, but it cannot set a
+# non-exported variable inside this script. Which checkout supplies PYTHONPATH
+# and which tree gets rebuilt is therefore fixed at install time.
 _wrapper_source_root() {
+  if [[ -n "${_harness_baked_source_root:-}" ]]; then
+    echo "$_harness_baked_source_root"
+    return 0
+  fi
   local src="${BASH_SOURCE[0]}"
   local dir
   while [[ -L "$src" ]]; do
@@ -94,8 +111,9 @@ _wrapper_source_root() {
 # never repaired. Only `_source_root` is written — `$(pwd)` is the target repo,
 # frequently not this one, and is never touched. No outcome changes the exit code.
 
-# Set by _sync_source_checkout when the fast-forward moved a path under harness/.
-_ff_touched_harness=0
+# Set by _sync_source_checkout when the fast-forward moved a path the image is
+# built from — harness/ (the verbs) or docker/ (the client and the Dockerfile).
+_ff_touched_sources=0
 
 _sync_source_checkout() {
   local root="$1"
@@ -149,41 +167,15 @@ _sync_source_checkout() {
   fi
   echo "harness: source checkout was $behind commit(s) behind $upstream — fast-forwarded to $(git -C "$root" rev-parse --short HEAD)." >&2
 
-  # Whether the fast-forward moved harness/ is its own rebuild trigger, and it is
+  # Whether the fast-forward moved the image's sources is its own rebuild trigger,
+  # and it is
   # load-bearing rather than an optimisation: `git log -1 --format=%ct -- harness/`
   # is NOT monotonic across a fast-forward. History simplification resolves a
   # merge to the feature commit's own committer date, which can predate the image
   # — so the timestamp comparison below can stay false even though the tree moved.
   # Trusting it alone would reinstate the silent-stale-engine defect.
-  if [[ -n "$ff_from" ]] && ! git -C "$root" diff --quiet "$ff_from" HEAD -- harness/ 2>/dev/null; then
-    _ff_touched_harness=1
-  fi
-}
-
-# Wrapper-drift status (CAL-1149). `doctor` runs in-container and cannot read the
-# on-PATH wrapper (`~/bin/harness` is host-only, never mounted), so here — where
-# both the invoked wrapper and its versioned source are readable — is the only
-# place the comparison can be made. Compute the verdict and forward it as
-# HARNESS_WRAPPER_STATUS; `check_wrapper` surfaces it. A wrapper predating this
-# does not set the var, and doctor uses its own container-presence to tell that
-# stale wrapper from a native run with no wrapper at all. Emits one of:
-#   symlink  — a symlink into the checkout; stays in lockstep on `git pull`
-#   copy     — a byte-identical copy today, but it will silently rot
-#   drifted  — a copy that has already fallen behind its versioned source
-#   detached — a copy outside any checkout; no source tree to track (the real
-#              ~/bin/harness deployment this ticket exists to catch)
-_wrapper_status() {
-  local invoked="${BASH_SOURCE[0]}"
-  local versioned
-  versioned="$(_wrapper_source_root)/docker/harness-wrapper.sh"
-  if [[ ! -f "$versioned" ]]; then
-    echo detached
-  elif [[ -L "$invoked" ]]; then
-    echo symlink
-  elif cmp -s "$invoked" "$versioned"; then
-    echo copy
-  else
-    echo drifted
+  if [[ -n "$ff_from" ]] && ! git -C "$root" diff --quiet "$ff_from" HEAD -- harness/ docker/ 2>/dev/null; then
+    _ff_touched_sources=1
   fi
 }
 
@@ -211,7 +203,7 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   # `set -euo pipefail`: no sync outcome may abort the wrapper.
   _sync_source_checkout "$_source_root" || true
   _image_created=$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null || true)
-  _source_committed=$(git -C "$_source_root" log -1 --format=%ct -- harness/ 2>/dev/null || true)
+  _source_committed=$(git -C "$_source_root" log -1 --format=%ct -- harness/ docker/ 2>/dev/null || true)
   # Three cases, split so the middle one is reachable (CAL-1153):
   #   image + source present -> compare, and rebuild if stale (below).
   #   image present, source absent -> this wrapper is a detached COPY, not a
@@ -223,7 +215,7 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   #     terms). Stay a silent no-op.
   if [[ -n "$_image_created" && -n "$_source_committed" ]]; then
     _image_epoch=$(_rfc3339_to_epoch "$_image_created" || true)
-    if [[ -n "${_image_epoch:-}" ]] && { [[ "$_source_committed" -gt "$_image_epoch" ]] || [[ "$_ff_touched_harness" -eq 1 ]]; }; then
+    if [[ -n "${_image_epoch:-}" ]] && { [[ "$_source_committed" -gt "$_image_epoch" ]] || [[ "$_ff_touched_sources" -eq 1 ]]; }; then
       echo "harness: $IMAGE is stale — harness/ has moved since the image was built ($_image_created)." >&2
       echo "harness: rebuilding it now (docker build -t $IMAGE -f docker/Dockerfile . in $_source_root)" >&2
       if ! docker build -t "$IMAGE" -f "$_source_root/docker/Dockerfile" "$_source_root" >&2; then
@@ -297,18 +289,21 @@ if ! PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
   exit 1
 fi
 
-# The status string is computed here because it describes *this wrapper* — whether
-# it is a symlink into a checkout or a detached copy — which is knowable only from
-# the shell that resolved it. The client reads it from the environment and pins it
-# into the container by value.
+# Three facts about *this client* that only the shell which resolved it knows:
+# where it physically is, which checkout it is speaking for, and which install
+# stamped it. `harness.hostenv.deployment` turns them into the drift verdict this
+# block used to compute in bash (CAL-1149, moved by #312 — the classification is
+# unchanged, it is merely somewhere a unit test can reach it).
 #
-# Assigned and exported on two lines, and not as lint hygiene: `export NAME="$(f)"`
-# is one command whose exit status is *export's*, and export's status does not
-# carry the substitution's — so `set -e` above could not see `_wrapper_status`
-# fail, and the verb ran with a silently empty status. Split, the assignment
-# carries the function's own status and a failure stops the script (SC2155, #383).
-HARNESS_WRAPPER_STATUS="$(_wrapper_status)"
-export HARNESS_WRAPPER_STATUS
+# The exported source root is the one the resolver *returned*, never an inherited
+# one: the baked-vs-derived decision is made above, inside this script, so no
+# ambient variable can redirect the checkout the client speaks for. The version
+# is empty for every deployment but an image install, and an empty value emits no
+# `-e` flag at all (harness/hostenv/spawn.py) — so a symlink install's docker run
+# line is byte-for-byte what it was before this change.
+export HARNESS_CLIENT_PATH="${BASH_SOURCE[0]}"
+export HARNESS_SOURCE_ROOT="$_source_root"
+export HARNESS_CLIENT_VERSION="${_harness_baked_client_version:-}"
 
 exec env PYTHONPATH="${_source_root:-}${PYTHONPATH:+:$PYTHONPATH}" \
   "${_HOST_PY[@]}" -m harness.hostenv.client "$(pwd)" -- "$@"

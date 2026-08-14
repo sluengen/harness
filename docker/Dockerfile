@@ -101,10 +101,17 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Layer 2: runtime sources. Tests are intentionally excluded (see .dockerignore).
 COPY harness/ ./harness/
 
-# The two-entrypoint dispatch script (decision #3 — one image, two entrypoints).
-# .dockerignore excludes docker/ wholesale, then re-includes just this file.
-COPY docker/entrypoint.sh /opt/harness/entrypoint.sh
-RUN chmod +x /opt/harness/entrypoint.sh
+# The entrypoint and the client it installs. .dockerignore excludes docker/
+# wholesale, then re-includes exactly these three files.
+#
+# They land beside each other, and beside pyproject.toml from the layer above,
+# because install-client.sh resolves both its template and the version it stamps
+# relative to its own location — one producer serving the image's /opt/harness
+# layout and a checkout's docker/ layout without an environment variable to say
+# which it is in. Late layer, so an edit to the client does not invalidate the
+# dependency layers.
+COPY docker/entrypoint.sh docker/install-client.sh docker/harness-wrapper.sh /opt/harness/
+RUN chmod +x /opt/harness/entrypoint.sh /opt/harness/install-client.sh
 
 # Install the harness package itself into the venv so `uv run harness`
 # resolves the console script declared in pyproject.toml (project.scripts.harness).
@@ -161,8 +168,10 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash harness \
     && chmod 1777 /home/harness
 USER harness
 
-# One image, two entrypoints: the script dispatches `agent <TICKET>` (headless
-# per-session agent runtime) vs. `verb <args…>` / bare-verb (one-shot verb).
-# Bare-verb stays backward compatible with the launcher / ~/bin/harness wrapper,
-# which pass `start …` directly with no mode selector.
+# The entrypoint dispatches two roles: `install [--source-root …]` emits the
+# ~/bin/harness client on stdout (#312), and `verb <args…>` / bare-verb runs one
+# one-shot verb. Bare-verb stays backward compatible with the ~/bin/harness
+# client, which passes `start …` directly with no selector.
+# (An `agent <TICKET>` role was described here until #312; it was the deferred
+# Hermes-dispatch scaffolding, removed in CAL-712.)
 ENTRYPOINT ["/opt/harness/entrypoint.sh"]

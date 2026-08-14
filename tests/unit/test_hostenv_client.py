@@ -547,3 +547,63 @@ def test_a_repo_the_provider_refuses_stops_before_docker_is_touched(
     assert "#313" in capsys.readouterr().err, (
         "the operator must be told why and where support is earned"
     )
+
+
+# ---------------------------------------------------------------------------
+# Which client is on PATH, and who decides (#312)
+# ---------------------------------------------------------------------------
+#
+# The drift verdict used to be computed in bash and forwarded whole. Since #312
+# the shim forwards three *facts* — where the client is, which checkout it speaks
+# for, which install stamped it — and `harness.hostenv.deployment` derives the
+# verdict from them. Both shapes reach this client, and the second one arrives on
+# merge day rather than eventually: every machine running a copy install has a
+# pre-#312 shim on PATH the moment the package advances.
+
+
+def test_a_pre_312_shim_still_has_its_own_verdict_forwarded(
+    tmp_path: Path, repo: Path, socket_path: Path, stub_docker: Path,
+    stdio: tuple[int, int, int],
+) -> None:
+    """Merge day: an old shim reports its own verdict and names no client path.
+
+    The classifier has nothing to work from and says so (an empty status), and
+    the forwarded value stands. Without that fallback every copy-install machine
+    silently loses its drift report at the exact moment the package advances past
+    its shim — a regression that reports as *nothing at all*.
+    """
+    env = _env(tmp_path, socket_path) | {"HARNESS_WRAPPER_STATUS": "copy"}
+
+    code = client.run(repo=repo, argv=["version"], env=env, stdio=stdio)
+
+    assert code == 0
+    assert "HARNESS_WRAPPER_STATUS=copy" in _spawns(stub_docker)[0]
+
+
+def test_a_current_client_is_classified_rather_than_taken_at_its_word(
+    tmp_path: Path, repo: Path, socket_path: Path, stub_docker: Path,
+    stdio: tuple[int, int, int],
+) -> None:
+    """When the facts are present they decide, and a stale forwarded verdict does
+    not override them.
+
+    The two sources are given deliberately contradictory answers. A precedence
+    that read the forwarded value first would look correct on every machine where
+    the two agree — which is all of them, until an old value is inherited from an
+    ancestor process or a half-updated deployment.
+    """
+    client_path = tmp_path / "installed-harness"
+    client_path.write_text("#!/usr/bin/env bash\n")
+    env = _env(tmp_path, socket_path) | {
+        "HARNESS_CLIENT_PATH": str(client_path),
+        "HARNESS_SOURCE_ROOT": str(tmp_path / "no-such-checkout"),
+        "HARNESS_CLIENT_VERSION": "9.9.9+20260815T171500Z",
+        "HARNESS_WRAPPER_STATUS": "detached",
+    }
+
+    code = client.run(repo=repo, argv=["version"], env=env, stdio=stdio)
+
+    assert code == 0
+    spawned = _spawns(stub_docker)[0]
+    assert "HARNESS_WRAPPER_STATUS=image" in spawned, spawned
+    assert "HARNESS_CLIENT_VERSION=9.9.9+20260815T171500Z" in spawned, spawned

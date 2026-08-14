@@ -129,6 +129,44 @@ point rejects would be worse than the warning.
 Order of operations: #351 → the in-repo callers → the two operator triggers
 above → remove the implicit form.
 
+### Migrating `~/bin/harness` to the image install (#312)
+
+The client can now be installed **from the image** instead of symlinked into a
+working tree. Run this from the harness checkout:
+
+```bash
+docker run --rm harness:dev install --source-root <checkout> > ~/bin/harness.new && chmod +x ~/bin/harness.new && mv ~/bin/harness.new ~/bin/harness
+```
+
+with `--source-root "$PWD"`. Updating later is the same command; it consults
+neither a git remote nor the client it replaces, which is the bootstrap case
+[#286](https://github.com/sluengen/harness/issues/286) could not close. Confirm
+the result **by content**, never by a version string the previous client could
+have produced:
+
+```bash
+harness doctor | grep wrapper
+# [PASS] wrapper      client installed from the image, version 0.2.1+<instant>
+```
+
+`--source-root` is not optional in practice. An installed client sits outside
+every checkout, so without it the freshness guard and the source sync both
+silently switch themselves off and the client cannot import its own package.
+Full reasoning in [`docker/README.md`](docker/README.md) under *Installation*.
+
+**#312 does not migrate this machine.** The loop's `~/bin/harness` stays a
+symlink into the main checkout, and that is a deliberate hold rather than an
+oversight: migrating changes how the loop's client updates — from *automatically,
+on the next fast-forward* to *whenever an operator runs the install* — and that
+trade is the operator's call, not a builder's. The symlink install keeps working
+unchanged, and `doctor` now reports its version as unpinned rather than
+implying it has one. Filed as a `decision` ticket; take the migration by running
+the command above once.
+
+Note the ordering, which is [#286](https://github.com/sluengen/harness/issues/286)'s
+own rule: nothing #312 ships is live here until the main checkout advances and the
+image is rebuilt from it. A fix to the delivery mechanism cannot deliver itself.
+
 ---
 
 ## Substrate: always-on local is the default
