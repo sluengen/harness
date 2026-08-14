@@ -88,7 +88,7 @@ files:
   commands/ship.md:                   { id: ship,                     version: 0.3.0, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.9.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 1.0.0, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.9.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.10.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
   # same invocation drives any repo's own branch names (#189).

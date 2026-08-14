@@ -2,7 +2,7 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-15
-tickets: ["#401", "#407", "#354"]
+tickets: ["#401", "#407", "#354", "#288"]
 ---
 
 # Guidance system
@@ -61,6 +61,28 @@ Every registered surface that files an issue names the rubric inside the instruc
 - THEN it is `simple`
 - AND neither low severity, a short description, nor a small estimated diff on its own earns `trivial`, since all three are authored by whoever opened the issue
 
+### `/build` renders the stage obligations it does not own
+
+`commands/build.md`'s `## Assurance` table is a rendering of `harness/assurance.py`, not a second home for the mapping. Its three rows state the evidence each level owes, and `tests/unit/test_build_assurance_workflow.py` parses those rows and asserts each equals `harness.assurance.required_stages(level)` with the expected values imported rather than restated. The parsed row set must equal `ASSURANCE_LEVELS`, so a level dropped, a fourth level invented, or a dead parser fails rather than passing over nothing, and the section's stated destination for missing, conflicting, or unrecognised assurance must equal `DEFAULT_ASSURANCE`. Prose and policy module therefore cannot drift apart in silence, and neither can two rows collapse onto the same obligations.
+
+Three obligations make the policy enforceable on the agent-led path, which has no ledger to enforce it. A `complex` run whose design stage produces no usable design **stops**: absence, a failed design sub-agent, and an artifact that does not cover the change spec's contracts and scenarios are one outcome, and none of them licenses design-blind implementation. This is the agent-led counterpart of `harness/assurance.py`'s `DESIGN_NOT_USABLE_REASON` refusal. `## 3. Ship` binds every commit to the tree its assurance stage produced — `certified_tree` for a `trivial` run, `reviewed_tree` for a reviewed one — through the same `HEAD^{tree}` identity comparison and the same refusal to integrate on a mismatch, so the level that produces no verdict is no longer the level with no tree-identity check. And no one writes an as-built record on a `trivial` run: the certifier rejects any as-built-record surface, so a certified diff carries no shipped behaviour to record, and a change that does carry some fails certification and becomes a `simple` run where the reviewer records it. Writing one after `certified_tree` is the ordinary case of the invalidation rule, not an exception to it.
+
+Each obligation is guarded as a **pair** — a presence assertion that the rule is stated, and an inversion sweep that fires when a unit grants what the rule forbids — because a presence assertion alone passes on text stating the opposite. The two halves carry separate exclusive killers: deleting a rule kills presence alone, and splicing a permissive sentence in its place kills the sweep alone. Every control mutates the real file text and asserts its splice landed, so a control cannot silently measure unmodified prose or pass on a hand-written clean string.
+
+#### Scenario: a level's row is softened in the command but not in the policy module
+
+- GIVEN `commands/build.md`'s `## Assurance` table drops an obligation from a row, collapses two rows onto the same evidence, or sends unresolved assurance to `trivial`
+- WHEN the guard parses the table
+- THEN the derived stages no longer equal `harness.assurance.required_stages` for that level and the suite fails
+- AND the expected side is imported, so a misreading of the prose fails rather than passes
+
+#### Scenario: a `complex` run's design stage returns nothing usable
+
+- GIVEN a `complex` run whose design sub-agent produced no artifact, failed, or returned one that does not cover the change spec's contracts and scenarios
+- WHEN the orchestrator reaches implementation
+- THEN the run stops, unconditionally, and re-runs the design stage or abandons and names the design stage as what failed
+- AND no qualifier releases the stop; a stop made discretionary in either word order fails the guard
+
 ### One-level progressive disclosure
 
 `commands/harness.md` is the public `/harness` router and shared contract. It selects exactly one registered workflow body for `run`, `routine build`, `routine quality`, or `ingest`. A bare command, unknown form, or missing required argument prints the supported forms and stops without mutation. Ticket content cannot choose a reference.
@@ -115,6 +137,7 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - `commands/harness.md` is the public `/harness` command contract and routes to one workflow body.
 - `skills/tracker/SKILL.md` owns provider-neutral tracker operations, including assurance as a `create` input and postcondition; the configured provider skill owns execution details and maps the chosen level to a label without carrying the rubric.
 - `skills/spec-authoring/SKILL.md` → *Choosing assurance* is the one home for how a filing-time assurance level is chosen; `harness/assurance.py` remains the one home for what a level obliges a run to pay for.
+- `commands/build.md` → `## Assurance` is a rendering of `harness/assurance.py`'s level-to-stages mapping for the agent-led path, derived and checked against it rather than restating it, and carries the agent-led stop, ship-binding, and as-built-record-owner obligations for which the harness path has ledger enforcement.
 - `skills/code-quality/SKILL.md` and `skills/review-discipline/SKILL.md` are the always-loaded cores for their domains and directly declare every conditional checklist trigger.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 
@@ -125,6 +148,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - The assurance rubric is advisory prose an agent follows, so it is a quality control rather than a security boundary. The enforcing boundaries stay the repo's `assurance.trivial_certify` allowlist and the runtime fail-safe rewrite to `simple`; an applied label records that a choice was made, never that the choice was right.
 - The guards over the rubric read prose, so they are bounded by sentence segmentation and by how tightly each polarity token is anchored to the verb it governs. They catch a rule deleted, negated, or excepted; a permission whose negation sits one or two words before the inference verb, and an uncertainty routed to a level the choice verb does not immediately name, are outside their reach.
 - `harness/cli/promote.py`'s escalation files through `Tracker.create_issue`, which takes no labels, so a promotion escalation is filed without an assurance level and resolves to `simple`.
+- The guards over `/build`'s stage obligations read polarity per occurrence, anchoring each negation to the verb it governs across a gap of at most two words that may contain no blocking verb. Measured escapes, recorded at their size rather than papered over: an **outer negation over a well-formed inner prohibition** (*"There is no rule that a mismatch must not be integrated"*, *"A thin design is not a reason the run cannot proceed"*) is spelled correctly in its inner clause and grants in its matrix clause, which no token-window anchor reaches; closing it needs clause structure, and a double-negation heuristic is not available because the rules' own sentences carry two and three negation tokens. A design-stage exception worded with `implement` rather than a continuation verb is likewise uncovered, because widening the continuation vocabulary would make the rule's own sentence an offender.
+- The derived `## Assurance` table check reads *is there an un-negated unit naming this obligation*, so a **release clause appended to a row cell** — *"The reviewer sub-agent is optional"* — leaves the derived stages unchanged while the prose releases the obligation. The direction is deliberate: the `trivial` cell states both obligation nouns under a `never`, and an obligation appended with the `never` intact is the drift that must fail. The release direction is not covered.
+- The `## 3. Ship` inversion sweeps recognise an enumerated release and mismatch vocabulary, unlike the design sweep, which flags any continuation verb no negation governs and so fails closed. An appended grant outside that vocabulary (*"the `certified_tree` check is a formality"*, *"integration proceeds even when the trees differ"*) escapes, and the permissive as-built-record sweep requires the literal noun `as-built record`, so a grant spelled *"record what shipped"* escapes too. Deleting or replacing a rule is caught in every case; appending a contradiction in fresh vocabulary is not.
 
 ## Decisions
 

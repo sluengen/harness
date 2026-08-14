@@ -1,4 +1,4 @@
-<!-- guidance:build@1.9.0 -->
+<!-- guidance:build@1.10.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -73,6 +73,13 @@ or implementer's conversation. It returns a design artifact covering contracts,
 scenarios, security boundaries, test strategy, and any decision that belongs in
 the governing spec. Resolve design questions on the ticket before implementation.
 
+A `complex` run whose design stage produces no usable design **stops**. No
+artifact, a failed design sub-agent, and an artifact that does not cover the
+contracts and scenarios the change spec asks for are one outcome: the run never
+proceeds to design-blind implementation. Re-run the design sub-agent against the
+corrected change spec; if it still produces nothing usable, abandon safely under
+section 4 and name the design stage as what failed.
+
 `trivial` and `simple` do not receive this stage. Their change spec still states
 enough design for its size; skipping a design agent is not permission to invent a
 contract mid-build.
@@ -124,6 +131,12 @@ surface; that path needs the reviewer who records reality. Any change after
 `certified_tree` invalidates the certificate and upgrades the run to `simple`.
 Do not call an LLM pass merely to label this certification a review.
 
+**No one writes an as-built record on a `trivial` run, and none is missing.** The
+certifier rejects any as-built-record surface, so a certified diff carries no
+shipped behaviour to record; a change that does carry some fails certification
+and becomes a `simple` run, where the reviewer records it. Writing an as-built
+record after `certified_tree` is not an exception to the invalidation rule above.
+
 ### Independent review
 
 Stage all changes and capture the tree to review:
@@ -147,6 +160,8 @@ evidence against the reference or applicable archetype and reports missing,
 misleading, or inconsistent screenshots as a finding.
 
 ### Record the as-built spec
+
+A `trivial` run does not reach this step; see *Certify trivial work*.
 
 Follow `review-discipline`'s final-evidence ordering: the reviewer writes the
 as-built record from the diff before its certifying gate and verdict. After that
@@ -174,17 +189,23 @@ or failed invocation is a review finding, not a PASS.
 
 ## 3. Ship
 
-- **PASS:** commit only the reviewer-recorded tree, then compare its identity:
+A `trivial` run has no verdict, so it ships `certified_tree` where a reviewed run
+ships `reviewed_tree` — the same identity comparison against `HEAD^{tree}`, and
+the same refusal to integrate on mismatch.
+
+- **PASS:** commit only the tree its assurance stage produced, then compare its
+  identity:
 
   ```bash
   cd "$worktree_path" && git add -A && git commit -m "COMMIT_MESSAGE"
-  cd "$worktree_path" && git rev-parse "HEAD^{tree}"    # must equal reviewed_tree
+  cd "$worktree_path" && git rev-parse "HEAD^{tree}"    # certified_tree or reviewed_tree
   ```
 
-  If `HEAD^{tree}` does not equal `reviewed_tree`, do not integrate; return to
-  review because the committing tree was never certified. On equality, transition
-  to In Review, integrate using the branch model, push, then transition to Done
-  through `tracker`.
+  If `HEAD^{tree}` does not equal that tree, never integrate — the committing
+  tree was never certified. Return to whichever stage produced that tree and run
+  it again over the current candidate. On equality, transition to In Review,
+  integrate using the branch model, push, then transition to Done through
+  `tracker`.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent.
   Re-run the required assurance stages; a changed diff invalidates old evidence.
 - **DEFER:** create the out-of-scope follow-up through `tracker` with explicit
