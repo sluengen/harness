@@ -107,7 +107,9 @@ A human typing `/harness run CAL-42` and Hermes dispatching CAL-42 produce the *
    - `fail` → fix the root cause, commit, re-run `review` (the `(fix → review)*` loop). Each review binds to the new HEAD.
    - `defer` → file a follow-up for the out-of-scope finding, then close.
    - `pass` → proceed to close.
-5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** a `verdict=pass` whose reviewed SHA == current HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+5. **`close <ticket> --run-id <id>`** — enforce the gate (a `start` exists **and** gate-evidenced evidence bound to current HEAD: a `verdict=pass` whose reviewed SHA == HEAD, or — for a `trivial` run since #353 — a `certify` event whose certified SHA == HEAD), then commit/merge/push, transition the ticket to Done, flip the run to `status=closed`. A gate refusal is structured (`no_run` / `dirty_worktree` / `no_passing_review` / `stale_review`) and is the gate doing its job — never worked around.
+
+   A `trivial` run calls **`certify`** in place of step 4: it classifies the run's whole `base_sha...HEAD` diff against the repo's `assurance.trivial_paths` allowlist and the built-in restricted-surface veto, and either records a SHA-bound `certify` event (no engine runs, no `review` event is written) or upgrades the run and its issue to `simple` so the ordinary review path resumes.
 
 The harness never decides what to build or how. The session does; the verbs record it and gate the merge.
 
@@ -176,7 +178,9 @@ branch, pushes, transitions the ticket to *Done*, and finalizes the run. It does
 edits are not in HEAD and so were never reviewed (`stale_review` catches a
 commit *after* review; only the clean-tree check catches an edit *without*
 committing — CAL-586). The gate refuses unless a `start` row exists, the
-worktree is clean, and a `verdict=pass` reviewed-SHA equals HEAD; a refusal
+worktree is clean, and the run holds gate-evidenced evidence bound to HEAD — a
+`verdict=pass` whose reviewed SHA equals HEAD, or (#353) a `certify` event whose
+certified SHA equals HEAD; a refusal
 exits 2 with exactly one structured `reason` — `no_run` / `dirty_worktree` /
 `no_passing_review` / `stale_review` (locked by
 `test_cli_close.py::test_dirty_worktree_refused_when_uncommitted_edits` and
@@ -263,6 +267,7 @@ the autonomous dispatcher itself is deferred until the Build loop is built.)
 harness start  <ticket>   [--base <b>] [--resume] [--repo <p>] [--db <p>] [--json]   # --resume: a reclaimed ticket with a checkpoint-pushed WIP branch continues from it (fetch + base the worktree on it); falls back to a clean start (CAL-739)
 harness design            [--run-id <id>] [--model <alias>] [--repo <p>] [--db <p>] [--json]   # the design stage between start and implement (ADR 0007): a dedicated Opus engine produces the change spec's Design section — written to one file outside the worktree, the only path it can write (#294) — recorded as a marked ticket comment + a `design` ledger event. --model overrides the unconditional Opus default (host/testing)
 harness review            [--run-id <id>] [--repo <p>] [--db <p>] [--json]
+harness certify           [--run-id <id>] [--gate-exit <code>] [--gate-log <p>] [--repo <p>] [--db <p>] [--json]   # the trivial fast path (#353): classify the run's whole diff against the repo's `assurance.trivial_paths` allowlist and the built-in restricted-surface veto. Eligible + green gate -> a `certify` event bound to HEAD that `close` accepts as evidence, no engine invoked. Ineligible -> the run and its issue upgrade to `simple`, exit 0. Missing or red gate evidence is a refusal (exit 5), never an upgrade
 harness close  <ticket>   [--run-id <id>] [--repo <p>] [--db <p>] [--json]
 harness checkpoint        [--run-id <id>] [--repo <p>] [--db <p>] [--json]   # push the run branch to origin so committed WIP survives the container dying (CAL-738); pushes only the feature branch — never merges, so the close gate is untouched
 

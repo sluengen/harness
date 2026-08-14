@@ -160,6 +160,9 @@ EXPECTED_SURFACE = {
     "review",
     "close",
     "design",  # the four audited lifecycle verbs (design: #211, ADR 0007)
+    "certify",  # the deterministic trivial fast path (#353) — an audited verb,
+    # but not a lifecycle stage every run pays for: only an `assurance:trivial`
+    # run reaches it, and it either certifies the diff or upgrades the run.
     "checkpoint",  # push the run branch mid-flight (CAL-738)
     "status",
     "logs",
@@ -745,7 +748,7 @@ def _documented_options() -> dict[str, set[str]]:
 #: it aliases the positional ``RUN_ID`` (#245). Equality (not a subset check)
 #: locks both directions — a dropped alias and an unintended new one both fail.
 EXPECTED_RUN_ID_COMMANDS = {
-    "design", "review", "close", "checkpoint",  # verbs
+    "design", "review", "certify", "close", "checkpoint",  # verbs
     "status", "logs", "events",  # read commands
 }
 

@@ -1,28 +1,29 @@
-"""#352 AC-7/AC-8 — one policy home, and no surface claiming the fast path shipped.
+"""#352 AC-7 — the required-stages mapping has exactly one home.
 
-Two criteria that are easy to satisfy in prose and easy to lose silently, so
-each gets a predicate that *measures* rather than a checklist that lists.
+The ticket's watchlist trigger says `review.py` must keep only orchestration and
+refusal mapping, with the decision extracted. A second copy would not fail any
+behavioural test on the day it is written: it would agree with the first. It
+fails months later, when one is updated. So the guard is structural — no module
+under ``harness/`` other than :mod:`harness.assurance` may relate the levels to
+each other — and it derives its vocabulary from ``ASSURANCE_LEVELS`` so a fourth
+level is covered the day it is added.
 
-**AC-7 — one required-stages mapping.** The ticket's watchlist trigger says
-`review.py` must keep only orchestration and refusal mapping, with the decision
-extracted. A second copy would not fail any behavioural test on the day it is
-written: it would agree with the first. It fails months later, when one is
-updated. So the guard is structural — no module under ``harness/`` other than
-:mod:`harness.assurance` may relate the levels to each other — and it derives its
-vocabulary from ``ASSURANCE_LEVELS`` so a fourth level is covered the day it is
-added.
+The predicate is a named function that the assertion **and its control** call, so
+a mutation to the predicate kills the control rather than passing unnoticed — the
+#327/#179 rule. It also carries a non-vacuity floor on the derived corpus it
+scans, because a parametrized guard over a derivation that narrowed to nothing
+reads green.
 
-**AC-8 — the trivial fast path has not shipped.** The level is in the vocabulary
-and named all over the as-built records, which is exactly the condition under
-which a sentence claiming it *works* is easy to write and impossible to spot.
-Every live document may describe it as recognized-and-upgraded; none may present
-it as available.
-
-Both predicates are named functions that the assertions **and their controls**
-call, so a mutation to a predicate kills the control rather than passing
-unnoticed — the #327/#179 rule. Both also carry a non-vacuity floor on the
-derived corpus they scan, because a parametrized guard over a derivation that
-narrowed to nothing reads green.
+**#352's AC-8 guard was retired here by #353, deliberately.** It banned any live
+document from presenting the trivial fast path as available, on the stated
+premise that "the certification path … is item 2 of the parent proposal and is
+not built". #353 builds it. The premise is now false, so the guard would force
+every honest sentence in the updated records to lie about a shipped feature and
+would turn ``dev`` red on the first one written. A guard whose subject has
+shipped is not weakened by deletion — it is answered. What replaces it is the
+behaviour itself: ``tests/unit/test_certify_verb.py`` and
+``tests/unit/test_certify_gate.py`` measure what the documents may now claim.
+The AC-7 half is untouched, and is what this module is now about.
 """
 
 from __future__ import annotations
@@ -36,20 +37,6 @@ from harness.assurance import ASSURANCE_LEVELS
 from tests._gitutil import tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SELF = str(Path(__file__).resolve().relative_to(_REPO_ROOT))
-
-#: Where describing the past correctly is required, so a live-claim scan must not
-#: reach: changelogs, decisions, proposals, retired specs, assessments, the log.
-_HISTORICAL_PREFIXES = (
-    "CHANGELOG.md",
-    "CHANGELOG-archive/",
-    "changelog.d/",
-    "specs/decisions/",
-    "specs/proposals/",
-    "specs/retired/",
-    "assessments/",
-    "LOG.md",
-)
 
 #: The policy module — the one place the levels may be related to one another.
 _POLICY_MODULE = "harness/assurance.py"
@@ -196,105 +183,3 @@ def test_the_policy_module_is_what_the_predicate_would_flag() -> None:
         f"the block the exclusion is for — the required-stages table — is no "
         f"longer what {_POLICY_MODULE} relates the levels in"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-8 — no live document claims the trivial fast path has shipped
-# ---------------------------------------------------------------------------
-
-#: Sentences that would present the fast path as available. Each names ``trivial``
-#: *and* a claim of current capability. Deliberately not a bare ``trivial`` scan:
-#: every as-built record now names the level, and must, to say it is upgraded.
-_SHIPPED_CLAIM = re.compile(
-    r"\btrivial\b[^.]{0,120}?\b(?:skips?|bypass\w*|no LLM review|without a review)\b"
-    r"|\b(?:skips?|bypass\w*)\b[^.]{0,120}?\breview\b[^.]{0,60}?\btrivial\b",
-    re.IGNORECASE,
-)
-
-#: Words that mark such a sentence as describing the *decided policy* or the
-#: unbuilt future rather than today's behaviour. The vocabulary must be
-#: describable — the proposal's own table says `trivial` skips design and review —
-#: so the ban is on presenting it as reachable, not on stating the mapping.
-_NOT_YET = re.compile(
-    r"\bnot built\b|\bunbuilt\b|\bnot (?:yet )?ship\w*\b|\bhas \*\*not\*\* shipped\b"
-    r"|\bupgrad\w*\b|\brewrit\w*\b|\bunavailable\b|\bwould\b|\buntil\b|\bcannot\b"
-    r"|\bnever returns\b|\bno run can\b|\blater increment\b|\bitem 2\b",
-    re.IGNORECASE,
-)
-
-
-def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"(?<=[.!?])\s+|\n\n", text) if s.strip()]
-
-
-def _live_fast_path_claims(text: str) -> list[str]:
-    """Sentences presenting the trivial fast path as something that works."""
-    return [
-        sentence
-        for sentence in _sentences(text)
-        if _SHIPPED_CLAIM.search(sentence) and not _NOT_YET.search(sentence)
-    ]
-
-
-def _live_markdown() -> list[str]:
-    return [
-        rel
-        for rel in _tracked()
-        if rel.endswith(".md") and not rel.startswith(_HISTORICAL_PREFIXES) and rel != _SELF
-    ]
-
-
-def test_the_document_corpus_reaches_the_surfaces_ac8_names() -> None:
-    """Non-vacuity floor on the AC-8 corpus, and on its exclusions.
-
-    The criterion names four surfaces by hand; the scan is deliberately wider
-    than that list, because a claim can appear in a file nobody thought to name.
-    What the floor pins is that the surfaces the criterion *did* name are in it,
-    and that the historical records it must not police are out.
-    """
-    docs = _live_markdown()
-    for expected in (
-        "commands/harness.md",
-        "skills/spec-authoring/SKILL.md",
-        "specs/features/verb-model.md",
-        "specs/features/run-ledger.md",
-    ):
-        assert expected in docs, f"the AC-8 scan no longer reaches {expected}"
-    assert not any(d.startswith(_HISTORICAL_PREFIXES) for d in docs)
-
-
-@pytest.mark.parametrize("doc", _live_markdown(), ids=lambda d: d)
-def test_no_live_document_claims_the_trivial_fast_path_works(doc: str) -> None:
-    """AC-8: ``trivial`` is described as recognized and upgraded, never as available.
-
-    A run that could skip the LLM review needs the deterministic certification
-    path, which is item 2 of the parent proposal and is not built. A document
-    saying otherwise would send an operator to label an issue in the belief that
-    it buys something, and the harness would silently give them ``simple``.
-    """
-    claims = _live_fast_path_claims((_REPO_ROOT / doc).read_text(encoding="utf-8"))
-    assert not claims, (
-        f"{doc} presents the trivial fast path as shipped (#352 AC-8). It is "
-        f"recognized and upgraded to `simple` until the certification path "
-        f"lands. Offending sentences: {claims}"
-    )
-
-
-def test_the_fast_path_predicate_discriminates() -> None:
-    """The control, through the same predicate — both directions.
-
-    A ban is free against prose that never made the claim, so the sample that
-    *does* make it has to be caught, and the sample that correctly describes the
-    upgrade has to be let through. The second half is the one that matters: a
-    predicate flagging every mention would pressure an author into deleting the
-    sentence that tells the truth, which is how #330's guard nearly shipped.
-    """
-    shipped = "An issue labelled `assurance:trivial` skips the LLM review entirely."
-    assert _live_fast_path_claims(shipped) == [shipped]
-
-    honest = (
-        "`trivial` skips design and the LLM review in the decided mapping, but "
-        "no run can reach it: `start` upgrades it to `simple` until the "
-        "certification path is built."
-    )
-    assert _live_fast_path_claims(honest) == []

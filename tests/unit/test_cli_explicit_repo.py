@@ -224,6 +224,7 @@ _MINIMAL_ARGV: dict[str, list[str]] = {
     "start": ["start", "T-1"],
     "design": ["design"],
     "review": ["review"],
+    "certify": ["certify"],
     "close": ["close", "T-1"],
     "checkpoint": ["checkpoint"],
     "cancel": ["cancel", "01J"],

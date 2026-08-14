@@ -76,6 +76,22 @@ from tests._reclaim import (
 # ===========================================================================
 
 
+async def _close_refusal(db_path, run_id, head_sha):
+    """``close``'s gate answer, resolved then mapped.
+
+    Since #353 the two halves are separate: :func:`~harness.cli._review_gate.certify_head`
+    resolves the evidence and ``close._certification_refusal`` maps it onto the
+    verb's refusal vocabulary (a pure function, no DB). Calling both here keeps
+    these tests measuring the same pair the verb runs.
+    """
+    from harness.cli._review_gate import certify_head
+
+    return close_mod._certification_refusal(
+        await certify_head(db_path, run_id, head_sha), run_id, head_sha
+    )
+
+
+
 def _seed_closable_worktree(
     path: Path, *, minutes_ago: int, name: str = "impl.py"
 ) -> tuple[Path, str]:
@@ -221,7 +237,14 @@ def test_stale_sweep_reports_a_closable_run_instead_of_reclaiming_it(
 
     payload = json.loads(result.stdout)
     assert payload["closable"] == [
-        {"ticket": "400", "run_id": "RCLOSE", "head_sha": head}
+        {
+            "ticket": "400",
+            "run_id": "RCLOSE",
+            "head_sha": head,
+            # #353: which kind of evidence covers HEAD, read off the same
+            # ``HeadCertification`` the predicate already resolved.
+            "evidence_kind": "review",
+        }
     ]
     assert payload["reclaimed"] == []
     assert payload["skipped"] == []
@@ -629,7 +652,9 @@ def test_closable_predicate_agrees_with_the_close_gate(tmp_path: Path) -> None:
 
         liveness = run_sync(reclaim_liveness.open_run_liveness(db, f"5{index:02d}"))
         predicted = run_sync(reclaim_closable.closable_run(db, liveness))  # type: ignore[arg-type]
-        gate = run_sync(close_mod._evaluate_gate(db, f"RAGREE{index}", head))
+        gate = run_sync(
+            _close_refusal(db, f"RAGREE{index}", head)
+        )
 
         assert (predicted is not None) == (gate is None), (
             f"{label}: sweep says closable={predicted is not None}, "

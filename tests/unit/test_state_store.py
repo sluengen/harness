@@ -98,6 +98,7 @@ async def test_runs_table_columns_match_spec(tmp_path: Path) -> None:
         "resumed_from",   # #258: the preserved branch ``--resume`` recovered, else NULL
         "assurance",         # #352: the level start snapshotted for the run
         "assurance_reason",  # #352: why the run carries that level
+        "base_sha",          # #353: the merge-target SHA the trivial classifier diffs from
     }
     assert set(cols.keys()) == expected
     # #352: both nullable. A run row written before the migration must be

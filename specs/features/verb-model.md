@@ -1,8 +1,8 @@
 ---
 feature: verb-model
 status: implemented
-last_updated: 2026-08-11
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#318", "#321", "#339", "#338", "#359", "#363", "#352", "#370"]
+last_updated: 2026-08-15
+tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#318", "#321", "#339", "#338", "#359", "#363", "#352", "#370", "#353"]
 ---
 
 # Verb model — start / design / review / close
@@ -36,9 +36,9 @@ The harness is **not** a pipeline that drives agents. One orchestrating agent se
 
 No new tracker round-trip: `labels` is already in the payload `start` fetched, so a tracker-less run simply has none to read. Resolution is **total and fails safe in one direction** — no label, two conflicting levels, an uninterpretable `assurance:*` value, and a `NULL` column on a row written before the migration all read as `simple`, the level that still requires a review. The recorded `assurance_reason` says which of those it was (`label`, `no_label`, `conflicting_labels`, `unknown_label`, `fast_path_unavailable`, `unrecorded`), because a run that silently lost its operator's stated intent is what an audit needs to see; the three reasons that mean *you stated something and it was not honoured* also warn on stderr. A bad label is never a refusal.
 
-**`trivial` is recognized and rewritten.** It is in the vocabulary because the vocabulary is the decided policy, but no run can snapshot it: `start` upgrades it to `simple` with reason `fast_path_unavailable`, since the deterministic certification path that makes skipping a review safe is item 2 of the proposal and is not built. So the `llm_review` column above has no consumer yet — every level a run can currently hold requires a review.
+**`trivial` is honoured where the repo can certify one** (#353; *superseded 2026-08-15: until #353 this read "recognized and rewritten — no run can snapshot it"*). `resolve_assurance` now returns the level as stated. Whether the *repo* can act on it is a second, still-pure question — `apply_fast_path_availability(resolution, fast_path_available=...)`, which `start` feeds with `load_trivial_allowlist(repo_root).valid`. A repo declaring no usable `assurance.trivial_paths` allowlist can never certify anything, so opening a `trivial` run there would charge every run an extra verb call and two tracker writes forever for an outcome already known at `start`; such a run opens at `simple` with `fast_path_unavailable`, and the existing stderr warning fires and now says something actionable. The `llm_review` column above therefore has its consumer: [`certify`](#certify--the-deterministic-trivial-fast-path) guards on `required_stages(assurance).llm_review` rather than comparing the level to a string.
 
-**It is a snapshot, not a cache.** `start` is its only writer and nothing mutates it, so `design` and `review` read the run row rather than re-reading labels: a label edited mid-run cannot remove a requirement the run was opened under. A repeat `start` reports the *recorded* pair for the same reason `attended` does.
+**It is a snapshot in one direction — monotone, not immutable** (#352, amended by #353). `start` writes the pair; `certify` is the only other writer and can only tighten `trivial` → `simple` (`assurance_reason='diff_ineligible'`), through an `UPDATE … WHERE assurance = 'trivial'` whose WHERE clause makes the direction a property of the statement rather than a convention. Nothing else mutates it, so `design` and `review` still read the run row rather than re-reading labels: a label edited mid-run cannot remove a requirement the run was opened under, and the level can only ever have grown stricter. A repeat `start` reports the *recorded* pair for the same reason `attended` does.
 
 The Linear transition is the only non-local side effect, and it runs **last**: if the worktree creation or the ledger insert fails, nothing has touched Linear. The rollback ordering is locked by `test_cli_start.py::test_worktree_failure_leaves_no_db_row_and_no_transition` and `::test_db_failure_removes_worktree_and_no_transition`. The open run is recorded as the `runs` row, not as an event.
 
@@ -283,15 +283,53 @@ The `review` verb is the loop boundary, so it enforces two **ledger-backed spend
 
 This is the enforcement of the one canonical stop policy, which `skills/review-discipline/SKILL.md` owns and `agents/reviewer.md` / `commands/harness.md` / `commands/build.md` / `commands/review.md` point at rather than restate (#329). The breakers are checked at the verb boundary, not mid-session: a run that runs away *between* verbs is bounded by the wall-clock check at the next boundary, not interrupted mid-thought — the honest limit of ledger-backed breakers, and the reason true token/$ metering is deferred.
 
+### `certify` — the deterministic trivial fast path
+
+`harness certify [--run-id <id>] [--gate-exit <code>] [--gate-log <p>]` is what makes `assurance:trivial` safe to honour (#353, item 2 of proposal [`assurance-led-lifecycle`](../proposals/assurance-led-lifecycle.md)). A `trivial` run calls it **instead of** `review`. It runs no engine, and it has exactly two answers, both exit 0:
+
+- **`certified`** — every path changed by `base_sha...HEAD` is allowlisted and unrestricted, the repo's verify gate is green at this HEAD, and the worktree is clean. A `certify` event is appended, bound to that SHA, and `close` accepts it. No `review` event is written: a synthetic pass would enter `harness stats`' verdict-by-engine aggregate as a judgement nobody made.
+- **`assurance_upgraded`** — anything else about the *diff*. The run row moves to `simple` (`assurance_reason='diff_ineligible'`), the issue's `assurance:trivial` label is replaced with `assurance:simple`, a comment records the machine-readable reason and the offending paths, and the orchestrator proceeds to `review`. Exit 0, because a correct upgrade is the safety mechanism working and an unattended loop must not read it as an error.
+
+A red or missing gate is **neither**: it is a refusal (exit 5, `gate_failed` / `no_gate_evidence` — the same two tags `review` emits), and it mutates nothing. "Come back when the gate is green" is the answer to a red tree; upgrading there would let a red tree quietly buy a review the run had not earned the right to ask for. Three more refusals exit 2 and also mutate nothing: `no_run`, `assurance_not_trivial` (decided through `required_stages(assurance).llm_review`, not a string compare), and `dirty_worktree` (`close`'s own predicate, called rather than copied — certifying a tree whose working copy differs from HEAD would attest to content nobody classified).
+
+**What decides eligibility.** The allowlist is repo configuration (`CONTEXT.md` → `assurance.trivial_paths`), read from the **run's own worktree**; the veto is code ([`harness/trivial_diff.py`](../../harness/trivial_diff.py) → `RESTRICTED_PATTERNS`), covering the eight surfaces the ticket names — source, security, persistence, configuration, command/guidance, feature-spec, decision, and other public contract. Narrowing is always available to a repo; widening past the veto is not, because a repo-configurable restricted list would put the safety property under the control of the input it protects against. **The restricted scan runs first**, so no allowlist pattern — however broad — can launder a restricted path, and `CONTEXT.md` is itself restricted, so a run that edits its own allowlist is ineligible on that ground alone. Patterns take exactly three forms (`<prefix>/**`, `*.<ext>`, an exact path) matched by a hand-written matcher rather than `fnmatch` or `PurePath.match`, both of which would decide a widening case nobody reasoned about; no spelling of *everything* is expressible, and **one** malformed pattern invalidates the whole list rather than being dropped, since silently discarding one changes which paths are eligible with nothing failing.
+
+**The classification boundary is the whole run, not the newest commit.** `base_sha` is the run's merge target at `start` (see [run ledger](run-ledger.md)), and the range is `base_sha...HEAD` computed with `--no-renames` and `-z`. Three-dot is what stops a run widening its allowlist in commit 1 and certifying in commit 2 — the widening commit is still inside the range — and it is why a base branch that advances mid-run cannot change the answer. `--no-renames` is a gate mechanism, not a formatting preference: `--name-only` prints a *detected* rename as its destination alone, so moving `harness/thing.py` to an allowlisted `docs/thing.md` would otherwise be reported as one allowlisted path and a change that deletes a source file would classify as trivial.
+
+**Everything unresolved is ineligible**, and there is exactly one direction to fail in. Absent or invalid allowlist (`no_allowlist`), a repo that configures no `verify:` at all (`gate_not_configured` — the one place `certify` is deliberately stricter than the shared `has_gate_evidence`, whose acceptance of an unconfigured gate is right for a review, where an engine still read the diff, and wrong for a certification, whose entire safety argument *is* the gate), a run with no recorded boundary (`no_base_sha`), an unreadable diff (`diff_unreadable`), an empty diff (`empty_diff`), a restricted path (`restricted_path`), an unlisted one (`unlisted_path`). So a bug here costs a fast path, never a gate.
+
+**Ordering is the contract.** Every check that can refuse runs before any mutation, and on the upgrade path the stricter run row is committed **before** `tracker_client` is even resolved. A tracker outage therefore cannot leave a run whose row says `trivial` while its issue says `simple`: the row is authoritative, the sync is best-effort, and a partial sync is reported by naming the artifact (`tracker_error: "label" | "comment"`) rather than by rolling anything back. Only the assurance label is touched, and that holds *by construction* — both tracker calls are single-label operations, so no code path enumerates the issue's labels and writes a set back.
+
+#### Scenario: an eligible trivial run certifies without an engine
+
+- GIVEN an open `trivial` run whose whole `base_sha...HEAD` diff is allowlisted and unrestricted, a clean worktree, and a green verify gate the caller reports
+- WHEN the agent runs `harness certify --run-id <id> --gate-exit 0`
+- THEN no design or review engine is invoked, a `certify` event is appended carrying `certified_sha`, `base_sha`, `assurance`, `classifier_version`, `eligible_paths`, `allowlist` and the same `gate_*` evidence contract `review` records, no `review` event is written, and `close` accepts that exact SHA and reports `evidence_kind: "trivial_certification"`
+
+#### Scenario: one ineligible path upgrades the run
+
+- GIVEN the same run, but one changed path is restricted (or matches no allowlist pattern)
+- WHEN the agent runs `harness certify`
+- THEN **no** `certify` event is written, the run row reads `simple` / `diff_ineligible` *before* the tracker is touched, the issue's assurance label is replaced and a comment names the reason and the offending paths, the verb exits 0 with `outcome: "assurance_upgraded"`, and the orchestrator proceeds to an ordinary `review`
+
+#### Scenario: a certification the tree has moved past
+
+- GIVEN a run that certified at SHA `A` and then committed, so HEAD is `B`
+- WHEN the agent runs `harness close`
+- THEN the gate refuses `stale_review` and names `A` among the evidenced SHAs — the binding is to the exact tree, and the answer is to certify the new HEAD
+
 ### `close` — enforce the gate, then merge
 
 `harness close <ticket> --run-id <id>` enforces the gate, integrates the current `origin/<base>`, merges the already-committed HEAD to the base branch, pushes, transitions the ticket to Done, and finalizes the run.
 
+The gate takes **two kinds of evidence** since #353, and it is one query for both ([`harness/cli/_review_gate.py`](../../harness/cli/_review_gate.py)): a gate-evidenced `review` pass whose `reviewed_sha` equals HEAD, or a gate-evidenced `certify` event whose `certified_sha` equals HEAD. `close.py` holds no query of its own — `_certification_refusal` is a **pure** mapping from the shared verdict onto `close`'s five (unchanged, locked) `RefusalReason` members, and `reclaim --stale`'s closable classifier calls the same predicate, because a sweep reporting *closable* for a run `close` would refuse leaves the ticket neither reclaimed nor closed. A review is preferred where both cover HEAD; the verdict's `evidence_kind` is what `CloseOutput` and the sweep report, so neither re-derives it.
+
 #### Scenario: the gate is satisfied
 
 - GIVEN an open run with a clean worktree and a `verdict=pass` whose `reviewed_sha` equals HEAD
+- OR GIVEN an open run with a clean worktree and a `certify` event whose `certified_sha` equals HEAD (#353) — `evidence_kind` then reads `trivial_certification` instead of `review`, and `reviewed_sha` keeps its name and its meaning (the SHA the evidence binds to, which is the SHA that merges)
 - WHEN the agent runs `harness close <ticket> --run-id <id>`
-- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done **and confirms it landed against the mutation's own post-write state** (#233, `harness/linear.py`, `harness/github.py`), flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`) — the main checkout is never touched (CAL-1154)
+- THEN the verb merges the run branch into `origin/<base>` **in a throwaway worktree** (`git merge --no-ff`), pushes the merge commit to `origin/<base>`, transitions the ticket to Done **and confirms it landed against the mutation's own post-write state** (#233, `harness/linear.py`, `harness/github.py`), flips the run to `status=closed`, and emits `CloseOutput` (`run_id`, `ticket`, `reviewed_sha`, `merged`, `ticket_done`, `status`, `evidence_kind`) — the main checkout is never touched (CAL-1154)
 
 #### Scenario: the base advanced during the run
 
@@ -325,7 +363,7 @@ This is the enforcement of the one canonical stop policy, which `skills/review-d
 
 - GIVEN an open run that does not satisfy the gate
 - WHEN the agent runs `harness close`
-- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no `verdict=pass` on record), `stale_review` (a pass exists but HEAD moved after it), or `no_gate_evidence` (a pass covers HEAD but cannot show the repo's verify gate ran)
+- THEN the verb exits 2 with exactly one structured `reason`: `no_run` (no `start` row), `dirty_worktree` (uncommitted edits — never reviewed), `no_passing_review` (no evidence of **either** kind on record), `stale_review` (evidence exists but HEAD moved after it), or `no_gate_evidence` (evidence covers HEAD but cannot show the repo's verify gate ran). The five members are unchanged by #353 — they are a locked output contract — so the last three widen in meaning to cover a `certify` row as well as a `review` pass, and the messages (which are not contract) say which. The consequence to read deliberately: a `trivial` run that never certified is refused `no_passing_review`, an odd tag for a run that never intended a review; the message explains it and the tag stays stable
 
 #### Scenario: the ticket-Done transition cannot be confirmed
 

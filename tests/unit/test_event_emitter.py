@@ -42,6 +42,7 @@ LIVE_EVENT_TYPES: list[EventType] = [
     "release",
     "design",
     "reclaim_undone",
+    "certify",
 ]
 
 #: Retired deterministic-engine types (CAL-574). No live code emits these; the

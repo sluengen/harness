@@ -209,6 +209,66 @@ def tracked_paths(
     return names or None
 
 
+def diff_paths(
+    worktree_path: Path,
+    base_sha: str,
+    *,
+    timeout: float | None = LS_FILES_TIMEOUT_SECONDS,
+) -> list[str] | None:
+    """The worktree-relative paths changed by ``base_sha...HEAD`` — or ``None`` (#353).
+
+    Sync (it shells out); call it through :func:`asyncio.to_thread` from async
+    code. ``None`` means *no opinion*: the path is not a directory, is not itself
+    a git top-level, or ``git diff`` failed, timed out, or could not resolve the
+    boundary. The caller converts that to ``diff_unreadable`` — ineligible, so a
+    run whose diff cannot be read takes an ordinary review.
+
+    **Three-dot, not two.** ``base_sha...HEAD`` is the run's own side since the
+    merge base, which is exactly what ``close`` merges, so a base branch that
+    advanced mid-run cannot change the answer. That is a security property and
+    not merely a stability one: it is what stops a run widening its allowlist in
+    one commit and certifying itself in the next, because the widening commit is
+    still inside the range being classified. A future "optimisation" to an
+    incremental range would be a gate widening.
+
+    Unlike :func:`tracked_paths`, an **empty** result is returned as ``[]`` and
+    not folded into ``None``: "this run changed nothing" is a real,
+    distinguishable answer here, and the classifier gives it its own refusal
+    (``empty_diff``) rather than treating it as a failed probe.
+
+    **``--no-renames`` is a gate mechanism, not a formatting preference.** Rename
+    detection is on by default since git 2.9, and ``--name-only`` prints a
+    detected rename as its **destination alone**. So moving ``harness/thing.py``
+    to ``docs/thing.md`` would be reported as a single allowlisted path, and a
+    change that deletes a source file would classify as trivial. With renames
+    off, the same move is an add and a delete and both paths are judged.
+
+    The :func:`worktree_toplevel_matches` anchor is the same trap
+    :func:`tracked_paths` documents: git walks **up** from a directory whose
+    worktree registration was pruned, so the diff would be computed against the
+    enclosing checkout's HEAD — a tree nobody asked about.
+    """
+    if not worktree_path.is_dir() or not worktree_toplevel_matches(worktree_path):
+        return None
+    try:
+        proc = run_git(
+            worktree_path,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            f"{base_sha}...HEAD",
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
+        return None
+    if proc.returncode != 0:
+        return None
+    # ``-z`` is NUL-terminated, so a newline in a filename cannot forge an entry.
+    return [name for name in proc.stdout.split("\0") if name]
+
+
 def rev_parse_head(worktree_path: Path, *, timeout: float | None = None) -> str:
     """Return the current HEAD SHA of ``worktree_path`` (sync — run in a thread).
 

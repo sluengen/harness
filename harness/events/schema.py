@@ -60,6 +60,13 @@ EventType = Literal[
     # being the restored run's newest ledger activity, it stops the next hourly
     # ``--stale`` sweep from immediately re-reclaiming the ticket it just restored.
     "reclaim_undone",
+    # Certify verb (#353) — the deterministic trivial fast path: an eligible
+    # diff at a green-gated HEAD, certified without any engine. Deliberately
+    # **not** a ``review``: it carries no verdict, no engine and no LLM claim, so
+    # ``harness stats``' verdict-by-engine aggregate cannot be inflated by a
+    # judgement nobody made. ``close``'s gate accepts it as the second kind of
+    # evidence (``harness/cli/_review_gate.py``).
+    "certify",
 ]
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))

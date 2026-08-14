@@ -116,7 +116,7 @@ from harness import close_merge
 from harness._git import rev_parse_head, teardown_worktree
 from harness._time import elapsed_ms, iso_z
 from harness.cli._repo import REPO_OPTION, resolve_repo_argument, resolve_verb_db_path
-from harness.cli._review_gate import certify_head
+from harness.cli._review_gate import HeadCertification, certify_head
 from harness.cli._runs import resolve_open_run
 from harness.cli._verb import VerbError, run_verb
 from harness.cli.close_retry import call_with_retry, merge_retry_tag, ticket_retry_tag
@@ -183,6 +183,15 @@ class CloseOutput(BaseModel):
     transition (#233), not merely attempted. A tracker-less close
     (``layers.linear: false``, CAL-1104) reports ``False`` — the merge still
     landed. It is not a success flag: read ``merged`` / ``status`` for that.
+
+    ``evidence_kind`` (#353) names what opened the gate — ``review`` for a
+    gate-evidenced LLM pass, ``trivial_certification`` for a deterministic one.
+    Additive and **always present**, never omitted, so a consumer reads the kind
+    from a field rather than inferring it from absence — the shape ``attended``
+    and ``assurance`` took. ``reviewed_sha`` keeps its name and its meaning (the
+    SHA the evidence binds to, which is the SHA that merged) rather than being
+    renamed for the second kind: it is a locked output key, and renaming it would
+    break every consumer to relabel a value that did not change.
     """
 
     run_id: str
@@ -191,6 +200,7 @@ class CloseOutput(BaseModel):
     merged: bool
     ticket_done: bool
     status: str
+    evidence_kind: str
 
 
 class _CloseError(VerbError):
@@ -357,10 +367,14 @@ async def _close_resolved_run(
             reason="dirty_worktree",
         )
 
-    # 4. Enforce the review gate: a pass whose reviewed_sha == HEAD.
-    gate = await _evaluate_gate(db_path, resolved_run_id, head_sha)
-    if gate is not None:
-        raise _CloseError(gate[1], 2, reason=gate[0])
+    # 4. Enforce the gate: evidence of either kind, bound to HEAD, gate-evidenced.
+    #    Resolved once here so the evidence *kind* is in scope for CloseOutput —
+    #    a second query to learn what opened the gate is exactly the drift the
+    #    shared predicate exists to prevent (#353).
+    certification = await certify_head(db_path, resolved_run_id, head_sha)
+    refusal = _certification_refusal(certification, resolved_run_id, head_sha)
+    if refusal is not None:
+        raise _CloseError(refusal[1], 2, reason=refusal[0])
 
     # 5. Validate Linear is configured before any local side effect, so a
     #    missing key does not leave a half-merged tree. Tracker-less
@@ -497,6 +511,10 @@ async def _close_resolved_run(
         merged=True,
         ticket_done=ticket_done,
         status="closed",
+        # Non-None by construction: ``_certification_refusal`` raised above for
+        # every verdict other than ``certified``, and the kind is set exactly
+        # when the verdict is.
+        evidence_kind=certification.evidence_kind or "review",
     )
 
 
@@ -505,44 +523,47 @@ async def _close_resolved_run(
 # ---------------------------------------------------------------------------
 
 
-async def _evaluate_gate(
-    db_path: Path,
+def _certification_refusal(
+    certification: HeadCertification,
     run_id: str,
     head_sha: str,
 ) -> tuple[RefusalReason, str] | None:
-    """Evaluate the review gate; return ``(reason, message)`` on refusal else ``None``.
+    """Map the shared verdict onto ``close``'s refusals; ``None`` when the gate opens.
 
-    A pass whose ``reviewed_sha == head_sha`` **and** which carries verify-gate
-    evidence opens the gate.  Otherwise: ``no_passing_review`` when no pass
-    exists at all, ``stale_review`` when a pass exists but only for a different
-    SHA, ``no_gate_evidence`` when the pass covering HEAD cannot show that the
-    repo's gate ran (CAL-1082).
+    **Pure** — it resolves nothing and reads no database (#353). The ledger
+    question lives in :mod:`harness.cli._review_gate`, because ``reclaim --stale``
+    asks the identical one to classify a stranded run as *closable* (#255) and the
+    two must not be able to disagree: a sweep that reports closable for a run this
+    gate then refuses leaves the ticket neither reclaimed nor closed. What stays
+    here is the mapping onto ``close``'s own refusal reasons and their messages,
+    which are this verb's user-facing contract and no other caller's business.
 
-    The ledger question itself lives in :mod:`harness.cli._review_gate`, because
-    ``reclaim --stale`` asks the identical one to classify a stranded run as
-    *closable* (#255) and the two must not be able to disagree — a sweep that
-    reports closable for a run this gate then refuses leaves the ticket neither
-    reclaimed nor closed.  What stays here is the mapping onto ``close``'s own
-    refusal reasons and their messages, which are this verb's user-facing
-    contract and no other caller's business.
+    The five :data:`RefusalReason` members are **unchanged**: they are a locked
+    public contract, so the two negatives widen in meaning to cover either
+    evidence kind and the messages — which are not contract — say which. The
+    consequence to read deliberately: a ``trivial`` run that never certified is
+    refused ``no_passing_review``, which the message explains rather than the tag.
     """
-    certification = await certify_head(db_path, run_id, head_sha)
     if certification.verdict == "certified":
         return None
     if certification.verdict == "no_passing_review":
-        return ("no_passing_review", f"no passing review recorded for run {run_id}")
+        return (
+            "no_passing_review",
+            f"no passing review and no trivial certification recorded for run "
+            f"{run_id}",
+        )
     if certification.verdict == "stale_review":
         return (
             "stale_review",
-            f"passing review is stale: HEAD {head_sha} has no pass "
-            f"(reviewed SHAs: {sorted(certification.pass_shas)})",
+            f"the recorded evidence is stale: HEAD {head_sha} is not covered "
+            f"(evidenced SHAs: {sorted(certification.evidenced_shas)})",
         )
     return (
         "no_gate_evidence",
-        f"passing review for HEAD {head_sha} carries no verify-gate "
-        f"evidence: it was recorded without running the repo's gate (or by a "
-        f"harness that predates it). Re-run review to record a pass backed by "
-        f"a green gate.",
+        f"the evidence for HEAD {head_sha} carries no verify-gate evidence: it "
+        f"was recorded without running the repo's gate (or by a harness that "
+        f"predates it). Re-run review — or `harness certify` — to record "
+        f"evidence backed by a green gate.",
     )
 
 

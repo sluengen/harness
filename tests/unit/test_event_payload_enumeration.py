@@ -149,6 +149,12 @@ def test_a_stale_payload_list_is_caught() -> None:
     assert set(_payload_models()) - set(offenders[0]) == {
         "CloseFailureEventData",
         "ReclaimUndoneEventData",
+        # #353's ``CertifyEventData`` postdates the pre-fix sentence, so it is a
+        # third model the stale list could not have named. Listed rather than
+        # derived-around on purpose: this control's whole subject is *which*
+        # models a fixed historical sentence omitted, and computing that from
+        # today's module would make it agree with itself.
+        "CertifyEventData",
     }
 
 

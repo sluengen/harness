@@ -58,6 +58,22 @@ from tests._asyncutil import run_sync
 # ---------------------------------------------------------------------------
 
 
+async def _refusal(db_path, run_id, head_sha):
+    """``close``'s gate answer, resolved then mapped.
+
+    Since #353 the two halves are separate: :func:`~harness.cli._review_gate.certify_head`
+    resolves the evidence and ``close._certification_refusal`` maps it onto the
+    verb's refusal vocabulary (a pure function, no DB). Calling both here keeps
+    these tests measuring the same pair the verb runs.
+    """
+    from harness.cli._review_gate import certify_head
+
+    return close_mod._certification_refusal(
+        await certify_head(db_path, run_id, head_sha), run_id, head_sha
+    )
+
+
+
 def test_review_event_data_required_keys() -> None:
     """A minimal review payload dumps exactly the always-present keys.
 
@@ -564,7 +580,7 @@ def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "pass")
 
-    assert run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
+    assert run_sync(_refusal(db_path, run_id, "headsha")) is None
 
 
 def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
@@ -573,7 +589,7 @@ def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "fail")
 
-    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
+    result = run_sync(_refusal(db_path, run_id, "headsha"))
     assert result is not None and result[0] == "no_passing_review"
 
 
@@ -583,7 +599,7 @@ def test_close_gate_stale_when_sha_moved(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "oldsha", "pass")
 
-    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
+    result = run_sync(_refusal(db_path, run_id, "newsha"))
     assert result is not None and result[0] == "stale_review"
 
 

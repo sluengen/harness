@@ -112,8 +112,13 @@ def _row(db_path: Path) -> dict[str, Any]:
 
 
 #: Every label shape an issue can arrive with, and the pair the run must
-#: snapshot. The ``trivial`` row is AC-6 at the CLI: no run row may hold it while
-#: the deterministic certification path is unbuilt.
+#: snapshot. The fixture repo declares **no** ``assurance.trivial_paths``
+#: allowlist, so the ``trivial`` row still reads ``fast_path_unavailable`` — the
+#: pre-#353 answer, now for the reason the tag names rather than unconditionally.
+#: The other direction (a repo that *can* certify) is
+#: :func:`test_trivial_is_honoured_where_the_repo_declares_an_allowlist`, and
+#: without that pair this table would keep passing against a ``start`` that had
+#: silently gone back to rewriting every ``trivial``.
 _CASES: list[tuple[str, list[str] | None, str, str]] = [
     ("no-labels-key", None, "simple", "no_label"),
     ("empty-labels", [], "simple", "no_label"),
@@ -342,3 +347,44 @@ def test_a_repeat_start_does_not_re_warn(repo: Path, db_path: Path) -> None:
     assert "assurance" not in (second.stderr or "").lower(), (
         "a repeat start re-warned about a resolution it did not act on"
     )
+
+
+def test_trivial_is_honoured_where_the_repo_declares_an_allowlist(
+    repo: Path, db_path: Path
+) -> None:
+    """#353: the run snapshots the level the issue stated.
+
+    The half of the pair that fails if the availability check is removed in the
+    "always downgrade" direction — which is the direction that silently disables
+    the whole fast path while every other test in this module stays green.
+    """
+    (repo / "CONTEXT.md").write_text(
+        "```yaml\nassurance:\n  trivial_paths:\n    - docs/**\n```\n"
+    )
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-m", "declare a trivial allowlist")
+
+    result = _start(repo, db_path, _stub(["assurance:trivial"]))
+
+    assert result.exit_code == 0, result.output
+    assert _row(db_path) == {"assurance": "trivial", "assurance_reason": "label"}
+
+
+def test_trivial_is_downgraded_where_the_repo_declares_none(
+    repo: Path, db_path: Path
+) -> None:
+    """The other half, stated explicitly rather than only as a table row.
+
+    The fixture repo has no ``assurance:`` block at all, so there is nothing the
+    fast path could certify and opening a ``trivial`` run would charge every run
+    an extra verb call forever. The operator's stated intent was not honoured,
+    which is what ``fast_path_unavailable`` means — and ``start`` warns about it.
+    """
+    result = _start(repo, db_path, _stub(["assurance:trivial"]))
+
+    assert result.exit_code == 0, result.output
+    assert _row(db_path) == {
+        "assurance": "simple",
+        "assurance_reason": "fast_path_unavailable",
+    }
+    assert "fast_path_unavailable" in result.stderr

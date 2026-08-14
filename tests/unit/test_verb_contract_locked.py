@@ -81,6 +81,7 @@ _INSTANCES: dict[str, BaseModel] = {
         merged=True,
         ticket_done=True,
         status="closed",
+        evidence_kind="review",
     ),
 }
 
@@ -147,7 +148,21 @@ EXPECTED_VERB_OUTPUT_KEYS: dict[str, set[str]] = {
         "probes_run",
         "probes_survived",
     },
-    "close": {"run_id", "ticket", "reviewed_sha", "merged", "ticket_done", "status"},
+    # ``evidence_kind`` (#353) names what opened the gate — ``review`` or
+    # ``trivial_certification``. Additive and always present, never omitted, so a
+    # consumer reads the kind from a field rather than inferring it from absence:
+    # the shape ``attended`` and ``assurance`` took. ``reviewed_sha`` deliberately
+    # keeps its name — it is the SHA the evidence binds to either way, and a
+    # rename would break every consumer to relabel a value that did not change.
+    "close": {
+        "run_id",
+        "ticket",
+        "reviewed_sha",
+        "merged",
+        "ticket_done",
+        "status",
+        "evidence_kind",
+    },
 }
 
 #: ``StartOutput.ticket`` serializes to a nested object; its keys are part of the

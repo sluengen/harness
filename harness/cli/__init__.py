@@ -11,6 +11,7 @@ are split across modules for readability:
 * :mod:`harness.cli.start`    — ``harness start <ticket>``
 * :mod:`harness.cli.design`   — ``harness design --run-id <id>``
 * :mod:`harness.cli.review`   — ``harness review --run-id <id>``
+* :mod:`harness.cli.certify`  — ``harness certify --run-id <id>`` (#353)
 * :mod:`harness.cli.close`    — ``harness close <ticket> --run-id <id>``
 * :mod:`harness.cli.promote`  — ``harness promote start / continue / status / pr / escalate``
 * :mod:`harness.cli.serve`    — ``harness serve`` (the ADR 0012 runtime host)
@@ -27,6 +28,7 @@ from __future__ import annotations
 import typer
 
 from harness.cli.cancel import cancel_command
+from harness.cli.certify import certify_command
 from harness.cli.checkpoint import checkpoint_command
 from harness.cli.close import close_command
 from harness.cli.defer import defer_command
@@ -100,6 +102,9 @@ app.command(name="design", help="Produce the run's Design section with a dedicat
 )
 app.command(name="review", help="Review the worktree HEAD with codex; record the verdict bound to that SHA.")(  # noqa: E501
     review_command
+)
+app.command(name="certify", help="Certify a trivial run's diff deterministically, or upgrade it to simple.")(  # noqa: E501
+    certify_command
 )
 app.command(name="close", help="Close a run: enforce the review gate, merge/push, transition ticket to Done.")(  # noqa: E501
     close_command

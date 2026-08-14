@@ -143,6 +143,18 @@ async def _migrate(db_path: Path) -> None:
         migration carries, and ``coerce_assurance`` reads it as ``simple`` — the
         level that still requires a review — so legacy runs need no backfill and
         behave exactly as they did.
+    #353: ``runs.base_sha TEXT`` — the SHA of the run's merge-target ref
+        (``preferred_base_ref``) resolved at ``start``. It is the stable boundary
+        the trivial classifier diffs from (``base_sha...HEAD``), so a base branch
+        that advances mid-run cannot change which paths a run is judged on.
+        Deliberately *not* the worktree's start point: on a ``--resume`` that is
+        the recovered WIP tip, which already contains the dead run's commits,
+        and ``close`` merges those too. Nullable: ``NULL`` is what every
+        pre-migration row carries and what a failed ``rev-parse`` records, and
+        :func:`harness.cli._runs.read_run_base_sha` reads it as *no boundary*,
+        which the classifier converts to ``no_base_sha`` — ineligible, upgrade
+        to ``simple``. So a damaged or absent boundary can only make a run more
+        verified, never less, and no backfill is needed.
     """
     async with aiosqlite.connect(db_path) as conn:
         await conn.execute("PRAGMA journal_mode = WAL")
@@ -153,6 +165,7 @@ async def _migrate(db_path: Path) -> None:
             "ALTER TABLE runs ADD COLUMN resumed_from TEXT",
             "ALTER TABLE runs ADD COLUMN assurance TEXT",
             "ALTER TABLE runs ADD COLUMN assurance_reason TEXT",
+            "ALTER TABLE runs ADD COLUMN base_sha TEXT",
         ):
             try:
                 await conn.execute(ddl)

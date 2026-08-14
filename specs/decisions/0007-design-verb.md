@@ -70,6 +70,36 @@ Four resolved dimensions:
 > makes skipping a review safe is a later increment and is not built. The
 > trivial fast path has **not** shipped.
 
+> **Amended 2026-08-15 (#353) — the trivial fast path has shipped, and the
+> security bound moved with it.** The two sentences above about `trivial` are
+> superseded: `resolve_assurance` now returns `trivial` as stated, and
+> `harness certify` is the deterministic certification the previous amendment
+> named as missing. A `trivial` run takes no design and **no LLM review**; its
+> evidence is a `certify` event bound to HEAD, which `close` accepts as the
+> second kind of gate evidence alongside a gate-evidenced `review` pass.
+>
+> So the bound is no longer *"the worst a label can buy is `complex` → `simple`,
+> i.e. skipping the design stage"*. The worst a hostile or mistaken
+> `assurance:trivial` label can now buy is **skipping the LLM review** — and only
+> when four independent conditions all hold, none of them under the label
+> writer's control: the repo's own `CONTEXT.md` declares a valid
+> `assurance.trivial_paths` allowlist (absent, empty, or holding one malformed
+> pattern, `start` opens the run at `simple` with `fast_path_unavailable`); the
+> repo configures a `verify:` command **and** the orchestrator reports it green
+> at this HEAD (an unconfigured gate is an ineligibility reason, not a pass —
+> the one place `certify` is stricter than `has_gate_evidence`); the worktree is
+> clean; and **every** path in `base_sha...HEAD` matches the allowlist *and*
+> survives the restricted-surface veto held in code
+> (`harness/trivial_diff.py`), which no repo configuration can widen. What a
+> label still cannot buy: the verify-gate evidence check, `close`'s SHA-bound
+> gate, a `review` event (none is ever synthesized), or eligibility for any
+> source, security, persistence, configuration, command/guidance, feature-spec,
+> decision, or other public-contract path. An ineligible diff upgrades the run
+> and its issue to `simple` and takes an ordinary review; every unresolved
+> condition — no allowlist, no boundary, an unreadable diff, an empty diff —
+> fails in that same direction, so a bug in the classifier costs a fast path and
+> never a gate.
+
 > **Amended 2026-08-08 — the design engine is selectable natively.** A required
 > design may run through `claude` (the default, with the configured Opus model)
 > or `codex`. Codex runs read-only and returns only the design Markdown as its

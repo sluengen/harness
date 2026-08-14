@@ -836,6 +836,10 @@ def test_context_economy_no_git_output_in_json(repo: Path, db_path: Path) -> Non
         "merged",
         "ticket_done",
         "status",
+        # #353: which kind of evidence opened the gate. A bounded status field
+        # like the rest — it carries no git output, which is what this guard is
+        # about.
+        "evidence_kind",
     }
     assert noisy not in result.output
     assert "Merge made by" not in result.output
