@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.2.0 -->
+<!-- guidance:tracker@0.3.0 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -42,7 +42,9 @@ Six operations cover the agent-led lifecycle. (Marker and resume operations are 
 
 ### `create` contract
 
-Input is a title, a UTF-8 body file, optional labels or priority, and mandatory initial Todo placement. Read `CONTEXT.md`'s `tracker:` field, load only the matching provider skill, and follow that provider's `create` recipe. The provider resolves all identifiers at runtime, creates the issue, attaches it to the configured queue or project, and explicitly sets Todo. Return the canonical identifier and URL only after every placement step succeeds.
+Input is a title, a UTF-8 body file, **exactly one assurance level**, optional labels or priority, and mandatory initial Todo placement. The level is chosen by `spec-authoring` → *Choosing assurance*; this contract requires only that one *was* chosen, states no classification criteria of its own, and carries the value to the provider as an `assurance:<level>` label. Read `CONTEXT.md`'s `tracker:` field, load only the matching provider skill, and follow that provider's `create` recipe. The provider resolves all identifiers at runtime, creates the issue, attaches it to the configured queue or project, applies the assurance label, and explicitly sets Todo. Return the canonical identifier and URL only after every placement step succeeds.
+
+**Assurance is a postcondition, not a hint.** A created issue carries **exactly one** recognized assurance label, and the provider confirms it by re-reading the issue rather than by trusting an exit status. A provider that cannot apply exactly one — the backend has no such label, two landed, or the write was refused — reports the filing **incomplete** with its identifier and URL and stops. It **never** returns a queue-ready identifier. Same shape as a failed placement, for the same reason: the queue's readers act on what a ticket says about itself, so a ticket that says nothing about its assurance is picked up as though it had been classified. The label records that a choice was made; it is not evidence the choice was right.
 
 If issue creation succeeds but queue attachment or Todo placement fails, report the partial creation with its identifier and URL, then stop. Never create a duplicate, delete the partial issue, switch providers, or claim success. The operator can repair placement without losing the original issue.
 

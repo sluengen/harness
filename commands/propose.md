@@ -1,4 +1,4 @@
-<!-- guidance:propose@0.2.1 -->
+<!-- guidance:propose@0.3.0 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /propose — work an idea before it becomes work
@@ -33,7 +33,7 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 
 ### 4. On accepted, spin out the work
 - Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
-- Create an issue per item in the breakdown through the `tracker` skill's `create` operation — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`). Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
+- Create an issue per item in the breakdown through the `tracker` skill's `create` operation — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
 
 ## Report
 Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.

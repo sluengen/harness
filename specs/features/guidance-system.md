@@ -1,8 +1,8 @@
 ---
 feature: guidance-system
 status: implemented
-last_updated: 2026-08-12
-tickets: ["#401", "#407"]
+last_updated: 2026-08-15
+tickets: ["#401", "#407", "#354"]
 ---
 
 # Guidance system
@@ -28,7 +28,7 @@ Agents begin with the generated process mirror and `CONTEXT.md`. The process mir
 
 The `tracker` skill reads the top-level `CONTEXT.md:tracker` value and loads only the matching provider skill. Active repo guidance uses provider-neutral terms unless a provider condition is explicit.
 
-`tracker.create` is the filing contract. It accepts a title, UTF-8 body file, optional labels or priority, and mandatory Todo placement. The selected provider resolves identifiers at runtime, creates the issue, attaches it to the configured queue or project, and sets Todo explicitly. It returns the canonical identifier and URL only after placement succeeds. The caller reports a partial creation and never creates a duplicate, deletes the issue, or switches providers.
+`tracker.create` is the filing contract. It accepts a title, UTF-8 body file, exactly one assurance level, optional labels or priority, and mandatory Todo placement. The selected provider resolves identifiers at runtime, creates the issue, attaches it to the configured queue or project, applies the assurance label, and sets Todo explicitly. It returns the canonical identifier and URL only after placement succeeds. The caller reports a partial creation and never creates a duplicate, deletes the issue, or switches providers.
 
 Capture commands gather their distinct content and delegate filing to this contract. Provider skills retain the API commands, credentials, body-file boundary, and placement recipe.
 
@@ -38,6 +38,28 @@ Capture commands gather their distinct content and delegate filing to this contr
 - WHEN `tracker.create` reports the result
 - THEN the caller reports the existing issue identifier and URL and stops
 - AND it does not create a duplicate, delete the issue, switch providers, or claim full success
+
+### Assurance is chosen once, at filing
+
+A created issue carries exactly one recognized `assurance:<level>` label. Assurance is a postcondition of `tracker.create`, not a hint: the provider confirms the label by re-reading the created issue rather than by trusting an exit status, and a provider that cannot apply exactly one — the backend has no such label, two landed, or the write was refused — reports the filing incomplete with its identifier and URL and stops rather than returning a queue-ready identifier.
+
+Two directions are kept apart deliberately. `harness/assurance.py` answers *given a level, which stages must this run pay for*, and resolves anything missing, doubled, or unrecognized to `simple`. `skills/spec-authoring/SKILL.md` → *Choosing assurance* answers *given this work, which level does the filer put on it*, and is the single home for that judgment: `trivial` for a diff inside the repo's configured allowlist carrying no unresolved design or public-contract decision, `simple` as the default, `complex` for consequential architecture, data-model, interface, or security decisions or work spanning more than one lifecycle contract. Two rules carry the weight — uncertain work is `simple`, and `trivial` is never inferred from low severity, a short description, or a small estimated diff alone. The rubric states no level-to-stages mapping and the policy module carries no selection advice.
+
+Every registered surface that files an issue names the rubric inside the instruction that files, and restates none of it: `/bug`, `/tweak`, `/propose`, `/assess`, `/harness ingest`, `/harness routine quality`, and `/build`'s DEFER path. `templates/change.md` and `/start` step 5 point at it too — they choose a level without filing. Existing unlabelled issues are not backfilled; they resolve to `simple` through the policy core.
+
+#### Scenario: a provider cannot apply the assurance label
+
+- GIVEN a filing surface passes `tracker.create` a title, a body file, and one chosen assurance level
+- WHEN the provider creates the issue but the assurance label does not exist in the backend, or two land
+- THEN the filing is reported incomplete with its identifier and URL and stops
+- AND no queue-ready identifier is returned, because a queue reader treats an unclassified ticket as a classified one
+
+#### Scenario: a filer cannot place the work
+
+- GIVEN a filer writing a change spec who cannot confidently place the work
+- WHEN the level is chosen
+- THEN it is `simple`
+- AND neither low severity, a short description, nor a small estimated diff on its own earns `trivial`, since all three are authored by whoever opened the issue
 
 ### One-level progressive disclosure
 
@@ -91,7 +113,8 @@ The guidance system changes no runtime application data. `registry.yaml` records
 ## Interface surface
 
 - `commands/harness.md` is the public `/harness` command contract and routes to one workflow body.
-- `skills/tracker/SKILL.md` owns provider-neutral tracker operations; the configured provider skill owns execution details.
+- `skills/tracker/SKILL.md` owns provider-neutral tracker operations, including assurance as a `create` input and postcondition; the configured provider skill owns execution details and maps the chosen level to a label without carrying the rubric.
+- `skills/spec-authoring/SKILL.md` → *Choosing assurance* is the one home for how a filing-time assurance level is chosen; `harness/assurance.py` remains the one home for what a level obliges a run to pay for.
 - `skills/code-quality/SKILL.md` and `skills/review-discipline/SKILL.md` are the always-loaded cores for their domains and directly declare every conditional checklist trigger.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 
@@ -99,6 +122,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 
 - UTF-8 `bytes / 4` is a stable context-budget heuristic, not an exact tokenizer count.
 - Conditional guidance supports a hot root plus one reference level. A workflow that needs a deeper conditional tree must first change the topology contract and its guard.
+- The assurance rubric is advisory prose an agent follows, so it is a quality control rather than a security boundary. The enforcing boundaries stay the repo's `assurance.trivial_certify` allowlist and the runtime fail-safe rewrite to `simple`; an applied label records that a choice was made, never that the choice was right.
+- The guards over the rubric read prose, so they are bounded by sentence segmentation and by how tightly each polarity token is anchored to the verb it governs. They catch a rule deleted, negated, or excepted; a permission whose negation sits one or two words before the inference verb, and an uncertainty routed to a level the choice verb does not immediately name, are outside their reach.
+- `harness/cli/promote.py`'s escalation files through `Tracker.create_issue`, which takes no labels, so a promotion escalation is filed without an assurance level and resolves to `simple`.
 
 ## Decisions
 
