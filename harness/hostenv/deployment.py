@@ -32,7 +32,10 @@ from pathlib import Path
 
 __all__ = ["DEPLOYMENT_STATUSES", "Deployment", "classify"]
 
-#: Every verdict :func:`classify` can produce. Deliberately **not** in precedence
+#: Every *named* verdict :func:`classify` can produce — it also returns ``""``
+#: for "nothing mediated the invocation", which is the absence of a verdict
+#: rather than one of them, and which ``check_wrapper`` answers from its own
+#: container-presence fallback. Deliberately **not** in precedence
 #: order — ``detached`` is decided before ``symlink`` and this tuple ends with it —
 #: because the order that matters is the one written in :func:`classify` and a
 #: second, differently-ordered statement of it would be a claim nothing checks.

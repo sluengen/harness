@@ -1,8 +1,8 @@
 ---
 feature: host-platform
 status: partial
-last_updated: 2026-08-13
-tickets: ["#305", "#308", "#309", "#380", "#383"]
+last_updated: 2026-08-15
+tickets: ["#305", "#308", "#309", "#312", "#380", "#383"]
 ---
 
 # Host platform abstraction
@@ -294,17 +294,112 @@ construction in bash; a missing interpreter is now a hard exit naming
 `HARNESS_HOST_PYTHON`.
 
 **The shim runs under `set -euo pipefail`, and no command it runs may hide behind a
-builtin's exit status (#383).** The wrapper computes one value the client cannot —
-`HARNESS_WRAPPER_STATUS`, the symlink/copy/detached/drifted verdict `harness doctor`
-reports — and until #383 it computed it as `export NAME="$(_wrapper_status)"`. That is
-a single command whose status is `export`'s, so a failing `_wrapper_status` never
-reached `set -e`: the wrapper carried on and spawned the container with an empty
-verdict, which `doctor` then reads as "no wrapper mediated this". Assignment and
-`export` are now separate commands, so the probe's own status stops the wrapper. The
-rule generalises past this one line, which is why a source guard holds it rather than
-the shellcheck run alone — shellcheck's SC2155 is satisfiable by a `disable` directive
-that leaves the masking in place, and it does not run on a host without shellcheck
-installed, which is every developer machine here.
+builtin's exit status (#383).** The rule was established on a line that no longer
+exists: until #383 the wrapper computed the drift verdict as
+`export NAME="$(_wrapper_status)"`, a single command whose status is `export`'s, so a
+failing `_wrapper_status` never reached `set -e` — the wrapper carried on and spawned
+the container with an empty verdict, which `doctor` then reads as "no wrapper mediated
+this". Splitting assignment from `export` made the probe's own status stop the script.
+#312 then moved the verdict out of the shim entirely (below), so the shim no longer
+computes anything to mask. **The rule outlives its example**, which is why a source
+guard holds it rather than the shellcheck run alone — shellcheck's SC2155 is satisfiable
+by a `disable` directive that leaves the masking in place, and it does not run on a host
+without shellcheck installed, which is every developer machine here.
+
+### How the client is deployed, and how it is classified (#312)
+
+There are **three** installs of the one versioned shim, and the shim itself is the
+single versioned source of all three (CAL-1123):
+
+| Install | What is on `PATH` | Source root | Version |
+|---|---|---|---|
+| **Symlink** (recommended where a checkout exists) | a symlink to `docker/harness-wrapper.sh` | resolved by walking the link | none — it follows the checkout |
+| **Image** (#312) | a stamped copy emitted by the image | **baked in at install time** | `<package version>+<UTC install instant>` |
+| **Copy** | a detached snapshot | resolved from the copy's own location, so usually none | none |
+
+The image install is what closes #286's bootstrap case. `docker/entrypoint.sh` gains an
+`install` role — its first real branch, since `verb` is a token it *strips* — which
+`exec`s `docker/install-client.sh`. That producer emits, on **stdout**, a provenance
+preamble followed by the **verbatim bytes** of `docker/harness-wrapper.sh`. Installing
+consults no git, no network and nothing at the destination, so a client fix arrives
+without the previous client having worked. Emission on stdout rather than a mounted host
+write is deliberate: a raw `docker run` pins no `--user`, so a container-side write
+succeeds on Docker Desktop and fails on every native Linux daemon — the platform split
+#380 was about.
+
+The two baked values are **plain shell variables, not exports**
+(`_harness_baked_source_root`, `_harness_baked_client_version`). A non-exported
+assignment inside the emitted script cannot be set by the process that invokes the
+client, so which checkout supplies `PYTHONPATH` and which tree the freshness guard
+rebuilds is fixed at install time. `--source-root` is therefore effectively required: an
+installed client sits outside every checkout, and without it the client resolves its
+root to `$HOME`, where the freshness guard silently disarms, the source sync becomes a
+no-op, and `PYTHONPATH=$HOME` cannot import the client at all. That value is the one
+injection surface the role opens — it is single-quoted into an emitted shell script, and
+an absolute-path requirement plus refusal of a single quote or a newline is the complete
+defence rather than an escaping scheme.
+
+Because the image now *ships* the client, the freshness guard's pathspec widens from
+`harness/` to `harness/ docker/`. That is not housekeeping: a client fix that never
+marked the image stale would leave `install` emitting the old client — the delivery
+mechanism failing to deliver itself. Both rebuild triggers (the `%ct` comparison and the
+fast-forward flag, now `_ff_touched_sources`) remain separately load-bearing, each with
+a case the other cannot answer.
+
+**The drift classification now lives in `harness/hostenv/deployment.py`.** The shim
+exports three *facts* about itself — `HARNESS_CLIENT_PATH`, `HARNESS_SOURCE_ROOT`
+(always the value the resolver returned, never an inherited one) and
+`HARNESS_CLIENT_VERSION` — and `classify()` derives the verdict, which
+`harness.hostenv.spawn` pins into the container as `HARNESS_WRAPPER_STATUS` and, only
+when non-empty, `HARNESS_CLIENT_VERSION`. Precedence, and the order is load-bearing:
+
+1. a stamp present → **`image`** — **checked first**. An image install sitting inside a
+   checkout is a plain file whose bytes differ from the versioned shim (it carries the
+   preamble), so any earlier branch calls it `drifted` and `doctor` FAILs a correct
+   install;
+2. no client path → **no verdict** (`""`), leaving `check_wrapper`'s container-presence
+   fallback to tell a native run from a pre-#312 shim;
+3. no versioned shim under the source root → `detached`;
+4. the client is a symlink → `symlink`;
+5. byte-identical to the versioned shim → `copy`, else `drifted`. Content, not the stat
+   signature — the question is whether a copy has fallen behind, and size-and-mtime
+   equality answers that wrong.
+
+`doctor` reports `image` as PASS naming the stamp, which is AC-1's "reportable without
+inspecting a symlink target": the value is forwarded, never read off a link. A symlink
+install stays PASS and now says its version is **unpinned**, which is the honest report
+of the defect #312 exists for.
+
+**Known limit, not fixed here:** this path runs in the client's direct spawn. `harness
+serve` forwards no deployment verdict and `protocol.py` makes env inexpressible over the
+socket, so `doctor` through a running server still reports a false FAIL for `wrapper`.
+Pre-existing (it predates #312), and filed separately rather than absorbed — `serve.py`
+is at its size bound and the fix needs a protocol widening.
+
+#### Decision — the image is the shim's provenance; the checkout stays the package's
+
+The ticket asked for "logic that changes lives in the image". That is unachievable as
+written, and the record should say why rather than leave the next reader to rediscover
+it. `harness/hostenv/*` is the code that *constructs* `docker run`; running it inside a
+container needs `/var/run/docker.sock` mounted, which is root-equivalent on the host and
+the exact posture the non-root image (CAL-1008, #380) exists to refuse. So the boundary
+is drawn at the artifact, not at the concept: **the shim's text comes from the image;
+the host-side package keeps arriving by the native path**, which this ticket left out of
+scope. The baked `HARNESS_SOURCE_ROOT` is the direct consequence — an image-installed
+shim still has to be told which checkout holds its package. Giving the package the same
+versioned provenance as the shim is the real fix and is filed as its own work.
+
+**Why the classification moved from bash to Python.** Two reasons, recorded because the
+diff shows only the move. The shim sits on a line-count ratchet
+(`EXECUTABLE_LINE_CEILING`) whose own written remedy is that logic belongs in
+`harness.hostenv`, which is tested; moving fourteen lines of branching out is what paid
+for the stamp the same ticket added, and the bound was **re-baselined downward**, 124 →
+115. And a bash branch is the one kind of branch in this repo no unit test can reach
+directly — every verdict now has one. AC-4 is satisfied as **preserved, with the reason
+recorded**: same environment variable, same four verdicts, same `doctor` mapping, plus
+`image`. The four end-to-end tests that execute the real shim were kept **byte-unmodified**
+as the regression floor, which is what shows the classification changed location and not
+behaviour.
 
 ## Data model
 

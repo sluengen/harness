@@ -216,7 +216,7 @@ if [[ "$IMAGE" == "$DEFAULT_IMAGE" ]]; then
   if [[ -n "$_image_created" && -n "$_source_committed" ]]; then
     _image_epoch=$(_rfc3339_to_epoch "$_image_created" || true)
     if [[ -n "${_image_epoch:-}" ]] && { [[ "$_source_committed" -gt "$_image_epoch" ]] || [[ "$_ff_touched_sources" -eq 1 ]]; }; then
-      echo "harness: $IMAGE is stale — harness/ has moved since the image was built ($_image_created)." >&2
+      echo "harness: $IMAGE is stale — harness/ or docker/ has moved since the image was built ($_image_created)." >&2
       echo "harness: rebuilding it now (docker build -t $IMAGE -f docker/Dockerfile . in $_source_root)" >&2
       if ! docker build -t "$IMAGE" -f "$_source_root/docker/Dockerfile" "$_source_root" >&2; then
         echo "harness: rebuild FAILED — refusing to run a stale $IMAGE." >&2

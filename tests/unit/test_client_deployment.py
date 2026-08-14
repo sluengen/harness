@@ -135,6 +135,31 @@ def test_a_drift_of_the_same_size_and_age_is_still_drift(tmp_path: Path) -> None
     )
 
 
+def test_a_client_that_cannot_be_read_is_drifted(tmp_path: Path) -> None:
+    """The bash this replaced reached this case too, and reached it the same way.
+
+    ``cmp -s`` on a client it cannot read exits non-zero, so the old ladder fell
+    through to ``drifted``. The port's ``except OSError`` is what preserves that
+    reach — without it an unreadable or vanished client raises out of
+    ``classify`` and takes the whole verb down on a health-reporting detail.
+
+    Exercised with a client path that does not exist, which raises
+    ``FileNotFoundError`` regardless of the uid the suite runs under — unlike a
+    permission bit, which root out-ranks, and unlike a directory, which
+    ``filecmp`` answers ``False`` for without ever raising.
+    """
+    root = _versioned_checkout(tmp_path)
+    client = tmp_path / "vanished-harness"
+
+    result = deployment.classify(
+        client_path=str(client), source_root=str(root), client_version=""
+    )
+    assert result.status == "drifted", (
+        "an unreadable client must report as drifted — the verdict that tells the "
+        f"operator to re-install — not raise out of classify: {result}"
+    )
+
+
 # --- The fifth verdict, and why it is checked first (AC-1) -------------------
 
 
