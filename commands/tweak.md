@@ -1,4 +1,4 @@
-<!-- guidance:tweak@0.2.0 -->
+<!-- guidance:tweak@0.3.0 -->
 # /tweak — capture a small upgrade, with an escape hatch to /propose
 
 Usage: `/tweak <description>`
@@ -47,8 +47,10 @@ No bespoke confirm gate otherwise — a clear tweak proceeds straight to Step 3.
 - **From actual use** — the situation that surfaced it
 - **Acceptance criteria** — specific, testable outcomes
 
-**Step 4 — file it.** Pass the title and UTF-8 body file to
-`tracker.create`, with any labels and mandatory initial Todo placement. The
+**Step 4 — file it.** Pass the title, the UTF-8 body file, and exactly one
+assurance level — chosen per `spec-authoring` → *Choosing assurance*, never
+restated here — to `tracker.create`, with any labels and mandatory initial Todo
+placement. The
 `tracker` skill reads `CONTEXT.md`, selects the configured provider, and owns
 creation plus queue placement. If it reports a partial creation, surface the
 identifier and URL and stop; never retry by creating a duplicate.

@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.12.0 -->
+<!-- guidance:spec-authoring@0.13.0 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -70,7 +70,7 @@ A single, concrete piece of work. The tracker issue is its home (`tracker`). Sec
 
 **Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `CONTEXT.md` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
 
-**The design stage is not yours to size (conditional).** Where the harness verb loop drives the ticket, `harness design` runs a top-tier engine in a fresh, verb-owned context. Whether it runs at all is the issue's **assurance** level, not your judgment while writing: only work labelled for the highest level requires a design, and everything unlabelled resolves to the level that requires none. Write the change spec's Design section to the depth the *decision* needs and no further — where the stage does run, the build's technical design is produced per run rather than by the implementing session inline, so a thin Design section on a filed ticket is not the failure mode it once was; where it does not, the change is one whose design was never going to be the hard part. (This paragraph previously also instructed the author to set a per-ticket `build:` / `review:` model tier at spec-authoring time; those labels were retired in #321, and the model the review engine runs on is now one value in the repo's `CONTEXT.md`, set by whoever tunes the loop rather than by the spec's author.)
+**The design stage is not yours to size (conditional).** Where the harness verb loop drives the ticket, `harness design` runs a top-tier engine in a fresh, verb-owned context. Whether it runs at all is the issue's **assurance** level, not your judgment while writing: only work labelled for the highest level requires a design, and everything unlabelled resolves to the level that requires none. Write the change spec's Design section to the depth the *decision* needs and no further — where the stage does run, the build's technical design is produced per run rather than by the implementing session inline, so a thin Design section on a filed ticket is not the failure mode it once was; where it does not, the change is one whose design was never going to be the hard part. (This paragraph previously also instructed the author to set a per-ticket `build:` / `review:` model tier at spec-authoring time; those labels were retired in #321, and the model the review engine runs on is now one value in the repo's `CONTEXT.md`, set by whoever tunes the loop rather than by the spec's author.) *Which* level the ticket carries is a different question from how deep to write the Design section, and *Choosing assurance* below is where it is answered.
 
 **Lifecycle sweep (conditional).** For any state-changing operation — a create / update / delete, or anything that mutates stored state — enumerate the **derived artifacts** of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state, per artifact, what happens to it. "Unaffected" is an acceptable answer; silence is not. This is the sweep that catches the write path that ships its primary mutation but drops a derived artifact — a stale cache, an unrevoked share token, a count left un-decremented — the defect class review keeps finding one artifact at a time. Do it at design time, in the change spec, where it is cheapest; a change that mutates no stored state has no sweep to do, so say so and move on.
 
@@ -79,6 +79,22 @@ A single, concrete piece of work. The tracker issue is its home (`tracker`). Sec
 **File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`code-quality` Part C — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
 
 **Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
+
+### Choosing assurance
+
+Every ticket carries **exactly one** `assurance:<level>` label, chosen when it is filed, and this subsection is the one home for *how that choice is made*. The other direction — which stages a level obliges a run to pay for, and what a run does with a label that is missing, doubled, or unrecognized — is the harness policy module's decision, **not this rubric's**. The two answer different questions, at different moments, for different readers; neither restates the other.
+
+| Level | Choose it when |
+|---|---|
+| `trivial` | The expected diff falls inside the repo's configured allowlist (`CONTEXT.md` → `assurance.trivial_certify`) and the work carries no unresolved design or public-contract decision. |
+| `simple` | The default: a normal change, a bug, a missing detail. |
+| `complex` | The work carries a consequential architecture, data-model, interface, or security decision, or spans more than one interacting lifecycle contract. |
+
+Two rules carry the weight.
+
+**Uncertain is `simple`.** A filer who cannot place the work confidently chooses `simple`, always. Guessing high costs one design pass; guessing low costs the independent read that would have caught the guess.
+
+**Never infer `trivial` from low severity, a short description, or a small estimated diff alone.** All three are properties of a ticket's *text*, written by whoever filed it and influenceable by anyone who can open an issue — and three of the surfaces that file tickets are agents acting on content someone else wrote. `trivial` is earned only by the repo's own certification command measuring the real diff against its versioned allowlist; until that command has run and passed, the work is `simple`. A ticket cannot argue its way down.
 
 ## Feature spec
 
