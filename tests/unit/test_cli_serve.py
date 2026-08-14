@@ -152,12 +152,29 @@ def test_the_surface_enumerates_subcommands_not_just_their_group() -> None:
 
 
 def test_the_surface_is_derived_rather_than_listed() -> None:
-    """Every leaf of the registered app is reachable — the property a hardcoded
-    list cannot keep. Derived here from the app itself, so a verb added later is
-    covered without editing this test."""
+    """Every leaf of the registered app is on the socket surface unless the
+    declaration withholds it — the property a hardcoded list cannot keep.
+
+    **The inline re-derivation is deliberate and is the whole value**: it is an
+    *independent* oracle, so a ``_leaves`` regression that silently drops one
+    registered verb is caught here and — measured, not assumed — nowhere else
+    in the tree. That is #311's own failure mode: a verb the CLI registers, for
+    which the socket answers ``unknown_verb``, sending the caller hunting for
+    code that is not missing. ``test_serve_verb_reachability.py`` checks that
+    everything *on* the surface resolves; this checks everything registered
+    *is* on it. Do not retire this as a duplicate of that guard.
+
+    ``SOCKET_EXCLUSIONS`` is subtracted rather than ignored (#311): otherwise
+    this assertion holds only while the declaration is empty, and the first
+    legitimate exclusion would redden a test that knows nothing about
+    exclusions — an escape hatch fully tested yet unusable. Sharing the
+    constant costs no independence, the subtraction being pinned by that same
+    module against fixture apps this test never sees.
+    """
     import typer
 
     from harness.cli import app
+    from harness.cli.serve_surface import SOCKET_EXCLUSIONS
 
     def leaves(command: object, prefix: str = "") -> Iterator[str]:
         commands = getattr(command, "commands", None)
@@ -169,7 +186,7 @@ def test_the_surface_is_derived_rather_than_listed() -> None:
 
     expected = {name for name in leaves(typer.main.get_command(app)) if name}
 
-    assert serve.operation_surface() == expected
+    assert serve.operation_surface() == expected - set(SOCKET_EXCLUSIONS)
 
 
 @pytest.mark.parametrize("argv", [["run"], ["exec", "sh"], ["build"], ["nonesuch"]])
@@ -615,3 +632,104 @@ def test_a_colon_bearing_repo_is_still_refused_after_the_check_moved(
 
     assert response.reason == protocol.Reason.REPO_NOT_ALLOWED
     assert _spawns(stub_docker) == []
+
+
+# ---------------------------------------------------------------------------
+# The repo lock as a seam the maintenance sweep can take (#310).
+# ---------------------------------------------------------------------------
+
+
+def test_the_sweep_can_reenter_the_repo_lock_it_holds(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """#310's structural hazard, made a test rather than a comment.
+
+    The maintenance sweep takes the repo lock for a whole cycle and then calls
+    :meth:`VerbServer.spawn`, which takes the *same* lock across its own
+    subprocess. With a plain ``threading.Lock`` that is a thread deadlocking
+    against itself — the sweep thread wedges silently and the host stops
+    sweeping with no error anywhere. ``RLock`` is what makes it impossible.
+
+    Driven on a joined thread with a timeout rather than inline, so a regression
+    fails this test instead of wedging the whole suite.
+    """
+    done: list[int] = []
+
+    def cycle() -> None:
+        with running_server.try_repo_lock(repo) as acquired:
+            assert acquired
+            done.append(running_server.spawn(repo=repo, argv=["status"], fds=[]))
+
+    thread = threading.Thread(target=cycle, daemon=True)
+    thread.start()
+    thread.join(20)
+
+    assert not thread.is_alive(), (
+        "the sweep deadlocked against its own repo lock — `_repo_locks` must "
+        "hold a reentrant lock"
+    )
+    assert done == [0]
+    assert len(_spawns(stub_docker)) == 1
+
+
+def test_a_repo_lock_held_by_one_thread_is_refused_to_another(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """The non-vacuity mirror: reentrancy is per-thread, so cross-thread
+    serialization — the property AC-5 asserts — is unchanged by the ``RLock``.
+
+    Without this, a ``try_repo_lock`` that always yielded ``True`` would satisfy
+    the reentrancy test above while letting a sweep run on top of a live verb.
+    """
+    seen: list[bool] = []
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with running_server.try_repo_lock(repo) as acquired:
+            seen.append(acquired)
+            held.set()
+            release.wait(10)
+
+    thread = threading.Thread(target=holder, daemon=True)
+    thread.start()
+    held.wait(10)
+    try:
+        with running_server.try_repo_lock(repo) as acquired:
+            assert acquired is False, (
+                "a second thread acquired a repo lock another thread holds"
+            )
+    finally:
+        release.set()
+        thread.join(10)
+
+    assert seen == [True]
+
+
+def test_a_released_repo_lock_is_acquirable_by_another_thread(
+    running_server: serve.VerbServer, repo: Path, stub_docker: Path
+) -> None:
+    """A non-blocking acquire that never released would leave every later sweep
+    recording ``lock_contended`` forever — and every verb on that repo queued
+    behind a lock nobody holds.
+
+    **Measured from another thread, and that is load-bearing.** The lock is
+    reentrant, so the thread that took it re-acquires whether or not it ever let
+    go: a second ``with`` block on this thread passes against a
+    ``try_repo_lock`` whose ``finally`` does nothing at all. Another thread is
+    the only place the release is observable.
+    """
+    with running_server.try_repo_lock(repo) as first:
+        assert first is True
+
+    seen: list[bool] = []
+
+    def other() -> None:
+        with running_server.try_repo_lock(repo) as acquired:
+            seen.append(acquired)
+
+    thread = threading.Thread(target=other, daemon=True)
+    thread.start()
+    thread.join(10)
+
+    assert seen == [True], "the repo lock was never released"

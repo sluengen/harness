@@ -1,4 +1,4 @@
-<!-- guidance:build@1.8.0 -->
+<!-- guidance:build@1.9.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -188,7 +188,8 @@ or failed invocation is a review finding, not a PASS.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent.
   Re-run the required assurance stages; a changed diff invalidates old evidence.
 - **DEFER:** create the out-of-scope follow-up through `tracker` with explicit
-  queue placement, then ship the independently reviewed tree.
+  queue placement and exactly one assurance level, chosen per `spec-authoring` →
+  *Choosing assurance*, then ship the independently reviewed tree.
 
 If integration conflicts, dispatch a fresh conflict-resolution sub-agent. After
 two failed attempts, preserve and push the branch, reset the ticket to Todo via

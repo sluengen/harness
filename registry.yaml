@@ -1,4 +1,4 @@
-# guidance:registry@0.5.132
+# guidance:registry@0.5.133
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -43,7 +43,7 @@ files:
   # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.4.0, profiles: [harness] }
   skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.7.0, profiles: [harness] }
-  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.12.0, profiles: [harness] }
+  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.13.0, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.23.0, profiles: [harness] }
   skills/code-quality/references/untrusted-fetch.md: { id: code-quality-untrusted-fetch, version: 0.1.0, profiles: [harness] }
@@ -54,9 +54,9 @@ files:
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
   skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.1, profiles: [harness] }
-  skills/tracker/SKILL.md: { id: tracker,                     version: 0.2.0, profiles: [harness] }
-  skills/linear/SKILL.md: { id: linear,                       version: 0.7.0, profiles: [harness] }
-  skills/github-issues/SKILL.md: { id: github-issues,         version: 0.1.0, profiles: [harness] }
+  skills/tracker/SKILL.md: { id: tracker,                     version: 0.3.0, profiles: [harness] }
+  skills/linear/SKILL.md: { id: linear,                       version: 0.8.0, profiles: [harness] }
+  skills/github-issues/SKILL.md: { id: github-issues,         version: 0.2.0, profiles: [harness] }
   skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.3.0, profiles: [harness] }
   skills/guidance-coherence/SKILL.md: { id: guidance-coherence,       version: 0.1.0, profiles: [harness] }
   # Product skills, home from the retired agents repo (CAL-652, D6), part of the
@@ -82,13 +82,13 @@ files:
   agents/steward.md:                  { id: steward,                  version: 0.3.1, profiles: [harness] }
 
   # --- commands ---
-  commands/propose.md:                { id: propose,                  version: 0.2.1, profiles: [harness] }
-  commands/start.md:                  { id: start,                    version: 0.4.0, profiles: [harness] }
+  commands/propose.md:                { id: propose,                  version: 0.3.0, profiles: [harness] }
+  commands/start.md:                  { id: start,                    version: 0.5.0, profiles: [harness] }
   commands/review.md:                 { id: review,                   version: 0.2.0, profiles: [harness] }
   commands/ship.md:                   { id: ship,                     version: 0.3.0, profiles: [harness] }
-  commands/assess.md:                 { id: assess,                   version: 0.8.0, profiles: [harness] }
+  commands/assess.md:                 { id: assess,                   version: 0.9.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 1.0.0, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.8.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.9.0, profiles: [harness] }
   # /promote — the versioned universal caller over the harness promotion verbs
   # (ADR 0003). Role-resolves <src>/<dst> against CONTEXT.md branches: so the
   # same invocation drives any repo's own branch names (#189).
@@ -107,22 +107,22 @@ files:
   commands/harness.md:                { id: harness,                  version: 0.9.0, profiles: [harness] }
   commands/harness/run.md:            { id: harness-run,              version: 0.1.0, profiles: [harness] }
   commands/harness/routine-build.md:  { id: harness-routine-build,    version: 0.1.0, profiles: [harness] }
-  commands/harness/routine-quality.md: { id: harness-routine-quality, version: 0.1.0, profiles: [harness] }
-  commands/harness/ingest.md:         { id: harness-ingest,           version: 0.1.0, profiles: [harness] }
+  commands/harness/routine-quality.md: { id: harness-routine-quality, version: 0.2.0, profiles: [harness] }
+  commands/harness/ingest.md:         { id: harness-ingest,           version: 0.2.0, profiles: [harness] }
   # /bug — thin capture command over templates/adjustment.md (#199/#200):
   # files a `kind: bug` adjustment straight to Todo, no escape hatch. The
   # delegates creation and mandatory Todo placement to tracker.create.
-  commands/bug.md:                    { id: bug,                      version: 0.2.0, profiles: [harness] }
+  commands/bug.md:                    { id: bug,                      version: 0.3.0, profiles: [harness] }
   # /tweak — as /bug, `kind: tweak` (#199/#201), plus the one axis a bug
   # lacks: a named escape hatch that stops and points at /propose when the
   # tweak carries a real decision or would spawn more than one change.
-  commands/tweak.md:                  { id: tweak,                    version: 0.2.0, profiles: [harness] }
+  commands/tweak.md:                  { id: tweak,                    version: 0.3.0, profiles: [harness] }
 
   # --- templates ---
   templates/generate_codex_artifacts.py: { id: generate-codex-artifacts, version: 0.2.0, profiles: [harness] }
   templates/proposal.md:              { id: template-proposal,        version: 0.1.3, profiles: [harness] }
   templates/assessment.md:            { id: template-assessment,      version: 0.3.0, profiles: [harness] }
-  templates/change.md:                { id: template-change,          version: 0.3.0, profiles: [harness] }
+  templates/change.md:                { id: template-change,          version: 0.4.0, profiles: [harness] }
   # Capture-optimized change spec for /bug and /tweak (#199): kind/area
   # frontmatter, As-built/Desired/From-actual-use/Acceptance-criteria sections.
   # An on-ramp to templates/change.md, not a competitor — /start extends it.
@@ -167,4 +167,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.5 }
-  registry.yaml:                      { id: registry,                 version: 0.5.132 }
+  registry.yaml:                      { id: registry,                 version: 0.5.133 }

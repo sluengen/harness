@@ -1,8 +1,8 @@
 ---
 feature: cli-surface
 status: implemented
-last_updated: 2026-08-12
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#318", "#321", "#355", "#347", "#339", "#338", "#359", "#378", "#370", "#390", "#391", "#393", "#394", "#396"]
+last_updated: 2026-08-14
+tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#310", "#318", "#321", "#355", "#347", "#339", "#338", "#359", "#378", "#370", "#390", "#391", "#393", "#394", "#396", "#311"]
 ---
 
 # CLI surface — the fixed verb contract
@@ -37,7 +37,7 @@ harness reclaim   [<run-id>] [--ticket <id>] [--stale [--project <name>] [--olde
 harness defer     <ticket> --reason <text> [--reason-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # triage: comment + additively apply the `decision`/`input`/`operator` label (`--needs`) + assign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (CAL-1143, CAL-1167, ADR 0006, #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
 harness release   <ticket> --resolution <text> [--resolution-file <p>] [--needs <kind>] [--repo <p>] [--db <p>] [--json]   # decision-sweep return write: write the resolution into the change spec + remove the hold label (`--needs`) + unassign the operator on a Build-queue ticket (`repo.project` when set, else the whole tracker queue — #248); writes no ledger row — the tracker issue is the record (#193, the `defer` shape in reverse; #338). `--db` and the JSON `run_id` are retained as deprecated, inert compatibility surface
 harness worktrees cleanup                 [--repo <p>] [--age <duration>] [--merged] [--force] [--db <p>]   # remove stale worktrees (git/fs); --merged vetoes an in-flight/stashed/dirty run unless --force (#235)
-harness doctor                            [--engine <e>] [--repo <p>] [--db <p>]               # system health checks (read-only); --engine selects whose authentication and liveness are required, so `--engine codex` does not require Claude
+harness doctor                            [--engine <e>] [--repo <p>] [--db <p>]               # system health checks (read-only); --engine selects whose authentication and liveness are required, so `--engine codex` does not require Claude. Since #310 the checks include `sweeps`: the lag since this repo's newest recorded maintenance sweep against `loop.maintenance_interval_minutes`, reported `WARN` (never `FAIL`) when it is overdue or when nothing is recorded, and `PASS` with "disabled" when the interval is `0` — see [runtime-host.md](runtime-host.md)
 harness version                           [--json]
 harness serve                             [--socket <p>] [--image <tag>]         # the ADR 0012 runtime host: bind the control socket, spawn one-shot verb containers (#307)
 
@@ -151,6 +151,19 @@ The verbs (`start` / `design` / `review` / `close`) and `status` / `events` / `v
 
 Commands are split per concern across `harness/cli/*.py` for readability and registered in `harness/cli/__init__.py`. The verb output shapes (`StartOutput` / `ReviewOutput` / `CloseOutput`) are defined alongside their verbs and locked by `test_verb_contract_locked.py`; the full registered command set is locked by `test_cli_surface_locked.py`.
 
+### The socket surface is derived from the registered set
+
+The verb surface `serve` accepts is the leaf invocations the registered Typer app exposes, less the entries of `SOCKET_EXCLUSIONS`. The derivation lives in [`harness/cli/serve_surface.py`](../../harness/cli/serve_surface.py) and the *decision* that it is derived rather than allowlisted is recorded once, in [runtime-host.md](runtime-host.md) (*Operation surface: derived, not an allowlist*). What belongs here is the rule that keeps the two surfaces one surface, and the guard that holds it (#311).
+
+The rule has two halves, and each needs its own oracle, because one test cannot hold both without restating the derivation to itself:
+
+- **Everything the app registers reaches the socket surface.** Held by `test_cli_serve.py::test_the_surface_is_derived_rather_than_listed`, which re-derives the leaf set *inline* rather than calling `registered_leaves`. That duplication is the value, and it was measured rather than assumed: a regression dropping exactly one registered verb from `_leaves` fails that test and nothing else in the 5,915-test non-Docker suite. It is not a duplicate of the guard below and must not be retired as one.
+- **Everything on the socket surface resolves.** Held by `test_serve_verb_reachability.py`, which pairs `operation_surface()` with `resolve_verb` — the two calls `serve.py` makes on every request — and reports each verb the socket enumerates but cannot return.
+
+The second half is not the first restated, because `resolve_verb` tries prefix lengths of two and one only. A group nested three deep is therefore enumerated into the surface *and* unresolvable at it: the caller gets `unknown_verb` for a verb the CLI genuinely registers, which is exactly the drift the retired `OPERATIONS` frozenset caused, reached by a route derivation does not close. The live tree has 24 leaves and none deeper than two, so the real-app case passes on arrival and proves nothing by itself; the guard's content is a three-deep fixture app reported unreachable, measured through the same checking function the real app goes through, with a flat fixture as the control. **No ceiling was raised**: a three-deep group fails the gate by design, and routing one is the host-process work's job.
+
+**Exclusions.** `SOCKET_EXCLUSIONS` maps verb to reason and is **empty today**. It is a declaration with an effect rather than a note — `operation_surface()` subtracts its keys, so an entry makes the running server answer `unknown_verb` for that verb, which is how it was verified rather than by inspection. The guard refuses two shapes: an entry whose reason is blank, and an entry naming a verb the app no longer registers, since a waiver outliving its verb is the same rot the derived surface exists to prevent. An entry is a real narrowing of what the host accepts, so adding one is a behaviour change that needs its own ticket.
+
 ### The retired surface is banned as a usage, not as a phrase
 
 `test_cli_surface_locked.py` also holds the *docs* to the live surface: no live doc, and no Python module docstring, may name the retired engine-era CLI (CAL-574). As built, that ban distinguishes a **usage** from a **mention** (#355).
@@ -178,6 +191,7 @@ The accepted trade is that a genuine instruction written as bare prose ("use har
 
 - No dynamic subcommands: the surface only changes by editing a verb, by design (the engine-era YAML-driven subcommand generation was retired in CAL-574).
 - The retired-surface doc ban sees only code-formatted invocations (#355, above): a retired command named in bare prose is out of scope by design.
+- The socket resolves a verb from the first one or two argv tokens. A command group nested three deep would be enumerated into the socket surface and refused at it; #311's reachability guard fails the gate naming the verb rather than raising the ceiling speculatively.
 - Four command-context shapes the #355 extractor does not recognise, each measured at **zero occurrences** in the live corpus when it shipped, so they are latent rather than live: a tilde fence (`~~~`, since `_FENCE` is backtick-only), an HTML `<code>` element, a reST literal block indented fewer than 4 columns, and a fence-pairing desync caused by an inline triple-backtick span. A retired invocation written in one of those would not be caught. The fix if one ever appears is to widen the extractor, not to re-widen the term match.
 
 ## Decisions

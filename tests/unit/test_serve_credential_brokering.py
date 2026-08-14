@@ -191,7 +191,7 @@ def running(tmp_path: Path, stub_docker: Path, repo: Path):
     def build(host: HostPlatform) -> Running:
         tmpdir = Path(tempfile.mkdtemp(prefix="hs", dir="/tmp"))
         lines: list[str] = []
-        server, broker = serve.build_server(
+        server, broker, _sweeper = serve.build_server(
             socket_path=tmpdir / "c.sock",
             roots=[repo.resolve()],
             image="harness:dev",
@@ -531,7 +531,7 @@ def test_an_unsupported_host_still_binds_a_server_with_no_broker(
     tmpdir = Path(tempfile.mkdtemp(prefix="hs", dir="/tmp"))
     lines: list[str] = []
     try:
-        server, broker = serve.build_server(
+        server, broker, _sweeper = serve.build_server(
             socket_path=tmpdir / "c.sock",
             roots=[repo.resolve()],
             image="harness:dev",
