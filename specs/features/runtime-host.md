@@ -2,7 +2,7 @@
 feature: runtime-host
 status: implemented
 last_updated: 2026-08-14
-tickets: ["#307", "#308", "#309", "#310", "#370", "#380", "#383"]
+tickets: ["#307", "#308", "#309", "#310", "#311", "#370", "#380", "#383"]
 ---
 
 # Runtime host (live)
@@ -468,8 +468,13 @@ tokens of argv against the leaf set of the registered Typer app, longest-prefix
 first, so `promote start` and `worktrees cleanup` resolve as leaves. The retired
 launcher's hardcoded `OPERATIONS` frozenset went stale as soon as a verb was
 added and was six verbs behind by the time it was deleted. Derivation makes that
-drift structurally impossible, which leaves #311's guard as a floor rather than
-the mechanism. The derivation moved to its own module,
+drift structurally impossible, so #311's guard did land as a floor rather than
+the mechanism: what it holds is not the derivation restated but the *pairing* of
+enumeration with resolution, plus the `SOCKET_EXCLUSIONS` declaration this
+surface now subtracts (empty today). Both are recorded in
+[cli-surface.md](cli-surface.md), *The socket surface is derived from the
+registered set* — the rule belongs to the command surface, this decision to the
+host. The derivation moved to its own module,
 [`harness/cli/serve_surface.py`](../../harness/cli/serve_surface.py), in #310 —
 one idea with one recorded decision, on the seam convention the `review_*` /
 `close_*` / `reclaim_*` modules follow. It is a pure move: `serve.py` re-exports

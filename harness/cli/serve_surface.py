@@ -19,10 +19,35 @@ and everything it imports — into the host process at startup.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Any
 
-__all__ = ["operation_surface", "resolve_verb"]
+__all__ = [
+    "SOCKET_EXCLUSIONS",
+    "operation_surface",
+    "registered_leaves",
+    "resolve_verb",
+    "surface_for",
+]
+
+#: Verbs the socket deliberately does not accept, each mapped to why (#311).
+#:
+#: The escape hatch for the one case derivation cannot express: a verb the CLI
+#: registers that must not be reachable over the socket. It is a **declaration
+#: with an effect** — :func:`surface_for` subtracts its keys, so an entry here
+#: narrows what the server accepts rather than documenting an intention.
+#:
+#: ``tests/unit/test_serve_verb_reachability.py`` refuses an entry with a blank
+#: reason and an entry naming a verb the app does not register: a waiver
+#: outliving its verb is the same rot the derived surface exists to prevent.
+#:
+#: **Empty, deliberately.** #311 makes an unreachable verb fail loudly; it
+#: routes nothing and withholds nothing, and its Out of scope reserves adding
+#: or removing socket routes for the host-process work. ``serve`` is the one
+#: plausible candidate — a ``serve`` reached over the socket of a running
+#: ``serve`` — and excluding it is a behaviour change this ticket does not
+#: authorise. An empty mapping here is the recorded answer, not an omission.
+SOCKET_EXCLUSIONS: dict[str, str] = {}
 
 
 def _leaves(command: Any, prefix: str = "") -> Iterator[str]:
@@ -43,6 +68,27 @@ def _leaves(command: Any, prefix: str = "") -> Iterator[str]:
             yield name
 
 
+def registered_leaves(command: Any) -> set[str]:
+    """Every leaf invocation ``command`` registers, before any exclusion.
+
+    Takes the command tree as a parameter so the surface of an arbitrary app is
+    answerable — #311's guard needs a fixture app to be measured by the same
+    derivation the real one is, and a derivation reachable only through the
+    hardcoded app can only ever be restated, never falsified.
+    """
+    return set(_leaves(command))
+
+
+def surface_for(command: Any, exclusions: Mapping[str, str]) -> set[str]:
+    """``command``'s leaf invocations, less the ones ``exclusions`` withholds.
+
+    The exclusions are a parameter rather than a module read so the guard can
+    measure the real declaration and a fixture one through this same
+    subtraction.
+    """
+    return registered_leaves(command) - set(exclusions)
+
+
 def operation_surface() -> set[str]:
     """The set of verb invocations this socket will accept.
 
@@ -57,7 +103,7 @@ def operation_surface() -> set[str]:
 
     from harness.cli import app
 
-    return set(_leaves(_typer.main.get_command(app)))
+    return surface_for(_typer.main.get_command(app), SOCKET_EXCLUSIONS)
 
 
 def resolve_verb(argv: list[str], surface: set[str]) -> str | None:

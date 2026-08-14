@@ -152,12 +152,29 @@ def test_the_surface_enumerates_subcommands_not_just_their_group() -> None:
 
 
 def test_the_surface_is_derived_rather_than_listed() -> None:
-    """Every leaf of the registered app is reachable — the property a hardcoded
-    list cannot keep. Derived here from the app itself, so a verb added later is
-    covered without editing this test."""
+    """Every leaf of the registered app is on the socket surface unless the
+    declaration withholds it — the property a hardcoded list cannot keep.
+
+    **The inline re-derivation is deliberate and is the whole value**: it is an
+    *independent* oracle, so a ``_leaves`` regression that silently drops one
+    registered verb is caught here and — measured, not assumed — nowhere else
+    in the tree. That is #311's own failure mode: a verb the CLI registers, for
+    which the socket answers ``unknown_verb``, sending the caller hunting for
+    code that is not missing. ``test_serve_verb_reachability.py`` checks that
+    everything *on* the surface resolves; this checks everything registered
+    *is* on it. Do not retire this as a duplicate of that guard.
+
+    ``SOCKET_EXCLUSIONS`` is subtracted rather than ignored (#311): otherwise
+    this assertion holds only while the declaration is empty, and the first
+    legitimate exclusion would redden a test that knows nothing about
+    exclusions — an escape hatch fully tested yet unusable. Sharing the
+    constant costs no independence, the subtraction being pinned by that same
+    module against fixture apps this test never sees.
+    """
     import typer
 
     from harness.cli import app
+    from harness.cli.serve_surface import SOCKET_EXCLUSIONS
 
     def leaves(command: object, prefix: str = "") -> Iterator[str]:
         commands = getattr(command, "commands", None)
@@ -169,7 +186,7 @@ def test_the_surface_is_derived_rather_than_listed() -> None:
 
     expected = {name for name in leaves(typer.main.get_command(app)) if name}
 
-    assert serve.operation_surface() == expected
+    assert serve.operation_surface() == expected - set(SOCKET_EXCLUSIONS)
 
 
 @pytest.mark.parametrize("argv", [["run"], ["exec", "sh"], ["build"], ["nonesuch"]])
