@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.9.0 -->
+<!-- guidance:review-discipline@0.10.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -58,7 +58,7 @@ Only after Stage 1 passes.
 | **Critical** | Security hole, data loss, crash, spec violation | Blocks approval |
 | **High** | Logic bug, missing validation, missing test for a criterion | Blocks approval |
 | **Medium** | Minor inefficiency, incomplete error handling, structural drift | Fix now if small (1–5 lines); carry-forward only if out of scope |
-| **Low** | Suggestion, minor improvement | Fix now if trivial; otherwise note and move on |
+| **Low** | Suggestion, minor improvement | Fix now if trivial; otherwise record in the review notes and drop — **never filed as a ticket** |
 
 Critical and High block. Medium and Low do not, **but fix them in the same pass when the fix is small** — the builder already has the context, so deferring a two-line fix wastes more effort than doing it.
 
@@ -66,7 +66,12 @@ Critical and High block. Medium and Low do not, **but fix them in the same pass 
 
 **Fix now:** any mechanical, localised fix on code the task already touched (stale comment, missing validation, wrong helper, a duplicated block). If you can state the fix in one sentence, fix it now.
 
-**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. File it as its own ticket.
+**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. File it as its own ticket, and state in the finding why it cannot be fixed in-branch.
+
+Two bounds on filing (ADR 0015), because a queue that grows under review is a failed review process:
+
+- **The severity floor.** Only Critical, High, and a Medium meeting the carry-forward bar may be filed. A Low is never filed — fix it or record it in the review notes and drop it.
+- **The recursion cap.** A ticket filed from a review carries the `review-finding` label; that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review files nothing below High — every other finding is fixed in-branch or recorded and dropped. One generation of follow-up, never a lineage.
 
 ## Every finding has four parts
 

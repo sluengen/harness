@@ -1,11 +1,11 @@
-<!-- guidance:decision@0.1.1 -->
-# /decision — drain the tickets held for a judgment call
+<!-- guidance:decision@0.2.0 -->
+# /decision — drain the tickets held for your input
 
 Usage: `/decision`
 
 The unattended Build loop defers a ticket it cannot action: `harness defer`
-posts a comment, applies a hold label (`decision` / `input` / `operator`, ADR
-0006), and assigns the ticket to the operator — the machine-readable "a human
+posts a comment, applies a hold label (`input` / `operator`; ADR 0006's three
+kinds, consolidated to two by ADR 0015), and assigns the ticket to the operator — the machine-readable "a human
 holds this" signal `work-discovery` skips on later ticks. That outbound half
 works on its own. This is the **inbound** half: an interactive sweep that pulls
 every ticket held for a judgment call, presents it, captures the operator's
@@ -18,19 +18,20 @@ drivable unattended; `/decision` is not — it exists specifically to put a huma
 judgment call in the loop. Run it when you (the operator) are at the keyboard,
 not from an unattended routine.
 
-## Scope: `decision` holds only
+## Scope: `input` holds
 
-`/decision` selects **only** the `decision` hold kind — a judgment call the
-operator can resolve by answering, from the ticket alone. It never surfaces:
+`/decision` selects the **`input`** hold kind — the operator must supply
+something the run cannot (ADR 0015: an answer, a judgment call, a credential,
+a fact). Within the sweep, each ticket resolves one of two ways: an item
+**answerable from the ticket alone** gets the operator's call captured and
+released here; an item that needs the operator to **go do something first**
+(supply a credential, stand up infrastructure) is skipped and stays held —
+clear those by doing the thing, then answering. It never surfaces
+**`operator`** holds — an interactive, hands-on session is needed (setup, a
+visual check); clear those at the keyboard on the actual task, not here.
 
-- **`input`** holds — the operator must go supply something the run cannot (a
-  work item, a credential, infrastructure stood up). Not answerable in this
-  turn; clear these by doing the thing, not by talking through it here.
-- **`operator`** holds — an interactive, hands-on session is needed (setup, a
-  visual check). Clear these at the keyboard on the actual task, not here.
-
-This selection is by hold kind alone — never a re-triage of what a ticket
-"really" needs. That distinction was made once, at defer time (ADR 0006), and
+This selection is by hold label alone — never a re-triage of what a ticket
+"really" needs. That classification was made once, at defer time, and
 restating it here would let this sweep get it wrong silently on a ticket a
 deferring run already classified correctly.
 
@@ -49,18 +50,19 @@ present, capture, write, release, stop.
 (`tracker:`) and the Build queue (`repo.project`, when set — otherwise the
 whole tracker queue, same nullable-scope rule `work-discovery` uses).
 
-**Step 1 — pull the held-for-decision pile.** List open tickets in scope
-carrying the `decision` label **and** assigned to the operator (the viewer) —
-both conditions, matching the exact state `harness defer --needs decision`
-leaves a ticket in. This is a read, not a lifecycle mutation, so it is done
-directly against the tracker rather than through a verb:
+**Step 1 — pull the held-for-input pile.** List open tickets in scope
+carrying the `input` label **and** assigned to the operator (the viewer) —
+both conditions, matching the exact state a deferral leaves a ticket in. (In
+an un-migrated repo, also pull the retired `decision` label and treat it as
+`input`.) This is a read, not a lifecycle mutation, so it is done directly
+against the tracker rather than through a verb:
 
-- **`tracker: github`** — `gh issue list --repo <github.repo> --label decision
+- **`tracker: github`** — `gh issue list --repo <github.repo> --label input
   --assignee @me --state open --json number,title,url,body,updatedAt` (add
   `--search 'project:<github.project>'` when `repo.project` is set and the
   queue should scope to one board).
 - **`tracker: linear`** — the `linear` skill's issue-search recipe, filtered to
-  `labels: { name: { eq: "decision" } }`, `assignee: { isMe: { eq: true } }`,
+  `labels: { name: { eq: "input" } }`, `assignee: { isMe: { eq: true } }`,
   and (when `repo.project` is set) `project: { name: { eq: <repo.project> } }`.
 
 Empty pile → report it and **stop**. Do not manufacture a decision to make —
@@ -77,8 +79,8 @@ the same way.
 - The deferring comment — the reason text `harness defer --reason` posted —
   since that comment names exactly what the ticket needs. Read it via
   `gh issue view <n> --comments` (github) or the `linear` skill's comment-read
-  recipe (linear); take the **latest** comment carrying the `decision` label's
-  triage reason if more than one exists.
+  recipe (linear); take the **latest** comment carrying the hold's triage
+  reason if more than one exists.
 
 Ask the operator for their call. Do not answer for them, and do not proceed
 past a ticket the operator wants to skip for this session (leave it held; move
@@ -99,7 +101,7 @@ to the next).
    `release` writes the resolution into the ticket's change spec (appending or
    replacing a `## Resolution` section — so the answer is where an agent
    building the ticket cold will actually see it, not buried in a comment
-   thread), removes the `decision` label, and unassigns the operator — the
+   thread), removes the `input` label, and unassigns the operator — the
    full "released" definition `work-discovery` names, done as one audited
    write. The audit trail is the tracker issue itself — the resolution in the
    body, the label gone, the assignment cleared — not a ledger event (#338).
@@ -123,7 +125,7 @@ decision, defeating the point of running the sweep interactively and quickly.
 If, after release, the ticket is not actually wholly actionable — the
 resolution given did not fully resolve it — do not leave it half-cleared.
 Re-defer it through the normal path (`harness defer <TICKET> --reason <text>
-[--needs decision|input|operator]`), same as any other not-yet-actionable
+[--needs input|operator]`), same as any other not-yet-actionable
 ticket the Build loop would find. `work-discovery`'s Return path section calls
 this **re-deferred**: a fresh comment + label + assignment, not a `/decision`
 sweep that quietly reopens the ticket without saying why.
@@ -135,7 +137,7 @@ At the end of the run (empty pile, operator stop, or pile exhausted), print:
 - Tickets released this session (identifier, one-line summary of the call).
 - Tickets left held (skipped this session, or re-deferred after an incomplete
   resolution).
-- The remaining `decision`-held pile size (0 if drained).
+- The remaining `input`-held pile size (0 if drained).
 
 ## Related
 
@@ -143,4 +145,5 @@ At the end of the run (empty pile, operator stop, or pile exhausted), print:
   clearable, and what "released" means.
 - `harness defer` / `harness release` — the audited writes on either side of a
   hold's lifetime.
-- ADR 0006 — the three hold kinds this command's scope rests on.
+- ADR 0006 — the hold kinds this command's scope rests on (three at origin;
+  consolidated to two by ADR 0015).

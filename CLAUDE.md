@@ -94,7 +94,9 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/ship` | Integrate and close, per the repo's branch model. |
 | `/build <TICKET>` | Autonomous agent-led driver: implement, verify, review, and ship a ticket end-to-end (`--engine codex` runs the review through Codex). The unattended form of the `/start → /review → /ship` lifecycle. |
 | `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) through the audited `harness promote` verb loop, resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
-| `/decision` | Interactive sweep that drains tickets held for a judgment call — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
+| `/decision` | Interactive sweep that drains tickets held for the operator's input — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
+| `/routine` | One unattended build-cycle tick: discover the next actionable ticket (`work-discovery`), `/build` it, ship to the integration branch; hold the ticket on a red gate or conflict. The versioned home of the standing prompt scheduled runs paste. |
+| `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, operator errands. Never mutates ticket state. |
 | `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
@@ -102,7 +104,7 @@ Three of these are front doors for work at a different moment, and the boundary 
 
 ## Command namespacing
 
-The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/promote`, `/decision`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
+The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/promote`, `/decision`, `/routine`, `/digest`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
 
 For example, in the harness repo the harness's own commands are namespaced under **`/harness`** (`/harness run`, `/harness ingest`, and the unattended-loop commands `/harness routine build` / `/harness routine quality`): its "start" means *run the harness pipeline*, not *begin the agent-led process*, so it cannot take the bare `/start` name. (The installer copies the guidance's `/start` to `commands/start.md`, so the repo's own command must move out of that path first — see `BOOTSTRAP.md` step 2.) Other repos apply the same rule to their own commands, if any. The `/harness routine` commands version the logic of the unattended loops (Build hourly, Quality idle/weekly) so it lives in the repo, not only in a scheduled-task config — *version the logic, not the schedule*; they are local-trigger only.
 

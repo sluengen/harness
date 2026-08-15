@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.3.0 -->
+<!-- guidance:tracker@0.4.0 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -76,9 +76,10 @@ A first-class field carries the machine-readable signal; a label carries the hum
 | Signal | Meaning | Who reads it |
 |---|---|---|
 | **Assignee = a human** | that human holds the ticket; the unattended loop **never picks it, in any state** | the loop's single skip rule |
-| **`decision` label** | held for a judgment call (a direction or a detail) | the operator's "to think about" filter |
-| **`input` label** | held because the operator must supply something the run cannot | the operator's "to go do" filter |
+| **`input` label** | held because the operator must supply something the run cannot — an answer, a judgment call, a credential, a fact | the operator's "to answer / go do" filter |
 | **`operator` label** | held for an interactive session (setup, hands-on, a visual check) | the operator's "at the keyboard" filter |
+
+There are exactly two hold labels. `decision` is the **retired** third: it merged into `input` (ADR 0015) — a judgment call is just one more thing only the operator can supply. Treat a `decision` label encountered in an un-migrated repo as `input`, and do not apply it to new holds.
 | **Todo** | confirmed work — a review follow-up or a filed finding lands here | the pull queue |
 | **Backlog** | existence uncertain, or a proposal/direction trigger | triage |
 

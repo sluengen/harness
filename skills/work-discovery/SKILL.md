@@ -2,7 +2,7 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.7.0 -->
+<!-- guidance:work-discovery@0.8.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
@@ -106,13 +106,12 @@ assignment: skip any ticket assigned to a human, in any state.** Assignment is
 the provider-neutral ownership signal; a held ticket re-enters the queue when
 the human unassigns it.
 
-The labels say *why* it is held, not *whether* to skip: `decision` — a judgment
-call is pending; `input` — the operator must supply something the run cannot;
-`operator` — an interactive session is needed (this meaning is narrower than
-it once was — it no longer also covers "the operator owes this ticket
-something", which is `input`'s job now). They are the operator's three filters
-("to think about", "to go do", "to sit down at the keyboard for"), not the
-loop's skip lever.
+The labels say *why* it is held, not *whether* to skip: `input` — the operator
+must supply something the run cannot (an answer, a judgment call, a credential,
+a fact); `operator` — an interactive session is needed. (`decision` is the
+retired third label — it merged into `input`, ADR 0015; treat it as `input`
+where it survives.) They are the operator's two filters ("to answer / go do",
+"to sit down at the keyboard for"), not the loop's skip lever.
 
 **Transitional rule.** Until the queue backfill assigns every already-deferred
 ticket, also skip any ticket carrying `decision`, `input`, **or** `operator`
