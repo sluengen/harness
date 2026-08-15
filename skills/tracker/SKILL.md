@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.4.0 -->
+<!-- guidance:tracker@0.5.0 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -39,6 +39,10 @@ Six operations cover the agent-led lifecycle. (Marker and resume operations are 
 | `comment` | post a PR link, a blocker note, a deferral reason |
 | `hold` | apply a hold label **and** assign the operator |
 | `queue` | list Todo work in scope |
+
+### Bundle before you file (ADR 0015)
+
+`create` has a precondition: **search the open queue for a ticket this work belongs to before filing a new one.** Match on surface, not phrasing — the same file, module, command, or screen. When an open, unstarted ticket covers the same surface, **extend it** (append the new item to its body or comment it in, keeping the higher of the two assurance levels) instead of creating a twin. One build loop over a surface beats two loops over the same file; each ticket carries fixed cost — discovery, worktree, gate, review — that bundling pays once. This applies to *every* filing path: review findings, capture commands, deferrals, feature work. The bound: bundle only what one change spec can honestly hold — same surface and same kind of change. Do not staple unrelated work together to dodge a filing, and never bundle into a ticket that is already In Progress or held — a moving target corrupts its change spec.
 
 ### `create` contract
 

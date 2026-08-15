@@ -1,4 +1,4 @@
-<!-- guidance:build@1.10.0 -->
+<!-- guidance:build@1.11.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -212,9 +212,13 @@ the same refusal to integrate on mismatch.
   queue placement and exactly one assurance level, chosen per `spec-authoring` →
   *Choosing assurance*, then ship the independently reviewed tree.
 
-If integration conflicts, dispatch a fresh conflict-resolution sub-agent. After
-two failed attempts, preserve and push the branch, reset the ticket to Todo via
-`tracker`, comment with the conflict, and stop.
+A moved integration branch is not a stop and never a question for the operator
+(`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If
+reconciliation hits textual conflicts, dispatch a fresh conflict-resolution
+sub-agent. After two failed attempts — or on a genuine functional conflict,
+where both changes want incompatible behaviour and resolving it is a design
+call — preserve and push the branch, hold the ticket via `tracker` (`input`
+label, assigned to the operator), comment naming the conflict, and stop.
 
 ## 4. Abandon safely
 

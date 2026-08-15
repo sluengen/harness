@@ -1,4 +1,4 @@
-<!-- guidance:routine@0.1.0 -->
+<!-- guidance:routine@0.2.0 -->
 # /routine — one unattended build cycle
 
 Usage: `/routine` (no arguments — discovery picks the ticket)
@@ -17,4 +17,4 @@ This command carries the repo owner's standing, explicit authorisation to push d
 
 ## The hold rule
 
-If the merge conflicts, the gate is red, or the review budget exhausts: keep the work on its own branch, push the branch, and hold the ticket for the operator per the `tracker` skill (comment the reason, apply the matching hold label, assign the operator). Never force it through, and never retry the same failure in a loop.
+A moved integration branch is not a hold — follow `/ship`'s *base-drift rule*: reconcile, re-gate, re-review, ship. Hold only when that rule escalates (a genuine functional conflict, or reconciliation fails twice), the gate is red, or the review budget exhausts: keep the work on its own branch, push the branch, and hold the ticket for the operator per the `tracker` skill (comment the reason, apply the matching hold label, assign the operator). Never force it through, and never retry the same failure in a loop.

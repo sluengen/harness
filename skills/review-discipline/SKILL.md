@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.10.0 -->
+<!-- guidance:review-discipline@0.11.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -66,7 +66,7 @@ Critical and High block. Medium and Low do not, **but fix them in the same pass 
 
 **Fix now:** any mechanical, localised fix on code the task already touched (stale comment, missing validation, wrong helper, a duplicated block). If you can state the fix in one sentence, fix it now.
 
-**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. File it as its own ticket, and state in the finding why it cannot be fixed in-branch.
+**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. Before filing, apply the `tracker` skill's *Bundle before you file* check: an open unstarted ticket on the same surface gets this finding appended to it rather than a twin filed beside it. Only when nothing bundles does it become its own ticket — and state in the finding why it cannot be fixed in-branch.
 
 Two bounds on filing (ADR 0015), because a queue that grows under review is a failed review process:
 

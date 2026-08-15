@@ -36,6 +36,11 @@ What is *not* obsolete is the discipline the machinery happened to enforce. The 
 
 - **Severity floor.** Critical and High block. Medium and Low get fixed in the same branch when small, or recorded in the review notes and dropped. **A Low is never filed as a ticket.** A Medium is filed only when it is genuinely separate work — different system, needs a design decision — and the reviewer states why it cannot be fixed in-branch.
 - **Recursion cap.** A follow-up ticket filed from a review carries the `review-finding` label — that label marks generation one, and generation one is the last. **A review of a `review-finding` ticket files nothing below High.** One generation of follow-up, never a lineage.
+- **Bundle before you file** *(added 2026-08-15, same day)*. Every filing path — review findings, captures, deferrals, features — first searches the open queue for an unstarted ticket on the same surface and extends it rather than filing a twin. One build loop over a surface beats two loops over the same file. (The operator consolidated nearly thirty tickets on a consuming repo this way.) Bound: one honest change spec — same surface, same kind of change; never into a ticket already In Progress or held.
+
+### Integration: base drift is not a stop *(added 2026-08-15, same day)*
+
+The integration branch moving underneath in-flight work is normal concurrency, never a reason to halt or ask the operator: pull the latest, reconcile, re-run the gate, re-bind the review, ship. The **only** escalation is a genuine functional conflict — both changes individually correct but wanting incompatible behaviour, a design call — which goes to the operator as an `input` hold. `/ship` owns the rule; `/build` and `/routine` point at it.
 
 ### Hold labels — consolidated
 
