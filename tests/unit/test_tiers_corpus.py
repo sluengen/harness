@@ -47,7 +47,6 @@ _ANCHORS: dict[str, Tier] = {
     # Drives `harness start` through CliRunner against a real repo and ledger.
     "tests/unit/test_cli_start.py": "integration",
     # Builds and runs the Docker image.
-    "tests/integration/test_docker.py": "integration",
     # Reads `commands/harness.md` and `registry.yaml` out of the checkout.
     "tests/unit/test_harness_command_distributed.py": "guard",
     # Parses a CONTEXT.md loop block held in the test's own strings.

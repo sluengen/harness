@@ -166,20 +166,3 @@ def test_task_conceptual_model_recorded() -> None:
 
 # --- release.md fold --------------------------------------------------------
 
-
-def test_releasing_doc_absorbs_release_notes_procedure() -> None:
-    """The useful half of the removed ``release.md`` is folded into ``RELEASING.md``.
-
-    ``release.md`` summarised completed tracker tickets into release notes and
-    raised the release PR; that procedure must survive its deletion (CAL-716).
-    (The tracker cutover to GitHub, tick #69, means "tracker tickets" reads as
-    GitHub issues here, not Linear tickets — see #196.)
-    """
-    lower = RELEASING.read_text().lower()
-    assert "release notes" in lower, (
-        "RELEASING.md must document generating release notes (folded from "
-        "agents/tasks/release.md, CAL-716)"
-    )
-    assert "completed issues" in lower, (
-        "RELEASING.md must document summarising completed tracker issues into the notes (CAL-716)"
-    )

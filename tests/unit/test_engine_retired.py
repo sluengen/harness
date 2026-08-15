@@ -242,27 +242,6 @@ def test_no_live_harness_source_cites_a_retired_build_yaml() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_release_procedure_survives_in_releasing_doc() -> None:
-    """The release procedure survives in ``RELEASING.md`` with its key steps.
-
-    CAL-574 converted ``release.yaml`` to ``agents/tasks/release.md``; CAL-716
-    folded it into ``RELEASING.md`` (the durable home) and deleted the task file.
-    The load-bearing mechanics — summarise the completed tracker issues into
-    release notes, then drive the promotion to `main` — must survive the move.
-    (The tracker cutover to GitHub, tick #69, and the `dev -> staging -> main`
-    promotion topology, ADR 0003 amendment #189/#190, mean the mechanics named
-    here are now the GitHub tracker + `/promote`, not Linear + a hand-rolled
-    `gh pr create` — see #196.)
-    """
-    text = (_REPO_ROOT / "RELEASING.md").read_text()
-    lowered = text.lower()
-    assert "release notes" in lowered  # summarise the shipped issues
-    assert "completed issues" in lowered  # fetch the completed tracker issues
-    assert "/promote" in text or "harness promote" in text  # drive the promotion
-    # The eliminated task file must be gone (CAL-716).
-    assert not (_REPO_ROOT / "agents" / "tasks" / "release.md").exists()
-
-
 def test_steward_procedure_survives_in_steward_agent() -> None:
     """The steward review survives in ``agents/steward.md`` with its key steps.
 

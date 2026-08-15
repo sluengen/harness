@@ -207,19 +207,6 @@ def test_pick_criteria_not_inlined_into_command() -> None:
     )
 
 
-def test_runbook_triggers_are_thin_callers() -> None:
-    """AC-3: the runbook's documented triggers are thin callers — they invoke the
-    versioned ``/harness routine`` surface and do NOT inline the discovery logic.
-    Fails if the runbook re-states the pick algorithm in a trigger."""
-    assert RUNBOOK.exists(), "RUNBOOK.md must exist (CAL-907 AC-2/AC-3)."
-    text = RUNBOOK.read_text()
-    assert not _inlines_discovery(text), (
-        "RUNBOOK.md inlines the discovery-logic triad into a trigger spec — a "
-        "scheduled task must be a *thin caller* of `/harness routine build` / "
-        "`quality`, not a re-statement of the pick logic (CAL-907 AC-3)."
-    )
-
-
 # --- AC-2: the runbook documents the scheduled-task re-sync --------------------
 
 
@@ -365,26 +352,6 @@ def test_work_discovery_states_operator_label_narrowed_meaning() -> None:
     assert re.search(r"narrow", text, re.IGNORECASE), (
         "the skill must state that the `operator` label's meaning narrows now "
         "that `input` exists as its own kind (ADR 0006, #191)."
-    )
-
-
-def test_runbook_documents_trigger_resync() -> None:
-    """AC-2: ``RUNBOOK.md`` documents re-syncing the two user-local scheduled
-    tasks into thin callers of the versioned routine, and names the drift it
-    fixes (the stale "use /build" wording / pre-reclamation logic)."""
-    text = RUNBOOK.read_text()
-    for task in ("harness-work-pull", "harness-code-assess"):
-        assert task in text, (
-            f"RUNBOOK.md must name the `{task}` scheduled task it re-syncs "
-            "(CAL-907 AC-2)."
-        )
-    assert "/harness routine build" in text and "/harness routine quality" in text, (
-        "RUNBOOK.md must direct each trigger to invoke the versioned "
-        "`/harness routine build` / `/harness routine quality` surface (CAL-907 AC-2)."
-    )
-    assert re.search(r"version the logic", text, re.IGNORECASE), (
-        "RUNBOOK.md must state the principle it enforces — version the logic, "
-        "not the schedule (CAL-907 AC-2)."
     )
 
 

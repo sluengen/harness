@@ -91,8 +91,9 @@ echo "=== release cadence (report only) ==="
 # gate's verdict (#350 — it wedged the build queue for five ticks). `report`
 # exits 0 regardless and is deliberately the LAST stage, so the breach line
 # lands inside the bounded gate-log tail `review` and `promote` already record.
-# The enforcing half is `cadence.py check`, run by the release-cadence CI job on
-# a PR into main and by RELEASING.md step 3.
+# The enforcing half was `cadence.py check`, run by a CI job on a PR into main;
+# that job is retired with the release machinery (ADR 0015), and the whole
+# cadence surface goes with the changelog.
 uv run --extra dev python scripts/cadence.py report
 
 echo ""

@@ -77,7 +77,7 @@ def _live_docs() -> list[Path]:
 def test_live_docs_are_discovered() -> None:
     """Sanity: the doc set is non-empty (a broken glob would vacuously pass)."""
     names = {p.name for p in _live_docs()}
-    assert "ONBOARDING.md" in names
+    assert "BOOTSTRAP.md" in names
     assert "README.md" in {p.relative_to(_REPO_ROOT).name for p in _live_docs()}
 
 

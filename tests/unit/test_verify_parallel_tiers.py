@@ -81,13 +81,12 @@ _DOCKER_MARKER = "docker"
 #: that the scan *finds* these, so a derivation that silently matched nothing
 #: cannot pass. A module joining the tag adds itself here in the same change
 #: that marks it — ``test_docker_worktree_prune.py`` did so on #371.
-_KNOWN_TAG_SHARERS = frozenset(
-    {
-        "tests/integration/test_docker.py",
-        "tests/integration/test_docker_worktree_prune.py",
-        "tests/integration/test_serve_socket.py",
-    }
-)
+#: #435 shrank this set to one. ADR 0015 retires the container, so the three
+#: modules that *built* the shared tag are deleted; the remaining sharer runs
+#: against it. The floor is kept rather than dropped with them — the property it
+#: protects (a scan anchored on real modules, not on a count that drifts to
+#: zero) is exactly what a one-member set most needs.
+_KNOWN_TAG_SHARERS = frozenset({"tests/integration/test_review_visual_live.py"})
 
 
 def _marker_selector(command: str) -> str | None:

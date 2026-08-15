@@ -12,10 +12,16 @@ concept:
 
 * the installer (``guidance:bootstrap``) is ``BOOTSTRAP.md`` — filename matches id
   and the "re-bootstrap" verb the prose uses throughout;
-* the harness onboarding/setup doc is ``ONBOARDING.md`` — filename matches its
+* the harness onboarding/setup doc was ``ONBOARDING.md`` — filename matches its
   own title ("onboarding the harness to a repo").
 
 These guards pin the realigned names so the inversion cannot silently return.
+
+**#435 retired the second half.** ADR 0015 deletes ``ONBOARDING.md``: it existed
+to install the harness, wire its credentials and drive ``/harness run``, none of
+which survives. What is guarded here is now one-sided — the installer's name, id,
+registry entry and freshness-hook membership — and that half is untouched by the
+teardown, because the copy-in installer is exactly what ADR 0015 keeps.
 """
 
 from __future__ import annotations
@@ -28,7 +34,6 @@ from tests._gitutil import tracked_files_under
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALLER_OLD = REPO_ROOT / "INSTALLER.md"
 BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"  # the installer (guidance:bootstrap)
-ONBOARDING = REPO_ROOT / "ONBOARDING.md"  # the harness onboarding/setup doc
 REGISTRY = REPO_ROOT / "registry.yaml"
 FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
@@ -37,8 +42,6 @@ FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 #: records — they legitimately name the filename that existed at the time.
 _LIVE_DOCS = (
     "BOOTSTRAP.md",
-    "ONBOARDING.md",
-    "RELEASING.md",
     "AGENTS.md",
     "CLAUDE.md",
     "GEMINI.md",
@@ -65,22 +68,6 @@ def test_installer_is_bootstrap_md() -> None:
     assert re.match(r"<!--\s*guidance:bootstrap@[\d.]+\s*-->", first), (
         "BOOTSTRAP.md must carry the `guidance:bootstrap@<version>` header on line "
         f"1 — it IS the installer; got: {first!r} (CAL-835)."
-    )
-
-
-def test_onboarding_doc_is_onboarding_md() -> None:
-    """``ONBOARDING.md`` is the repo-owned harness onboarding/setup doc."""
-    assert ONBOARDING.resolve() in tracked_files_under("ONBOARDING.md"), (
-        "ONBOARDING.md (the harness onboarding/setup doc) must be a committed file "
-        "(CAL-835)."
-    )
-    first = ONBOARDING.read_text().splitlines()[0]
-    assert not first.startswith("<!-- guidance:"), (
-        "ONBOARDING.md is a repo-owned doc, not a distributable — it must NOT carry "
-        f"a `guidance:` header; got: {first!r} (CAL-835)."
-    )
-    assert "onboarding" in first.lower(), (
-        f"ONBOARDING.md's title must name onboarding; got: {first!r} (CAL-835)."
     )
 
 

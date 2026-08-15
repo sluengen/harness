@@ -1,7 +1,7 @@
 """Footprint guard — the installed surface excludes every app path (CAL-648).
 
 The harness repo holds two things that must never bleed into each other: the
-harness *app* (``harness/ docker/ bin/ scripts/ specs/ tests/`` — never
+harness *app* (``harness/ scripts/ specs/ tests/`` — never
 installed into a target repo) and the *surface* it installs (``commands/
 skills/ agents/ templates/ hooks/ process/ settings/``, enumerated by
 ``registry.yaml``'s ``files:`` block). After the guidance merge the boundary is
@@ -31,7 +31,7 @@ REGISTRY = REPO_ROOT / "registry.yaml"
 #: surface (``specs/architecture-principles.md``, "App vs. installed surface";
 #: merge decision D5). A registry ``files:`` entry under any of these would
 #: entangle the app's release line with the installed surface.
-APP_PREFIXES = ("harness/", "docker/", "bin/", "scripts/", "specs/", "tests/")
+APP_PREFIXES = ("harness/", "scripts/", "specs/", "tests/")
 
 #: The directories that *are* the installed surface, enumerated verbatim from the
 #: "App vs. installed surface" principle. The installer copies a registry entry

@@ -24,14 +24,14 @@ issues are prioritized over speculative ones.
 Only the tip of the default branch is supported; fixes are not back-ported to
 older tags.
 
-## What the ledger does and does not guarantee
+## What the gate does and does not guarantee
 
-The harness records every run in a local SQLite **ledger**, and the `close` verb
-refuses to finish without a passing review bound to the current commit. That is a
-workflow aid, **not** a cryptographic attestation: the ledger is an ordinary file,
-so anything with write access to the workspace — including the agent under review
-— can append, alter, or delete an event, and the gate it feeds can be bypassed by
-editing the record it reads. Treat the audit trail as an account of what a
+The harness is a verification layer: deterministic gates an agent runs, plus the
+guidance that says when to run them. That is a workflow aid, **not** a
+cryptographic attestation. Every part of it — the gate script, the tests it runs,
+the records that say what shipped — is an ordinary file in the workspace, so
+anything with write access there, including the agent under review, can edit the
+check or the evidence it produces. Treat a green gate as an account of what a
 cooperating agent did, not as tamper-evident proof against a hostile one. Do not
 build a security control on top of it.
 

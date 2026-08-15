@@ -17,12 +17,18 @@ only to a repo **already on a harness lock**.
 That distinction was stated nowhere. These guards pin it into the three docs a
 migrator would read:
 
-* **AC-1** — ``BOOTSTRAP.md`` and ``ONBOARDING.md`` state the supersede path
-  explicitly: superseding old agents-repo guidance is a re-bootstrap.
+* **AC-1** — ``BOOTSTRAP.md`` states the supersede path explicitly: superseding
+  old agents-repo guidance is a re-bootstrap.
 * **AC-2** — ``commands/update-guidance.md`` carries the wrong-tool guard: it is
   for a repo already on a harness lock; an agents-repo supersede is a re-bootstrap.
-* **AC-3** — ``ONBOARDING.md`` collects the scattered legacy handling into one
-  "Migrating off pre-merge guidance" checklist.
+
+**#435 removed the third doc.** ADR 0015 deletes ``ONBOARDING.md``, which carried
+AC-3's consolidated "Migrating off pre-merge guidance" checklist and a second
+statement of AC-1. The migrator-facing surface is now the two documents below,
+both of which ADR 0015 keeps — the copy-in installer and its update command are
+the delivery mechanism the decision explicitly retains. AC-3's checklist has no
+surviving home and is **not** re-asserted here: a guard kept pointing at content
+that no longer exists is the failure mode this module was written to prevent.
 
 The docs are worded "pre-merge guidance" rather than "agents-repo" so the live
 operational docs respect the one-repo-source invariant enforced by the CAL-651
@@ -36,7 +42,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
-ONBOARDING = REPO_ROOT / "ONBOARDING.md"
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 
 #: The canonical phrase naming the supersede case, used so a migrator searching
@@ -73,19 +78,6 @@ def test_installer_states_supersede_is_rebootstrap() -> None:
     )
 
 
-def test_onboarding_states_supersede_is_rebootstrap() -> None:
-    """``ONBOARDING.md`` distinguishes re-bootstrap from ``/update-guidance`` (AC-1)."""
-    text = ONBOARDING.read_text()
-    assert SUPERSEDE_PHRASE in text, (
-        "ONBOARDING.md §Updating must state the supersede path explicitly — the "
-        f"phrase {SUPERSEDE_PHRASE!r} (CAL-733 AC-1)."
-    )
-    assert "re-bootstrap" in text and LOCK_PHRASE in text, (
-        "ONBOARDING.md must contrast re-bootstrap (supersede) with "
-        f"/update-guidance ({LOCK_PHRASE!r}) (CAL-733 AC-1)."
-    )
-
-
 # --- AC-2: /update-guidance carries the wrong-tool guard -----------------------
 
 
@@ -100,17 +92,6 @@ def test_update_guidance_carries_wrong_tool_guard() -> None:
         "commands/update-guidance.md must point an agents-repo supersede at "
         "re-bootstrap (re-running BOOTSTRAP.md) rather than this command "
         "(CAL-733 AC-2)."
-    )
-
-
-# --- AC-3: the consolidated checklist -----------------------------------------
-
-
-def test_onboarding_has_migration_checklist() -> None:
-    """``ONBOARDING.md`` collects the legacy handling into one checklist (AC-3)."""
-    assert "migrating off pre-merge guidance" in ONBOARDING.read_text().lower(), (
-        "ONBOARDING.md must collect the scattered step-2/3/4/6 legacy handling "
-        "into one 'Migrating off pre-merge guidance' checklist (CAL-733 AC-3)."
     )
 
 
@@ -141,17 +122,17 @@ def test_installer_distinguishes_bulk_supersede_from_foreign_deletion() -> None:
     )
 
 
-# --- cross-file: all three name re-bootstrap as the supersede tool -------------
+# --- cross-file: both name re-bootstrap as the supersede tool -----------------
 
 
-def test_all_three_docs_name_rebootstrap() -> None:
-    """The supersede answer is consistent across all three migrator-facing docs."""
+def test_both_docs_name_rebootstrap() -> None:
+    """The supersede answer is consistent across both surviving migrator docs."""
     missing = [
         p.name
-        for p in (BOOTSTRAP, ONBOARDING, UPDATE_GUIDANCE)
+        for p in (BOOTSTRAP, UPDATE_GUIDANCE)
         if "re-bootstrap" not in p.read_text()
     ]
     assert not missing, (
-        f"these docs do not name re-bootstrap: {missing} — a migrator reading any "
-        "one must learn that an agents-repo supersede is a re-bootstrap (CAL-733)."
+        f"these docs do not name re-bootstrap: {missing} — a migrator reading "
+        "either must learn that an agents-repo supersede is a re-bootstrap (CAL-733)."
     )

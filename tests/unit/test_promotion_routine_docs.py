@@ -14,10 +14,8 @@ command yet existed to carry it.
 universal command every repo on this guidance installs, with role-based
 argument resolution (`/promote <src> to <dst>` against `CONTEXT.md`
 `branches:`) so the same invocation shape works whether a repo's roles are
-named `dev`/`staging`/`main` or `develop`/`staging`/`production`. `RUNBOOK.md`
-§"The promotion routine" now carries only this repo's own operational facts —
-which trigger fires it, on what cadence — and points at the command for the
-loop mechanics, so the orchestration logic lives in exactly one place.
+named `dev`/`staging`/`main` or `develop`/`staging`/`production`. The
+orchestration logic lives in exactly one place.
 
 These tests are the executable form of the acceptance criteria and — more
 importantly — the **drift guard** that keeps the prose tied to the real
@@ -37,8 +35,10 @@ a new lifecycle state fails this gate until the command doc is updated too.
   target-branch push, no PR creation outside the harness, no Linear promotion
   mutation outside the harness.
 * **AC-5 — the bounded repair policy and escalation** behaviour are documented.
-* **AC-6 — `RUNBOOK.md` no longer carries the loop** — the section is a short
-  pointer, not a second copy of the orchestration logic.
+* **AC-6 — retired (#435).** ADR 0015 deletes `RUNBOOK.md` with the operator
+  loops it documented, so "the runbook is a pointer, not a second copy" no
+  longer has a subject. The one-place-only property it protected now holds by
+  construction: `commands/promote.md` is the only surviving home.
 * **The contract stays agent-agnostic** (Design): Hermes is named as the likely
   local cron driver, but the surface is deterministic and model-free — local
   inference powers only the outer agent.
@@ -55,36 +55,11 @@ from tests._cliutil import registered_command_surface
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COMMAND = _REPO_ROOT / "commands" / "promote.md"
-_RUNBOOK = _REPO_ROOT / "RUNBOOK.md"
 _CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
 
 
 def _command_doc() -> str:
     return _COMMAND.read_text(encoding="utf-8")
-
-
-def _runbook() -> str:
-    return _RUNBOOK.read_text(encoding="utf-8")
-
-
-def _promotion_section() -> str:
-    """The ``RUNBOOK.md`` section documenting the promotion routine — now a
-    pointer to the command, not a second copy of the loop.
-
-    Located by the first ``## `` heading whose text mentions "promotion"
-    (case-insensitive, so the exact wording can be tuned without breaking the
-    guard), sliced up to the next ``## `` heading or end of file.
-    """
-    text = _runbook()
-    headings = list(re.finditer(r"^## .*$", text, re.MULTILINE))
-    for i, h in enumerate(headings):
-        if "promotion" in h.group(0).lower():
-            start = h.start()
-            end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
-            return text[start:end]
-    raise AssertionError(
-        "RUNBOOK.md has no '## …promotion…' section pointing at /promote"
-    )
 
 
 def test_command_exists_and_versioned() -> None:
@@ -215,29 +190,6 @@ def test_ac5_documents_bounded_repair_and_escalation() -> None:
         "AC-5: the doc does not state repair is a single bounded attempt"
     )
     assert "escalat" in doc, "AC-5: escalation behaviour is not documented"
-
-
-def test_ac6_runbook_promotion_section_is_a_pointer() -> None:
-    """AC-6: `RUNBOOK.md` §"The promotion routine" no longer carries the loop —
-    it is a short pointer at `/promote`, not a second copy of the state machine.
-    """
-    section = _promotion_section()
-    assert "/promote" in section, (
-        "AC-6: RUNBOOK.md's promotion section does not point at the /promote command"
-    )
-    # The old section (the full loop, state table, forbidden-actions list, and
-    # bounded-repair policy inline) ran ~185 lines. A pointer section is much
-    # shorter; this is the drift guard against orchestration logic creeping back
-    # into both places.
-    assert len(section.splitlines()) < 40, (
-        "AC-6: RUNBOOK.md's promotion section reads as long as the old inline "
-        "loop — the orchestration logic must live only in commands/promote.md"
-    )
-    lower = section.lower()
-    assert "agent_may_fix" not in lower and "needs_ticket" not in lower, (
-        "AC-6: RUNBOOK.md's promotion section still enumerates lifecycle states "
-        "inline — that table now belongs only to commands/promote.md"
-    )
 
 
 def test_design_contract_is_agent_agnostic() -> None:

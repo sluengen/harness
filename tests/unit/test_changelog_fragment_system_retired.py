@@ -66,15 +66,6 @@ _HISTORICAL_PREFIXES = (
     "LOG.md",
 )
 
-#: The one live document still describing the deleted mechanism, deliberately.
-#: ``RELEASING.md``'s changelog section is #325's subject — this ticket's Out of
-#: scope reserves it, and item 4 of ADR 0014's breakdown ships "with or
-#: immediately after" item 3, never before. The exemption is paired with
-#: :func:`test_the_releasing_exemption_is_still_load_bearing`, which fails once
-#: #325 lands, so it cannot outlive the reason for it.
-_PENDING_REWRITE = "RELEASING.md"
-
-
 def _live_markdown() -> list[Path]:
     """Tracked ``.md`` files that make standing claims, not historical ones."""
     live = []
@@ -276,37 +267,42 @@ def test_no_live_document_names_the_retired_gate_stage() -> None:
 
 
 def test_no_live_document_points_a_reader_at_the_deleted_script() -> None:
-    """Only ``RELEASING.md`` may still name ``scripts/changelog_fragments.py``.
+    """No live document names ``scripts/changelog_fragments.py``.
 
-    Every other live document must describe the gate and the release path as
-    they are. ``RELEASING.md`` is exempt for exactly as long as #325 takes.
+    ``RELEASING.md`` used to be exempt here — #324 left its changelog section to
+    #325 — and the exemption was paired with a test that failed once the reason
+    for it was gone, so it could not outlive its purpose. That test has now paid
+    out: ADR 0015 deletes ``RELEASING.md`` with the release machinery it
+    documented (#435), so there is nothing left to exempt and the carve-out is
+    removed rather than left permitting a reference nobody makes.
     """
     offenders = [
         str(path.relative_to(_REPO_ROOT))
         for path in _live_markdown()
-        if str(path.relative_to(_REPO_ROOT)) != _PENDING_REWRITE
-        and _SCRIPT in path.read_text(encoding="utf-8")
+        if _SCRIPT in path.read_text(encoding="utf-8")
     ]
     assert offenders == [], (
         f"these live documents send a reader to {_SCRIPT}, which is deleted: "
-        f"{offenders}. Only {_PENDING_REWRITE} may, until #325 rewrites it."
+        f"{offenders}."
     )
 
 
-def test_the_releasing_exemption_is_still_load_bearing() -> None:
-    """The exemption above dies with the reason for it.
+def test_the_live_markdown_sweep_has_something_to_read() -> None:
+    """The floor under both sweeps above.
 
-    An exemption nobody re-checks is how a guard goes quiet: once #325 rewrites
-    ``RELEASING.md``, the carve-out would sit there permitting a reference that
-    is no longer made, and the next document to reintroduce one could be moved
-    under it without argument. So the carve-out asserts its own necessity — when
-    #325 lands, this test fails and the exemption must be deleted with it.
+    Each is an absence over a derived set, so an empty derivation reports green.
+    The exemption that used to sit in the sweep was itself the non-vacuity
+    witness (it asserted its own subject still existed); with the exemption gone
+    the floor has to be stated outright.
     """
-    releasing = (_REPO_ROOT / _PENDING_REWRITE).read_text(encoding="utf-8")
-    assert _SCRIPT in releasing, (
-        f"{_PENDING_REWRITE} no longer names {_SCRIPT}, so #325 has landed and "
-        f"the {_PENDING_REWRITE} exemption in this module is now dead. Delete "
-        "the exemption and the two tests that reference it."
+    live = _live_markdown()
+    assert len(live) > 30, (
+        f"_live_markdown() derived only {len(live)} documents, so the sweeps "
+        "above are measuring almost nothing"
+    )
+    assert any(path.name == "CONTEXT.md" for path in live), (
+        "CONTEXT.md is not in the live set — the historical-prefix filter is "
+        "excluding standing prose"
     )
 
 

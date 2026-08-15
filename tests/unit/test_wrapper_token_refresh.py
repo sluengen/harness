@@ -123,10 +123,3 @@ def test_the_commit_identity_still_reaches_the_container() -> None:
         "the degraded path must still forward a usable identity default"
     )
 
-
-def test_wrapper_no_longer_claims_it_always_fetches_fresh() -> None:
-    """The stale note that *claimed* per-invocation freshness (the original bug)."""
-    text = _wrapper()
-
-    assert "fetches\na fresh token on every invocation" not in text
-    assert "fetches a fresh token on every invocation" not in text

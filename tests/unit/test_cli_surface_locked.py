@@ -60,7 +60,6 @@ README = REPO_ROOT / "README.md"
 HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
-DOCKER_README = REPO_ROOT / "docker" / "README.md"
 RUN_LEDGER_SPEC = REPO_ROOT / "specs" / "features" / "run-ledger.md"
 
 
@@ -85,10 +84,12 @@ def _live_docs() -> list[Path]:
         REPO_ROOT / "CONTEXT.md",
         REPO_ROOT / "CLAUDE.md",
         SPEC,
-        REPO_ROOT / "docker" / "README.md",
-        REPO_ROOT / "docker" / "entrypoint.sh",
-        REPO_ROOT / "docker" / "Dockerfile",
-        REPO_ROOT / "docker" / "docker-compose.yml",
+        # The two live shell files an invocation would actually *execute*.
+        # They replace the retired `docker/` members (#435): the corpus needs at
+        # least one non-markdown member or `_EXECUTABLE_DOCS` below derives to
+        # nothing and its probe silently stops running.
+        REPO_ROOT / "scripts" / "verify.sh",
+        REPO_ROOT / "scripts" / "promotion-step.sh",
     ]
     docs += sorted((REPO_ROOT / "commands").glob("*.md"))
     docs += sorted((REPO_ROOT / "skills").glob("*.md"))
@@ -620,7 +621,7 @@ def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> No
 #: `docker/` doc, a `specs/features/` as-built record, and a `commands/` contract
 #: — each a class the #252 widening brought in, and the first three each carried
 #: a real offender before it.
-_INJECTION_PROBES = (README, CONTEXT, DOCKER_README, CLI_SURFACE_SPEC, HARNESS_CONTRACT)
+_INJECTION_PROBES = (README, CONTEXT, CLI_SURFACE_SPEC, HARNESS_CONTRACT)
 
 
 @pytest.mark.parametrize(
@@ -689,7 +690,7 @@ def test_enumeration_guard_is_parametrized_over_the_whole_live_doc_corpus() -> N
     )
 
     corpus = set(_live_docs())
-    for doc in (*_INJECTION_PROBES, CONTEXT, DOCKER_README, RUN_LEDGER_SPEC):
+    for doc in (*_INJECTION_PROBES, CONTEXT, RUN_LEDGER_SPEC):
         assert doc in corpus, (
             f"{doc.relative_to(REPO_ROOT)} dropped out of the live-doc corpus — "
             "the enumeration and retired-surface guards both parametrize over "
@@ -1058,7 +1059,7 @@ def _hits_with_injection(doc: Path, injection: str, mp: pytest.MonkeyPatch) -> l
 
 
 @pytest.mark.parametrize(
-    "doc", (README, CONTEXT, DOCKER_README, SPEC, HARNESS_CONTRACT)
+    "doc", (README, CONTEXT, SPEC, HARNESS_CONTRACT)
 )
 def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(
     doc: Path, monkeypatch: pytest.MonkeyPatch
@@ -1087,9 +1088,8 @@ def test_the_executable_corpus_members_are_the_expected_set() -> None:
     testing the files it exempted. Pinning the membership makes that a failure.
     """
     assert {d.name for d in _EXECUTABLE_DOCS} == {
-        "entrypoint.sh",
-        "Dockerfile",
-        "docker-compose.yml",
+        "verify.sh",
+        "promotion-step.sh",
     }
 
 

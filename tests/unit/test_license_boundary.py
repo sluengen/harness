@@ -5,7 +5,7 @@ taken proprietary and sold with nothing returned. A single copyleft licence over
 the whole tree is the wrong instrument, because the repo holds two artifacts with
 different distribution models:
 
-* **The engine** (``harness/`` ``bin/`` ``docker/`` ``scripts/``) — a CLI the user
+* **The engine** (``harness/`` ``scripts/``) — a CLI the user
   runs, and the thing a third party would fork and productize. Copyleft here does
   the intended work, so it is **AGPL-3.0-only**.
 * **The installed guidance** — the files the installer physically copies into a
@@ -102,7 +102,7 @@ _LICENSE_CANDIDATE = re.compile(r"(?i)(un)?licen[sc]e|copy(ing|right)|\bofl\b")
 
 #: Engine roots — never MIT. ``harness/`` is the load-bearing one (the CLI a
 #: third party would fork); the rest are named so the scope cannot creep.
-_ENGINE_PREFIXES = ("harness/", "tests/", "scripts/", "docker/", "bin/")
+_ENGINE_PREFIXES = ("harness/", "tests/", "scripts/")
 
 
 def _mit_scope_prefixes(text: str) -> tuple[str, ...]:

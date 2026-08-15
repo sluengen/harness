@@ -343,7 +343,6 @@ def test_claim_derivation_finds_the_known_sites() -> None:
         "CONTEXT.md",
         "README.md",
         "commands/harness/run.md",
-        "docker/README.md",
         "specs/features/verb-model.md",
         "specs/decisions/0002-in-container-review-engine.md",
     }

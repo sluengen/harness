@@ -432,19 +432,3 @@ def test_only_the_repo_seam_reads_the_working_directory() -> None:
 # AC-4 — the out-of-repo callers an operator must update
 # ---------------------------------------------------------------------------
 
-
-def test_runbook_records_the_out_of_repo_callers() -> None:
-    """AC-4: the implicit form cannot be removed until callers outside this
-    checkout state their repo, and a caller this checkout does not contain can
-    only be tracked in the operational runbook."""
-    text = RUNBOOK.read_text(encoding="utf-8")
-
-    assert "harness-work-pull" in text, (
-        "RUNBOOK.md does not name the out-of-repo scheduled task that invokes "
-        "the verbs implicitly (#306 AC-4)"
-    )
-    assert CANONICAL_REPO_OPTION in text
-    assert "docker/harness-wrapper.sh" in text, (
-        "RUNBOOK.md must record that the wrapper cannot yet forward an explicit "
-        "--repo, since that blocks removing the implicit form (#306)"
-    )

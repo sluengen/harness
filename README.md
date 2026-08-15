@@ -33,12 +33,13 @@ YAML workflow engine was retired in CAL-574; this README and [`SPEC.md`](./SPEC.
 ## Is this turnkey? No — it's dogfood infrastructure
 
 **This is infrastructure one maintainer runs on their own machine, published to
-read and adapt — not a turnkey product.** Several pieces are deliberately
-operator-specific and assume a particular setup: the `~/bin/harness` Docker
-wrapper, the macOS Keychain OAuth flow, and the operator [`RUNBOOK.md`](./RUNBOOK.md).
-Treat the whole repo as a worked example to **adapt to taste**, not a dependency to
-install unchanged. The concepts — the SHA-bound gate, the append-only ledger, the
-builder/recorder split — are the portable part; the plumbing around them is not.
+read and adapt — not a turnkey product.** It assumes a particular setup — an
+agent host, a GitHub tracker, this repo's own branch model — and nothing here is
+packaged for installation: there is no image, no wrapper, and no console script
+to put on PATH (ADR 0015). Treat the whole repo as a worked example to **adapt to
+taste**, not a dependency to install unchanged. The concepts — the SHA-bound
+gate, the builder/recorder split — are the portable part; the plumbing around
+them is not.
 
 ## What it does
 
@@ -60,7 +61,7 @@ There is **one** execution model — an agent session running `start → design 
 - a **human**, via the `/harness run <ISSUE-ID>` command in a supported agent host (the built trigger), or
 - **Hermes**, the autonomous dispatcher that *would* occupy the same trigger slot — **design-only**, not built: the launcher was removed in CAL-712 and the design is retired to [`specs/retired/hermes-orchestration.md`](./specs/retired/hermes-orchestration.md).
 
-By design, either trigger produces the identical execution path. The agent runtime is *per-session* (one agent per ticket, where context lives); each verb is *per-call*. The default wrapper launches a one-shot `docker run` outside the runtime; strict Codex-only operation currently invokes a native Harness install instead.
+By design, either trigger produces the identical execution path. The agent runtime is *per-session* (one agent per ticket, where context lives); each verb is *per-call*, invoked from the checkout.
 
 ```
 trigger ( /harness run CAL-42  |  Hermes† )
@@ -68,7 +69,7 @@ trigger ( /harness run CAL-42  |  Hermes† )
    ▼
 agent session — orchestrator + implementer
    start → design → [implement] → review → (fix → review)* → close
-   │  shells out to verbs (one-shot Docker or strict native Codex)
+   │  shells out to verbs
    ▼
 harness verbs:  start / design / review / close   +   SQLite ledger   +   close gate
 ```
@@ -121,23 +122,6 @@ uv tool install .          # installs the `harness` console script on PATH
 harness version
 ```
 
-### Docker wrapper (canonical invocation)
-
-The primary way to invoke the verbs is the `~/bin/harness` wrapper — a thin shell around the Docker image. It mounts the current repo at `/workspace`, reads `LINEAR_API_KEY` from a local `.env`, and extracts your Claude OAuth token from the macOS Keychain so runs use subscription pricing. See [`docker/README.md`](./docker/README.md) for the wrapper script and one-time setup.
-
-For a Codex-only development loop, install Harness natively, authenticate with `codex login`, and run `/harness run <ISSUE-ID> --codex-only`. That mode uses `harness design --engine codex`, `harness review --engine codex --no-fallback`, and `harness doctor --engine codex`; it never invokes Claude. It is native-only until #314 enables Codex's sandbox in the Docker wrapper.
-
-```bash
-# Build the image
-docker build -t harness:dev -f docker/Dockerfile .
-
-# Then drive a ticket from any repo (CWD is mounted automatically)
-cd /path/to/target-repo
-harness start CAL-42        # → run_id + worktree
-```
-
-The ledger, worktrees, and event log land under `/workspace/.harness/` and `/workspace/.worktrees/` (both gitignored).
-
 ## Authentication
 
 Harness dispatches review through the Claude CLI by default. Claude auth follows Claude Code's conventions, not the raw Anthropic API:
@@ -145,7 +129,7 @@ Harness dispatches review through the Claude CLI by default. Claude auth follows
 | Path | Pricing | When |
 |---|---|---|
 | `claude /login` on the host, then run locally | Subscription | Local development. Credentials read from `~/.claude/` automatically — **no env var needed.** |
-| Mount `~/.claude` into the container, or pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | Docker / CI / non-interactive contexts. The `~/bin/harness` wrapper extracts the Keychain token for you. |
+| Pass `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) | Subscription | CI and other non-interactive contexts. |
 | `ANTHROPIC_API_KEY` env var | API rates (per-token) | Fallback when neither OAuth path is convenient. |
 
 For strict native Codex-only operation, authenticate separately with `codex login` and verify it with `harness doctor --engine codex`. No Claude credential is required in that mode.
@@ -192,7 +176,6 @@ harness/
 ├── commands/      ← user-invocable slash commands (start, review, ship, /harness …)
 ├── harness/       ← the Python package: cli/ verbs, state/ ledger, worktree, codex dispatch
 ├── specs/         ← design specs (SPEC.md is the index); proposals/ for unconfirmed ideas
-├── docker/        ← container build + entrypoint + the ~/bin/harness wrapper
 ├── tests/         ← unit + integration tests
 ├── scripts/       ← verify gate (scripts/verify.sh) and tooling
 ├── CONTEXT.md     ← agent-facing repo context (read first)
@@ -204,7 +187,7 @@ harness/
 
 ## Tech stack
 
-Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude_agent_sdk` · Codex CLI · pytest · ruff · mypy · uv · Docker
+Python 3.11+ · Pydantic 2 · Typer · `aiosqlite` · `anthropic` SDK · `claude_agent_sdk` · Codex CLI · pytest · ruff · mypy · uv
 
 ## Related
 

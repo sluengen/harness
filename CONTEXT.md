@@ -120,14 +120,13 @@ Use `specs/decisions/` only for cross-cutting choices that are consequential and
 - System design and verb behavior: `SPEC.md`, `specs/features/verb-model.md`, `specs/features/cli-surface.md`, `specs/features/run-ledger.md`, `specs/features/worktree-lifecycle.md`
 - Build-time mutation instrument: `scripts/mutate.py`, driven by `CONTRIBUTING.md`
 - Harness workflows: `commands/harness.md` and its directly linked workflow references
-- Loop operations: `RUNBOOK.md`; loop substrate: ADR 0001
-- Promotion policy: ADR 0003; attended timing: ADR 0011
+- Loop substrate: ADR 0001
+- Promotion policy: ADR 0003 (the `harness promote` verb is retired by ADR 0015; the topology and its nightly automation are kept, driven by `scripts/promotion-step.sh`); attended timing: ADR 0011
 - User-facing feature surface: `README.md`; unconfirmed ideas: `specs/proposals/`
 - Issues and in-flight work: the configured GitHub repository and Projects board
 
 ## Gotchas
 
-- Use `~/bin/harness` from a target repo for the Docker-wrapped verbs. Use `bin/harness` only while developing this checkout; native installs use `uv tool install .`.
 - Drive attended work through `/harness run <ISSUE-ID>` or the agent-led `/build`; workflow and refusal handling live behind `commands/harness.md`.
 - Cross-repo verbs use CWD; direct/native calls may also accept `--repo` and `--base`.
 - `mypy` checks `harness`, not tests.

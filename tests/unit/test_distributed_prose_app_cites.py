@@ -204,7 +204,7 @@ def _surface_md_files() -> list[str]:
 
 def test_app_prefixes_come_from_the_boundary_doc() -> None:
     prefixes = _app_prefixes()
-    for expected in ("harness/", "docker/", "bin/", "scripts/", "specs/", "tests/"):
+    for expected in ("harness/", "scripts/", "specs/", "tests/"):
         assert expected in prefixes, (
             f"the App boundary enumeration must include {expected!r}"
         )
@@ -229,8 +229,8 @@ def test_detector_flags_an_app_only_cite() -> None:
 
 
 def test_detector_flags_a_bare_app_root_doc() -> None:
-    flagged = _scan_text("see RUNBOOK.md for the operator loop")
-    assert flagged == [(1, "RUNBOOK.md")], flagged
+    flagged = _scan_text("see SECURITY.md for the disclosure path")
+    assert flagged == [(1, "SECURITY.md")], flagged
 
 
 def test_detector_flags_a_relative_markdown_link() -> None:

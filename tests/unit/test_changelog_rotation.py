@@ -216,17 +216,3 @@ def test_root_points_at_the_archive() -> None:
 # RELEASING.md documents the rotation.
 # ---------------------------------------------------------------------------
 
-
-def test_releasing_documents_the_rotation() -> None:
-    """``RELEASING.md`` names the archive and the move-at-release step."""
-    text = (_REPO_ROOT / "RELEASING.md").read_text(encoding="utf-8")
-    assert _ARCHIVE_DIR in text, (
-        f"RELEASING.md must name {_ARCHIVE_DIR}/ — the rotation target."
-    )
-    lowered = text.lower()
-    assert "[unreleased]" in lowered and (
-        "rotat" in lowered or "archive" in lowered
-    ), (
-        "RELEASING.md must document the changelog rotation step (move the "
-        "[Unreleased] entries into the archive at each dev→main release)."
-    )

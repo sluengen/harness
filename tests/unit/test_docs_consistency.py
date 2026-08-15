@@ -31,28 +31,6 @@ STALE_PHRASES = [
 ]
 
 
-# --- ONBOARDING.md must be shipped (CAL-620) ----------------------------------
-#
-# RELEASING.md links to ONBOARDING.md (§Updating) as the repeatable-onboarding
-# doc. A doc you reference but do not ship sends anyone who follows the pointer
-# to a 404, so the repo must actually carry it.
-#
-# The guard judges the *committed* tree (``git ls-files``), not the working
-# tree, per the CAL-619 git-aware-guard principle: an ONBOARDING.md that exists
-# only on an author's disk must still fail on a clean checkout.
-
-ONBOARDING_DOC = REPO_ROOT / "ONBOARDING.md"
-
-
-def test_onboarding_md_is_tracked() -> None:
-    """ONBOARDING.md is referenced across the docs; it must be a committed file."""
-    assert ONBOARDING_DOC.resolve() in tracked_files_under("ONBOARDING.md"), (
-        "ONBOARDING.md is referenced by RELEASING.md (§Updating), but git does "
-        "not track it. Ship the onboarding doc you reference (CAL-620; the "
-        "CAL-619 git-aware-guard principle)."
-    )
-
-
 @pytest.mark.parametrize("doc", BOOTSTRAP_DOCS, ids=lambda p: p.name)
 def test_no_stale_bootstrap_phrases(doc: Path) -> None:
     """Bootstrap docs must not contain pre-implementation placeholder language."""
@@ -213,7 +191,6 @@ def test_routing_discipline_scoped_to_run_lifecycle() -> None:
 #: agents-repo *retirement* as a past event. specs/ and assessments/ are decision
 #: and audit records, likewise historical.
 ONE_REPO_DOCS = [
-    REPO_ROOT / "ONBOARDING.md",
     REPO_ROOT / "CONTEXT.md",
     REPO_ROOT / "README.md",
     REPO_ROOT / "BOOTSTRAP.md",
@@ -369,24 +346,6 @@ def test_wrapper_pins_allowlist_to_container_workspace() -> None:
         "`${HARNESS_WORKSPACE_ROOTS:-…}` default). Inside the container the repo "
         "is /workspace, so a host path rejects it — pin `=/workspace` instead "
         "(CAL-675 regression)."
-    )
-
-
-def test_onboarding_ignores_both_run_state_dirs() -> None:
-    """AC-3 (CAL-675): the onboarding doc tells a consuming repo to ignore both
-    run-state directories.
-
-    A run writes the SQLite ledger to ``<repo>/.harness/`` and its worktrees to
-    ``<repo>/.worktrees/harness/`` — *different* paths. ONBOARDING step 5 must
-    list both in the `.gitignore` it scaffolds, or a `git add .` after a run can
-    stage worktree contents in the consuming repo (the rough edge the cross-repo
-    smoke surfaced).
-    """
-    text = ONBOARDING_DOC.read_text()
-    assert ".worktrees/" in text and ".harness/" in text, (
-        "ONBOARDING.md must tell a consuming repo to gitignore both `.harness/` "
-        "(ledger) and `.worktrees/` (run worktrees) — they sit at different "
-        "paths, so ignoring only one leaves the other committable (CAL-675, AC-3)."
     )
 
 
@@ -601,102 +560,3 @@ def test_readme_does_not_present_hermes_as_built() -> None:
         "design-only, not a live trigger (CAL-1009)."
     )
 
-
-# --- The image-installed client (#312, AC-3) ---------------------------------
-#
-# The install command is written **once**, in `docker/install-client.sh`, and the
-# producer stamps that same line into every client's preamble. The docs must
-# carry the producer's own sentence rather than a paraphrase of it: a documented
-# command that has drifted from the role it invokes is worse than none, because
-# the operator follows it and gets a refusal they cannot diagnose.
-
-DOCKER_DIR = REPO_ROOT / "docker"
-INSTALL_PRODUCER = DOCKER_DIR / "install-client.sh"
-ENTRYPOINT_SH = DOCKER_DIR / "entrypoint.sh"
-RUNBOOK_MD = REPO_ROOT / "RUNBOOK.md"
-DOCKER_README = DOCKER_DIR / "README.md"
-
-
-def _entrypoint_roles() -> set[str]:
-    """The role tokens ``docker/entrypoint.sh`` actually dispatches on."""
-    return set(re.findall(r'\$\{1:-\}"\s*==\s*"([a-z][a-z-]*)"', ENTRYPOINT_SH.read_text()))
-
-
-def _producer_flags() -> set[str]:
-    """The long options the producer's own ``case`` accepts."""
-    return set(re.findall(r"^\s+(--[a-z][a-z-]*)\)", INSTALL_PRODUCER.read_text(), re.M))
-
-
-def _documented_install_command() -> str:
-    """The install command as the producer itself writes it, once."""
-    lines = {
-        line.strip().lstrip("#").strip()
-        for line in INSTALL_PRODUCER.read_text().splitlines()
-        if line.lstrip().startswith("#") and "docker run" in line and "install" in line
-    }
-    assert len(lines) == 1, (
-        "docker/install-client.sh states its own install command more than one "
-        f"way, so there is no single sentence for the docs to carry: {lines}"
-    )
-    return lines.pop()
-
-
-def test_the_derived_install_vocabulary_is_populated() -> None:
-    """The floor under the two guards below.
-
-    Each derives its subject from a source file; a derivation that silently
-    matched nothing would leave both assertions trivially satisfiable while
-    enforcing nothing at all.
-    """
-    assert "install" in _entrypoint_roles(), (
-        f"the entrypoint no longer dispatches an `install` role: {_entrypoint_roles()}"
-    )
-    assert "verb" in _entrypoint_roles(), "the verb role vanished from the entrypoint"
-    assert _producer_flags() == {"--source-root"}, (
-        f"the producer's option set changed: {_producer_flags()} — the docs guards "
-        "below derive from it and must be re-read, not merely re-run"
-    )
-
-
-@pytest.mark.parametrize("doc", [DOCKER_README, RUNBOOK_MD], ids=lambda p: p.name)
-def test_the_documented_install_command_matches_the_role(doc: Path) -> None:
-    """Both docs carry the producer's own install command, verbatim.
-
-    Derived rather than listed: the expected string comes out of
-    ``docker/install-client.sh``, so renaming the role or its flag reddens this
-    guard instead of leaving two documents quietly describing a command the image
-    no longer accepts.
-    """
-    text = doc.read_text()
-    command = _documented_install_command()
-    assert command in text, (
-        f"{doc.name} does not document the install command the image accepts.\n"
-        f"expected verbatim:\n  {command}"
-    )
-    for role in {"install"} | _producer_flags():
-        assert role in text, f"{doc.name} never mentions {role!r}"
-
-
-def test_the_runbook_records_that_the_loop_machine_is_not_migrated() -> None:
-    """AC-3's second half: the migration is documented **and** elective.
-
-    #312 ships the mechanism; it deliberately does not migrate this machine's
-    ``~/bin/harness``, because doing so changes how the loop's client updates
-    (automatic-on-fast-forward → an explicit act) and that is an operator's call.
-    An undocumented non-migration is indistinguishable from an oversight, and the
-    next tick would re-derive the decision from scratch.
-
-    The predicate is anchored on the **negation** — the load-bearing half of the
-    sentence — rather than on its nouns, which ordinary prose about migration
-    would satisfy. Acknowledged limit, stated rather than chased: a paragraph
-    rewritten to say the opposite while keeping these tokens would pass. Nothing a
-    substring predicate can do reaches that, and a guard claiming otherwise would
-    be the more expensive artifact.
-    """
-    runbook = RUNBOOK_MD.read_text()
-    assert re.search(r"#312 does not migrate", runbook), (
-        "RUNBOOK.md does not record that #312 leaves this machine's "
-        "~/bin/harness on its symlink install — an elective migration that is "
-        "not written down reads as an omission"
-    )
-    assert "~/bin/harness" in runbook

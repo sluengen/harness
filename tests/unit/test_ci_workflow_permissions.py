@@ -11,12 +11,13 @@ Note the threat is *not* fork pull requests: a public repo hands a fork PR a
 read-only token regardless of the default. It is the ``push: [main]`` trigger,
 which runs with the repo's own token, that a widened default would reach.
 
-``release.yml`` already carries a job-level block (``packages: write``, CAL-623);
-``ci.yml`` carried none. These guards hold the contract for both, so a new
-workflow cannot land without declaring what it needs.
+``ci.yml`` carried no block at all. These guards hold the contract for every
+workflow in the directory, so a new one cannot land without declaring what it
+needs — including the nightly promotion, whose ``contents: write`` is the widest
+grant left in the tree now that ADR 0015 has retired the image release (#435).
 
-The workflows are parsed as text (PyYAML is not a project dependency), matching
-``tests/unit/test_release_workflow.py``. That is enough to catch the regression
+The workflows are parsed as text (PyYAML is not a project dependency). That is
+enough to catch the regression
 this targets — a workflow with no block at all — without pretending to evaluate
 GitHub's effective-permission resolution.
 
@@ -32,7 +33,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
 
 #: A ``permissions:`` key at any indent — top-level or job-level both satisfy
-#: least privilege; ``release.yml`` scopes its grant per-job by design.
+#: least privilege, so a workflow that scopes its grant per-job is accepted.
 _PERMISSIONS_RE = re.compile(r"^\s*permissions:\s*$", re.M)
 
 #: The only grant CI needs: read the code it tests. Anything wider on a workflow
