@@ -1,8 +1,8 @@
 ---
 name: review-discipline
-description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
+description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), the blocking/size 2×2 for findings, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.12.0 -->
+<!-- guidance:review-discipline@0.14.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -51,27 +51,23 @@ Only after Stage 1 passes.
 
 **For frontend code, additionally:** design-system adoption and accessibility (`design-system`), and that the surface handles all its states — empty, loading, error, and edge cases (0 / 1 / many / missing), not just the happy path (`ux-design`).
 
-## Severity
+## Findings — the 2×2 (ADR 0015)
 
-| Severity | Definition | Action |
+Two axes decide everything about a finding, each a plain binary:
+
+- **Blocking or not.** A finding blocks when shipping it would ship a defect: a security hole, data loss, a crash, a spec violation, a logic bug, a missing test for an acceptance criterion. Everything else — inefficiency, incomplete error handling, structural drift, an improvement — does not block. There are no severity grades beyond this; "Critical/High/Medium/Low" is retired vocabulary.
+- **Small or large.** Small means cheap **and** contained — a bounded edit whose consequences end where the edit does. A two-line change in a load-bearing area with a wide blast radius is not small. Large is anything that would blow out the diff and the review in flight, or stall the queue behind work the ticket never promised.
+
+|  | Small fix | Large fix |
 |---|---|---|
-| **Critical** | Security hole, data loss, crash, spec violation | Blocks approval |
-| **High** | Logic bug, missing validation, missing test for a criterion | Blocks approval |
-| **Medium** | Minor inefficiency, incomplete error handling, structural drift | Fix now if small (1–5 lines); carry-forward only if out of scope |
-| **Low** | Suggestion, minor improvement | Fix now if trivial; otherwise record in the review notes and drop — **never filed as a ticket** |
+| **Blocking** | Fix now, in this branch | **FAIL** — the ticket cannot ship as scoped; *On a FAIL* below, and a human re-scopes if the budget cannot absorb it |
+| **Non-blocking** | Fix now, in this branch | Write it up — through the `tracker` skill's *Bundle before you file* check; only when nothing bundles does it become its own ticket, stating why it could not be fixed in-branch |
 
-Critical and High block. Medium and Low do not, **but fix them in the same pass when the fix is small** — the builder already has the context, so deferring a two-line fix wastes more effort than doing it.
+The default posture is **fix it now — do the job right the first time**. Three of the four cells resolve inside this branch; the builder already has the context, and fixing a small thing costs less than discussing it. Size is the only legitimate reason not to, and blocking is the only thing severity was ever needed for.
 
-### Fix now vs carry-forward
+There is deliberately no "small but not worth doing" case. The finding bar above already filters it: a specific, stateable defect or improvement is a finding, and a small one is always worth its own cost; anything vaguer ("could be improved") never became a finding in the first place. A rule with a subjective override attached is not a rule.
 
-**Fix now:** any mechanical, localised fix on code the task already touched (stale comment, missing validation, wrong helper, a duplicated block). If you can state the fix in one sentence, fix it now.
-
-**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. Before filing, apply the `tracker` skill's *Bundle before you file* check: an open unstarted ticket on the same surface gets this finding appended to it rather than a twin filed beside it. Only when nothing bundles does it become its own ticket — and state in the finding why it cannot be fixed in-branch.
-
-Two bounds on filing (ADR 0015), because a queue that grows under review is a failed review process:
-
-- **The severity floor.** Only Critical, High, and a Medium meeting the carry-forward bar may be filed. A Low is never filed — fix it or record it in the review notes and drop it.
-- **The recursion cap.** A ticket filed from a review carries the `review-finding` label; that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review files nothing below High — every other finding is fixed in-branch or recorded and dropped. One generation of follow-up, never a lineage.
+**The recursion cap** (ADR 0015), because a queue that grows under review is a failed review process: a ticket filed from a review carries the `review-finding` label — that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review fixes or drops everything it can and files nothing at all — its one write-up cell closes. A large-and-blocking finding on such a ticket is still a FAIL/hold, never a new ticket. One generation of follow-up, never a lineage.
 
 ## Every finding has four parts
 
@@ -87,7 +83,7 @@ Two bounds on filing (ADR 0015), because a queue that grows under review is a fa
 - **Run the verification yourself.** Do not trust the builder's claim that tests pass. Fresh run, read the output (`code-quality` Part C).
 - **Record reality on PASS — the as-built-record gate.** When the diff touches a **user-facing surface** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it; a surface is not permitted to accumulate more than one shipped ticket without one — the record is where a gap between tickets becomes visible, and it cannot do that job retroactively (`spec-driven-development`).
 - **Close the candidate before you certify it — the final-evidence ordering rule.** The tree you verify and the tree your verdict covers are the tree that merges. So the as-built-record update goes **into the candidate first**: draft it from the diff, commit it onto the branch, and only then run the verify gate and decide. Nothing lands after that — a later commit, documentation included, is uncertified tree content and voids the pass. Order it the other way and the record edit is never gate-checked, which matters because a record is delivered tree content that a link, generated-doc, or drift guard can reject. Two consequences worth stating: on a **FAIL** there is nothing settled to record, so no record work is done — it is drafted fresh from the *next* diff; and when the certifying gate goes red **because of your own record edit**, you wrote it, so you fix it and re-run (bounded — two attempts, then FAIL carrying the gate output), never the implementation, which would make you the builder. A **deferral** is ordering-neutral: it lands in the report and the ticket, not the tree. Report the SHA the verdict bound to, so the flow that ships can check that HEAD is still it.
-- **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings by severity with the four parts each, the verification output, the `reviewed_sha` the verdict binds to, and a final PASS / FAIL.
+- **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings each placed in the 2×2 (blocking or not, small or large) with the four parts and what happened to it (fixed / filed / FAIL), the verification output, the `reviewed_sha` the verdict binds to, and a final PASS / FAIL.
 
 ## On a FAIL — the review→fix stop rule
 

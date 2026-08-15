@@ -1,4 +1,4 @@
-<!-- guidance:review@0.2.0 -->
+<!-- guidance:review@0.3.0 -->
 # /review — review the current branch
 
 Usage: `/review` (reviews the active branch's diff against its change spec)
@@ -21,7 +21,7 @@ Dispatch the `reviewer` agent in a fresh context. Supply the ticket, change spec
 - **FAIL:** return the blocking findings to the developer to fix, then re-run `/review`. How many times you may do that — and what happens to the ticket when the budget is spent — is `review-discipline`'s *On a FAIL* section, which owns the stop rule for every entry point. Follow it there rather than counting from a number restated here.
 
 ### 5. Report
-Print the verdict, Stage 1 result per acceptance criterion, Stage 2 findings by severity, and the verification output.
+Print the verdict, Stage 1 result per acceptance criterion, Stage 2 findings placed in `review-discipline`'s 2×2 with what happened to each, and the verification output.
 
 ## Note
 On PASS this command leaves the branch review-clean and the canonical spec updated, but does not merge. Integration and ticket-closing belong to `/ship` and the repo's branch model (`CONTEXT.md`).
