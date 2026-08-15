@@ -87,11 +87,18 @@ _GH_STATUS_FIELD_KEY = re.compile(
 _DEFAULT_STATUS_FIELD = "Status"
 
 
-def _block(text: str, header: re.Pattern[str]) -> str | None:
+def context_block(text: str, header: re.Pattern[str]) -> str | None:
     """Return the indented body of the ``header`` block, or ``None`` if absent.
 
     The block runs from the header line to the first line that is neither blank
     nor indented — a later top-level key (or a closing code fence) ends it.
+
+    Public since #353, when :mod:`harness.trivial_diff` became the first reader
+    of a CONTEXT.md block outside this module. It is the generic extractor the
+    other config readers' private copies (``repo_config._repo_block``,
+    ``branch_config._branches_block``) each re-spell; a fourth copy would be one
+    more place for "where does a block end" to drift, so the name was widened
+    rather than the behaviour duplicated.
     """
     lines = text.splitlines()
     start: int | None = None
@@ -121,7 +128,7 @@ def _read_context(repo_root: Path) -> str | None:
 
 def _layers_linear(text: str) -> str | None:
     """The raw ``layers.linear`` value, or ``None`` if the key is absent."""
-    block = _block(text, _LAYERS_HEADER)
+    block = context_block(text, _LAYERS_HEADER)
     if block is None:
         return None
     match = _LINEAR_KEY.search(block)
@@ -130,7 +137,7 @@ def _layers_linear(text: str) -> str | None:
 
 def _repo_linear(text: str) -> str | None:
     """The raw ``repo.linear`` address, or ``None`` if the key is absent."""
-    block = _block(text, _REPO_HEADER)
+    block = context_block(text, _REPO_HEADER)
     if block is None:
         return None
     match = _LINEAR_KEY.search(block)
@@ -159,7 +166,7 @@ def _github_settings_from_text(text: str) -> GitHubSettings | None:
     ``project`` — an incomplete block is not a usable config. ``status_field``
     defaults to :data:`_DEFAULT_STATUS_FIELD`.
     """
-    block = _block(text, _GITHUB_HEADER)
+    block = context_block(text, _GITHUB_HEADER)
     if block is None:
         return None
     repo_match = _GH_REPO_KEY.search(block)

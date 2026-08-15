@@ -1490,3 +1490,48 @@ def test_logs_db_help_documents_default(tmp_path: Path) -> None:
         "Path to harness.db (defaults to .harness/harness.db)"
         in _db_help_text("logs")
     )
+
+
+def test_worktrees_cleanup_reports_a_locked_worktree_and_its_remedy(
+    tmp_path: Path,
+) -> None:
+    """#372 — the wiring. ``teardown_worktree`` now *returns* what it did, and
+    the sweep is the one caller that reports it. A locked worktree survives on
+    purpose, so the operator must be told which run was skipped, that a lock is
+    why, and the ``git worktree unlock`` that releases it — not the generic
+    "still present after removal", which reads as a teardown malfunction and
+    names no way out. Nothing in ``test_teardown_worktree.py`` can see this: the
+    primitive returning ``LOCKED`` and the sweep *using* it are separate facts.
+    """
+    import os
+
+    repo_root = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo_root)], check=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo_root), "config", k, v], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_root), "commit", "--allow-empty", "-q", "-m", "init"],
+        check=True,
+    )
+    wt = repo_root / ".worktrees" / "harness" / "R-locked"
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "add",
+         "-b", "harness/R-locked", str(wt)], check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "lock", str(wt)], check=True
+    )
+    old_time = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+    os.utime(wt, (old_time, old_time))
+
+    result = runner.invoke(
+        app,
+        ["worktrees", "cleanup", "--repo-root", str(repo_root), "--age", "1d"],
+    )
+
+    assert wt.exists(), "the sweep destroyed a locked worktree"
+    combined = result.stdout + (result.stderr or "")
+    assert "R-locked" in combined, combined
+    assert "locked" in combined, combined
+    assert "git worktree unlock" in combined, combined
+    assert result.exit_code == 1, combined

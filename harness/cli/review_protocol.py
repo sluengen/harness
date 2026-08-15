@@ -53,7 +53,13 @@ from harness.events.payloads import DESIGN_HASH_KEY, DESIGN_STATUS_KEY
 # each match is narrow — which is the one thing that must not be trimmed, since
 # without it a future reader cannot tell a real engine quirk from a guess.
 # The module sat one line under the limit and #270 crossed it by adding the
-# second SUBMIT sentinel and its discriminator.
+# second SUBMIT sentinel and its discriminator. #361 added the third and last
+# evidence block the prompt carries — the visual-context template, its optional
+# manifest sub-block, and the reasons the ordering is what it is. It belongs
+# here for the same reason the design block does: what an evidence block says
+# to the engine, and where it sits relative to the SUBMIT contract, is knowledge
+# about how this engine reads a prompt. The *decision* about which captures
+# exist is not, and lives in ``harness.cli.review_visual``.
 # The extraction candidate, if it grows again, is the design gate
 # (``DesignGate`` + ``resolve_design_gate``, ~110 lines): it is a *policy*
 # decision about the ledger's design record, not engine-output knowledge, and it
@@ -137,6 +143,39 @@ conflict, say so.
 --- END DESIGN ---
 """
 
+# The visual-evidence block (#361). Captures are named by **absolute path** and
+# never inlined — the design above is inlined because text can be, and an image
+# cannot; the engine's own read-only file access is what opens them. It sits with
+# the design block because both are evidence context, and before the SUBMIT
+# contract for the reason stated throughout this module: the contract stays the
+# last thing the engine reads.
+#
+# The closing paragraph is the channel's honest limit, stated to the engine
+# rather than only in the spec: nothing authenticates that a capture depicts the
+# reviewed commit. The verb cannot check it (it parses no manifest), and the
+# engine can — which is judgment placed where judgment lives.
+_VISUAL_CONTEXT_TEMPLATE = """
+This run supplied rendered captures of the user-facing surface under review.
+They are files on disk in this workspace, listed by absolute path below. Read
+each one — you will receive the image itself, not its bytes — and judge whether
+the rendered result matches what the ticket and the design call for. A layout
+that satisfies the diff and renders wrongly is a finding.
+
+--- BEGIN CAPTURES ---
+{image_lines}
+--- END CAPTURES ---
+{manifest_block}
+These captures are the builder's own account of what was rendered. Nothing here
+authenticates that they depict the commit under review ({reviewed_sha}); if the
+manifest names a different SHA, or names none, say so.
+"""
+
+_VISUAL_MANIFEST_TEMPLATE = """
+--- BEGIN CAPTURE MANIFEST ---
+{manifest}
+--- END CAPTURE MANIFEST ---
+"""
+
 _SUBMIT_CONTRACT = """
 When you have finished, you MUST signal your verdict by emitting a single line
 of the exact form:
@@ -165,6 +204,9 @@ def build_review_prompt(
     *,
     probe_cap: int = 0,
     probe_feedback: str | None = None,
+    screenshots: tuple[str, ...] = (),
+    manifest: str | None = None,
+    reviewed_sha: str = "",
 ) -> str:
     """The review prompt, with the run's design as context when there is one.
 
@@ -188,6 +230,17 @@ def build_review_prompt(
 
     Either block sits **before** the ``SUBMIT`` contract for the same reason the
     design block does: the contract stays the last thing the engine reads.
+
+    ``screenshots`` (#361) are absolute paths to rendered captures, resolved and
+    bounded by :func:`harness.cli.review_visual.resolve_visual_evidence`. They
+    are **named, never inlined** — that is the whole channel, and it is what
+    makes the prompt's cost a function of the number of paths rather than of the
+    images' bytes. The block is emitted only when there is at least one capture,
+    so a run that supplies none is byte-identical to the pre-#361 prompt and pays
+    nothing for the channel, exactly as ``probe_cap=0`` does. ``manifest`` is
+    optional context accompanying them, and ``reviewed_sha`` is passed so the
+    engine can make the staleness comparison the verb cannot: it parses no
+    manifest, and asking it to would put judgment in the wrong layer.
     """
     probe_block = probe_feedback or (build_probe_request(probe_cap) if probe_cap > 0 else "")
     design_block = (
@@ -195,7 +248,20 @@ def build_review_prompt(
         if design_markdown is None
         else _DESIGN_CONTEXT_TEMPLATE.format(design_markdown=design_markdown)
     )
-    return _REVIEW_INTRO + design_block + probe_block + _SUBMIT_CONTRACT
+    visual_block = (
+        ""
+        if not screenshots
+        else _VISUAL_CONTEXT_TEMPLATE.format(
+            image_lines="\n".join(screenshots),
+            manifest_block=(
+                ""
+                if manifest is None
+                else _VISUAL_MANIFEST_TEMPLATE.format(manifest=manifest)
+            ),
+            reviewed_sha=reviewed_sha,
+        )
+    )
+    return _REVIEW_INTRO + design_block + visual_block + probe_block + _SUBMIT_CONTRACT
 
 
 # ---------------------------------------------------------------------------
@@ -435,12 +501,20 @@ def _build_cmd(engine: Engine, *, model: str | None = None) -> list[str]:
 
     Both engines are headless CLIs fed the review prompt on **stdin** and scanned
     for a single ``SUBMIT: <json>`` line; neither uses the Agent SDK.  Both run
-    **read-only**: the diff under review and the ticket are untrusted prompt
-    content, so a read-only posture stops prompt-injection from mutating the host.
+    read-only: the diff under review and the ticket are untrusted prompt content,
+    so a read-only posture is what keeps prompt-injection from editing the tree
+    the review is about.
 
-    * ``claude`` — ``claude -p`` headless in **plan** permission mode (read-only:
-      it may read files / run read-only git, but carries no edit/write/bypass
-      capability). ``model``, when given, is appended as ``--model <alias>``
+    * ``claude`` — ``claude -p`` headless in **plan** permission mode. Read-only
+      **by the engine's own plan-mode policy, which includes an unrestricted Bash
+      tool** — measured in ``harness:dev`` (#361): plan mode ran arbitrary
+      ``python3 -c`` and wrote under ``~/.claude/plans/``, and declined, but was
+      not prevented from attempting, a write into the mounted workspace, which
+      was byte-identical after every run. So this is a **behavioural mitigation,
+      not a sandbox**: it must not be read as a guarantee that the engine cannot
+      mutate the host. The containment that does not depend on the model's
+      cooperation is the container and the workspace allowlist.
+      ``model``, when given, is appended as ``--model <alias>``
       (#321): the repo's configured ``loop.review_model``, or an explicit
       ``--model`` override.
     * ``codex`` — ``codex exec`` under the ``--sandbox read-only`` sandbox

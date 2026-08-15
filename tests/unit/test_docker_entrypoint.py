@@ -78,3 +78,46 @@ def test_bare_verb_is_backward_compatible(bin_dir: Path) -> None:
     proc = _run(["start", "CAL-1", "--repo", "/x"], bin_dir)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "STUB [run] [harness] [start] [CAL-1] [--repo] [/x]"
+
+
+# --- The `install` role (#312) ----------------------------------------------
+#
+# The image gains a second role: emit the client, rather than run a verb. It is
+# the first genuine dispatch this script has had — `verb` is a token it *strips*,
+# not a branch it takes — so the two tests above become a regression floor: an
+# `install` branch that swallowed argv, or sat where a bare verb reaches it,
+# would break every existing invocation.
+
+
+def test_the_install_role_emits_a_client_rather_than_running_a_verb(
+    bin_dir: Path,
+) -> None:
+    """``install`` reaches the real producer with its arguments intact.
+
+    The producer is not stubbed: it sits beside this script in the image and in
+    the checkout alike, so what this test dispatches to is the same file the
+    image's role dispatches to. A branch that dropped ``--source-root``, or that
+    fell through to ``uv run harness install``, fails here.
+    """
+    proc = _run(["install", "--source-root", "/srv/harness"], bin_dir)
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.startswith("#!/usr/bin/env bash\n"), proc.stdout[:200]
+    assert "_harness_baked_source_root='/srv/harness'" in proc.stdout, proc.stdout[:400]
+    assert "STUB [run] [harness]" not in proc.stdout, (
+        "`install` was treated as a verb name and handed to the CLI — the role "
+        f"must not fall through to `uv run harness`:\n{proc.stdout}"
+    )
+
+
+def test_the_install_role_forwards_a_refusal_rather_than_masking_it(
+    bin_dir: Path,
+) -> None:
+    """A refused install must exit 2 through the entrypoint, with nothing on
+    stdout. ``exec`` is what makes that automatic; a branch that ran the producer
+    as a child and exited on its own terms would report success for an install
+    that produced no client."""
+    proc = _run(["install", "--source-root", "relative/path"], bin_dir)
+
+    assert proc.returncode == 2, proc.stderr
+    assert proc.stdout == "", proc.stdout

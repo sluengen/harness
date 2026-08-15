@@ -72,6 +72,7 @@ from harness.assurance import (
     DEFAULT_ASSURANCE,
     UNRECORDED_REASON,
     Assurance,
+    apply_fast_path_availability,
     coerce_assurance,
     resolve_assurance,
 )
@@ -88,6 +89,7 @@ from harness.tracker_errors import (
     TrackerNotFound,
     TrackerRequestError,
 )
+from harness.trivial_diff import load_trivial_allowlist
 from harness.worktree import WorktreeNode, WorktreeNodeError
 
 # size: one cohesive verb — the start orchestration plus the Linear/resume
@@ -298,7 +300,16 @@ async def _run_start(
     #     ``start`` and snapshotting the answer is what makes the required stages
     #     stable: ``design`` and ``review`` read the run row, never the ticket, so
     #     a label edited mid-run cannot remove a requirement the run opened under.
-    resolution = resolve_assurance(ticket_data.get("labels") or [])
+    #     Since #353 the level is honoured as stated, and a second, still-pure
+    #     check downgrades ``trivial`` where *this repo* declares no usable
+    #     trivial allowlist — there is nothing such a repo could ever certify, so
+    #     opening a trivial run would charge every run an extra verb call and two
+    #     tracker writes, forever, for an outcome already known here. The repo
+    #     read stays out of ``harness/assurance.py``, which is pure by contract.
+    resolution = apply_fast_path_availability(
+        resolve_assurance(ticket_data.get("labels") or []),
+        fast_path_available=load_trivial_allowlist(repo_root).valid,
+    )
 
     # 4. Check for an existing open run for this ticket (keyed on canonical).
     #    Migrate the ledger FIRST (#352). ``_migrate`` runs only from
@@ -318,8 +329,8 @@ async def _run_start(
         return existing
 
     #     Warn only where the operator stated something that was not honoured —
-    #     a conflict, an uninterpretable value, or ``trivial`` before the
-    #     certification path exists. Never a refusal: a bad label is a downgrade
+    #     a conflict, an uninterpretable value, or ``trivial`` in a repo that
+    #     declares no trivial allowlist. Never a refusal: a bad label is a downgrade
     #     to the safe level, not a reason to block the queue. And never on
     #     ``no_label``, the common case, which would put a line on every run in
     #     every repo that has not adopted the labels and train readers to ignore
@@ -361,8 +372,17 @@ async def _run_start(
     # a tree that lags the merged work (Option 1). ``preferred_base_ref`` falls back
     # to the local ``<base>`` for offline / no-origin repos, so those are unchanged.
     # The recorded ``base_branch`` (the merge target) stays ``base`` either way.
+    #
+    #     The ref is resolved *unconditionally* (#353) because the run's
+    #     classification boundary is its merge target, not its start point. A
+    #     resumed run starts at the recovered WIP tip, which already carries the
+    #     dead run's commits — commits ``close`` will merge — so anchoring the
+    #     trivial classifier there would judge a resumed run on a strictly
+    #     smaller diff than the one that lands.
+    base_ref = await asyncio.to_thread(preferred_base_ref, repo_root, base)
     if start_point is None:
-        start_point = await asyncio.to_thread(preferred_base_ref, repo_root, base)
+        start_point = base_ref
+    base_sha = await asyncio.to_thread(_resolve_ref_sha, repo_root, base_ref)
 
     # 5. Create worktree (local side effect — rolled back on any later failure).
     run_id = generate_run_id()
@@ -393,6 +413,7 @@ async def _run_start(
             attended=attended,
             assurance=resolution.effective,
             assurance_reason=resolution.reason,
+            base_sha=base_sha,
         )
     except aiosqlite.IntegrityError:
         # A concurrent start process won the race — the unique partial index on
@@ -522,6 +543,23 @@ async def _resolve_resume_start_point(
     return _ResumeStartPoint(start_point=start_point, branch=branch)
 
 
+def _resolve_ref_sha(repo_root: Path, ref: str) -> str | None:
+    """The SHA ``ref`` names, or ``None`` — never raises (#353).
+
+    Sync — offloaded via :func:`asyncio.to_thread`. ``None`` is the fail-safe: a
+    run with no recorded boundary can never be certified (the classifier answers
+    ``no_base_sha`` and the run upgrades to ``simple``), so a failed read costs
+    the fast path and never the gate. A local call, so no timeout.
+    """
+    try:
+        result = run_git(repo_root, "rev-parse", "--verify", "--quiet", ref)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def _fetch_origin_branch(repo_root: Path, branch: str) -> str | None:
     """``git fetch origin <branch>`` then resolve its tip SHA, or ``None`` on failure.
 
@@ -635,6 +673,7 @@ async def _insert_open_run(
     attended: bool = False,
     assurance: Assurance = DEFAULT_ASSURANCE,
     assurance_reason: str = "no_label",
+    base_sha: str | None = None,
 ) -> None:
     """Insert a ``status='open'`` row into ``runs``.
 
@@ -645,6 +684,10 @@ async def _insert_open_run(
     ``attended`` is the declared mode (#295, ADR 0011), and this insert is its
     only writer — there is no mutation path, which is what makes attendance
     fixed at ``start``.
+
+    ``base_sha`` is the run's classification boundary (#353) — the merge target's
+    SHA, resolved once here. ``None`` when git could not resolve it, which the
+    classifier reads as ``no_base_sha``: ineligible, never certified.
     """
     await store.init_db(db_path)
     async with store.connect(db_path) as conn:
@@ -653,8 +696,8 @@ async def _insert_open_run(
             "run_id, workflow_name, workflow_version, status, "
             "state_json, inputs_json, base_branch, worktree_path, "
             "worktree_branch, ticket, started_at, resumed_from, "
-            "assurance, assurance_reason"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "assurance, assurance_reason, base_sha"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 "",          # workflow_name — not yet known at open time
@@ -673,6 +716,9 @@ async def _insert_open_run(
                 # mutated, which is what makes it a snapshot rather than a cache.
                 assurance,
                 assurance_reason,
+                # The classification boundary (#353) — the merge target at
+                # ``start``, never the worktree's start point.
+                base_sha,
             ),
         )
         await conn.commit()

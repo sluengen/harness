@@ -99,7 +99,7 @@ from harness.cli._duration import _parse_duration
 from harness.cli._query_common import _resolve_db_path
 from harness.cli._repo import REPO_OPTION, repo_arg_or_cwd
 from harness.cli._verb import VerbError, run_verb
-from harness.cli.reclaim_closable import closable_run
+from harness.cli.reclaim_closable import ClosableEntry, closable_run
 from harness.cli.reclaim_liveness import locally_live, open_run_liveness
 from harness.cli.reclaim_undo import ReclaimUndoOutput, run_undo
 from harness.cli.reclaim_undo import describe as describe_undo
@@ -175,20 +175,6 @@ class ReclaimOutput(BaseModel):
     ticket: str
     outcome: str
     branch_preserved: str | None
-
-
-class ClosableEntry(BaseModel):
-    """One ticket a ``--stale`` sweep found **closable** rather than stale (#255).
-
-    Its run passed ``review`` and then lost its session; it is still ``open`` and
-    ``close`` would accept it, so reverting it to Todo would throw away a passing
-    review. Carries the two addresses a caller needs to finish it — the run and
-    the exact HEAD the pass covers.
-    """
-
-    ticket: str
-    run_id: str
-    head_sha: str
 
 
 class SweepOutput(BaseModel):
@@ -543,6 +529,7 @@ async def _run_stale_sweep(
                         ticket=identifier,
                         run_id=finishable.run_id,
                         head_sha=finishable.head_sha,
+                        evidence_kind=finishable.evidence_kind,
                     )
                 )
                 continue
@@ -584,7 +571,8 @@ def _print_sweep(result: SweepOutput) -> None:
     for closable in result.closable:
         typer.echo(
             f"  closable  {closable.ticket} (run {closable.run_id} at "
-            f"{closable.head_sha}) — review covers HEAD; harness close will finish it"
+            f"{closable.head_sha}) — {closable.evidence_kind} covers HEAD; "
+            f"harness close will finish it"
         )
 
 

@@ -1,8 +1,8 @@
 ---
 feature: run-ledger
 status: implemented
-last_updated: 2026-08-14
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#310", "#318", "#321", "#347", "#338", "#352"]
+last_updated: 2026-08-15
+tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#310", "#318", "#321", "#347", "#338", "#352", "#353"]
 ---
 
 # Run ledger — the SQLite audit trail
@@ -80,16 +80,29 @@ Each event payload's shape is a **typed contract** in [`harness/events/payloads.
 
 #### Scenario: the close gate query
 
-- GIVEN a run with one or more `review` events
-- WHEN `harness close` checks the gate
-- THEN it queries for a `review` event with `verdict='pass'` whose `reviewed_sha` equals the worktree's current HEAD:
+- GIVEN a run holding evidence of either kind — a `review` event, a `certify` event, or both
+- WHEN `harness close` (or `reclaim --stale`'s closable classifier) checks the gate
+- THEN `certify_head` ([`harness/cli/_review_gate.py`](../../harness/cli/_review_gate.py)) runs **two** projections of one shape and opens only on evidence bound to the worktree's current HEAD that also shows the repo's verify gate was accounted for:
 
 ```sql
-SELECT json_extract(data_json, '$.reviewed_sha')
+-- kind 1: a gate-evidenced LLM review pass
+SELECT json_extract(data_json, '$.reviewed_sha'),
+       json_extract(data_json, '$.gate_ran'), json_extract(data_json, '$.gate_reason')
 FROM events
 WHERE run_id = ? AND event_type = 'review'
   AND json_extract(data_json, '$.verdict') = 'pass';
+
+-- kind 2: a gate-evidenced trivial certification (#353)
+SELECT json_extract(data_json, '$.certified_sha'),
+       json_extract(data_json, '$.gate_ran'), json_extract(data_json, '$.gate_reason')
+FROM events
+WHERE run_id = ? AND event_type = 'certify'
+  AND json_extract(data_json, '$.certified_sha') IS NOT NULL;
 ```
+
+Four properties of that pair are load-bearing (#353). The gate-evidence rule is **one function** applied to both projections (`has_gate_evidence`), because a second copy is how the two kinds would start disagreeing about what green means — and the two payloads are asserted at import to name those fields identically, so the rule can be applied verbatim. A **review is preferred** where both cover HEAD, so every run that has one behaves byte-identically to before. The certify half selects on `certified_sha IS NOT NULL`, the same enforcement-by-absence that keeps `review`'s refusal shape (which carries no `verdict`) out of the review half — a row that cannot name the tree it covers can never open a gate. And the verdict carries an **`evidence_kind`** (`review` | `trivial_certification`), set iff the verdict is `certified`, so `close` (`CloseOutput.evidence_kind`) and the `--stale` sweep (`ClosableEntry.evidence_kind`) report what opened the gate without a second query. `close`'s five `RefusalReason` members are unchanged — a locked contract — so the two negatives widen in meaning to cover either kind and the messages, which are not contract, say which; the consequence to read deliberately is that a `trivial` run that never certified is refused `no_passing_review`.
+
+The `certify` event is written **only** by `harness certify`, and only after: the run row says `trivial` (decided through `required_stages(...).llm_review`, not a string compare), the repo configures a `verify:` command and the caller reported it green, the worktree is clean, and every path of `base_sha...HEAD` is allowlisted and unrestricted. No successful trivial path writes a `review` event — a synthetic pass would enter `harness stats`' verdict-by-engine aggregate as a judgement nobody made.
 
 Storing the reviewed SHA on the append-only event (rather than mutating a `runs` column) keeps the full review history auditable and is why decision D2 needed no schema migration — the `events` table already holds arbitrary JSON. `start` emits **no** event (the open run *is* the `runs` row); so the audit trail is the `runs` row **plus** its events, not the events alone.
 
@@ -120,9 +133,9 @@ Two tables in `.harness/harness.db`, created idempotently by `init_db()` (`IF NO
 | Table | Key columns | Purpose |
 |---|---|---|
 | `runs` | `run_id` (PK, ULID), `status`, `ticket`, `worktree_path`, `worktree_branch`, `base_branch`, `started_at`, `completed_at` | One row per run; the open/closed lifecycle |
-| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the live `review`, `close`, `workflow_failed`, `checkpoint` events |
+| `events` | `id` (PK), `run_id` (FK, `ON DELETE CASCADE`), `event_type`, `timestamp`, `data_json` | Append-only log; carries the live `review`, `certify`, `close`, `workflow_failed`, `checkpoint` events |
 
-The canonical `event_type` set is whatever `EventType` in `harness/events/schema.py` enumerates — that `Literal` is the source of truth, and `EVENT_TYPES` derives from it so the two cannot drift (`test_event_emitter.py` asserts the derived set equals the tested one, so a new type cannot be added without the round-trip test seeing it). One writable type per live emitter: `workflow_failed` (`harness cancel`, and `reclaim`'s reuse of the same abandon transaction), `review`, `close`, `checkpoint` (the run-branch push that makes WIP durable, CAL-738), `design` (the design stage's recorded attempt, ADR 0007 / #211), and `reclaim_undone` (a reclaim reversed as a confirmed false positive, #254). `defer` and `release` are **historical-only since #338**: both remain in `EventType`, and their payload models stay defined in [`harness/events/payloads.py`](../../harness/events/payloads.py) — named there, not listed here (#282) — so rows already on disk parse and read back unchanged, but no live emitter writes them. They are retained rather than pruned because the emitter validates *writes*, never reads — pruning would not make an existing ledger fail, it would only remove the readers that keep it meaningful. Ledger-backed statistics therefore describe the lifecycle verbs the ledger records: historical defer/release counts stay visible in `harness stats`, while transitions performed after #338 are audited through tracker history instead and simply do not appear. CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
+The canonical `event_type` set is whatever `EventType` in `harness/events/schema.py` enumerates — that `Literal` is the source of truth, and `EVENT_TYPES` derives from it so the two cannot drift (`test_event_emitter.py` asserts the derived set equals the tested one, so a new type cannot be added without the round-trip test seeing it). One writable type per live emitter: `workflow_failed` (`harness cancel`, and `reclaim`'s reuse of the same abandon transaction), `review`, `close`, `checkpoint` (the run-branch push that makes WIP durable, CAL-738), `design` (the design stage's recorded attempt, ADR 0007 / #211), `reclaim_undone` (a reclaim reversed as a confirmed false positive, #254), and `certify` (a deterministic trivial certification bound to a SHA, #353 — its payload is `CertifyEventData`, which carries no `verdict`, no `issues` and no `engine`, because nothing about it asserts a judgement; it records the certified and base SHAs, the classifier version, the eligible paths, the allowlist in force, and the same `gate_*` evidence contract `review` records). `defer` and `release` are **historical-only since #338**: both remain in `EventType`, and their payload models stay defined in [`harness/events/payloads.py`](../../harness/events/payloads.py) — named there, not listed here (#282) — so rows already on disk parse and read back unchanged, but no live emitter writes them. They are retained rather than pruned because the emitter validates *writes*, never reads — pruning would not make an existing ledger fail, it would only remove the readers that keep it meaningful. Ledger-backed statistics therefore describe the lifecycle verbs the ledger records: historical defer/release counts stay visible in `harness stats`, while transitions performed after #338 are audited through tracker history instead and simply do not appear. CAL-713 pruned the 16 retired deterministic-engine types (CAL-574) out of the writable set; the emitter validates them out, but historical rows that carry them read back unchanged (readers never re-validate `event_type`).
 
 New `runs` columns are added via idempotent `ALTER TABLE ... ADD COLUMN` migrations in `_migrate()`. The `pid` column is vestigial (the engine-era SIGTERM `cancel` path was removed in CAL-587; always `NULL`) — declared in the base `_SCHEMA` and kept as a dormant column; CAL-713 removed its redundant `ADD COLUMN` migration (a writer-less column needs none). `runs.state_json` survives as `"{}"` for verb-model rows but is no longer merged or snapshotted (the engine-era state machinery and the never-shipped resume snapshot layer were removed in CAL-613; the `BaseState` model that once described `state_json` was deleted in CAL-1107). The full DDL and the migration table are the **schema reference** below.
 
@@ -177,7 +190,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_ticket_open
 
 WAL journal mode and `PRAGMA foreign_keys = ON` are set on every connection opened via `connect()`. `init_db()` creates all tables and indexes idempotently (`IF NOT EXISTS`). The DDL above is the base `CREATE TABLE`; the columns added since are in the migration table below, not repeated here — duplicating them in both places is the drift the additive `ALTER TABLE` form avoids.
 
-**The assurance pair is a snapshot, never mutated** (#352). `start` is its only writer; `design` and `review` read it through `harness.cli._runs.read_run_assurance`, which is the one query and routes the value through `harness.assurance.coerce_assurance`. That coercion is total and falls back to `simple` — the level that still requires a review — so a `NULL`, an unknown string, or a hand-edited value can only ever make a run *more* verified, never less. Every row written before the migration therefore behaves exactly as it did, with **no backfill and no historical rewrite**: `NULL` is already the correct answer.
+**The assurance pair is monotone: it may only move toward more verification** (#352, amended 2026-08-15 by #353). *Superseded: until #353 this read "a snapshot, never mutated — `start` is its only writer".* There are now exactly **two** writers, and the second can only tighten. `start` writes the pair once at open time. `certify` writes it at most once more, and only through this statement:
+
+```sql
+UPDATE runs SET assurance = 'simple', assurance_reason = 'diff_ineligible'
+WHERE run_id = ? AND assurance = 'trivial';
+```
+
+The direction is a property of the **statement**, not a convention a caller has to remember: the `WHERE assurance = 'trivial'` predicate makes the write idempotent under a concurrent upgrade and structurally incapable of expressing a downgrade of a `simple` or `complex` row. There is no path that writes `trivial` over anything, and no third writer. So every reader's guarantee is unchanged in the direction that matters — the level a run is under can only ever have grown stricter since it opened, never looser. `design` and `review` read it through `harness.cli._runs.read_run_assurance`, which is the one query and routes the value through `harness.assurance.coerce_assurance`. That coercion is total and falls back to `simple` — the level that still requires a review — so a `NULL`, an unknown string, or a hand-edited value can only ever make a run *more* verified, never less. Every row written before the migration therefore behaves exactly as it did, with **no backfill and no historical rewrite**: `NULL` is already the correct answer.
 
 **A ledger that predates the columns is handled at both ends, because the migration does not run on every verb.** `_migrate` runs only from `init_db`, and `init_db`'s one caller is `start` — so on an existing checkout the first `design` or `review` against a run opened by an older harness reads a column that does not exist yet. Two fixes, each at its own end. `start` runs `init_db` **before** its first ledger read rather than inside the insert that follows it, which restores the self-healing every earlier migration had: the projection of the new columns cannot precede the migration that adds them. And `read_run_assurance` treats a failed read as no recorded assurance — "the column is absent" and "the column is `NULL`" are the same fact one level up, and both route through the same `coerce_assurance` fallback. Readers therefore stay read-only and fail toward the more-verified level instead of raising past the verb's JSON refusal contract.
 
@@ -190,8 +210,9 @@ New columns added after the initial schema are applied via `ALTER TABLE ... ADD 
 | `ticket` | `TEXT` | CAL-570 | Linear ticket identifier (e.g. `CAL-570`) for runs opened via `harness start`. |
 | `worktree_path` | `TEXT` | CAL-570 | Absolute filesystem path to the git worktree; set by `harness start`. |
 | `resumed_from` | `TEXT` | #258 | The preserved WIP branch `harness start --resume` actually recovered, or `NULL` for a clean start (including a `--resume` that fell back). ADR 0008 gates design inheritance on how the run started. |
-| `assurance` | `TEXT` | #352 | The assurance level `harness start` resolved from the issue's labels — `simple` or `complex` (never `trivial`, which is rewritten at the boundary). `NULL` on every row written before the migration. |
-| `assurance_reason` | `TEXT` | #352 | Why the run carries that level: `label`, `no_label`, `conflicting_labels`, `unknown_label`, or `fast_path_unavailable`. `NULL` on a pre-migration row, which reads as `unrecorded`. |
+| `assurance` | `TEXT` | #352 | The assurance level in force for the run. `start` resolves it from the issue's labels; since #353 all three values are reachable — `trivial` only where the repo declares a valid `assurance.trivial_paths` allowlist, otherwise `start` downgrades it to `simple`. `certify` may tighten `trivial` → `simple` (see the monotonicity statement above). `NULL` on every row written before the migration. |
+| `assurance_reason` | `TEXT` | #352 | Why the run carries that level: `label`, `no_label`, `conflicting_labels`, `unknown_label`, `fast_path_unavailable` (#353: `trivial` stated in a repo that declares no usable allowlist), or `diff_ineligible` (#353: `certify` found the run's actual diff not certifiable — the only reason written by a verb other than `start`, and the only one that replaces a value already on the row). `NULL` on a pre-migration row, which reads as `unrecorded`. |
+| `base_sha` | `TEXT` | #353 | The run's classification boundary — the SHA of its **merge target** (`preferred_base_ref`) resolved at `start`, deliberately not the worktree's start point, which on a `--resume` is the recovered WIP tip and already carries commits `close` will merge. `certify` classifies `base_sha...HEAD`, so a base branch that advances mid-run cannot change which paths a run is judged on. Nullable: `NULL` on every pre-migration row and whenever `rev-parse` could not answer; `read_run_base_sha` reads that as *no boundary*, which the classifier converts to `no_base_sha` — ineligible, upgrade to `simple`. A damaged or absent boundary can therefore only make a run more verified, so no backfill is needed. |
 
 > The `pid` column is **not** in this table: it is declared in the base `_SCHEMA` CREATE TABLE (a dormant, writer-less column — see above) and its redundant `ADD COLUMN` migration was removed in CAL-713.
 
@@ -202,7 +223,7 @@ Under the **verb model** (proposal [`harness-as-tool`](../proposals/harness-as-t
 | Value | Set by | Meaning |
 |---|---|---|
 | `open` | `harness start` | **Live.** Run initialised; ticket transitioned to In Progress and worktree created. The verb run is in progress (implement → review → close). The partial unique index `idx_runs_ticket_open` keeps at most one `open` run per ticket. |
-| `closed` | `harness close` | **Live.** Gate passed (a `verdict=pass` whose reviewed SHA == HEAD); branch merged + pushed, ticket transitioned to Done, run finalised. Terminal state of the verb lifecycle. |
+| `closed` | `harness close` | **Live.** Gate passed — gate-evidenced evidence of either kind bound to HEAD: a `verdict=pass` whose reviewed SHA == HEAD, or (#353) a `certify` event whose certified SHA == HEAD; branch merged + pushed, ticket transitioned to Done, run finalised. Terminal state of the verb lifecycle. |
 | `cancelled` | `harness cancel` | **Live.** Run abandoned (close-without-merge). The verb marks the in-flight run cancelled, stamps `completed_at`, and emits a `workflow_failed` event with `reason='cancelled'`. It also abandons legacy `running`/`pending` rows historical engine-era runs left behind. |
 | `pending` | `harness run` (legacy) | Workflow accepted; executor not yet started. |
 | `running` | engine (legacy) | At least one node has started. |

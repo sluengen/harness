@@ -26,6 +26,7 @@ import pytest
 
 from harness._git import (
     GitError,
+    diff_paths,
     git_common_dir,
     rev_parse_head,
     run_git,
@@ -279,3 +280,131 @@ def test_tracked_paths_is_none_for_a_subdirectory_of_a_repo(repo: Path) -> None:
     assert "README.md" not in walked_up.stdout
 
     assert tracked_paths(repo / "sub") is None
+
+
+# --- diff_paths (#353) ---------------------------------------------------------
+#
+# The trivial classifier's input. Two properties matter and neither is the
+# obvious one: the range is **three-dot**, so a base branch that advances mid-run
+# cannot change which paths a run is judged on; and an **empty** result is ``[]``,
+# not ``None``, because "this run changed nothing" is a real answer the caller
+# refuses with its own reason rather than a probe that could not answer.
+
+
+def _commit(repo: Path, relpath: str, body: str | None = None) -> str:
+    """Commit ``relpath``. The body defaults to the path, so two files never
+    share content — identical content is what git's rename detection pairs, and
+    an accidental pairing would silently change what these tests measure."""
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body if body is not None else f"{relpath}\n")
+    _git(repo, "add", "--", relpath)
+    _git(repo, "-c", "user.email=t@e.c", "-c", "user.name=T", "commit", "-q", "-m", relpath)
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_diff_paths_lists_the_run_side_of_the_range(repo: Path) -> None:
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "checkout", "-q", "-b", "run")
+    _commit(repo, "docs/a.md")
+    _commit(repo, "docs/b.md")
+
+    assert sorted(diff_paths(repo, base) or []) == ["docs/a.md", "docs/b.md"]
+
+
+def test_diff_paths_excludes_what_the_boundary_holds_but_the_run_never_touched(
+    repo: Path,
+) -> None:
+    """Three-dot, not two — and this is the shape where the two disagree.
+
+    The run branched at ``C1``; the base then advanced to ``C2`` with a
+    **restricted** file, and ``C2`` is the boundary the run recorded (a resumed
+    run's worktree starts at the recovered WIP tip while its merge target is
+    read fresh). A two-dot ``C2..HEAD`` compares the two trees and reports
+    ``harness/late.py`` as changed on the run's side — attributing the base
+    branch's own commit to the run and making it ineligible for a file it never
+    touched. Three-dot diffs from ``merge_base(C2, HEAD)``, which is exactly what
+    ``close`` merges.
+
+    The premise is asserted, not assumed: without the two-dot assertion below,
+    this test would pass against either range.
+    """
+    _git(repo, "checkout", "-q", "-b", "run")
+    _commit(repo, "docs/a.md")
+    _git(repo, "checkout", "-q", "dev")
+    boundary = _commit(repo, "harness/late.py")
+    _git(repo, "checkout", "-q", "run")
+
+    two_dot = run_git(repo, "diff", "--name-only", f"{boundary}..HEAD").stdout.split()
+    assert "harness/late.py" in two_dot, (
+        "the fixture must be one where two-dot and three-dot disagree"
+    )
+
+    assert diff_paths(repo, boundary) == ["docs/a.md"]
+
+
+def test_diff_paths_reports_an_unchanged_run_as_an_empty_list(repo: Path) -> None:
+    """``[]`` and ``None`` mean different things here, unlike ``tracked_paths``."""
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert diff_paths(repo, base) == []
+
+
+def test_diff_paths_is_none_for_an_unresolvable_boundary(repo: Path) -> None:
+    assert diff_paths(repo, "0" * 40) is None
+
+
+def test_diff_paths_is_none_for_a_non_directory(tmp_path: Path) -> None:
+    plain = tmp_path / "file"
+    plain.write_text("x\n")
+    assert diff_paths(plain, "HEAD") is None
+
+
+def test_diff_paths_is_none_for_a_directory_that_is_not_its_own_top_level(
+    repo: Path,
+) -> None:
+    """The pruned-worktree anchor: git walks **up** and would diff another tree.
+
+    The premise is asserted rather than assumed — from inside the subdirectory
+    git succeeds and answers about the enclosing checkout.
+    """
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _commit(repo, "sub/b.txt")
+
+    walked_up = run_git(repo / "sub", "diff", "--name-only", "-z", f"{base}...HEAD")
+    assert walked_up.returncode == 0
+    assert "b.txt" in walked_up.stdout
+
+    assert diff_paths(repo / "sub", base) is None
+
+
+def test_diff_paths_splits_on_nul_so_a_newline_in_a_name_is_one_entry(
+    repo: Path,
+) -> None:
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _commit(repo, "two\nlines.txt")
+
+    assert diff_paths(repo, base) == ["two\nlines.txt"]
+
+
+def test_diff_paths_reports_a_rename_as_both_of_its_paths(repo: Path) -> None:
+    """Rename detection would report the destination alone, hiding the source.
+
+    That is not cosmetic: a change moving ``harness/thing.py`` under an
+    allowlisted ``docs/`` would be reported as one allowlisted path, and the
+    trivial classifier would certify a diff that deletes a source file. The
+    premise is asserted first — with detection on, git really does collapse it —
+    so this test cannot pass by accident on a fixture git declined to pair.
+    """
+    _commit(repo, "harness/thing.py", body="identical\n")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    (repo / "docs").mkdir()
+    (repo / "harness" / "thing.py").rename(repo / "docs" / "thing.md")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@e.c", "-c", "user.name=T", "commit", "-q", "-m", "move")
+
+    collapsed = run_git(repo, "diff", "--name-only", f"{base}...HEAD").stdout.split()
+    assert collapsed == ["docs/thing.md"], (
+        "the fixture must be one git detects as a rename, or this proves nothing"
+    )
+
+    assert sorted(diff_paths(repo, base) or []) == ["docs/thing.md", "harness/thing.py"]

@@ -600,3 +600,103 @@ def test_readme_does_not_present_hermes_as_built() -> None:
         "specs/retired/hermes-orchestration.md. Caveat every mention as "
         "design-only, not a live trigger (CAL-1009)."
     )
+
+
+# --- The image-installed client (#312, AC-3) ---------------------------------
+#
+# The install command is written **once**, in `docker/install-client.sh`, and the
+# producer stamps that same line into every client's preamble. The docs must
+# carry the producer's own sentence rather than a paraphrase of it: a documented
+# command that has drifted from the role it invokes is worse than none, because
+# the operator follows it and gets a refusal they cannot diagnose.
+
+DOCKER_DIR = REPO_ROOT / "docker"
+INSTALL_PRODUCER = DOCKER_DIR / "install-client.sh"
+ENTRYPOINT_SH = DOCKER_DIR / "entrypoint.sh"
+RUNBOOK_MD = REPO_ROOT / "RUNBOOK.md"
+DOCKER_README = DOCKER_DIR / "README.md"
+
+
+def _entrypoint_roles() -> set[str]:
+    """The role tokens ``docker/entrypoint.sh`` actually dispatches on."""
+    return set(re.findall(r'\$\{1:-\}"\s*==\s*"([a-z][a-z-]*)"', ENTRYPOINT_SH.read_text()))
+
+
+def _producer_flags() -> set[str]:
+    """The long options the producer's own ``case`` accepts."""
+    return set(re.findall(r"^\s+(--[a-z][a-z-]*)\)", INSTALL_PRODUCER.read_text(), re.M))
+
+
+def _documented_install_command() -> str:
+    """The install command as the producer itself writes it, once."""
+    lines = {
+        line.strip().lstrip("#").strip()
+        for line in INSTALL_PRODUCER.read_text().splitlines()
+        if line.lstrip().startswith("#") and "docker run" in line and "install" in line
+    }
+    assert len(lines) == 1, (
+        "docker/install-client.sh states its own install command more than one "
+        f"way, so there is no single sentence for the docs to carry: {lines}"
+    )
+    return lines.pop()
+
+
+def test_the_derived_install_vocabulary_is_populated() -> None:
+    """The floor under the two guards below.
+
+    Each derives its subject from a source file; a derivation that silently
+    matched nothing would leave both assertions trivially satisfiable while
+    enforcing nothing at all.
+    """
+    assert "install" in _entrypoint_roles(), (
+        f"the entrypoint no longer dispatches an `install` role: {_entrypoint_roles()}"
+    )
+    assert "verb" in _entrypoint_roles(), "the verb role vanished from the entrypoint"
+    assert _producer_flags() == {"--source-root"}, (
+        f"the producer's option set changed: {_producer_flags()} — the docs guards "
+        "below derive from it and must be re-read, not merely re-run"
+    )
+
+
+@pytest.mark.parametrize("doc", [DOCKER_README, RUNBOOK_MD], ids=lambda p: p.name)
+def test_the_documented_install_command_matches_the_role(doc: Path) -> None:
+    """Both docs carry the producer's own install command, verbatim.
+
+    Derived rather than listed: the expected string comes out of
+    ``docker/install-client.sh``, so renaming the role or its flag reddens this
+    guard instead of leaving two documents quietly describing a command the image
+    no longer accepts.
+    """
+    text = doc.read_text()
+    command = _documented_install_command()
+    assert command in text, (
+        f"{doc.name} does not document the install command the image accepts.\n"
+        f"expected verbatim:\n  {command}"
+    )
+    for role in {"install"} | _producer_flags():
+        assert role in text, f"{doc.name} never mentions {role!r}"
+
+
+def test_the_runbook_records_that_the_loop_machine_is_not_migrated() -> None:
+    """AC-3's second half: the migration is documented **and** elective.
+
+    #312 ships the mechanism; it deliberately does not migrate this machine's
+    ``~/bin/harness``, because doing so changes how the loop's client updates
+    (automatic-on-fast-forward → an explicit act) and that is an operator's call.
+    An undocumented non-migration is indistinguishable from an oversight, and the
+    next tick would re-derive the decision from scratch.
+
+    The predicate is anchored on the **negation** — the load-bearing half of the
+    sentence — rather than on its nouns, which ordinary prose about migration
+    would satisfy. Acknowledged limit, stated rather than chased: a paragraph
+    rewritten to say the opposite while keeping these tokens would pass. Nothing a
+    substring predicate can do reaches that, and a guard claiming otherwise would
+    be the more expensive artifact.
+    """
+    runbook = RUNBOOK_MD.read_text()
+    assert re.search(r"#312 does not migrate", runbook), (
+        "RUNBOOK.md does not record that #312 leaves this machine's "
+        "~/bin/harness on its symlink install — an elective migration that is "
+        "not written down reads as an omission"
+    )
+    assert "~/bin/harness" in runbook

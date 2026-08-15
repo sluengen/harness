@@ -96,6 +96,13 @@ VERB_OUTCOME_PATHS: dict[str, str | None] = {
     "checkpoint": None,
     "defer": None,
     "release": None,
+    # ``certify`` (#353) writes an event only on its success path — the upgrade
+    # path records its outcome on the run row and the ticket, not the ledger —
+    # so there is no discriminator to read, exactly as for ``checkpoint``.
+    # Without the key its rows would be scored as an unknown verb and vanish
+    # from ``harness stats``; nothing raises, which is why this is guarded by
+    # test rather than left to be noticed.
+    "certify": None,
 }
 
 #: Event types that are verb *attempts*. ``workflow_failed`` and

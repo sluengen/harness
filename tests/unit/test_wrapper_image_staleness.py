@@ -22,11 +22,13 @@ differs between a stale and a fresh image — a text guard cannot tell those apa
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 WRAPPER = PROJECT_ROOT / "docker" / "harness-wrapper.sh"
+PRODUCER = PROJECT_ROOT / "docker" / "install-client.sh"
 
 # One fixed instant, expressed the two ways the wrapper must reconcile: the
 # nanosecond RFC3339 UTC that `docker image inspect` reports, and the epoch
@@ -481,4 +483,108 @@ def test_wrapper_passes_bytecode_suppression_on_the_docker_run_line(
         assert "-e PYTHONDONTWRITEBYTECODE=1" in line, (
             "the docker run argv must pin PYTHONDONTWRITEBYTECODE=1 so the "
             f"container writes no bytecode into the mount (#278):\n{line}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# The image-installed client and the version it reports (#312, AC-1)
+# ---------------------------------------------------------------------------
+#
+# The stamp's whole journey is: baked into the client by `docker/install-client.sh`
+# → read by the shim → forwarded to `harness.hostenv.client` → classified by
+# `harness.hostenv.deployment` → emitted by `harness.hostenv.spawn` onto the real
+# `docker run` line → read by `doctor` inside the container. Every link but the
+# last is host-side, and every one of them is a place the value can be dropped
+# while every unit test in `tests/unit/test_client_deployment.py` stays green.
+#
+# This module is the one that *executes* the real client against stubs, so the
+# argv proof belongs here — beside the four verdict tests above, which are the
+# regression floor showing the classification changed location and not behaviour.
+
+
+def _installed_client(tmp_path: Path, *, source_root: Path) -> tuple[Path, str]:
+    """Install a real client from the real producer, and return it with its stamp.
+
+    Nothing here re-implements the emission: the bytes come from
+    ``docker/install-client.sh``, the same producer the image's ``install`` role
+    executes, so a client this test can run is a client the operator can install.
+    """
+    produced = subprocess.run(
+        [str(PRODUCER), "--source-root", str(source_root)],
+        capture_output=True,
+        check=True,
+    )
+    stamped = re.search(rb"_harness_baked_client_version='([^']+)'", produced.stdout)
+    assert stamped, produced.stdout[:400]
+
+    exe = tmp_path / "installed" / "harness"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(produced.stdout)
+    exe.chmod(0o755)
+    return exe, stamped.group(1).decode()
+
+
+def test_an_installed_client_puts_its_version_on_the_docker_run_line(
+    tmp_path: Path,
+) -> None:
+    """AC-1's wiring, end to end and through the real client.
+
+    The client here is installed **inside** a real checkout's line of sight — its
+    baked source root is this repo — which is the case that separates a working
+    install from a broken one: byte-compared against the versioned shim it is
+    *drifted* (it carries the preamble), and reported that way ``doctor`` would
+    FAIL a correct install.
+
+    Every doctor-side test stays green if the ``client_version=`` argument or the
+    ``-e`` emission is dropped. This is the test that does not.
+    """
+    exe, stamp = _installed_client(tmp_path, source_root=PROJECT_ROOT)
+    result = _run_exe(
+        exe,
+        tmp_path,
+        tmp_path,
+        STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339,
+        STUB_SOURCE_EPOCH=str(IMAGE_INSTANT_EPOCH - ONE_HOUR),
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+    run_lines = [ln for ln in calls.splitlines() if ln.startswith("docker run")]
+    assert run_lines, f"the installed client never reached `docker run`:\n{calls}"
+    for line in run_lines:
+        assert f"-e HARNESS_CLIENT_VERSION={stamp}" in line, (
+            "the installed client's stamp must reach the container, or `doctor` "
+            f"cannot report the version in effect (#312 AC-1):\n{line}"
+        )
+        assert "-e HARNESS_WRAPPER_STATUS=image" in line, (
+            "an image-installed client must be classified `image`; any other "
+            f"verdict makes `doctor` complain about a correct install:\n{line}"
+        )
+
+
+def test_an_unstamped_deployment_emits_no_version_flag(tmp_path: Path) -> None:
+    """A deployment with no stamp forwards no version at all — not an empty one.
+
+    ``-e HARNESS_CLIENT_VERSION=`` would pin the variable to the empty string
+    inside the container, which is a *different* state from absent and the one
+    this repo has been bitten by before: an empty value is what silently disables
+    ``PYTHONDONTWRITEBYTECODE`` and the in-container allowlist (#278, CAL-584).
+    Here it would put ``doctor`` one branch away from reporting a client
+    "installed from the image, version " with nothing after the comma.
+
+    Written because the mutation making the emission unconditional **survived**
+    the four verdict tests: each asserts the presence of its own status and none
+    of them looks at what else the argv gained.
+    """
+    link_dir = tmp_path / "link"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    exe = link_dir / "harness"
+    exe.symlink_to(WRAPPER)
+
+    result = _run_exe(exe, tmp_path, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339)
+    calls = result.calls  # type: ignore[attr-defined]
+    run_lines = [ln for ln in calls.splitlines() if ln.startswith("docker run")]
+    assert run_lines, f"the wrapper never reached `docker run`:\n{calls}"
+    for line in run_lines:
+        assert "HARNESS_CLIENT_VERSION" not in line, (
+            "a symlink deployment has no pinned version, so the flag must be "
+            f"absent rather than empty:\n{line}"
         )

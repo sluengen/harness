@@ -145,6 +145,14 @@ from harness.cli.review_protocol import (
     scan_submit_line,
 )
 from harness.cli.review_telemetry import record_terminal_refusal
+from harness.cli.review_visual import (
+    MANIFEST_FILENAME,
+    MAX_SCREENSHOTS,
+    SCREENSHOT_DIR_OUTSIDE_WORKSPACE_REASON,
+    SCREENSHOTS_UNSUPPORTED_ENGINE_REASON,
+    TOO_MANY_SCREENSHOTS_REASON,
+    resolve_visual_evidence,
+)
 from harness.events.emitter import EventEmitter
 from harness.events.payloads import (
     DESIGN_STATUS_KEY,
@@ -195,6 +203,10 @@ from harness.workspace import WorkspaceNotAllowed, allowed_roots, resolve_within
 # — was split out to harness.cli.review_inherit (#259) on the design_adopt.py
 # precedent; what stays here is the guarded early return and the recording, which
 # need ReviewOutput and EventEmitter and so have nowhere else to live.
+# The visual-evidence *decision* — which captures a --screenshot-dir yields, and
+# which invocations it refuses — was split out to harness.cli.review_visual (#361)
+# on the same review_inherit / review_pollution precedent; what stays here is one
+# call site at step 1a-0', its refusal raise, and four fields on the event.
 # The terminal-observation *writer* — the event every non-verdict exit path now
 # appends (#262) — was split out to harness.cli.review_telemetry on the same
 # precedent, and for a reason the line count understates: inlining an emit at ten
@@ -230,6 +242,13 @@ __all__ = [
     "NO_GATE_EVIDENCE_REASON",
     "NO_DESIGN_REASON",
     "DESIGN_FILE_OUTSIDE_WORKSPACE_REASON",
+    # The visual-evidence channel's three refusals (#361). Defined beside the
+    # decision that produces them (``harness.cli.review_visual``) and re-exported
+    # here, the way ``CODEX_USAGE_LIMIT_REASON`` is: one home for the tag, and
+    # the verb's public surface still names every reason it can exit with.
+    "SCREENSHOT_DIR_OUTSIDE_WORKSPACE_REASON",
+    "SCREENSHOTS_UNSUPPORTED_ENGINE_REASON",
+    "TOO_MANY_SCREENSHOTS_REASON",
     "RUN_WORKTREE_MUTATED_REASON",
 ]
 
@@ -550,6 +569,17 @@ def review_command(
             "hash, then given to the engine as review context."
         ),
     ),
+    screenshot_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--screenshot-dir",
+        help=(
+            f"Directory of rendered captures of the surface under review, plus "
+            f"an optional {MANIFEST_FILENAME}. They are named to the engine by "
+            f"absolute path, never inlined. Claude engine only; a path outside "
+            f"the workspace, or more than {MAX_SCREENSHOTS} captures, is "
+            f"refused."
+        ),
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         True,
         "--json/--no-json",
@@ -581,6 +611,7 @@ def review_command(
                 gate_exit=gate_exit,
                 gate_log=gate_log,
                 design_file=design_file,
+                screenshot_dir=screenshot_dir,
                 runner=_default_runner,
                 probe_runner=_default_probe_runner,
             )
@@ -873,6 +904,7 @@ async def _run_review(
     gate_exit: int | None = None,
     gate_log: Path | None = None,
     design_file: Path | None = None,
+    screenshot_dir: Path | None = None,
     runner: Runner,
     probe_runner: Runner,
 ) -> ReviewOutput:
@@ -923,6 +955,7 @@ async def _run_review(
             gate_exit=gate_exit,
             gate_log=gate_log,
             design_file=design_file,
+            screenshot_dir=screenshot_dir,
             runner=runner,
             probe_runner=probe_runner,
             invoked_at=invoked_at,
@@ -952,6 +985,7 @@ async def _review_resolved_run(
     gate_exit: int | None,
     gate_log: Path | None,
     design_file: Path | None,
+    screenshot_dir: Path | None,
     runner: Runner,
     probe_runner: Runner,
     invoked_at: str,
@@ -984,6 +1018,38 @@ async def _review_resolved_run(
     design_precondition_result = design_precondition(
         assurance, None if design_event is None else design_event.get(DESIGN_STATUS_KEY)
     )
+
+    # 1a-0'. Validate the visual-evidence invocation (#361) — BEFORE every
+    #        short-circuit below, including the inherit one.
+    #
+    #        Two of its three refusals are decided from argv alone (the engine
+    #        cannot read images) or from the filesystem the caller named (a path
+    #        outside the mount, an oversized set). None reads the ledger, so
+    #        there is nothing cheaper to put first — and a refusal an unrelated
+    #        short-circuit can skip is one whose test is defeated by putting the
+    #        caller into an inherit-eligible state, which a resumed WIP branch
+    #        reaches in normal operation. Placing it first makes "no path reaches
+    #        a spawn, or a recorded pass, with the combination accepted" a
+    #        structural property rather than a claim about the other steps.
+    #
+    #        This deviates from ``--design-file``'s position at 1b, and the
+    #        deviation is safe for the reason the feature spec already records
+    #        about that one: the design refusal's *position* is not the property
+    #        it protects — containment is (the file is never opened outside the
+    #        allowlist). Containment holds identically here, and earlier.
+    #
+    #        The screenshot bounding travels with the engine check rather than
+    #        being split across two steps, because splitting one flag's
+    #        validation is how the second half gets forgotten.
+    visual = resolve_visual_evidence(screenshot_dir, engine=engine, roots=allowed_roots())
+    if visual.refusal_reason is not None:
+        raise _ReviewError(
+            visual.refusal_message or visual.refusal_reason,
+            EXIT_GATE_FAILED,
+            reason=visual.refusal_reason,
+        )
+    if visual.warning is not None:
+        typer.echo(f"warning: {visual.warning}", err=True)
 
     # 1a-0. Inherit a prior pass instead of re-earning one, when this run resumed
     #       from a preserved WIP branch and its HEAD is the exact commit a
@@ -1266,7 +1332,15 @@ async def _review_resolved_run(
     # Built once (#212) so the usage-limit fallback below re-runs the identical
     # prompt, design context included.
     prompt = build_review_prompt(
-        design_gate.design_markdown, probe_cap=budget.probe_max_entries
+        design_gate.design_markdown,
+        probe_cap=budget.probe_max_entries,
+        # #361. ``reviewed_sha`` is free here and lets the engine make the
+        # staleness comparison this verb cannot: it parses no manifest, so
+        # "do these captures depict the reviewed tree?" is judgment placed
+        # where judgment lives.
+        screenshots=visual.images,
+        manifest=visual.manifest,
+        reviewed_sha=reviewed_sha,
     )
     result = await _invoke_engine(
         runner,
@@ -1428,6 +1502,13 @@ async def _review_resolved_run(
                         first_verdict=parsed.verdict,
                         first_issues=tuple(parsed.issues),
                     ),
+                    # The second pass revises the same verdict about the same
+                    # tree, so it gets the same evidence: dropping the captures
+                    # here would ask it to reconsider a rendering it can no
+                    # longer see.
+                    screenshots=visual.images,
+                    manifest=visual.manifest,
+                    reviewed_sha=reviewed_sha,
                 ),
                 timeout=engine_timeout,
                 model=resolved_model,
@@ -1484,6 +1565,17 @@ async def _review_resolved_run(
         gate_ran=gate_ran,
         design_context=design_gate.design_markdown is not None,
         design_context_reason=design_gate.context_reason,
+        # #361, the visual channel's four fields. ``visual_context`` records that
+        # the prompt NAMED these captures — never that the engine opened them;
+        # nothing in this path parses the engine's tool use, and the ledger must
+        # not imply otherwise. The two scoping fields are absent rather than
+        # zero/False when no captures were supplied, so a row cannot assert
+        # anything about a channel that was not used (``probe_second_pass``'s
+        # argument).
+        visual_context=bool(visual.images),
+        visual_context_reason=visual.context_reason,
+        visual_count=len(visual.images) if visual.images else None,
+        visual_manifest=(visual.manifest is not None) if visual.images else None,
         gate_command=gate_command,
         gate_exit_code=gate_exit_code,
         gate_reason=gate_reason,

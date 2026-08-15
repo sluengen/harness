@@ -58,6 +58,22 @@ from tests._asyncutil import run_sync
 # ---------------------------------------------------------------------------
 
 
+async def _refusal(db_path, run_id, head_sha):
+    """``close``'s gate answer, resolved then mapped.
+
+    Since #353 the two halves are separate: :func:`~harness.cli._review_gate.certify_head`
+    resolves the evidence and ``close._certification_refusal`` maps it onto the
+    verb's refusal vocabulary (a pure function, no DB). Calling both here keeps
+    these tests measuring the same pair the verb runs.
+    """
+    from harness.cli._review_gate import certify_head
+
+    return close_mod._certification_refusal(
+        await certify_head(db_path, run_id, head_sha), run_id, head_sha
+    )
+
+
+
 def test_review_event_data_required_keys() -> None:
     """A minimal review payload dumps exactly the always-present keys.
 
@@ -68,6 +84,11 @@ def test_review_event_data_required_keys() -> None:
     recorded design. ``outcome`` (#262) joins them: it defaults rather than being
     optional, so every fresh event states which half of the denominator it is,
     and a row that predates the field still validates as the verdict it was.
+    ``visual_context`` (#361) is the third of that shape, for whether the prompt
+    named any rendered captures — its two *scoping* companions (``visual_count``,
+    ``visual_manifest``) are deliberately optional and absent here, because a
+    value for either on a run that supplied no captures would assert something
+    about a channel that was not used.
     """
     dumped = ReviewEventData(
         run_id="R1",
@@ -91,8 +112,12 @@ def test_review_event_data_required_keys() -> None:
         "created_at": "2026-06-10T00:00:00Z",
         "gate_ran": False,
         "design_context": False,
+        "visual_context": False,
         "outcome": REVIEW_OUTCOME_OK,
     }
+    assert "visual_count" not in dumped
+    assert "visual_manifest" not in dumped
+    assert "visual_context_reason" not in dumped
 
 
 def test_both_review_shapes_discriminate_on_the_same_outcome_key() -> None:
@@ -564,7 +589,7 @@ def test_close_gate_opens_on_model_written_pass(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "pass")
 
-    assert run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha")) is None
+    assert run_sync(_refusal(db_path, run_id, "headsha")) is None
 
 
 def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
@@ -573,7 +598,7 @@ def test_close_gate_no_passing_review_when_fail(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "headsha", "fail")
 
-    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "headsha"))
+    result = run_sync(_refusal(db_path, run_id, "headsha"))
     assert result is not None and result[0] == "no_passing_review"
 
 
@@ -583,7 +608,7 @@ def test_close_gate_stale_when_sha_moved(tmp_path: Path) -> None:
     _seed_run(db_path, run_id)
     _emit_review_via_model(db_path, run_id, "oldsha", "pass")
 
-    result = run_sync(close_mod._evaluate_gate(db_path, run_id, "newsha"))
+    result = run_sync(_refusal(db_path, run_id, "newsha"))
     assert result is not None and result[0] == "stale_review"
 
 

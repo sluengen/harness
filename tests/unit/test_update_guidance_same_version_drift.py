@@ -58,8 +58,8 @@ def _section(start: str, end: str) -> str:
 
 def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
     """The corrected commands publish coordinated, intentional version bumps."""
-    assert _version(DECISION, "decision") == "0.1.1"
-    assert _registry_version("commands/decision.md") == "0.1.1"
+    assert _version(DECISION, "decision") == "0.2.0"
+    assert _registry_version("commands/decision.md") == "0.2.0"
     assert _version(UPDATE_GUIDANCE, "update-guidance") == "1.0.0"
     assert _registry_version("commands/update-guidance.md") == "1.0.0"
 

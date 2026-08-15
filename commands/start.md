@@ -1,4 +1,4 @@
-<!-- guidance:start@0.5.0 -->
+<!-- guidance:start@0.5.1 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /start — begin work on a ticket
@@ -27,7 +27,7 @@ Draft the change spec into the tracker issue following `spec-authoring` (`templa
 ### 6. Build
 Dispatch the `dev` agent (or build directly). **Before writing code, open and read `skills/test-driven-development/SKILL.md` and `skills/code-quality/SKILL.md`** — naming the method is not reading it. Then build one acceptance criterion at a time: RED, GREEN, REFACTOR, under the non-negotiable rules in `AGENTS.md` — test-first, a measurable criterion needs a test that measures it, and no completion claim without fresh evidence.
 
-For `complex` work, dispatch the `architect` agent first in a fresh context and resolve its returned design before implementation. For a user-facing change, use `ux-design` (and `design-system` where enabled), render realistic seeded state, inspect screenshots at reference and breakpoint widths, fix defects, and retain the final visual evidence for review.
+For `complex` work, dispatch the `architect` agent first in a fresh context and resolve its returned design before implementation. For a user-facing change, use `ux-design` (and `design-system` where enabled), render realistic seeded state, and produce the visual evidence `commands/build.md` → *Visual evidence for a user-facing change* defines — the slice rule, the capture location, and the bounds live there and are not restated here. Retain the final evidence for review.
 
 ### 7. Verify and stop at review-ready
 Run the repo's lint / type / test gate (`CONTEXT.md`), read the output, and confirm the change spec still matches what was built. Then hand to `/review`.

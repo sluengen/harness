@@ -35,12 +35,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from harness import close_merge
 from harness._git import GitError, rev_parse_head, worktree_toplevel_matches
 from harness.cli._review_gate import certify_head
 from harness.cli.reclaim_liveness import RunLiveness
 
-__all__ = ["ClosableRun", "closable_run"]
+__all__ = ["ClosableEntry", "ClosableRun", "closable_run"]
 
 #: Ceiling (seconds) for both git probes. The twin of
 #: :data:`harness.cli.reclaim_liveness._LS_FILES_TIMEOUT_SECONDS`, for the same
@@ -51,15 +53,42 @@ _PROBE_TIMEOUT_SECONDS = 15
 
 @dataclass(frozen=True)
 class ClosableRun:
-    """A run whose recorded review certifies the exact tree its worktree holds.
+    """A run whose recorded evidence certifies the exact tree its worktree holds.
 
-    Deliberately *not* ``reclaim.ClosableEntry``: :mod:`harness.cli.reclaim`
-    imports this module, so this module must not import back. It reports the two
-    facts only it can resolve; the caller adds the ticket it already holds.
+    The producer's answer: the facts only this module can resolve. The caller adds
+    the ticket it already holds, producing a :class:`ClosableEntry`.
+
+    ``evidence_kind`` (#353) is read off the :class:`~harness.cli._review_gate.
+    HeadCertification` this module already computes — never a second query, which
+    is the whole reason the shared predicate returns it.
     """
 
     run_id: str
     head_sha: str
+    evidence_kind: str
+
+
+class ClosableEntry(BaseModel):
+    """One ticket a ``--stale`` sweep found **closable** rather than stale (#255).
+
+    Its run passed its gate and then lost its session; it is still ``open`` and
+    ``close`` would accept it, so reverting it to Todo would throw away evidence
+    that was already earned. Carries the addresses a caller needs to finish it —
+    the run, the exact HEAD the evidence covers, and which kind of evidence that
+    is.
+
+    It lives **here**, beside its producer, rather than in
+    :mod:`harness.cli.reclaim` (#353). ``reclaim.py`` sat at 743 of its 750-line
+    ceiling, so documenting a new field there would have tripped the size guard;
+    and the model was already one field away from ``ClosableRun`` in the module
+    that computes every one of them. That is the architecture-watchlist outcome
+    for this change: a seam extraction, not a deferral.
+    """
+
+    ticket: str
+    run_id: str
+    head_sha: str
+    evidence_kind: str
 
 
 def _probe_head_of_clean_worktree(worktree: Path) -> str | None:
@@ -126,4 +155,11 @@ async def closable_run(db_path: Path, run: RunLiveness) -> ClosableRun | None:
     certification = await certify_head(db_path, run.run_id, head)
     if not certification.certified:
         return None
-    return ClosableRun(run_id=run.run_id, head_sha=head)
+    return ClosableRun(
+        run_id=run.run_id,
+        head_sha=head,
+        # Non-None whenever the verdict is ``certified``; the fallback keeps the
+        # dataclass total rather than asserting inside a classifier that must
+        # never raise.
+        evidence_kind=certification.evidence_kind or "review",
+    )

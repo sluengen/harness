@@ -308,6 +308,32 @@ class ReviewEventData(BaseModel):
     #: was never possible did not happen. Absent means *no stage*;
     #: ``probe_status`` says which kind of no.
     probe_second_pass: bool | None = None
+    #: The visual-evidence channel (#361), modelled on ``design_context`` field
+    #: for field because it answers the same question about the same kind of
+    #: evidence: did what the orchestrator produced actually reach the engine.
+    #:
+    #: ``visual_context`` is a non-optional bool — the prompt named N readable,
+    #: in-workspace captures. **It does not attest that the engine opened them.**
+    #: Nothing in the production path parses the engine's tool use, so this
+    #: records what the verb did, not what the model did; the same real semantics
+    #: ``design_context`` has, and the limit is recorded rather than implied.
+    visual_context: bool = False
+    #: Why no captures reached the engine, when none did — one of
+    #: :data:`~harness.cli.review_visual.VisualContextReason`
+    #: (``not_supplied`` / ``unreadable`` / ``no_images``). Absent whenever
+    #: ``visual_context`` is ``True``, exactly as ``design_context_reason`` is.
+    visual_context_reason: str | None = None
+    #: How many captures were named. Absent when there were none: a bool cannot
+    #: answer "how much visual evidence is a review actually carrying", which is
+    #: the measurement deciding whether the deferred consumption-tracking option
+    #: is worth building.
+    visual_count: int | None = None
+    #: Whether a manifest accompanied the captures. **Absent when there were
+    #: none** — a ``False`` on a run that supplied no captures would assert
+    #: something about a channel that was not used, the argument
+    #: ``probe_second_pass`` above already makes. The manifest is optional by
+    #: decision, so this is the adoption data a later requirement would rest on.
+    visual_manifest: bool | None = None
 
 
 class ReviewRefusalEventData(BaseModel):
@@ -657,6 +683,52 @@ class ReclaimUndoneEventData(BaseModel):
     undone_at: str
 
 
+class CertifyEventData(BaseModel):
+    """Payload of a ``certify`` event — a deterministic trivial certification (#353).
+
+    It is **not** a review and must never be read as one. It carries no
+    ``verdict``, no ``issues`` and no ``engine``: nothing about it asserts a
+    judgement, only that a named classifier, at a named version, found every path
+    of ``base_sha...certified_sha`` allowlisted and unrestricted, with the repo's
+    verify gate green at that SHA.
+
+    ``certified_sha`` is this shape's binding datum, and it is **required**: the
+    close gate selects on its presence, so a row that cannot name the tree it
+    covers cannot open a gate however else it is written. That is the same
+    enforcement-by-absence that keeps :class:`ReviewRefusalEventData` (which
+    omits ``verdict``) out of the review half of the query.
+
+    The ``gate_*`` fields are the *same* evidence contract ``review`` records, so
+    :func:`~harness.cli._review_gate.has_gate_evidence` applies verbatim to both
+    kinds rather than being re-implemented for this one. The cross-assertion
+    below is what makes that a checked claim rather than a coincidence.
+
+    ``eligible_paths`` and ``allowlist`` are recorded together on purpose: a past
+    certification is only auditable if a reader can see both what changed and the
+    policy in force when it was judged. ``classifier_version`` completes that —
+    the rules themselves can change, and a certification read against today's
+    rules rather than its own would be read wrong.
+    """
+
+    run_id: str
+    certified_sha: str
+    base_sha: str
+    #: The level certified — ``trivial``. Recorded rather than implied so a
+    #: reader does not have to know which levels this verb accepts.
+    assurance: str
+    classifier_version: int
+    eligible_paths: list[str]
+    allowlist: list[str]
+    gate_ran: bool
+    created_at: str
+    gate_command: str | None = None
+    gate_exit_code: int | None = None
+    gate_reason: str | None = None
+    gate_output_tail: str | None = None
+    invoked_at: str | None = None
+    duration_ms: int | None = None
+
+
 def _field_name(model: type[BaseModel], field: str) -> str:
     """The model's field name, verified to exist.
 
@@ -735,6 +807,29 @@ if CLOSE_OUTCOME_PATH != _CLOSE_FAILURE_OUTCOME_PATH:  # pragma: no cover - impo
 #: telemetry exists for. Derived from the failure model, which is the only shape
 #: that carries a ``reason``.
 CLOSE_REASON_PATH = _field_path(CloseFailureEventData, "reason")
+
+#: ``json_extract`` paths the close gate reads from a ``certify`` payload (#353)
+#: — the trivial half of the shared predicate. Derived from the model, like the
+#: review half, so a field rename breaks at import rather than degrading the gate
+#: into a silent ``no_passing_review`` for every certified run.
+CERTIFY_CERTIFIED_SHA_PATH = _field_path(CertifyEventData, "certified_sha")
+CERTIFY_GATE_RAN_PATH = _field_path(CertifyEventData, "gate_ran")
+CERTIFY_GATE_REASON_PATH = _field_path(CertifyEventData, "gate_reason")
+
+#: The gate-evidence fields must be named identically on both evidence shapes,
+#: because :func:`~harness.cli._review_gate.has_gate_evidence` is applied to both
+#: — one rule, one opinion about what green means. Asserted rather than assumed:
+#: a rename on one side alone would leave the trivial half reading ``NULL`` and
+#: refusing every certification it should accept, fail-safe but undiagnosable.
+if (CERTIFY_GATE_RAN_PATH, CERTIFY_GATE_REASON_PATH) != (
+    REVIEW_GATE_RAN_PATH,
+    REVIEW_GATE_REASON_PATH,
+):  # pragma: no cover - import guard
+    raise ValueError(
+        "the review and certify payloads must name the verify-gate evidence "
+        f"alike: {(CERTIFY_GATE_RAN_PATH, CERTIFY_GATE_REASON_PATH)} != "
+        f"{(REVIEW_GATE_RAN_PATH, REVIEW_GATE_REASON_PATH)}"
+    )
 
 #: The payload key ``harness status`` reads from a ``workflow_failed`` payload.
 WORKFLOW_FAILED_REASON_KEY = _field_name(WorkflowFailedEventData, "reason")

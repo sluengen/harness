@@ -26,7 +26,7 @@ harness design --run-id <run_id> --engine codex   # --codex-only
 
 Save `DesignOutput.design_markdown` inside the repo for review. The event binds `design_hash` and `grounded_sha`. A resumed, authenticated predecessor design may be adopted with `inherited_from`; no engine runs and no comment is posted. Otherwise run design once as one top-level command. Avoid nested-background invocation: never combine an inner bare `&` with a host background flag. An empty redirected output means not finished yet. Wait instead of relaunching. If concurrent calls occur, `concurrent_prior_at` warns that the last invocation to finish became authoritative; run one clean design and implement that output. This recovery leaves the idempotent re-run contract unchanged.
 
-Assurance is snapshotted at start. `complex` requires a usable design. `simple`, unlabelled/conflicting/unknown assurance, and upgraded `trivial` return `status: "not_required"` with empty design and require no `--design-file`. A failed design records `status="failed"` and exits 3: this is degrade-and-record. On work that does not require design, the failed attempt still satisfies review enforcement and implementation may proceed; complex review refuses `no_design` or `design_not_usable`, so retry design once and ask the operator if it remains unusable. A design file outside the mounted workspace is refused as `design_file_outside_workspace`.
+Assurance is snapshotted at start. `complex` requires a usable design. `simple`, unlabelled/conflicting/unknown assurance, and `trivial` return `status: "not_required"` with empty design and require no `--design-file`. Since #353 a run can be opened at `trivial` — in a repo whose `CONTEXT.md` declares a usable `assurance.trivial_paths` allowlist; where it declares none, `start` still reports `fast_path_unavailable` and opens the run at `simple`. A failed design records `status="failed"` and exits 3: this is degrade-and-record. On work that does not require design, the failed attempt still satisfies review enforcement and implementation may proceed; complex review refuses `no_design` or `design_not_usable`, so retry design once and ask the operator if it remains unusable. A design file outside the mounted workspace is refused as `design_file_outside_workspace`.
 
 **Step 2 — implement and verify.**
 
@@ -39,6 +39,18 @@ harness checkpoint --run-id <run_id>
 ```
 
 Checkpoint pushes only the run branch and records an event. Failure loses durability, not the run; report it and continue.
+
+**Step 3a — `certify` (a `trivial` run only).**
+
+When `StartOutput.assurance` is `trivial`, run the verify gate yourself and call `certify` **instead of** `review`:
+
+```bash
+harness certify --run-id <run_id> --gate-exit <code> --gate-log <path>
+```
+
+Two outcomes, both exit 0, and the JSON says which. `outcome: "certified"` means every changed path in `base_sha...HEAD` is allowlisted and unrestricted: a `certify` event is bound to `certified_sha`, no engine ran, and `close` accepts it — **skip step 3 entirely and go to step 4**. `outcome: "assurance_upgraded"` means the diff was not certifiable (`reason` names why: `restricted_path`, `unlisted_path`, `no_allowlist`, `gate_not_configured`, `no_base_sha`, `diff_unreadable`, `empty_diff`); the run row and the issue label are already `simple`, so **continue to step 3 and review normally**. `tracker_synced: false` names the artifact (`label` or `comment`) that did not land — reconcile it by hand; the run row is authoritative either way.
+
+Missing or red gate evidence is a refusal (exit 5, `no_gate_evidence` / `gate_failed`), not an upgrade: fix the gate and certify again. Committing after certifying invalidates it — `close` refuses the moved HEAD as `stale_review`, and the answer is to certify the new HEAD.
 
 **Step 3 — `review`.**
 

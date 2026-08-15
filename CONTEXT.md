@@ -43,6 +43,19 @@ loop:
   probe_max_entries: 3           # Maximum proposed mutations per review; 0 disables. Matches DEFAULT_PROBE_MAX_ENTRIES; evidence: specs/features/verb-model.md.
   probe_budget_seconds: 720      # Probe ceiling, clamped to engine_timeout_seconds; matches DEFAULT_PROBE_BUDGET_SECONDS.
   maintenance_interval_minutes: 60 # How often `harness serve` sweeps each repo it serves; 0 disables. Matches DEFAULT_MAINTENANCE_INTERVAL_MINUTES; evidence: specs/features/runtime-host.md.
+assurance:
+  # `assurance:trivial` certifies without an LLM review only when EVERY changed
+  # path matches one of these (#353). Restricted surfaces — source, security,
+  # persistence, configuration, command/guidance, feature specs, decisions, and
+  # the rest of the public contract — are vetoed regardless of a broader pattern;
+  # that table is code, in harness/trivial_diff.py, not configuration. Three
+  # forms only: `<prefix>/**`, `*.<ext>`, or an exact path. An absent, empty or
+  # invalid list means no diff is trivial and `start` opens `trivial` runs at
+  # `simple` instead.
+  trivial_paths:
+    - CHANGELOG.md
+    - docs/**
+    - assessments/**
 conventions:
   commit_format: "type(scope): description — feat / fix / chore / docs / refactor / test / spec"
 paths:
@@ -54,7 +67,7 @@ paths:
   design_system: design/
 architecture_watchlist:
   files:
-    - harness/cli/review.py   # Review orchestration; seams: review_protocol.py, review_inherit.py, review_telemetry.py, review_pollution.py, review_probe.py. Carries a size: marker.
+    - harness/cli/review.py   # Review orchestration; seams: review_protocol.py, review_inherit.py, review_telemetry.py, review_pollution.py, review_probe.py, review_visual.py. Carries a size: marker.
     - harness/cli/close.py    # Close gate and ledger finalization; git in close_merge.py, tracker in close_tracker.py, telemetry in close_telemetry.py, retry in close_retry.py. Carries a size: marker.
     - harness/cli/reclaim.py  # Reclaim orchestration; seams: reclaim_liveness.py, reclaim_undo.py, reclaim_closable.py, reclaim_marker.py. Tests follow the seams. Carries a size: marker.
     - harness/cli/promote.py  # Promotion lifecycle orchestration; mechanics live in promotion.py, promotion_gate.py, promotion_pr.py, and promotion_escalation.py. Carries a size: marker.

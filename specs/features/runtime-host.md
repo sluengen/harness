@@ -1,8 +1,8 @@
 ---
 feature: runtime-host
 status: implemented
-last_updated: 2026-08-14
-tickets: ["#307", "#308", "#309", "#310", "#311", "#370", "#380", "#383"]
+last_updated: 2026-08-15
+tickets: ["#307", "#308", "#309", "#310", "#311", "#312", "#370", "#380", "#383"]
 ---
 
 # Runtime host (live)
@@ -772,8 +772,10 @@ as the wrapper does today, so there is no boundary to check. The container's own
 
 ## What is not here
 
-The reachability guard (#311), deployment via image and entrypoint (#312), and WSL
-validation on a real Windows host (#313). This record covers the process, the
+The reachability guard (#311) and WSL validation on a real Windows host (#313).
+Deployment via image and entrypoint **shipped in #312** and is recorded in
+[host-platform](host-platform.md), which owns the wrapper contract it extends — the
+client's own provenance is not this record's subject. This record covers the process, the
 socket, the spawner, the fallback, the credential broker, and the maintenance
 scheduler. Reclaiming the accumulated worktree *directories* is not here either:
 #310 shipped the scheduler with `reclaim --stale` as its only step, and putting

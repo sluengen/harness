@@ -46,6 +46,11 @@ from tests.unit.test_wrapper_image_staleness import (
 
 _MARKER = "harness/marker.txt"
 
+#: The line ``_checkout_behind_origin(docker_only_delta=True)`` adds to the
+#: origin-side ``docker/Dockerfile``. Named once and substituted into the stub
+#: below, so the fixture and the observation of it cannot drift apart.
+_DOCKER_DELTA_MARKER = "RUN true"
+
 _DOCKER_STUB_RECORDING_CONTEXT = """#!/usr/bin/env bash
 echo "docker $*" >> "$STUB_LOG"
 if [[ "$1" == "image" && "$2" == "inspect" ]]; then
@@ -56,10 +61,15 @@ if [[ "$1" == "build" ]]; then
   _ctx="${@: -1}"
   echo "build-context-source=$(cat "$_ctx/harness/marker.txt" 2>/dev/null || echo ABSENT)" \
     >> "$STUB_LOG"
+  if grep -q '@DOCKER_DELTA_MARKER@' "$_ctx/docker/Dockerfile" 2>/dev/null; then
+    echo "build-context-docker=advanced" >> "$STUB_LOG"
+  else
+    echo "build-context-docker=stale" >> "$STUB_LOG"
+  fi
   exit "${STUB_BUILD_EXIT:-0}"
 fi
 exit 0
-"""
+""".replace("@DOCKER_DELTA_MARKER@", _DOCKER_DELTA_MARKER)
 
 # The stale local commit sits an hour BEFORE the image, the origin-only commit an
 # hour AFTER it. So the guard fires if and only if it is looking at origin's tip:
@@ -123,7 +133,9 @@ def _checkout_behind_origin(
         # A change under docker/ never moves `git log -1 -- harness/`, so it can
         # never trigger the freshness rebuild. That blind spot is out of scope
         # here; the fixture exists so a test can pin it as deliberate.
-        (other / "docker" / "Dockerfile").write_text("FROM scratch\nRUN true\n")
+        (other / "docker" / "Dockerfile").write_text(
+            f"FROM scratch\n{_DOCKER_DELTA_MARKER}\n"
+        )
     else:
         (other / _MARKER).write_text("origin-tip-shipped\n")
     _git("add", "-A", cwd=other)
@@ -153,6 +165,22 @@ def _run_from_checkout(
 ) -> subprocess.CompletedProcess[str]:
     """Run the checkout's own copy of the wrapper with **real git** and a docker
     stub that records its build context."""
+    return _run_client(
+        checkout / "docker" / "harness-wrapper.sh", checkout, tmp_path, **stub_env
+    )
+
+
+def _run_client(
+    exe: Path, cwd: Path, tmp_path: Path, **stub_env: str
+) -> subprocess.CompletedProcess[str]:
+    """Run an arbitrary client ``exe`` from ``cwd``, with real git and the
+    recording docker stub.
+
+    Split out of ``_run_from_checkout`` so an **image-installed** client — which
+    by construction lives outside the checkout it speaks for — can be run through
+    the identical harness. One runner, so a difference between the two cases can
+    only come from the client, never from how it was invoked.
+    """
     stub_bin = tmp_path / "bin"
     stub_bin.mkdir(parents=True, exist_ok=True)
     docker = stub_bin / "docker"
@@ -173,10 +201,10 @@ def _run_from_checkout(
         }
     )
     result = subprocess.run(
-        [str(checkout / "docker" / "harness-wrapper.sh"), "start", "CAL-1"],
+        [str(exe), "start", "CAL-1"],
         capture_output=True,
         text=True,
-        cwd=checkout,
+        cwd=cwd,
         env=env,
     )
     result.calls = log.read_text()  # type: ignore[attr-defined]
@@ -370,20 +398,22 @@ def test_a_dirty_tree_blocking_the_fast_forward_warns_and_continues(
     assert result.returncode == 0, "a refused fast-forward must not wedge the queue"
 
 
-def test_a_docker_only_delta_fast_forwards_without_rebuilding(
+def test_a_docker_only_delta_rebuilds_the_image_from_the_advanced_tree(
     tmp_path: Path,
 ) -> None:
-    """The ``docker/``-only blind spot is deliberate here, not accidental.
+    """#286 left a ``docker/``-blind spot; #312 is the change that must close it.
 
-    The freshness comparison keys on ``harness/``, so a delta touching only
-    ``docker/`` moves the checkout without triggering a rebuild. That gap is real
-    and explicitly out of scope for #286 — this test pins the current behaviour so
-    the gap stays a recorded decision, and so whoever closes it has to change a
-    test that says what it is changing.
+    The freshness comparison used to key on ``harness/`` alone, so a delta
+    touching only ``docker/`` advanced the checkout and left the image alone.
+    That gap was a recorded decision until this ticket, and this ticket is the one
+    it breaks: the image now *carries* the client (``harness-wrapper.sh`` and
+    ``install-client.sh``), so a shim fix that never marks the image stale means
+    ``install`` keeps emitting the old client. The delivery mechanism would fail
+    to deliver itself.
 
-    What #286 *does* owe this case is the fast-forward itself: the checkout must
-    still advance, because the wrapper script lives under ``docker/`` and that is
-    precisely how a wrapper fix reaches the next invocation.
+    Asserting on the build context's **content**, per this module's standard: a
+    rebuild issued off the un-advanced tree would satisfy "docker build was
+    called" while shipping exactly the defect.
     """
     checkout = _checkout_behind_origin(tmp_path, docker_only_delta=True)
     result = _run_from_checkout(
@@ -392,15 +422,198 @@ def test_a_docker_only_delta_fast_forwards_without_rebuilding(
     calls = result.calls  # type: ignore[attr-defined]
 
     assert "fast-forwarded" in result.stderr.lower(), (
-        "the checkout must still advance — a docker/-only delta is how a wrapper "
+        "the checkout must still advance — a docker/-only delta is how a client "
         f"fix propagates:\n{result.stderr}"
     )
-    assert "docker build" not in calls, (
-        "a delta that never touched harness/ does not trigger the freshness "
-        f"rebuild; that blind spot is out of scope for #286:\n{calls}"
+    assert "docker build" in calls, (
+        "a delta under docker/ must now mark the image stale: the image ships the "
+        f"client, so a shim fix that skips the rebuild never reaches anyone:\n{calls}"
+    )
+    assert "build-context-docker=advanced" in calls, (
+        "the rebuild must be off the fast-forwarded tree — rebuilding from the "
+        f"pre-merge docker/ is the defect, not the fix:\n{calls}"
     )
     assert "docker run" in calls, f"the verb must still run:\n{calls}"
     assert result.returncode == 0
+
+
+# The two rebuild triggers are separately load-bearing, and it took a mutation
+# table to show it. Narrowing EITHER pathspec back to `harness/` alone left the
+# docker-only test above green, because the other trigger still fired for that
+# one shape. So each gets a case the other cannot answer — the #393 rule: when a
+# mutation survives, find the input the two mechanisms treat differently rather
+# than concluding one is redundant.
+
+
+def test_a_docker_only_fast_forward_rebuilds_when_the_timestamp_cannot(
+    tmp_path: Path,
+) -> None:
+    """Only the fast-forward trigger can fire here.
+
+    The image is stamped after every commit in the repository, so the ``%ct``
+    comparison is false by construction — the same construction
+    ``test_the_fast_forward_alone_forces_the_rebuild`` uses for ``harness/``, and
+    for the same reason: ``git log -1 --format=%ct`` is not monotonic across a
+    fast-forward, so a merge can move the tree while the timestamp goes backwards.
+    """
+    checkout = _checkout_behind_origin(tmp_path, docker_only_delta=True)
+    image_newer_than_every_commit = "2026-07-17T09:00:00.000000000Z"
+    result = _run_from_checkout(
+        checkout, tmp_path, STUB_IMAGE_CREATED=image_newer_than_every_commit
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert "docker build" in calls, (
+        "a fast-forward that moved docker/ must trigger the rebuild on its own; "
+        "the timestamp comparison cannot be relied on across a merge, and the "
+        f"image now ships the client:\n{calls}"
+    )
+    assert "build-context-docker=advanced" in calls, (
+        f"and the rebuild must carry the advanced docker/ tree:\n{calls}"
+    )
+
+
+def test_a_docker_commit_already_in_the_checkout_marks_the_image_stale(
+    tmp_path: Path,
+) -> None:
+    """Only the timestamp trigger can fire here.
+
+    The checkout is already at origin's tip, so no fast-forward happens and the
+    ``_ff_touched_sources`` flag stays 0. What remains is an image older than a
+    ``docker/`` commit that is already present — the ordinary case of "someone
+    pulled yesterday and never rebuilt", which is how a client fix goes stale in
+    the image without anything moving.
+    """
+    checkout = _checkout_behind_origin(tmp_path, docker_only_delta=True)
+    _git("pull", "--ff-only", "-q", cwd=checkout)
+    head_before = _head(checkout)
+
+    result = _run_from_checkout(
+        checkout, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert _head(checkout) == head_before, (
+        "the fixture must not fast-forward here, or the other trigger answers "
+        "this case and the test stops discriminating"
+    )
+    assert "fast-forwarded" not in result.stderr.lower(), result.stderr
+    assert "docker build" in calls, (
+        "a docker/ commit newer than the image must mark it stale even with "
+        f"nothing to sync:\n{calls}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The image-installed client (#312, AC-3-b)
+# ---------------------------------------------------------------------------
+#
+# The single most expensive failure available in #312, and a silent one. An
+# image-installed client at ~/bin/harness is outside every checkout, so without
+# the root baked in at install time it resolves its source root to $HOME: the
+# freshness guard disables itself, the sync becomes a no-op against a directory
+# with no upstream, and the client degrades to PYTHONPATH=$HOME. Nothing reports
+# any of that — the verb simply runs against whatever image happens to exist.
+#
+# Only a real repository can show the difference, which is why the test is here
+# rather than beside the stub-driven freshness cases.
+
+PRODUCER = WRAPPER.parent / "install-client.sh"
+
+
+def _install_client(tmp_path: Path, *, source_root: Path) -> Path:
+    """Install a real client, from the real producer, stamped for ``source_root``.
+
+    Deliberately **outside** that checkout, at a path shaped like ``~/bin/harness``
+    — the deployment the whole ticket is about.
+    """
+    produced = subprocess.run(
+        [str(PRODUCER), "--source-root", str(source_root)],
+        capture_output=True,
+        check=True,
+    )
+    exe = tmp_path / "opt" / "harness"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(produced.stdout)
+    exe.chmod(0o755)
+    return exe
+
+
+def test_an_image_installed_client_still_syncs_and_rebuilds_from_its_baked_root(
+    tmp_path: Path,
+) -> None:
+    """AC-3-b: the migration is a lateral move, not a regression.
+
+    The client is installed outside the checkout it speaks for and run from a
+    third directory that is not a checkout either — so nothing about where it sits
+    can tell it which tree to guard. Only the baked root can. Both guards must
+    still fire: the checkout fast-forwards, and the image is rebuilt with origin's
+    source in its context.
+    """
+    checkout = _checkout_behind_origin(tmp_path)
+    exe = _install_client(tmp_path, source_root=checkout)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    head_before = _head(checkout)
+
+    result = _run_client(
+        exe, elsewhere, tmp_path, STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert "fast-forwarded" in result.stderr.lower(), (
+        "the source sync did not reach the baked checkout — an installed client "
+        f"that syncs nothing silently freezes the engine:\n{result.stderr}"
+    )
+    assert _head(checkout) != head_before, "the baked checkout did not advance"
+    assert "docker build" in calls, (
+        "the freshness guard is disarmed under an image install — this is the "
+        f"silent failure the baked source root exists to prevent:\n{calls}"
+    )
+    assert "build-context-source=origin-tip-shipped" in calls, (
+        f"the rebuild must carry origin's source, not a stale tree:\n{calls}"
+    )
+    assert "docker run" in calls, f"the verb must still run:\n{calls}"
+    assert result.returncode == 0
+    assert result.stdout.strip() == "", (
+        f"the guard must not write to stdout (it carries JSON):\n{result.stdout}"
+    )
+
+
+def test_an_image_installed_client_ignores_an_ambient_source_root(
+    tmp_path: Path,
+) -> None:
+    """The baked root is not an environment variable, and this is the difference.
+
+    A client whose checkout could be redirected by whatever the calling shell
+    exported would let any parent process choose which tree supplies its package
+    and which tree gets rebuilt. Here a second, decoy checkout is exported through
+    every plausible variable name; the client must still guard the one it was
+    built for.
+    """
+    checkout = _checkout_behind_origin(tmp_path)
+    exe = _install_client(tmp_path, source_root=checkout)
+
+    decoy = tmp_path / "decoy"
+    (decoy / "docker").mkdir(parents=True)
+    decoy_head = _head(checkout)
+
+    result = _run_client(
+        exe,
+        tmp_path,
+        tmp_path,
+        STUB_IMAGE_CREATED=IMAGE_INSTANT_RFC3339,
+        HARNESS_SOURCE_ROOT=str(decoy),
+    )
+    calls = result.calls  # type: ignore[attr-defined]
+
+    assert _head(checkout) != decoy_head, (
+        "an ambient HARNESS_SOURCE_ROOT redirected the client away from the "
+        "checkout it was installed for"
+    )
+    assert "build-context-source=origin-tip-shipped" in calls, (
+        f"the rebuild was taken from the ambient root, not the baked one:\n{calls}"
+    )
 
 
 def test_an_unreachable_remote_warns_and_still_runs_the_verb(

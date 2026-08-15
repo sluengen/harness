@@ -50,6 +50,13 @@ snapshot ``start`` wrote, never a re-read of the issue's labels, or a label
 edited mid-run would change the stages a run is required to pay for after it
 opened. The *policy* it reads through lives in :mod:`harness.assurance`, which is
 pure; this is the one query that fetches its input.
+
+:func:`read_run_base_sha` is the fourth (#353), and the same shape once more:
+``certify`` classifies the diff from the run's recorded boundary, and ``start``
+is the only writer of it. It lives beside :func:`read_run_assurance` because the
+two are read together on the one path that consults either — the level says
+whether the fast path is even permitted, the boundary says what would be judged
+— and both fail toward *more* verification when the row cannot answer.
 """
 
 from __future__ import annotations
@@ -191,6 +198,42 @@ async def read_run_resumed_from(db_path: Path, run_id: str) -> str | None:
         conn.execute("SELECT resumed_from FROM runs WHERE run_id = ?", (run_id,)) as cur,
     ):
         row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0])
+
+
+async def read_run_base_sha(db_path: Path, run_id: str) -> str | None:
+    """The SHA this run was based on at ``start``, or ``None`` (#353).
+
+    The boundary the trivial classifier diffs from: ``base_sha...HEAD`` is the
+    change ``close`` will merge, so a base branch that advances mid-run cannot
+    move it.
+
+    Total, and ``None`` in one direction. An absent ledger, a missing row, a
+    ``NULL`` column on a pre-migration row, and an ``aiosqlite.OperationalError``
+    from a ledger that predates the column all answer ``None``. ``None`` means
+    *the classification boundary is unknown*, which
+    :mod:`harness.trivial_diff`'s caller converts to ``no_base_sha`` —
+    ineligible, upgrade to ``simple``. A damaged or absent boundary can therefore
+    only make a run *more* verified, never less, exactly as
+    :func:`read_run_assurance` does for the level itself.
+
+    The ``OperationalError`` catch is not defensive padding: ``_migrate`` runs
+    only from :func:`harness.state.store.init_db`, whose one caller is ``start``,
+    so a run opened by an older harness reaches ``certify`` against a ledger that
+    has no such column.
+    """
+    if not db_path.exists():
+        return None
+    try:
+        async with (
+            store.connect(db_path) as conn,
+            conn.execute("SELECT base_sha FROM runs WHERE run_id = ?", (run_id,)) as cur,
+        ):
+            row = await cur.fetchone()
+    except aiosqlite.OperationalError:
+        return None
     if row is None or row[0] is None:
         return None
     return str(row[0])

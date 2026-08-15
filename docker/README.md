@@ -281,22 +281,29 @@ directory with no flags or env-var setup.
   [ADR 0013](../specs/decisions/0013-codex-engines-in-container.md) amends) —
   nothing in the container writes `~/.codex`. Read-only stays read-only until a
   ticket that runs Codex here shows otherwise.
-- **Image freshness** — rebuilds `harness:dev` when this repo's `harness/`
-  source is newer than the image (CAL-1144). Nothing else rebuilds the image
-  after a merge to `dev`, so a verb that ships is otherwise invisible to the next
-  run, which sees only `No such command '<verb>'` and reads it as missing code
-  rather than a stale image. The check compares `docker image inspect` against
-  `git log -1 --format=%ct -- harness/`, costs ~10ms, and fires a build **only**
-  when the source actually moved — once per merge, against a warm layer cache. A
-  rebuild that fails exits non-zero rather than falling through to the stale
-  image, and all of its output goes to **stderr** so the verbs' JSON contract on
-  stdout stays parseable. An explicit `HARNESS_IMAGE` is never rebuilt: a pinned
-  tag is the caller's to manage. The guard needs a source tree to compare
-  against, so it runs only from a **symlinked** install; a **copied** wrapper
-  (see [Copy](#installation) below) resolves outside any checkout, and once an
-  image exists it warns once on stderr — naming the detached-copy cause and the
-  symlink remedy — then runs the verb unguarded rather than failing (CAL-1153).
-  Symlink the wrapper to arm the guard.
+- **Image freshness** — rebuilds `harness:dev` when this repo's `harness/` or
+  `docker/` source is newer than the image (CAL-1144). Nothing else rebuilds the
+  image after a merge to `dev`, so a verb that ships is otherwise invisible to the
+  next run, which sees only `No such command '<verb>'` and reads it as missing
+  code rather than a stale image. The check compares `docker image inspect`
+  against `git log -1 --format=%ct -- harness/ docker/`, costs ~10ms, and fires a
+  build **only** when the source actually moved — once per merge, against a warm
+  layer cache. A rebuild that fails exits non-zero rather than falling through to
+  the stale image, and all of its output goes to **stderr** so the verbs' JSON
+  contract on stdout stays parseable. An explicit `HARNESS_IMAGE` is never
+  rebuilt: a pinned tag is the caller's to manage.
+  `docker/` joined the comparison in
+  [#312](https://github.com/sluengen/harness/issues/312), and it is not
+  housekeeping: the image now *ships* the client, so a client fix that never
+  marked the image stale would leave `install` emitting the old client — the
+  delivery mechanism failing to deliver itself.
+  The guard needs a source tree to compare against. A **symlinked** install
+  resolves one from the link; an **image** install carries the checkout it was
+  built for, baked in at install time. A **copied** wrapper (see
+  [Copy](#installation) below) has neither, so it resolves outside any checkout,
+  and once an image exists it warns once on stderr — naming the detached-copy
+  cause and the symlink remedy — then runs the verb unguarded rather than failing
+  (CAL-1153).
 - **Source-checkout sync** — fast-forwards the wrapper's own checkout to its
   upstream before that freshness comparison runs (#286). It is what makes the
   comparison mean anything: the loop transacts entirely in `origin/<base>`
@@ -403,12 +410,46 @@ mkdir -p ~/bin
 ln -sf "$(pwd)/docker/harness-wrapper.sh" ~/bin/harness
 ```
 
+**Image install.** The image carries the client and can emit it, so installing
+or updating needs no checkout, no network and no working previous client. That is
+the difference [#312](https://github.com/sluengen/harness/issues/312) exists for:
+a fix to the client itself used to be un-live until the tree it was served from
+advanced — including the fix whose whole purpose was to advance the tree.
+
+```bash
+docker run --rm harness:dev install --source-root <checkout> > ~/bin/harness.new && chmod +x ~/bin/harness.new && mv ~/bin/harness.new ~/bin/harness
+```
+
+Run it from the checkout, with `--source-root "$PWD"`. Three things about that
+command are deliberate:
+
+- **Write-then-rename.** An interrupted install cannot leave a truncated client
+  on your `PATH`.
+- **`--source-root` is effectively required.** An installed client lives outside
+  every checkout, so without it the client resolves its source root to `$HOME`:
+  the freshness guard silently disables itself, the source sync becomes a no-op,
+  and `PYTHONPATH=$HOME` cannot import `harness.hostenv.client` at all. The value
+  is baked into the emitted file, not read from the environment, so no parent
+  process can redirect which checkout your client speaks for. It must be
+  absolute, and a root containing a single quote or a newline is refused.
+- **The version is reportable.** Each install stamps `<package version>+<UTC
+  instant>`, which `harness doctor` prints:
+  `[PASS] wrapper  client installed from the image, version 0.2.1+20260815T171500Z`.
+  A symlink install has no such stamp — its version follows the checkout — and
+  `doctor` says exactly that instead of inventing one.
+
+Updating is then the same command again. Nothing about it consults the client it
+replaces.
+
 **Copy** if you prefer a detached snapshot (re-copy after each `git pull` to pick
 up fixes — this is the drift path CAL-1123 exists to avoid):
 
 ```bash
 cp docker/harness-wrapper.sh ~/bin/harness && chmod +x ~/bin/harness
 ```
+
+All three installs keep working; the symlink stays the recommended one for a
+machine that already has a checkout it tracks.
 
 Then ensure `~/bin` is on your `PATH`:
 

@@ -13,12 +13,13 @@ Three properties carry the safety argument and are each measured, not implied:
 * **Resolution is total** — every label list resolves to a level and a reason,
   and unrecognized, conflicting, and absent input all fail *safe* to ``simple``
   (AC-1). Nothing raises, so a hostile or mistyped label cannot wedge ``start``.
-* **``trivial`` cannot escape** (AC-6). It is a recognized level that this
-  increment rewrites to ``simple`` at the boundary, because the deterministic
-  certification path that would make it safe is item 2 of the proposal and is
-  not built. The property is asserted over a *derived* corpus of label lists
-  rather than the one obvious case, so the rewrite cannot be removed for some
-  input shape while a single hand-picked case keeps passing.
+* **``trivial`` is honoured only where the repo can certify it** (#353). The
+  level resolves like any other stated one; the availability question — does the
+  repo declare a usable ``assurance.trivial_paths`` allowlist? — is a *second*
+  pure function taking a boolean, because ``resolve_assurance`` must not learn
+  about the filesystem. Both halves are asserted over a *derived* corpus of
+  label lists rather than one hand-picked case, so a downgrade that stopped
+  firing for some input shape could not hide behind a single passing example.
 * **Coercion is total in the same direction** — a ``NULL``, unknown, or
   hand-edited ledger value reads as ``simple``, so a corrupted snapshot can only
   make a run *more* verified, never less.
@@ -44,6 +45,8 @@ from harness.assurance import (
     DESIGN_NOT_USABLE_REASON,
     NO_DESIGN_REASON,
     Assurance,
+    AssuranceResolution,
+    apply_fast_path_availability,
     coerce_assurance,
     design_precondition,
     required_stages,
@@ -181,28 +184,64 @@ def test_a_bare_prefix_with_no_value_is_unrecognized() -> None:
     assert resolution.reason == "unknown_label"
 
 
-def test_trivial_alone_is_upgraded_to_simple() -> None:
-    """AC-6: the level is *recognized*, and rewritten while the fast path is unbuilt."""
+def test_trivial_alone_resolves_to_trivial() -> None:
+    """#353: a stated level is honoured, like every other stated level.
+
+    The rewrite #352 applied here has moved to
+    :func:`apply_fast_path_availability`, where it is conditional on the repo
+    being able to certify anything — which is what makes the tag
+    ``fast_path_unavailable`` mean what it says instead of meaning "always".
+    """
     resolution = resolve_assurance([_label("trivial")])
-    assert resolution.effective == "simple"
-    assert resolution.reason == "fast_path_unavailable"
+    assert resolution.effective == "trivial"
+    assert resolution.reason == "label"
+
+
+def test_the_availability_check_downgrades_only_an_unavailable_trivial() -> None:
+    """The second pure function, both directions, over every level.
+
+    Both directions matter and each catches a different bug: a check that
+    downgraded unconditionally would make ``trivial`` unreachable again, and one
+    that downgraded nothing would honour it in a repo that can certify nothing.
+    """
+    for level in ASSURANCE_LEVELS:
+        stated = AssuranceResolution(level, "label")
+        assert apply_fast_path_availability(stated, fast_path_available=True) == stated
+
+        downgraded = apply_fast_path_availability(stated, fast_path_available=False)
+        if level == "trivial":
+            assert downgraded == AssuranceResolution("simple", "fast_path_unavailable")
+        else:
+            assert downgraded == stated, (
+                f"{level!r} was downgraded by an availability check that only "
+                f"concerns the trivial fast path"
+            )
 
 
 @pytest.mark.parametrize("labels", LABEL_LISTS, ids=lambda labels: "+".join(labels) or "none")
-def test_resolution_is_total_and_never_yields_trivial(labels: tuple[str, ...]) -> None:
-    """AC-1 and AC-6 over the whole derived corpus.
-
-    Two claims in one sweep, because they are the same safety property read
-    from either end: resolution answers for *every* input (it never raises, and
-    always names a level in the vocabulary and a reason in the closed set), and
-    the answer is never ``trivial``. No run can bypass review before the
-    certification path exists — whatever combination of labels an issue carries.
-    """
+def test_resolution_is_total_over_the_corpus(labels: tuple[str, ...]) -> None:
+    """AC-1 over the whole derived corpus: every input answers, nothing raises."""
     resolution = resolve_assurance(list(labels))
     assert resolution.effective in ASSURANCE_LEVELS
+    assert resolution.reason in RESOLUTION_REASONS
+
+
+@pytest.mark.parametrize("labels", LABEL_LISTS, ids=lambda labels: "+".join(labels) or "none")
+def test_no_run_reaches_trivial_where_the_fast_path_is_unavailable(
+    labels: tuple[str, ...]
+) -> None:
+    """#353's safety property, over the same corpus AC-6 used to be asserted on.
+
+    Composed exactly as ``start`` composes it. A repo that declares no usable
+    allowlist can certify nothing, so no combination of labels may open a run at
+    a level that skips review there — the pre-#353 guarantee, now conditional
+    rather than unconditional.
+    """
+    resolution = apply_fast_path_availability(
+        resolve_assurance(list(labels)), fast_path_available=False
+    )
     assert resolution.effective != "trivial", (
-        f"{labels!r} resolved to trivial — the fast path is not built, so no "
-        f"run may snapshot a level that skips review"
+        f"{labels!r} opened a trivial run in a repo that can certify nothing"
     )
     assert resolution.reason in RESOLUTION_REASONS
 
@@ -255,10 +294,9 @@ def test_coercion_is_total_and_falls_back_to_simple(stored: str | None, expected
     """A legacy ``NULL``, an unknown value, or a hand-edited one reads as ``simple``.
 
     ``trivial`` round-trips deliberately: coercion describes *what the column
-    says*, and the safety rewrite belongs at the one ingress
-    (:func:`resolve_assurance`), not smeared across every reader. No row can
-    hold ``trivial`` this increment, which is a property of the writer — pinned
-    by :func:`test_resolution_is_total_and_never_yields_trivial`, not here.
+    says*, and it has always done so — which is why #353 could start writing the
+    value without touching this function. Since #353 a row *can* hold it, in a
+    repo that declares a usable allowlist.
     """
     assert coerce_assurance(stored) == expected
 

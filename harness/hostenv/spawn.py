@@ -439,6 +439,7 @@ def build_docker_argv(
     mount: WorkspaceMount | None = None,
     container_user: ContainerUser | None = None,
     wrapper_status: str = "",
+    client_version: str = "",
     git_identity: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Construct the one-shot verb container's ``docker run`` argv.
@@ -534,6 +535,12 @@ def build_docker_argv(
     ]
     if wrapper_status:
         out += ["-e", f"HARNESS_WRAPPER_STATUS={wrapper_status}"]
+    # Only an image install carries a version, and emitting an empty one would be
+    # worse than emitting none: `doctor` would report a client "installed from the
+    # image, version " for a deployment that has no version at all. Same shape as
+    # the wrapper status above, for the same reason (#312).
+    if client_version:
+        out += ["-e", f"HARNESS_CLIENT_VERSION={client_version}"]
     resolved_identity = dict(git_identity or {})
     for name, default in _GIT_IDENTITY_DEFAULTS.items():
         out += ["-e", f"{name}={resolved_identity.get(name) or default}"]

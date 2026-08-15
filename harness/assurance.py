@@ -27,13 +27,14 @@ with issue-write access can set, so the worst a hostile or mistaken one can buy
 is ``complex`` → ``simple``, i.e. skipping the *design* stage. It cannot skip the
 review engine, the verify-gate evidence check, or ``close``'s SHA-bound gate.
 
-**``trivial`` is recognized and rewritten.** The level that would skip review is
-in the vocabulary because the vocabulary is the decided policy, but
-:func:`resolve_assurance` never returns it: the deterministic certification path
-that makes skipping a review safe is item 2 of the proposal and is not built, so
-this increment upgrades it to ``simple`` with reason ``fast_path_unavailable``.
-The rewrite sits at the single ingress rather than in every reader — see
-:func:`coerce_assurance`.
+**``trivial`` is honoured where the repo can certify one** (#353). It resolves
+like any other stated level; whether the *repo* can act on it is a separate
+question — it needs a usable ``assurance.trivial_paths`` allowlist — and the
+answer lives in :func:`apply_fast_path_availability`, a second pure function
+taking a boolean. That split is what keeps this module free of the filesystem
+while still letting ``fast_path_unavailable`` mean what it says: the operator
+stated an intent the repo could not honour, rather than an intent nothing could
+ever honour.
 """
 
 from __future__ import annotations
@@ -63,9 +64,16 @@ ASSURANCE_LABEL_PREFIX = "assurance:"
 #: (including every tracker-less run, which has no labels to read).
 #: ``conflicting_labels``: two or more distinct recognized levels.
 #: ``unknown_label``: some ``assurance:*`` label carried a value outside the
-#: vocabulary. ``fast_path_unavailable``: ``trivial`` was stated and upgraded.
-#: ``unrecorded``: read off a run row written before the migration — the only
-#: member :func:`resolve_assurance` never produces.
+#: vocabulary. ``fast_path_unavailable``: ``trivial`` was stated in a repo that
+#: declares no usable trivial allowlist, so there is nothing it could certify.
+#: ``unrecorded``: read off a run row written before the migration.
+#: ``diff_ineligible``: the run stated ``trivial``, the repo could certify one,
+#: and the run's actual diff turned out not to be — the first member produced by
+#: a verb other than ``start`` (``certify``, #353), and the only one that ever
+#: replaces a value already on the row.
+#:
+#: ``unrecorded`` and ``diff_ineligible`` are the two members
+#: :func:`resolve_assurance` never produces.
 ResolutionReason = Literal[
     "label",
     "no_label",
@@ -73,7 +81,11 @@ ResolutionReason = Literal[
     "unknown_label",
     "fast_path_unavailable",
     "unrecorded",
+    "diff_ineligible",
 ]
+
+#: What ``certify`` records when it upgrades a run whose diff is not certifiable.
+DIFF_INELIGIBLE_REASON: ResolutionReason = "diff_ineligible"
 
 #: What a run row that predates the assurance columns reports as its reason.
 UNRECORDED_REASON: ResolutionReason = "unrecorded"
@@ -105,12 +117,11 @@ class RequiredStages:
     llm_review: bool
 
 
-#: The decided mapping. ``llm_review`` has no consumer this increment — every
-#: level a run can currently snapshot requires a review, because ``trivial`` is
-#: rewritten at the boundary — and is carried anyway: the *table* is the decided
-#: policy, and splitting it across two tickets is how the two halves start
-#: disagreeing. ``test_assurance_policy.py`` pins all three rows, so it is
-#: asserted data rather than dead code.
+#: The decided mapping. ``llm_review`` gained its consumer in #353: ``certify``
+#: guards on ``required_stages(assurance).llm_review`` rather than comparing the
+#: level to a string, so the table — not a scattered set of equality checks — is
+#: what decides which runs may take the fast path.
+#: ``test_assurance_policy.py`` pins all three rows.
 _REQUIRED_STAGES: dict[Assurance, RequiredStages] = {
     "trivial": RequiredStages(design=False, llm_review=False),
     "simple": RequiredStages(design=False, llm_review=True),
@@ -162,7 +173,8 @@ def resolve_assurance(labels: Iterable[str]) -> AssuranceResolution:
     cannot interpret is not a statement to act on. Distinct recognized values
     then conflict; a level repeated is one intent stated once.
 
-    Never returns ``trivial``: see the module docstring.
+    Since #353 it *may* return ``trivial``, and whether the repo can act on that
+    is :func:`apply_fast_path_availability`'s question, not this one.
     """
     stated: set[str] = set()
     unknown = False
@@ -184,11 +196,35 @@ def resolve_assurance(labels: Iterable[str]) -> AssuranceResolution:
         return AssuranceResolution(DEFAULT_ASSURANCE, "conflicting_labels")
 
     (selected,) = stated
-    if selected == "trivial":
-        # The one rewrite: recognized, and not yet safe to honour.
-        return AssuranceResolution(DEFAULT_ASSURANCE, "fast_path_unavailable")
     # ``selected`` came out of ASSURANCE_LEVELS, so it is an Assurance.
     return AssuranceResolution(selected, "label")  # type: ignore[arg-type]
+
+
+def apply_fast_path_availability(
+    resolution: AssuranceResolution, *, fast_path_available: bool
+) -> AssuranceResolution:
+    """Downgrade a ``trivial`` resolution where the repo cannot certify one (#353).
+
+    A repo that declares no valid ``assurance.trivial_paths`` allowlist can never
+    certify a diff, so opening a ``trivial`` run there would buy the operator
+    nothing except an extra verb call and a tracker write on every single run,
+    forever. The intent was stated and not honoured, which is exactly what
+    ``fast_path_unavailable`` has always meant — so the tag keeps its meaning and
+    regains a live producer, and ``start``'s existing stderr warning
+    (``_UNHONOURED_INTENT_REASONS``) fires unchanged and now says something
+    actionable.
+
+    Pure, and total: it never reads the repo. The caller supplies the boolean,
+    the same way ``review`` supplies ``design_status`` rather than this module
+    querying the ledger for it — which is what keeps this module's stated purity
+    contract intact while the decision it feeds is about the filesystem.
+
+    Touches nothing but a ``trivial`` resolution: a ``simple`` or ``complex`` run
+    is unaffected by whether a fast path exists.
+    """
+    if resolution.effective != "trivial" or fast_path_available:
+        return resolution
+    return AssuranceResolution(DEFAULT_ASSURANCE, "fast_path_unavailable")
 
 
 def coerce_assurance(stored: str | None) -> Assurance:
@@ -200,10 +236,11 @@ def coerce_assurance(stored: str | None) -> Assurance:
     fail-toward-the-bound posture ``resolve_attended`` takes.
 
     ``trivial`` round-trips rather than being rewritten here, because coercion
-    describes what the column *says*. No row can hold it this increment, and
-    that is a property of the writer (:func:`resolve_assurance`) — putting the
-    safety rewrite at the single ingress rather than smearing it across every
-    reader is what keeps it auditable.
+    describes what the column *says* — and that is why #353 could start writing
+    the value without touching this function. Since #353 a row can hold it: in a
+    repo that declares a usable trivial allowlist, ``start`` snapshots the level
+    the issue stated. Keeping the availability decision at the single ingress
+    rather than smearing it across every reader is what keeps it auditable.
     """
     if stored is None:
         return DEFAULT_ASSURANCE

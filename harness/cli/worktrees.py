@@ -59,6 +59,7 @@ from pathlib import Path
 import typer
 
 from harness._git import (
+    TeardownOutcome,
     preferred_base_ref,
     resolve_base_branch,
     run_git,
@@ -393,15 +394,27 @@ def cleanup_command(
             continue
 
         # Orphan-safe removal + optional branch deletion (local + remote). The
-        # shared primitive is best-effort, so confirm by checking the directory
-        # is actually gone afterwards.
-        teardown_worktree(
+        # shared primitive is best-effort, so it *reports* what it did rather
+        # than raising, and the directory is checked as a backstop.
+        outcome = teardown_worktree(
             repo_root,
             worktree_path=path,
             branch=branch_str if delete_branch else None,
             delete_remote=delete_branch,
         )
-        if path.exists():
+        if outcome is TeardownOutcome.LOCKED:
+            # Deliberate, not a malfunction: a lock is the operator's "hands
+            # off" and teardown honours it (#372). Name the way out, or the
+            # sweep reports a worktree it will keep refusing forever with no
+            # hint that a single command clears it.
+            failures.append(
+                (run_id, f"worktree is locked — release it with: git worktree unlock {path}")
+            )
+        elif outcome is TeardownOutcome.UNKNOWN:
+            failures.append(
+                (run_id, "removal failed and the worktree is still registered")
+            )
+        elif path.exists():
             failures.append(
                 (run_id, "worktree directory still present after removal")
             )
