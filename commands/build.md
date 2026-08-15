@@ -1,4 +1,4 @@
-<!-- guidance:build@1.11.0 -->
+<!-- guidance:build@1.12.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -98,15 +98,49 @@ loading, error, success, mobile, and accessibility states relevant to the change
 
 ### Visual evidence for a user-facing change
 
-Before handoff, render the changed surface in an HTML or simulator window using
-**realistic seeded state**. Capture a screenshot at the repo's reference widths,
-at least one mid-width, and on either side of every breakpoint the change touches.
-Compare each capture against the reference or the applicable design
+**When.** Any diff that touches a user-facing surface obliges this step — a
+screen, route, view, template, or the styles behind one. It is not a judgment
+call about how large or risky the change looks.
+
+**Render.** Before handoff, render the changed surface in an HTML or simulator
+window using **realistic seeded state** — synthetic throughout; never a copy of
+production data. Capture a screenshot at the repo's reference widths, at least
+one mid-width, and on either side of every breakpoint the change touches.
+
+**How.** Set the window to the capture width and a fixed viewport height, and
+capture **viewport-height slices**: one image per viewport, scrolled one viewport
+at a time, numbered in scroll order until the surface is covered. **Never capture
+the full page in one image**, at any width. Measured in #361: a real 1440 × 5726
+px capture reached the reviewer as an image content block, but 16 px body text
+read 7 of 8 characters correctly, because a capture's long edge is downscaled to
+fit the model's image budget and a surface four viewports tall arrives downscaled
+about fourfold. **No capture exceeds 2000 px in height** — where one viewport
+would, shorten the viewport and take another slice.
+
+**Where.** Captures and their manifest land in `.evidence/<TICKET-ID>/` at the
+worktree root — repo-relative, so `/review` hands the reviewer a directory rather
+than a list, and git-ignored, so a capture never reaches the committed tree
+through `/build`'s `git add -A`. Name each capture
+`<page>-<state>-<width>w-<slice>.png` and the manifest `manifest.md`. The key is
+this ticket: a capture filed under another ticket is not this change's evidence.
+The directory is scratch — a removed worktree takes it with it, and nothing
+re-creates it. **If this repo's `.gitignore` does not already ignore `.evidence/`,
+add that line before capturing anything**; a repo that installed this guidance
+did not receive its ignore rule with it.
+
+**How many.** At most **12 captures** per review — roughly four widths across up
+to three pages. The bound is token and latency cost: several large images are the
+largest input a review carries. Where a change needs more, **narrow the set** to
+the states that carry the change; never shrink or downscale the images to fit,
+which reintroduces the exact failure the slice rule exists to prevent.
+
+**Judge.** Compare each capture against the reference or the applicable design
 archetype and `ux-design` principles; inspect the implementation as well, because
-screenshots do not replace code review. Fix defects, render again, and retain
-only the final screenshots plus a short manifest of page, state, width, reference,
-and accepted deviations. Revert temporary seeded data, simulator settings, and
-capture-only code before verification. Pass the final visual evidence to review.
+screenshots do not replace code review. Fix defects, render again, and retain only
+the final screenshots plus a short manifest of page, state, width, slice,
+reference, and accepted deviations. Revert temporary seeded data, simulator
+settings, and capture-only code before verification. Pass the final visual
+evidence — the directory and its manifest — to review.
 
 ### Verify
 
