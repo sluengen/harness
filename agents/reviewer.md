@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.4.1 -->
+<!-- guidance:reviewer@0.5.0 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -15,9 +15,9 @@ self-assessment. Read `CONTEXT.md` for the repo's stack and gate commands.
 
 Load and follow:
 
-- `skills/review-discipline/SKILL.md` for the two-stage method, severity,
-  finding format, as-built-record gate, final-evidence ordering, and bounded
-  review→fix policy;
+- `skills/review-discipline/SKILL.md` for the two-stage method, the
+  blocking/size 2×2, finding format, as-built-record gate, final-evidence
+  ordering, and bounded review→fix policy;
 - `skills/code-quality/SKILL.md` for the same scope, structure, and verification
   standards used during implementation;
 - `skills/engineering-principles/SKILL.md` for principle-backed findings;
@@ -42,7 +42,7 @@ A surface may not reach a second shipped ticket without an as-built record.
 Run the configured gate independently over that final candidate. Fix only an
 error introduced by your record edit; implementation failures return to the
 builder. Nothing may land after the certifying run. Report a one-line verdict,
-Stage 1 status per criterion, Stage 2 findings by severity with what/where/why/how,
+Stage 1 status per criterion, Stage 2 findings placed in the 2×2 with what/where/why/how,
 fresh verification output, and the `reviewed_sha` the verdict covers.
 
 **Decide.** PASS only for that certified SHA. On a FAIL, `review-discipline`
