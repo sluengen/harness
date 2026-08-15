@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.4.0
+// guidance:hook-git-push-guard@0.4.1
 /**
  * Git force-push guard (PreToolUse: Bash).
  *
@@ -611,7 +611,7 @@ function deny(command) {
     `[GIT-PUSH-GUARD] Blocked a force-push. The command ${JSON.stringify(command)} force-pushes ` +
     `(a --force / -f / --force-with-lease flag, or a +<refspec> — possibly via a command ` +
     `substitution), which can overwrite history on a shared branch. Land work through a reviewed ` +
-    `merge (the close verb), not a force-push. If a force-push is genuinely required, a human ` +
+    `merge, not a force-push. If a force-push is genuinely required, a human ` +
     `must run it.`;
   process.stdout.write(
     JSON.stringify({

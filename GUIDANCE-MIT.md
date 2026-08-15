@@ -2,7 +2,7 @@
 
 Copyright (c) 2026 Scott Luengen
 
-The harness engine is licensed under the GNU Affero General Public License v3.0
+The harness's own code is licensed under the GNU Affero General Public License v3.0
 (see [`LICENSE`](./LICENSE)). This file is the exception: the guidance files the
 installer copies into other repositories are **MIT**-licensed, and the MIT terms
 alone govern them. This file is named off any `licen[sc]e`/`copying` stem on

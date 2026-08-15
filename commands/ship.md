@@ -1,4 +1,4 @@
-<!-- guidance:ship@0.4.0 -->
+<!-- guidance:ship@0.4.1 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /ship — integrate and close
@@ -16,7 +16,7 @@ Integrates a branch the reviewer has PASSed, closes the ticket, and clears the i
   git rev-parse HEAD    # must equal the reviewed_sha /review reported
   ```
 
-  Mismatch means something landed after the verdict, so what you would ship was never reviewed or verified. **Stop and re-run `/review`** to bind a fresh pass to the current HEAD. This is the agent-led twin of the harness's `stale_review` refusal, and it has the same remedy — never a manual merge.
+  Mismatch means something landed after the verdict, so what you would ship was never reviewed or verified. **Stop and re-run `/review`** to bind a fresh pass to the current HEAD — never a manual merge.
 - The verification gate is green (`code-quality` Part C).
 
 If any is missing, stop — do not ship unreviewed or unverified work.

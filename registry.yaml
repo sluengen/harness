@@ -1,4 +1,4 @@
-# guidance:registry@0.5.138
+# guidance:registry@0.5.140
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -54,8 +54,8 @@ files:
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
   skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.2, profiles: [harness] }
-  skills/tracker/SKILL.md: { id: tracker,                     version: 0.5.0, profiles: [harness] }
-  skills/linear/SKILL.md: { id: linear,                       version: 0.8.0, profiles: [harness] }
+  skills/tracker/SKILL.md: { id: tracker,                     version: 0.5.1, profiles: [harness] }
+  skills/linear/SKILL.md: { id: linear,                       version: 0.8.1, profiles: [harness] }
   skills/github-issues/SKILL.md: { id: github-issues,         version: 0.2.0, profiles: [harness] }
   skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.4.0, profiles: [harness] }
   # Product skills, home from the retired agents repo (CAL-652, D6), part of the
@@ -75,17 +75,17 @@ files:
 
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.2, profiles: [harness] }
-  agents/researcher.md:               { id: researcher,               version: 0.1.2, profiles: [harness] }
+  agents/researcher.md:               { id: researcher,               version: 0.1.3, profiles: [harness] }
   agents/reviewer.md:                 { id: reviewer,                 version: 0.5.0, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.4.1, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.4.0, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.3.0, profiles: [harness] }
-  commands/start.md:                  { id: start,                    version: 0.5.0, profiles: [harness] }
+  commands/start.md:                  { id: start,                    version: 0.5.1, profiles: [harness] }
   commands/review.md:                 { id: review,                   version: 0.3.0, profiles: [harness] }
-  commands/ship.md:                   { id: ship,                     version: 0.4.0, profiles: [harness] }
-  commands/assess.md:                 { id: assess,                   version: 0.10.0, profiles: [harness] }
+  commands/ship.md:                   { id: ship,                     version: 0.4.1, profiles: [harness] }
+  commands/assess.md:                 { id: assess,                   version: 0.10.1, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 1.0.0, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.11.0, profiles: [harness] }
   # /promote — the versioned universal caller for a promotion hop. Role-resolves
@@ -97,7 +97,7 @@ files:
   # the operator's input (ADR 0006, #191/#192/#193; hold labels consolidated by
   # ADR 0015). Delegates the clearable test and the "released" definition to
   # work-discovery's Return path section rather than restating it.
-  commands/decision.md:                { id: decision,                 version: 0.3.0, profiles: [harness] }
+  commands/decision.md:                { id: decision,                 version: 0.3.1, profiles: [harness] }
   # /routine — one unattended build-cycle tick (ADR 0015): work-discovery →
   # /build → ship to the integration branch, with the standing branch
   # authorisation and the hold-don't-force rule. The versioned home of the
@@ -135,7 +135,7 @@ files:
   # Reference implementation of the size-marker guard, distributed so a consuming
   # repo can adopt the mechanical check with its own globs/limit/exemptions. The
   # rule lives in skills/code-quality; this is the ~30-line walker that enforces it.
-  templates/size-guard.md:            { id: template-size-guard,      version: 0.3.0, profiles: [harness] }
+  templates/size-guard.md:            { id: template-size-guard,      version: 0.3.1, profiles: [harness] }
   # The eight-layer design-system scaffold contract (#239, accepted proposal
   # design-system-scaffold): what an agent needs to stand up a repo-native
   # design/ tree — layers, dependency rule, frontmatter, token tiers, output
@@ -151,18 +151,18 @@ files:
   hooks/package.json:                 { id: hook-package-json,        version: 0.1.0, profiles: [harness] }
   hooks/prompt-guard.js:              { id: hook-prompt-guard,        version: 0.2.0, profiles: [harness] }
   hooks/workflow-guard.js:            { id: hook-workflow-guard,      version: 0.2.0, profiles: [harness] }
-  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.4.0, profiles: [harness] }
+  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.4.1, profiles: [harness] }
   hooks/context-monitor.js:           { id: hook-context-monitor,     version: 0.2.0, profiles: [harness] }
-  hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.4.1, profiles: [harness] }
+  hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.4.2, profiles: [harness] }
 
   # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---
-  process/harness.md:                 { id: process-harness,          version: 0.8.0, profiles: [harness] }
+  process/harness.md:                 { id: process-harness,          version: 0.8.1, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
-  settings/harness.json:              { id: settings-harness,         version: 0.9.0, profiles: [harness] }
+  settings/harness.json:              { id: settings-harness,         version: 0.9.1, profiles: [harness] }
 
 # Source-managed + version-stamped, but NOT installed into a repo (the installer and the registry itself).
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.6 }
-  registry.yaml:                      { id: registry,                 version: 0.5.138 }
+  registry.yaml:                      { id: registry,                 version: 0.5.140 }

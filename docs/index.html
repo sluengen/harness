@@ -193,9 +193,9 @@
   .verb{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
     padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:var(--build)}
   .verb::before{content:""; position:absolute; left:0; top:0; right:0; height:4px; background:var(--accent)}
-  .verb--review{--accent:var(--product)} .verb--close{--accent:var(--strategy)}
+  .verb--guidance{--accent:var(--product)} .verb--guards{--accent:var(--strategy)}
   .verb h4{margin:0 0 3px; font:800 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent-ink,var(--ink)); letter-spacing:-.01em}
-  .verb--start h4{color:var(--build-ink)} .verb--review h4{color:var(--product-ink)} .verb--close h4{color:var(--strategy-ink)}
+  .verb--verify h4{color:var(--build-ink)} .verb--guidance h4{color:var(--product-ink)} .verb--guards h4{color:var(--strategy-ink)}
   .verb .role{margin:0 0 10px; font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.05em}
   .verb p{margin:0 0 10px; font-size:13.5px; color:var(--ink-2)}
   .verb .out{display:inline-block; font:600 11.5px/1 ui-monospace,Menlo,monospace; color:var(--ink-2);
@@ -379,13 +379,13 @@
         </dl>
         <ul class="steps">
           <li><span>Build idle → assess code</span></li>
-          <li><span>Weekly → assess system (broader)</span></li>
+          <li><span>Weekly → assess code --deep (broader)</span></li>
           <li><span>File findings as tracker issues</span></li>
           <li><span>→ back to Build queue</span></li>
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code data-guidance="assess">/assess code</code><code data-guidance="assess">/assess system</code></div>
+          <div class="cmds"><code data-guidance="assess">/assess code</code><code data-guidance="assess">/assess architecture</code></div>
           <span class="status"><i class="pip pip--auto"></i> Weekly <code style="background:none;padding:0;color:inherit">--deep</code> adds coverage, design-system &amp; doc-coherence lenses</span>
         </div>
       </article>
@@ -551,19 +551,19 @@
     </p>
 
     <div class="verbs">
-      <article class="verb verb--start">
+      <article class="verb verb--verify">
         <h4>verify</h4>
         <p class="role">the whole contract</p>
         <p><code>bash scripts/verify.sh</code> runs lint, types, the suite under a coverage floor, and the drift guards. The same command in CI, in a checkout, and in the nightly promotion — green is the only evidence a completion claim may cite.</p>
         <span class="out">→ pass · or a named failure</span>
       </article>
-      <article class="verb verb--review">
+      <article class="verb verb--guidance">
         <h4>guidance</h4>
         <p class="role">how work happens here</p>
         <p>Skills, agents and commands, each version-stamped and distributed from this repo by <code>registry.yaml</code>. A consuming repo pulls them with <code data-guidance="update-guidance">/update-guidance</code>, and a semver bump is the compatibility promise.</p>
         <span class="out">→ one process, every repo</span>
       </article>
-      <article class="verb verb--close">
+      <article class="verb verb--guards">
         <h4>guards</h4>
         <p class="role">rules with teeth</p>
         <p>Roughly 1,300 tests, most of which read the tracked tree: a version stamp that drifted, a mirror that stopped matching its source, a document citing a path that no longer resolves. A rule with a test is a bound.</p>

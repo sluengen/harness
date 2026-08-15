@@ -73,8 +73,8 @@ Each obligation is guarded as a **pair** — a presence assertion that the rule 
 
 - GIVEN `commands/build.md`'s `## Assurance` table drops an obligation from a row, collapses two rows onto the same evidence, or sends unresolved assurance to `trivial`
 - WHEN the guard parses the table
-- THEN the derived stages no longer equal `harness.assurance.required_stages` for that level and the suite fails
-- AND the expected side is imported, so a misreading of the prose fails rather than passes
+- THEN the derived stages no longer equal the stages the row is expected to require and the suite fails
+- AND the expected side is stated independently of the prose, so a misreading of the table fails rather than passes
 
 #### Scenario: a `complex` run's design stage returns nothing usable
 

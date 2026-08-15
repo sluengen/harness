@@ -1,4 +1,4 @@
-<!-- guidance:decision@0.3.0 -->
+<!-- guidance:decision@0.3.1 -->
 # /decision — drain the tickets held for your input
 
 Usage: `/decision`
@@ -55,7 +55,7 @@ carrying the `input` label **and** assigned to the operator (the viewer) —
 both conditions, matching the exact state a deferral leaves a ticket in. (In
 an un-migrated repo, also pull the retired `decision` label and treat it as
 `input`.) This is a read, not a lifecycle mutation, so it is done directly
-against the tracker rather than through a verb:
+against the tracker:
 
 - **`tracker: github`** — `gh issue list --repo <github.repo> --label input
   --assignee @me --state open --json number,title,url,body,updatedAt` (add

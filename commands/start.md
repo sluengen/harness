@@ -1,4 +1,4 @@
-<!-- guidance:start@0.5.0 -->
+<!-- guidance:start@0.5.1 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /start — begin work on a ticket
@@ -19,7 +19,7 @@ Move the ticket to In Progress so the board reflects reality.
 Create a feature branch off the repo's integration branch (named in `CONTEXT.md`) and a worktree for it (`worktree-isolation`). All work happens here, never on the default branch.
 
 ### 4. Ground the spec
-Before writing the change spec, ground the facts it will rest on in current reality (`spec-driven-development` step 2; `spec-authoring` → Grounding). Where a sub-agent host is available, dispatch the read-only `researcher` agent (`agents/researcher.md`): it investigates in its own context and returns a distilled grounding brief — verified facts anchored to `path:line`, current versions/flags, decisions surfaced, open questions. Where none is available, self-ground inline (the fallback). Record the brief as the change spec's `Grounding` section. Verbs stay deterministic — dispatch lives in this agent-led flow, never in the `start` CLI verb; the extra agent counts against the loop spend breakers (`CONTEXT.md` `loop:`).
+Before writing the change spec, ground the facts it will rest on in current reality (`spec-driven-development` step 2; `spec-authoring` → Grounding). Where a sub-agent host is available, dispatch the read-only `researcher` agent (`agents/researcher.md`): it investigates in its own context and returns a distilled grounding brief — verified facts anchored to `path:line`, current versions/flags, decisions surfaced, open questions. Where none is available, self-ground inline (the fallback). Record the brief as the change spec's `Grounding` section. The brief is worth its own agent when the ticket rests on facts you have not read this session; skip it when you have.
 
 ### 5. Write or confirm the change spec
 Draft the change spec into the tracker issue following `spec-authoring` (`templates/change.md`): problem, approach, **assurance**, design (data model / interface / scenarios, scaled to size), acceptance criteria, out of scope. Assurance is exactly one of `trivial`, `simple`, or `complex`: unknown or conflicting work defaults to `simple`; only an explicit conservative allowlist permits `trivial`; `complex` requires an isolated design agent and reviewer. Which one this ticket carries is decided per `spec-authoring` → *Choosing assurance*, the one home for that judgment — a ticket filed with a level keeps it unless the rubric says otherwise. Keep it short; depth scales with size. Confirm it with the user if the scope is non-obvious. If the work turns out to be unconfirmed or too big for one change, stop and `/propose` it instead.

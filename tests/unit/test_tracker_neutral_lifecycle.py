@@ -48,7 +48,6 @@ BAN_ALLOWLIST: dict[str, str] = {
     "skills/linear/SKILL.md": "the Linear provider recipe home — its whole job is Linear",
     "skills/github-issues/SKILL.md": "the GitHub provider recipe home",
     "skills/tracker/SKILL.md": "the protocol; it names both backends to dispatch between them",
-    "commands/harness.md": "repo-owned pipeline command over the verbs, which dispatch in code",
     "commands/promote.md": "promotion escalation is Linear-coupled in code (#328), not prose",
     "templates/CONTEXT.template.md": "carries the backend-conditional env/tools keys themselves",
 }
@@ -62,6 +61,28 @@ def _registered_surface() -> list[Path]:
     """
     entries = re.findall(r"^\s{2}([\w./-]+\.(?:md|json)):\s*\{", REGISTRY.read_text(), re.M)
     return [Path(e) for e in entries if e.endswith(".md")]
+
+
+def test_every_allowlisted_file_is_still_registered() -> None:
+    """The exemption list names files that exist and are actually distributed.
+
+    An allowlist entry for a file the registry no longer carries is a silent
+    dead key: it exempts nothing today, so nothing fails, and it sits there as a
+    standing invitation to re-create the path it names and inherit the
+    exemption. ``commands/harness.md`` was exactly that after #435 retired the
+    command — the entry outlived its subject, and no assertion noticed.
+
+    Checked against the registered surface rather than the filesystem, because
+    exemption from a *distributed*-surface ban is only meaningful for a file the
+    registry distributes.
+    """
+    registered = {p.as_posix() for p in _registered_surface()}
+    stale = sorted(rel for rel in BAN_ALLOWLIST if rel not in registered)
+    assert not stale, (
+        f"BAN_ALLOWLIST exempts {stale}, which registry.yaml no longer "
+        f"distributes. Drop the entry with the file — an exemption whose "
+        f"subject is gone is a hole waiting for a path of that name to return."
+    )
 
 
 def _neutral_surface() -> list[Path]:

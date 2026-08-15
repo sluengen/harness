@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.8.0 -->
+<!-- guidance:process-harness@0.8.1 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -74,7 +74,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `dev` | Implementation, test-first, in scope. |
 | `reviewer` | The final gate; records what shipped. |
 | `architect` | Data models, contracts, decisions. Produces designs, not code. |
-| `steward` | Periodic health assessment; `/assess <scope>` selects code or guidance. |
+| `steward` | Periodic health assessment; `/assess <scope>` selects code or architecture. |
 
 ## Commands
 
@@ -91,7 +91,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/decision` | Interactive sweep that drains tickets held for the operator's input — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/routine` | One unattended build-cycle tick: discover the next actionable ticket (`work-discovery`), `/build` it, ship to the integration branch; hold the ticket on a red gate or conflict. The versioned home of the standing prompt scheduled runs paste. |
 | `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, operator errands. Never mutates ticket state. |
-| `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
+| `/assess <scope>` | Run the steward over the codebase — `code` or `architecture` (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
 Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.

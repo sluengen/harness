@@ -1,4 +1,4 @@
-# Runtime host (live)
+# Runtime host
 
 > **Superseded 2026-08-15** — describes `harness serve`, the persistent host-side process that owned container construction, brokered the agent credential and ran the maintenance scheduler (ADR 0012). [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) retires the container and the host process together; nothing replaces them. Kept for historical reference only.
 

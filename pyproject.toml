@@ -54,7 +54,12 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --strict-markers"
+# No marker survives this repo's own suite — the tier markers went with the
+# runtime (#435), and the one `@pytest.mark.fast` in the tree is a string
+# literal in a synthetic child project that registers it in its own ini. The
+# flag is kept anyway: with no `markers` list, *any* marker is a collection
+# error, so a typo'd or reintroduced marker fails loudly instead of warning.
 # Per-test timeout (requires pytest-timeout). Prevents a hung test from
 # consuming the full CI job budget; the job-level timeout-minutes is a
 # secondary backstop.

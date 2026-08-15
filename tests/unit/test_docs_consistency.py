@@ -114,6 +114,75 @@ def test_retired_spec_has_in_file_banner(spec: Path) -> None:
     )
 
 
+# --- Retired specs are not titled "(live)" (CAL-712 AC-5, re-homed by #435) ----
+#
+# The banner rule above and this one are the two halves of "a retired spec must
+# not read as current", and they are not redundant: the banner is a line the
+# reader may scroll past, while the H1 is the first thing they see. This
+# assertion lived in ``test_hermes_retired.py`` until #435 deleted that module
+# for its ``harness`` imports. Its subject — ``specs/retired/`` — survives, and
+# #435 added six files to that directory, so the assertion moves here to sit
+# beside the banner sweep that already runs over the same set.
+
+_LIVE_MARKER = "(live)"
+
+
+def _spec_h1(text: str) -> str:
+    """The first ``# `` markdown heading in ``text`` (empty if none)."""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line
+    return ""
+
+
+def _h1_claims_live(text: str) -> bool:
+    """True iff the document's H1 wears the ``(live)`` badge.
+
+    The single predicate. Both the tree sweep and its synthetic controls call
+    this function, so a control cannot certify a predicate the live path does
+    not use.
+    """
+    return _LIVE_MARKER in _spec_h1(text).lower()
+
+
+#: (document, verdict) — the predicate pinned by example, so it cannot go inert.
+_LIVE_TITLE_CASES = [
+    ("# Runtime host (live)\n\nbody\n", True),
+    ("# Runtime host (LIVE)\n\nbody\n", True),
+    ("# Runtime host\n\nbody\n", False),
+    # The badge below the H1 is not a title claim — only the heading counts.
+    ("# Runtime host\n\nthe (live) host process\n", False),
+    # No heading at all: nothing to claim.
+    ("some prose (live)\n", False),
+]
+
+
+@pytest.mark.parametrize("text, expected", _LIVE_TITLE_CASES)
+def test_the_live_title_predicate_reads_the_heading(text: str, expected: bool) -> None:
+    """The predicate fires on a ``(live)`` H1 and only on a ``(live)`` H1."""
+    assert _h1_claims_live(text) is expected
+
+
+def test_retired_specs_are_not_titled_live() -> None:
+    """A spec under ``specs/retired/`` may not still be titled ``(live)``.
+
+    A retired subsystem's spec is design history, not a live reference. The
+    subject set is the same derivation the banner sweep uses, so
+    ``test_the_retired_spec_set_is_not_empty`` is this test's non-vacuity anchor
+    too: an empty set would make both pass over nothing.
+    """
+    offenders = [
+        str(p.relative_to(REPO_ROOT))
+        for p in _retired_specs()
+        if _h1_claims_live(p.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, (
+        f"retired specs still wear the '(live)' badge: {offenders}. A retired "
+        "subsystem's spec is design history, not a live reference — drop the "
+        "badge from the H1."
+    )
+
+
 # --- One-repo source model (CAL-651) ------------------------------------------
 #
 # The guidance repo was merged into the harness: the harness *is* the guidance

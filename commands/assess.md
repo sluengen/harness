@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.10.0 -->
+<!-- guidance:assess@0.10.1 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /assess — run a periodic assessment
@@ -26,7 +26,7 @@ Reviews split by **axis, not dimension**. There are two surfaces: the per-change
 
 Structure and tests stay *lenses inside* `code` — folding them keeps the surface small. Architecture is not folded the same way: the architecture-drift **lens** inside `code` still catches a crossed boundary or a contradicted decision *as a finding*, but the finding-engine contract squeezes out the holistic question — positive bets to preserve and trade-offs to keep are not findings, so they fall out at the "every finding is a ticket" bar. The holistic review needs a **different report contract**, not a different lens, so it is its own scope. `--deep` widens the codebase scopes (the broad weekly/periodic arm) rather than adding a target. Split any other lens into its own scope only as a per-repo escalation, when one repo's codebase is large enough that a single run overflows context or misses findings.
 
-**Routine cadence.** The weekly Quality arm stays `/assess code --deep` to avoid churn; `/assess architecture --deep` is **on demand / low-cadence** (a milestone or a periodic check), run by a human or a slower routine — not added to the weekly loop. A holistic verdict that barely moves week to week would only pile up trivial reports.
+**Cadence.** `/assess code --deep` is the broad periodic pass; `/assess architecture --deep` is **on demand / low-cadence** (a milestone or a periodic check). A holistic verdict that barely moves week to week would only pile up trivial reports, so do not put it on a frequent schedule.
 
 ## Steps
 

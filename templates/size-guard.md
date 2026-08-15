@@ -1,4 +1,4 @@
-<!-- guidance:template-size-guard@0.3.0 -->
+<!-- guidance:template-size-guard@0.3.1 -->
 # Size-marker guard (reference implementation)
 
 A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,
@@ -106,7 +106,7 @@ from pathlib import Path
 
 # --- config: edit these for your repo ---------------------------------------
 # Source globs (relative to the repo root) this guard scans.
-SOURCE_GLOBS: tuple[str, ...] = ("harness/**/*.py",)
+SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py",)
 # The hard line limit above which a file must justify its size.
 HARD_LIMIT: int = 500
 # Repo-relative POSIX paths exempt from the limit — files long by nature, not by

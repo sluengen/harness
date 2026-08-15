@@ -5,7 +5,7 @@
 # *execute* it against stubbed git instead of reading its text
 # (specs/architecture-principles.md -> "CI logic lives in a script, not in a
 # `run:` block"). The executing guard is
-# tests/integration/test_promotion_step_script.py.
+# tests/unit/test_promotion_step_script.py.
 #
 # Extracting the shell split which ref supplies it, so note where each half comes
 # from. GitHub reads a scheduled workflow from the default branch (`main`), while

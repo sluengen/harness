@@ -302,14 +302,36 @@ def test_guard_flags_a_traversal_app_path() -> None:
 
 def test_guard_flags_a_symlinked_app_path(tmp_path: Path) -> None:
     """AC-1 (symlink form): a surface-named entry that is a symlink to app code
-    is flagged once its real target is resolved (codex P2, CAL-648)."""
-    (tmp_path / "harness").mkdir()
-    (tmp_path / "harness" / "cli.py").write_text("# app code\n")
+    is flagged once its real target is resolved (codex P2, CAL-648).
+
+    Anchored on ``scripts/`` — a member of ``APP_PREFIXES``. It built the link
+    under ``harness/`` until #435 deleted that tree from the app side, at which
+    point the fixture stopped being app code and the control passed on its
+    ``SURFACE_PREFIXES`` half alone: it still flagged, so it read green while its
+    docstring's claim went untested. Both halves are asserted below so the same
+    drift cannot happen again silently — the target is app code *and* outside
+    every surface directory, and each is checked through the function that
+    decides it.
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "mutate.py").write_text("# app code\n")
     (tmp_path / "skills").mkdir()
     link = tmp_path / "skills" / "internal.md"
-    link.symlink_to(Path("..") / "harness" / "cli.py")
+    link.symlink_to(Path("..") / "scripts" / "mutate.py")
 
     assert _symlink_escapes(tmp_path, ["skills/internal.md"]) == ["skills/internal.md"], (
         "a surface-named entry symlinked to app code was not flagged — the guard "
         "must resolve symlinks before judging the boundary."
+    )
+    # The fixture really is app code, not merely non-surface. Asserted through
+    # the same predicates the live registry sweep calls, so a re-anchoring that
+    # picked a path outside both sets fails here instead of reading green.
+    assert _app_paths(["scripts/mutate.py"]) == ["scripts/mutate.py"], (
+        "the symlink fixture's target is not under APP_PREFIXES — this control "
+        "would prove only that the target left the surface, not that app code "
+        "rides the install."
+    )
+    assert _non_surface_paths(["scripts/mutate.py"]) == ["scripts/mutate.py"], (
+        "the symlink fixture's target resolves inside a surface directory — the "
+        "escape it is meant to demonstrate is not an escape."
     )

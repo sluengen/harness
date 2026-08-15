@@ -195,7 +195,13 @@ def _unresolved(
 #: extraction that stopped extracting — without it, a broken ``_TOKEN`` or
 #: ``_PATH_SHAPED`` reports zero dangling paths, which reads exactly like a
 #: clean tree.
-_RESOLUTION_FLOOR = 30
+#:
+#: Set just under the 77 measured across the six entry documents at the teardown.
+#: It sat at 30 against that same population, which is slack enough to swallow
+#: ``CONTEXT.md`` — the document contributing 37 of the 77 — without the floor
+#: moving. A floor that survives losing its largest subject is not measuring the
+#: extraction, only asserting that something was extracted.
+_RESOLUTION_FLOOR = 72
 
 #: The floor under the **registry** half, which is counted separately and not
 #: pooled with the one above. Mutating ``_TOKEN`` to match nothing was the entry
@@ -203,7 +209,10 @@ _RESOLUTION_FLOOR = 30
 #: kept the total over the line, so the prose extractor could die completely and
 #: the sweep stayed green. Two halves that can fail independently need two
 #: floors, or the larger one masks the other.
-_REGISTRY_FLOOR = 40
+#:
+#: Set just under the 60 keys measured at the teardown, for the reason above: at
+#: 40 the pattern could stop reading a third of the registry and stay green.
+_REGISTRY_FLOOR = 55
 
 
 def test_every_path_the_entry_documents_name_resolves() -> None:
@@ -372,9 +381,30 @@ _RETIRED_TOKENS = re.compile(
     r"|/harness routine"
     r"|the run ledger"
     r"|verb loop"
+    r"|CLI verb"
+    r"|harness engine"
+    r"|spend breaker"
     r"|guidance-coherence",
     re.IGNORECASE,
 )
+
+#: **Why the token set is anchored, and what it therefore cannot see.** The verb
+#: alternations require the literal word ``harness`` in front, because every one
+#: of them — ``start``, ``review``, ``close``, ``ship`` — is *also* the name of a
+#: live command. A predicate keyed on the bare word would flag the correct
+#: instruction on nearly every page, and the cheapest fix for that failure is
+#: deleting true prose. The three phrases added by the review pass
+#: (``CLI verb``, ``harness engine``, ``spend breaker``) are exactly the shapes
+#: that gap let through: unambiguous names for retired machinery that collide
+#: with no live command.
+#:
+#: ``audited verb`` is deliberately **not** here, and the reason is the same one
+#: that keeps the marker set narrow. Two superseded Decision blocks — inside
+#: files that are otherwise live — use the phrase to state what was decided. The
+#: blocks carry dated supersede notes, but this sweep's unit is the *sentence*,
+#: so it cannot see a block-level note, and adding the phrase would make its
+#: cheapest fix an edit to a historical record. A sweep that rewrites history to
+#: stay green is not measuring the live surface.
 
 #: Words that mark a sentence as *recording* the retirement rather than
 #: instructing in it. A live document may — and several must — say the mechanism
@@ -391,33 +421,71 @@ _RETIREMENT_MARKERS = re.compile(
 )
 
 
+#: Suffixes the live projection reads. ``.json`` is here because the review pass
+#: found the settings files carrying paragraph-long permission rationales naming
+#: the retired routines — distributed guidance an agent reads as current fact,
+#: and wholly outside a Markdown-only projection. That was a gap in the
+#: projection, not a scope choice: nothing about a permission rationale makes it
+#: less of a live instruction for being written inside a JSON string.
+_LIVE_SUFFIXES = (".md", ".json")
+
+
 def _live_markdown() -> list[str]:
-    """Every tracked Markdown file that can carry a *live* instruction."""
+    """Every tracked prose file that can carry a *live* instruction."""
     return sorted(
         rel
         for rel in (
             str(path.relative_to(_REPO_ROOT)) for path in tracked_files_under(".")
         )
-        if rel.endswith(".md")
+        if rel.endswith(_LIVE_SUFFIXES)
         and not rel.startswith(_HISTORICAL_PREFIXES)
         and rel != _SELF
     )
 
 
+def _classify_runtime_sentences(text: str) -> tuple[list[str], int]:
+    """``(sentences instructing in the retired vocabulary, count recording it)``.
+
+    The one home of the sweep's predicate. The live sweep needs both halves — the
+    offenders it fails on and the compliant count its floor asserts upward — and
+    the controls need the offender half; returning both from one function is what
+    stops the sweep re-spelling the predicate its controls certify. It did
+    re-spell it: the loop below carried its own
+    ``_RETIRED_TOKENS`` / ``_RETIREMENT_MARKERS`` conditions, so the controls and
+    the live path were near-twins rather than the same code, and a change to one
+    condition could pass the controls while the sweep read differently.
+    """
+    offenders: list[str] = []
+    recorded = 0
+    for sentence in _sentences(text):
+        if not _RETIRED_TOKENS.search(sentence):
+            continue
+        if _RETIREMENT_MARKERS.search(sentence):
+            recorded += 1
+        else:
+            offenders.append(sentence)
+    return offenders, recorded
+
+
 def _live_runtime_instructions(text: str) -> list[str]:
-    """Sentences of ``text`` using the retired vocabulary without retiring it."""
-    return [
-        sentence
-        for sentence in _sentences(text)
-        if _RETIRED_TOKENS.search(sentence) and not _RETIREMENT_MARKERS.search(sentence)
-    ]
+    """Sentences of ``text`` using the retired vocabulary without retiring it.
+
+    The offender half of :func:`_classify_runtime_sentences`, so a control that
+    calls this exercises exactly the code the live sweep runs.
+    """
+    return _classify_runtime_sentences(text)[0]
 
 
 #: The floor under the live sweep's *compliant* count. The retirement is a large
 #: event and the records that describe it are supposed to name what went; if
 #: almost nothing mentions the vocabulary at all, the token set has stopped
 #: recognising it and the offender check is passing over nothing.
-_RECORDED_FLOOR = 6
+#:
+#: Set just under the 9 measured at the teardown. It sat at 6 with the same
+#: population, which is enough slack that a third of the records could stop being
+#: recognised without the floor noticing — the same defect the two floors above
+#: carried, one order smaller.
+_RECORDED_FLOOR = 8
 
 
 def test_no_live_document_still_instructs_in_the_retired_vocabulary() -> None:
@@ -426,13 +494,9 @@ def test_no_live_document_still_instructs_in_the_retired_vocabulary() -> None:
     recorded = 0
     for relpath in _live_markdown():
         text = (_REPO_ROOT / relpath).read_text(encoding="utf-8", errors="replace")
-        for sentence in _sentences(text):
-            if not _RETIRED_TOKENS.search(sentence):
-                continue
-            if _RETIREMENT_MARKERS.search(sentence):
-                recorded += 1
-            else:
-                offenders.append(f"{relpath}: {' '.join(sentence.split())[:160]}")
+        found, count = _classify_runtime_sentences(text)
+        recorded += count
+        offenders += [f"{relpath}: {' '.join(s.split())[:160]}" for s in found]
 
     assert not offenders, (
         "ADR 0015 retired the verbs, the wrapper, the ledger and the "
@@ -478,10 +542,13 @@ def test_the_predicate_catches_the_instruction_it_forbids() -> None:
         "`/harness routine build` drives the hourly tick. "
         "Every mutation is appended to the run ledger. "
         "The verb loop is what an orchestrating agent drives. "
+        "Dispatch never happens inside the deterministic start CLI verb. "
+        "The harness engine owns container construction. "
+        "The extra agent counts against the spend breaker. "
         "`/assess system` pulls `guidance-coherence` for its standards."
     )
     sentences = _sentences(live)
-    assert len(sentences) == 16, sentences
+    assert len(sentences) == 19, sentences
     caught = _live_runtime_instructions(live)
     assert caught == sentences, (
         f"the predicate missed a sentence instructing in the retired runtime: "
@@ -545,11 +612,28 @@ def test_the_sweep_reads_a_populated_live_surface() -> None:
     weaken the token set.
     """
     live = _live_markdown()
-    assert len(live) >= 40, (
+    assert len(live) >= 85, (
         f"only {len(live)} live Markdown files projected — the sweep is reading "
         f"almost nothing: {live}"
     )
+    # 85 is just under the 90 measured at the teardown. It sat at 40 against that
+    # same population, which is slack enough to lose the entire `skills/` tree —
+    # or every command doc — without the floor moving, and a projection that
+    # silently stopped reaching a tree is exactly what this floor exists for.
     assert _SELF not in live, "this module must never be its own subject"
+    # The projection's *width* is pinned, not only its size. Narrowing
+    # `_LIVE_SUFFIXES` back to Markdown drops every distributed settings file
+    # from the sweep, and the count floor above does not notice: four files out
+    # of ninety-odd is well inside its slack. The settings pair is named because
+    # it is the surface the review pass found unswept, carrying paragraph-long
+    # permission rationales an agent reads as current fact.
+    assert ".json" in _LIVE_SUFFIXES, (
+        "the live projection stopped reading JSON. `settings/harness.json` and "
+        "`.claude/settings.json` are distributed guidance whose prose lives "
+        "inside JSON strings; a Markdown-only projection never sees them."
+    )
+    for settings in ("settings/harness.json", ".claude/settings.json"):
+        assert settings in live, f"{settings} is not in the swept surface"
     assert not any(rel.startswith(_HISTORICAL_PREFIXES) for rel in live), (
         "a historical record leaked into the live projection; those files "
         "describe the runtime as it worked and must stay exempt"
@@ -570,8 +654,69 @@ def test_the_historical_exemption_names_real_trees() -> None:
         )
 
 
+def test_the_historical_exemption_is_exactly_these_four_trees() -> None:
+    """The exemption list is pinned by membership, not merely by non-emptiness.
+
+    Both this and :data:`_RETIREMENT_MARKERS` below are **grants**, and a sweep
+    keyed on grants fails *open* when one is appended: adding ``"skills/"`` here
+    would exempt the whole distributed skill set from the retired-vocabulary
+    sweep, and every assertion in this module would stay green — the
+    non-emptiness check above passes on a wider list just as happily as on this
+    one. Pinning the set is what makes an addition a decision someone has to
+    write down rather than a silent widening.
+    """
+    assert _HISTORICAL_PREFIXES == (
+        "assessments/",
+        "specs/proposals/",
+        "specs/retired/",
+        "specs/decisions/",
+    ), (
+        f"the historical exemption changed to {_HISTORICAL_PREFIXES}. Each entry "
+        f"excuses a whole tree from the sweep; adding one is a decision about "
+        f"what stops being checked, so it belongs in this assertion too."
+    )
+
+
+def test_the_retirement_markers_are_pinned() -> None:
+    r"""The marker vocabulary is pinned, for the same fail-open reason.
+
+    A marker excuses a sentence from the sweep. Appending an alternation that
+    matches common prose — ``\bhook\w*`` was the one an independent mutation
+    table found surviving — excuses every sentence containing that word, so a
+    live instruction to run a retired verb would pass as long as it also
+    mentioned a hook. The negative control below proves the markers that *are*
+    here work; only a membership pin catches one that should not be.
+    """
+    assert _RETIREMENT_MARKERS.pattern == (
+        r"\bretire\w*|\bsupersed\w*|\bno longer\b|\bwas\b|\bwere\b|\buntil\b"
+        r"|\breplac\w*|\bdeleted\b|\bremoved\b|\bformerly\b|\binert\b|\bnothing reads\b"
+        r"|\bpreviously\b"
+    ), (
+        f"the retirement-marker set changed to {_RETIREMENT_MARKERS.pattern!r}. "
+        f"Every alternation is a grant that excuses a sentence from the sweep — "
+        f"widening it narrows what this module checks, silently."
+    )
+
+
+#: Every entry document, with the reason it is required reading. A **membership**
+#: assertion, because ``_ENTRY_DOCUMENTS`` is hand-written and dropping an entry
+#: from it removes a document from the resolution sweep without failing anything:
+#: the floor absorbs the loss, the dangling check simply stops reading the file,
+#: and both stay green. ``CONTEXT.md`` is the one that mattered — it contributes
+#: 37 of the 77 resolved paths, so it is both the most valuable subject and the
+#: cheapest to lose unnoticed.
+_REQUIRED_ENTRY_DOCUMENTS = {
+    "CONTEXT.md": "this repo's own values, and the densest source of repo paths",
+    "process/harness.md": "the canonical process doc every agent reads",
+    "registry.yaml": "the manifest naming every distributed file",
+    "CLAUDE.md": "a byte-identical mirror an agent host may load instead",
+    "AGENTS.md": "a byte-identical mirror an agent host may load instead",
+    "GEMINI.md": "a byte-identical mirror an agent host may load instead",
+}
+
+
 def test_the_entry_documents_are_tracked_and_mirrored() -> None:
-    """The (a) subject list names real files, and covers all three mirrors.
+    """The (a) subject list names real files, and covers every required document.
 
     ``_ENTRY_DOCUMENTS`` is hand-written, so a typo in it silently drops a
     document from the resolution sweep while every assertion stays green. Git is
@@ -588,8 +733,9 @@ def test_the_entry_documents_are_tracked_and_mirrored() -> None:
         f"an entry document is not tracked under the name this module uses: "
         f"{tracked.stderr.strip()}"
     )
-    for mirror in ("CLAUDE.md", "AGENTS.md", "GEMINI.md"):
-        assert mirror in _ENTRY_DOCUMENTS, (
-            f"{mirror} is a byte-identical mirror of process/harness.md that an "
-            f"agent host may load *instead* of it, so it must be swept too"
+    for required, reason in _REQUIRED_ENTRY_DOCUMENTS.items():
+        assert required in _ENTRY_DOCUMENTS, (
+            f"{required} dropped out of the resolution sweep's subject list. It "
+            f"is required reading: {reason}. Removing it costs nothing visible — "
+            f"no assertion fails, the sweep just stops reading the file."
         )

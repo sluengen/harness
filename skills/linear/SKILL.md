@@ -2,7 +2,7 @@
 name: linear
 description: Use when the repo's CONTEXT.md says tracker linear and you need to read or update a ticket — opening an issue, filing one, resolving team/state/label IDs, moving status, or commenting. The Linear provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:linear@0.8.0 -->
+<!-- guidance:linear@0.8.1 -->
 # Linear
 
 The **Linear provider recipes** for the tracker protocol. Policy — the operation set, the state names, filing and placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against Linear's API.
@@ -31,7 +31,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the `tr
 
 ## A merged PR auto-transitions every ticket it names
 
-Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a harness verb: the audited verbs transition state on purpose; the integration does it on sight of an id. The deliberate-linking rule is `tracker` sync rule 6.
+Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: `/ship` transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is `tracker` sync rule 6.
 
 ## Accessing Linear (GraphQL via curl)
 

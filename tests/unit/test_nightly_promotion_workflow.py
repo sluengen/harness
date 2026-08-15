@@ -2,7 +2,7 @@
 
 The step's logic lives in ``scripts/promotion-step.sh``, and what that logic
 *does* is proven by executing it against a stubbed ``git`` in
-``tests/integration/test_promotion_step_script.py`` — the instrument swap of
+``tests/unit/test_promotion_step_script.py`` — the instrument swap of
 ``specs/proposals/promotion-guard-instrument.md``, whose rule is recorded in
 ``specs/architecture-principles.md`` (*CI logic lives in a script, not in a
 `run:` block*). Four tickets of regex (#390, #391, #393, #394) derived call sites
@@ -129,7 +129,7 @@ def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
     Three assertions whose conjunction pins the ``run:`` value exactly, without
     any one of them restating another: the value is ``bash`` plus one token, that
     token names a file that exists, and that file is :data:`SCRIPT` — the module
-    ``tests/integration/test_promotion_step_script.py`` actually executes. A
+    ``tests/unit/test_promotion_step_script.py`` actually executes. A
     workflow pointing at some *other* script would be green on the first two and
     is caught by the third; a workflow that grew ``| tee run.log`` is caught by
     the first, and that matters beyond tidiness, because ``::error::``
@@ -206,7 +206,7 @@ def test_the_script_still_drives_the_promotion(token: str) -> None:
     """A presence check, and deliberately no more.
 
     What the script *does* with each of these is proven by executing it
-    (``tests/integration/test_promotion_step_script.py``); this only pins that
+    (``tests/unit/test_promotion_step_script.py``); this only pins that
     the file the workflow runs is still the promotion, so a script emptied to
     ``true`` fails here rather than leaving the executed guard asserting over an
     empty invocation list.
