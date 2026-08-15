@@ -40,10 +40,20 @@ from __future__ import annotations
 import contextlib
 import shutil
 import subprocess
+from enum import StrEnum
 from pathlib import Path
 
 from harness.branch_config import integration_branch
 from harness.identity import WORKTREES_SUBDIR
+
+# size: the shared git-invocation leaf every verb shells out through. #372
+# pushed it past 500 by giving teardown the registry probe that tells a *locked*
+# worktree from an orphaned directory — the two states ``git worktree remove``
+# reports with the same exit code. That probe has to sit beside the teardown it
+# discriminates for, and this module is already the one place below the CLI that
+# owns "how the verbs talk to git". A seam does exist (invocation primitive vs.
+# branch resolution vs. worktree teardown), and splitting on it would move five
+# import sites — deliberately not folded into a bug fix. See #372's handoff.
 
 #: The back-compat fallback base branch when neither CONTEXT.md nor the repo's
 #: origin default resolves one — the harness's own integration branch (CAL-1106).
@@ -353,6 +363,74 @@ def preferred_base_ref(repo_root: Path, base: str) -> str:
     return base
 
 
+class TeardownOutcome(StrEnum):
+    """What :func:`teardown_worktree` did to the *worktree* half of its subject
+    (#372). Returned, never raised — teardown stays best-effort (CAL-767), so a
+    caller reporting a refusal reads this rather than re-deriving one from the
+    filesystem, which cannot tell a survivor from a refusal.
+    """
+
+    #: ``git worktree remove --force`` succeeded: directory and entry both gone.
+    RECLAIMED = "reclaimed"
+    #: Nothing was registered at that path, so the directory on disk was cruft.
+    ORPHAN_REMOVED = "orphan_removed"
+    #: The worktree is locked. **Both halves were left alone.**
+    LOCKED = "locked"
+    #: Removal failed while the path is still registered, or the registry could
+    #: not be read. Both halves left alone: a teardown that cannot tell which
+    #: case it is in must not act.
+    UNKNOWN = "unknown"
+    #: Outside ``.worktrees/harness/`` — neither half was ever eligible.
+    SKIPPED_AREA = "skipped_area"
+
+
+def _registration_state(repo_root: Path, worktree_path: Path) -> str | None:
+    """Is ``worktree_path`` still a registered worktree, and is it locked (#372)?
+
+    ``"locked"`` / ``"registered"`` / ``"unregistered"``, or ``None`` for *no
+    opinion* — git could not be read, so the caller must fail closed.
+
+    The discriminator :func:`teardown_worktree` needs and never had.
+    ``git worktree remove --force`` exits **128** both for a locked worktree and
+    for a path git no longer tracks, and ``worktree_path.exists()`` is true of
+    both — so neither can separate them. The registry can: porcelain prints a
+    ``locked`` line inside a locked stanza and **omits an orphan's path
+    entirely**. Structural, not textual — nothing here reads ``stderr``, whose
+    wording drifts between git versions.
+
+    ``Path.resolve()`` on both sides is load-bearing: porcelain emits
+    **realpaths**, so a worktree added through a symlinked parent (``/tmp`` on
+    macOS) is listed resolved, and a string comparison would miss its own
+    stanza and report a locked worktree as an orphan to be destroyed.
+
+    Output carrying no ``worktree`` stanza at all answers ``None``, not
+    ``"unregistered"``: git always lists at least the main checkout, so an empty
+    parse is a failed read — and the one answer that authorises a delete must
+    never be reachable by failing to read.
+    """
+    parsed_any = False
+    try:
+        proc = run_git(repo_root, "worktree", "list", "--porcelain", timeout=15)
+        if proc.returncode != 0:
+            return None
+        target = worktree_path.resolve()
+        for stanza in proc.stdout.split("\n\n"):
+            lines = stanza.splitlines()
+            if not lines or not lines[0].startswith("worktree "):
+                continue
+            parsed_any = True
+            if Path(lines[0][len("worktree "):]).resolve() != target:
+                continue
+            # ``locked`` bare, or ``locked <reason>`` when one was given.
+            if any(ln == "locked" or ln.startswith("locked ") for ln in lines[1:]):
+                return "locked"
+            return "registered"
+    except (OSError, subprocess.SubprocessError):
+        # Includes TimeoutExpired: a wedged git is no opinion, not a failure.
+        return None
+    return "unregistered" if parsed_any else None
+
+
 def _is_safe_branch_arg(branch: str) -> bool:
     """True iff ``branch`` is safe to pass as a git branch-name positional.
 
@@ -375,7 +453,7 @@ def teardown_worktree(
     worktree_path: Path,
     branch: str | None = None,
     delete_remote: bool = False,
-) -> None:
+) -> TeardownOutcome:
     """Reclaim a run's worktree directory and branch — best-effort, never raises.
 
     One reclaim primitive for every site that finishes with a worktree it no
@@ -383,56 +461,44 @@ def teardown_worktree(
     merge has landed, and ``worktrees cleanup`` sweeping a merged run. It runs
     *after* the operation it follows has already succeeded, so a teardown failure
     must never mask or undo that — every git call ignores its result and no path
-    here raises (CAL-767).
+    here raises (CAL-767). What happened comes back as a
+    :class:`TeardownOutcome` instead.
 
-    Steps, in order:
+    Three steps: ``git worktree remove --force`` the directory *and* its admin
+    entry, then ``git branch -D`` the local branch (when given), then
+    ``git push origin --delete`` it when ``delete_remote`` (a checkpoint push
+    may have created it). Step 1 runs whether or not the directory is present —
+    git clears a registration whose directory is already gone, which keeps a
+    stale entry from blocking a later ``git worktree add`` at that path — and on
+    a refusal :func:`_registration_state` decides what happens next. Steps 2 and
+    3 run on **every** step-1 outcome, ``LOCKED`` included: a lock is a
+    statement about a directory and says nothing about a branch.
 
-    1. ``git worktree remove --force`` the directory *and* its admin entry under
-       ``<git-common-dir>/worktrees/``. Run whether or not the directory is
-       present: git clears a registration whose directory is already gone, which
-       is what keeps a stale entry from accumulating and blocking a later
-       ``git worktree add`` at the same path (``probe_tree.create`` reclaims a
-       leftover from a previous review exactly that way). If it exits non-zero
-       and the directory is still present, it is an **orphan** — its worktree
-       registration was already gone, so git no longer recognises it as a
-       working tree — and :func:`shutil.rmtree` removes it instead. This is the
-       cruft case a plain ``git worktree remove`` cannot touch.
-    2. ``git branch -D <branch>`` to delete the local branch (when given).
-    3. ``git push origin --delete <branch>`` when ``delete_remote`` — a
-       checkpoint push may have created the branch on ``origin``; once the run is
-       merged it is dead weight. A no-op (and harmless non-zero exit) when the
-       remote ref does not exist.
+    **A lock is honoured, never overridden (#372).** ``git worktree remove
+    --force`` refuses a locked worktree; the refusal is reported, not escalated
+    — teardown never issues ``remove -f -f`` and never unlocks. Nor is it
+    mistaken for an orphan: both refusals exit 128, so the discriminator is
+    whether the path is *still registered*, never whether its directory exists.
+    Only an **unregistered** path reaches :func:`shutil.rmtree` — the cruft a
+    plain ``git worktree remove`` cannot touch. A path still registered, and a
+    registry that cannot be read, both fail closed to ``UNKNOWN``: neither half
+    touched, and the caller told.
 
-    **Blast radius (#371).** Step 1 names the one path teardown was asked to
-    reclaim, and git touches no other registration — verified against
-    ``git worktree remove``, which leaves an unrelated stale entry registered.
-    Until #371 the step was followed by a bare, repo-wide ``git worktree prune``.
-    That command takes no path, and every verb runs *in the container*, where the
-    repo is mounted at ``/workspace`` and nothing else on the host filesystem
-    exists — so the prune read every worktree registered outside the mount as
-    missing and deleted its admin entry. The directory survived on the host, so
-    the damage stayed invisible until something read that tree and git answered
-    ``fatal: not a git repository: <repo>/.git/worktrees/<name>`` with exit 128,
-    arriving as a wall of red in tracked-tree guards the change never touched. A
-    *host-side* prune does not do this — the path is there — which is why it was
-    twice recorded as a race between concurrent sessions rather than as this.
-
-    **Safety:** the directory *and* the admin entry are only ever touched for a
-    path *inside* ``<repo_root>/.worktrees/harness/``. A ``worktree_path`` that
-    is the main checkout (or anything outside the run-worktree area) skips both —
-    the ``rmtree`` fallback must never be able to destroy the repository itself,
-    and deregistering a directory teardown may not remove would leave exactly the
-    broken half-state above. The branch operations still run (deleting a merged
-    run branch is safe) —
-    unless ``branch`` is flag-like (leading ``-``), which :func:`_is_safe_branch_arg`
-    refuses so an untrusted, tracker-parsed name cannot be read by git as an
-    option instead of a branch.
+    **Safety:** both halves are only ever touched for a path *inside*
+    ``<repo_root>/.worktrees/harness/`` (``SKIPPED_AREA`` otherwise); a
+    flag-like ``branch`` (leading ``-``) reaches neither branch step, which
+    :func:`_is_safe_branch_arg` refuses so an untrusted, tracker-parsed name
+    cannot be read by git as an option instead of a branch. That guard and the
+    blast-radius contract behind step 1 (#371) — one named path, no repo-wide
+    ``git worktree prune`` — are recorded in
+    ``specs/features/worktree-lifecycle.md`` §*Teardown*.
     """
     worktrees_area = (repo_root / WORKTREES_SUBDIR).resolve()
     resolved = worktree_path.resolve()
     within_worktrees_area = (
         resolved != worktrees_area and worktrees_area in resolved.parents
     )
+    outcome = TeardownOutcome.SKIPPED_AREA
     if within_worktrees_area:
         # Named path, not a sweep: this clears this worktree's admin entry and
         # provably no other, including one whose directory is unreachable from
@@ -440,9 +506,19 @@ def teardown_worktree(
         # existing — a registration outliving its directory is the stale entry
         # the retired repo-wide prune used to collect.
         result = run_git(repo_root, "worktree", "remove", "--force", str(worktree_path))
-        if result.returncode != 0 and worktree_path.exists():
-            # Orphaned directory — git won't remove what it no longer tracks.
-            shutil.rmtree(worktree_path, ignore_errors=True)
+        if result.returncode == 0:
+            outcome = TeardownOutcome.RECLAIMED
+        else:
+            state = _registration_state(repo_root, worktree_path)
+            if state == "unregistered":
+                # git tracks nothing here, so whatever is on disk is cruft.
+                shutil.rmtree(worktree_path, ignore_errors=True)
+                outcome = TeardownOutcome.ORPHAN_REMOVED
+            elif state == "locked":
+                outcome = TeardownOutcome.LOCKED
+            else:
+                # Still registered, or the registry is unreadable — fail closed.
+                outcome = TeardownOutcome.UNKNOWN
     if branch and _is_safe_branch_arg(branch):
         run_git(repo_root, "branch", "-D", branch)
         if delete_remote:
@@ -458,3 +534,4 @@ def teardown_worktree(
                     branch,
                     timeout=NETWORK_GIT_TIMEOUT_SECONDS,
                 )
+    return outcome
