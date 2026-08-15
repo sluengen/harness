@@ -73,7 +73,12 @@ def test_all_three_mirrors_are_named_and_substantial() -> None:
     three of them, that each is tracked, and that the canonical doc is a real
     process document rather than a stub someone reduced all four files to.
     """
-    assert len(MIRROR_NAMES) == 3, MIRROR_NAMES
+    # Membership, not only count. A count pin is satisfied by
+    # ``("AGENTS.md", "CLAUDE.md", "CLAUDE.md")`` — three names, three real
+    # files, and GEMINI.md silently unchecked from then on. That is the cheapest
+    # way to lose this rule, and it is the same shape as losing the module was.
+    assert MIRROR_NAMES == ("AGENTS.md", "CLAUDE.md", "GEMINI.md"), MIRROR_NAMES
+    assert len(set(MIRROR_NAMES)) == 3, MIRROR_NAMES
     for name in MIRROR_NAMES:
         assert (REPO_ROOT / name).is_file(), f"{name} is missing from the repo root."
     assert len(PROCESS_DOC.read_text()) > 2000, (

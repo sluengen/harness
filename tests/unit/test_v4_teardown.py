@@ -436,6 +436,19 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
     assert len(_SURVIVING_TREES) >= 14, _SURVIVING_TREES
     assert len(_SURVIVING_PROMOTION) >= 3, _SURVIVING_PROMOTION
     assert len(_SURVIVING_GUIDANCE) >= 8, _SURVIVING_GUIDANCE
+    # Count is not membership, and for the did-not-delete-too-much control the
+    # difference is the whole assertion: swapping `tests/unit` and
+    # `tests/_gitutil.py` out for two root documents keeps the length at 14 and
+    # stops checking that the suite and its one shared helper survived at all.
+    # These four are named because each is a floor no other entry implies — the
+    # tests that remain, the helper 61 of them import, the gate, and the
+    # mutation instrument that proves a guard can fail.
+    for required in ("tests/unit", "tests/_gitutil.py", "scripts/verify.sh", "scripts/mutate.py"):
+        assert required in _SURVIVING_TREES, (
+            f"{required} dropped out of the did-not-delete-too-much control. "
+            f"Its absence is not visible in the length above, and nothing else "
+            f"here asserts that it survived."
+        )
 
 
 @pytest.mark.parametrize(
@@ -626,6 +639,13 @@ def test_an_archived_record_says_it_is_history_and_when_it_became_history(
 # AC1 — nothing living still reaches for the deleted package.
 # ---------------------------------------------------------------------------
 
+#: The trees the import sweep reads. Named as a constant and pinned below,
+#: because the sweep's subject list is as much of the predicate as its regex is:
+#: narrowing the call to ``tracked_py_sources("scripts")`` leaves every assertion
+#: in this module green while ``tests/`` — 130-odd modules, the population that
+#: actually imported the package — stops being read at all.
+_IMPORT_SWEEP_ROOTS = ("scripts", "tests", "templates")
+
 #: An ``import harness`` / ``from harness[.sub] import …`` statement, at any
 #: indentation.
 #:
@@ -663,9 +683,17 @@ def test_no_surviving_python_imports_the_retired_package() -> None:
     deletion and a gate that is red everywhere for a reason unrelated to the
     change under review.
     """
-    importers = _engine_importers(
-        tracked_py_sources("scripts", "tests", "templates"), root=_REPO_ROOT
+    assert _IMPORT_SWEEP_ROOTS == ("scripts", "tests", "templates"), (
+        f"the import sweep's subject roots changed to {_IMPORT_SWEEP_ROOTS}. "
+        f"Every tracked Python tree must be read; dropping one costs nothing "
+        f"visible — the sweep simply stops looking there."
     )
+    swept = tracked_py_sources(*_IMPORT_SWEEP_ROOTS)
+    assert len(swept) >= 120, (
+        f"the import sweep read only {len(swept)} Python sources — the tracked "
+        f"tree carries far more, so the roots have stopped resolving"
+    )
+    importers = _engine_importers(swept, root=_REPO_ROOT)
     assert importers == [], (
         f"these modules still import the retired `harness` package: {importers}. "
         f"ADR 0015 deletes it; remove the dependency rather than restoring the "

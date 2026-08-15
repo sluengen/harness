@@ -59,3 +59,15 @@ The existing installer/`/update-guidance` mechanism is retained for now — it i
 - **All 61 open issues close citing this ADR.** #362 alone is re-filed in the new shape (visual evidence as a capability of the review skill, carrying #361's measured narrowing: viewport-height slices per width, a documented max capture height). The four held `decision` tickets (#351, #364, #411, #416) become moot — each awaited a judgment about a subsystem this ADR retires.
 - Lesson-bearing closures (#432 plan-mode-is-not-a-sandbox, #421 negation polarity, #420 fail-open blacklists, and the wider vacuity catalogue) are preserved in the craft file, not as tickets.
 - The teardown itself is tracked as new, bounded work; success criterion for v4: a new repo adopts it in minutes, and the harness itself does not need a ticket for a month.
+
+## The final shape *(recorded by the reviewer at the close of #435)*
+
+The teardown ran in five stages. Measured over the git index — regular-file blobs and symlinks counted separately, since twenty-odd `.codex/` and `.claude/` entries are symlinks — the tree went from **657 tracked paths / 159,547 lines** at `32b1bc9` to **345 tracked paths / 51,342 lines** at `f5f9d98`: 312 paths and 108,205 lines removed, leaving 32% of the repository.
+
+The `harness/` package is gone whole — no seam left the rest importable — and with it `docker/`, `bin/harness`, the GHCR release workflow, `SPEC.md`, the changelog and its archive, the `/harness` command namespace, the `guidance-coherence` skill, and 191 test modules. `tests/integration/` went entirely; the one guard there whose subject survives moved to `tests/unit/`.
+
+What remains is three things. **The guidance surface** — `skills/`, `agents/`, `commands/`, `templates/`, `hooks/`, `process/harness.md` and its three byte-identical mirrors, with `registry.yaml` as the manifest. **The gate** — `scripts/verify.sh`, now ruff, `mypy scripts templates`, one pytest stage with a coverage floor over `scripts/`, and the two `docs/index.html` drift guards; `scripts/mutate.py` is the instrument that proves a guard can fail. **The guards** — `tests/unit/`, almost entirely tree-readers, running 1,522 tests at 79.12% coverage of the surviving executable code.
+
+Two things survived that the shape of the change made it tempting to remove, both by operator decision: the `dev → staging → main` topology with its nightly automation, which now runs on plain git rather than an audited verb, and `/build --engine codex` with the generated `.codex/` surface.
+
+The retired subsystems' as-built records were **archived, not deleted** — six feature specs moved to `specs/retired/` under dated banners citing this ADR. A retired subsystem's record is what explains the shape of the tree that replaced it, and this teardown is the case in point.

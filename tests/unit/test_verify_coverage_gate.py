@@ -151,6 +151,32 @@ def test_gate_measures_the_scripts_tree() -> None:
         )
 
 
+def test_gate_typechecks_both_surviving_python_trees() -> None:
+    """The mypy stage names ``scripts`` **and** ``templates``.
+
+    The twin of :func:`test_gate_measures_the_scripts_tree`, and it was missing.
+    #435 re-pointed this stage from ``mypy harness`` to ``mypy scripts
+    templates``, so the target is new in this change and nothing pinned it:
+    narrowing it back to ``mypy scripts`` — or dropping the stage — left the
+    suite green while ``templates/generate_codex_artifacts.py``, the script that
+    produces the whole distributed ``.codex/`` surface, stopped being typed.
+    A wiring field is a family, not a line.
+    """
+    stages = [
+        line.strip()
+        for line in VERIFY.read_text().splitlines()
+        if line.strip().startswith("uv run") and " mypy " in f" {line} "
+    ]
+    assert len(stages) == 1, f"expected exactly one mypy stage; found {stages}"
+    tokens = shlex.split(stages[0])
+    for tree in ("scripts", "templates"):
+        assert tree in tokens[tokens.index("mypy") + 1 :], (
+            f"scripts/verify.sh's mypy stage must typecheck `{tree}` — both "
+            f"surviving Python trees are strict-typed and `CONTEXT.md`'s "
+            f"`commands.typecheck` promises both:\n  {stages[0]}"
+        )
+
+
 def test_gate_enforces_the_coverage_floor() -> None:
     """Exactly one stage carries the floor, with the expected value."""
     commands = pytest_commands()

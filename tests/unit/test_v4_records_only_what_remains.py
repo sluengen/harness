@@ -443,6 +443,33 @@ def _live_markdown() -> list[str]:
     )
 
 
+#: A Markdown block boundary: a blank line, or the start of a list item, a
+#: heading, or a table row.
+#:
+#: The sweep's unit is a sentence *within a block*, and the block half is
+#: load-bearing rather than tidy. :func:`_sentences` splits on ``[.!?]`` followed
+#: by whitespace and a capital, which no Markdown bullet, heading or table row
+#: satisfies — so a run of list items merges into one "sentence" thousands of
+#: characters long. ``CONTEXT.md``'s Decisions index is the live case: it forms a
+#: single 2,677-character unit that runs from the index into *Gotchas*, and
+#: because the index says "superseded" the whole span is excused. An instruction
+#: to run a retired verb added anywhere in it passed the sweep silently, which
+#: was verified by adding one. The polarity anchor was computing the opposite
+#: boolean because the text unit was wrong.
+#:
+#: Splitting on blank lines alone is not enough (the index is one block), and
+#: splitting on every line is too much: it cuts hard-wrapped prose mid-sentence
+#: and turns the true retirement record in ``commands/promote.md`` into a false
+#: offender. A block boundary is the unit that separates one *statement* from the
+#: next without severing either.
+_BLOCK_BREAK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s|#{1,6}\s|\|))")
+
+
+def _units(text: str) -> list[str]:
+    """The sweep's text units: sentences, scoped to one Markdown block each."""
+    return [unit for block in _BLOCK_BREAK.split(text) for unit in _sentences(block)]
+
+
 def _classify_runtime_sentences(text: str) -> tuple[list[str], int]:
     """``(sentences instructing in the retired vocabulary, count recording it)``.
 
@@ -457,7 +484,7 @@ def _classify_runtime_sentences(text: str) -> tuple[list[str], int]:
     """
     offenders: list[str] = []
     recorded = 0
-    for sentence in _sentences(text):
+    for sentence in _units(text):
         if not _RETIRED_TOKENS.search(sentence):
             continue
         if _RETIREMENT_MARKERS.search(sentence):
@@ -554,6 +581,51 @@ def test_the_predicate_catches_the_instruction_it_forbids() -> None:
         f"the predicate missed a sentence instructing in the retired runtime: "
         f"expected all {len(sentences)}, caught {len(caught)}. Missed: "
         f"{[s for s in sentences if s not in caught]}"
+    )
+
+
+def test_a_neighbouring_records_marker_does_not_excuse_an_instruction() -> None:
+    """The text unit is part of the predicate, and this pins which unit it is.
+
+    A marker grants amnesty to *its own* statement, never to the document region
+    around it. Before this, it granted amnesty to the region: ``_sentences``
+    finds no break between Markdown list items, so ``CONTEXT.md``'s Decisions
+    index and the *Gotchas* section below it were one 2,677-character "sentence",
+    and the index's own ``superseded`` excused a live ``harness close``
+    instruction added under the heading. The sweep reported zero offenders. That
+    is the exact shape below, in miniature.
+
+    The second half is the reason the fix is a *block* boundary and not a line
+    boundary: a hard-wrapped true record must survive being split. Cutting on
+    every newline makes the middle line of ``commands/promote.md``'s retirement
+    paragraph a false offender, and the cheapest fix for a false offender is
+    deleting a correct sentence.
+    """
+    index_then_instruction = (
+        "## Decisions index\n"
+        "\n"
+        "- [0008 — inherited ledger events](specs/decisions/0008.md) — superseded\n"
+        "- [0009 — verb attempt telemetry](specs/decisions/0009.md) — superseded\n"
+        "\n"
+        "## Gotchas\n"
+        "\n"
+        "- Run `harness close` to merge the branch.\n"
+    )
+    caught = _live_runtime_instructions(index_then_instruction)
+    assert caught == ["- Run `harness close` to merge the branch."], (
+        f"a retirement marker in a neighbouring block excused a live "
+        f"instruction; caught {caught}. The marker must scope to its own "
+        f"statement, or the sweep passes over anything written near a record."
+    )
+
+    hard_wrapped_record = (
+        "The mechanism is plain git plus the repo's own verify gate. ADR 0015\n"
+        "retired the audited `harness promote` verb loop that used to drive\n"
+        "this; the topology and its nightly automation are kept.\n"
+    )
+    assert not _live_runtime_instructions(hard_wrapped_record), (
+        "a hard-wrapped true record was split into a false offender — the unit "
+        "is a block, not a line, precisely so this stays legal."
     )
 
 
