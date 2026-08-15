@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.11.0 -->
+<!-- guidance:review-discipline@0.12.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -57,21 +57,22 @@ Only after Stage 1 passes.
 |---|---|---|
 | **Critical** | Security hole, data loss, crash, spec violation | Blocks approval |
 | **High** | Logic bug, missing validation, missing test for a criterion | Blocks approval |
-| **Medium** | Minor inefficiency, incomplete error handling, structural drift | Fix now if small (1–5 lines); carry-forward only if out of scope |
-| **Low** | Suggestion, minor improvement | Fix now if trivial; otherwise record in the review notes and drop — **never filed as a ticket** |
+| **Medium** | Minor inefficiency, incomplete error handling, structural drift | Does not block |
+| **Low** | Suggestion, minor improvement | Does not block |
 
-Critical and High block. Medium and Low do not, **but fix them in the same pass when the fix is small** — the builder already has the context, so deferring a two-line fix wastes more effort than doing it.
+**Severity answers exactly one question: does this finding block the PASS.** Critical and High block; Medium and Low do not. What *happens* to a finding — fixed here, or written up — is the size axis below, and severity never enters that decision.
 
-### Fix now vs carry-forward
+### Fixed here or written up — the size axis (ADR 0015)
 
-**Fix now:** any mechanical, localised fix on code the task already touched (stale comment, missing validation, wrong helper, a duplicated block). If you can state the fix in one sentence, fix it now.
+The default posture is **fix it now — do the job right the first time**. A one-line High gets fixed in the same breath as a one-line Low; the builder already has the context, and fixing a small thing costs less than discussing it. The only legitimate reason not to fix a finding now is **size**: the fix is genuinely large enough to blow out the diff and the review in flight, or to stall the queue behind work the ticket never promised. Severity was always a bad proxy for that cost. Three outcomes, no residue:
 
-**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. Before filing, apply the `tracker` skill's *Bundle before you file* check: an open unstarted ticket on the same surface gets this finding appended to it rather than a twin filed beside it. Only when nothing bundles does it become its own ticket — and state in the finding why it cannot be fixed in-branch.
+- **Small → fix now, any severity.** Small means cheap **and** contained — a bounded edit whose consequences end where the edit does. A two-line change in a load-bearing area with a wide blast radius is not small; that is a size judgment, not a severity one.
+- **Large and non-blocking → write it up.** Apply the `tracker` skill's *Bundle before you file* check first: an open unstarted ticket on the same surface gets this finding appended rather than a twin filed beside it. Only when nothing bundles does it become its own ticket — and state in the finding why it cannot be fixed in-branch.
+- **Large and blocking → FAIL.** This is not a filing decision: the ticket cannot ship as scoped. Follow *On a FAIL* below; if the budget or the scope cannot absorb it, the ticket goes on operator hold and a human re-scopes.
 
-Two bounds on filing (ADR 0015), because a queue that grows under review is a failed review process:
+There is deliberately no "small but not worth doing" case. The finding bar above already filters it: a specific, stateable defect or improvement is a finding, and a small one is always worth its own cost; anything vaguer ("could be improved") never became a finding in the first place. A rule with a subjective override attached is not a rule.
 
-- **The severity floor.** Only Critical, High, and a Medium meeting the carry-forward bar may be filed. A Low is never filed — fix it or record it in the review notes and drop it.
-- **The recursion cap.** A ticket filed from a review carries the `review-finding` label; that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review files nothing below High — every other finding is fixed in-branch or recorded and dropped. One generation of follow-up, never a lineage.
+**The recursion cap** (ADR 0015), because a queue that grows under review is a failed review process: a ticket filed from a review carries the `review-finding` label — that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review fixes or drops everything it can and files **only a large-and-blocking finding** — the one case where losing it would be worse than growing the lineage. One generation of follow-up, never a lineage.
 
 ## Every finding has four parts
 
