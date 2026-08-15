@@ -1256,12 +1256,6 @@ def test_ac5_submit_parsing_unchanged_across_engines(
 _REPO_ROOT = Path(__file__).parent.parent.parent
 
 
-def test_ac6_harness_md_documents_engine_option() -> None:
-    text = (_REPO_ROOT / "commands" / "harness" / "run.md").read_text()
-    assert "--engine" in text, "the activated /harness run guidance must document --engine"
-    assert "codex" in text and "claude" in text.lower()
-
-
 def test_ac6_principle_recorded_in_architecture_principles() -> None:
     text = (_REPO_ROOT / "specs" / "architecture-principles.md").read_text()
     assert "CLI subprocess" in text, (

@@ -459,7 +459,7 @@ Config lives in a `github:` block, read by `harness/layers.py` (`github_settings
 
 ### Routing discipline
 
-The ledger is a complete audit trail only if nothing hand-rolls a `git merge` / `push` or a Linear mutation for the run lifecycle. Every git/ticket state transition routes through a verb; `close` validates against the ledger as a backstop (decision D5). The `/harness run` skill ([`commands/harness.md`](../../commands/harness.md)) forbids out-of-band mutation.
+The ledger is a complete audit trail only if nothing hand-rolls a `git merge` / `push` or a Linear mutation for the run lifecycle. Every git/ticket state transition routes through a verb; `close` validates against the ledger as a backstop (decision D5). The `/harness run` skill (`commands/harness.md`) forbids out-of-band mutation.
 
 ### Triggers
 
@@ -467,7 +467,7 @@ One execution model, **two triggers** that produce the same audited lifecycle: a
 
 ## Interface surface
 
-The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is [`commands/harness.md`](../../commands/harness.md). The verb implementations live in `harness/cli/start.py`, `harness/cli/design.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
+The verbs are part of the CLI surface; their flags, exit codes, and JSON shapes are documented in [cli-surface.md](cli-surface.md), and the agent-facing contract is `commands/harness.md`. The verb implementations live in `harness/cli/start.py`, `harness/cli/design.py`, `harness/cli/review.py`, `harness/cli/close.py`; the emitted CLI JSON is locked by `test_verb_contract_locked.py`.
 
 Every verb raises one control-flow exception — `VerbError` (`harness/cli/_verb.py`) — and translates it through one epilogue, `run_verb`, so the error-JSON shape is single-sourced rather than re-declared per verb (CAL-1013). The shape: `{"error": <message>}` on stdout under `--json`, plus a machine-readable `"reason"` **only when set** (absent, never `null`). `review` and `close` set a `reason` (the gate-refusal kinds above; an infra-wall tag for `review`); the other verbs leave it unset, keeping their bare `{"error"}` shape. The `--json` *default* stays a per-verb choice (orchestrator-consumed verbs default it on; the human-facing `reclaim` / `cancel` default it off) and is deliberately not unified. `reclaim` emits a typed `ReclaimOutput` / `SweepOutput` like every sibling verb.
 

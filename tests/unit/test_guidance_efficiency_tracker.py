@@ -23,16 +23,17 @@ def test_tracker_create_is_the_single_filing_contract() -> None:
 
 
 def test_active_repo_guidance_does_not_direct_agents_to_linear() -> None:
-    active = {
-        relative: _read(relative)
-        for relative in (
-            "CONTEXT.md",
-            "commands/harness.md",
-            "commands/promote.md",
-            "settings/harness.json",
-            ".claude/settings.json",
-        )
-    }
+    # The repo-active surface: what this GitHub-tracked repo's own agents read.
+    # ``commands/harness.md`` was a member until #435 retired it.
+    corpus = (
+        "CONTEXT.md",
+        "commands/promote.md",
+        "commands/routine.md",
+        "settings/harness.json",
+        ".claude/settings.json",
+    )
+    assert len(corpus) >= 5, "the sweep's corpus was emptied — it now measures nothing"
+    active = {relative: _read(relative) for relative in corpus}
     forbidden = (
         "LINEAR_API_KEY",
         "Linear ticket",

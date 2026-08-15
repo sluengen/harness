@@ -117,7 +117,7 @@ The harness never decides what to build or how. The session does; the verbs reco
 
 ---
 
-> **§3, §5–§10, §12–§15, and §17–§18 described the retired deterministic workflow engine — their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers below.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current, and **§16 *Non-Goals*** is standing policy rather than engine design.) The re-homed doc is kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement in the re-homed doc as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is [`commands/harness.md`](commands/harness.md).
+> **§3, §5–§10, §12–§15, and §17–§18 described the retired deterministic workflow engine — their bodies are re-homed to [`specs/retired/spec-engine.md`](specs/retired/spec-engine.md), leaving stub pointers below.** (Exceptions: **§4 *Core Module Design*** and **§11 *CLI Design*** have been rewritten to the as-built verb system — read them as current, and **§16 *Non-Goals*** is standing policy rather than engine design.) The re-homed doc is kept for historical reference and for the mechanics that were **re-homed as verb helpers** (worktree lifecycle, codex dispatch, the SQLite store, git/Linear helpers). The YAML-walking orchestration — `engine/runner|executor|loop|retry`, the node protocol, the workflow schema, contract/derive machinery, and `build*.yaml` — was deleted in CAL-574 (proposal [`harness-as-tool`](specs/proposals/harness-as-tool.md), decision D1). Treat any "the engine walks the workflow / the YAML decides the route" statement in the re-homed doc as superseded by §1–2. The current schema reference is [`specs/features/run-ledger.md`](specs/features/run-ledger.md) § Schema reference; the current command contract is `commands/harness.md`.
 
 ---
 
@@ -342,7 +342,7 @@ The surface above is **fixed**. There is no per-workflow dynamic subcommand
 generation: each verb is a hand-written Typer command with a stable flag set,
 and adding behaviour means adding or changing a verb, not loading YAML at
 invocation. The authoritative, agent-facing contract for the verbs the
-orchestrating session drives is [`commands/harness.md`](commands/harness.md);
+orchestrating session drives is `commands/harness.md`;
 the registered command set is wired in `harness/cli/__init__.py`.
 
 ### Exit codes (stable contract)

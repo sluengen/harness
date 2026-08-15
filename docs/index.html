@@ -337,8 +337,8 @@
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
-          <div class="cmds"><code data-guidance="harness">/harness&nbsp;run</code><code data-guidance="build">/build</code><code data-guidance="start">/start</code></div>
-          <span class="status"><i class="pip pip--auto"></i> Automated · the harness app is the tool inside this loop</span>
+          <div class="cmds"><code data-guidance="build">/build</code><code data-guidance="routine">/routine</code><code data-guidance="start">/start</code></div>
+          <span class="status"><i class="pip pip--auto"></i> Automated · the agent drives this loop end to end</span>
         </div>
       </article>
 
@@ -592,10 +592,9 @@
 
     <div class="drive">
       <b>How an agent drives it.</b> One session runs the loop —
-      <code data-guidance="harness">/harness&nbsp;run&nbsp;&lt;TICKET&gt;</code> orchestrates
-      <code>start</code> → implement → <code>review</code> → (fix → review)* → <code>close</code>. It writes the code
-      inline; it never hand-rolls a merge, push, or tracker write — every state change routes through a verb. Each verb
-      runs as a one-shot container via the <code>~/bin/harness</code> Docker wrapper.
+      <code data-guidance="build">/build&nbsp;&lt;TICKET&gt;</code> takes it from
+      the ticket through implement → verify → review → (fix → review)* → ship. It writes the code inline, and every
+      claim it makes is backed by the repo's own verify gate run and read in that session.
     </div>
   </section>
 
@@ -624,7 +623,6 @@
         <span class="cat-item"><code class="cat-name" data-guidance="linear">linear</code><span class="cat-line">The single home for reading and updating the Linear queue.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="work-discovery">work-discovery</code><span class="cat-line">How an unattended routine picks its own next ticket.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="assessment-craft">assessment-craft</code><span class="cat-line">The methodology for a periodic <code>/assess</code> health pass.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="guidance-coherence">guidance-coherence</code><span class="cat-line">Standards for assessing the guidance system itself.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="ux-design">ux-design</code><span class="cat-line">Designing a user-facing surface — flow, states, architecture.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="design-system">design-system</code><span class="cat-line">Building UI with the repo's tokens and primitives (layer-gated).</span></span>
       </div>
@@ -647,8 +645,8 @@
         <span class="cat-item"><code class="cat-name" data-guidance="review">/review</code><span class="cat-line">Run the final gate on the current branch.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="ship">/ship</code><span class="cat-line">Integrate and close, per the repo's branch model.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="build">/build</code><span class="cat-line">Autonomous agent-led driver: implement → verify → review → ship.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="harness">/harness&nbsp;run</code><span class="cat-line">Drive a ticket through the audited <code>start → review → close</code> verb loop.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="assess">/assess</code><span class="cat-line">Run the steward over the codebase or the guidance.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="routine">/routine</code><span class="cat-line">One unattended tick: discover the next ticket, build it, ship it.</span></span>
+        <span class="cat-item"><code class="cat-name" data-guidance="assess">/assess</code><span class="cat-line">Run the steward over the codebase — code or architecture.</span></span>
         <span class="cat-item"><code class="cat-name" data-guidance="update-guidance">/update-guidance</code><span class="cat-line">Pull upstream guidance changes into this repo.</span></span>
       </div>
     </div>

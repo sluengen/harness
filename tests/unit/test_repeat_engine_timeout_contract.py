@@ -249,32 +249,6 @@ def _slice(doc: str, start_needle: str, end_needle: str) -> str:
     return doc[start : doc.index(end_needle, start)]
 
 
-def test_the_infra_wall_paragraph_bounds_the_re_run() -> None:
-    """``commands/harness.md`` says to just re-run an infra wall — with a bound.
-
-    That instruction is the orchestrator's actual retry site: the harness verb is
-    one-shot, so the loop #330 spent 48 minutes in was driven by this prose. It
-    must now say the re-run is bounded and name the refusal that ends it, by tag,
-    so a rename cannot leave the doc promising a tag nobody emits.
-
-    The bound is asserted as the **claim** the paragraph makes, not as the bare
-    token ``once``. That token was the original guard and it did not hold: a
-    rewrite dropping the bound outright — "re-run it with care", followed by an
-    ordinary "read the verdict once the engine returns" elsewhere in the region —
-    still satisfied it, because ``once`` is common enough in running prose to
-    reappear by accident. The negation is what carries the meaning: a doc telling
-    the reader to re-run *until it works* is exactly the loop this ticket closes,
-    so its explicit denial is the sentence worth pinning.
-    """
-    region = _slice(
-        HARNESS_COMMAND.read_text(),
-        "**A review that produced no verdict is not a `fail`.**",
-        "Act on `verdict`:",
-    )
-    assert REPEAT_ENGINE_TIMEOUT_REASON in region
-    assert "not until it works" in region
-
-
 def test_the_exit_4_row_lists_the_third_breaker() -> None:
     """The as-built exit table must name every reason that lands on exit 4.
 

@@ -57,7 +57,6 @@ from tests._gitutil import tracked_py_sources
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC = REPO_ROOT / "SPEC.md"
 README = REPO_ROOT / "README.md"
-HARNESS_CONTRACT = REPO_ROOT / "commands" / "harness.md"
 CLI_SURFACE_SPEC = REPO_ROOT / "specs" / "features" / "cli-surface.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 RUN_LEDGER_SPEC = REPO_ROOT / "specs" / "features" / "run-ledger.md"
@@ -621,7 +620,7 @@ def test_a_stale_audited_slash_list_in_a_retained_section_is_not_scanned() -> No
 #: `docker/` doc, a `specs/features/` as-built record, and a `commands/` contract
 #: — each a class the #252 widening brought in, and the first three each carried
 #: a real offender before it.
-_INJECTION_PROBES = (README, CONTEXT, CLI_SURFACE_SPEC, HARNESS_CONTRACT)
+_INJECTION_PROBES = (README, CONTEXT, CLI_SURFACE_SPEC, SPEC)
 
 
 @pytest.mark.parametrize(
@@ -776,23 +775,6 @@ def test_documented_options_exist_on_the_command() -> None:
     assert not drift, (
         f"SPEC §11 documents options the CLI does not expose: {drift}. "
         "Correct the signature against `harness/cli/` (Typer params)."
-    )
-
-
-def test_contract_documents_only_registered_verbs() -> None:
-    """Every ``harness <verb>`` the agent-facing contract invokes is registered.
-
-    ``commands/harness.md`` documents a subset (the loop verbs) — the lock is
-    that it never names a verb the CLI does not register (the CAL-601 failure
-    mode), not that it enumerates the whole surface.
-    """
-    documented = _verbs_in_fences(HARNESS_CONTRACT.read_text())
-    unknown = documented - _registered_surface()
-    assert not unknown, (
-        f"{HARNESS_CONTRACT.relative_to(REPO_ROOT)} documents `harness <verb>` "
-        f"invocation(s) the CLI does not register: {sorted(unknown)}. Either the "
-        "verb was removed/renamed or the doc drifted — reconcile against "
-        "`harness/cli/__init__.py`."
     )
 
 
@@ -1059,7 +1041,7 @@ def _hits_with_injection(doc: Path, injection: str, mp: pytest.MonkeyPatch) -> l
 
 
 @pytest.mark.parametrize(
-    "doc", (README, CONTEXT, SPEC, HARNESS_CONTRACT)
+    "doc", (README, CONTEXT, SPEC, CLI_SURFACE_SPEC)
 )
 def test_a_fenced_retired_invocation_in_a_live_doc_is_caught(
     doc: Path, monkeypatch: pytest.MonkeyPatch

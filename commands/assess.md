@@ -1,11 +1,11 @@
-<!-- guidance:assess@0.9.0 -->
+<!-- guidance:assess@0.10.0 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /assess — run a periodic assessment
 
-Usage: `/assess <scope>` — `code`, `architecture`, or `system`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
+Usage: `/assess <scope>` — `code` or `architecture`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
 
-Runs the `steward` over the codebase (or the guidance itself), produces a dated report, and files its findings as tickets. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
+Runs the `steward` over the codebase, produces a dated report, and files its findings as tickets. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
 
 ## One steward, scope selects the standards
 
@@ -15,15 +15,14 @@ There is **one** `steward` agent — the *process*. The scope you pass names the
 |---|---|---|
 | `code` | `code-quality`, `test-driven-development`, `architecture`, `engineering-principles` (+ `design-system` when the layer is on) | The codebase: size/structure drift, duplication, dead code, stale TODOs, test health, cross-cutting security, architecture drift, dependencies. |
 | `architecture` | `architecture`, `engineering-principles` | The system *shape*: purpose fit, boundary integrity, domain-model coherence, change ergonomics, operational/efficiency fit, verification architecture, spec-record health, watchlist recommendations. A **holistic** judgement — a verdict plus what to preserve, change, or watch — not a finding sweep. Canonical form `/assess architecture --deep`. |
-| `system` | `guidance-coherence` | The guidance and process: universal/repo boundary, version integrity, references, duplication, lean, profile coherence, CONTEXT currency. |
 | `code --deep` | the `code` skills, plus coverage and spec-coherence lenses | The `code` lenses **plus** test-coverage quantity, design-system adherence (layer-gated), and spec/doc coherence — the broad weekly pass. |
 
 ## The scopes — split by target and by report contract
 
 Reviews split by **axis, not dimension**. There are two surfaces: the per-change gate (`/review`, which *blocks* a merge) and this cumulative sweep (which *advises*). The sweep splits along two axes:
 
-- **Target** — `code` and `architecture` read the **codebase**; `system` reads the **guidance** that governs the work.
-- **Report contract** (within the codebase target) — `code` is a **finding engine**: accumulated defects and drift that clear the future-ticket bar become tickets, and a clean pass files nothing. `architecture` is a **holistic judgement**: *is the system shape still right for the product, and what should we preserve, change, or watch?* Its output is a verdict plus narrative — what is working, the architectural risks, a watchlist — and only the *actionable* risks become tickets. A useful architecture report can file zero tickets.
+- **Target** — both scopes read the **codebase**; there is no third target.
+- **Report contract** — `code` is a **finding engine**: accumulated defects and drift that clear the future-ticket bar become tickets, and a clean pass files nothing. `architecture` is a **holistic judgement**: *is the system shape still right for the product, and what should we preserve, change, or watch?* Its output is a verdict plus narrative — what is working, the architectural risks, a watchlist — and only the *actionable* risks become tickets. A useful architecture report can file zero tickets.
 
 Structure and tests stay *lenses inside* `code` — folding them keeps the surface small. Architecture is not folded the same way: the architecture-drift **lens** inside `code` still catches a crossed boundary or a contradicted decision *as a finding*, but the finding-engine contract squeezes out the holistic question — positive bets to preserve and trade-offs to keep are not findings, so they fall out at the "every finding is a ticket" bar. The holistic review needs a **different report contract**, not a different lens, so it is its own scope. `--deep` widens the codebase scopes (the broad weekly/periodic arm) rather than adding a target. Split any other lens into its own scope only as a per-repo escalation, when one repo's codebase is large enough that a single run overflows context or misses findings.
 

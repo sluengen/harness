@@ -248,20 +248,27 @@ def test_spec_index_has_no_dangling_links() -> None:
 
 
 def test_no_dangling_links_in_the_migrated_specs() -> None:
-    """Relative ``.md`` links in the migrated surface resolve (AC-3).
+    """Relative ``.md`` links in the **live** migrated surface resolve (AC-3).
 
-    Covers SPEC.md and every file this migration authors or moves —
-    ``specs/features/`` (the as-built record) and ``specs/retired/`` (the
-    re-homed engine docs). Each link is resolved relative to the file that
+    Covers SPEC.md and ``specs/features/`` — the as-built record, which a reader
+    is expected to follow. Each link is resolved relative to the file that
     contains it, so a doc moved to a deeper directory whose relative links were
     not re-based against the new depth is caught (the CAL-661 review surfaced
     exactly this in the re-homed banners).
+
+    ``specs/retired/`` is **out of scope**, and that is a decision rather than an
+    oversight. A retired spec is a frozen record of how something worked; its
+    links rot the moment the tree moves past it, and the only way to keep them
+    resolving is to keep editing frozen history — which corrupts the record this
+    guard exists alongside. #435 made the choice concrete: retiring the
+    ``/harness`` command namespace left seven retired engine docs pointing at
+    ``commands/harness.md``, all of them accurate about their own era. The same
+    historical-by-category exemption ``specs/retired/`` already carries in the
+    retirement sweeps applies here.
     """
-    migrated = (
-        {_SPEC_INDEX}
-        | {p for p in tracked_files_under("specs/features") if p.suffix == ".md"}
-        | {p for p in tracked_files_under("specs/retired") if p.suffix == ".md"}
-    )
+    migrated = {_SPEC_INDEX} | {
+        p for p in tracked_files_under("specs/features") if p.suffix == ".md"
+    }
     dangling: list[str] = []
     for path in sorted(migrated):
         for target in _MD_LINK.findall(path.read_text(encoding="utf-8")):

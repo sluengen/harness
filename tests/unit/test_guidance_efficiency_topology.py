@@ -8,13 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "registry.yaml"
 
+#: A root document and the conditional references it links one level down. The
+#: ``commands/harness.md`` tree was the fourth entry until #435 retired the
+#: ``/harness`` namespace; the two skill trees below are the whole set now.
 REFERENCE_TREES = {
-    "commands/harness.md": (
-        "commands/harness/run.md",
-        "commands/harness/routine-build.md",
-        "commands/harness/routine-quality.md",
-        "commands/harness/ingest.md",
-    ),
     "skills/code-quality/SKILL.md": (
         "skills/code-quality/references/untrusted-fetch.md",
         "skills/code-quality/references/specialized-verification.md",
@@ -71,12 +68,12 @@ def test_every_conditional_reference_is_versioned_registered_and_non_orphaned() 
     discovered = {
         path.relative_to(ROOT).as_posix()
         for pattern in (
-            "commands/harness/*.md",
             "skills/code-quality/references/*.md",
             "skills/review-discipline/references/*.md",
         )
         for path in ROOT.glob(pattern)
     }
+    assert expected, "the conditional-reference set is empty — this sweep measures nothing"
     assert discovered == expected, (
         f"conditional reference set drifted: missing={expected - discovered}, "
         f"orphaned={discovered - expected}"
@@ -97,12 +94,14 @@ def test_every_conditional_reference_is_versioned_registered_and_non_orphaned() 
                 assert nested not in text, f"{reference} nests conditional reference {nested}"
 
 
-def test_each_activated_harness_command_payload_fits_budget() -> None:
-    for reference in REFERENCE_TREES["commands/harness.md"]:
-        measured = _estimated_tokens("commands/harness.md", reference)
-        assert measured <= 5_000, (
-            f"/harness router + {reference} is {measured:.1f} estimated tokens"
-        )
+# The activated-payload budget (``/harness`` router + one routed reference
+# <= 5,000 estimated tokens) went with the router: #435 retired
+# ``commands/harness.md`` and the four references it routed to, and that command
+# was the only root the budget was ever set against. The two surviving reference
+# trees are skills, whose cores are budgeted by
+# ``test_hot_skill_cores_fit_budget`` below; re-pointing the router budget at
+# them would not be re-homing a guard, it would be inventing a bound nothing has
+# ever held them to (both exceed it today).
 
 
 def test_hot_skill_cores_fit_budget() -> None:

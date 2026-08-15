@@ -1,4 +1,4 @@
-<!-- guidance:bug@0.3.0 -->
+<!-- guidance:bug@0.3.1 -->
 # /bug — capture a bug straight to Todo
 
 Usage: `/bug <description>`
@@ -43,5 +43,5 @@ identifier and URL and stop; never retry by creating a duplicate.
 Print the filed ticket's identifier and URL, then:
 
 ```
-Next: /start <TICKET>   (or /harness run <TICKET>)
+Next: /start <TICKET>   (or /build <TICKET> to drive it unattended)
 ```

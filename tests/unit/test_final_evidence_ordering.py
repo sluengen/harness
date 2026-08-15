@@ -94,7 +94,6 @@ _POINTERS = (
     "commands/review.md",
     "commands/build.md",
     "commands/ship.md",
-    "commands/harness/run.md",
 )
 
 #: A topic cue that must sit on the *same line* as the pointer. Without this the

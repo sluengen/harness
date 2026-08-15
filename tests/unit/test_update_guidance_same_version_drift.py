@@ -58,8 +58,8 @@ def _section(start: str, end: str) -> str:
 
 def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
     """The corrected commands publish coordinated, intentional version bumps."""
-    assert _version(DECISION, "decision") == "0.2.0"
-    assert _registry_version("commands/decision.md") == "0.2.0"
+    assert _version(DECISION, "decision") == "0.3.0"
+    assert _registry_version("commands/decision.md") == "0.3.0"
     assert _version(UPDATE_GUIDANCE, "update-guidance") == "1.0.0"
     assert _registry_version("commands/update-guidance.md") == "1.0.0"
 
@@ -79,7 +79,14 @@ def test_decision_keeps_the_tracker_only_audit_trail() -> None:
     assert re.search(r"resolution in the body", text)
     assert re.search(r"label gone", text)
     assert re.search(r"assignment cleared", text)
-    assert re.search(r"not a ledger event", text)
+    # #338's "not a ledger event" clause went with the ledger (ADR 0015 / #435).
+    # The decision it recorded survives as the positive claim above: the tracker
+    # issue is the audit trail. Assert the negative directly instead — the command
+    # must not reintroduce a second, off-tracker record of the release.
+    assert "ledger" not in text, (
+        "commands/decision.md must not name a ledger — ADR 0015 retired it, and "
+        "the tracker issue is the whole audit trail (#338)."
+    )
 
 
 def test_current_requires_equal_versions_and_both_hash_matches() -> None:

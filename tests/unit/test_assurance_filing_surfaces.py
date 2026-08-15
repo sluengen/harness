@@ -100,18 +100,19 @@ def _filing_surfaces() -> list[str]:
     return [rel for rel in _registered_markdown() if _filing_units(_read(rel))]
 
 
-#: The five surfaces AC-4 names by hand, plus the two the derivation adds. Named
-#: as a **membership** floor, never as the subject set: the subject set is
-#: derived above, and this list exists only so a narrowed derivation cannot read
-#: green. `commands/build.md` is here because it is the surface the ticket's own
-#: author did not know about — it is the evidence the derivation earns its keep.
+#: The surfaces AC-4 names by hand, plus the ones the derivation adds. Named as a
+#: **membership** floor, never as the subject set: the subject set is derived
+#: above, and this list exists only so a narrowed derivation cannot read green.
+#: `commands/build.md` is here because it is the surface the ticket's own author
+#: did not know about — it is the evidence the derivation earns its keep, and
+#: `commands/promote.md` is the same shape found later. The two
+#: `commands/harness/*` members were dropped when #435 retired that namespace.
 _KNOWN_FILING_SURFACES = (
     "commands/bug.md",
     "commands/tweak.md",
     "commands/propose.md",
     "commands/assess.md",
-    "commands/harness/ingest.md",
-    "commands/harness/routine-quality.md",
+    "commands/promote.md",
     "commands/build.md",
 )
 

@@ -213,7 +213,7 @@ def test_app_prefixes_come_from_the_boundary_doc() -> None:
 def test_registered_files_come_from_the_registry() -> None:
     registered = _registered_files()
     # non-vacuous anchor: known surface (files:) and machinery (meta:) units
-    assert "commands/harness.md" in registered
+    assert "commands/routine.md" in registered
     assert "agents/steward.md" in registered
     assert "templates/feature.md" in registered
     assert "BOOTSTRAP.md" in registered  # meta: — documented machinery, not app-only

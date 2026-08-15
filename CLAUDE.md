@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.7.0 -->
+<!-- guidance:process-harness@0.8.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -40,16 +40,11 @@ The load-bearing rules throughout — non-negotiable, and written out here so th
 
 The builder writes the change spec and builds. The reviewer records what actually shipped. The agent that promises is not the agent that records delivery — this is what keeps the canonical record honest.
 
-## Execution options
+## Driving a ticket
 
-A ticket can be driven two ways within the one surface — the choice is per-invocation / per-repo, not a profile:
+The process is agent-led, and there is one way to drive it. Unattended, that is `/build <TICKET>` — implement, verify, review, and ship, end to end (`--engine codex` runs the review through Codex). Attended, it is the same lifecycle taken a step at a time: `/start → /review → /ship`. Both are available in every repo on this guidance, and neither depends on any tool beyond the agent host and the repo's own verify gate.
 
-- **Harness tooling** — `/harness run <TICKET>`, the audited verb loop (`start → review → close`) whose `review` is the Codex review. Available where the repo hosts the harness app.
-- **Agent-led** — `/build` (with `--engine codex` to opt into the Codex review), or the `/start → /review → /ship` sequence, driven by the agent directly.
-
-Use the option your repo provides; its `CONTEXT.md` says which. A repo without the harness app uses the agent-led option — `/build` is available everywhere.
-
-**If this repo is the harness** (its `CONTEXT.md` `repo.name` is `harness`): it remains the source of the canonical `/build` command. During the interim harness pause, it drives its own tickets with agent-led `/build` (or `/start → /review → /ship` when attended), exactly as every consuming repo does. `/build` carries the assurance stages, isolated agents, and evidence requirements that formerly depended on the harness loop; it does not carry a wall-clock budget or ledger machinery. An operator must explicitly end the pause before `/harness run` returns as this repo's default. This rule applies elsewhere, where `/build` remains the normal agent-led option.
+`/build` carries the assurance stages, the isolated review agent, and the evidence requirements. What it deliberately does not carry is a wall-clock budget or a run ledger: the bounds that matter are the review→fix stop rule (`review-discipline`) and the verify gate, both of which are properties of the work rather than of a runtime.
 
 ## Skills (the durable rules)
 
@@ -67,7 +62,6 @@ Use the option your repo provides; its `CONTEXT.md` says which. A repo without t
 | `worktree-isolation` | Any multi-commit work. |
 | `tracker` | Any tracker operation — the backend-neutral protocol. Dispatches to `linear` or `github-issues`. |
 | `assessment-craft` | The methodology for any `/assess` pass (the steward). |
-| `guidance-coherence` | Domain standards for the `/assess system` scope (guidance coherence). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |
 | `design-system` | Frontend work without degrading the design system — only when the `design_system` layer is on. |
 
@@ -93,20 +87,20 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/review` | Run the final gate on the current branch. |
 | `/ship` | Integrate and close, per the repo's branch model. |
 | `/build <TICKET>` | Autonomous agent-led driver: implement, verify, review, and ship a ticket end-to-end (`--engine codex` runs the review through Codex). The unattended form of the `/start → /review → /ship` lifecycle. |
-| `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) through the audited `harness promote` verb loop, resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
+| `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) with plain git — merge, gate, then publish — resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
 | `/decision` | Interactive sweep that drains tickets held for the operator's input — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/routine` | One unattended build-cycle tick: discover the next actionable ticket (`work-discovery`), `/build` it, ship to the integration branch; hold the ticket on a red gate or conflict. The versioned home of the standing prompt scheduled runs paste. |
 | `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, operator errands. Never mutates ticket state. |
 | `/assess <scope>` | Run the steward over the codebase or guidance (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
-Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` (or `/harness run`) **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.
+Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.
 
 ## Command namespacing
 
 The universal guidance commands own the **bare names** (`/start`, `/review`, `/ship`, `/propose`, `/promote`, `/decision`, `/routine`, `/digest`, `/assess`, `/update-guidance`) and mean the same agent-led process in every repo. A repo with its own slash commands namespaces them under a repo prefix (e.g. `/<repo> <verb>`) so they do not collide — the installer will not overwrite a command the repo already owns.
 
-For example, in the harness repo the harness's own commands are namespaced under **`/harness`** (`/harness run`, `/harness ingest`, and the unattended-loop commands `/harness routine build` / `/harness routine quality`): its "start" means *run the harness pipeline*, not *begin the agent-led process*, so it cannot take the bare `/start` name. (The installer copies the guidance's `/start` to `commands/start.md`, so the repo's own command must move out of that path first — see `BOOTSTRAP.md` step 2.) Other repos apply the same rule to their own commands, if any. The `/harness routine` commands version the logic of the unattended loops (Build hourly, Quality idle/weekly) so it lives in the repo, not only in a scheduled-task config — *version the logic, not the schedule*; they are local-trigger only.
+The collision that matters is a repo command whose name reads as a lifecycle step but means something else — a `/start` that launches the repo's own pipeline rather than beginning the agent-led process. Move it under the prefix before installing, or an agent reading `/start` in this document gets the wrong one. (`BOOTSTRAP.md` step 2 is where the installer stops on such a collision rather than clobbering it.)
 
 ## When you are confused
 

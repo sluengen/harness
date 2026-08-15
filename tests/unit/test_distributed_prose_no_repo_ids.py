@@ -122,14 +122,15 @@ def test_detector_parsed_from_hook() -> None:
 
 
 def test_registry_member_rule() -> None:
-    """The membership predicate matches the registered command, not a non-entry.
+    """The membership predicate matches a registered command, not a non-entry.
 
-    ``commands/harness.md`` is registered (CAL-764), so it is in scope — the very
-    file this ticket cleans must be covered. A made-up path must not register, or
-    the sweep would silently widen.
+    ``commands/harness.md`` was this anchor until #435 retired it; ``/routine``
+    is the registered command that replaced its unattended half, so the anchor
+    moves rather than being dropped. A made-up path must not register, or the
+    sweep would silently widen.
     """
     registry_src = _REGISTRY.read_text()
-    assert _is_registered("commands/harness.md", registry_src)
+    assert _is_registered("commands/routine.md", registry_src)
     assert not _is_registered("commands/does-not-exist.md", registry_src)
 
 
@@ -140,7 +141,7 @@ def test_sweep_covers_registered_prose() -> None:
     root), which would make the leak sweep pass without checking anything.
     """
     rels = {p.relative_to(_REPO_ROOT).as_posix() for p in _registered_prose_files()}
-    assert "commands/harness.md" in rels
+    assert "commands/routine.md" in rels
     assert any(r.startswith("skills/") for r in rels), "no registered skill prose found"
 
 

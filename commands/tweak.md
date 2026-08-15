@@ -1,4 +1,4 @@
-<!-- guidance:tweak@0.3.0 -->
+<!-- guidance:tweak@0.3.1 -->
 # /tweak — capture a small upgrade, with an escape hatch to /propose
 
 Usage: `/tweak <description>`
@@ -60,5 +60,5 @@ identifier and URL and stop; never retry by creating a duplicate.
 Print the filed ticket's identifier and URL, then:
 
 ```
-Next: /start <TICKET>   (or /harness run <TICKET>)
+Next: /start <TICKET>   (or /build <TICKET> to drive it unattended)
 ```

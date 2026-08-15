@@ -9,6 +9,13 @@ is the stage being built.
 **Stage 1 — the deployment envelope.** The container, the developer wrapper, the
 GHCR release workflow, and the operator documents that existed to run them.
 
+**Stage 2 — the guidance surface.** The repo's own ``/harness`` command
+namespace, and the `guidance-coherence` skill ADR 0015 retires by name. This
+stage is where a teardown is most likely to over-reach, because the trees it
+edits — ``commands/``, ``skills/``, ``.codex/`` — are almost entirely surviving
+surface with a few retired entries inside them. So the did-not-delete-too-much
+control names those three trees specifically, not only the repo at large.
+
 Two properties, and they fail for different reasons:
 
 * **Absence.** Every retired path resolves to nothing in the index. Judged with
@@ -62,6 +69,24 @@ _RETIRED_PATHS = (
     "specs/local-orchestrator-stack.md",
 )
 
+#: Stage 2's retired paths — the guidance surface, as pathspecs.
+#:
+#: ``commands/harness.md`` and the ``commands/harness/`` directory under it are
+#: the repo's own ``/harness`` command namespace: ``run``, ``ingest`` and the two
+#: unattended routines. Every one of them drives a verb ADR 0015 retires, and
+#: their replacements (``/build``, ``/routine``) already ship. ``.codex/skills/
+#: command-harness`` is the generated Codex adapter for the same command, which
+#: ``templates/generate_codex_artifacts.py`` prunes once the command is gone.
+#: ``skills/guidance-coherence`` is retired by ADR 0015 by name, taking the
+#: ``/assess system`` scope with it, and its generated Codex symlink with that.
+_RETIRED_GUIDANCE_PATHS = (
+    "commands/harness.md",
+    "commands/harness",
+    "skills/guidance-coherence",
+    ".codex/skills/command-harness",
+    ".codex/skills/guidance-coherence",
+)
+
 #: Test modules whose **subject** is a Stage 1 retired path, deleted in the same
 #: change as the thing they certify. Listed as an explicit set rather than
 #: derived, because "which guard belongs to which subsystem" is a judgement the
@@ -86,6 +111,24 @@ _RETIRED_TEST_MODULES = (
     "tests/integration/test_nightly_promotion_workspace_allowlist.py",
 )
 
+#: Test modules whose **subject** is a Stage 2 retired path or a retired verb's
+#: prose. Same rule as the Stage 1 list above, and the same reason for spelling
+#: it out: several of these are prose sweeps, and a prose sweep over a deleted
+#: document is the fail-open shape this teardown is most exposed to.
+_RETIRED_GUIDANCE_TEST_MODULES = (
+    "tests/unit/test_harness_command_distributed.py",
+    "tests/unit/test_routine_commands.py",
+    "tests/unit/test_attendance_declaration.py",
+    "tests/unit/test_close_no_rebase_rule_documented.py",
+    "tests/unit/test_design_concurrency_warning.py",
+    "tests/unit/test_design_verb_lifecycle_documented.py",
+    "tests/unit/test_loop_stop_rule_coherence.py",
+    "tests/unit/test_promotion_design.py",
+    "tests/unit/test_review_engine_decision.py",
+    "tests/unit/test_loop_substrate_decision.py",
+    "tests/unit/test_design_engine_capability_claim.py",
+)
+
 #: The surviving surface. Non-empty is the whole claim: these are the trees a
 #: mass deletion is likeliest to over-reach into, and an empty answer for any of
 #: them means the teardown took something ADR 0015 keeps.
@@ -101,6 +144,28 @@ _SURVIVING_TREES = (
     "specs/features",
     "scripts/mutate.py",
     "scripts/verify.sh",
+    ".codex",
+)
+
+#: The guidance Stage 2 edits *around*. Named individually because "``commands/``
+#: is non-empty" is a floor one surviving file satisfies, and this stage deletes
+#: files from inside three trees that are otherwise almost all survivors — the
+#: over-reach it risks is a sibling, not a tree. Each entry sits next to
+#: something this stage removes: ``/promote`` keeps its command and its generated
+#: Codex adapter while ``/harness`` loses both; ``/build`` and ``/routine`` are
+#: the replacements the retired namespace routes to, so deleting either would
+#: leave the process doc pointing at nothing; ``assessment-craft`` is the
+#: methodology skill that stays when ``guidance-coherence`` (its ``system``-scope
+#: domain half) goes.
+_SURVIVING_GUIDANCE = (
+    "commands/build.md",
+    "commands/routine.md",
+    "commands/promote.md",
+    "commands/assess.md",
+    "skills/assessment-craft/SKILL.md",
+    "skills/work-discovery/SKILL.md",
+    ".codex/skills/command-promote/SKILL.md",
+    ".codex/skills/command-build/SKILL.md",
 )
 
 #: The promotion path, named separately because it survives *by decision* and
@@ -149,6 +214,27 @@ def test_a_guard_over_a_retired_path_is_gone_with_its_subject(module: str) -> No
     )
 
 
+@pytest.mark.parametrize("pathspec", _RETIRED_GUIDANCE_PATHS)
+def test_a_retired_guidance_path_is_gone_from_the_index(pathspec: str) -> None:
+    """Nothing under a Stage 2 retired guidance path is still tracked."""
+    survivors = _relative(tracked_files_under(pathspec))
+    assert survivors == [], (
+        f"{pathspec} is retired by ADR 0015 (the repo's own `/harness` command "
+        f"namespace and the `guidance-coherence` skill), but these files are "
+        f"still tracked: {survivors}."
+    )
+
+
+@pytest.mark.parametrize("module", _RETIRED_GUIDANCE_TEST_MODULES)
+def test_a_guard_over_retired_guidance_is_gone_with_its_subject(module: str) -> None:
+    """A guard whose subject Stage 2 deletes is deleted in the same change."""
+    survivors = _relative(tracked_files_under(module))
+    assert survivors == [], (
+        f"{module} guards a subject Stage 2 deletes and must go with it; still "
+        f"tracked: {survivors}."
+    )
+
+
 def test_every_parametrized_set_in_this_module_is_populated() -> None:
     """The floor under **every** ``@parametrize`` source in this module.
 
@@ -157,18 +243,30 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
     without failing anything. This is the one case that cannot be skipped away,
     and it is unparametrized for exactly that reason.
 
-    All four lists, not just the retirement ones. Emptying ``_SURVIVING_TREES``
-    or ``_SURVIVING_PROMOTION`` silently removes the did-not-delete-too-much
-    control, which is the assertion that stops the rest of this module being
-    satisfied by deleting the repository — the control needs a control.
+    Every list, not just the retirement ones. Emptying ``_SURVIVING_TREES``,
+    ``_SURVIVING_PROMOTION`` or ``_SURVIVING_GUIDANCE`` silently removes the
+    did-not-delete-too-much control, which is the assertion that stops the rest
+    of this module being satisfied by deleting the repository — the control
+    needs a control.
     """
     assert len(_RETIRED_PATHS) >= 8, _RETIRED_PATHS
+    assert len(_RETIRED_GUIDANCE_PATHS) >= 5, _RETIRED_GUIDANCE_PATHS
     assert len(_RETIRED_TEST_MODULES) >= 12, _RETIRED_TEST_MODULES
-    assert len(_SURVIVING_TREES) >= 10, _SURVIVING_TREES
+    assert len(_RETIRED_GUIDANCE_TEST_MODULES) >= 11, _RETIRED_GUIDANCE_TEST_MODULES
+    assert len(_SURVIVING_TREES) >= 11, _SURVIVING_TREES
     assert len(_SURVIVING_PROMOTION) >= 3, _SURVIVING_PROMOTION
+    assert len(_SURVIVING_GUIDANCE) >= 8, _SURVIVING_GUIDANCE
 
 
-@pytest.mark.parametrize("pathspec", (*_RETIRED_PATHS, *_RETIRED_TEST_MODULES))
+@pytest.mark.parametrize(
+    "pathspec",
+    (
+        *_RETIRED_PATHS,
+        *_RETIRED_GUIDANCE_PATHS,
+        *_RETIRED_TEST_MODULES,
+        *_RETIRED_GUIDANCE_TEST_MODULES,
+    ),
+)
 def test_a_retired_path_is_one_that_really_existed(pathspec: str) -> None:
     """Every path named above was a real file, proven from git history.
 
@@ -235,4 +333,22 @@ def test_the_promotion_path_survives_the_verb_it_used_to_call(pathspec: str) -> 
         f"{pathspec} is not tracked — the `harness promote` verb is retired, "
         f"but the promotion topology and its nightly automation are kept "
         f"(ADR 0015 operator decision). Rewrite it to plain git; do not delete it."
+    )
+
+
+@pytest.mark.parametrize("pathspec", _SURVIVING_GUIDANCE)
+def test_a_sibling_of_a_retired_guidance_path_survives(pathspec: str) -> None:
+    """Stage 2 removed entries from three trees, not the trees.
+
+    A tree-level floor (``commands`` is non-empty) is satisfied by one surviving
+    file, which is not the property this stage needs: it deletes named files
+    from inside trees that are otherwise entirely survivors, and the plausible
+    over-reach is the neighbour — the `/promote` command alongside `/harness`,
+    the generated Codex adapter alongside the generated Codex adapter, the
+    methodology skill alongside its retired domain half.
+    """
+    assert tracked_files_under(pathspec), (
+        f"{pathspec} holds no tracked file — Stage 2 retires the repo's own "
+        f"`/harness` namespace and the `guidance-coherence` skill, not the "
+        f"commands, skills and Codex adapters standing next to them."
     )

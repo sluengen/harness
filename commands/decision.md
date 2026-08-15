@@ -1,12 +1,13 @@
-<!-- guidance:decision@0.2.0 -->
+<!-- guidance:decision@0.3.0 -->
 # /decision — drain the tickets held for your input
 
 Usage: `/decision`
 
-The unattended Build loop defers a ticket it cannot action: `harness defer`
-posts a comment, applies a hold label (`input` / `operator`; ADR 0006's three
-kinds, consolidated to two by ADR 0015), and assigns the ticket to the operator — the machine-readable "a human
-holds this" signal `work-discovery` skips on later ticks. That outbound half
+The unattended Build loop defers a ticket it cannot action: it posts a comment,
+applies a hold label (`input` / `operator`; ADR 0006's three kinds, consolidated
+to two by ADR 0015), and assigns the ticket to the operator — the
+machine-readable "a human holds this" signal `work-discovery` skips on later
+ticks. That outbound half
 works on its own. This is the **inbound** half: an interactive sweep that pulls
 every ticket held for a judgment call, presents it, captures the operator's
 call, writes the resolution into the ticket, and releases it back to the
@@ -40,8 +41,7 @@ deferring run already classified correctly.
 Which tickets are **clearable**, what counts as a valid resolution, and what
 **released** means (the change spec updated, the hold label removed, the
 operator unassigned) is `work-discovery`'s "Return path" section — the single
-home of that judgment, the same skill `/harness routine build` reads for the
-outbound half. This command owns only the control flow around it: pull, order,
+home of that judgment, the same skill `/routine` reads for the outbound half. This command owns only the control flow around it: pull, order,
 present, capture, write, release, stop.
 
 ## The loop
@@ -76,8 +76,8 @@ the same way.
 **Step 3 — present one at a time.** For the next ticket in order, show:
 
 - Title, URL, and current change-spec body (context for what's being decided).
-- The deferring comment — the reason text `harness defer --reason` posted —
-  since that comment names exactly what the ticket needs. Read it via
+- The deferring comment — the reason text the deferring run posted — since that
+  comment names exactly what the ticket needs. Read it via
   `gh issue view <n> --comments` (github) or the `linear` skill's comment-read
   recipe (linear); take the **latest** comment carrying the hold's triage
   reason if more than one exists.
@@ -89,33 +89,32 @@ to the next).
 **Step 4 — capture and release.** Once the operator gives a call:
 
 1. Compose the resolution text from what they said.
-2. Release the ticket through the verb — never a hand-rolled tracker write
-   (the risk the proposal flagged: this needs write access across both
-   backends, so it is a bounded, named verb mirroring `defer`, not ad-hoc
-   GraphQL/`gh` mutation calls):
+2. Release the ticket through the `tracker` skill, in this order — all three
+   writes, or the ticket is not released:
 
-   ```bash
-   harness release <TICKET> --resolution <text> [--resolution-file <path>]
-   ```
+   1. Write the resolution into the ticket's change spec, appending or
+      replacing a `## Resolution` section. Into the **body**, not a comment:
+      the answer has to be where an agent starting the ticket cold will read
+      it, not buried in a thread it has to go dig up.
+   2. Remove the hold label.
+   3. Unassign the operator. This one is load-bearing — `work-discovery` skips
+      on assignment, so a ticket answered but still assigned stays held
+      forever.
 
-   `release` writes the resolution into the ticket's change spec (appending or
-   replacing a `## Resolution` section — so the answer is where an agent
-   building the ticket cold will actually see it, not buried in a comment
-   thread), removes the `input` label, and unassigns the operator — the
-   full "released" definition `work-discovery` names, done as one audited
-   write. The audit trail is the tracker issue itself — the resolution in the
-   body, the label gone, the assignment cleared — not a ledger event (#338).
-3. If `release` refuses (not on the Build queue, tracker error) — report the
-   refusal and its `reason`; do not work around it by hand-rolling the write
-   it exists to replace.
+   That is the full "released" definition `work-discovery` names. The audit
+   trail is the tracker issue itself: the resolution in the body, the label
+   gone, the assignment cleared.
+3. If a write is refused (not on the Build queue, tracker error) — report the
+   refusal and what was refused, and leave the ticket held rather than
+   half-released. A ticket whose label came off but whose resolution never
+   landed is worse than one still waiting.
 
 **Step 5 — re-pick or stop.** More tickets in the ordered pile → go to step 3.
 Pile exhausted → **stop**.
 
 ## No build handoff
 
-`/decision` never hands a released ticket to `/harness run` or `/build`. It
-writes the answer and returns the ticket to Todo; the Build arm picks it up on
+`/decision` never hands a released ticket to `/build`. It writes the answer and returns the ticket to Todo; the Build arm picks it up on
 its own next tick. Sweeping and building are two separate jobs — conflating
 them would make this command block on a full build cycle for every resolved
 decision, defeating the point of running the sweep interactively and quickly.
@@ -124,9 +123,9 @@ decision, defeating the point of running the sweep interactively and quickly.
 
 If, after release, the ticket is not actually wholly actionable — the
 resolution given did not fully resolve it — do not leave it half-cleared.
-Re-defer it through the normal path (`harness defer <TICKET> --reason <text>
-[--needs input|operator]`), same as any other not-yet-actionable
-ticket the Build loop would find. `work-discovery`'s Return path section calls
+Re-defer it through the normal path — a fresh comment naming what is still
+missing, the hold label, and the operator assigned — same as any other
+not-yet-actionable ticket the Build loop would find. `work-discovery`'s Return path section calls
 this **re-deferred**: a fresh comment + label + assignment, not a `/decision`
 sweep that quietly reopens the ticket without saying why.
 
@@ -143,7 +142,6 @@ At the end of the run (empty pile, operator stop, or pile exhausted), print:
 
 - `work-discovery` — the judgment this command delegates to: which holds are
   clearable, and what "released" means.
-- `harness defer` / `harness release` — the audited writes on either side of a
-  hold's lifetime.
+- `tracker` — the backend-neutral writes on either side of a hold's lifetime.
 - ADR 0006 — the hold kinds this command's scope rests on (three at origin;
   consolidated to two by ADR 0015).

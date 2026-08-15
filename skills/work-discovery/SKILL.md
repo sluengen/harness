@@ -2,15 +2,15 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.8.0 -->
+<!-- guidance:work-discovery@0.9.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,
 without a human in the turn, which ticket to start next and whether that ticket
 is ready to build. This skill is the single home of that judgment. A routine
-(e.g. `/harness routine build`) **invokes** it; the routine command owns the
-control flow (the pre-flight sweeps, which build surface to call, how to resume),
-this skill owns the *discovery logic*. Keeping the logic here — not restated in
+(`/routine`) **invokes** it; the routine command owns the control flow (what to
+run before picking, how to ship, when to hold), this skill owns the *discovery
+logic*. Keeping the logic here — not restated in
 each trigger or command — is what lets *version the logic, not the schedule*
 hold: every caller reads one home, so what runs cannot drift from what is
 versioned.
@@ -25,9 +25,8 @@ Work off the Build queue defined in `CONTEXT.md`. Its scope is set by the
   Resolve that scope through the `tracker` skill rather than naming a backend
   address here.
 
-Consider only tickets marked **Todo**: an **In Progress** ticket is either live
-or already handled by the routine's reclaim pre-flight, and **In Review** is
-somebody's open handoff. Scope only bounds *which* tickets are in view — the
+Consider only tickets marked **Todo**: an **In Progress** ticket is somebody's
+live run, and **In Review** is somebody's open handoff. Scope only bounds *which* tickets are in view — the
 ranking and actionability below are the same either way.
 
 ## Ranking — pick the next most logical ticket
@@ -69,13 +68,11 @@ spec needs problem, approach, and acceptance criteria.
   The loop **skips all three** kinds the same way — the outbound hold semantics
   are unchanged by adding a kind; only the return path (e.g. `/decision`)
   distinguishes between them, selecting `decision` and nothing else.
-  Where the routine provides a **`defer` verb** (as `/harness routine build`
-  does: `harness defer <TICKET> --reason <text>`), call it — it posts the
-  comment, applies the label, assigns the operator, and records the decision in
-  the audit trail, so triage is an audited action like the lifecycle verbs
-  rather than a hand-rolled tracker write. Where there is no such verb, make the
-  comment + label + assignment through the `tracker` skill's provider-neutral
-  operations.
+  Make all three — comment, label, assignment — through the `tracker` skill's
+  provider-neutral hold operation. All three, not the label alone: assignment is
+  what the skip rule below actually reads, and the comment is what `/decision`
+  presents to the operator. The tracker issue *is* the audit trail; a deferral
+  recorded nowhere else is still fully recorded.
 
 ## When a tracker write is refused
 

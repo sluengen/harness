@@ -20,12 +20,12 @@ WS2 closes this three ways (proposal D2 → **B1 + B2**):
   guidance other repos self-host, so the skill has a real second consumer: every
   self-hosting repo's routine. The routine *invokes* the skill; the criteria are
   single-homed there, not duplicated in command prose.
-* **B1 — de-drift the triggers** with a runbook (``RUNBOOK.md``) documenting how
-  to re-sync the user-local scheduled tasks into thin callers of the versioned
-  routine. The task files live outside the repo, so the fix is operational.
+* **B1 — de-drift the triggers** by keeping the trigger a thin caller of the
+  versioned routine. The scheduled-task files live outside the repo, so that
+  half is operational; ``commands/routine.md`` is the versioned half.
 * **drift guard** — this module: it fails if the discovery-logic *signature*
   (the selection-criteria triad) is inlined into a trigger/caller surface (the
-  routine command or the runbook's trigger spec) instead of living solely in the
+  routine command) instead of living solely in the
   ``work-discovery`` skill and being *invoked* from those surfaces.
 
 Acceptance criteria (CAL-907):
@@ -55,8 +55,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "routine-build.md"
-RUNBOOK = REPO_ROOT / "RUNBOOK.md"
+ROUTINE_COMMAND = REPO_ROOT / "commands" / "routine.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 
@@ -178,14 +177,14 @@ def test_work_discovery_skill_owns_pick_criteria() -> None:
 def test_build_routine_invokes_work_discovery_skill() -> None:
     """AC-1: the Build routine *invokes* the skill by name rather than owning the
     logic — it delegates the pick to ``work-discovery``."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = ROUTINE_COMMAND.read_text()
     assert "work-discovery" in body, (
-        "the Build routine must invoke the `work-discovery` skill for its pick "
+        "the routine must invoke the `work-discovery` skill for its pick "
         "step instead of inlining the discovery logic (CAL-907 AC-1)."
     )
     # It must still retain the pick step itself (the invocation point).
-    assert "pick the next ticket" in body.lower(), (
-        "the Build routine must retain its pick step as the skill's invocation "
+    assert "pick the next" in body.lower(), (
+        "the routine must retain its pick step as the skill's invocation "
         "point (CAL-907 AC-1)."
     )
 
@@ -198,9 +197,9 @@ def test_pick_criteria_not_inlined_into_command() -> None:
     command. The command is a *caller* of the versioned surface — if a future
     edit re-inlines the pick algorithm (the triad) into the Build routine section
     instead of invoking the skill, this guard fails."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = ROUTINE_COMMAND.read_text()
     assert not _inlines_discovery(body), (
-        "the Build routine section inlines the discovery-logic triad "
+        "the routine command inlines the discovery-logic triad "
         "(dependencies + priority + decision) instead of invoking the "
         "`work-discovery` skill — the pick logic must be single-homed in the "
         "skill, not duplicated in command prose (CAL-907 AC-3)."
@@ -313,16 +312,17 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_8_0() -> None:
-    """Bumped by ADR 0015 for the hold-label consolidation; the registry row agrees."""
+def test_work_discovery_version_is_0_9_0() -> None:
+    """Bumped by #435 for the routine re-pointing; the registry row agrees."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.8.0" in text, (
-        "the skill stamp must be work-discovery@0.8.0 (ADR 0015 — hold labels)."
+    assert "guidance:work-discovery@0.9.0" in text, (
+        "the skill stamp must be work-discovery@0.9.0 (#435 — the `/harness "
+        "routine build` caller and its `defer` verb are retired)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.8\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.8.0 (ADR 0015)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.9\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.9.0 (#435)."
 
 
 # --- ADR 0006 / #191: the third hold kind, `input` --------------------------

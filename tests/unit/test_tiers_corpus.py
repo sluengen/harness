@@ -46,9 +46,8 @@ _RETIRED_MARKER = "pytest.mark.slow"
 _ANCHORS: dict[str, Tier] = {
     # Drives `harness start` through CliRunner against a real repo and ledger.
     "tests/unit/test_cli_start.py": "integration",
-    # Builds and runs the Docker image.
-    # Reads `commands/harness.md` and `registry.yaml` out of the checkout.
-    "tests/unit/test_harness_command_distributed.py": "guard",
+    # Reads the process doc and its three entry-file mirrors out of the checkout.
+    "tests/unit/test_process_doc_mirrors.py": "guard",
     # Parses a CONTEXT.md loop block held in the test's own strings.
     "tests/unit/test_loop_budget.py": "unit",
 }
