@@ -29,6 +29,15 @@ can be wrong in both directions, so it carries a positive and a negative
 control, both run against synthetic source in ``tmp_path`` so they exercise the
 *predicate* rather than agreeing with the current state of the tree.
 
+**Stage 5 — the records.** The documents that described the runtime: ``SPEC.md``
+(the verb model's design spec), the changelog and its archive with the cadence
+script that measured them, and the six ``specs/features/*.md`` records of
+retired subsystems. The feature specs are **moved**, not deleted, so this stage
+carries a fifth property: an archived record must actually land in the archive
+carrying a banner that dates its retirement. Absence alone would be satisfied by
+deleting them, which is the opposite of what ADR 0015 asks for — a retired
+subsystem's as-built record is the thing a later reader needs most.
+
 Two properties, and they fail for different reasons:
 
 * **Absence.** Every retired path resolves to nothing in the index. Judged with
@@ -186,6 +195,60 @@ _RETIRED_TEST_HELPERS = (
     "tests/conftest.py",
 )
 
+#: Stage 5's retired paths — the records, as pathspecs.
+#:
+#: ``SPEC.md`` is the design spec of the verb model: its live sections describe
+#: the verbs, the ledger and the CLI, and its retired sections were already
+#: re-homed under ``specs/retired/``. ``CHANGELOG.md`` and
+#: ``CHANGELOG-archive/`` are the released history of a released artifact; ADR
+#: 0015 leaves nothing to release, and ADR 0014 already made the commit body the
+#: entry. ``scripts/cadence.py`` existed solely to measure those two files'
+#: growth, and was the last stage of ``scripts/verify.sh``.
+_RETIRED_RECORD_PATHS = (
+    "SPEC.md",
+    "CHANGELOG.md",
+    "CHANGELOG-archive",
+    "scripts/cadence.py",
+)
+
+#: Test modules whose **subject** is a Stage 5 retired record. Same rule and the
+#: same reason as the two lists above: ``test_cadence_bounds`` and
+#: ``test_changelog_rotation`` measure files this stage deletes,
+#: ``test_changelog_fragment_system_retired`` guards a deletion inside a
+#: changelog system that no longer exists, ``test_spec_engine_extraction``
+#: asserts a section layout in ``SPEC.md``, and
+#: ``test_persistent_runtime_host_decision`` pins ``SPEC.md`` §16's non-goals
+#: against ADR 0012 — an ADR about the runtime host ADR 0015 retires.
+_RETIRED_RECORD_TEST_MODULES = (
+    "tests/unit/test_cadence_bounds.py",
+    "tests/unit/test_changelog_rotation.py",
+    "tests/unit/test_changelog_fragment_system_retired.py",
+    "tests/unit/test_spec_engine_extraction.py",
+    "tests/unit/test_persistent_runtime_host_decision.py",
+)
+
+#: The as-built records of retired subsystems, as ``(old, new)`` pathspecs.
+#:
+#: These are the one part of this teardown that must **not** end in an empty
+#: index. Each describes a subsystem ADR 0015 retires, so it cannot stay under
+#: ``specs/features/`` — that tree is the *current* as-built record, and
+#: ``feature_specs: true`` makes it the contract a builder reads before changing
+#: behaviour. But a retired subsystem's record is exactly what a later reader
+#: needs to understand why the tree looks as it does, so it moves to
+#: ``specs/retired/`` rather than being deleted, which is the convention that
+#: tree has carried since CAL-661.
+_ARCHIVED_FEATURE_SPECS = (
+    ("specs/features/verb-model.md", "specs/retired/verb-model.md"),
+    ("specs/features/cli-surface.md", "specs/retired/cli-surface.md"),
+    ("specs/features/run-ledger.md", "specs/retired/run-ledger.md"),
+    ("specs/features/runtime-host.md", "specs/retired/runtime-host.md"),
+    ("specs/features/host-platform.md", "specs/retired/host-platform.md"),
+    (
+        "specs/features/worktree-lifecycle.md",
+        "specs/retired/worktree-lifecycle.md",
+    ),
+)
+
 #: The surviving surface. Non-empty is the whole claim: these are the trees a
 #: mass deletion is likeliest to over-reach into, and an empty answer for any of
 #: them means the teardown took something ADR 0015 keeps.
@@ -325,6 +388,28 @@ def test_a_helper_that_only_drove_the_engine_is_gone(pathspec: str) -> None:
     )
 
 
+@pytest.mark.parametrize("pathspec", _RETIRED_RECORD_PATHS)
+def test_a_retired_record_path_is_gone_from_the_index(pathspec: str) -> None:
+    """Nothing under a Stage 5 retired record path is still tracked."""
+    survivors = _relative(tracked_files_under(pathspec))
+    assert survivors == [], (
+        f"{pathspec} is retired by ADR 0015 (the verb model's design spec, the "
+        f"released history of an artifact there is no longer anything to "
+        f"release, and the script that measured its growth), but these files "
+        f"are still tracked: {survivors}."
+    )
+
+
+@pytest.mark.parametrize("module", _RETIRED_RECORD_TEST_MODULES)
+def test_a_guard_over_a_retired_record_is_gone_with_its_subject(module: str) -> None:
+    """A guard whose subject Stage 5 deletes is deleted in the same change."""
+    survivors = _relative(tracked_files_under(module))
+    assert survivors == [], (
+        f"{module} guards a subject Stage 5 deletes and must go with it; still "
+        f"tracked: {survivors}."
+    )
+
+
 def test_every_parametrized_set_in_this_module_is_populated() -> None:
     """The floor under **every** ``@parametrize`` source in this module.
 
@@ -345,6 +430,9 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
     assert len(_RETIRED_GUIDANCE_TEST_MODULES) >= 11, _RETIRED_GUIDANCE_TEST_MODULES
     assert len(_RETIRED_ENGINE_PATHS) >= 2, _RETIRED_ENGINE_PATHS
     assert len(_RETIRED_TEST_HELPERS) >= 8, _RETIRED_TEST_HELPERS
+    assert len(_RETIRED_RECORD_PATHS) >= 4, _RETIRED_RECORD_PATHS
+    assert len(_RETIRED_RECORD_TEST_MODULES) >= 5, _RETIRED_RECORD_TEST_MODULES
+    assert len(_ARCHIVED_FEATURE_SPECS) >= 6, _ARCHIVED_FEATURE_SPECS
     assert len(_SURVIVING_TREES) >= 14, _SURVIVING_TREES
     assert len(_SURVIVING_PROMOTION) >= 3, _SURVIVING_PROMOTION
     assert len(_SURVIVING_GUIDANCE) >= 8, _SURVIVING_GUIDANCE
@@ -359,6 +447,9 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
         *_RETIRED_GUIDANCE_TEST_MODULES,
         *_RETIRED_ENGINE_PATHS,
         *_RETIRED_TEST_HELPERS,
+        *_RETIRED_RECORD_PATHS,
+        *_RETIRED_RECORD_TEST_MODULES,
+        *(old for old, _ in _ARCHIVED_FEATURE_SPECS),
     ),
 )
 def test_a_retired_path_is_one_that_really_existed(pathspec: str) -> None:
@@ -445,6 +536,89 @@ def test_a_sibling_of_a_retired_guidance_path_survives(pathspec: str) -> None:
         f"{pathspec} holds no tracked file — Stage 2 retires the repo's own "
         f"`/harness` namespace and the `guidance-coherence` skill, not the "
         f"commands, skills and Codex adapters standing next to them."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC1 — a retired subsystem's as-built record is archived, not destroyed.
+# ---------------------------------------------------------------------------
+
+#: The banner ``specs/retired/`` has carried since CAL-661: a blockquote
+#: immediately under the H1, opening ``> **Superseded YYYY-MM-DD**``. The date is
+#: what makes it a *dated* note (``spec-authoring``), and it is required as a
+#: literal pattern rather than as free prose because "this is history" is the one
+#: thing a reader must learn before reading the body.
+_BANNER = re.compile(r"^>\s*\*\*Superseded\s+(\d{4}-\d{2}-\d{2})\*\*")
+
+#: Lines scanned for the banner. A note buried mid-document would not warn a
+#: reader who opens the file and reads the lede, which is the whole job.
+_BANNER_SCAN_LINES = 8
+
+#: One id per archived record, so a failure names the subsystem rather than
+#: repeating the slug once per parameter.
+_ARCHIVE_IDS = [Path(old).stem for old, _ in _ARCHIVED_FEATURE_SPECS]
+
+
+@pytest.mark.parametrize(
+    "old, new", _ARCHIVED_FEATURE_SPECS, ids=_ARCHIVE_IDS
+)
+def test_a_retired_subsystems_record_left_the_current_as_built_tree(
+    old: str, new: str
+) -> None:
+    """The record is gone from ``specs/features/`` and present in the archive.
+
+    Both halves in one case, because they are one move and the failure modes are
+    each other's opposite. Absence alone is satisfied by deleting the record —
+    the worst outcome available here, since a retired subsystem's as-built record
+    is precisely what explains a tree full of removals. Presence alone is
+    satisfied by copying it and leaving the original in place, which leaves
+    ``feature_specs: true``'s contract tree asserting that a deleted subsystem is
+    current behaviour.
+    """
+    assert _relative(tracked_files_under(old)) == [], (
+        f"{old} records a subsystem ADR 0015 retires and must not stay in "
+        f"specs/features/ — that tree is the *current* as-built record, and "
+        f"`feature_specs: true` makes it the contract a builder reads before "
+        f"changing behaviour."
+    )
+    assert tracked_files_under(new), (
+        f"{new} is not tracked. The record moves to specs/retired/; it is not "
+        f"deleted. A retired subsystem's as-built record is what explains the "
+        f"shape of the tree that replaced it."
+    )
+
+
+@pytest.mark.parametrize(
+    "old, new", _ARCHIVED_FEATURE_SPECS, ids=_ARCHIVE_IDS
+)
+def test_an_archived_record_says_it_is_history_and_when_it_became_history(
+    old: str, new: str
+) -> None:
+    """Each archived record carries a dated banner citing ADR 0015.
+
+    ``specs/retired/`` is exempt *by category* from every retirement sweep in
+    this suite — that is what lets these six keep describing the verbs, the
+    ledger and the container in the present tense of their own day. The
+    exemption is only honest if the file says so on its face, so the banner is
+    the condition of the exemption rather than a formatting preference: without
+    it, the six documents most likely to be mistaken for current design are the
+    six nothing checks.
+    """
+    text = (_REPO_ROOT / new).read_text(encoding="utf-8")
+    head = text.splitlines()[:_BANNER_SCAN_LINES]
+    dated = [match for match in (_BANNER.match(line) for line in head) if match]
+    assert dated, (
+        f"{new} has no dated supersede banner in its first "
+        f"{_BANNER_SCAN_LINES} lines. Prepend a blockquote under the H1: "
+        f"`> **Superseded YYYY-MM-DD** — describes the <subsystem>. <what "
+        f"replaced it, or that nothing did>. Kept for historical reference "
+        f"only.` (the convention specs/retired/ has carried since CAL-661)."
+    )
+    banner = "\n".join(head)
+    assert "0015" in banner, (
+        f"{new}'s supersede banner must cite ADR 0015 — the decision that "
+        f"retired the subsystem it describes. A date says when; only the "
+        f"citation says why, and it is the reader's next hop."
     )
 
 

@@ -1,11 +1,6 @@
----
-feature: runtime-host
-status: implemented
-last_updated: 2026-08-15
-tickets: ["#307", "#308", "#309", "#310", "#311", "#312", "#370", "#380", "#383"]
----
-
 # Runtime host (live)
+
+> **Superseded 2026-08-15** — describes `harness serve`, the persistent host-side process that owned container construction, brokered the agent credential and ran the maintenance scheduler (ADR 0012). [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) retires the container and the host process together; nothing replaces them. Kept for historical reference only.
 
 The as-built record of `harness serve` — the persistent host-side process that
 owns container construction and spawns each verb as a one-shot container. It is

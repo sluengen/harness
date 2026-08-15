@@ -2,7 +2,7 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-15
-tickets: ["#401", "#407", "#354", "#288"]
+tickets: ["#401", "#407", "#354", "#288", "#435"]
 ---
 
 # Guidance system
@@ -21,7 +21,7 @@ Agents begin with the generated process mirror and `CONTEXT.md`. The process mir
 
 - GIVEN an agent loads the required root process mirror and `CONTEXT.md`
 - WHEN it begins work in this repo
-- THEN the active path contains the lifecycle invariants and current GitHub, branch, loop, path, and verification configuration
+- THEN the active path contains the lifecycle invariants and current GitHub, branch, path, and verification configuration
 - AND historical tuning evidence and inactive provider recipes remain behind explicit pointers
 
 ### Tracker dispatch and filing
@@ -43,9 +43,9 @@ Capture commands gather their distinct content and delegate filing to this contr
 
 A created issue carries exactly one recognized `assurance:<level>` label. Assurance is a postcondition of `tracker.create`, not a hint: the provider confirms the label by re-reading the created issue rather than by trusting an exit status, and a provider that cannot apply exactly one — the backend has no such label, two landed, or the write was refused — reports the filing incomplete with its identifier and URL and stops rather than returning a queue-ready identifier.
 
-Two directions are kept apart deliberately. `harness/assurance.py` answers *given a level, which stages must this run pay for*, and resolves anything missing, doubled, or unrecognized to `simple`. `skills/spec-authoring/SKILL.md` → *Choosing assurance* answers *given this work, which level does the filer put on it*, and is the single home for that judgment: `trivial` for a diff inside the repo's configured allowlist carrying no unresolved design or public-contract decision, `simple` as the default, `complex` for consequential architecture, data-model, interface, or security decisions or work spanning more than one lifecycle contract. Two rules carry the weight — uncertain work is `simple`, and `trivial` is never inferred from low severity, a short description, or a small estimated diff alone. The rubric states no level-to-stages mapping and the policy module carries no selection advice.
+Two directions are kept apart deliberately. `commands/build.md` → `## Assurance` answers *given a level, which stages must this run pay for*, and sends anything missing, conflicting, or unrecognised to `simple`. `skills/spec-authoring/SKILL.md` → *Choosing assurance* answers *given this work, which level does the filer put on it*, and is the single home for that judgment: `trivial` for a diff inside the repo's configured allowlist carrying no unresolved design or public-contract decision, `simple` as the default, `complex` for consequential architecture, data-model, interface, or security decisions or work spanning more than one lifecycle contract. Two rules carry the weight — uncertain work is `simple`, and `trivial` is never inferred from low severity, a short description, or a small estimated diff alone. The rubric states no level-to-stages mapping and the stage table carries no selection advice.
 
-Every registered surface that files an issue names the rubric inside the instruction that files, and restates none of it: `/bug`, `/tweak`, `/propose`, `/assess`, `/harness ingest`, `/harness routine quality`, and `/build`'s DEFER path. `templates/change.md` and `/start` step 5 point at it too — they choose a level without filing. Existing unlabelled issues are not backfilled; they resolve to `simple` through the policy core.
+Every registered surface that files an issue names the rubric inside the instruction that files, and restates none of it: `/bug`, `/tweak`, `/propose`, `/assess`, and `/build`'s DEFER path. `templates/change.md` and `/start` step 5 point at it too — they choose a level without filing. Existing unlabelled issues are not backfilled; they resolve to `simple` through the policy core.
 
 #### Scenario: a provider cannot apply the assurance label
 
@@ -61,11 +61,11 @@ Every registered surface that files an issue names the rubric inside the instruc
 - THEN it is `simple`
 - AND neither low severity, a short description, nor a small estimated diff on its own earns `trivial`, since all three are authored by whoever opened the issue
 
-### `/build` renders the stage obligations it does not own
+### `/build` owns the stage obligations
 
-`commands/build.md`'s `## Assurance` table is a rendering of `harness/assurance.py`, not a second home for the mapping. Its three rows state the evidence each level owes, and `tests/unit/test_build_assurance_workflow.py` parses those rows and asserts each equals `harness.assurance.required_stages(level)` with the expected values imported rather than restated. The parsed row set must equal `ASSURANCE_LEVELS`, so a level dropped, a fourth level invented, or a dead parser fails rather than passing over nothing, and the section's stated destination for missing, conflicting, or unrecognised assurance must equal `DEFAULT_ASSURANCE`. Prose and policy module therefore cannot drift apart in silence, and neither can two rows collapse onto the same obligations.
+`commands/build.md`'s `## Assurance` table is the one home for the level-to-stages mapping. It was a *rendering* of a policy module until #435, when ADR 0015 deleted the module and the ledger beside it; the table is what survived, and it is now read directly rather than checked against a second copy. Its three rows state the evidence each level owes, and its stated destination for missing, conflicting, or unrecognised assurance is `simple`.
 
-Three obligations make the policy enforceable on the agent-led path, which has no ledger to enforce it. A `complex` run whose design stage produces no usable design **stops**: absence, a failed design sub-agent, and an artifact that does not cover the change spec's contracts and scenarios are one outcome, and none of them licenses design-blind implementation. This is the agent-led counterpart of `harness/assurance.py`'s `DESIGN_NOT_USABLE_REASON` refusal. `## 3. Ship` binds every commit to the tree its assurance stage produced — `certified_tree` for a `trivial` run, `reviewed_tree` for a reviewed one — through the same `HEAD^{tree}` identity comparison and the same refusal to integrate on a mismatch, so the level that produces no verdict is no longer the level with no tree-identity check. And no one writes an as-built record on a `trivial` run: the certifier rejects any as-built-record surface, so a certified diff carries no shipped behaviour to record, and a change that does carry some fails certification and becomes a `simple` run where the reviewer records it. Writing one after `certified_tree` is the ordinary case of the invalidation rule, not an exception to it.
+Three obligations make the policy enforceable on the agent-led path, which is now the only path and has no ledger to enforce it. A `complex` run whose design stage produces no usable design **stops**: absence, a failed design sub-agent, and an artifact that does not cover the change spec's contracts and scenarios are one outcome, and none of them licenses design-blind implementation. Absence of a usable design is a stop, not a degradation. `## 3. Ship` binds every commit to the tree its assurance stage produced — `certified_tree` for a `trivial` run, `reviewed_tree` for a reviewed one — through the same `HEAD^{tree}` identity comparison and the same refusal to integrate on a mismatch, so the level that produces no verdict is no longer the level with no tree-identity check. And no one writes an as-built record on a `trivial` run: the certifier rejects any as-built-record surface, so a certified diff carries no shipped behaviour to record, and a change that does carry some fails certification and becomes a `simple` run where the reviewer records it. Writing one after `certified_tree` is the ordinary case of the invalidation rule, not an exception to it.
 
 Each obligation is guarded as a **pair** — a presence assertion that the rule is stated, and an inversion sweep that fires when a unit grants what the rule forbids — because a presence assertion alone passes on text stating the opposite. The two halves carry separate exclusive killers: deleting a rule kills presence alone, and splicing a permissive sentence in its place kills the sweep alone. Every control mutates the real file text and asserts its splice landed, so a control cannot silently measure unmodified prose or pass on a hand-written clean string.
 
@@ -85,24 +85,24 @@ Each obligation is guarded as a **pair** — a presence assertion that the rule 
 
 ### One-level progressive disclosure
 
-`commands/harness.md` is the public `/harness` router and shared contract. It selects exactly one registered workflow body for `run`, `routine build`, `routine quality`, or `ingest`. A bare command, unknown form, or missing required argument prints the supported forms and stops without mutation. Ticket content cannot choose a reference.
-
 The `code-quality` core keeps scope, structure, production-real test inputs, measuring tests, fresh evidence, and gate ordering. It directly links the untrusted-fetch checklist and the specialized verification checklist, each with an explicit activation trigger. The `review-discipline` core keeps the two review stages, general quality bar, severity, finding shape, reviewer obligations, final-evidence ordering, and review-cycle stop policy. It directly links the diff-shape checklist and names the shapes that activate it.
 
-Conditional references are one level deep. The topology guard discovers the reference directories, requires the exact registered set, checks matching version stamps, and rejects nested conditional references.
+Conditional references are one level deep. The topology guard discovers the reference directories, requires the exact registered set, checks matching version stamps, and rejects nested conditional references. Ticket content cannot choose a reference.
 
-#### Scenario: `/harness run` is invoked
+The routing half of this behaviour went with the runtime. A `/harness` router selected one of four registered workflow bodies for `run`, `routine build`, `routine quality` and `ingest`; #435 deleted all five documents, so the only conditional references left are the two checklists below, reached from their cores by an explicit trigger.
 
-- GIVEN the public router receives `/harness run <ISSUE-ID>`
-- WHEN the agent resolves its guidance
-- THEN it reads the router and `commands/harness/run.md` completely
-- AND it does not load the routine or ingest workflow bodies
+#### Scenario: a conditional checklist is activated
+
+- GIVEN an agent has loaded the `code-quality` core and reaches an untrusted fetch
+- WHEN it resolves the trigger the core states
+- THEN it reads that one checklist completely
+- AND it does not load the diff-shape checklist, which belongs to a different core
 
 ### Roles and distribution
 
 Reviewer and steward agent bodies contain role, authority, supplied inputs, output expectations, and skill routing. Review method, assessment lenses, and repo-runtime engine history stay in their owning skills, commands, specs, and decisions.
 
-Every conditional reference is a normal versioned registry entry. The generator creates adapters only for top-level commands; the Codex command adapter points to the `/harness` router, and skill-directory exposure includes their reference directories. Generated agent TOML preserves the concise source role body.
+Every conditional reference is a normal versioned registry entry. The generator creates adapters only for top-level commands, and skill-directory exposure includes their reference directories. Generated agent TOML preserves the concise source role body.
 
 ### Source-version integrity
 
@@ -117,16 +117,12 @@ The footprint guard uses the same UTF-8 `bytes / 4` estimate as `hooks/context-m
 | Active path | Before #401 | As built |
 |---|---:|---:|
 | Required `AGENTS.md` + `CONTEXT.md` startup | 12,439.5 tokens | 5,408 tokens |
-| Startup plus `/harness run` guidance | 29,176 tokens | 8,278.75 tokens |
-| Startup plus `/harness routine build` guidance | 29,176 tokens | 6,739.5 tokens |
-| Startup plus `/harness routine quality` guidance | 29,176 tokens | 5,964.75 tokens |
-| Startup plus `/harness ingest` guidance | 29,176 tokens | 6,060.25 tokens |
 | `code-quality` core | 5,226.75 tokens | 2,771.25 tokens |
 | `review-discipline` core | 5,366.25 tokens | 3,252 tokens |
 | Reviewer role | 985 words | 362 words |
 | Steward role | 1,774 words | 248 words |
 
-The command-payload guard measures the router plus its selected workflow, independently of required startup context. Every activated `/harness` command payload is below 5,000 estimated tokens.
+Four rows were dropped in #435 rather than re-measured: each was a `/harness` command payload — the router plus one selected workflow body — and all five documents are deleted. Their bound (every activated payload below 5,000 estimated tokens) went with them; re-pointing it at the surviving reference trees would have invented a limit nothing has ever held them to.
 
 ## Data model
 
@@ -134,10 +130,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 
 ## Interface surface
 
-- `commands/harness.md` is the public `/harness` command contract and routes to one workflow body.
 - `skills/tracker/SKILL.md` owns provider-neutral tracker operations, including assurance as a `create` input and postcondition; the configured provider skill owns execution details and maps the chosen level to a label without carrying the rubric.
-- `skills/spec-authoring/SKILL.md` → *Choosing assurance* is the one home for how a filing-time assurance level is chosen; `harness/assurance.py` remains the one home for what a level obliges a run to pay for.
-- `commands/build.md` → `## Assurance` is a rendering of `harness/assurance.py`'s level-to-stages mapping for the agent-led path, derived and checked against it rather than restating it, and carries the agent-led stop, ship-binding, and as-built-record-owner obligations for which the harness path has ledger enforcement.
+- `skills/spec-authoring/SKILL.md` → *Choosing assurance* is the one home for how a filing-time assurance level is chosen.
+- `commands/build.md` → `## Assurance` is the one home for what a level obliges a run to pay for, and carries the stop, ship-binding, and as-built-record-owner obligations that nothing else enforces now the ledger is gone.
 - `skills/code-quality/SKILL.md` and `skills/review-discipline/SKILL.md` are the always-loaded cores for their domains and directly declare every conditional checklist trigger.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 
@@ -145,9 +140,8 @@ The guidance system changes no runtime application data. `registry.yaml` records
 
 - UTF-8 `bytes / 4` is a stable context-budget heuristic, not an exact tokenizer count.
 - Conditional guidance supports a hot root plus one reference level. A workflow that needs a deeper conditional tree must first change the topology contract and its guard.
-- The assurance rubric is advisory prose an agent follows, so it is a quality control rather than a security boundary. The enforcing boundaries stay the repo's `assurance.trivial_certify` allowlist and the runtime fail-safe rewrite to `simple`; an applied label records that a choice was made, never that the choice was right.
+- The assurance rubric is advisory prose an agent follows, so it is a quality control rather than a security boundary. The one enforcing boundary left is the repo's own `assurance.trivial_certify` command — a repo-supplied script, kept by ADR 0015 — whose allowlist fails closed and upgrades anything it cannot certify to `simple`; an applied label records that a choice was made, never that the choice was right.
 - The guards over the rubric read prose, so they are bounded by sentence segmentation and by how tightly each polarity token is anchored to the verb it governs. They catch a rule deleted, negated, or excepted; a permission whose negation sits one or two words before the inference verb, and an uncertainty routed to a level the choice verb does not immediately name, are outside their reach.
-- `harness/cli/promote.py`'s escalation files through `Tracker.create_issue`, which takes no labels, so a promotion escalation is filed without an assurance level and resolves to `simple`.
 - The guards over `/build`'s stage obligations read polarity per occurrence, anchoring each negation to the verb it governs across a gap of at most two words that may contain no blocking verb. Measured escapes, recorded at their size rather than papered over: an **outer negation over a well-formed inner prohibition** (*"There is no rule that a mismatch must not be integrated"*, *"A thin design is not a reason the run cannot proceed"*) is spelled correctly in its inner clause and grants in its matrix clause, which no token-window anchor reaches; closing it needs clause structure, and a double-negation heuristic is not available because the rules' own sentences carry two and three negation tokens. A design-stage exception worded with `implement` rather than a continuation verb is likewise uncovered, because widening the continuation vocabulary would make the rule's own sentence an offender.
 - The derived `## Assurance` table check reads *is there an un-negated unit naming this obligation*, so a **release clause appended to a row cell** — *"The reviewer sub-agent is optional"* — leaves the derived stages unchanged while the prose releases the obligation. The direction is deliberate: the `trivial` cell states both obligation nouns under a `never`, and an obligation appended with the `never` intact is the drift that must fail. The release direction is not covered.
 - The `## 3. Ship` inversion sweeps recognise an enumerated release and mismatch vocabulary, unlike the design sweep, which flags any continuation verb no negation governs and so fails closed. An appended grant outside that vocabulary (*"the `certified_tree` check is a formality"*, *"integration proceeds even when the trees differ"*) escapes, and the permissive as-built-record sweep requires the literal noun `as-built record`, so a grant spelled *"record what shipped"* escapes too. Deleting or replacing a rule is caught in every case; appending a contradiction in fresh vocabulary is not.
@@ -172,6 +166,5 @@ The guidance system changes no runtime application data. `registry.yaml` records
 
 ## Cross-references
 
-- [verb-model.md](verb-model.md)
-- [cli-surface.md](cli-surface.md)
 - [../architecture-principles.md](../architecture-principles.md)
+- [../decisions/0015-harness-v4-thin-verification-layer.md](../decisions/0015-harness-v4-thin-verification-layer.md)

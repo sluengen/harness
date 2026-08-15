@@ -33,13 +33,13 @@ across all four loops — no loop gets an adjective the others don't.
 - **Every section heading is a question or a plain label**, in the small-caps
   eyebrow style already established (`How we build · operating model`, `How
   the loops are triggered`) — never a slogan.
-- **Verb names and command syntax are never paraphrased.** `/harness run`,
-  `/propose`, `--deep` appear verbatim, in `<code>`, exactly as a user would
-  type them — this is also what lets
+- **Command names and syntax are never paraphrased.** `/build`, `/propose`,
+  `--deep` appear verbatim, in `<code>`, exactly as a user would type them —
+  this is also what lets
   `tests/unit/test_landing_page.py::test_named_guidance_resolves_in_registry`
   hold the page to the real registry.
 - **Status is stated at the cadence and mechanism level**, e.g. "Automated ·
-  the harness app is the tool inside this loop", "Human-driven — the rudder
+  the verify gate is the tool inside this loop", "Human-driven — the rudder
   for everything inside" — one line, no elaboration, always ending on who or
   what drives the loop.
 - **Bold marks the one word that carries the sentence's point**, not for

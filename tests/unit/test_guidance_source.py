@@ -261,8 +261,8 @@ def test_no_canonical_file_gates_ux_design_on_design_system() -> None:
     """ux-design is never gated on the design_system layer in canonical metadata.
 
     The fix must hold across every canonical home, not just the process-doc
-    skills table: the merged process doc, the ``registry.yaml`` copy-list
-    comments, and the CHANGELOG record all describe the skills. ux-design applies
+    skills table: the merged process doc and the ``registry.yaml`` copy-list
+    comments both describe the skills. ux-design applies
     to any user-facing surface regardless of a design system; only design-system
     is layer-gated (skills/ux-design/SKILL.md). A line that names ux-design while
     gating it on the design_system layer is the regression — unless it is
@@ -272,7 +272,6 @@ def test_no_canonical_file_gates_ux_design_on_design_system() -> None:
     canonical = {
         "process/harness.md": PROCESS_DOC,
         "registry.yaml": REGISTRY,
-        "CHANGELOG.md": REPO_ROOT / "CHANGELOG.md",
     }
     offenders: list[str] = []
     for name, path in canonical.items():

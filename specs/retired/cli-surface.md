@@ -1,11 +1,6 @@
----
-feature: cli-surface
-status: implemented
-last_updated: 2026-08-15
-tickets: [CAL-583, CAL-603, CAL-661, CAL-738, CAL-739, CAL-1113, CAL-1114, CAL-1115, CAL-1116, "#193", "#295", "#297", "#328", "#300", "#301", "#306", "#310", "#318", "#321", "#355", "#347", "#339", "#338", "#359", "#378", "#370", "#390", "#391", "#393", "#394", "#396", "#311", "#353"]
----
-
 # CLI surface — the fixed verb contract
+
+> **Superseded 2026-08-15** — describes the `harness` CLI's fixed command contract: the audited verbs, the read-only inspection commands, the ops commands, and their flags, exit codes and JSON output. [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) deletes the CLI; the repo's only executable surface is now `scripts/verify.sh`. Kept for historical reference only.
 
 > A fixed set of hand-written commands — audited verbs, read-only inspection, and ops — with stable flags, exit codes, and JSON output, invoked identically by a human and by Hermes.
 

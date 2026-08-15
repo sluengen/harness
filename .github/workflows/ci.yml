@@ -20,11 +20,9 @@ permissions:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    # Must exceed the longest single test. The docker integration module builds
-    # the image with no layer cache and is allowed 600s (CAL-1110); at the old
-    # 10 minutes the job budget and that one test were the same number, so the
-    # backstop would fire before the thing it backstops. Pinned by
-    # tests/unit/test_timeout_budgets_coherent.py.
+    # A backstop, not a budget: it must exceed the whole gate with room to
+    # spare. The gate runs in well under a minute since #435 deleted the docker
+    # stage that used to build an uncached image under a 600s allowance.
     timeout-minutes: 20
 
     steps:
@@ -47,8 +45,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Run verification gate
-        # pytest-timeout kills any single test that stalls past 120 s — except
-        # the docker integration module, which overrides to 600 s for its
-        # uncached image build (CAL-1110). The job-level timeout-minutes is a
-        # secondary backstop and must stay above both.
+        # pytest-timeout kills any single test that stalls past 120 s
+        # (pyproject.toml). The job-level timeout-minutes above is a secondary
+        # backstop and must stay above it.
         run: bash scripts/verify.sh

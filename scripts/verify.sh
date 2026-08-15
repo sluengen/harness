@@ -47,7 +47,7 @@ echo "=== pytest ==="
 # The floor is set just under the measured value at the time of the teardown
 # and is a ratchet, not a target: raise it when coverage rises, and treat a drop
 # below it as the regression it is.
-uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=75
+uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=79
 
 echo "=== landing-page drift guard ==="
 # Fail the gate if docs/index.html names a command/skill/agent the registry no
@@ -61,17 +61,6 @@ echo "=== design-token drift guard ==="
 # narrowed (#243): the guidance catalog above stays guarded and hand-authored;
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
-
-echo "=== release cadence (report only) ==="
-# Cadence bounds describe accumulated repo state, not this change: no change
-# here caused a breach and none can fix one, so a breach must never be this
-# gate's verdict (#350 — it wedged the build queue for five ticks). `report`
-# exits 0 regardless and is deliberately the LAST stage, so the breach line
-# lands inside the bounded gate-log tail `review` and `promote` already record.
-# The enforcing half was `cadence.py check`, run by a CI job on a PR into main;
-# that job is retired with the release machinery (ADR 0015), and the whole
-# cadence surface goes with the changelog.
-uv run --extra dev python scripts/cadence.py report
 
 echo ""
 echo "All checks passed."

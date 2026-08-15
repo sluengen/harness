@@ -1,11 +1,6 @@
----
-feature: verb-model
-status: implemented
-last_updated: 2026-08-15
-tickets: [CAL-570, CAL-574, CAL-586, CAL-661, CAL-925, CAL-1082, CAL-1104, CAL-1197, "#244", "#295", "#296", "#297", "#298", "#299", "#329", "#300", "#301", "#315", "#318", "#321", "#339", "#338", "#359", "#363", "#352", "#370", "#353"]
----
-
 # Verb model — start / design / review / close
+
+> **Superseded 2026-08-15** — describes the four audited verbs (`start` / `design` / `review` / `close`), the assurance levels that selected their stages, and the close gate that bound a merge to a reviewed SHA. [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) retires the runtime that implemented them. Nothing replaces the verbs: a ticket is driven by the agent-led `/build` lifecycle, and the only mechanical enforcement left is the verify gate. Kept for historical reference only.
 
 > The four audited verbs an orchestrating agent calls to drive a ticket from open to merged, with the design stage recorded and review enforced as a gate before anything lands.
 

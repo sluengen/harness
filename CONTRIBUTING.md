@@ -1,9 +1,10 @@
 # Contributing
 
 Thanks for your interest. First, the honest framing: **this is dogfood
-infrastructure.** The harness is an audit/process layer that one maintainer runs
-on their own agent-driven development and publishes so others can read, learn
-from, and adapt it — not a turnkey product with a support commitment.
+infrastructure.** The harness is a verification layer and a body of guidance that
+one maintainer runs on their own agent-driven development and publishes so others
+can read, learn from, and adapt it — not a turnkey product with a support
+commitment.
 
 ## Issues
 
@@ -23,23 +24,15 @@ If you do open a PR:
 - **Stay in scope and test-first.** The repo builds test-first and runs a gate —
   `uv run --extra dev pytest`, plus `ruff` and `mypy`. See [`CONTEXT.md`](./CONTEXT.md)
   for the exact commands and [`CLAUDE.md`](./CLAUDE.md) for how work happens here.
-- **Use the tiers for the fast loop.** Every test is assigned a dependency tier
-  at collection — `unit` (nothing outside the process), `guard` (reads the
-  checked-out tree) or `integration` (a real repo or worktree, the
-  SQLite ledger, a spawned process, or a whole verb through `CliRunner`). Run
-  `uv run --extra dev pytest -m "unit or guard"` while iterating: ~2,900 tests
-  in about nine seconds, against roughly four minutes to run the whole suite
-  serially. Add `-m integration` — or `-m "integration and not docker"` without a
-  daemon — for the rest. The tier is *derived* from your module's imports, so
-  there is no marker to write; if a `unit`-tier test of yours spawns a process it
-  fails with `TierViolationError`, and [`tests/_tiers.py`](./tests/_tiers.py)
-  explains the escape hatch. **A tier selection is still not a gate run** —
-  `bash scripts/verify.sh` runs everything, and only that counts as verification.
-  It does so in two stages: the tests sharing the `harness:test` Docker image tag
-  run serially, and the rest run across your cores (about a minute on eight),
-  under one coverage floor measured on the union. Set `HARNESS_TEST_WORKERS` to
-  override the worker count — `HARNESS_TEST_WORKERS=0` runs in the controller,
-  which is how you reproduce a failure that only appears under parallelism.
+- **Run the gate, not a subset.** `bash scripts/verify.sh` is the whole contract
+  and the only thing that counts as verification: lint, types, the suite across
+  your cores under a coverage floor, and the drift guards over the generated
+  artifacts. It takes well under a minute. Set `HARNESS_TEST_WORKERS` to override
+  the worker count — `HARNESS_TEST_WORKERS=0` runs in the controller, which is
+  how you reproduce a failure that only appears under parallelism. (The suite
+  used to be split into dependency tiers so a fast loop could skip the slow half.
+  #435 deleted the runtime that made half of it slow, so there is no longer a
+  subset worth selecting.)
 - **Prove a new guard by mutating what it guards.** A test written after the
   code, or one that was green the moment it was born, has not been shown to
   measure anything. `scripts/mutate.py` runs that proof: you write a TOML table
@@ -47,8 +40,8 @@ If you do open a PR:
   harness applies them one at a time against a pristine tree.
 
   ```bash
-  uv run python scripts/mutate.py check --table <table>.toml   # lands? costs nothing
-  uv run python scripts/mutate.py run   --table <table>.toml   # baseline, then each entry
+  uv run --extra dev python scripts/mutate.py check --table <table>.toml   # lands? costs nothing
+  uv run --extra dev python scripts/mutate.py run   --table <table>.toml   # baseline, then each entry
   ```
 
   Each entry carries an `id`, the `file` it edits, the exact `old` and `new`
@@ -87,8 +80,9 @@ If you do open a PR:
 
 ## Inbound licensing
 
-This repo is split: the engine is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)) and
-the guidance the installer copies into other repos is **MIT**
+This repo is split: its own code — the gate, the mutation instrument and the
+guard suite — is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)) and the guidance the
+installer copies into other repos is **MIT**
 ([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md)). A contribution is licensed under
 whichever of the two already covers the file it touches.
 

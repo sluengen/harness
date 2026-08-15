@@ -13,7 +13,7 @@ canonical recipes. These guards pin the fix:
 
 * **AC-1** — the skill lives at ``skills/linear/SKILL.md`` with a ``name: linear``
   frontmatter and a ``guidance:linear@<version>`` header (the directory was *moved*,
-  not copied). Registry/header/CHANGELOG version parity is covered generically by
+  not copied). Registry/header version parity is covered generically by
   ``tests/unit/test_guidance_source.py::test_surface_headers_match_registry``.
 * **AC-2** — the skill leads with **type-based runtime state resolution**: resolve a
   state by its stable ``type`` enum (``unstarted`` / ``started`` / ``completed`` /
@@ -21,12 +21,12 @@ canonical recipes. These guards pin the fix:
   **by name**; CONTEXT-cached UUIDs are demoted to an override-only exception.
 * **AC-3** — **no command embeds raw Linear GraphQL** (``api.linear.app``). A
   documented, *shrinking* allowlist carries the pre-existing embeds (``build.md`` →
-  CAL-715, ``harness.md`` → the repo-owned ``/harness`` ingest flow); an allowlisted
+  CAL-715); an allowlisted
   file that no longer embeds GraphQL fails the guard, forcing the list toward the
   absolute invariant (no silent caps — ``code-quality`` Part C).
 * **AC-4** — every **live** surface reference to the old ``linear-sync`` id is
-  updated to ``linear``. Only the historical record (``CHANGELOG.md``,
-  ``assessments/``) and regression guards (``tests/``) keep the old id.
+  updated to ``linear``. Only the historical record (``assessments/``) and
+  regression guards (``tests/``) keep the old id.
 """
 
 from __future__ import annotations
@@ -160,13 +160,15 @@ def test_embed_allowlist_shrinks() -> None:
 
 #: Live surface directories that must reference the skill by its new ``linear`` id.
 _LIVE_DIRS = ("skills", "commands", "agents", "templates", "process", "specs")
-#: Live root files in the same boat (historical CHANGELOG.md / assessments/ excluded).
+#: Live root files in the same boat (historical assessments/ excluded).
+#: ``SPEC.md`` sat here until #435 deleted it with the design it described;
+#: ``CONTEXT.md`` takes its place as the repo's own live root record.
 _LIVE_ROOT_FILES = (
     "CLAUDE.md",
     "AGENTS.md",
     "GEMINI.md",
     "BOOTSTRAP.md",
-    "SPEC.md",
+    "CONTEXT.md",
     "README.md",
     "registry.yaml",
 )
@@ -193,8 +195,8 @@ _ALLOWED_OLD_ID_FOLD = "linear-sync` → `linear"
 def test_no_live_reference_to_old_skill_id() -> None:
     """No live surface file points at the old ``linear-sync`` id as a live skill (AC-4).
 
-    Historical records (``CHANGELOG.md``, ``assessments/``) and regression guards
-    (``tests/``) legitimately keep the old id and are excluded by construction. The
+    Historical records (``assessments/``) and regression guards (``tests/``)
+    legitimately keep the old id and are excluded by construction. The
     documented rename ``linear-sync`` -> ``linear`` in the migration docs (CAL-750)
     is a fold reference, not a live pointer, and is exempt.
     """

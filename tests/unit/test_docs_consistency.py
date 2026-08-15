@@ -3,9 +3,9 @@
 Scans README.md and CLAUDE.md for phrases that indicate the repo is in a
 pre-implementation state. If the harness has shipped, these should be absent.
 
-Also enforces (DOC-3, CAL-593) that every spec the SPEC.md index marks as
-superseded carries an in-file dated supersede banner, so an agent opening the
-file directly is not misled into reading retired-engine content as live.
+Also enforces (DOC-3, CAL-593) that every retired spec carries an in-file dated
+supersede banner, so an agent opening the file directly is not misled into
+reading superseded content as live.
 
 **#435 removed the cross-repo-execution and ssh-forwarding sections.** Both read
 their invariants off ``harness.hostenv.spawn`` — the argv it built for the
@@ -15,6 +15,14 @@ ssh-agent gate they locked no longer exist to be locked. Everything else here
 guards a surviving file, including the two ``--extra dev`` guards below, which
 are what hold ``CONTEXT.md``'s ``commands:`` block and ``scripts/verify.sh``
 together as this repo becomes a gate and nothing else.
+
+**#435 also re-anchored the banner guard on the tree instead of an index.** Its
+subject set came from a "Superseded" table inside ``SPEC.md``, and ADR 0015
+deletes ``SPEC.md`` with the design it described. The set is now every tracked
+``specs/retired/*.md``, which is a stronger subject than the table ever was: the
+table listed the specs someone remembered to add a row for, while the directory
+*is* the retired set by definition, so a spec retired without a banner is caught
+on the commit that retires it rather than on the commit that indexes it.
 """
 
 from __future__ import annotations
@@ -54,11 +62,6 @@ def test_no_stale_bootstrap_phrases(doc: Path) -> None:
 
 # --- Supersede banners (DOC-3, CAL-593) ---------------------------------------
 
-SPEC_INDEX = REPO_ROOT / "SPEC.md"
-
-#: Header of the SPEC.md index table that lists superseded specs.
-_SUPERSEDED_TABLE_MARKER = "**Superseded (retired deterministic engine"
-
 #: A spec file carries a banner if one of its first lines is a blockquote of the
 #: form ``> **Superseded YYYY-MM-DD** …`` (the format `hermes-control-model.md`
 #: established). The date requirement is what makes it a *dated* banner.
@@ -69,121 +72,45 @@ _BANNER_RE = re.compile(r"^>\s*\*\*Superseded\s+\d{4}-\d{2}-\d{2}")
 _BANNER_SCAN_LINES = 12
 
 
-def _superseded_specs() -> list[Path]:
-    """Spec files the SPEC.md index marks as superseded.
+def _retired_specs() -> list[Path]:
+    """Every tracked ``specs/retired/*.md``.
 
-    Parses the "Superseded" table rather than hard-coding a list, so a spec
-    added to (or removed from) the index is automatically held to the same rule.
+    Derived from the tracked tree, so a spec retired tomorrow is held to the
+    banner rule the moment it lands. Judged over the *index* rather than the
+    working tree, so an untracked scratch file next door is not a subject.
     """
-    text = SPEC_INDEX.read_text()
-    lines = text.splitlines()
-    specs: list[Path] = []
-    in_table = False
-    for line in lines:
-        if _SUPERSEDED_TABLE_MARKER in line:
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if in_table and not line.lstrip().startswith("|"):
-            # Table ends at the first non-row line after it has begun.
-            if specs:
-                break
-            continue
-        # A superseded row may point at a doc re-homed under specs/retired/
-        # (CAL-661) or still at the top level of specs/.
-        for match in re.finditer(r"specs/((?:retired/)?[A-Za-z0-9_-]+\.md)", line):
-            candidate = REPO_ROOT / "specs" / match.group(1)
-            if candidate not in specs:
-                specs.append(candidate)
-    return specs
+    return sorted(p for p in tracked_files_under("specs/retired") if p.suffix == ".md")
 
 
-def test_superseded_table_is_parseable() -> None:
-    """Guard the parser itself: the index must list the known superseded specs."""
-    names = {p.name for p in _superseded_specs()}
-    assert {
-        "engine-executor.md",
-        "engine-loop.md",
-        "ai-node.md",
-        "script-node.md",
-        "workflow-schema.md",
-        "build-workflow.md",
-        "cli.md",
-        "hermes-control-model.md",
-        "spec-engine.md",  # SPEC.md's own retired-engine sections (CAL-1010)
-    } <= names
+def test_the_retired_spec_set_is_not_empty() -> None:
+    """Guard the derivation itself: the retired tree really is populated.
+
+    The banner check below is parametrized over a derived set, and an empty
+    parametrize collects zero cases and reports ``skipped``, which reads as
+    green. A wrong pathspec would therefore certify the banner rule while
+    checking nothing.
+    """
+    names = {p.name for p in _retired_specs()}
+    assert len(names) >= 10, (
+        f"only {len(names)} tracked specs/retired/*.md — the derivation has "
+        f"stopped finding the tree: {sorted(names)}"
+    )
 
 
-@pytest.mark.parametrize(
-    "spec", _superseded_specs(), ids=lambda p: p.name
-)
-def test_superseded_spec_has_in_file_banner(spec: Path) -> None:
-    """Every spec marked superseded in the index carries a dated in-file banner."""
-    assert spec.exists(), f"{spec} listed in SPEC.md index but does not exist"
+@pytest.mark.parametrize("spec", _retired_specs(), ids=lambda p: p.name)
+def test_retired_spec_has_in_file_banner(spec: Path) -> None:
+    """Every spec under ``specs/retired/`` carries a dated in-file banner.
+
+    The directory is exempt *by category* from every retirement prose sweep in
+    this suite, which is what lets these files keep describing a deleted design
+    in the present tense of their own day. The banner is the condition of that
+    exemption, not a formatting preference.
+    """
     head = spec.read_text().splitlines()[:_BANNER_SCAN_LINES]
     assert any(_BANNER_RE.match(line) for line in head), (
-        f"{spec.name} is marked superseded in the SPEC.md index but has no "
-        "in-file supersede banner near the top. Prepend a dated banner of the "
-        "form '> **Superseded YYYY-MM-DD** by …' (see hermes-control-model.md)."
-    )
-
-
-# --- D5 routing-discipline scope (ADH-1, CAL-596) -----------------------------
-#
-# The architecture-principles "Routing discipline" principle once claimed that
-# *every* git and ticket mutation goes through a verb. That overstated the
-# guarantee: the agent-led backup flow (`/start` → `/review` → `/ship`)
-# hand-rolls a Linear lifecycle transition outside the verbs and outside the
-# `runs` ledger, by design. These two tests pin the prose to that reality —
-# one anchors the reality (the backup flow really does hand-roll the
-# transition), the other forbids the unqualified claim from creeping back.
-
-ARCH_PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
-LINEAR_SKILL = REPO_ROOT / "skills" / "linear" / "SKILL.md"
-
-#: The exact unqualified assertion ADH-1 (CAL-596) flagged as overstated.
-_UNQUALIFIED_D5_CLAIM = "Every git and ticket mutation goes through a verb."
-
-
-def _routing_discipline_section() -> str:
-    """Body of the '### Routing discipline' subsection of the principles spec."""
-    text = ARCH_PRINCIPLES.read_text()
-    marker = "### Routing discipline"
-    start = text.index(marker)
-    rest = text[start + len(marker) :]
-    # The section runs until the next heading of equal-or-higher level.
-    end = re.search(r"\n#{1,3} ", rest)
-    return rest[: end.start()] if end else rest
-
-
-def test_backup_flow_hand_rolls_linear_transition() -> None:
-    """The reality ADH-1 documents: the agent-led backup flow hand-rolls a Linear
-    lifecycle transition outside the verbs. If this stops being true, the
-    run-lifecycle carve-out in architecture-principles.md is stale — revisit it.
-    """
-    text = LINEAR_SKILL.read_text()
-    assert "issueUpdate" in text and "stateId" in text, (
-        "skills/linear/SKILL.md no longer shows a hand-rolled issueUpdate/stateId "
-        "transition. Re-check whether architecture-principles.md still needs its "
-        "run-lifecycle carve-out (ADH-1, CAL-596)."
-    )
-
-
-def test_routing_discipline_scoped_to_run_lifecycle() -> None:
-    """ADH-1: the routing-discipline principle must scope its guarantee to the
-    run lifecycle, not claim that *every* ticket mutation goes through a verb —
-    the backup flow is a standing counterexample."""
-    section = _routing_discipline_section()
-    assert _UNQUALIFIED_D5_CLAIM not in section, (
-        "architecture-principles.md 'Routing discipline' still makes the "
-        f"unqualified claim {_UNQUALIFIED_D5_CLAIM!r}. The agent-led backup flow "
-        "hand-rolls a Linear transition outside the verbs, so this overstates the "
-        "guarantee — scope it to run-lifecycle mutations (ADH-1, CAL-596)."
-    )
-    assert "run-lifecycle" in section or "run lifecycle" in section, (
-        "architecture-principles.md 'Routing discipline' must scope the guarantee "
-        "to run-lifecycle mutations (ADH-1, CAL-596)."
+        f"{spec.name} sits under specs/retired/ but has no in-file supersede "
+        "banner near the top. Prepend a dated banner of the form "
+        "'> **Superseded YYYY-MM-DD** — …' (see hermes-control-model.md)."
     )
 
 
@@ -228,14 +155,13 @@ def test_no_separate_agents_source_repo_claim(doc: Path) -> None:
     )
 
 
-# --- CHANGELOG freshness anchor (CAL-651, AC-2) -------------------------------
+# --- Version-bump freshness anchor (CAL-651, AC-2) ----------------------------
 
-CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 FRESHNESS_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 
-def test_changelog_present_and_referenced_by_freshness_hook() -> None:
-    """AC-2: the changelog exists and the SOURCE-mode freshness hook nags toward it.
+def test_the_freshness_hook_names_a_record_that_exists() -> None:
+    """AC-2: the SOURCE-mode freshness hook nags toward a real place.
 
     The freshness hook (SOURCE mode) tells an author where to record a version
     bump. If the hook points somewhere, that place must exist or the pointer is
@@ -245,15 +171,19 @@ def test_changelog_present_and_referenced_by_freshness_hook() -> None:
 
     Since #324 there is no changelog artifact to nag for. The entry is derived
     from the commit at release (ADR 0014), so the reminder points at the commit
-    body. ``CHANGELOG.md`` itself remains a tracked root file: it is the
-    released history the release assembly writes into, and naming *it* would
-    send an author to the one file the ratchet forbids them to grow.
+    body — the one destination that cannot rot, because every change has one.
+    ``CHANGELOG.md`` was still a tracked root file until #435, when ADR 0015
+    left nothing to release and the file went with the release path. Both
+    forbidden spellings are asserted rather than one: a hook repaired by
+    swapping ``changelog.d/`` for ``CHANGELOG.md`` would have satisfied the
+    older form of this guard while naming a file that no longer exists.
     """
-    assert CHANGELOG.resolve() in tracked_files_under("CHANGELOG.md"), (
-        "CHANGELOG.md must be a committed root file — it holds the released "
-        "history the release assembly writes into (CAL-651, AC-2)."
-    )
     hook = FRESHNESS_HOOK.read_text()
+    assert "CHANGELOG" not in hook, (
+        "hooks/guidance-freshness.js points authors at a CHANGELOG, which #435 "
+        "deleted along with the release path that wrote it. The entry is the "
+        "commit body (ADR 0014)."
+    )
     assert "changelog.d" not in hook, (
         "hooks/guidance-freshness.js still points authors at changelog.d/, "
         "which #324 deleted. A reminder naming a path that does not exist is "
@@ -357,50 +287,3 @@ def test_context_gate_commands_use_extra_dev() -> None:
         "a surface test fails for all commands — match scripts/verify.sh's "
         "`uv run --extra dev` form (CAL-1003)."
     )
-
-
-# --- Hermes is design-only, not a built trigger (CAL-1009) --------------------
-#
-# The README once presented Hermes as a live trigger equal to `/harness run` —
-# a bullet ("the autonomous dispatcher occupying the same trigger slot") and an
-# ASCII diagram (`trigger ( /harness run CAL-42 | Hermes )`). But Hermes was
-# never built: its launcher was removed in CAL-712 and the design is retired to
-# specs/retired/hermes-orchestration.md. A reader must not mistake it for a
-# shipped trigger. Wherever the README names Hermes, a design-only caveat must
-# sit nearby (the same proximity-guard idiom the other doc checks here use).
-
-README_MD = REPO_ROOT / "README.md"
-
-#: Tokens that mark a Hermes mention as not-built. Lower-cased match.
-_HERMES_CAVEAT_TOKENS = ("design-only", "not built", "not yet built", "retired")
-
-#: Chars scanned on each side of a "Hermes" mention for a caveat token. Wide
-#: enough to let one caveat cover the adjacent bullet + diagram mentions.
-_HERMES_CAVEAT_WINDOW = 600
-
-
-def test_readme_does_not_present_hermes_as_built() -> None:
-    """Every README mention of Hermes carries a design-only caveat nearby.
-
-    Hermes is design-only — the launcher was removed (CAL-712) and the design is
-    retired (specs/retired/hermes-orchestration.md). The README must not present
-    it as a live/built trigger equal to `/harness run` (CAL-1009).
-    """
-    lowered = README_MD.read_text().lower()
-    uncaveated: list[int] = []
-    idx = lowered.find("hermes")
-    while idx != -1:
-        window = lowered[
-            max(0, idx - _HERMES_CAVEAT_WINDOW) : idx + _HERMES_CAVEAT_WINDOW
-        ]
-        if not any(tok in window for tok in _HERMES_CAVEAT_TOKENS):
-            uncaveated.append(idx)
-        idx = lowered.find("hermes", idx + len("hermes"))
-    assert not uncaveated, (
-        "README.md mentions Hermes without a design-only caveat nearby "
-        f"(char offsets {uncaveated}). Hermes was never built — the launcher was "
-        "removed in CAL-712 and the design is retired to "
-        "specs/retired/hermes-orchestration.md. Caveat every mention as "
-        "design-only, not a live trigger (CAL-1009)."
-    )
-

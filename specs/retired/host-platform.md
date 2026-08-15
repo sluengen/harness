@@ -1,11 +1,6 @@
----
-feature: host-platform
-status: partial
-last_updated: 2026-08-15
-tickets: ["#305", "#308", "#309", "#312", "#380", "#383"]
----
-
 # Host platform abstraction
+
+> **Superseded 2026-08-15** — describes how the harness resolved credentials and commit identity on the **host**, before any container existed, without depending on macOS. [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) retires the container those values were assembled for, so there is nothing left to resolve them for. Kept for historical reference only.
 
 > How the harness resolves credentials and commit identity on the **host**, before any
 > container exists, in a way that is not specific to macOS.

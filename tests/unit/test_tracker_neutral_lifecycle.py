@@ -138,11 +138,10 @@ def test_registry_seeds_no_linear_layer() -> None:
 def test_no_retired_layer_switch_on_the_neutral_surface() -> None:
     """No distributed guidance file branches on the retired ``layers.linear``.
 
-    ``harness/layers.py`` deliberately keeps its back-compat *fallback* for a
-    consumer whose ``CONTEXT.md`` predates ``tracker:`` — that is engine
-    behaviour, documented in ``specs/features/verb-model.md``, and is not what
-    this bans. What is banned is a *guidance* file telling an agent to read the
-    retired switch.
+    The ban is on a *guidance* file telling an agent to read the retired switch.
+    The engine that carried a back-compat fallback for a consumer whose
+    ``CONTEXT.md`` predates ``tracker:`` is deleted (#435), so guidance is now
+    the only place the switch could be read at all.
     """
     offenders = {
         p.as_posix(): _RETIRED_LAYER.search(_read(p)).group(0)  # type: ignore[union-attr]
@@ -477,13 +476,19 @@ def test_feature_template_uses_a_neutral_ticket_key() -> None:
 
 
 def test_shipped_feature_specs_migrated_to_the_neutral_key() -> None:
-    """The four as-built records rename the key in place.
+    """Every as-built record uses the neutral key.
 
     Their values already mixed Linear ids and ``#244``-style GitHub ids, which
     is exactly why the neutral name is the correct one.
+
+    The floor was four records until #435 retired five of the six subsystems
+    they described and archived their specs under ``specs/retired/``. It is one
+    now, and one is the honest number: ``specs/features/`` holds exactly the
+    records of what this repo still is, and the floor exists to catch a *derived
+    set that evaluated to nothing*, not to assert a population.
     """
     records = sorted(FEATURES_DIR.glob("*.md"))
-    assert len(records) >= 4, (
+    assert len(records) >= 1, (
         f"FLOOR: only {len(records)} feature specs found — the migration check "
         "would pass on an empty set (#327)."
     )

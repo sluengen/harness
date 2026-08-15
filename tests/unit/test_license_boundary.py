@@ -100,9 +100,11 @@ _AGPL_BODY_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079
 #: ``NOASSERTION`` ("Other"), so the carve-out file must not match this.
 _LICENSE_CANDIDATE = re.compile(r"(?i)(un)?licen[sc]e|copy(ing|right)|\bofl\b")
 
-#: Engine roots — never MIT. ``harness/`` is the load-bearing one (the CLI a
-#: third party would fork); the rest are named so the scope cannot creep.
-_ENGINE_PREFIXES = ("harness/", "tests/", "scripts/")
+#: Engine roots — never MIT. ``scripts/`` is the load-bearing one since #435
+#: (the gate and the mutation instrument a third party would fork); ``harness/``
+#: was, until ADR 0015 deleted the package. ``tests/`` is named so the scope
+#: cannot creep into the guard suite.
+_ENGINE_PREFIXES = ("tests/", "scripts/")
 
 
 def _mit_scope_prefixes(text: str) -> tuple[str, ...]:
@@ -246,8 +248,8 @@ def test_mit_scope_excludes_the_engine() -> None:
     """The MIT scope never reaches the engine (AC-3).
 
     The engine is the thing copyleft is *for*. A scope prefix that swallowed
-    ``harness/`` would silently relicense the CLI permissively and void the whole
-    point of the change.
+    ``scripts/`` would silently relicense the gate and the mutation instrument
+    permissively and void the whole point of the change.
     """
     prefixes = _mit_scope_prefixes(_GUIDANCE_MIT.read_text())
     for engine in _ENGINE_PREFIXES:
@@ -291,7 +293,7 @@ def test_boundary_check_catches_an_escaped_path() -> None:
     """
     prefixes = _mit_scope_prefixes(_GUIDANCE_MIT.read_text())
     assert _is_mit_scoped("skills/code-quality/SKILL.md", prefixes), "a distributed file must scope"
-    assert not _is_mit_scoped("harness/cli/close.py", prefixes), "an engine file must not scope"
+    assert not _is_mit_scoped("scripts/mutate.py", prefixes), "an engine file must not scope"
     # The registry parse must find the real distributed set, not an empty one.
     files = _registry_files(_REGISTRY.read_text())
     assert "skills/code-quality/SKILL.md" in files, "registry files: parse missed a known entry"

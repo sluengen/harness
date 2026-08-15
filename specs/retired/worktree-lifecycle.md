@@ -1,11 +1,6 @@
----
-feature: worktree-lifecycle
-status: implemented
-last_updated: 2026-08-15
-tickets: [CAL-590, CAL-661, CAL-693, CAL-739, CAL-767, CAL-935, 371, 372]
----
-
 # Worktree lifecycle — isolated branch per run
+
+> **Superseded 2026-08-15** — describes the isolated worktree a run built in, the merge `close` performed, and the reclaim sweep that tidied up after it. [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) deletes the verbs that managed all three. Worktree isolation itself survives: it is now plain `git worktree`, driven by the universal `worktree-isolation` skill. Kept for historical reference only.
 
 > Every run builds in its own git worktree on its own branch, so file mutations never escape to the main working tree; `close` advances the base by merging that branch, then reclaims the worktree and branch it no longer needs.
 

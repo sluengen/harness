@@ -1,7 +1,7 @@
 """Footprint guard — the installed surface excludes every app path (CAL-648).
 
 The harness repo holds two things that must never bleed into each other: the
-harness *app* (``harness/ scripts/ specs/ tests/`` — never
+harness *app* (``scripts/ specs/ tests/`` — never
 installed into a target repo) and the *surface* it installs (``commands/
 skills/ agents/ templates/ hooks/ process/ settings/``, enumerated by
 ``registry.yaml``'s ``files:`` block). After the guidance merge the boundary is
@@ -31,14 +31,14 @@ REGISTRY = REPO_ROOT / "registry.yaml"
 #: surface (``specs/architecture-principles.md``, "App vs. installed surface";
 #: merge decision D5). A registry ``files:`` entry under any of these would
 #: entangle the app's release line with the installed surface.
-APP_PREFIXES = ("harness/", "scripts/", "specs/", "tests/")
+APP_PREFIXES = ("scripts/", "specs/", "tests/")
 
 #: The directories that *are* the installed surface, enumerated verbatim from the
 #: "App vs. installed surface" principle. The installer copies a registry entry
 #: to the same path in the target tree, so a path is only legitimately surface
 #: when it resolves within one of these. Asserting membership here (not merely
 #: "not under an app dir") catches an entry that escapes via ``..`` traversal —
-#: e.g. ``skills/../harness/cli.py`` resolves to an app file but would clear a
+#: e.g. ``skills/../scripts/mutate.py`` resolves to an app file but would clear a
 #: bare app-prefix denylist.
 SURFACE_PREFIXES = (
     "commands/",
@@ -53,8 +53,8 @@ SURFACE_PREFIXES = (
 
 def _normalize(path: str) -> str:
     """Lexically normalize a registry path the way the installer's copy target
-    would resolve it, collapsing ``..`` traversal (``skills/../harness/x`` →
-    ``harness/x``) so the prefix checks see the real destination."""
+    would resolve it, collapsing ``..`` traversal (``skills/../scripts/x`` →
+    ``scripts/x``) so the prefix checks see the real destination."""
     return posixpath.normpath(path)
 
 
@@ -68,7 +68,7 @@ _KEY_RE = re.compile(r"""\s+(?P<q>["']?)(?P<key>[^"'\s:]+)(?P=q)\s*:""")
 
 #: A *plain literal* path: word chars, ``/``, ``.``, ``-`` only — the shape every
 #: real registry key has. A key outside this set (a backslash escape such as
-#: ``skills/\x2e\x2e/harness/cli.py``, which YAML decodes to ``skills/../...``,
+#: ``skills/\x2e\x2e/scripts/mutate.py``, which YAML decodes to ``skills/../...``,
 #: or any other non-literal spelling) cannot be reasoned about by the lexical
 #: prefix checks, which see the *raw* text, not YAML's decoded value. The guard
 #: therefore accepts only plain literals and rejects everything else loudly —
@@ -127,7 +127,7 @@ def _symlink_escapes(root: Path, paths: list[str]) -> list[str]:
 
     Lexical normalization sees only the registry string, so a surface-looking
     entry (``skills/internal.md``) that is a **symlink** to app code
-    (``../harness/cli.py``) would clear the lexical checks yet install app code
+    (``../scripts/mutate.py``) would clear the lexical checks yet install app code
     when dereferenced. Resolve each materialized path against ``root`` and flag
     any whose real target leaves ``root`` or lands outside a surface directory.
     Paths not yet on disk are skipped — the lexical checks already cover them.
@@ -180,7 +180,7 @@ def test_registry_paths_are_within_a_surface_dir() -> None:
 
     The allowlist complement of the app-path exclusion: an entry must land under
     one of the enumerated surface directories. This catches not only app paths
-    but also a ``..``-traversal entry (``skills/../harness/x``) that resolves out
+    but also a ``..``-traversal entry (``skills/../scripts/x``) that resolves out
     of the surface, which a bare app-prefix denylist would miss.
     """
     offenders = _non_surface_paths(_registry_file_paths())
@@ -210,8 +210,8 @@ def test_registry_keys_are_plain_literal_paths() -> None:
     """AC-2 (encoding form): every ``files:`` key is a plain literal path.
 
     The lexical prefix checks compare the *raw* key text, so a YAML-escaped key
-    such as ``"skills/\\x2e\\x2e/harness/cli.py"`` (which decodes to
-    ``skills/../harness/cli.py``) would clear them while the installer copies app
+    such as ``"skills/\\x2e\\x2e/scripts/mutate.py"`` (which decodes to
+    ``skills/../scripts/mutate.py``) would clear them while the installer copies app
     code. Rejecting any non-literal key closes that raw-vs-decoded gap: a plain
     literal decodes to itself, so what the checks see is what gets installed
     (codex P2, CAL-648).
@@ -228,7 +228,7 @@ def test_registry_keys_are_plain_literal_paths() -> None:
 def test_escape_encoded_app_key_is_rejected() -> None:
     """AC-1 (encoding form): a YAML-escaped key that decodes to an app path does
     not match the plain-literal rule, so the guard rejects it (codex P2)."""
-    encoded = r"skills/\x2e\x2e/harness/cli.py"
+    encoded = r"skills/\x2e\x2e/scripts/mutate.py"
     assert not _PLAIN_PATH_RE.fullmatch(encoded), (
         f"{encoded!r} contains escapes that decode to an app path but was "
         "accepted as a plain literal — the guard would not flag it."
@@ -253,12 +253,12 @@ def test_every_files_entry_line_is_parsed() -> None:
 
 def test_parser_reads_quoted_and_unquoted_keys() -> None:
     """Regression for the codex P2 bypass: the key extractor must read quoted
-    keys, or a quoted app entry like ``"harness/foo.py": {...}`` would slip past
+    keys, or a quoted app entry like ``"scripts/foo.py": {...}`` would slip past
     the exclusion guard."""
     cases = {
         "  skills/foo.md: { id: foo }": "skills/foo.md",
-        '  "harness/foo.py": { id: x }': "harness/foo.py",
-        "  'bin/run.sh': { id: y }": "bin/run.sh",
+        '  "scripts/foo.py": { id: x }': "scripts/foo.py",
+        "  'tests/run.sh': { id: y }": "tests/run.sh",
     }
     for line, expected in cases.items():
         m = _KEY_RE.match(line)
@@ -288,8 +288,8 @@ def test_guard_flags_an_app_path() -> None:
 def test_guard_flags_a_traversal_app_path() -> None:
     """AC-1 (traversal form): an entry that escapes a surface dir via ``..`` and
     resolves into an app dir is still flagged — a lexical prefix check alone
-    would be fooled by ``skills/../harness/cli.py`` (codex P2, CAL-648)."""
-    traversal = "skills/../harness/cli.py"
+    would be fooled by ``skills/../scripts/mutate.py`` (codex P2, CAL-648)."""
+    traversal = "skills/../scripts/mutate.py"
     assert _app_paths([traversal]) == [traversal], (
         f"{traversal!r} resolves to an app file but was not flagged — the guard "
         "must normalize paths before the app-prefix check."

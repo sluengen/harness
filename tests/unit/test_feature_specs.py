@@ -6,29 +6,35 @@ verb-model subsystem is a ``specs/features/<feature>.md`` in the
 ``templates/feature.md`` shape, not a design doc under ``specs/``. This guard is
 the executable form of the migration's acceptance criteria:
 
-* **AC-1** — each current verb-model subsystem (the verb model, the run ledger,
-  the worktree lifecycle, the CLI surface) has a ``specs/features/<feature>.md``
-  in the feature-spec shape: the ``templates/feature.md`` frontmatter keys and a
-  ``## Behaviour`` section (the canonical "how does it work?" answer).
-* **AC-3** — the SPEC.md index has no dangling links: every relative ``.md``
-  link in SPEC.md resolves to a file git tracks. A row that points the reader at
-  a moved or never-created spec is worse than none.
+* **AC-1** — each subsystem this repo still has has a
+  ``specs/features/<feature>.md`` in the feature-spec shape: the
+  ``templates/feature.md`` frontmatter keys and a ``## Behaviour`` section (the
+  canonical "how does it work?" answer).
+* **AC-3** — the as-built record has no dangling links: every relative ``.md``
+  link in it resolves to a file git tracks. A row that points the reader at a
+  moved or never-created spec is worse than none.
 
 The check is structural: a regression that deletes a feature spec, drops a
-required section, or leaves a dangling SPEC.md link fails here.
+required section, or leaves a dangling link fails here.
 
-**#435 removed the semantic-coverage half.** Six guards here tied the specs'
-prose to the code that implemented it — the documented CLI surface against the
-registered Typer commands, the documented flags against the registered options,
-``verb-model.md``'s output keys against the Pydantic models, the worktree path
-constants, the verdict and run-status literals. ADR 0015 deletes that code, so
-each of them was measuring a spec against a module that no longer exists. They
-are deleted rather than narrowed: what they compared against is gone, and a
-comparison with one side missing is not a weaker guard, it is no guard. The
-structural half below is untouched and keeps guarding a live subject —
-``specs/features/guidance-system.md`` is the record of the surviving delivery
-mechanism, and its ``last_updated`` currency is what the CI checkout's
-``fetch-depth: 0`` exists for.
+**#435 removed the semantic-coverage half, and five of the six subjects.** Six
+guards here tied the specs' prose to the code that implemented it — the
+documented CLI surface against the registered Typer commands, the documented
+flags against the registered options, ``verb-model.md``'s output keys against
+the Pydantic models, the worktree path constants, the verdict and run-status
+literals. ADR 0015 deletes that code, so each was measuring a spec against a
+module that no longer exists; a comparison with one side missing is not a weaker
+guard, it is no guard. Then the specs themselves followed: five records of
+retired subsystems moved to ``specs/retired/`` under dated banners
+(``tests/unit/test_v4_teardown.py`` holds that move), and ``SPEC.md`` — whose
+index this module used to check for dangling links — went with the design it
+described.
+
+What is left is one record and the same structural rule over it.
+``specs/features/guidance-system.md`` is the as-built record of the delivery
+mechanism ADR 0015 explicitly keeps — the registry, the copy-in installer,
+``/update-guidance`` and the freshness hook — and its ``last_updated`` currency
+is what the CI checkout's ``fetch-depth: 0`` exists for.
 
 Since #280 the module also measures one frontmatter **value**. ``last_updated``
 was required to exist and never read, so all four records drifted to declaring a
@@ -49,16 +55,16 @@ from tests._gitutil import last_commit_date, tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FEATURES_DIR = _REPO_ROOT / "specs" / "features"
-_SPEC_INDEX = _REPO_ROOT / "SPEC.md"
 
-#: The current verb-model subsystems, each of which must carry a feature spec
+#: The subsystems this repo still has, each of which must carry a feature spec
 #: (AC-1). The slug is the ``specs/features/<slug>.md`` basename.
-_EXPECTED_FEATURES = (
-    "verb-model",
-    "run-ledger",
-    "worktree-lifecycle",
-    "cli-surface",
-)
+#:
+#: One entry since #435. The other four named the verb model, the run ledger,
+#: the worktree lifecycle and the CLI surface — all deleted by ADR 0015, with
+#: their records archived under ``specs/retired/``. Requiring a record for a
+#: subsystem that no longer exists would be the mirror of the defect this list
+#: exists to catch.
+_EXPECTED_FEATURES = ("guidance-system",)
 
 #: Frontmatter keys required by ``templates/feature.md``.
 _REQUIRED_FRONTMATTER = ("feature", "status", "last_updated", "tickets")
@@ -114,11 +120,11 @@ def _tracked_feature_spec_md() -> list[Path]:
     """Every tracked ``specs/features/*.md``, sorted.
 
     Derived from the tracked tree rather than from :data:`_EXPECTED_FEATURES`,
-    so a fifth feature spec is governed by the date rule the moment it is
+    so a newly added feature spec is governed by the date rule the moment it is
     committed, with no edit here (AC-3). The two subject sets answer different
     questions and deliberately stay separate: ``_EXPECTED_FEATURES`` encodes
-    *these four subsystems must each have a record* — a claim a derived set
-    cannot make, because deriving it would let the record's absence satisfy it.
+    *these subsystems must each have a record* — a claim a derived set cannot
+    make, because deriving it would let the record's absence satisfy it.
     """
     return sorted(p for p in tracked_files_under("specs/features") if p.suffix == ".md")
 
@@ -194,8 +200,8 @@ def test_the_last_updated_guard_covers_every_expected_feature_spec() -> None:
     A parametrized guard over a derived set passes vacuously when the set
     evaluates to nothing — a wrong pathspec, or tests run outside a checkout —
     and a vacuous pass here reads exactly like a currency it never measured.
-    The floor is the four records AC-1 already requires; it is a subset check,
-    not equality, because the set is meant to grow.
+    The floor is the records AC-1 already requires; it is a subset check, not
+    equality, because the set is meant to grow.
     """
     covered = {p.stem for p in _tracked_feature_spec_md()}
     assert set(_EXPECTED_FEATURES) <= covered, (
@@ -244,29 +250,14 @@ def test_a_missing_last_updated_key_fails_with_a_readable_message(
 _MD_LINK = re.compile(r"\]\((?!https?://)([^)#]+\.md)(?:#[^)]*)?\)")
 
 
-def test_spec_index_has_no_dangling_links() -> None:
-    """Every relative ``.md`` link in SPEC.md resolves to a tracked file (AC-3)."""
-    tracked = tracked_files_under(".")
-    text = _SPEC_INDEX.read_text(encoding="utf-8")
-    dangling: list[str] = []
-    for target in _MD_LINK.findall(text):
-        resolved = (_REPO_ROOT / target).resolve()
-        if resolved not in tracked:
-            dangling.append(target)
-    assert not dangling, (
-        "SPEC.md links to spec files that are not tracked (dangling links): "
-        f"{sorted(set(dangling))}"
-    )
+def test_no_dangling_links_in_the_as_built_record() -> None:
+    """Relative ``.md`` links in the **live** as-built record resolve (AC-3).
 
-
-def test_no_dangling_links_in_the_migrated_specs() -> None:
-    """Relative ``.md`` links in the **live** migrated surface resolve (AC-3).
-
-    Covers SPEC.md and ``specs/features/`` — the as-built record, which a reader
-    is expected to follow. Each link is resolved relative to the file that
-    contains it, so a doc moved to a deeper directory whose relative links were
-    not re-based against the new depth is caught (the CAL-661 review surfaced
-    exactly this in the re-homed banners).
+    Covers ``specs/features/`` — the as-built record, which a reader is expected
+    to follow. Each link is resolved relative to the file that contains it, so a
+    doc moved to a deeper directory whose relative links were not re-based
+    against the new depth is caught (the CAL-661 review surfaced exactly this in
+    the re-homed banners).
 
     ``specs/retired/`` is **out of scope**, and that is a decision rather than an
     oversight. A retired spec is a frozen record of how something worked; its
@@ -278,11 +269,14 @@ def test_no_dangling_links_in_the_migrated_specs() -> None:
     historical-by-category exemption ``specs/retired/`` already carries in the
     retirement sweeps applies here.
     """
-    migrated = {_SPEC_INDEX} | {
-        p for p in tracked_files_under("specs/features") if p.suffix == ".md"
-    }
+    records = {p for p in tracked_files_under("specs/features") if p.suffix == ".md"}
+    assert records, (
+        "no tracked specs/features/*.md — this guard resolves links inside a "
+        "derived set, so an empty set is a vacuous pass that reads like a clean "
+        "record"
+    )
     dangling: list[str] = []
-    for path in sorted(migrated):
+    for path in sorted(records):
         for target in _MD_LINK.findall(path.read_text(encoding="utf-8")):
             if not (path.parent / target).resolve().exists():
                 dangling.append(f"{path.relative_to(_REPO_ROOT)} -> {target}")

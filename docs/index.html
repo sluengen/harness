@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>The harness — operating model, verbs, and guidance</title>
-<meta name="description" content="The harness: an evidence layer for agent-driven development — deterministic, audited verbs an agent calls while it drives a ticket end-to-end. The operating model, the verbs, and the guidance at a glance." />
+<title>The harness — operating model, the gate, and the guidance</title>
+<meta name="description" content="The harness: a thin verification layer for agent-driven development — one deterministic gate, and the versioned guidance that routes an agent through it. The operating model, the gate, and the guidance at a glance." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
-<meta property="og:title" content="The harness — operating model, verbs, and guidance" />
-<meta property="og:description" content="An evidence layer for agent-driven development: deterministic, audited verbs an agent calls while it drives a ticket end-to-end." />
+<meta property="og:title" content="The harness — operating model, the gate, and the guidance" />
+<meta property="og:description" content="A thin verification layer for agent-driven development: one deterministic gate, and the versioned guidance that routes an agent through it." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="The harness — operating model, verbs, and guidance" />
-<meta name="twitter:description" content="An evidence layer for agent-driven development: deterministic, audited verbs an agent calls while it drives a ticket end-to-end." />
+<meta name="twitter:title" content="The harness — operating model, the gate, and the guidance" />
+<meta name="twitter:description" content="A thin verification layer for agent-driven development: one deterministic gate, and the versioned guidance that routes an agent through it." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -188,7 +188,7 @@
   footer{margin-top:34px; color:var(--muted); font-size:12.5px; text-align:center}
   footer code{font-family:ui-monospace,Menlo,monospace}
 
-  /* ---------- THE HARNESS (verbs + invariants) ---------- */
+  /* ---------- THE HARNESS (stages + invariants) ---------- */
   .verbs{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:18px}
   .verb{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
     padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:var(--build)}
@@ -300,7 +300,7 @@
 
           <text x="460" y="390" font-size="19" font-weight="800" fill="#0a5e44" letter-spacing=".03em">BUILD</text>
           <text x="460" y="408" font-size="11.5" font-weight="700" fill="#0f7d59">Hourly · autonomous</text>
-          <text x="460" y="424" font-size="10" font-weight="600" fill="#3a8f72">the engine · pulls from Linear</text>
+          <text x="460" y="424" font-size="10" font-weight="600" fill="#3a8f72">agent-led · pulls from the tracker</text>
         </g>
       </svg>
     </div>
@@ -330,10 +330,10 @@
           <dt>Driver</dt><dd>Autonomous — Claude, unattended.</dd>
         </dl>
         <ul class="steps">
-          <li><span>Pick a wholly-defined task from Linear</span></li>
+          <li><span>Pick a wholly-defined task from the tracker</span></li>
           <li><span>Build it test-first (TDD)</span></li>
-          <li><span>Review the implementation</span></li>
-          <li><span>Close out</span></li>
+          <li><span>Review the implementation independently</span></li>
+          <li><span>Verify, then ship</span></li>
           <li class="repeat"><span>↻</span></li>
         </ul>
         <div class="loop__foot">
@@ -362,7 +362,7 @@
         </ul>
         <div class="loop__foot">
           <div class="cmds"><code data-guidance="propose">/propose</code></div>
-          <span class="status"><i class="pip pip--auto"></i> As-built spec recorded by the reviewer on PASS, via <code style="background:none;padding:0;color:inherit">close</code></span>
+          <span class="status"><i class="pip pip--auto"></i> As-built spec recorded by the reviewer on PASS, before the change ships</span>
         </div>
       </article>
 
@@ -380,7 +380,7 @@
         <ul class="steps">
           <li><span>Build idle → assess code</span></li>
           <li><span>Weekly → assess system (broader)</span></li>
-          <li><span>File findings as Linear tasks</span></li>
+          <li><span>File findings as tracker issues</span></li>
           <li><span>→ back to Build queue</span></li>
           <li class="repeat"><span>↻</span></li>
         </ul>
@@ -422,9 +422,9 @@
     <div class="trigger">
       <h3>Scheduled locally — by choice</h3>
       <p class="lede">
-        Claude Code can schedule these routines itself; the only question is <i>where</i> they run. The Build loop drives the
-        local harness Docker app (it needs the Mac Keychain token and your <code>~/.codex</code> auth), so the autonomous
-        loops run <b>on this machine</b>. That's a deliberate choice — and local scheduling is actually finer-grained than the cloud.
+        Claude Code can schedule these routines itself; the only question is <i>where</i> they run. A run needs the host's own
+        agent credentials and a checkout it can push from, so the autonomous loops run <b>on this machine</b>.
+        That's a deliberate choice — and local scheduling is actually finer-grained than the cloud.
       </p>
       <div class="tgrid">
         <div class="tcard is-now">
@@ -433,7 +433,7 @@
         </div>
         <div class="tcard">
           <h4><code>/schedule</code> Cloud routines <small class="later">if ever needed</small></h4>
-          <p>Cloud Routines run on Anthropic's infrastructure even with the laptop closed — but each run is a fresh clone that can't reach the local harness app. The escape hatch for laptop-off operation: you'd run Build via the agent-led <code>/start → /review → /ship</code> flow instead of the Docker app.</p>
+          <p>Cloud Routines run on Anthropic's infrastructure even with the laptop closed — but each run is a fresh clone with no host credentials and nothing to push with. The escape hatch for laptop-off operation is to give that clone its own token; the lifecycle itself is identical either way.</p>
         </div>
       </div>
 
@@ -447,7 +447,7 @@
       <div class="pill-row">
         <span class="pill"><b>Machine must be awake</b> for a local routine to fire</span>
         <span class="pill"><b>Runs as you</b> — local Keychain + <code style="font-size:11px">~/.codex</code> creds</span>
-        <span class="pill"><b>State lives in Linear</b> → survives between runs</span>
+        <span class="pill"><b>State lives in the tracker</b> → survives between runs</span>
         <span class="pill"><b>Sub-hourly possible</b> locally (cloud is 1-hour min)</span>
       </div>
     </div>
@@ -489,7 +489,7 @@
         <h4>Change spec</h4>
         <p class="spec-q">"What exactly will this one piece of work do?"</p>
         <dl class="spec-meta">
-          <div><dt>Lives in</dt><dd>the <b>Linear issue</b> — no separate file</dd></div>
+          <div><dt>Lives in</dt><dd>the <b>tracker issue</b> — no separate file</dd></div>
           <div><dt>Written by</dt><dd>the builder</dd></div>
           <div><dt>Holds</dt><dd>Problem · Approach · Design (data / interface / scenarios) · Acceptance criteria · Out of scope</dd></div>
         </dl>
@@ -529,7 +529,7 @@
         <h4>Infrastructure <span class="spec-tag">Reference · standing</span></h4>
         <p>The operational reality — repo, CI, packaging, accounts, secrets. The source of truth for a deployment or configuration decision.</p>
         <code>specs/infrastructure.md</code>
-        <p class="spec-note">Now instantiated for the harness — repo, GitHub Actions CI, the Docker wrapper, Linear, and where each credential lives. Updated when infra changes, not per task.</p>
+        <p class="spec-note">Now instantiated for the harness — repo, GitHub Actions CI, the documentation page, and where each credential lives. Updated when infra changes, not per task.</p>
       </div>
       <div class="spec-card spec--decision">
         <h4>Decisions <span class="spec-tag">ADRs + inline</span></h4>
@@ -542,47 +542,47 @@
 
   <!-- ===================== THE HARNESS ===================== -->
   <section class="section" data-section="harness">
-    <h2>The harness — the audited build loop</h2>
+    <h2>The harness — one gate, and the guidance around it</h2>
     <p class="section-intro">
-      Inside the Build loop sits the <b>harness</b>: three deterministic verbs the agent orchestrates. The agent writes
-      the code and the tests; the verbs own <b>every git and tracker mutation</b>, each one appended to a single
-      SQLite ledger. That division is what makes the record trustworthy — a promise and its delivery are recorded by
-      different hands.
+      Inside the Build loop sits the <b>harness</b>: a single deterministic gate, and the versioned guidance that
+      routes an agent into it. The agent writes the code and the tests and decides how to answer a finding; the repo
+      owns only what must not depend on the agent remembering it. There is no runtime here — nothing runs unless
+      someone asks it to.
     </p>
 
     <div class="verbs">
       <article class="verb verb--start">
-        <h4>start</h4>
-        <p class="role">open the run</p>
-        <p>Validates the ticket, moves it <b>In&nbsp;Progress</b>, cuts a fresh worktree off <code>dev</code>, and opens a row in the runs ledger.</p>
-        <span class="out">→ run_id · worktree · branch</span>
+        <h4>verify</h4>
+        <p class="role">the whole contract</p>
+        <p><code>bash scripts/verify.sh</code> runs lint, types, the suite under a coverage floor, and the drift guards. The same command in CI, in a checkout, and in the nightly promotion — green is the only evidence a completion claim may cite.</p>
+        <span class="out">→ pass · or a named failure</span>
       </article>
       <article class="verb verb--review">
-        <h4>review</h4>
-        <p class="role">record a verdict</p>
-        <p>Runs the review engine (<b>Claude</b> by default) against the worktree HEAD and records <code>pass</code>&nbsp;/&nbsp;<code>fail</code>&nbsp;/&nbsp;<code>defer</code> <b>bound to that SHA</b> — refusing without fresh gate evidence.</p>
-        <span class="out">→ verdict · issues · reviewed_sha</span>
+        <h4>guidance</h4>
+        <p class="role">how work happens here</p>
+        <p>Skills, agents and commands, each version-stamped and distributed from this repo by <code>registry.yaml</code>. A consuming repo pulls them with <code data-guidance="update-guidance">/update-guidance</code>, and a semver bump is the compatibility promise.</p>
+        <span class="out">→ one process, every repo</span>
       </article>
       <article class="verb verb--close">
-        <h4>close</h4>
-        <p class="role">finalize through the gate</p>
-        <p>Enforces the gate — a passing review whose SHA equals HEAD — then merges in a throwaway worktree, pushes, and transitions the ticket <b>Done</b>. The main checkout is never touched.</p>
-        <span class="out">→ merged · ticket_done</span>
+        <h4>guards</h4>
+        <p class="role">rules with teeth</p>
+        <p>Roughly 1,300 tests, most of which read the tracked tree: a version stamp that drifted, a mirror that stopped matching its source, a document citing a path that no longer resolves. A rule with a test is a bound.</p>
+        <span class="out">→ the gate goes red</span>
       </article>
     </div>
 
     <div class="aux">
-      <code>status</code><code>checkpoint</code><code>reclaim</code><code>defer</code><code>worktrees&nbsp;cleanup</code><code>promote</code><code>doctor</code>
+      <code>ruff</code><code>mypy</code><code>pytest</code><code>coverage&nbsp;floor</code><code>landing-page&nbsp;drift</code><code>design-token&nbsp;drift</code><code>mutate.py</code>
     </div>
 
     <div class="invariants">
       <div class="inv">
-        <h5>SHA-bound verdicts</h5>
-        <p>A verdict is pinned to the exact commit it read. Move HEAD and <code>close</code> refuses (<code>stale_review</code>) — so what merges is exactly what was reviewed.</p>
+        <h5>Fresh evidence, or no claim</h5>
+        <p>A completion claim names the gate run that backs it, read in the session that makes it. A structural change is not evidence that anything worked.</p>
       </div>
       <div class="inv">
-        <h5>Append-only ledger</h5>
-        <p>Every verb appends to one SQLite <code>runs</code> / <code>events</code> ledger. That ledger <b>is</b> the audit trail — never hand-rolled, never rewritten.</p>
+        <h5>Mutation-proved guards</h5>
+        <p>A test that was green the moment it was born has not been shown to measure anything. <code>scripts/mutate.py</code> breaks the thing on purpose and checks the guard notices.</p>
       </div>
       <div class="inv">
         <h5>Builder ≠ recorder</h5>

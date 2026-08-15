@@ -43,18 +43,16 @@ Branch model: feature branches base from and merge back to `dev` (integration); 
 
 | Service | Used for | Managed where |
 |---|---|---|
-| Linear | Issue tracking and the change-spec home | Team **CAL**, project **Harness v3**; GraphQL API only — no CLI |
 | Anthropic / Claude Code | The orchestrating + implementing agent | OAuth token (see Secrets) |
-| OpenAI Codex | The reviewer behind `/build --engine codex` | Subscription auth via `~/.codex` on the host |
+| OpenAI Codex | The reviewer behind `/build --engine codex` | Subscription auth via `~/.codex` on the host; invoked by the agent, never by this repo |
 | GitHub | Code hosting, CI, and the issue tracker | `sluengen/harness`; issues + the Projects v2 board `sluengen/2` |
 
 ## Secrets
 
-Credentials are read from the environment or the OS keystore at run time and are **never committed or logged** — `.env` is gitignored and values live only on the host.
+Nothing in this repo reads a credential. The `LINEAR_API_KEY` row that used to sit here belonged to the verbs, which fetched and transitioned tickets through Linear's GraphQL API; ADR 0015 deleted them, and this repo's tracker is GitHub (`CONTEXT.md`). What remains is the credentials the *agent host* needs, listed so an operator knows what to have in place — read from the environment or the OS keystore at invocation, **never committed or logged**, with `.env` gitignored and values living only on the host.
 
 | Secret | Unlocks | Where it lives |
 |---|---|---|
-| `LINEAR_API_KEY` | The Linear GraphQL API | `.env` at the repo root |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code auth in a non-interactive context | The host environment; interactive use reads `~/.claude/` and needs no variable |
 | Codex subscription auth | The Codex reviewer | `~/.codex` on the host |
 

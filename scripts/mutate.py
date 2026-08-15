@@ -158,9 +158,9 @@ than "a guard is weak", and they call for different work.
 The table, in TOML — ``'''literal'''`` strings need no escaping, and ``old``/
 ``new`` are exact source substrings full of quotes and backslashes::
 
-    select = ["-m", "unit or guard"]
-    sentinel_file = "scripts/cadence.py"
-    sentinel_text = "Release-cadence bounds"
+    select = ["tests/unit"]
+    sentinel_file = "scripts/verify.sh"
+    sentinel_text = "Canonical verification gate"
 
     [[mutation]]
     id = "tracked-set-ignores-pathspec"
@@ -178,8 +178,8 @@ This is a **build-time instrument**, not a gate stage: it proves a new guard
 while the guard is being written. ``scripts/verify.sh`` does not run it, and
 ``tests/unit/test_mutate_end_to_end.py`` pins that.
 
-Stdlib only, in the shape of :mod:`cadence`. Three departures from the run's
-design, recorded so they are legible in the diff rather than in someone's
+Stdlib only, like everything else under ``scripts/``. Three departures from the
+run's design, recorded so they are legible in the diff rather than in someone's
 reasoning:
 
 * The optional ``--json <path>`` report dump was **dropped**, on the stated
@@ -460,7 +460,12 @@ def load_table(path: Path) -> MutationTable:
                 "containment is what stops a table running against the wrong checkout",
             )
 
-    select = raw.get("select", ["-m", "unit or guard"])
+    # The whole suite, because there is no longer a subset worth selecting. The
+    # default was `-m "unit or guard"` until #435 deleted the runtime the tier
+    # split existed to keep out of a fast loop; with the markers gone that
+    # selection deselects everything, which the zero-collected refusal below
+    # catches loudly — but a default that can only ever refuse is not a default.
+    select = raw.get("select", [])
     if not isinstance(select, list) or not all(isinstance(item, str) for item in select):
         raise RefusalError("table", f"{path}: `select` must be a list of strings")
     _refuse_parallel_selection(path, select)

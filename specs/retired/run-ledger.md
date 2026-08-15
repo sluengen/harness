@@ -1,11 +1,6 @@
----
-feature: run-ledger
-status: implemented
-last_updated: 2026-08-15
-tickets: [CAL-570, CAL-583, CAL-613, CAL-661, CAL-693, CAL-1002, CAL-1114, "#295", "#310", "#318", "#321", "#347", "#338", "#352", "#353"]
----
-
 # Run ledger — the SQLite audit trail
+
+> **Superseded 2026-08-15** — describes the SQLite `runs` / `events` audit trail the verbs wrote and the close gate validated against, plus its promotion and maintenance sibling tables. [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) deletes it, and nothing replaces it: with no run there is nothing to record. Kept for historical reference only.
 
 > The single source of truth for the run lifecycle: a `runs` row per run and an append-only `events` log, against which the close gate validates.
 

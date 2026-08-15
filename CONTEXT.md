@@ -88,7 +88,7 @@ Use `specs/decisions/` only for cross-cutting choices that are consequential and
 - [0010 — rebased-tree recertification](specs/decisions/0010-rebased-tree-recertification.md) — superseded in mechanism by 0015
 - [0011 — attended-run spend scope](specs/decisions/0011-attended-run-spend-scope.md) — superseded in mechanism by 0015
 - [0012 — persistent runtime host](specs/decisions/0012-persistent-runtime-host.md) — superseded in mechanism by 0015
-- [0014 — changelog from commits](specs/decisions/0014-changelog-from-commits.md)
+- [0014 — changelog from commits](specs/decisions/0014-changelog-from-commits.md) — the rule stands (the commit body *is* the entry); the `CHANGELOG.md` a release assembled into is deleted by 0015, since there is nothing left to release
 - [0015 — harness v4: retire the runtime, thin verification layer](specs/decisions/0015-harness-v4-thin-verification-layer.md)
 
 ## Where deeper truth lives
