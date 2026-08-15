@@ -61,6 +61,13 @@ already contains *"exactly one home"*, and ``commands/build.md`` already contain
 therefore scoped to the section or instruction that **is** the rule.
 """
 
+# size: over the ceiling on the shared prose-predicate primitives re-homed here
+# by #435, which are ~90 lines of recorded measurement — which escape each
+# negation anchor still misses, and what each emphasis half was measured letting
+# through — attached to five short definitions. Splitting the primitives from
+# `_sentences`/`_section` would fork the unit boundary every polarity predicate
+# in this tree is anchored on, which is the one thing that must not have two
+# renderings.
 from __future__ import annotations
 
 import re
@@ -748,3 +755,91 @@ def test_the_create_contract_carries_no_classification_criteria() -> None:
         f"the `create` contract must name `spec-authoring` → "
         f"*{_RUBRIC_SECTION_TITLE}* as where the level comes from (#354 AC-2)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared prose-predicate primitives
+# ---------------------------------------------------------------------------
+# `_units`, `_BLOCKING_VERBS`/`_NEGATION_GAP` and `_EMPHASIS` were #288's and
+# lived in `test_build_assurance_workflow`, which #435 deleted with the verb
+# loop it described. They are re-homed here, beside `_sentences` and `_section`,
+# rather than re-spelled at each call site: every polarity predicate in this
+# tree is only as honest as this boundary, and a fork of it is a fork of the
+# unit the controls were written to hold.
+
+def _units(text: str) -> str:
+    """``text`` re-joined one :func:`_sentences` unit per paragraph.
+
+    Loss-free for every predicate here, because every one of them runs over
+    ``_sentences`` units and ``_sentences`` already normalizes whitespace inside
+    a unit. What it buys is **wrap-insensitivity for the controls below**: a
+    control anchored on a hard-wrapped phrase stops landing the moment the
+    paragraph is re-wrapped at another column width, and a re-wrap must not read
+    as a finding. Call it on a section body, never on the whole file — ``_section``
+    needs its headers on lines of their own.
+    """
+    return "\n\n".join(_sentences(text))
+
+
+# ---------------------------------------------------------------------------
+# The shared negation gap — what a negation is allowed to reach across
+# ---------------------------------------------------------------------------
+
+#: Verbs that **block** whatever follows them. A negation landing on one of
+#: these states the *opposite* of the rule it appears to state: *"does not
+#: preclude proceeding"*, *"does not block integration"* and *"does not forbid
+#: writing"* each read to a negation-then-verb anchor as the prohibition intact,
+#: while granting exactly what the prohibition forbids. Measured, one sentence at
+#: a time, against the real file: each of those three left the whole module at
+#: **25 passed**. So the gap a negation may reach across excludes them — a
+#: negation whose object is a blocking verb governs the blocking, not the verb
+#: beyond it, and the predicate must decline to treat the occurrence as covered.
+#:
+#: ``fail`` and ``hesitat`` are here for the double negation (*"never fails to
+#: proceed"*), which is the same false converse reached by a different idiom.
+#: Prefixes, not whole words: ``preclud`` covers *precludes/precluding*, ``rul``
+#: covers *rule out/rules out*.
+_BLOCKING_VERBS = (
+    r"preclud|prevent|block|forbid|prohibit|bar|stop|halt|refus|restrict|"
+    r"impede|hinder|obstruct|disallow|deter|rul|fail|hesitat"
+)
+#: The gap between a negation and the verb it governs: up to two words, none of
+#: them a blocking verb. Two is #354's measured bound — every legitimate spelling
+#: here keeps them adjacent or within two words (*"never proceeds"*, *"No one
+#: writes"*, *"never integrate"*, *"refusal to integrate"*), and a negation
+#: further off governs something else.
+#:
+#: **What this does not catch, measured rather than assumed.** Eighteen further
+#: grant-shaped wordings were spliced into the real file one at a time, and the
+#: line falls in a describable place:
+#:
+#: *Caught.* A grant whose blocking word is a noun or an idiom wider than the gap
+#: — *"is no bar to proceeding"*, *"does not stand in the way of proceeding"*,
+#: *"Nothing here prevents proceeding"*, *"is not a reason to withhold
+#: proceeding"* — matches **no** negation at all, so the occurrence stays
+#: uncovered and the sweep flags it. That is the fail-closed side, and it is why
+#: the exclusion only has to rescue the cases where a negation *does* match.
+#:
+#: *Escapes.* **An outer negation over a well-formed inner prohibition** — *"It
+#: is not true that no one writes an as-built record on a `trivial` run"*,
+#: *"There is no rule that a mismatch must not be integrated"*, *"A thin design
+#: is not a reason the run cannot proceed"*. The inner clause is exactly the rule
+#: these predicates look for, spelled correctly, with a clean gap; the grant
+#: lives in the matrix clause, which no token-window anchor can reach. All three
+#: were measured escaping all three predicates. It is a different class from the
+#: one fixed here — sentential negation scope, not a verb inside a gap — and it
+#: is **not** closed. Closing it needs clause structure, not a wider window, so
+#: it is recorded here at its measured size rather than papered over.
+_NEGATION_GAP = rf"(?:\s+(?!(?:{_BLOCKING_VERBS})\w*\b)\w+){{0,2}}"
+
+
+#: Emphasis, stripped before any *anchored* predicate runs: this tree bolds its
+#: rules, so ``**stops**`` puts a ``*`` between the verb and the words that
+#: release it, and a "verb, then up to N words" anchor never crosses it.
+#: **Asterisks only** — ``_`` emphasis is unused here and ``certified_tree`` is
+#: not, and splitting one identifier into two tokens spends two of an anchor's
+#: gap allowance on a single word. Both halves measured: the first let
+#: ``**stops** only when the operator asks`` read as unconditional, the second
+#: let ``Comparing `HEAD^{tree}` to `certified_tree` is optional`` escape.
+_EMPHASIS = re.compile(r"\*+")
+#: A stop **released by a qualifier**. The rule is unconditional by design —
