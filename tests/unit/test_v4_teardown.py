@@ -74,6 +74,14 @@ from tests._gitutil import (
     tracked_py_sources,
 )
 
+# size: over the ceiling on declarative data, not on logic — roughly three
+# quarters of this module is the retirement inventory itself: nine tuples naming
+# every path, guard and helper ADR 0015 retires, each annotated with why it
+# belongs to the stage it is listed under. That annotation is the judgement the
+# teardown makes once and must then be held to, so it lives beside the entry
+# rather than in a commit body. Ten short test bodies read those tuples; the
+# executable surface is one regex and two helpers.
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Stage 1's retired paths — the deployment envelope, as pathspecs.

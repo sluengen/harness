@@ -53,6 +53,17 @@ from pathlib import Path
 from tests._gitutil import tracked_files_under
 from tests.unit.test_review_discipline_watchlist_entry_currency import _sentences
 
+# size: over the ceiling on recorded reasoning, not on logic — this module is the
+# AC3 half of a 108,000-line deletion, and the majority of its lines are the
+# written-down *why* behind each predicate, floor and grant: which text unit the
+# polarity anchor reads, why two floors cannot be pooled, why `harness promote`
+# and `assurance.trivial_certify` are deliberately unbanned. Every one of those
+# notes exists because the omission it describes was a live defect at some point
+# in this ticket's two review cycles. Splitting the file would separate a
+# predicate from the reason it is shaped as it is, which is the failure mode a
+# prose guard is least able to survive. The executable surface — four regexes,
+# five helpers — is well inside the limit.
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: This module names every banned token in order to look for it, so it is its own
