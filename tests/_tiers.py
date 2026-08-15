@@ -155,6 +155,10 @@ HELPER_BOUNDARIES: dict[str, frozenset[str]] = {
     "tests._gitutil::last_commit_date": frozenset({"tree"}),
     # Seeds ledger events straight into the SQLite store.
     "tests._ledger": frozenset({"db"}),
+    # Reads a ``claude --output-format stream-json`` transcript held in a string
+    # (#361). Pure ``json`` parsing over text the caller already has; it neither
+    # spawns the engine nor opens the file, so it crosses nothing.
+    "tests._stream_json": frozenset(),
     # Reclaim fixtures: a seeded ledger plus real git worktrees.
     "tests._reclaim": frozenset({"db", "proc"}),
     # This module. It *patches* subprocess and sqlite3 rather than using them,

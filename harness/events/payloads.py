@@ -308,6 +308,32 @@ class ReviewEventData(BaseModel):
     #: was never possible did not happen. Absent means *no stage*;
     #: ``probe_status`` says which kind of no.
     probe_second_pass: bool | None = None
+    #: The visual-evidence channel (#361), modelled on ``design_context`` field
+    #: for field because it answers the same question about the same kind of
+    #: evidence: did what the orchestrator produced actually reach the engine.
+    #:
+    #: ``visual_context`` is a non-optional bool — the prompt named N readable,
+    #: in-workspace captures. **It does not attest that the engine opened them.**
+    #: Nothing in the production path parses the engine's tool use, so this
+    #: records what the verb did, not what the model did; the same real semantics
+    #: ``design_context`` has, and the limit is recorded rather than implied.
+    visual_context: bool = False
+    #: Why no captures reached the engine, when none did — one of
+    #: :data:`~harness.cli.review_visual.VisualContextReason`
+    #: (``not_supplied`` / ``unreadable`` / ``no_images``). Absent whenever
+    #: ``visual_context`` is ``True``, exactly as ``design_context_reason`` is.
+    visual_context_reason: str | None = None
+    #: How many captures were named. Absent when there were none: a bool cannot
+    #: answer "how much visual evidence is a review actually carrying", which is
+    #: the measurement deciding whether the deferred consumption-tracking option
+    #: is worth building.
+    visual_count: int | None = None
+    #: Whether a manifest accompanied the captures. **Absent when there were
+    #: none** — a ``False`` on a run that supplied no captures would assert
+    #: something about a channel that was not used, the argument
+    #: ``probe_second_pass`` above already makes. The manifest is optional by
+    #: decision, so this is the adoption data a later requirement would rest on.
+    visual_manifest: bool | None = None
 
 
 class ReviewRefusalEventData(BaseModel):

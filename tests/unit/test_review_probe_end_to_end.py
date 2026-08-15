@@ -216,7 +216,22 @@ def _review_event(db_path: Path) -> dict[str, Any]:
 
 
 @pytest.fixture
-def outcome(repo: Path, db_path: Path) -> tuple[Any, _Engine, dict[str, Any]]:
+def captures(tmp_path: Path) -> Path:
+    """A capture set for #361's visual channel, staged *outside* the repo.
+
+    Inside the workspace allowlist but outside the tree under review, so the
+    worktree-identity assertions below still see a pristine repo — the captures
+    are evidence about the run, not a change to it.
+    """
+    shots = tmp_path / "captures"
+    shots.mkdir()
+    (shots / "surface-1440.png").write_bytes(b"\x89PNG\x00")
+    (shots / "manifest.md").write_text("surface @ 1440\n", encoding="utf-8")
+    return shots
+
+
+@pytest.fixture
+def outcome(repo: Path, db_path: Path, captures: Path) -> tuple[Any, _Engine, dict[str, Any]]:
     """One real probe run, shared by the assertions below.
 
     A single run rather than one per assertion because it is genuinely expensive
@@ -240,10 +255,39 @@ def outcome(repo: Path, db_path: Path) -> tuple[Any, _Engine, dict[str, Any]]:
                 str(db_path),
                 "--run-id",
                 _RUN_ID,
+                "--screenshot-dir",
+                str(captures),
                 "--json",
             ],
         )
     return result, engine, _review_event(db_path)
+
+
+def test_the_second_pass_carries_the_same_visual_evidence_as_the_first(
+    outcome: tuple[Any, _Engine, dict[str, Any]], captures: Path
+) -> None:
+    """#361 — the probe second pass revises a verdict about the same rendering.
+
+    The second pass is asked to reconsider its verdict in the light of a
+    demonstrated survivor. Dropping the captures from that call would ask it to
+    reconsider a rendering it can no longer see, and the ledger would still say
+    ``visual_context=true`` for the review as a whole. Nothing else in the suite
+    can see that wiring: every other test drives a review with **one** engine
+    pass, so deleting ``screenshots``/``manifest``/``reviewed_sha`` from the
+    second ``build_review_prompt`` call left the whole suite green.
+    """
+    _result, engine, event = outcome
+
+    assert len(engine.prompts) == 2, "a survivor must buy a second pass"
+    capture = str((captures / "surface-1440.png").resolve())
+    assert capture in engine.prompts[0]
+    assert capture in engine.prompts[1], (
+        "the probe second pass lost the captures the first pass was given (#361)"
+    )
+    assert "surface @ 1440" in engine.prompts[1]
+    assert event["reviewed_sha"] in engine.prompts[1]
+    assert event["visual_context"] is True
+    assert event["visual_count"] == 1
 
 
 def test_a_live_survivor_is_demonstrated_and_an_inert_entry_is_not(

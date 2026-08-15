@@ -67,7 +67,7 @@ paths:
   design_system: design/
 architecture_watchlist:
   files:
-    - harness/cli/review.py   # Review orchestration; seams: review_protocol.py, review_inherit.py, review_telemetry.py, review_pollution.py, review_probe.py. Carries a size: marker.
+    - harness/cli/review.py   # Review orchestration; seams: review_protocol.py, review_inherit.py, review_telemetry.py, review_pollution.py, review_probe.py, review_visual.py. Carries a size: marker.
     - harness/cli/close.py    # Close gate and ledger finalization; git in close_merge.py, tracker in close_tracker.py, telemetry in close_telemetry.py, retry in close_retry.py. Carries a size: marker.
     - harness/cli/reclaim.py  # Reclaim orchestration; seams: reclaim_liveness.py, reclaim_undo.py, reclaim_closable.py, reclaim_marker.py. Tests follow the seams. Carries a size: marker.
     - harness/cli/promote.py  # Promotion lifecycle orchestration; mechanics live in promotion.py, promotion_gate.py, promotion_pr.py, and promotion_escalation.py. Carries a size: marker.
