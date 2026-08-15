@@ -326,16 +326,16 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_7_0() -> None:
-    """Bumped by #401 for provider-neutral discovery; the registry row agrees."""
+def test_work_discovery_version_is_0_8_0() -> None:
+    """Bumped by ADR 0015 for the hold-label consolidation; the registry row agrees."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.7.0" in text, (
-        "the skill stamp must be work-discovery@0.7.0 (#401 — provider neutrality)."
+    assert "guidance:work-discovery@0.8.0" in text, (
+        "the skill stamp must be work-discovery@0.8.0 (ADR 0015 — hold labels)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.7\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.7.0 (#401)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.8\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.8.0 (ADR 0015)."
 
 
 # --- ADR 0006 / #191: the third hold kind, `input` --------------------------
