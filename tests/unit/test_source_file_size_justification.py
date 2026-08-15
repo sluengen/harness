@@ -19,7 +19,7 @@ as ``test_retired_spec_cites`` (CAL-633) and ``test_guidance_footprint``
 Scope and discriminator:
 
 * **Every tracked Python tree, at a ceiling per tree** (``_TREE_CEILINGS``).
-  ``harness/``, ``scripts/``, and ``templates/`` answer to the 500-line hard
+  ``scripts/`` and ``templates/`` answer to the 500-line hard
   limit; ``tests/`` answers to Part B's declarative ceiling (1.5x, so 750),
   because a test module's length is substantially *case enumeration* against
   one surface's acceptance criteria rather than accreted logic. A raised
@@ -111,7 +111,6 @@ _DECLARATIVE_CEILING = _HARD_LIMIT * 3 // 2
 #: ``scripts/`` and ``templates/`` answer to the hard limit like ``harness/``:
 #: build-time tooling and generators are ordinary logic.
 _TREE_CEILINGS = {
-    "harness": _HARD_LIMIT,
     "scripts": _HARD_LIMIT,
     "templates": _HARD_LIMIT,
     "tests": _DECLARATIVE_CEILING,
@@ -245,7 +244,7 @@ def test_tests_tree_answers_to_the_declarative_ceiling() -> None:
     does not silently subject it to the 500-line production limit.
     """
     assert _TREE_CEILINGS["tests"] == _DECLARATIVE_CEILING
-    assert _TREE_CEILINGS["tests"] > _TREE_CEILINGS["harness"]
+    assert _TREE_CEILINGS["tests"] > _TREE_CEILINGS["scripts"]
 
 
 def test_docstring_scope_prose_names_every_guarded_tree() -> None:

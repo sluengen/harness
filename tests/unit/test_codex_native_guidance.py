@@ -248,10 +248,19 @@ def test_agent_led_commands_use_tool_neutral_entry_doc() -> None:
 
 
 def test_repo_context_describes_agent_neutral_orchestration() -> None:
-    """CONTEXT.md should not make Claude the only orchestrating host."""
+    """CONTEXT.md should not make Claude the only orchestrating host.
+
+    The two negative assertions are the guard. The positive one is the floor
+    under them: on a file that said nothing about who drives the work, both
+    negatives would be trivially true. Its anchor was ``orchestrating agent
+    session`` — the phrase describing a session calling the retired runtime's
+    verbs — and #435 deleted the runtime, so the floor moves to the vocabulary
+    the file now uses for the same question. Host-neutral either way, which is
+    the whole point: the anchor must never be a product name.
+    """
 
     context = _text(CONTEXT)
 
-    assert "orchestrating agent session" in context
+    assert "agent-led" in context
     assert "single Claude session" not in context
     assert "orchestrating Claude session" not in context

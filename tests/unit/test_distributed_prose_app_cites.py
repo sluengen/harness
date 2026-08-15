@@ -223,9 +223,17 @@ def test_registered_files_come_from_the_registry() -> None:
 
 
 def test_detector_flags_an_app_only_cite() -> None:
-    """A synthetic line citing an app file is flagged (the mechanism is live)."""
-    flagged = _scan_text("the verb lives in `harness/cli/close.py` today")
-    assert flagged == [(1, "harness/cli/close.py")], flagged
+    """A synthetic line citing an app file is flagged (the mechanism is live).
+
+    The cite was ``harness/cli/close.py`` until #435 deleted the package. A
+    control naming a path that no longer exists resolves to nothing and stops
+    flagging — silently, and while still reading as a control. It is repointed
+    at a surviving app-only file: ``scripts/mutate.py`` is under an App prefix,
+    is tracked, and appears in neither ``registry.yaml`` block, which is exactly
+    the shape this detector must catch.
+    """
+    flagged = _scan_text("the driver lives in `scripts/mutate.py` today")
+    assert flagged == [(1, "scripts/mutate.py")], flagged
 
 
 def test_detector_flags_a_bare_app_root_doc() -> None:

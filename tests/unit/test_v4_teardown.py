@@ -16,6 +16,19 @@ edits — ``commands/``, ``skills/``, ``.codex/`` — are almost entirely surviv
 surface with a few retired entries inside them. So the did-not-delete-too-much
 control names those three trees specifically, not only the repo at large.
 
+**Stage 4 — the engine.** The ``harness/`` package itself, every test module
+that imported it, and the test helpers that existed only to drive it. This
+stage carries a fourth property the earlier ones did not need: *nothing living
+still reaches for the package*. A module-scope ``import harness`` of a deleted
+package is an ``ImportError`` at collection, so that is the difference between
+a clean deletion and a gate that is red everywhere. It is asserted with an
+import-**statement** regex rather than a ban on the word, because the word
+survives legitimately in prose and in ``scripts/mutate.py``'s worked example —
+a vocabulary ban would be satisfiable only by deleting true sentences. A regex
+can be wrong in both directions, so it carries a positive and a negative
+control, both run against synthetic source in ``tmp_path`` so they exercise the
+*predicate* rather than agreeing with the current state of the tree.
+
 Two properties, and they fail for different reasons:
 
 * **Absence.** Every retired path resolves to nothing in the index. Judged with
@@ -40,11 +53,17 @@ both surviving workflows are named here rather than left to be noticed.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-from tests._gitutil import ShallowHistoryError, last_commit_date, tracked_files_under
+from tests._gitutil import (
+    ShallowHistoryError,
+    last_commit_date,
+    tracked_files_under,
+    tracked_py_sources,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -129,6 +148,44 @@ _RETIRED_GUIDANCE_TEST_MODULES = (
     "tests/unit/test_design_engine_capability_claim.py",
 )
 
+#: Stage 4's retired paths — the engine itself, as pathspecs.
+#:
+#: ``harness/`` is the package ADR 0015 retires: the verb loop, the run ledger,
+#: the event store, the tracker clients and the gate driver. It goes whole,
+#: because no internal seam leaves the rest importable — ``cli/`` reaches into
+#: ``state/``, ``events/``, ``gate.py`` and ``worktree.py`` pervasively.
+#: ``tests/integration/`` goes with it: every module under it either imported
+#: the package or shelled out to the container, and the one guard there whose
+#: subject survives (``scripts/promotion-step.sh``) is moved into
+#: ``tests/unit/`` rather than deleted.
+_RETIRED_ENGINE_PATHS = (
+    "harness",
+    "tests/integration",
+)
+
+#: Test helpers that existed only to drive the retired package, as pathspecs.
+#:
+#: Each was checked against its consumers before being listed: every remaining
+#: importer of these seven is itself a module this stage deletes. ``_ledger``
+#: built ledger rows, ``_reclaim`` staged reclaimable runs, ``_cliutil`` drove
+#: verbs through ``CliRunner``, ``_asyncutil`` ran the async verb bodies,
+#: ``_capture`` and ``_stream_json`` parsed engine transcripts, and ``_tiers``
+#: classified tests by the process/SQLite/CLI boundaries only the package had.
+#: ``conftest.py`` goes with ``_tiers``: it existed to apply those markers, to
+#: deny those boundaries, and to unset ``LINEAR_API_KEY`` for the Linear client
+#: that is gone. ``tests/_gitutil.py`` is deliberately **not** here — 61 modules
+#: import it and most survive, this one included.
+_RETIRED_TEST_HELPERS = (
+    "tests/_ledger.py",
+    "tests/_reclaim.py",
+    "tests/_cliutil.py",
+    "tests/_asyncutil.py",
+    "tests/_capture.py",
+    "tests/_stream_json.py",
+    "tests/_tiers.py",
+    "tests/conftest.py",
+)
+
 #: The surviving surface. Non-empty is the whole claim: these are the trees a
 #: mass deletion is likeliest to over-reach into, and an empty answer for any of
 #: them means the teardown took something ADR 0015 keeps.
@@ -142,9 +199,16 @@ _SURVIVING_TREES = (
     "design",
     "specs/decisions",
     "specs/features",
+    "scripts",
     "scripts/mutate.py",
     "scripts/verify.sh",
     ".codex",
+    # Stage 4 deletes 143 of the 275 modules under `tests/unit/` and seven of
+    # the nine helpers beside it. Both floors are named because "the suite is
+    # empty" and "the suite kept its shared helper" are the two ways this stage
+    # over-reaches, and either would leave every absence assertion above green.
+    "tests/unit",
+    "tests/_gitutil.py",
 )
 
 #: The guidance Stage 2 edits *around*. Named individually because "``commands/``
@@ -235,6 +299,32 @@ def test_a_guard_over_retired_guidance_is_gone_with_its_subject(module: str) -> 
     )
 
 
+@pytest.mark.parametrize("pathspec", _RETIRED_ENGINE_PATHS)
+def test_a_retired_engine_path_is_gone_from_the_index(pathspec: str) -> None:
+    """Nothing under a Stage 4 retired engine path is still tracked."""
+    survivors = _relative(tracked_files_under(pathspec))
+    assert survivors == [], (
+        f"{pathspec} is retired by ADR 0015 — the harness becomes deterministic "
+        f"gates plus hooks, with no runtime package — but these files are still "
+        f"tracked: {survivors}."
+    )
+
+
+@pytest.mark.parametrize("pathspec", _RETIRED_TEST_HELPERS)
+def test_a_helper_that_only_drove_the_engine_is_gone(pathspec: str) -> None:
+    """A test helper whose every consumer this stage deletes goes with them.
+
+    Left behind, each would be dead code that still imports the deleted package
+    at module scope — collected by nothing, but read by the next person as a
+    seam that still exists.
+    """
+    survivors = _relative(tracked_files_under(pathspec))
+    assert survivors == [], (
+        f"{pathspec} existed only to drive the retired package and has no "
+        f"surviving consumer; still tracked: {survivors}."
+    )
+
+
 def test_every_parametrized_set_in_this_module_is_populated() -> None:
     """The floor under **every** ``@parametrize`` source in this module.
 
@@ -253,7 +343,9 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
     assert len(_RETIRED_GUIDANCE_PATHS) >= 5, _RETIRED_GUIDANCE_PATHS
     assert len(_RETIRED_TEST_MODULES) >= 12, _RETIRED_TEST_MODULES
     assert len(_RETIRED_GUIDANCE_TEST_MODULES) >= 11, _RETIRED_GUIDANCE_TEST_MODULES
-    assert len(_SURVIVING_TREES) >= 11, _SURVIVING_TREES
+    assert len(_RETIRED_ENGINE_PATHS) >= 2, _RETIRED_ENGINE_PATHS
+    assert len(_RETIRED_TEST_HELPERS) >= 8, _RETIRED_TEST_HELPERS
+    assert len(_SURVIVING_TREES) >= 14, _SURVIVING_TREES
     assert len(_SURVIVING_PROMOTION) >= 3, _SURVIVING_PROMOTION
     assert len(_SURVIVING_GUIDANCE) >= 8, _SURVIVING_GUIDANCE
 
@@ -265,6 +357,8 @@ def test_every_parametrized_set_in_this_module_is_populated() -> None:
         *_RETIRED_GUIDANCE_PATHS,
         *_RETIRED_TEST_MODULES,
         *_RETIRED_GUIDANCE_TEST_MODULES,
+        *_RETIRED_ENGINE_PATHS,
+        *_RETIRED_TEST_HELPERS,
     ),
 )
 def test_a_retired_path_is_one_that_really_existed(pathspec: str) -> None:
@@ -351,4 +445,114 @@ def test_a_sibling_of_a_retired_guidance_path_survives(pathspec: str) -> None:
         f"{pathspec} holds no tracked file — Stage 2 retires the repo's own "
         f"`/harness` namespace and the `guidance-coherence` skill, not the "
         f"commands, skills and Codex adapters standing next to them."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC1 — nothing living still reaches for the deleted package.
+# ---------------------------------------------------------------------------
+
+#: An ``import harness`` / ``from harness[.sub] import …`` statement, at any
+#: indentation.
+#:
+#: The **statement**, deliberately, not the bare word. ``harness`` is this
+#: repository's own name: it appears in the ADR that records the retirement, in
+#: ``CONTEXT.md``, in ``process/harness.md``, and in ``scripts/mutate.py``'s
+#: module docstring, which carries a worked example of a mutation entry. A ban
+#: on the vocabulary would be satisfiable only by deleting true sentences, which
+#: is a worse tree than the one it was meant to protect.
+#:
+#: A regex is a predicate that can be wrong in either direction, so it is
+#: exercised by :func:`_engine_importers` — the one function the live sweep and
+#: both controls below call — rather than asserted about.
+_ENGINE_IMPORT = re.compile(
+    r"^\s*(?:from\s+harness(?:\.[A-Za-z0-9_.]+)?\s+import\b|import\s+harness\b)",
+    re.MULTILINE,
+)
+
+
+def _engine_importers(paths: list[Path], *, root: Path) -> list[str]:
+    """Every path in ``paths`` whose source imports the retired package."""
+    return sorted(
+        str(path.relative_to(root))
+        for path in paths
+        if _ENGINE_IMPORT.search(path.read_text(encoding="utf-8"))
+    )
+
+
+def test_no_surviving_python_imports_the_retired_package() -> None:
+    """No tracked Python source imports ``harness``.
+
+    The consequence is not tidiness. A module-scope import of a deleted package
+    raises ``ImportError`` during collection, which takes the whole suite down
+    rather than failing one test — so this is the difference between a clean
+    deletion and a gate that is red everywhere for a reason unrelated to the
+    change under review.
+    """
+    importers = _engine_importers(
+        tracked_py_sources("scripts", "tests", "templates"), root=_REPO_ROOT
+    )
+    assert importers == [], (
+        f"these modules still import the retired `harness` package: {importers}. "
+        f"ADR 0015 deletes it; remove the dependency rather than restoring the "
+        f"module."
+    )
+
+
+def test_the_import_predicate_catches_a_real_import(tmp_path: Path) -> None:
+    """Positive control: the shapes a real dependency takes are all matched.
+
+    Without this the sweep above is green on an empty tree, on a misspelled
+    pattern, and on a regex that matches nothing at all.
+    """
+    forms = {
+        "plain.py": "import harness\n",
+        "submodule.py": "import harness.cli.review as r\n",
+        "from_package.py": "from harness import gate\n",
+        "from_submodule.py": "from harness.cli import review\n",
+        "from_deep.py": "from harness.state.store import Store\n",
+        "indented.py": "def f():\n    from harness import gate\n",
+        "after_prose.py": '"""A docstring."""\n\nimport harness.events\n',
+    }
+    for name, source in forms.items():
+        (tmp_path / name).write_text(source, encoding="utf-8")
+
+    caught = _engine_importers(sorted(tmp_path.glob("*.py")), root=tmp_path)
+    assert caught == sorted(forms), (
+        f"the predicate missed a real import statement: expected all of "
+        f"{sorted(forms)}, caught {caught}."
+    )
+
+
+def test_the_import_predicate_leaves_true_prose_alone(tmp_path: Path) -> None:
+    """Negative control: naming the retired package is not importing it.
+
+    This is the half that stops the guard being "fixed" by deleting the
+    sentences that record the retirement. ``scripts/mutate.py``'s docstring is
+    the live case — it carries a worked example of a mutation entry, and a
+    surviving example is still an example. The repo's own name, its process
+    doc's filename, and a path literal must all stay legal.
+    """
+    legal = {
+        "docstring.py": (
+            '"""The harness retires its runtime (ADR 0015).\n\n'
+            'A mutation entry may name a module to import as an observation:\n'
+            "    observe = [\"-c\", \"import scripts.mutate as m; print(m)\"]\n"
+            '"""\n'
+        ),
+        "prose_naming_the_package.py": (
+            "# The harness package was deleted; nothing imports harness now.\n"
+            "REASON = 'the harness runtime is retired'\n"
+        ),
+        "path_literal.py": "DOC = 'process/harness.md'\nROOT = 'harness/'\n",
+        "unrelated_import.py": "from tests._gitutil import tracked_files_under\n",
+    }
+    for name, source in legal.items():
+        (tmp_path / name).write_text(source, encoding="utf-8")
+
+    caught = _engine_importers(sorted(tmp_path.glob("*.py")), root=tmp_path)
+    assert caught == [], (
+        f"the predicate flagged prose that merely names the package: {caught}. "
+        f"A guard satisfiable only by deleting true sentences is worse than no "
+        f"guard."
     )

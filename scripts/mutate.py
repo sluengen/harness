@@ -163,16 +163,16 @@ The table, in TOML — ``'''literal'''`` strings need no escaping, and ``old``/
     sentinel_text = "Release-cadence bounds"
 
     [[mutation]]
-    id = "memo-read-key"
-    file = "harness/cli/review.py"
-    old = '''    key = (sha, model)'''
-    new = '''    key = (sha,)'''
-    kills = ["tests/unit/test_review_memo.py::test_memo_keys_on_model"]
-    note = "the memo's read key must include the model"
+    id = "tracked-set-ignores-pathspec"
+    file = "tests/_gitutil.py"
+    old = '''["git", "ls-files", "-z", "--", str(path)]'''
+    new = '''["git", "ls-files", "-z"]'''
+    kills = ["tests/unit/test_gitutil.py::test_removed_path_returns_empty"]
+    note = "a tracked-set query that ignores its pathspec answers about the repo"
     # Optional. Argv appended to this interpreter, not a command line. Declare it
     # on any entry whose failure mode is "the edit changed nothing" — otherwise a
     # survivor is reported UNPROVEN and cannot be cited against the guard.
-    observe = ["-c", "import harness.cli.review as r; print(r.CACHE_KEY_FIELDS)"]
+    observe = ["-c", "import tests._gitutil as g; print(g.tracked_files_under('.'))"]
 
 This is a **build-time instrument**, not a gate stage: it proves a new guard
 while the guard is being written. ``scripts/verify.sh`` does not run it, and
@@ -184,11 +184,11 @@ reasoning:
 
 * The optional ``--json <path>`` report dump was **dropped**, on the stated
   ground that nothing consumed it and the rendered report is the contract a tick
-  reads. #363 restored it, because that ground expired: ``harness review``'s
-  probe stage runs this module as a subprocess and classifies each entry with no
-  human in the loop. It reads :func:`json_report`, never :func:`render` —
-  deriving a verdict from a human summary is the defect #207 *is*, and this
-  module's own rule against parsing ``N passed`` says so.
+  reads. #363 restored it, because that ground expired: an automated reader runs
+  this module as a subprocess and classifies each entry with no human in the
+  loop. It reads :func:`json_report`, never :func:`render` — deriving a verdict
+  from a human summary is the defect #207 *is*, and this module's own rule
+  against parsing ``N passed`` says so.
 * ``Baseline`` carries only ``passed``, ``collected`` and ``duration_s``, not the
   design's ``failed``/``errored``. A baseline that is not green refuses, so its
   red set cannot reach any later stage — carrying it would be dead data that
@@ -271,9 +271,10 @@ Outcome = str
 #: The members of that vocabulary, in the order :func:`render` reads best.
 #: Load-bearing rather than a second list to keep in sync: :class:`EntryResult`
 #: refuses an outcome outside it, so a classifier that invents a sixth verdict
-#: raises on the first test that reaches the branch. That matters here because
-#: ``mypy``'s scope is ``harness`` (see ``CONTEXT.md``), so ``scripts/`` is not
-#: type-checked and a ``Literal`` alias would be an unenforced list. It is also
+#: raises on the first test that reaches the branch. That mattered when
+#: ``mypy``'s scope excluded ``scripts/`` and a ``Literal`` alias would have been
+#: an unenforced list; since #435 the gate type-checks this file, and the
+#: runtime refusal is kept because it is the stronger of the two. It is also
 #: what lets a doc guard *derive* what ``CONTRIBUTING.md`` must document, instead
 #: of hand-listing it and going stale the way #365 left it (#366).
 OUTCOMES: tuple[Outcome, ...] = ("killed", "survived", "mispredicted", "errored", "inert")
@@ -1097,14 +1098,14 @@ def _liveness_advisory(result: EntryResult) -> list[str]:
 def json_report(report: Report) -> dict[str, object]:
     """The same observations as :func:`render`, shaped for a machine reader (#363).
 
-    ``harness review``'s probe stage runs this module as a subprocess and has to
-    classify each entry without a human in the loop. The alternative — parsing
+    An automated reader runs this module as a subprocess and has to classify
+    each entry without a human in the loop. The alternative — parsing
     :func:`render` — is textually the defect #207 *is*, so the producer grows a
     machine channel rather than the consumer growing a scraper.
 
     The **same** disclosure rule applies as to :func:`render`, and it binds
-    harder here because the output is read into a ledger event and pasted into a
-    ticket: node ids, counts, durations and digests only. In particular a
+    harder here because the output is pasted into a ticket: node ids, counts,
+    durations and digests only. In particular a
     mutation's ``old``/``new`` are exact source substrings of the tree under
     review and are deliberately **absent**; ``id`` is the handle a consumer cites
     by, and it is the one the entry's author chose.

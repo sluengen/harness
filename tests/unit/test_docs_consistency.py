@@ -6,11 +6,19 @@ pre-implementation state. If the harness has shipped, these should be absent.
 Also enforces (DOC-3, CAL-593) that every spec the SPEC.md index marks as
 superseded carries an in-file dated supersede banner, so an agent opening the
 file directly is not misled into reading retired-engine content as live.
+
+**#435 removed the cross-repo-execution and ssh-forwarding sections.** Both read
+their invariants off ``harness.hostenv.spawn`` — the argv it built for the
+Docker container — and ADR 0015 retires the container and the package that
+constructed it. The mount, the ``HARNESS_WORKSPACE_ROOTS`` pin and the
+ssh-agent gate they locked no longer exist to be locked. Everything else here
+guards a surviving file, including the two ``--extra dev`` guards below, which
+are what hold ``CONTEXT.md``'s ``commands:`` block and ``scripts/verify.sh``
+together as this repo becomes a gate and nothing else.
 """
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
@@ -257,170 +265,6 @@ def test_changelog_present_and_referenced_by_freshness_hook() -> None:
         "entry goes. Since #324 that is the commit body, which the release "
         "assembles from (ADR 0014) — without it the bump reminder names a "
         "version to change and no record to change it in (CAL-651, AC-2)."
-    )
-
-
-# --- Cross-repo execution (CAL-675) -------------------------------------------
-#
-# `/harness run` is universal across repo types: one harness checkout (+ the
-# `~/bin/harness` wrapper) drives a Linear ticket in *any* repo, because the
-# verbs are repo-agnostic — the wrapper mounts the target repo's CWD at
-# /workspace and the verbs operate there. These guards keep that capability and
-# the docs that promise it honest:
-#   - the wrapper must pin HARNESS_WORKSPACE_ROOTS to the in-container /workspace
-#     (a host-side value is a host path, meaningless inside, and would reject the
-#     mounted repo — the exact regression a review of CAL-675 caught); and
-#   - the onboarding doc must tell a consuming repo to ignore *both* run-state
-#     directories (.harness/ ledger and .worktrees/ worktrees), which sit at
-#     different paths.
-
-DOCKER_README = REPO_ROOT / "docker" / "README.md"
-#: The wrapper is a versioned file (CAL-1123), not a README heredoc; the guards
-#: below lock its *code* against the installed artifact, not prose.
-DOCKER_WRAPPER = REPO_ROOT / "docker" / "harness-wrapper.sh"
-
-#: The wrapper enables cross-repo execution with two moves: mount the caller's
-#: CWD at /workspace, and pin the fail-closed allowlist (workspace.py, CAL-584)
-#: to that same /workspace so the mounted repo is admitted.
-#: The repo mount. Was ``-v "$(pwd)":/workspace`` in the wrapper's own bash; since
-#: #307 the spawner substitutes the resolved repo path, so the invariant is the
-#: *target*, which is what the in-container allowlist is pinned to.
-_WRAPPER_MOUNTS_CWD_RE = re.compile(r"-v\s+\S+:/workspace\b")
-#: The fix must be a *literal* /workspace, not a forwarded host value. The
-#: ``${HARNESS_WORKSPACE_ROOTS:-/workspace}`` default and a bare
-#: ``-e HARNESS_WORKSPACE_ROOTS`` both forward whatever the host exported — a
-#: host path the container's verbs then reject. Pin ``=/workspace`` instead.
-_WRAPPER_PINS_ALLOWLIST_RE = re.compile(r"-e\s+HARNESS_WORKSPACE_ROOTS=/workspace")
-_WRAPPER_FORWARDS_HOST_RE = re.compile(
-    # bare `-e HARNESS_WORKSPACE_ROOTS \` (env-passthrough), or the old
-    # `export HARNESS_WORKSPACE_ROOTS="${HARNESS_WORKSPACE_ROOTS:-…}"` default —
-    # the optional quote after `=` is what made the original guard miss the
-    # real (quoted) export line.
-    r'-e\s+HARNESS_WORKSPACE_ROOTS\s*\\|HARNESS_WORKSPACE_ROOTS="?\$\{HARNESS_WORKSPACE_ROOTS'
-)
-
-
-def test_wrapper_pins_allowlist_to_container_workspace() -> None:
-    """The cross-repo claim is backed by the documented wrapper (CAL-675).
-
-    `/harness run` runs cross-repo only because the ``~/bin/harness`` wrapper
-    (versioned at ``docker/harness-wrapper.sh``) mounts the caller's CWD at
-    ``/workspace`` *and* sets the ``HARNESS_WORKSPACE_ROOTS`` allowlist to that
-    same in-container ``/workspace`` — so the fail-closed guard in
-    ``workspace.py`` (CAL-584) admits the mounted repo. The allowlist must be a
-    **literal** ``/workspace``: forwarding the host's value (the old
-    ``${HARNESS_WORKSPACE_ROOTS:-/workspace}`` default / bare
-    ``-e HARNESS_WORKSPACE_ROOTS``) leaks a host path into the container, which
-    then rejects ``/workspace`` and breaks every verb — the regression a review
-    of CAL-675 caught. Lock both the mount and the pin.
-
-    **Retargeted by #307.** The wrapper stopped constructing its own container;
-    ``harness.hostenv.spawn`` builds it for both the socket path and the client's
-    fallback. The mount and the pin are asserted over the argv it actually builds,
-    which is the same property read off the live construction instead of off a
-    file that no longer performs it.
-    """
-    from harness.hostenv import spawn
-
-    argv = spawn.build_docker_argv(
-        repo=Path("/work/repo"),
-        argv=["status"],
-        image="harness:dev",
-        env_names=(),
-        home=Path("/home/op"),
-    )
-    text = " ".join(argv)
-    assert _WRAPPER_MOUNTS_CWD_RE.search(text), (
-        "harness.hostenv.spawn no longer mounts the repo at /workspace. That "
-        "mount is what makes the verbs repo-agnostic — without it the cross-repo "
-        "claim (CAL-675) is false."
-    )
-    assert _WRAPPER_PINS_ALLOWLIST_RE.search(text), (
-        "harness.hostenv.spawn no longer pins "
-        "`-e HARNESS_WORKSPACE_ROOTS=/workspace`. It must set the in-container "
-        "allowlist to a literal /workspace (CAL-584/CAL-675)."
-    )
-    assert not _WRAPPER_FORWARDS_HOST_RE.search(text), (
-        "harness.hostenv.spawn forwards the host's HARNESS_WORKSPACE_ROOTS "
-        "into the container (bare `-e HARNESS_WORKSPACE_ROOTS` or a "
-        "`${HARNESS_WORKSPACE_ROOTS:-…}` default). Inside the container the repo "
-        "is /workspace, so a host path rejects it — pin `=/workspace` instead "
-        "(CAL-675 regression)."
-    )
-
-
-# --- ssh-agent forwarding gate --------------------------------------
-#
-# The close verb pushes over SSH from inside the container. Docker Desktop
-# bridges the host ssh-agent into the container at the fixed in-VM path
-# /run/host-services/ssh-auth.sock — a path that exists ONLY inside the Docker
-# VM, never on the macOS host. The wrapper must therefore NOT gate the forward on
-# the host-side existence of that socket (`[[ -S /run/host-services/... ]]`):
-# evaluated host-side that test is *always* false, so forwarding silently never
-# enables and every `close` push falls back to the tokenized-https detour
-# (mis-read for months as "this host has no ssh-agent"). Gate on the host
-# actually having a reachable agent instead, and let Docker Desktop supply the
-# socket at mount time.
-
-#: The buggy *active* gate — `if [[ -S /run/host-services/ssh-auth.sock ]]`.
-#: Anchored on the `if` so a prose mention of the old form (e.g. this guard's own
-#: rationale, or an explanatory comment in the wrapper) is not a false positive;
-#: only a live gate keying off the VM-only socket trips it.
-_SSH_VM_SOCKET_TEST_RE = re.compile(
-    r"if\s+\[\[\s*-S\s+/run/host-services/ssh-auth\.sock\s*\]\]"
-)
-#: The corrected gate keys off the host's own agent (SSH_AUTH_SOCK + ssh-add) on
-#: a single line.
-_SSH_HOST_AGENT_GATE_RE = re.compile(r"SSH_AUTH_SOCK|ssh-add")
-#: Docker Desktop still supplies the socket — the mount must remain.
-_SSH_SOCKET_MOUNT = "/run/host-services/ssh-auth.sock:/ssh-agent"
-
-
-def test_wrapper_ssh_gate_keys_off_host_agent() -> None:
-    """The documented wrapper gates ssh-agent forwarding on the *host* agent, not
-    on the VM-only magic socket.
-
-    Testing `[[ -S /run/host-services/ssh-auth.sock ]]` host-side is always false
-    — that path lives inside the Docker VM, never on the macOS host — so the old
-    gate silently disabled forwarding and forced the tokenized-https fallback on
-    every close. The fix keys the gate off the host's own agent and lets Docker
-    Desktop provide the socket at mount time; the mount itself must stay.
-
-    **Retargeted by #307.** The gate is now
-    ``HostPlatform.ssh_agent_is_live`` — an ``ssh-add -l`` probe run only when
-    ``SSH_AUTH_SOCK`` is set — and the mount is built by ``harness.hostenv.spawn``.
-    Both halves are read from the source that performs them.
-    """
-    from harness.hostenv import host, spawn
-
-    text = inspect.getsource(host.HostPlatform.ssh_agent_is_live) + " ".join(
-        spawn.build_docker_argv(
-            repo=Path("/work/repo"),
-            argv=["status"],
-            image="harness:dev",
-            env_names=(),
-            home=Path("/home/op"),
-            ssh_agent=spawn.SshAgentForwarding(
-                source=spawn.DOCKER_DESKTOP_AGENT_SOCKET, probed="/tmp/agent.sock"
-            ),
-        )
-    )
-    assert not _SSH_VM_SOCKET_TEST_RE.search(text), (
-        "docker/harness-wrapper.sh still gates ssh forwarding on "
-        "`[[ -S /run/host-services/ssh-auth.sock ]]`. That socket exists only "
-        "inside the Docker VM, so the host-side test is always false and "
-        "forwarding never enables. Gate on the host agent "
-        "(`[[ -n \"${SSH_AUTH_SOCK:-}\" ]] && ssh-add -l`) instead."
-    )
-    assert _SSH_HOST_AGENT_GATE_RE.search(text), (
-        "docker/harness-wrapper.sh no longer gates on the host's own agent "
-        "(SSH_AUTH_SOCK + ssh-add). The forward must enable when the host has a "
-        "reachable agent holding a key."
-    )
-    assert _SSH_SOCKET_MOUNT in text, (
-        "docker/harness-wrapper.sh no longer mounts "
-        f"`{_SSH_SOCKET_MOUNT}`. Docker Desktop supplies the host agent at that "
-        "in-VM path at mount time — the mount must remain."
     )
 
 
