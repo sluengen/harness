@@ -1,4 +1,4 @@
-<!-- guidance:review-discipline-craft@0.4.0 -->
+<!-- guidance:review-discipline-craft@0.5.0 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
@@ -158,6 +158,42 @@ where `subjects` came from a filtered scan. The filter stopped matching and the
 assertion became a constant. Assert the iterable is non-empty in the same test,
 or collect the violations into a list and assert the list is empty — the list
 form at least names what it checked when it fails.
+
+Its sibling is *A comparison whose operands live in different frames is constant*
+below: the same symptom, an assertion true for every input, reached the other way.
+Here the subject is empty; there both operands exist and are measured against
+each other in incommensurable units. Check which of the two you have before
+reaching for a remedy — asserting non-emptiness does nothing for a frame
+mismatch.
+
+### A comparison whose operands live in different frames is constant
+
+A containment, prefix, or ordering test is constant unless both sides are
+expressed in the same frame. Resolve both operands to a common one before
+comparing them.
+
+**Falsifying example.** A floor existed to prove a fixture's symlink pointed
+*outside* the repository — a link pointing inside is a shape git answers about
+happily, and would leave the guard testing nothing new. It asserted
+`not link.readlink().is_relative_to(link.parent)`. But `readlink()` returns the
+target as written, which is usually relative, and a relative path is never
+`is_relative_to` an absolute one; the assertion therefore held for every relative
+target, however far inside the repository it pointed. Mutating the fixture to
+link at a relative in-repo path survived the entire suite — including the floor
+whose sole job was to catch exactly that. Comparing
+`(link.parent / link.readlink()).resolve()` against `link.parent.resolve()`
+makes that mutation the assertion's exclusive killer.
+
+Paths are the common case in a guard suite that reads a tree, but the shape is
+the frame and not the API: a naive datetime compared with an aware one, and a raw
+string compared with a normalised one, fail the same way. The tell is an
+assertion that reads as a strong claim — `is_relative_to` looks like it measures
+containment, and its negation like it measures escape — while one side was never
+in a position to satisfy it.
+
+Its sibling above is *`all()` over a possibly-empty iterable is constant-true*,
+where the constancy comes from an empty subject instead, and where the remedy is
+a non-emptiness assertion rather than a common root.
 
 ## Prose predicates and text guards
 
