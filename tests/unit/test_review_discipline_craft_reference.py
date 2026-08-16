@@ -22,13 +22,13 @@ What this module pins:
   family, and nothing else settles that nothing sits between them;
 * the three survivor entries sit under ``Mutation discipline``, the ordinal entry
   under ``Unmeasured claims``, the counterfeited-delimiter entry under
-  ``Prose predicates and text guards``, and the frame-mismatch entry under
-  ``Vacuity`` — the family set and the pattern set are each derived alone, and
-  neither knows a heading's *home*, so a pattern can migrate between existing
-  families with both of them green;
-* the header states the admission rule — additions are held for an operator call
-  rather than self-filed — in the prose above the first family heading, where a
-  reader deciding whether to add an entry is looking;
+  ``Prose predicates and text guards``, and the frame-mismatch and
+  unclassified-member entries under ``Vacuity`` — the family set and the pattern
+  set are each derived alone, and neither knows a heading's *home*, so a pattern
+  can migrate between existing families with both of them green;
+* the header states the admission rule — additions are raised as proposals for an
+  operator call rather than self-filed — in the prose above the first family
+  heading, where a reader deciding whether to add an entry is looking;
 * both citing roots name the reference by its repo-relative path.
 
 What this module does **not** prove:
@@ -126,6 +126,11 @@ _DELIMITER_PATTERN = "A paired delimiter can be counterfeited by prose that ment
 _EMPTY_ITERABLE_PATTERN = "`all()` over a possibly-empty iterable is constant-true"
 _FRAME_MISMATCH_PATTERN = "A comparison whose operands live in different frames is constant"
 
+#: The entry naming the unclassified-member class. Spelled apart from the
+#: membership tuple below for the same reason as the entries above: the family pin
+#: needs it by exact heading too, and a heading spelled twice drifts once.
+_UNCLASSIFIED_PATTERN = "A guard over an enumerable dimension must fail on an unclassified member"
+
 #: Named patterns pinned by membership — one per family at minimum, covering the
 #: lesson classes the change spec names. A rename shows up here as a missing
 #: name rather than as a set that silently lost an entry.
@@ -134,6 +139,7 @@ _REQUIRED_PATTERNS = (
     "The empty comparison set",
     _EMPTY_ITERABLE_PATTERN,
     _FRAME_MISMATCH_PATTERN,
+    _UNCLASSIFIED_PATTERN,
     "A blacklist inversion sweep fails open on an appended grant",
     "The negation window assumes a false converse",
     _TEXT_UNIT_PATTERN,
@@ -149,11 +155,11 @@ _REQUIRED_PATTERNS = (
     _ORDINAL_PATTERN,
 )
 
-#: Measured at 45 patterns. The floor sits just under that: a slack floor set
+#: Measured at 46 patterns. The floor sits just under that: a slack floor set
 #: far below the real count swallows whole families without going red. Re-derived
 #: from the count on each addition rather than incremented, so the slack stays the
 #: two entries it was measured at instead of growing by one every time.
-_PATTERN_FLOOR = 43
+_PATTERN_FLOOR = 44
 
 #: Measured shortest body is 357 characters. The floor sits just under it. A
 #: pattern stripped back to its one-line statement — the rule with the
@@ -421,6 +427,37 @@ def test_the_frame_entry_sits_under_vacuity() -> None:
     )
 
 
+def test_the_unclassified_member_entry_sits_under_vacuity() -> None:
+    """The unclassified-member entry is in that family, not merely in the file.
+
+    Its home was argued on its ticket, and the ticket's own routing was wrong: it
+    sent the entry to a "floors and controls family", which this file does not
+    have. The correction was recorded before the build — the floors-and-controls
+    entries are a *cluster inside* ``Vacuity``, not a family — so the family is a
+    decision that took an argument to reach, and the class itself earns it: a
+    classifier that skips what it cannot place makes its guard's assertion hold
+    over a shrinking subject, which is the constant-predicate direction every
+    entry in this family names. A silent re-home to the deletion or
+    prose-predicate family would quietly re-decide that.
+
+    Kept apart from the other family pins so each has its own killer: moving any
+    one family's heading past its entries must go red on its own test.
+
+    Position within the family is deliberately not pinned. The entry sits after
+    *Floors decay into decoration*, which is where the cluster it belongs to ends
+    — but the only positional fact anyone argued is that it must not land between
+    the constant-predicate pair, and ``test_the_constant_predicate_pair_is_adjacent``
+    already owns that. A second pin would guard the same event twice and start the
+    duplicate map of the file's structure this module declines to keep.
+    """
+    grouped = _patterns_by_family()
+    assert _VACUITY_FAMILY in grouped, f"no {_VACUITY_FAMILY!r} family: {list(grouped)}"
+    assert _UNCLASSIFIED_PATTERN in grouped[_VACUITY_FAMILY], (
+        f"{_UNCLASSIFIED_PATTERN!r} is no longer under {_VACUITY_FAMILY!r} — "
+        f"found under {[f for f, names in grouped.items() if _UNCLASSIFIED_PATTERN in names]}"
+    )
+
+
 def test_the_constant_predicate_pair_is_adjacent() -> None:
     """Nothing sits between the two constant-predicate entries, in that order.
 
@@ -456,7 +493,7 @@ def test_the_constant_predicate_pair_is_adjacent() -> None:
 
 
 def test_the_header_states_the_admission_rule() -> None:
-    """The header says additions are held for an operator call, not self-filed.
+    """The header says additions are proposed for an operator call, not self-filed.
 
     Asserted against the header specifically — the prose above the first family
     heading — because the rule governs whether to add an entry at all, so it has
@@ -472,6 +509,15 @@ def test_the_header_states_the_admission_rule() -> None:
     paragraph-scoped assertion green. The sentence is the unit that makes the
     terms co-occur *in the rule*. What it does not prove is that the rule was
     obeyed — see the module docstring.
+
+    **The named mechanism changed, so this assertion changed with it.** The rule
+    used to hold a candidate on the tracker under the ``input`` label, and the
+    term this required was ``` `input` ```. Under the bugs-are-filed /
+    improvements-are-proposed rule an addition to this file is an improvement, so
+    it may not be filed at all: it is a **proposal**, raised in a report and
+    ratified by the operator, and there is no held ticket to label. Requiring the
+    retired term would now pin the retired mechanism, which is the drift a version
+    stamp cannot see — so the required term is the one that names the channel.
     """
     header = _header()
     assert header.strip(), "no header derived — the file has no ## family heading"
@@ -490,7 +536,7 @@ def test_the_header_states_the_admission_rule() -> None:
         f"the sentence unit stopped resolving over {len(sentences)} part(s)"
     )
 
-    missing = [term for term in ("operator", "`input`") if term not in rule]
+    missing = [term for term in ("operator", "proposal") if term not in rule]
     assert not missing, (
         f"the admission rule does not name {missing} — an addition held for "
         "nobody in particular, by no named mechanism, is not held"

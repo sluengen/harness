@@ -108,6 +108,10 @@ def _filing_surfaces() -> list[str]:
 #: did not know about — it is the evidence the derivation earns its keep, and
 #: `commands/promote.md` is the same shape found later. The two
 #: `commands/harness/*` members were dropped when #435 retired that namespace.
+#: `skills/review-discipline/SKILL.md` joined when the bugs-are-filed /
+#: improvements-are-proposed rule landed there: the rule's bug half instructs any
+#: agent to file, which makes the skill a filing surface and puts it under the
+#: rubric-pointer assertion below.
 _KNOWN_FILING_SURFACES = (
     "commands/bug.md",
     "commands/tweak.md",
@@ -115,13 +119,14 @@ _KNOWN_FILING_SURFACES = (
     "commands/assess.md",
     "commands/promote.md",
     "commands/build.md",
+    "skills/review-discipline/SKILL.md",
 )
 
 
 def test_the_filing_surface_set_is_non_empty() -> None:
     """FLOOR 1. A derivation that narrowed to nothing passes every check below."""
     surfaces = _filing_surfaces()
-    assert len(surfaces) >= 6, (
+    assert len(surfaces) >= 7, (
         f"only {len(surfaces)} filing surfaces derived from registry.yaml — the "
         f"per-surface pointer checks derive their subjects from this set, so a "
         f"broken derivation makes them all pass on an empty set (#354 AC-4)."

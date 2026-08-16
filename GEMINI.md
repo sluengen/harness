@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.10.0 -->
+<!-- guidance:process-harness@0.11.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -105,7 +105,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) with plain git — merge, gate, then publish — resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
 | `/decision` | Interactive sweep that drains tickets held for the operator's input — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/routine` | One unattended build-cycle tick: discover the next actionable ticket (`work-discovery`), `/build` it, ship to the integration branch; hold the ticket on a red gate or conflict. The versioned home of the standing prompt scheduled runs paste. |
-| `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, operator errands. Never mutates ticket state. |
+| `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, the window's proposals for a promote-or-drop call, operator errands. Never mutates ticket state. |
 | `/assess <scope>` | Run the steward over the codebase — `code` or `architecture` (`--deep` for the broad pass). |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 

@@ -1,4 +1,4 @@
-<!-- guidance:reviewer@0.6.0 -->
+<!-- guidance:reviewer@0.7.0 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.
@@ -44,6 +44,9 @@ Run the configured gate independently over that final candidate. Fix only an
 error introduced by your record edit; implementation failures return to the
 builder. Nothing may land after the certifying run. Report a one-line verdict,
 Stage 1 status per criterion, Stage 2 findings placed in the 2×2 with what/where/why/how,
+a **Proposals** section carrying every improvement the review proposes rather than
+files — one line each with its case, or the word `none`, never an omitted section
+(`review-discipline` → *bugs are filed; improvements are proposed*) —
 **whether visual evidence was consulted** — and when it was not, which of
 `review-discipline`'s reasons applies — fresh verification output, and the
 `reviewed_sha` the verdict covers.

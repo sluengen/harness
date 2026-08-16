@@ -1,4 +1,4 @@
-<!-- guidance:review-discipline-craft@0.5.0 -->
+<!-- guidance:review-discipline-craft@0.6.0 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
@@ -13,8 +13,9 @@ Every entry has a name, the rule in one line, and a falsifying example — the
 concrete shape where the wrong thing read as green. The example is the
 load-bearing half; read it to recognise the shape in the diff in front of you.
 
-Additions to this file are held for an operator call — filed with the `input`
-hold label and assigned — never self-filed. The entry bar here is *a defect class
+Additions to this file are raised as a **proposal** for an operator call — an
+entry here is an improvement, so it goes in a review or close report and is
+ratified at `/digest`, never self-filed. The entry bar here is *a defect class
 that reads as green*, which is a standing incentive to grow the file, and every
 entry taxes the context of every future reader. The operator is the budget-holder
 for that tax.
@@ -98,6 +99,28 @@ had length three was satisfied forever by `("A", "B", "B")`. Never assert
 cardinality as the floor either — a hardcoded count is usually the very drift the
 guard exists to remove. Non-empty, plus a named anchor so a rename names itself,
 is the form that does not rot.
+
+### A guard over an enumerable dimension must fail on an unclassified member
+
+A guard over an enumerable dimension — file suffixes, defect families, subtrees —
+fails on an unclassified member rather than letting it fall through, so the diff
+that introduces the novelty answers the coverage question in place or defers it
+consciously.
+
+**Falsifying example.** A size ceiling classified tracked files by extension and
+walked the trees it knew about. Its one comment prefix was the prefix the repo's
+only language used, so on the day it was written every tracked file was covered
+and every control was honest. A later change added the tree's first files in a
+second language. They matched no classifier, the walker passed over them, and the
+ceiling silently stopped applying to a whole language while the guard still
+reported green over the files it recognised — the gap surfaced a release later,
+as a defect in the guard rather than a question the introducing diff had been
+made to answer. The shape to look for is a classifier whose default branch means
+*not my subject*: make that branch fail, and the change that brings the new
+member is the change that has to place it or record why it does not belong. The
+same reading applies to the derived set the classifier feeds — a subtree list, a
+family map — which is why this is a vacuity class and not a prose-predicate one:
+the assertion holds over a subject that quietly stopped growing.
 
 ### A control goes inert when the change deletes what it names
 

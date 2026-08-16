@@ -1,4 +1,4 @@
-<!-- guidance:build@1.13.1 -->
+<!-- guidance:build@1.14.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -248,9 +248,14 @@ the same refusal to integrate on mismatch.
   `tracker`.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent.
   Re-run the required assurance stages; a changed diff invalidates old evidence.
-- **DEFER:** create the out-of-scope follow-up through `tracker` with explicit
+- **DEFER:** sort the deferred findings by class first (`review-discipline` —
+  *bugs are filed; improvements are proposed*). A **bug** — the tree
+  contradicting its own contract, a red gate, a guard asserting something false
+  — is filed: create the out-of-scope follow-up through `tracker` with explicit
   queue placement and exactly one assurance level, chosen per `spec-authoring` →
-  *Choosing assurance*, then ship the independently reviewed tree.
+  *Choosing assurance*. An **improvement** is not filed at all; it goes in the
+  run report's Proposals section, where `/digest` puts it in front of the
+  operator. Then ship the independently reviewed tree.
 
 A moved integration branch is not a stop and never a question for the operator
 (`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If
