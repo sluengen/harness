@@ -1,11 +1,11 @@
 ---
 name: assessment-craft
-description: Use when running a periodic codebase audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
+description: Use when running a periodic codebase audit as the steward (via /assess) — the finding bar, the blocking×size 2×2, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.5.0 -->
+<!-- guidance:assessment-craft@0.6.0 -->
 # Assessment Craft
 
-Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering-principles` for `architecture`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering-principles` for `architecture`.
 
 ## Posture — signal, not noise
 
@@ -13,7 +13,6 @@ Your report becomes work items. Every finding is a unit of someone's future time
 
 - **Specific or silent.** Every finding names a file, line, or concrete pattern. "Could be improved" is not a finding.
 - **Evidence leads.** State what you found before proposing a fix.
-- **Err toward lower severity.** A borderline High is a Medium.
 - **No hypotheticals.** If it might not be a problem under normal conditions, do not file it.
 
 If you write "could benefit from", "might be worth considering", or "it would be nice to" — delete the finding.
@@ -27,14 +26,12 @@ If you write "could benefit from", "might be worth considering", or "it would be
 
 Missing any of these means it is not a finding yet.
 
-## Severity
+## Placing a finding — the 2×2
 
-| Severity | Definition |
-|---|---|
-| **Critical** | Security/data-integrity risk, a silent wiring failure, or a violation a current change is actively compounding. |
-| **High** | A clear principle/decision/contract violation not yet causing problems but that will before the next touch in that area. |
-| **Medium** | Structural drift, duplicated knowledge, a weak test assertion, a stale doc that creates confusion. |
-| **Low** | Cleanup: minor drift, cosmetic inconsistency, an unused file, a dependency a minor version behind with no security reason. |
+A finding is placed by two binaries, **does it block?** and **is the fix small?**. That 2×2 is `review-discipline`'s and has its one home there; read the placement rules from that skill rather than from a copy here. What the axes mean for a periodic pass:
+
+- **Blocking** — the tree contradicts its own contract today: a security or data-integrity risk, a silent wiring failure, a guard asserting something false, a violation a current change is actively compounding.
+- **Non-blocking** — structural drift, duplicated knowledge, a weak test assertion, a stale doc that creates confusion, cleanup.
 
 Calibrate honestly. An inflated backlog loses its shape and trains the reader to skim.
 
@@ -53,7 +50,7 @@ Rules:
 
 ## Narrative scopes — when a report is more than findings
 
-Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture --deep`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, honest severity. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
+Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture --deep`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, an honest blocking call. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
 
 ## What you are not looking for
 
@@ -63,4 +60,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format (the `assess` command handles filing). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the proposals ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.

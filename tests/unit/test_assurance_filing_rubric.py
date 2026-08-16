@@ -199,7 +199,12 @@ _TRIVIAL = re.compile(r"\btrivial\b", re.IGNORECASE)
 _ALONE = re.compile(r"\balone\b", re.IGNORECASE)
 #: The properties of a ticket's *text* — every one of them authored by whoever
 #: filed it, which is what makes R2 a security rule rather than a style rule.
-_TEXT_PROPERTIES = ("severity", "description", "diff")
+#: ``severity`` was the first of the three until #455: the grade scale was
+#: retired for the blocking×size 2×2, so a ticket has no severity to read and the
+#: property it stood for — *the ticket saying the work is small* — is now spelled
+#: as the filer's own claim of minorness. The rule, its arity, and its polarity
+#: are unchanged; only the name of one author-controlled property moved.
+_TEXT_PROPERTIES = ("minor", "description", "diff")
 
 
 def _names_text_properties(sentence: str) -> int:
@@ -356,9 +361,9 @@ def test_the_rubric_states_the_trivial_inference_ban() -> None:
     stated = _states_the_trivial_inference_ban(_read(_RUBRIC_HOME))
     assert stated, (
         f"{_RUBRIC_HOME} does not forbid inferring `trivial` from a ticket's own "
-        f"text. All three properties — severity, description, estimated diff size "
-        f"— are authored by whoever filed the issue, so a rubric without this rule "
-        f"lets a ticket argue its way down (#354 AC-5b)."
+        f"text. All three properties — a claim of minorness, the description, the "
+        f"estimated diff size — are authored by whoever filed the issue, so a "
+        f"rubric without this rule lets a ticket argue its way down (#354 AC-5b)."
     )
 
 
@@ -432,23 +437,24 @@ def test_the_rubric_rule_predicates_discriminate() -> None:
     and the absence assertions above passing for the wrong reason.
     """
     banned = (
-        "**Never infer `trivial` from low severity, a short description, or a "
-        "small estimated diff alone.**"
+        "**Never infer `trivial` from a ticket calling the work minor, a short "
+        "description, or a small estimated diff alone.**"
     )
     assert _states_the_trivial_inference_ban(banned) == [banned]
     assert _permits_trivial_inference(banned) == []
 
     # The inversion: same subject, same nouns, negation replaced.
     permitted = (
-        "A filer may sometimes infer `trivial` from low severity, a short "
-        "description, or a small estimated diff alone."
+        "A filer may sometimes infer `trivial` from a ticket calling the work "
+        "minor, a short description, or a small estimated diff alone."
     )
     assert _permits_trivial_inference(permitted) == [permitted]
     assert _states_the_trivial_inference_ban(permitted) == []
 
     # The quantifier, dropped: a *different*, absolute rule, and not R2.
     without_alone = (
-        "Never infer `trivial` from low severity, a short description, or a small estimated diff."
+        "Never infer `trivial` from a ticket calling the work minor, a short "
+        "description, or a small estimated diff."
     )
     assert _states_the_trivial_inference_ban(without_alone) == [], (
         "the ban predicate cannot see the `alone` quantifier — it would accept an "
@@ -466,7 +472,8 @@ def test_the_rubric_rule_predicates_discriminate() -> None:
     # permission wearing a prohibition's tokens.
     shielded = (
         "A filer who cannot reach the certification command may infer `trivial` from "
-        "low severity, a short description, or a small estimated diff alone."
+        "a ticket calling the work minor, a short description, or a small "
+        "estimated diff alone."
     )
     assert _permits_trivial_inference(shielded) == [shielded], (
         "an unrelated `cannot` shields a permission — the negation is not "
@@ -519,8 +526,8 @@ def test_the_rule_predicates_read_the_real_rubrics_unit_boundaries() -> None:
     drifted = rubric.replace(
         ban,
         ban + " Where the certification command is unavailable, a filer may infer "
-        "`trivial` from low severity, a short description, or a small estimated "
-        "diff alone.",
+        "`trivial` from a ticket calling the work minor, a short description, or "
+        "a small estimated diff alone.",
     )
     assert _permits_trivial_inference(drifted), (
         "an exception appended to R2 is invisible to the tree-wide sweep — the "

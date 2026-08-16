@@ -118,7 +118,11 @@ def test_assessment_template_exists_and_is_versioned() -> None:
     )
     lower = text.lower()
     # The format must carry the load-bearing parts of an assessment report.
-    for part in ("finding", "severity", "insight"):
+    # ``severity`` was one of the three until #455 retired the grade scale;
+    # ``verdict`` replaces it rather than the set shrinking to two, because the
+    # verdict is the part a reader skims first and is what an architecture pass
+    # exists to produce.
+    for part in ("finding", "verdict", "insight"):
         assert part in lower, (
             f"templates/assessment.md must document the '{part}' part of the report format"
         )

@@ -96,7 +96,11 @@ _DISMISSES_THE_COUNT_OR_SIZE = re.compile(
 
 #: The reviewer bullet's two tier terms: the finding's own tier, and the
 #: rule-of-three tier it is pegged to.
-_BULLET_TERMS = (r"\bMedium\b", r"3\+")
+# ``Medium`` until #455 retired the grade scale for the blocking×size 2×2.
+# The assertion is unchanged in kind — it pegs *this* bullet's placement to
+# the rule-of-three placement — only the vocabulary the equivalence is
+# written in moved.
+_BULLET_TERMS = (r"\bnon-blocking\b", r"3\+")
 
 
 def _third_strike_section() -> str:
