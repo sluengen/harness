@@ -7,17 +7,31 @@ two into one ``commands/build.md`` whose review takes ``--engine codex`` (defaul
 mirroring the engine-arg policy A1 set on the verb surface, and retires
 ``build-codex.md`` + its registry entry.
 
-These guards pin the consolidated state so the split cannot regress and a re-import of
-the retired file is caught by the verify gate:
+**What this module asserts, after #459.** Three negative-space sweeps — the retired
+file is gone, the registry does not list it, and no live distributed surface names
+it — plus **one tripwire** over the review-engine section: the Codex engine is
+declared there, it runs read-only, and it runs from the worktree. Nothing here reads
+whether the prose *says* the right thing about the engine; per ADR 0016 that is the
+review gate's job.
 
-* the second file is gone and unlisted (AC-1, AC-2);
-* no dangling ``build-codex`` reference survives in the live distributed command/process
-  surface (AC-3) — history (``CHANGELOG.md``), specs/proposals, and source comments about
-  the long-retired ``build-codex.yaml`` workflow are out of scope and keep their records;
-* the surviving ``build.md`` documents both engines and the agent-orchestrated
-  Codex→Claude fallback (AC-1).
+The two assertions #459 removed, and why:
 
-*Source:* CAL-703.
+* the Codex→Claude fallback was pinned by bare term co-occurrence (``"fall" in text
+  and "claude" in text``) — a predicate with no polarity, satisfied by prose saying
+  the fallback is forbidden;
+* the ``build.md`` header was pinned to a ``>= 1.3.0`` floor, a frozen bump that only
+  ever needs hand-editing. Version identity is owned tree-wide by
+  ``test_assurance_filing_surfaces::test_registered_file_version_matches_its_registry_entry``.
+
+Occurrence this tripwire cites (``code-quality`` Part C, *A new guard cites the
+occurrence it prevents*): the pre-#459 form read ``"--engine codex" in text`` over the
+**whole file**, so the engine declaration and the sandbox flag could drift into two
+unrelated sections — or into a retirement note — and still satisfy it. Scoping the
+read to the ``### Independent review`` section is the fix; the ``craft.md`` class is
+*A guard over prose owns structure and negative space, never meaning* (the anchored
+window half).
+
+*Source:* CAL-703, reshaped by #459.
 """
 
 from __future__ import annotations
@@ -41,6 +55,27 @@ _SURFACE = [
     REPO_ROOT / "GEMINI.md",
     REGISTRY,
 ]
+
+#: The heading the review engines are declared under. A ``### `` heading, so the
+#: window runs to the next ``## `` (``^## `` cannot match ``### ``) and covers the
+#: whole review block including *Record the as-built spec*, where the Codex
+#: invocation sits.
+_ENGINE_HEADING = "### Independent review"
+
+
+def _review_engine_section() -> str:
+    """``### Independent review`` through the next ``## `` heading.
+
+    Returns ``""`` when the heading is absent, so a rename fails the tripwire
+    loudly rather than leaving its containment checks scanning an empty string.
+    """
+    text = BUILD.read_text()
+    start = re.search(rf"^{re.escape(_ENGINE_HEADING)}\s*$", text, re.MULTILINE)
+    if start is None:
+        return ""
+    rest = text[start.end() :]
+    following = re.search(r"^## ", rest, re.MULTILINE)
+    return (rest[: following.start()] if following is not None else rest).strip()
 
 
 # --- AC-1 / AC-2: the second file is gone and unlisted ----------------------
@@ -78,58 +113,52 @@ def test_no_build_codex_in_distributed_surface() -> None:
     )
 
 
-# --- AC-1: the surviving file documents both engines + the fallback ---------
+# --- The tripwire: the engine is declared where it runs, and it runs safely ---
 
 
-def test_build_command_takes_engine_arg() -> None:
-    """``build.md`` documents ``--engine codex`` with Claude as the default."""
-    text = BUILD.read_text()
-    assert "--engine codex" in text, (
-        "build.md must document the '--engine codex' opt-in (CAL-703)"
-    )
-    assert re.search(r"default[^.\n]*[Cc]laude|[Cc]laude[^.\n]*default", text), (
-        "build.md must state Claude is the default review engine (CAL-703)"
+def test_the_codex_engine_runs_read_only_from_the_worktree() -> None:
+    """The review-engine section declares the Codex engine and constrains it.
+
+    One tripwire over one rule-home (#459). Three parts:
+
+    * **anchor** — ``### Independent review`` resolves to prose, so a heading
+      rename names itself here instead of emptying every check below;
+    * **terms** — the opt-in flag, the invocation, and the sandbox flag are the
+      three words the engine cannot be specified without;
+    * **polarity** — ``--dangerously-bypass-approvals-and-sandbox`` is asserted
+      **absent from this window**. The diff and the ticket are untrusted prompt
+      content (CAL-659), so the unsandboxed flag reappearing next to the
+      invocation is the inversion this guard exists to catch.
+
+    The whole-file absence of that flag, and the tree-wide shell-invocation
+    identity, stay in ``test_build_command_bodies`` — this window-scoped form is
+    what keeps the flag from returning *in the section that runs the engine* while
+    a retirement note elsewhere keeps the file-wide sweep green.
+    """
+    section = _review_engine_section()
+    assert section, f"commands/build.md has no {_ENGINE_HEADING!r} section"
+
+    missing = [
+        term
+        for term in ("--engine codex", "codex exec", "--sandbox read-only")
+        if term not in section
+    ]
+    assert not missing, (
+        f"the {_ENGINE_HEADING!r} section no longer specifies the Codex engine: "
+        f"{missing} is absent. The engine opt-in, its invocation, and its sandbox "
+        "must be stated where the review actually runs (CAL-703 / CAL-659)."
     )
 
+    assert "--dangerously-bypass-approvals-and-sandbox" not in section, (
+        "the review-engine section runs Codex with approvals and sandboxing "
+        "disabled — the diff and the ticket are untrusted prompt content, so "
+        "prompt injection could run arbitrary host commands (CAL-659)"
+    )
 
-def test_build_command_documents_codex_review_read_only_from_worktree() -> None:
-    """The Codex engine path keeps the CAL-659 safety posture: read-only, in the worktree."""
-    text = BUILD.read_text()
-    assert "--dangerously-bypass-approvals-and-sandbox" not in text, (
-        "build.md must not run the Codex reviewer unsandboxed — the diff/ticket are "
-        "untrusted prompt content (CAL-659 carried into CAL-703)"
-    )
-    assert "--sandbox read-only" in text, (
-        "build.md's Codex engine must run 'codex exec --sandbox read-only'"
-    )
-    codex_lines = [ln for ln in text.splitlines() if "codex exec" in ln]
-    assert codex_lines, "build.md must invoke 'codex exec' for the Codex engine"
+    codex_lines = [ln for ln in section.splitlines() if "codex exec" in ln]
+    assert codex_lines, "the review-engine section must invoke 'codex exec'"
     for ln in codex_lines:
         assert 'cd "$worktree_path" &&' in ln, (
             "the 'codex exec' invocation must 'cd \"$worktree_path\"' first so Codex "
             f"reads the implementation under review, not the base checkout — got: {ln!r}"
         )
-
-
-def test_build_command_documents_codex_to_claude_fallback() -> None:
-    """``build.md`` documents the agent-orchestrated Codex→Claude fallback (AC-1)."""
-    text = BUILD.read_text().lower()
-    assert "fall" in text and "claude" in text, (
-        "build.md must document the Codex→Claude fallback on an exhausted tier (CAL-703)"
-    )
-    assert "usage limit" in text or "exhausted" in text, (
-        "build.md must name the exhausted-tier / usage-limit trigger for the fallback"
-    )
-
-
-# --- AC-2: version bumped consistently --------------------------------------
-
-
-def test_build_version_bumped_to_1_3() -> None:
-    """``build.md`` header is at least 1.3.0 (minor bump for the engine arg)."""
-    m = re.search(r"guidance:build@(\d+)\.(\d+)\.(\d+)", BUILD.read_text())
-    assert m, "build.md must carry a guidance:build@<version> header"
-    major, minor, _ = (int(g) for g in m.groups())
-    assert (major, minor) >= (1, 3), (
-        f"build.md must be bumped to >= 1.3.0 for the added engine arg; got {m.group(0)}"
-    )

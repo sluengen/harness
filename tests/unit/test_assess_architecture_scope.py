@@ -10,23 +10,40 @@ standards (the architecture skill's assessment rubric) and the report contract
 (a holistic judgement that may file zero tickets while still recording a verdict
 and a watchlist), not the agent.
 
-The lenses live in ONE canonical home — `skills/architecture/SKILL.md` ("##
-Architecture assessment") — and the command (`commands/assess.md`), the steward
-(`agents/steward.md`), the report shape (`templates/assessment.md`), and the
-finding bar (`skills/assessment-craft/SKILL.md`) reference it rather than
-re-stating it. These guards pin each acceptance criterion so a later re-edit
-cannot silently drop it.
+**What this module asserts, after #459.** Four identity/exclusivity checks —
+header⇄registry parity for every surface this ticket edited, the rubric's single
+canonical home, the routed scope set with the retired `system` scope asserted
+absent, and the global scope-ID enumeration naming `ARCH-` — plus **two
+tripwires**, one per rule-home:
 
-These are text-parse content guards in the style of `test_architecture_watchlist`
-/ `test_steward_consolidated`; the `test_smoke_*` cases below are the documented
-smoke test the ticket asks for (AC-9), exercising the filing rule the guidance
-specifies (file only actionable risks; never positive observations).
+* ``skills/architecture/SKILL.md`` § ``## Architecture assessment`` carries the
+  eight lenses and names positive bets to preserve;
+* ``commands/assess.md`` § step 2 states that the architecture scope files only
+  actionable risks, with the negation that excludes positive observations.
+
+Seven prose pins collapsed into those two under #459 (ADR 0016), and both
+``test_smoke_*`` cases went with their ``_file_only_actionable`` fixture: the
+"executable spec" they exercised was a three-line dict filter **defined in this
+test file**, asserted against samples also defined here. It could not fail for any
+edit to the guidance it claimed to be the smoke test of — the ``craft.md`` class
+*Exercise the production path, not merely a production constant*, in its worst
+form, since there is no production path at all (the mechanism is agent-followed
+prose).
+
+Occurrence the surviving polarity cites (``code-quality`` Part C): the pre-#459
+filing check was ``assert "only" in low and "actionable" in low`` over the whole
+of ``commands/assess.md``. Both words occur in the file for unrelated reasons,
+and neither reads the exclusion — so prose instructing the steward to file
+positive observations as tickets passed it. The ``craft.md`` class is *A guard
+over prose owns structure and negative space, never meaning*.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from tests.unit.test_assess_filing_placement import _step_two
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSESS = REPO_ROOT / "commands" / "assess.md"
@@ -76,76 +93,35 @@ def _header_version(path: Path) -> str:
     return m.group(1)
 
 
-# --- AC-1 / AC-6: the command surface documents the scope + the contrast ------
-
-
-def test_assess_documents_architecture_scope_and_usage() -> None:
-    """`commands/assess.md` documents `architecture` as a scope and the
-    `/assess architecture --deep` usage (AC-1)."""
-    text = ASSESS.read_text()
-    assert "/assess architecture --deep" in text, (
-        "commands/assess.md must document the `/assess architecture --deep` usage "
-        "(AC-1)."
-    )
-    assert "architecture" in text.lower(), (
-        "commands/assess.md must name `architecture` as a valid scope (AC-1)."
-    )
-
-
-def test_assess_distinguishes_code_from_architecture() -> None:
-    """The command explains how `architecture --deep` differs from `code --deep`
-    and `system`: code = finding engine, architecture = holistic judgement (AC-6)."""
-    low = ASSESS.read_text().lower()
-    assert "finding engine" in low, (
-        "commands/assess.md must frame `code` as a finding engine (AC-6)."
-    )
-    assert "holistic" in low, (
-        "commands/assess.md must frame `architecture` as a holistic judgement "
-        "(AC-6)."
-    )
-    # The three scopes are all named in the surface.
-    for scope in ("code", "architecture", "system"):
-        assert scope in low, f"commands/assess.md must still name the `{scope}` scope"
-
-
-def test_assess_documents_architecture_filing_behavior() -> None:
-    """Linear filing for the architecture scope: only actionable risks are filed,
-    positive observations are not, and zero tickets is a valid pass (AC-7)."""
-    low = ASSESS.read_text().lower()
-    assert "only" in low and "actionable" in low, (
-        "commands/assess.md must state architecture files only actionable risks "
-        "(AC-7)."
-    )
-    assert "zero" in low, (
-        "commands/assess.md must state a useful architecture pass may file zero "
-        "tickets (AC-7)."
-    )
-
-
-# --- AC-2: the steward defines the architecture scope + read path -------------
-
-
-def test_steward_routes_architecture_scope_to_owned_standards() -> None:
-    """The concise role routes architecture assessment instead of duplicating it."""
-    low = STEWARD.read_text().lower()
-    assert "architecture" in low and "engineering-principles" in low
-    assert "commands/assess.md" in low and "detailed lenses" in low
-
-
 # --- AC-3: the architecture skill carries a holistic assessment rubric --------
 
 
-def test_architecture_skill_has_holistic_rubric() -> None:
-    """`skills/architecture/SKILL.md` carries an "Architecture assessment" rubric
-    with the eight holistic lenses — not only design-decision guidance (AC-3)."""
+def test_the_architecture_rubric_carries_its_lenses() -> None:
+    """The rubric's lens set, read from its own section (AC-3).
+
+    **This rule has no polarity, and that is stated rather than faked.** It is an
+    enumeration: eight lenses plus the instruction to name positive bets to
+    preserve. There is no negation the rule cannot be stated without, and a bare
+    ``"not" in block`` over a section this long is decoration — almost any English
+    section satisfies it. What the tripwire owns is membership, read from the
+    anchored section rather than the file, so a lens deleted from the rubric fails
+    here even if the word survives in the surrounding prose.
+
+    Whether the eight lenses *say* the right thing is the review gate's job
+    (ADR 0016).
+    """
     block = _section(ARCHITECTURE.read_text(), RUBRIC_SECTION).lower()
-    for lens in LENSES:
-        assert lens in block, (
-            f"the Architecture assessment rubric must carry the `{lens}` lens (AC-3)."
-        )
+    missing = [lens for lens in LENSES if lens not in block]
+    assert not missing, (
+        f"the {RUBRIC_SECTION!r} rubric no longer carries the {missing} lens(es) "
+        "(AC-3). The scope is the lens set — dropping one narrows what a holistic "
+        "pass looks at, silently."
+    )
     assert "preserve" in block, (
-        "the rubric must name positive bets to preserve as first-class output "
-        "(AC-3)."
+        "the rubric no longer names positive bets to preserve as first-class "
+        "output. Without it the architecture scope degrades into the finding "
+        "engine the `code` scope already is, which is the gap CAL-816 opened it "
+        "to close (AC-3)."
     )
 
 
@@ -162,65 +138,63 @@ def test_rubric_lives_in_exactly_one_skill() -> None:
     )
 
 
-# --- AC-4: the report template supports the holistic shape --------------------
+# --- AC-7: the architecture scope's filing rule -------------------------------
+
+#: The exclusion, **anchored to the object it excludes**. This is the whole rule:
+#: narrative output stays in the report. A window that says "file only actionable
+#: risks" without it is satisfied by a step that also files every positive
+#: observation, since both are things an architecture pass produces.
+_NOT_POSITIVE_OBSERVATIONS = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,6}?\W+positive observations?\b", re.IGNORECASE
+)
 
 
-def test_assessment_template_has_architecture_shape() -> None:
-    """`templates/assessment.md` supports the holistic architecture report shape:
-    positive observations, trade-offs to preserve, watchlist recommendations
-    (AC-4) — and proves the Slate-like section set (AC-9)."""
-    text = ASSESSMENT_TEMPLATE.read_text()
-    low = text.lower()
-    assert "architecture report" in low, (
-        "templates/assessment.md must document an architecture report shape (AC-4)."
-    )
-    # The Slate-like section set the ticket asks for (AC-9).
-    for section in (
-        "verdict",
-        "what is working",
-        "architectural risks",
-        "watchlist",
-        "recommended actions",
-        "not assessed",
-    ):
-        assert section in low, (
-            f"the architecture report shape must include a `{section}` section "
-            "(AC-4/AC-9)."
-        )
-    assert "tickets to file" in low, (
-        "the architecture report shape must include a findings/tickets-to-file "
-        "section (AC-4/AC-9)."
-    )
-    # Positive observations are recorded but not filed (AC-4/AC-7).
-    assert "not" in low and "filed" in low, (
-        "the template must state positive observations are not filed as tickets "
-        "(AC-4/AC-7)."
-    )
+def _architecture_filing_rules() -> list[str]:
+    """Step-2 paragraphs stating the ``architecture`` scope's filing rule."""
+    return [
+        " ".join(block.split())
+        for block in _step_two().split("\n\n")
+        if "architecture" in block.lower() and block.strip()
+    ]
 
 
-# --- AC-5: assessment-craft allows non-ticket narrative sections --------------
+def test_the_architecture_scope_files_only_actionable_risks() -> None:
+    """Step 2's architecture-scope filing rule, read from its own unit (AC-7).
 
+    Three parts:
 
-def test_assessment_craft_allows_narrative_scopes() -> None:
-    """`assessment-craft` clarifies architecture reports may carry non-ticket
-    narrative sections, while actionable risks still need the four parts (AC-5)."""
-    low = ASSESSMENT_CRAFT.read_text().lower()
-    assert "narrative" in low, (
-        "assessment-craft must name the narrative (non-ticket) report sections "
-        "(AC-5)."
+    * **anchor** — the one paragraph of ``### 2. File the findings`` that names
+      the ``architecture`` scope. The step slicer is imported from
+      ``test_assess_filing_placement``, which owns the Todo-not-Backlog rule in
+      the same step; two tripwires, two rule-homes, one slicer.
+    * **terms** — ``only``, ``actionable``, and ``zero`` (a pass that files
+      nothing is a valid outcome, not a failed run).
+    * **polarity** — the negation anchored to ``positive observations``. Before
+      #459 this rule was pinned by ``"only" in low and "actionable" in low`` over
+      the whole command file, which reads neither the scope nor the exclusion.
+    """
+    candidates = _architecture_filing_rules()
+    assert len(candidates) == 1, (
+        f"step 2 has {len(candidates)} paragraphs naming the architecture scope; "
+        "it must have exactly one. The scope's filing rule is what separates a "
+        "holistic pass from the `code` scope's finding engine, and it is only "
+        "readable where it is stated once (AC-7)."
     )
-    assert "architecture" in low, (
-        "assessment-craft must tie the narrative allowance to the architecture "
-        "scope (AC-5)."
+    rule = candidates[0]
+    lowered = rule.lower()
+
+    missing = [term for term in ("only", "actionable", "zero") if term not in lowered]
+    assert not missing, (
+        f"the architecture-scope filing rule no longer states {missing}. Only the "
+        "actionable risks become tickets, and a useful pass may file zero of them "
+        "while still recording a verdict and a watchlist (AC-7)."
     )
-    assert "four parts" in low, (
-        "assessment-craft must keep the four-part bar for filed architecture risks "
-        "(AC-5)."
-    )
-    # The Output section's ID-prefix list must name ARCH- alongside CODE-/SYSTEM-,
-    # so the scope-ID convention stays coherent with the new scope (review nit).
-    assert "arch-" in low, (
-        "assessment-craft must list the `ARCH-` scope ID prefix beside CODE-/SYSTEM-."
+    assert _NOT_POSITIVE_OBSERVATIONS.search(rule), (
+        "the architecture-scope filing rule no longer excludes positive "
+        "observations from the tracker. An architecture report's value is largely "
+        "narrative — the verdict, what is working, the trade-offs to preserve — "
+        "and a rule that files only actionable risks *and* files the narrative has "
+        "excluded nothing (AC-7)."
     )
 
 
@@ -284,40 +258,3 @@ def test_edited_versions_match_registry() -> None:
             f"{fragment}: header {_header_version(path)} != registry "
             f"{_registry_version(fragment)} — bump both together."
         )
-
-
-# --- AC-9: documented smoke test of the filing rule --------------------------
-
-
-def _file_only_actionable(items: list[dict[str, str]]) -> list[str]:
-    """The architecture filing rule the guidance specifies, as an executable spec.
-
-    An architecture report carries mixed items: ``risk`` (actionable) items file
-    as tickets; ``positive``/``tradeoff`` (narrative) items stay in the report and
-    are never filed (`commands/assess.md`, `assessment-craft`). This mirrors what
-    the steward does by hand; it is a test fixture, not production code (the
-    mechanism is agent-followed prose, so a live helper nothing calls would be a
-    port-time orphan).
-    """
-    return [it["id"] for it in items if it["kind"] == "risk"]
-
-
-def test_smoke_files_only_actionable_risks() -> None:
-    """A holistic report with a verdict, a "what is working" note, and one risk
-    files only the risk — not the positive observation (AC-9, Verification)."""
-    report = [
-        {"id": "ARCH-WORKING-1", "kind": "positive"},   # what is working
-        {"id": "ARCH-TRADEOFF-1", "kind": "tradeoff"},  # a trade-off to preserve
-        {"id": "ARCH-1", "kind": "risk"},               # an actionable risk
-    ]
-    assert _file_only_actionable(report) == ["ARCH-1"]
-
-
-def test_smoke_zero_risks_files_nothing() -> None:
-    """A useful architecture pass — verdict + watchlist, no actionable risk — files
-    zero tickets and is still a valid, complete report (AC-7/AC-9)."""
-    report = [
-        {"id": "ARCH-WORKING-1", "kind": "positive"},
-        {"id": "ARCH-WATCH-1", "kind": "tradeoff"},
-    ]
-    assert _file_only_actionable(report) == []

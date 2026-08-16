@@ -15,9 +15,17 @@ Two drift classes pass every automated gate yet still fork the design:
   second source of truth — drift the value scan cannot see.
 
 Both fixes are guidance edits to the universal ``design-system`` skill, in its
-"Primitives over bespoke markup" section. This guard pins their substance so a
-future edit cannot silently drop the anti-drift prose (the same pattern that
-pins the dedup state in ``test_skill_boundary_dedup``).
+"Primitives over bespoke markup" section.
+
+**What this module asserts (#459).** One tripwire over one rule-home. Both
+drift classes live in the same section, so two sentence-pin functions over one
+already-scoped slice were one guard written twice (``code-quality`` Part C →
+*A guard over prose owns structure and negative space, never meaning*; ADR
+0016 → *one tripwire per rule-home, not per sentence*). Polarity **does**
+exist here, contrary to the triage note that produced this conversion: the
+whole point of both classes is that the value scan **cannot** see the
+duplication, so the negation is bound to ``scan`` rather than left loose over
+the paragraph.
 """
 
 from __future__ import annotations
@@ -27,6 +35,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = REPO_ROOT / "skills" / "design-system" / "SKILL.md"
+
+_NEGATION = re.compile(
+    r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
+)
 
 
 def _section(text: str, heading: str) -> str:
@@ -56,36 +68,51 @@ def _primitives_section() -> str:
     return _section(SKILL.read_text(), "Primitives over bespoke markup")
 
 
-def test_composition_chrome_rule_present() -> None:
-    """CAL-771 — the section flags composition chrome a value scan can't catch
-    and applies the rule of three across files (grep first; extract at 3+)."""
-    sec = _primitives_section()
-    assert "composition" in sec.lower(), (
-        "design-system 'Primitives over bespoke markup' must name the "
-        "composition layer (sheet/header/card chrome) — CAL-771."
-    )
-    assert re.search(r"value scan|raw-value scan", sec), (
-        "must say the duplication is invisible to a raw-value scan (every value "
-        "is already a token) — CAL-771."
-    )
-    assert "three or more files" in sec, (
-        "must extend the rule of three to compositions across three or more "
-        "files, not just raw values — CAL-771."
-    )
+def _sentences(block: str) -> list[str]:
+    """*block* flattened to one line and split into sentences.
+
+    The terminator may be followed by markdown emphasis or a closing bracket
+    (``skill.**``, ``(…).``) — consuming those is load-bearing, not cosmetic:
+    a bolded lead-in that ends ``.**`` otherwise glues its sentence to the
+    next one and widens every negation window that reads this (``craft.md`` →
+    *The text unit is part of the predicate*). A dry run of this module's #459
+    mutation table surfaced exactly that: an inverted clause survived on a
+    negation belonging to the sentence after it.
+    """
+    flat = " ".join(block.split())
+    return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
 
 
-def test_finish_adoption_rule_present() -> None:
-    """CAL-789 — extracting a primitive obliges migrating every callsite, or an
-    explicit file:line follow-up of the un-migrated ones."""
+def test_primitives_section_flags_the_drift_a_value_scan_misses() -> None:
+    """Tripwire — the section names both drift classes and their remedies.
+
+    Terms the two rules cannot be stated without: ``composition`` and ``value
+    scan`` (CAL-771's class and why a gate misses it), ``three or more files``
+    (the extraction threshold), ``partial adoption`` and ``file:line``
+    (CAL-789's class and the follow-up it demands). Polarity: a sentence
+    naming the scan carries a negation — the duplication is what the scan
+    *cannot* see. A section that claimed the value scan already catches
+    composition drift would name every term above and mean the opposite.
+    """
     sec = _primitives_section()
-    assert "partial adoption" in sec, (
-        "design-system must name partial-adoption drift after an extraction "
-        "— CAL-789."
-    )
-    assert re.search(r"every (one|callsite)", sec, re.I), (
-        "must require migrating every callsite the primitive replaces — CAL-789."
-    )
-    assert "file:line" in sec, (
-        "must require an explicit follow-up listing un-migrated callsites by "
-        "file:line — CAL-789."
+    lowered = sec.lower()
+    for term in (
+        "composition",
+        "value scan",
+        "three or more files",
+        "partial adoption",
+        "file:line",
+    ):
+        assert term in lowered, (
+            "design-system's 'Primitives over bespoke markup' must state the "
+            f"composition/adoption drift rules in terms of {term!r} "
+            "(CAL-771 / CAL-789)."
+        )
+    scan_sentences = [s for s in _sentences(lowered) if "scan" in s]
+    assert scan_sentences, "no sentence in the section names the scan."
+    assert any(_NEGATION.search(s) for s in scan_sentences), (
+        "the section must say what the value scan does *not* see — that "
+        "negation is the whole reason both rules exist, and without it the "
+        "term set reads identically on prose claiming the scan covers this "
+        "(CAL-771 / CAL-789)."
     )

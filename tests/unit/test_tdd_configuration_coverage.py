@@ -1,4 +1,4 @@
-"""#221 — RED gains a rule: cover a new stage under every supported configuration.
+"""RED carries a rule: cover a new stage under every supported configuration.
 
 Surfaced by an ``/assess code`` steward pass (2026-07-26, systemic insight
 CODE-INSIGHT-2, report ``assessments/2026-07-26-code.md``): a new lifecycle
@@ -15,27 +15,31 @@ just the one that trips first" (one trigger path untested behind a covered
 guard). This one is the configuration axis: the stage is covered, the
 configuration is not.
 
-Acceptance criteria (this ticket):
+**What this module asserts, after #459.**
 
-* **AC-1** — the skill states the rule: on adding a stage to a documented
-  lifecycle, grep for the suites exercising the sibling stages under a
-  configuration or layer and add the new stage's case to each, naming those
-  suites in the change spec; a stage's own unit suite proves the stage, not
-  that the lifecycle still holds under every configuration the repo claims to
-  support. Proven by
-  :func:`test_skill_states_the_configuration_coverage_rule`.
-* **AC-2** — the rule sits in the RED section, immediately after the
-  guard-conditions bullet. Proven by
-  :func:`test_rule_sits_after_the_guard_conditions_bullet`.
-* **AC-3** — the skill's version header is bumped and matches its
-  ``registry.yaml`` entry (registry two-place self-version: header +
-  ``files:`` row). Proven by :func:`test_version_bumped_and_matches_registry`.
+* **One tripwire** over one rule-home: the ``**Cover the new stage under every
+  configuration…`` bullet of ``skills/test-driven-development/SKILL.md`` →
+  ``### RED``, sliced to its own paragraph and read for a small term set the
+  rule cannot be stated without.
+* **A derived ordinal** placing that bullet immediately after the
+  guard-conditions bullet, over titles derived from the file rather than a
+  hardcoded neighbour pair (``code-quality`` → *A guard derives its subjects; it
+  does not list them*). A fifth RED bullet added after this one leaves it green;
+  a rename of an anchor fails a *named* existence assertion rather than an
+  opaque lookup error.
+* **Structural correspondence**: the header version and its ``registry.yaml``
+  row agree.
+* **Negative space**: the bullet leaks no stack vocabulary into prose the
+  installer copies verbatim into repos on other stacks.
 
-The placement test asserts an **ordinal over the bullet titles derived from
-the file**, not a hardcoded neighbour pair — ``code-quality``'s "a guard
-derives its subjects, it does not list them". A fifth RED bullet added after
-this one leaves it green; a rename of an anchor fails a *named* existence
-assertion rather than an opaque lookup error.
+The rule is an obligation — grep the sibling suites, extend each, name them in
+the change spec — so most of it has no polarity to read. Its one directional
+clause is the reason it exists (*a stage's own unit suite does* **not** *prove
+the lifecycle holds under every configuration*), and that negation is asserted
+anchored to the verb it governs. The eight exact-phrase containments this
+replaced carried no direction at all: a bullet inverting the rule while reusing
+its vocabulary passed every one of them (ADR 0016; ``code-quality`` Part C → *A
+guard over prose owns structure and negative space, never meaning*).
 """
 
 from __future__ import annotations
@@ -47,8 +51,6 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILL = _REPO_ROOT / "skills" / "test-driven-development" / "SKILL.md"
 _REGISTRY = _REPO_ROOT / "registry.yaml"
-
-_PRIOR_VERSION = "0.5.0"
 
 _NEW_BULLET_TITLE_PREFIX = "Cover the new stage under every configuration"
 _GUARD_BULLET_TITLE_PREFIX = "Cover each of a guard's"
@@ -106,53 +108,50 @@ def _bullet(text: str, title_prefix: str) -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
-def test_skill_states_the_configuration_coverage_rule() -> None:
-    """The skill states the configuration-coverage rule (AC-1)."""
+def test_the_configuration_coverage_rule_has_a_home() -> None:
+    """RED's configuration-coverage bullet states the rule, with its direction.
+
+    Four conjuncts and a negation, all inside the bullet's own paragraph — the
+    scoping matters, since ``lifecycle``, ``grep`` and ``change spec`` all have
+    neighbours in RED that could supply them.
+
+    ``lifecycle`` is the trigger's subject; ``grep`` and ``sibling`` are the
+    action, and without them the rule says "test more" and names no move;
+    ``layers:`` is where a repo declares the configurations that make the set of
+    suites finite; and ``change spec`` is what makes the extension reviewable
+    rather than a private intention. The negation is the reason clause: a
+    stage's own suite does **not** prove the lifecycle still holds, which is the
+    one place this bullet has a direction to lose.
+    """
     bullet = _bullet(_skill_text(), _NEW_BULLET_TITLE_PREFIX).lower()
 
-    # The trigger: a change adds a stage to a documented lifecycle.
-    assert "adds a stage" in bullet and "lifecycle" in bullet, (
-        "the rule must name its trigger — a change adding a stage to a "
-        "documented lifecycle"
-    )
-    # The action: grep for the suites exercising the sibling stages.
-    assert "grep" in bullet and "sibling stages" in bullet, (
-        "the rule must direct a grep for the suites exercising the sibling "
-        "stages"
-    )
-    # Where to look: the configuration/layer declarations.
-    assert "`context.md`" in bullet, (
-        "the rule must point at CONTEXT.md as where a repo declares its "
-        "configurations"
-    )
-    assert "`layers:`" in bullet and "`tracker:`" in bullet, (
-        "the rule must name the layers: / tracker: keys as the places to look"
-    )
-    # The obligation: extend each suite...
-    assert "add the new stage's case to each" in bullet, (
-        "the rule must require adding the new stage's case to each such suite"
-    )
-    # ...and declare which ones, so a reviewer can check it.
-    assert "name those suites in the change spec" in bullet, (
-        "the rule must require naming those suites in the change spec"
-    )
-    # The reason: a stage's own suite proves the stage, not the lifecycle.
-    # Anchored on the body's phrasing, not "every configuration" — that phrase
-    # is in the bullet's own title, so it would satisfy the assertion even
-    # with the reason deleted.
-    assert "own unit suite" in bullet and "the repo claims to support" in bullet, (
-        "the rule must state that a stage's own unit suite does not prove the "
-        "lifecycle holds under every configuration the repo claims to support"
-    )
-    # The most expensive case: a stage other stages now refuse without.
-    assert "refuse" in bullet, (
-        "the rule must name the expensive case — a stage that other stages "
-        "now refuse without"
+    for term, why in (
+        ("lifecycle", "the rule is triggered by a stage added to a documented "
+                      "lifecycle; unscoped, it is advice about testing"),
+        ("grep", "the rule must name the move — grep for the suites that "
+                 "already exercise the sibling stages"),
+        ("sibling", "the subject is the sibling stages' suites, not the new "
+                    "stage's own"),
+        ("layers:", "the rule must point at where a repo declares the "
+                    "configurations, or the set of suites to extend is unbounded"),
+        ("change spec", "the extended suites are named in the change spec, "
+                        "which is what makes the obligation reviewable"),
+    ):
+        assert term in bullet, (
+            f"RED's configuration-coverage bullet no longer names {term!r} — {why}"
+        )
+
+    assert re.search(r"\b(?:not|never|no)\b(?:\W+\w+){0,3}?\W+prov\w+", bullet), (
+        "the bullet no longer states that a stage's own unit suite does *not* "
+        "prove the lifecycle holds under every configuration. That clause is "
+        "the rule's whole direction: without it a bullet asserting the opposite "
+        "— that the stage's own suite is sufficient — reuses every term above "
+        "and reads the same to this guard."
     )
 
 
 def test_rule_sits_after_the_guard_conditions_bullet() -> None:
-    """The rule sits immediately after the guard-conditions bullet (AC-2)."""
+    """The rule sits immediately after the guard-conditions bullet."""
     titles = _red_bullet_titles(_skill_text())
 
     def _index_of(prefix: str) -> int:
@@ -181,18 +180,22 @@ def test_rule_sits_after_the_guard_conditions_bullet() -> None:
     )
 
 
-def test_version_bumped_and_matches_registry() -> None:
-    """The header is bumped past 0.5.0 and matches the registry row (AC-3)."""
+def test_version_matches_registry() -> None:
+    """The skill's stamp and its registry row move together.
+
+    #459 dropped the ``header != "0.5.0"`` half. A frozen prior version is a
+    museum assertion: it was live for exactly one commit, and every version the
+    tree can now hold satisfies it, so it can no longer fail for any edit. What
+    is durable is the **agreement** — a stamp that drifts from its registry
+    entry is how a consuming repo pulls a file whose version says it already has
+    it.
+    """
     text = _skill_text()
     header_m = re.search(
         r"^<!-- guidance:test-driven-development@([\d.]+) -->", text, re.MULTILINE
     )
     assert header_m, "test-driven-development/SKILL.md must carry its version header"
     header_version = header_m.group(1)
-    assert header_version != _PRIOR_VERSION, (
-        f"the header version must be bumped past {_PRIOR_VERSION} for this "
-        "ticket's content addition"
-    )
 
     registry_text = _REGISTRY.read_text(encoding="utf-8")
     row_m = re.search(

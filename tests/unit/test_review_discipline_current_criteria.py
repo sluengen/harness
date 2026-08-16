@@ -4,31 +4,52 @@ From proposal ``size-criterion-process`` (accepted 2026-07-17). The reviewer's
 side of the renegotiation rule: Stage 1 checks the acceptance criteria as they
 stand on the ticket *now*, and flags any amendment in the review report. A
 criterion renegotiated only in a commit body or PR description — never amended on
-the Linear issue — is a Stage 1 FAIL even when the engineering call is right,
+the tracker issue — is a Stage 1 FAIL even when the engineering call is right,
 because the canonical record (the ticket) is then wrong.
 
-This guard is a text-parse content check in the style of
-``test_review_discipline_port_orphan`` (CAL-665): it reads the as-built guidance
-and asserts the rule is present in the Stage 1 section, so a future re-edit
-cannot silently drop it.
+**What this module asserts, after #459.** One tripwire, over the numbered Stage 1
+item that carries the rule — not over the whole Stage 1 section.
 
-Acceptance criteria (this ticket):
-
-* **AC-1** — Stage 1 reviews against the ticket's *current* criteria and
-  surfaces any renegotiation. Proven by
-  :func:`test_stage1_checks_current_criteria`.
-* **AC-2** — a criterion renegotiated only in a commit body or PR description is
-  a Stage 1 FAIL. Proven by
-  :func:`test_commit_body_only_renegotiation_is_a_fail`.
+Occurrence the anchoring cites (``code-quality`` Part C), and it is the reason
+ADR 0016 names this module by name: the pre-#459 form was two functions of term
+co-occurrence over the **whole Stage 1 section**, and *both passed if the rule was
+inverted*. ``current`` and ``criteria`` are the section's own subject matter;
+``renegotiat`` and ``commit body`` survive any sentence *about* renegotiation,
+including one permitting it; and ``FAIL`` was satisfied by the section's closing
+line — *"If Stage 1 fails, stop. … Issue a FAIL."* — which has nothing to do with
+this rule. So a Stage 1 rewritten to say a commit-body renegotiation is
+acceptable left every assertion green. Scoping the read to the one numbered item
+is what ties the verdict to the clause it belongs to. The ``craft.md`` class is
+*A guard over prose owns structure and negative space, never meaning*.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+
+#: The term the rule is *about*, used to select its item out of the numbered list.
+#: Selecting by subject rather than by ordinal is deliberate: an ordinal into an
+#: enumeration is invalidated by a correct insertion.
+_RULE_TERM = "renegotiat"
+
+#: The consequence, **anchored to the clause it governs**. ``FAIL`` alone is not
+#: polarity here — Stage 1 ends by telling the reviewer to issue one — so it has
+#: to be read next to the renegotiation it condemns.
+_COMMIT_BODY_IS_A_FAIL = re.compile(
+    r"commit body\b(?:\W+\w+){0,20}?\W+FAIL\b", re.DOTALL
+)
+
+#: The other half of the same clause: the amendment belongs on the ticket. A rule
+#: that names the commit body without saying where the amendment *should* have
+#: gone leaves the reviewer nothing to check against.
+_NEVER_AMENDED = re.compile(
+    r"\b(?:never|not|no)\b(?:\W+\w+){0,3}?\W+amend\w*\b", re.IGNORECASE
+)
 
 
 def _skill_text() -> str:
@@ -45,28 +66,65 @@ def _stage1_section() -> str:
     return text[start:end]
 
 
-def test_stage1_checks_current_criteria() -> None:
-    """Stage 1 reviews against the ticket's current criteria and flags amendment (AC-1)."""
-    section = _stage1_section()
-    lower = section.lower()
-    assert "current" in lower and "criteria" in lower, (
-        "Stage 1 must review against the ticket's *current* acceptance criteria "
-        "(proposal size-criterion-process)"
-    )
-    assert "renegotiat" in lower, (
-        "Stage 1 must surface any criterion renegotiation in the review report"
-    )
+def _criteria_currency_item() -> str:
+    """The one numbered Stage 1 item stating the criteria-currency rule.
+
+    Returns ``""`` when no item — or more than one — carries the subject, so an
+    ambiguous window fails the tripwire rather than being silently widened to the
+    section, which is what the pre-#459 form read.
+    """
+    items = [
+        line.strip()
+        for line in _stage1_section().splitlines()
+        if re.match(r"^\d+\. ", line.strip()) and _RULE_TERM in line
+    ]
+    return items[0] if len(items) == 1 else ""
 
 
-def test_commit_body_only_renegotiation_is_a_fail() -> None:
-    """A commit-body-only renegotiation is a Stage 1 FAIL (AC-2)."""
-    section = _stage1_section()
-    lower = section.lower()
-    assert "commit body" in lower, (
-        "Stage 1 must name the commit-body-only renegotiation it rejects"
+def test_stage1_checks_the_current_criteria_and_fails_a_commit_body_renegotiation() -> None:
+    """The one tripwire: the rule, read from the item that states it (AC-1/AC-2).
+
+    Four parts:
+
+    * **anchor** — exactly one numbered Stage 1 item names renegotiation. Both
+      halves of the rule live in that item; split across two, the verdict stops
+      being attached to the clause it belongs to.
+    * **terms** — ``current`` and ``criteria`` (review against the ticket as it
+      stands now, not a remembered earlier version) and ``report`` (the amendment
+      is surfaced, not silently accepted).
+    * **polarity, part one** — ``FAIL`` anchored to ``commit body``. Read over the
+      whole section this token is free: Stage 1's closing line issues a FAIL for
+      an unrelated reason.
+    * **polarity, part two** — a negation anchored to ``amend``: the criterion was
+      never amended where it counts. That is what makes the commit body *only* a
+      commit body.
+    """
+    item = _criteria_currency_item()
+    assert item, (
+        "review-discipline's Stage 1 does not carry exactly one numbered item "
+        f"naming {_RULE_TERM!r}. The criteria-currency rule and its verdict are one "
+        "clause — with none, the rule is gone; with two, the reviewer reads "
+        "whichever it reaches first (CAL-1155)."
     )
-    # The verdict is explicit — FAIL is retained verbatim (uppercase) in the rule.
-    assert "FAIL" in section, (
-        "a criterion renegotiated only in a commit body / PR description must be "
-        "stated as a Stage 1 FAIL, even when the engineering call is right"
+    lowered = item.lower()
+
+    missing = [term for term in ("current", "criteria", "report") if term not in lowered]
+    assert not missing, (
+        f"the Stage 1 criteria-currency item no longer states {missing}. The review "
+        "runs against the acceptance criteria *as they stand on the ticket now*, "
+        "and any amendment is surfaced in the review report (AC-1)."
+    )
+
+    assert _COMMIT_BODY_IS_A_FAIL.search(item), (
+        "the Stage 1 criteria-currency item no longer makes a commit-body-only "
+        "renegotiation a FAIL. This is the assertion the pre-#459 guard could not "
+        "make: `FAIL` read anywhere in Stage 1 is satisfied by the section's own "
+        "closing line, so the rule could be inverted — a renegotiation buried in a "
+        "commit body accepted as sound — with nothing going red (AC-2)."
+    )
+    assert _NEVER_AMENDED.search(item), (
+        "the item no longer says the criterion was never amended on the ticket. "
+        "Without it the rule condemns writing in a commit body rather than "
+        "*failing to amend the canonical record*, which is the thing that makes a "
+        "Done ticket a false record (AC-2)."
     )

@@ -5,20 +5,28 @@ decision D1 = review-discipline canonical + assessment-craft reference). The
 ponytail plugin itself is **not** installed.
 
 ``review-discipline`` already cites principle violations and has diff-scoped
-deletion lenses ("Dead surface after a deletion", "Port-time orphan"), but no
-reusable **over-engineering taxonomy** — so "this is over-built, here is what
-replaces it" was a per-case judgement instead of a fast, repeatable call. These
-guards pin the taxonomy and its single canonical home:
+deletion lenses, but had no reusable **over-engineering taxonomy** — so "this is
+over-built, here is what replaces it" was a per-case judgement instead of a fast,
+repeatable call.
 
-* **AC-1** — ``review-discipline`` Stage 2 names the over-engineering lens with
-  all five tags (``stdlib`` / ``native`` / ``yagni`` / ``shrink`` / ``delete``),
-  each instructing the reviewer to name what replaces the cut.
-* **AC-2** — the lens is complexity-only (correctness/security/perf stay in their
-  own lenses) and never flags the minimum smoke test / ``assert``-based
-  self-check as bloat.
-* **AC-3** — ``assessment-craft`` references the taxonomy for ``/assess code``
-  and does **not** duplicate the tag definitions: the tag list lives in exactly
-  one skill file.
+**What this module asserts, after #459.** Two exclusivity checks — the five-tag
+list has exactly one home among the skills, and ``assessment-craft`` references it
+without reproducing the set — plus **one tripwire** over the lens bullet itself:
+the five tags in their definitional form, the instruction to name the replacement,
+the complexity-only scope, and the carve-out for the minimum test.
+
+Three lens-body pins collapsed into it (ADR 0016).
+
+Occurrence the polarity anchor cites (``code-quality`` Part C): the pre-#459
+carve-out check was ``assert "not" in block or "never" in block`` over the lens
+bullet. That is decoration, not polarity — the bullet is ~1,200 characters of
+English and contains ``not`` several times over for unrelated reasons ("do not
+relabel a real bug", "pre-existing complexity … is not a finding"). It could not
+fail while the lens existed, including on the exact regression it names: a bullet
+rewritten to flag the minimum smoke test as bloat keeps every one of those
+negations. Anchoring the negation to ``smoke test`` / ``self-check`` is the fix.
+The ``craft.md`` class is *A guard over prose owns structure and negative space,
+never meaning*.
 """
 
 from __future__ import annotations
@@ -35,6 +43,23 @@ ASSESSMENT_CRAFT = SKILLS_DIR / "assessment-craft" / "SKILL.md"
 #: form. The canonical home defines each as a list item; a reference elsewhere
 #: must not reproduce the whole set (AC-3).
 TAGS = ("stdlib", "native", "yagni", "shrink", "delete")
+
+#: The carve-out, **anchored to the subject it protects**. The smallest thing that
+#: proves the change works is never bloat; a lens that flags it turns the
+#: over-engineering call into an argument against testing.
+#:
+#: **Four words of gap, measured rather than guessed.** The bullet's preceding
+#: sentence ends *"do not relabel a real bug as over-engineering."* and the
+#: carve-out opens *"The single minimum smoke test"* — ten words apart. A gap of
+#: twelve therefore matched that unrelated negation against this subject, so an
+#: inverted carve-out ("is routinely flagged as bloat") still satisfied the
+#: predicate. Four spans every legitimate spelling of the real clause
+#: (``self-check, is **never** flagged``) and stops short of the neighbour.
+_MINIMUM_TEST_IS_NEVER_BLOAT = re.compile(
+    r"\b(?:never|not|no)\b(?:\W+\w+){0,4}?\W+(?:smoke test|self-check)\b"
+    r"|\b(?:smoke test|self-check)\b(?:\W+\w+){0,4}?\W+(?:never|not|no)\b",
+    re.IGNORECASE,
+)
 
 
 def _tag_markers(text: str) -> set[str]:
@@ -60,57 +85,49 @@ def _over_engineering_block(text: str) -> str:
     return rest[: end.start()] if end else rest
 
 
-# --- AC-1: the lens names all five tags, each naming the replacement ----------
+def test_the_over_engineering_lens_names_its_cuts_and_its_carve_out() -> None:
+    """The one tripwire over the lens bullet (AC-1/AC-2).
 
+    Four parts:
 
-def test_over_engineering_lens_has_all_five_tags() -> None:
-    """review-discipline Stage 2 names the lens with all five tags (AC-1)."""
+    * **anchor** — the ``- **Over-engineering**`` bullet resolves;
+      :func:`_over_engineering_block` asserts it exists, so a rename names itself
+      instead of emptying the window.
+    * **terms** — all five tags in their definitional form, plus ``replace`` (the
+      lens's whole point is that a finding names the simpler form, not that
+      something feels over-built) and ``complexity only`` (the scope that keeps
+      correctness, security, and performance in their own lenses).
+    * **polarity** — the negation anchored to ``smoke test`` / ``self-check``.
+      The carve-out is the one part of this lens that can be *inverted* rather
+      than merely dropped, and inverting it is expensive: a reviewer that reads
+      the minimum test as bloat argues against the smallest evidence a change can
+      carry.
+    """
     block = _over_engineering_block(REVIEW_DISCIPLINE.read_text())
-    present = _tag_markers(block)
-    missing = set(TAGS) - present
+
+    missing = sorted(set(TAGS) - _tag_markers(block))
     assert not missing, (
         "the over-engineering lens must define all five tags in `tag:` form "
-        f"(stdlib/native/yagni/shrink/delete); missing: {sorted(missing)} (AC-1)."
+        f"(stdlib/native/yagni/shrink/delete); missing: {missing} (AC-1)."
     )
 
-
-def test_over_engineering_lens_names_the_replacement() -> None:
-    """Each tag instructs the reviewer to name what replaces the cut (AC-1).
-
-    The lens's whole point is that a finding stays actionable because it names the
-    simpler form. The block must instruct naming the replacement, not merely flag
-    "this is over-built".
-    """
-    block = _over_engineering_block(REVIEW_DISCIPLINE.read_text()).lower()
-    assert "replace" in block, (
-        "the over-engineering lens must instruct the reviewer to name what "
-        "*replaces* the cut so the finding stays concrete (AC-1)."
+    lowered = block.lower()
+    assert "replace" in lowered, (
+        "the over-engineering lens no longer instructs the reviewer to name what "
+        "*replaces* the cut. Without it a finding is a vibe, not a fix (AC-1)."
+    )
+    assert "complexity only" in lowered, (
+        "the lens no longer states it is 'complexity only', so correctness, "
+        "security, and performance findings can be relabelled as over-engineering "
+        "and lose their own lens's bar (AC-2)."
     )
 
-
-# --- AC-2: complexity-only, and the minimum test is never bloat ---------------
-
-
-def test_over_engineering_lens_is_complexity_only() -> None:
-    """The lens states it is complexity-only — other axes stay in their lenses (AC-2)."""
-    block = _over_engineering_block(REVIEW_DISCIPLINE.read_text()).lower()
-    assert "complexity only" in block, (
-        "the lens must state it is 'complexity only' so correctness/security/"
-        "performance stay in their own lenses (AC-2)."
-    )
-
-
-def test_over_engineering_lens_never_flags_the_minimum_test() -> None:
-    """The lens never flags the minimum smoke test / self-check as bloat (AC-2)."""
-    block = _over_engineering_block(REVIEW_DISCIPLINE.read_text()).lower()
-    mentions_min_test = "smoke test" in block or "self-check" in block
-    assert mentions_min_test, (
-        "the lens must carve out the single minimum smoke test / assert-based "
-        "self-check as never-bloat (AC-2)."
-    )
-    assert "not" in block or "never" in block, (
-        "the smoke-test / self-check carve-out must be a negative ('not'/'never' "
-        "over-engineering) (AC-2)."
+    assert _MINIMUM_TEST_IS_NEVER_BLOAT.search(block), (
+        "the lens no longer carves the single minimum smoke test / `assert`-based "
+        "self-check out as never-bloat, with the negation beside the thing it "
+        "protects. A bare negation elsewhere in the bullet is satisfied by a lens "
+        "that flags the minimum test — which turns an over-engineering call into "
+        "an argument against testing at all (AC-2)."
     )
 
 

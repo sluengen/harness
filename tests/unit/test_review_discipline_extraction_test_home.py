@@ -1,4 +1,4 @@
-"""#276 — a seam extraction must also say where the extracted module's tests went.
+"""#276 / #459 — a seam extraction must also say where the extracted module's tests went.
 
 #273 extended the Stage-2 **Architecture watchlist** bullet so that a seam
 extraction refreshes the ``architecture_watchlist.files`` entry it invalidates.
@@ -11,40 +11,35 @@ So test structure could silently stop following production structure. The repo
 demonstrably has the convention — three extractions in one window each got their
 own test module — but nothing stated it, so adherence was coincidental, and a
 fourth family's four extractions all landed their tests back in a single
-2,768-line module.
+2,768-line module. The fix is one clause on the same bullet, bound to the same
+*extraction* outcome and folded into the same **Medium** finding.
 
-The fix is one clause on the same bullet, bound to the same *extraction*
-outcome and folded into the same **Medium** finding — not a new Stage-2 bullet
-with its own trigger and severity. The bullet already holds the changed-file set
-from its own ``git diff --name-only`` comparison, so the confirmation costs
-nothing extra to run, and the review gate is the one moment both halves — the
-extracted module and its tests — are visible at once.
+**What this module asserts, after #459.** One tripwire over one clause-home
+(ADR 0016, ``code-quality`` Part C → *A guard over prose owns structure and
+negative space, never meaning*), plus the severity sweep, which is negative
+space and stays:
 
-Acceptance criteria (this ticket):
+1. **Anchor** — the ``- **Architecture watchlist**`` bullet, sliced by
+   :func:`~tests.unit.test_architecture_watchlist._review_watchlist_bullet`, and
+   narrowed again to the *sentences* naming tests. The narrowing is load-bearing:
+   the bullet already contains ``module``, ``reason``, ``extraction``, ``Medium``
+   and ``diff`` for other reasons, so any bullet-wide key is green against the
+   pre-clause file and measures nothing — the over-wide unit ``craft.md`` → *The
+   text unit is part of the predicate* names.
+2. **Term set** — ``test`` selects the clause; ``stay`` is what makes the
+   obligation an *answer* rather than a mandate to move.
+3. **Polarity** — ``with no reason stated``, the negation anchored to the reason
+   it governs. Tests left behind are a finding only when nothing was said, so an
+   edit that dropped the negation would turn a recorded decision into a
+   violation, or a violation into a shrug, depending which way it fell. And the
+   **binding** carries direction independently: every test-bearing sentence must
+   name the extraction, so a clause demanding the check on every watchlist touch
+   goes red. Mutating a relation means mutating the relation, not the relata.
 
-* **AC-1** — the clause lives on the **Architecture watchlist** bullet and both
-  version stamps move (the skill header and its ``registry.yaml`` entry). The
-  stamp half needs no new test: header ↔ registry parity is already asserted by
-  ``test_review_discipline_backend_module_clone::test_review_discipline_header_matches_registry``
-  and the tree-wide sweep in ``test_guidance_source``, so a stamp bumped without
-  its registry entry (or vice versa) goes red there. The clause half is proven by
-  :func:`test_watchlist_bullet_asks_where_the_extracted_modules_tests_went`.
-* **AC-2** — the obligation is bound to the *extraction* outcome and admits the
-  tests staying for a stated reason, rather than mandating the move. Proven by
-  :func:`test_the_test_home_obligation_is_bound_to_the_extraction_outcome`.
-* **AC-3** — the clause reuses the bullet's existing severity rather than adding
-  a tier. Proven by :func:`test_the_clause_adds_no_new_severity`.
-* **AC-4** — the assertions are *anchored to that bullet*, not matched anywhere
-  in the file. Proven by :func:`test_the_clause_lives_inside_the_watchlist_bullet`.
-* **AC-5** — the verify gate is green (the gate, not a test).
-
-Why these tokens and not the obvious ones: the pre-change bullet already contains
-``module`` ("the modules carved out beside it"), ``reason`` (the deferral
-clause), ``extraction``, ``Medium``, ``diff`` and ``decomposition``. A guard
-keyed on any of those bullet-wide is green against the *unmodified* file and
-measures nothing, so each is used only inside a sentence scope, never as the
-measure. ``test`` and ``stay`` were each confirmed absent from the bullet before
-the clause was written, and carry the measurement.
+What went: ``"test" in bullet`` — over a bullet about testing — and the
+slicer-boundary control, which was a verbatim duplicate of the one
+``test_review_discipline_watchlist_entry_currency`` owns over the same slicer and
+the same file. One copy of a control, called by the assertions it protects.
 """
 
 from __future__ import annotations
@@ -64,53 +59,39 @@ from tests.unit.test_review_discipline_watchlist_entry_currency import _sentence
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 
-# The neighbouring bullet. Its title must never appear inside our slice — if it
-# does, the slicer over-ran and the assertions below could be satisfied by
-# *that* bullet's prose instead of ours.
-_NEIGHBOUR_TITLE = "**CONTEXT.md currency**"
-
 # The severities the repo grades findings at. `medium` is the one this bullet
 # already uses; the rest must stay absent, because the clause folds into that
 # finding rather than introducing a tier of its own.
 _OTHER_SEVERITIES = ("critical", "high", "low")
+
+#: The escape hatch, with the negation **anchored to the reason it governs**.
+#: ``reason`` alone is present elsewhere in the bullet (the deferral clause), so
+#: only the anchored form measures this clause; and only the negation
+#: distinguishes "tests left behind are a finding" from "tests left behind are
+#: fine".
+_NO_REASON_STATED = re.compile(r"\bno\b(?:\W+\w+){0,2}?\W+reason\b", re.IGNORECASE)
 
 
 def _bullet() -> str:
     return _review_watchlist_bullet(_SKILL.read_text(encoding="utf-8"))
 
 
-def test_watchlist_bullet_asks_where_the_extracted_modules_tests_went() -> None:
-    """The bullet obliges an answer about the extracted module's tests (AC-1)."""
-    bullet = _bullet().lower()
+def test_the_extracted_modules_test_home_is_owed_on_an_extraction() -> None:
+    """The bullet obliges an answer about the extracted module's tests, on extraction.
 
-    assert "test" in bullet, (
-        "the Architecture watchlist bullet must ask where the extracted "
-        "module's tests now live — production structure and test structure "
-        "part company at the extraction commit and nothing else looks (#276)"
-    )
-    # The obligation is to *answer*, not to move: tests may stay when the change
-    # says why. A clause that only ever mandates the move would satisfy the
-    # token above and fail here.
-    assert re.search(r"\bstay", bullet), (
-        "the bullet must admit the tests staying with a stated reason as a "
-        "discharged obligation, not mandate the move — the reviewer is "
-        "confirming a decision was made, not enforcing one outcome (#276)"
-    )
-
-
-def test_the_test_home_obligation_is_bound_to_the_extraction_outcome() -> None:
-    """The answer is owed on an *extraction*, not on every watchlist touch (AC-2).
-
-    A deferral carves nothing out, so no tests were orphaned and there is
-    nothing to confirm. A clause demanding the check on every watchlist touch
-    would pass the token test above and fail here — and it should, because that
-    is the drift toward *check everything every time* that the neighbouring
-    bullet rules out in its own text.
+    Three claims on the sentences that mention tests, and the scope is the
+    point. A deferral carves nothing out, so no tests were orphaned and there is
+    nothing to confirm — which is why the binding to the extraction outcome is
+    asserted per sentence rather than as bullet-wide co-presence. The obligation
+    is to *answer*: tests may stay when the change says why, and they are a
+    finding only when no reason was stated.
     """
     bearing = [s for s in _sentences(_bullet()) if "test" in s.lower()]
     assert bearing, (
         "no sentence in the Architecture watchlist bullet mentions tests — the "
-        "obligation this ticket adds is missing (#276)"
+        "obligation this clause adds is missing. Production structure and test "
+        "structure part company at the extraction commit and nothing else "
+        "looks (#276)"
     )
     for sentence in bearing:
         assert "extract" in sentence.lower(), (
@@ -119,13 +100,17 @@ def test_the_test_home_obligation_is_bound_to_the_extraction_outcome() -> None:
             "bullet; an unbound clause reads as 'check the tests on every "
             f"watchlist touch' (#276). Offending sentence: {sentence!r}"
         )
-    # `reason` is present elsewhere in the bullet (the deferral clause), so this
-    # is a real assertion only inside the sentence scope: it pins the escape
-    # hatch to the sentences that state the obligation.
-    assert any("reason" in s.lower() for s in bearing), (
-        "the sentences stating the tests obligation must name the stated "
-        "reason that discharges it — without it the clause reads as an "
-        "unconditional mandate to move the tests (#276)"
+    assert any(re.search(r"\bstay", s, re.IGNORECASE) for s in bearing), (
+        "the bullet no longer admits the tests staying with a stated reason as "
+        "a discharged obligation. The reviewer is confirming a decision was "
+        "made, not enforcing one outcome — a clause that only ever mandates the "
+        "move is a different, stricter rule (#276)"
+    )
+    assert any(_NO_REASON_STATED.search(s) for s in bearing), (
+        "the bullet no longer says that tests left behind with *no* reason "
+        "stated are the finding. Without the negation the clause grades a "
+        "recorded decision and a silent omission the same way, in whichever "
+        "direction the edit fell (#276, #459)"
     )
 
 
@@ -144,29 +129,3 @@ def test_the_clause_adds_no_new_severity() -> None:
             "tier of its own; a second severity makes one check produce two "
             "findings (#276)"
         )
-
-
-def test_the_clause_lives_inside_the_watchlist_bullet() -> None:
-    """The claims are anchored to the bullet, not matched file-wide (AC-4)."""
-    text = _SKILL.read_text(encoding="utf-8")
-    bullet = _bullet()
-
-    assert bullet.strip(), (
-        "the Architecture watchlist slice is empty — the guard would assert "
-        "nothing (#276)"
-    )
-    assert len(bullet) < len(text), (
-        "the Architecture watchlist slice spans the whole skill file, so every "
-        "assertion above degenerates into a file-wide substring match (#276)"
-    )
-    assert _NEIGHBOUR_TITLE not in bullet, (
-        f"the slice ran past the bullet into {_NEIGHBOUR_TITLE} — prose from "
-        "that bullet could satisfy the tokens above without the clause "
-        "existing at all (#276)"
-    )
-    # And the neighbour is genuinely a separate bullet in the file, so the
-    # exclusion above is a real boundary rather than a vacuous one.
-    assert _NEIGHBOUR_TITLE in text, (
-        f"{_NEIGHBOUR_TITLE} is no longer a Stage-2 bullet, so excluding it "
-        "from the slice proves nothing — re-anchor this guard (#276)"
-    )

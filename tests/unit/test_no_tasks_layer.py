@@ -19,11 +19,29 @@ These guards pin the eliminated state so the layer cannot regress:
 * AC-3 — ``templates/assessment.md`` exists, is a versioned surface unit, and is referenced
   for the report format; the registry lists it;
 * AC-4 — the conceptual model (task = command + role + skill + template; the instance lives
-  in Linear; no ``tasks/`` artifact) is recorded in ``architecture-principles.md``;
-* the useful half of ``release.md`` (release notes from Linear + a ``dev → main`` PR) was
+  in the tracker; no ``tasks/`` artifact) is recorded in ``architecture-principles.md``;
+* the useful half of ``release.md`` (release notes + a ``dev → main`` PR) was
   folded into ``RELEASING.md``, which #435 deleted with the release path it described.
 
 *Source:* CAL-716.
+
+**What changed at #459.** Under ADR 0016 (*tests own structure and negative
+space; the reviewer owns meaning*) the **absence** assertions and the **registry
+identity** assertions stay byte-for-byte — they are exactly the two classes the
+decision exempts. Two prose co-occurrences went:
+
+* ``agents/steward.md`` was searched file-wide for ``summar``/``assess``/
+  ``report``. Three common words in an agent file about assessment passes:
+  satisfied by any steward, including one that points at a ``tasks/`` file again.
+  What that test still owns — the versioned header and the ``name:`` frontmatter
+  — is identity, and stays.
+* AC-4 was four common words (``command``, ``role``, ``skill``, ``template``)
+  searched over the whole of ``architecture-principles.md``, a document that
+  necessarily uses all four throughout. It is now **anchored to the task-model
+  section** and carries the claim's polarity: *there is no ``tasks/`` artifact*.
+  Occurrence it cites (``code-quality`` Part C, *A new guard cites the occurrence
+  it prevents*): the whole-file form passed before the section was ever written,
+  and would keep passing over a document that reinstated the fifth artifact.
 """
 
 from __future__ import annotations
@@ -83,12 +101,6 @@ def test_steward_is_versioned_and_self_sufficient() -> None:
     assert re.search(r"^name:\s*steward\s*$", text, re.MULTILINE), (
         "agents/steward.md frontmatter must declare 'name: steward'"
     )
-    lower = text.lower()
-    # The folded procedure: read the scope, summarise, assess, write a dated report.
-    assert "summar" in lower and "assess" in lower and "report" in lower, (
-        "agents/steward.md must carry the folded procedure (read/summarise/assess/report) "
-        "now that the tasks/ pointer is gone (CAL-716 AC-2)"
-    )
 
 
 # --- AC-3: the report format lives in a template, and is referenced ----------
@@ -143,24 +155,70 @@ def test_assessment_template_is_referenced_for_the_format() -> None:
 # --- AC-4: the conceptual model is recorded ---------------------------------
 
 
-def test_task_conceptual_model_recorded() -> None:
-    """``architecture-principles.md`` records the task = command + role + skill + template model.
+#: The elimination, **anchored to the artifact it denies**. A document carrying a
+#: negation somewhere and the token ``tasks/`` somewhere states nothing — the
+#: section discusses the retired directory at length. The claim is that no such
+#: artifact exists. Four words is the gap the legitimate spellings keep ("there is
+#: no standalone `tasks/` artifact", "no `tasks/` artifact").
+_NO_TASKS_ARTIFACT = re.compile(r"\bno\b(?:\W+\w+){0,4}?\W+`?tasks/", re.IGNORECASE)
 
-    The instance lives in Linear; there is no ``tasks/`` artifact (AC-4).
+
+def _task_model_section() -> str:
+    """The **body** of the task-model section of ``architecture-principles.md``.
+
+    Anchored on a heading naming the ``tasks/`` artifact, derived from the
+    document's own headings rather than pinned to one title. Two narrowings:
+
+    **By section**, because ``command``, ``role``, ``skill`` and ``template``
+    are the document's working vocabulary from end to end — a file-wide search
+    for them reports the model present before it was written and after it is
+    removed.
+
+    **Body only**, because the heading itself states the denial. A window that
+    included its own title would answer a question about what the document
+    *records* with the document's own table of contents, and the polarity
+    assertion below would be satisfied by the heading no matter what the section
+    went on to say.
     """
     text = PRINCIPLES.read_text()
-    lower = text.lower()
+    headings = list(re.finditer(r"^##+ .*$", text, re.MULTILINE))
+    hits = [i for i, m in enumerate(headings) if "tasks/" in m.group(0).lower()]
+    assert hits, (
+        "architecture-principles.md must carry a section heading recording that "
+        "there is no `tasks/` artifact — the layer's elimination is a decision, "
+        "and a decision with no heading is not findable (CAL-716 AC-4)"
+    )
+    assert len(hits) == 1, (
+        f"architecture-principles.md carries {len(hits)} `tasks/` headings; the "
+        "task model has one home"
+    )
+    start = headings[hits[0]].end()
+    end = headings[hits[0] + 1].start() if hits[0] + 1 < len(headings) else len(text)
+    body = text[start:end]
+    assert body.strip(), "the task-model section has a heading and no body"
+    return body
+
+
+def test_task_conceptual_model_recorded() -> None:
+    """One tripwire for AC-4: the section, its four artifacts, and the denial (#459)."""
+    section = _task_model_section()
+    lower = section.lower()
+
     for term in ("command", "role", "skill", "template"):
         assert term in lower, (
-            f"architecture-principles.md must name '{term}' as one of the four task artifacts "
-            "(CAL-716 AC-4)"
+            f"the task-model section must name '{term}' as one of the four task "
+            "artifacts a unit of repeatable work decomposes into (CAL-716 AC-4)"
         )
-    assert "linear" in lower or "tracker" in lower, (
-        "architecture-principles.md must record that the task instance lives in Linear/the "
-        "tracker (CAL-716 AC-4)"
+    assert "tracker" in lower or "linear" in lower, (
+        "the task-model section must record that the task *instance* lives in the "
+        "tracker rather than in a file — without it the four artifacts read as a "
+        "taxonomy and the instance has nowhere to go (CAL-716 AC-4)"
     )
-    assert "tasks/" in text, (
-        "architecture-principles.md must record that there is no tasks/ artifact (CAL-716 AC-4)"
+    assert _NO_TASKS_ARTIFACT.search(lower), (
+        "the task-model section must state that there is *no* `tasks/` artifact, "
+        "with the negation anchored to it. A section that names the four "
+        "artifacts and discusses `tasks/` without denying it reinstates the fifth "
+        "thing this decision eliminated (CAL-716 AC-4)"
     )
 
 

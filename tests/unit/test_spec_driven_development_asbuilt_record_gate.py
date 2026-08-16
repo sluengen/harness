@@ -1,62 +1,63 @@
-"""#182 — ``spec-driven-development`` requires the as-built record before a
-surface accumulates a second ticket.
+"""``spec-driven-development``: the as-built record cannot arrive late.
 
 A missing join between two shipped tickets is invisible from inside either
-ticket. In nano-erp, ERP-114 built the receiving end of the quote share flow
-and ERP-109 built the list — each met every criterion — but no record
-described the *flow* (operator sends a quote, customer opens a link), so the
-missing share link (CODE-2) went unseen until an assessment wrote the record
-six tickets late. The as-built record is where a gap between tickets becomes
-visible, and it cannot do that job retroactively (nano-erp assessment
-``assessments/2026-07-22-code.md``, systemic insight CODE-INSIGHT-3, nano-erp
-ERP-139).
+ticket. In one consuming repo, one ticket built the receiving end of a share
+flow and another built the list — each met every criterion — but no record
+described the *flow*, so the missing link went unseen until an assessment wrote
+the record six tickets late. The as-built record is where a gap between tickets
+becomes visible, and it cannot do that job retroactively.
 
-The fix lives in the reviewer's record step (step 8) of
-``spec-driven-development``: when a surface's as-built record does not exist
-yet, the first ticket touching that surface creates it, and a surface is not
-permitted to accumulate more than one shipped ticket without one. Worded
-layer-aware (per ``skills/spec-driven-development/SKILL.md``'s existing
-"Layer note") so it holds for both a ``feature_specs``-on repo (the record is
-a feature spec in ``specs/features/``) and a ``feature_specs``-off repo (the
-design doc / ``SPEC.md``).
+The rule lives at the reviewer's record step (step 8): when a surface's as-built
+record does not exist yet, the first ticket touching that surface creates it,
+and a surface is not permitted to accumulate more than one shipped ticket
+without one. It is worded layer-aware, so it holds for a ``feature_specs``-on
+repo (a feature spec in ``specs/features/``) and a ``feature_specs``-off one
+(the design doc / ``SPEC.md``).
 
-Acceptance criteria (#182):
+**What this module asserts, after #459.** One tripwire over one rule-home:
+numbered step 8 of ``skills/spec-driven-development/SKILL.md``, sliced to the
+step and read for a small term set plus **two negations, each anchored to the
+noun it governs** — the record that does *not* exist yet, and the surface that
+is *not* permitted to accumulate a second shipped ticket. Anchoring is the
+point: the four functions this replaced were term co-occurrence, and term
+co-occurrence has no direction, so a step 8 that permitted the accumulation
+passed them all (ADR 0016).
 
-* **AC-1** — the skill states the gate: no as-built record yet → the first
-  ticket touching that surface creates it; a surface may not accumulate a
-  second shipped ticket without one. Proven by
-  :func:`test_skill_states_asbuilt_record_creation_gate`.
-* **AC-2** — the gate lives at the reviewer's record step (step 8, "the
-  reviewer records reality"), not buried elsewhere. Proven by
-  :func:`test_gate_is_at_record_step`.
-* **AC-3** — the gate is layer-aware: it names ``specs/features/`` for the
-  ``feature_specs``-on case and the design doc / ``SPEC.md`` for the
-  ``feature_specs``-off case. Proven by :func:`test_gate_is_layer_aware`.
-* **AC-4 (reachability)** — the gate is reachable at review time. The rule as
-  first shipped lived only in ``spec-driven-development``, a file
-  ``agents/reviewer.md``'s "Load these skills" list never loads (it loads
-  ``review-discipline``, ``code-quality``, ``engineering-principles``) — the
-  acting reviewer agent could never see it. Propagated into
-  ``skills/review-discipline/SKILL.md``'s as-built-record-gate bullet,
-  ``agents/reviewer.md``'s on-PASS section, and ``commands/review.md`` step 4
-  — the three surfaces that already operationalize the sibling CAL-972
-  as-built-record gate — in the style of
-  ``test_review_discipline_asbuilt_record_gate.py``'s command+agent
-  surfacing checks. Proven by :func:`test_review_discipline_surfaces_the_cap`,
-  :func:`test_reviewer_agent_surfaces_the_cap`, and
-  :func:`test_review_command_surfaces_the_cap`.
+Craft class this conversion answers (``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Three of the deleted
+functions pinned the same rule into three further homes —
+``skills/review-discipline/SKILL.md``, ``agents/reviewer.md`` and
+``commands/review.md`` — by whole-file containment of phrases like
+``"second shipped ticket"``. That is one rule pinned in four places by its
+bytes: it made every rewording a four-file edit, while none of the three
+propagation checks could tell whether the phrase sat in the reviewer's record
+step or in an unrelated paragraph of the same file. Whether the operating
+surfaces still carry the rule where a reviewer meets it is a placement question
+about *those* files, and it belongs to a tripwire anchored in them, not to a
+substring search run from here.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILL = _REPO_ROOT / "skills" / "spec-driven-development" / "SKILL.md"
-_REVIEW_DISCIPLINE = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
-_REVIEWER_AGENT = _REPO_ROOT / "agents" / "reviewer.md"
-_REVIEW_COMMAND = _REPO_ROOT / "commands" / "review.md"
+
+#: The trigger's direction, anchored to the noun it governs: the gate fires on a
+#: surface whose record does **not** exist. A bare negation over a paragraph this
+#: long would be decoration.
+_NO_RECORD_YET = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,3}?\W+exists?\b", re.IGNORECASE
+)
+#: The consequence's direction, likewise anchored. This is the half that makes
+#: the rule a gate rather than an encouragement — without it, step 8 says a
+#: record is nice to have and the surface accumulates tickets anyway.
+_MAY_NOT_ACCUMULATE = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,3}?\W+accumulat\w+", re.IGNORECASE
+)
 
 
 def _skill_text() -> str:
@@ -64,101 +65,58 @@ def _skill_text() -> str:
 
 
 def _record_step() -> str:
-    """The numbered step 8 record-reality bullet, up through step 9."""
+    """The reviewer's record-reality step, bounded by the next numbered step.
+
+    Anchored on the step's **title**, not its ordinal, and bounded by whatever
+    numbered step follows rather than by "9.". The ordinal form this replaced
+    (``text.find("8. **On PASS")`` up to ``"9. **Ship and close"``) is the class
+    ``craft.md`` → *An ordinal reference into an enumeration is invalidated by a
+    correct insertion* names: a step inserted anywhere earlier in the flow
+    renumbers both ends and the slice silently stops resolving, or resolves to
+    the wrong step.
+    """
     text = _skill_text()
-    start = text.find("8. **On PASS")
-    assert start != -1, (
-        "spec-driven-development must have a numbered step 8 'On PASS, the "
-        "reviewer records reality' bullet"
+    m = re.search(r"^\d+\.\s+\*\*On PASS\b.*$", text, re.MULTILINE)
+    assert m, (
+        "spec-driven-development must have a numbered 'On PASS, the reviewer "
+        "records reality' step — the gate's canonical home"
     )
-    end = text.find("9. **Ship and close", start)
-    assert end != -1, "spec-driven-development must have a step 9 after step 8"
-    return text[start:end]
+    rest = text[m.start() :]
+    nxt = re.search(r"^\d+\.\s+\*\*", rest[m.end() - m.start() :], re.MULTILINE)
+    return rest if nxt is None else rest[: (m.end() - m.start()) + nxt.start()]
 
 
-def test_skill_states_asbuilt_record_creation_gate() -> None:
-    """The skill states the gate: first-ticket-creates-it, one-shipped-ticket
-    cap without a record (AC-1)."""
-    section = _record_step().lower()
-    assert "does not exist yet" in section, (
-        "the gate must trigger on a surface with no as-built record yet"
-    )
-    assert "first ticket" in section, (
-        "the gate must say the first ticket touching the surface creates the "
-        "record"
-    )
-    assert "more than one shipped ticket" in section, (
-        "the gate must cap a surface at one shipped ticket without an "
-        "as-built record"
-    )
-    assert "cannot do that job retroactively" in section, (
-        "the gate must state why the record can't be written after the fact"
-    )
+def test_the_asbuilt_record_gate_has_a_home() -> None:
+    """Step 8 states the creation gate, its cap, and both record forms.
 
+    Five conjuncts over the step, two of them negations. ``first ticket`` is who
+    creates the record; the two negations carry the trigger and the cap; and the
+    two record forms are what makes the rule layer-aware, so a repo with the
+    ``feature_specs`` layer off is not told to create a file its process has no
+    home for.
+    """
+    step = _record_step()
+    lower = step.lower()
 
-def test_gate_is_at_record_step() -> None:
-    """The gate sits at step 8, the reviewer's record-reality step, not
-    elsewhere in the skill (AC-2)."""
-    section = _record_step()
-    assert "does not exist yet" in section.lower(), (
-        "the as-built-record-creation gate must live inside step 8, the "
-        "reviewer's record-reality step"
+    assert _NO_RECORD_YET.search(step), (
+        "step 8 no longer states the gate's trigger — a surface whose as-built "
+        "record does *not* exist yet. Without the negation beside the verb, a "
+        "step describing what to do when the record already exists satisfies "
+        "every term this guard reads."
     )
-
-
-def test_gate_is_layer_aware() -> None:
-    """The gate names both the feature_specs-on and feature_specs-off record
-    forms (AC-3)."""
-    section = _record_step().lower()
-    assert "specs/features" in section, (
+    assert "first ticket" in lower, (
+        "step 8 must say the first ticket touching the surface creates the "
+        "record; without a named owner the obligation lands on nobody"
+    )
+    assert _MAY_NOT_ACCUMULATE.search(step), (
+        "step 8 no longer caps a surface at one shipped ticket without an "
+        "as-built record. That clause is the whole gate: drop it and the rule "
+        "becomes a preference, which is the state the defect shipped under."
+    )
+    assert "specs/features" in lower, (
         "the gate must name specs/features/ for the feature_specs-on case"
     )
-    assert "design doc" in section or "spec.md" in section, (
-        "the gate must name the design doc / SPEC.md for the "
-        "feature_specs-off case"
-    )
-
-
-def test_review_discipline_surfaces_the_cap() -> None:
-    """review-discipline's as-built-record-gate bullet carries the cap, so the
-    reviewer agent (which loads review-discipline, not spec-driven-development)
-    can actually see it (AC-4)."""
-    text = _REVIEW_DISCIPLINE.read_text(encoding="utf-8").lower()
-    assert "does not exist yet" in text, (
-        "review-discipline must surface the as-built-record creation gate"
-    )
-    assert "first ticket" in text, (
-        "review-discipline must say the first ticket touching the surface "
-        "creates the record"
-    )
-    assert "more than one shipped ticket" in text, (
-        "review-discipline must cap a surface at one shipped ticket without "
-        "a record"
-    )
-
-
-def test_reviewer_agent_surfaces_the_cap() -> None:
-    """agents/reviewer.md's on-PASS section states the cap directly, since its
-    'Load these skills' list does not load spec-driven-development (AC-4)."""
-    text = _REVIEWER_AGENT.read_text(encoding="utf-8").lower()
-    assert "no as-built record yet" in text or "does not exist yet" in text, (
-        "agents/reviewer.md must state the as-built-record creation gate at "
-        "its on-PASS record step"
-    )
-    assert "second shipped ticket" in text or "more than one shipped ticket" in text, (
-        "agents/reviewer.md must cap a surface at one shipped ticket without "
-        "a record"
-    )
-
-
-def test_review_command_surfaces_the_cap() -> None:
-    """commands/review.md step 4 states the cap in its verdict step (AC-4)."""
-    text = _REVIEW_COMMAND.read_text(encoding="utf-8").lower()
-    assert "creates it" in text, (
-        "commands/review.md must say the ticket creates the as-built record "
-        "when the surface has none yet"
-    )
-    assert "second shipped ticket" in text, (
-        "commands/review.md must cap a surface at one shipped ticket without "
-        "a record"
+    assert "design doc" in lower or "spec.md" in lower, (
+        "the gate must name the design doc / SPEC.md for the feature_specs-off "
+        "case, or the rule is unfollowable in a repo with the layer off"
     )

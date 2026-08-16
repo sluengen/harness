@@ -1,5 +1,4 @@
-"""CAL-1100 — ``code-quality`` names a narrowing's worklist as the transitive
-consumers of the field, not the callsites a grep for the coercion finds.
+"""``code-quality`` Part C: a narrowing's worklist is the transitive consumers.
 
 From the 2026-07-16 code assessment (CODE-INSIGHT-1). A batch deliberately
 hunting a null-sentinel narrowed it at each render edge and left the coercion
@@ -7,36 +6,36 @@ operator as a greppable worklist for a follow-up. The follow-up cleared every
 callsite the operator grep returned — and still missed two: one coercion was two
 files upstream of the render it fed (grepping the operator finds the coercion,
 not the render), and one documented exception was waved through while a new
-consumer did arithmetic on the sentinel. Both were High findings that survived a
-pass built to catch exactly this.
+consumer did arithmetic on the sentinel. Both were findings that survived a pass
+built to catch exactly this.
 
-The fix is a Part C verification rule: when a change narrows a nullable at a
-boundary, the worklist is every *transitive consumer* of that field, enumerated
-by following the type to its readers — not the callsites a grep for the coercion
-operator returns. It sits beside the sibling auditable-choice rules in the gate.
+The rule: when a change narrows a nullable at a boundary, the worklist is every
+*transitive consumer* of that field, enumerated by following the type to its
+readers — not the callsites a grep for the coercion operator returns.
 
-This guard binds that rule into the skill so a future re-edit cannot silently
-drop it. It is a text-parse content guard in the style of
-``test_code_quality_owning_layer_aggregate`` (CAL-1073) and
-``test_code_quality_size_justification`` (CAL-666), whose Part C rules this one
-sits beside.
+**What this module asserts, after #459.** Under ADR 0016 (*tests own structure
+and negative space; the reviewer owns meaning*) the term-set pin and the separate
+placement pin collapse into a single tripwire:
 
-Acceptance criteria (this ticket):
+* the section **exists inside Part C** — the slicer starts at ``## Part C``, so
+  the placement claim rides on where the anchor is looked for;
+* the terms the rule cannot be stated without (``worklist``, ``transitive
+  consumer``, ``following the type``);
+* the **contrast anchored to what it excludes** — *not the callsites*. That is
+  the rule's whole content, and it is the only assertion here that reads a
+  direction: a section naming worklists, transitive consumers and greps while
+  endorsing the callsite grep as the worklist satisfies every term above.
+  Occurrence it cites (``code-quality`` Part C, *A new guard cites the occurrence
+  it prevents*): the predecessor asserted ``"coercion" in lower and "grep" in
+  lower``, which the inverted rule states just as fully as the correct one.
 
-* **AC-1** — ``code-quality`` states that a narrowing's worklist is the transitive
-  consumers of the field, found by following the type to its readers, not the
-  callsites the coercion-operator grep returns. Proven by
-  :func:`test_code_quality_has_narrowing_worklist_rule`.
-* **AC-2** — the rule lives in the Part C verification gate, beside the sibling
-  auditable-choice rules. Proven by
-  :func:`test_narrowing_worklist_rule_is_in_verification_gate`.
-* **AC-3** — the rule is phrased universally: it keys off the type / call graph
-  every language has, and names no single consumer's stack, paths, or transport.
-  Proven by :func:`test_narrowing_worklist_rule_is_universal`.
+:func:`test_narrowing_worklist_rule_is_universal` is unchanged — a
+**negative-space** sweep, which ADR 0016 exempts and keeps byte-for-byte.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
@@ -45,36 +44,51 @@ _SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-ve
 
 _HEADING = "### Narrowing a nullable is a whole-call-graph change"
 
+#: The exclusion **anchored to the set it excludes**. A window merely carrying a
+#: negation and the word *callsites* somewhere states nothing; the claim is that
+#: the callsite grep is not the worklist.
+#:
+#: The gap is two words, measured rather than chosen: at three, the section's own
+#: later sentence — "never its boundary: the callsite that reads the narrowed
+#: value" — satisfies the predicate, and inverting the rule leaves it green. Two
+#: admits every legitimate spelling of the exclusion ("not the callsites", "not
+#: the local callsites") and nothing else in the section.
+_NOT_THE_CALLSITES = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,2}?\W+callsites?\b", re.IGNORECASE
+)
+
 
 def _skill_text() -> str:
     return _SKILL.read_text(encoding="utf-8")
 
 
 def _section() -> str:
-    """The rule's own section body, sliced to the next heading.
+    """The rule's own section body, sliced from Part C to the next heading.
 
     Scoped deliberately: an assertion run against the whole file would pass on
     wording that lives in some other section, so it would not prove *this* rule
-    is present. The slice is what makes each assertion below bite on the rule
-    it names.
+    is present. Starting the search at ``## Part C`` is what makes the slice
+    carry the placement claim as well.
     """
     text = _skill_text()
-    start = text.find(_HEADING)
+    part_c = text.find("## Part C")
+    assert part_c != -1, "code-quality must have a Part C verification section"
+    rest_of_part_c = text[part_c:]
+    start = rest_of_part_c.find(_HEADING)
     assert start != -1, (
-        "code-quality must carry the narrowing-worklist rule under the heading "
-        f"{_HEADING!r} (CAL-1100 / CODE-INSIGHT-1)"
+        "code-quality's Part C verification gate must carry the narrowing-worklist "
+        f"rule under the heading {_HEADING!r}"
     )
-    rest = text[start + len(_HEADING) :]
+    rest = rest_of_part_c[start + len(_HEADING) :]
     end = rest.find("\n### ")
     return rest if end == -1 else rest[:end]
 
 
-def test_code_quality_has_narrowing_worklist_rule() -> None:
-    """The skill states the transitive-consumer worklist rule (AC-1)."""
-    section = _section()
-    lower = section.lower()
+def test_the_narrowing_worklist_rule_is_stated_in_its_home() -> None:
+    """One tripwire for one rule-home: anchor, term set, and the exclusion (#459)."""
+    lower = _section().lower()
+    assert lower.strip(), f"the section {_HEADING!r} is empty"
 
-    # The rule names the worklist as the transitive consumers of the field...
     assert "worklist" in lower, (
         "the rule must name the change's *worklist* — the thing the enumeration "
         "produces — so an agent knows what set it is completing"
@@ -83,27 +97,15 @@ def test_code_quality_has_narrowing_worklist_rule() -> None:
         "the worklist must be the *transitive consumers* of the narrowed field, "
         "not the local callsites — that transitivity is the whole point"
     )
-    # ...found by following the type to its readers...
     assert "following the type" in lower, (
         "the rule must say the consumers are enumerated by *following the type* "
         "to its readers — the mechanism that catches the file the grep misses"
     )
-    # ...and states the coercion-operator grep is not that worklist.
-    assert "coercion" in lower and "grep" in lower, (
-        "the rule must contrast the type-driven enumeration against a *grep for "
-        "the coercion operator*, which finds the narrowing but not the reader"
-    )
-
-
-def test_narrowing_worklist_rule_is_in_verification_gate() -> None:
-    """The rule sits in the Part C verification gate (AC-2)."""
-    text = _skill_text()
-    part_c_start = text.find("## Part C")
-    assert part_c_start != -1, "code-quality must have a Part C verification section"
-    assert _HEADING in text[part_c_start:], (
-        "the narrowing-worklist rule must live in the Part C verification gate, "
-        "beside the owning-layer aggregate and over-limit rules whose "
-        "auditable-choice / completeness shape it shares (CAL-1100)"
+    assert _NOT_THE_CALLSITES.search(lower), (
+        "the rule must exclude the callsite set by name, with the negation "
+        "anchored to it: a section that names the type-driven enumeration and "
+        "then offers the coercion-operator grep as the worklist carries every "
+        "other term here and states the opposite rule"
     )
 
 

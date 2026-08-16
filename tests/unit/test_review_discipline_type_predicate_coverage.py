@@ -1,98 +1,82 @@
-"""#181 — ``review-discipline`` catches a type predicate that validates a subset.
+"""#181 / #459 — the Stage-2 **Type predicate coverage** rule, as one tripwire.
 
 TypeScript takes ``value is T`` on faith — it cannot check a user-defined type
 predicate against the type it asserts. In the nano-erp assessment,
 ``isMeResponse`` validated four of six required fields and nothing (compiler,
-reviewer, tests) caught it; it was the highest-severity finding in the pass and
-survived two prior reviews (nano-erp ERP-107, ERP-121). The failure mode is
-entirely mechanical — enumerate the asserted type's required fields and check
-the guard covers each one — and belongs in the review checklist so it is
-caught the next time, not just this once (nano-erp assessment
-``assessments/2026-07-22-code.md``, systemic insight CODE-INSIGHT-2 /
-nano-erp ERP-138).
+reviewer, tests) caught it; it was the highest-severity finding in that pass and
+had survived two prior reviews. The failure mode is entirely mechanical —
+enumerate the asserted type's required fields and check the guard covers each
+one — so it belongs in the review checklist.
 
-This guard binds the new rule into the skill so a future re-edit cannot
-silently drop it, in the style of the sibling Stage-2 content guards
-(``test_review_discipline_port_orphan``, ``test_review_discipline_misplaced_helper``).
+**What this module asserts, after #459.** One tripwire over one rule-home
+(ADR 0016, ``code-quality`` Part C → *A guard over prose owns structure and
+negative space, never meaning*):
 
-Acceptance criteria (this ticket):
+1. **Anchor** — the ``- **Type predicate coverage**`` bullet exists inside
+   ``### Stage 2``, and the assertion reads only that slice.
+2. **Term set** — ``type predicate``, ``required fields``, ``subset``: the
+   subject, the enumeration it is checked against, and the defect shape. The
+   rule cannot be stated without all three.
+3. **Polarity** — ``a defect, not a nit``, with the negation anchored to the
+   noun it governs. This is the load-bearing half: the whole point of the rule
+   is the *grade*, and a rewrite that downgraded a subset-validating predicate
+   to a nit would keep every term above while inverting the rule. That
+   inversion is what ``craft.md`` → *Mutate the rule into its opposite, not only
+   out of existence* names, and it is the occurrence #459 converted this module
+   to close.
 
-* **AC-1** — ``review-discipline`` carries a rule that every user-defined type
-  predicate (``value is T``) must be checked against *T*'s required fields,
-  and a predicate validating only a subset is a defect, not a nit. Proven by
-  :func:`test_review_discipline_has_type_predicate_rule`.
-* **AC-2** — the rule lives in the Stage 2 quality checks (``For code:``),
-  beside the other concrete structural/correctness checks, not buried
-  elsewhere. Proven by :func:`test_type_predicate_rule_is_in_stage_two`.
+What went: ``value is t`` and ``false assurance`` were exact-phrase pins that
+break on a benign rewording while proving nothing about direction, and
+``test_type_predicate_rule_is_in_stage_two`` re-derived the very slice the
+bullet reader performs — a strict subset of the slicer, so it could only fail
+where the slicer already fails.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
+# The slicer lives in the module that exports it to this family rather than in a
+# private copy per bullet: a copy drifts from the prose it slices and produces a
+# confident false green (``craft.md`` → *A positive control must exercise the
+# predicate, not re-implement it*). It carries its own missing-bullet assertion,
+# so a renamed or deleted anchor fires there rather than measuring nothing here.
+from tests.unit.test_review_discipline_context_currency import (
+    _skill_text,
+    _stage_two_bullet,
+)
+
+_BULLET_TITLE = "Type predicate coverage"
+
+#: The subject, the enumeration it is measured against, and the defect shape.
+_TERMS = ("type predicate", "required fields", "subset")
+
+#: The grade, with the negation **anchored to the noun it governs**. A bare
+#: negation token anywhere in the paragraph would be satisfied by the sentence
+#: that describes the defect; this only matches while the bullet still refuses
+#: to call a subset-validating predicate a nit. Reversing the pair — "a nit, not
+#: a defect" — puts ``nit`` before ``not`` and no longer matches.
+_NOT_A_NIT = re.compile(r"\bnot\b(?:\W+\w+){0,2}?\W+nit\b", re.IGNORECASE)
 
 
-def _skill_text() -> str:
-    return _SKILL.read_text(encoding="utf-8")
+def _bullet() -> str:
+    return _stage_two_bullet(_skill_text(), _BULLET_TITLE)
 
 
-def _stage_two(text: str) -> str:
-    start = text.index("### Stage 2")
-    end = text.index("## Severity", start)
-    return text[start:end]
+def test_the_type_predicate_rule_grades_a_subset_as_a_defect() -> None:
+    """A predicate validating a subset of `T`'s required fields is a defect, not a nit."""
+    bullet = _bullet().lower()
 
-
-def _type_predicate_bullet(text: str) -> str:
-    stage_two = _stage_two(text)
-    m = re.search(r"^- \*\*Type predicate coverage\*\*", stage_two, re.MULTILINE)
-    assert m, (
-        "review-discipline Stage 2 has no bullet naming the type-predicate "
-        "coverage rule (#181)"
+    missing = [t for t in _TERMS if t not in bullet]
+    assert not missing, (
+        f"the Type predicate coverage bullet no longer states {missing}. The rule "
+        f"is the enumeration — every required field of the asserted type, checked "
+        f"against the guard — and a rule missing the subject or the measure is a "
+        f"reminder, not a check (#181)."
     )
-    rest = stage_two[m.start() :]
-    nxt = re.search(r"^(?:- \*\*|#{2,3} )", rest[1:], re.MULTILINE)
-    return rest[: nxt.start() + 1] if nxt else rest
-
-
-def test_review_discipline_has_type_predicate_rule() -> None:
-    """The skill states the type-predicate coverage rule (AC-1)."""
-    bullet = _type_predicate_bullet(_skill_text()).lower()
-    # It is about a *user-defined type predicate* (`value is T`)...
-    assert "type predicate" in bullet, (
-        "the rule must name a user-defined type predicate"
-    )
-    assert "value is t" in bullet, (
-        "the rule must cite the `value is T` predicate syntax"
-    )
-    # ...enumerated against T's *required fields*...
-    assert "required fields" in bullet, (
-        "the rule must require enumerating the asserted type's required fields"
-    )
-    # ...and a subset-validating predicate is a false assurance / defect.
-    assert "subset" in bullet, (
-        "the rule must flag a predicate that validates only a subset"
-    )
-    assert "false assurance" in bullet, (
-        "the rule must name the failure as a false assurance at the boundary"
-    )
-    assert "defect" in bullet and "nit" in bullet, (
-        "the rule must state this is a defect, not a nit"
-    )
-
-
-def test_type_predicate_rule_is_in_stage_two() -> None:
-    """The rule sits in Stage 2 quality, in the `For code:` checks (AC-2)."""
-    text = _skill_text()
-    stage_two_start = text.find("### Stage 2")
-    assert stage_two_start != -1, "review-discipline must have a Stage 2 section"
-    severity_start = text.find("## Severity")
-    assert severity_start != -1, "review-discipline must have a Severity section"
-    stage_two = text[stage_two_start:severity_start]
-    assert "**Type predicate coverage**" in stage_two, (
-        "the type-predicate coverage rule must live in the Stage 2 quality "
-        "checks, alongside the other structural/correctness rules"
+    assert _NOT_A_NIT.search(bullet), (
+        "the bullet no longer grades a subset-validating predicate a defect "
+        "rather than a nit. The grade is the rule: `value is T` compiles either "
+        "way, so a predicate demoted to a nit is one a reviewer waves through "
+        "at exactly the boundary it was added to protect (#181, #459)."
     )

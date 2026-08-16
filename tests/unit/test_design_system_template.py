@@ -14,9 +14,9 @@ Acceptance criteria:
 
 * **AC-1** — the file exists, carries a matching version header, and is
   registered in `registry.yaml` under `profiles: [harness]`.
-* **AC-2** — the doc names all eight layers (in order), the one-way dependency
-  rule, the three rules, the five frontmatter fields, and the three token
-  tiers.
+* **AC-2** — the doc names all eight layers **in order**; the numeric prefix
+  *is* the dependency order, so this is a derivation over the layer ids rather
+  than a claim about prose.
 * **AC-3** — the doc names the stack seam as the adopting repo's job and cites
   both worked shapes (typed TS for a mobile/Expo build; CSS custom properties
   for runtime multi-tenant theming) — scoped to that section, not the whole
@@ -25,6 +25,20 @@ Acceptance criteria:
   is subject to (footprint, header/registry parity, distributed-prose cites,
   no repo ids, CHANGELOG bounds) are exercised by the full suite, not
   re-implemented here.
+
+**What changed under #459.** AC-2's four whole-file word pins — `downward`,
+`semantic` + `consuming code`, `archetype` + `chrome`, the five frontmatter
+field names, the three token tiers — were unanchored co-occurrence over an
+860-line document: they could not tell a doc that stated the rules from one
+that stated their opposites, and they broke on any rewording that preserved
+them. They are gone; the layer-order derivation is what survives as AC-2, and
+AC-3's two functions collapse into one anchored tripwire over the stack-seam
+section (`code-quality` Part C → *A guard over prose owns structure and
+negative space, never meaning*; ADR 0016). The private-path sweep stays as
+negative space — its control was re-implementing the predicate on a locally
+built token tuple rather than calling it, so the predicate is now extracted
+and both the guard and the control run it (`craft.md` → *A positive control
+must exercise the predicate, not re-implement it*).
 """
 
 from __future__ import annotations
@@ -111,8 +125,7 @@ def test_registered_in_harness_profile_with_matching_version() -> None:
     )
 
 
-# --- AC-2: the eight layers, the dependency rule, the three rules, the -------
-# --- frontmatter contract, the three token tiers -----------------------------
+# --- AC-2: the eight layers, in dependency order -----------------------------
 
 
 def test_names_all_eight_layers_in_order() -> None:
@@ -125,37 +138,6 @@ def test_names_all_eight_layers_in_order() -> None:
         "the eight layers are not listed in ascending dependency order — a "
         "shuffled list loses the order the numeric prefix encodes."
     )
-
-
-def test_states_the_one_way_dependency_rule() -> None:
-    text = _text().lower()
-    assert "downward" in text or "one-way" in text, (
-        "the doc must state the one-way dependency rule — a layer may consume "
-        "the layers above/below it, nothing reaches the other way."
-    )
-
-
-def test_states_the_three_rules() -> None:
-    text = _text().lower()
-    assert "downward" in text, "rule 1 (no downward reach) is not stated"
-    assert "semantic" in text and "consuming code" in text, (
-        "rule 2 (semantic tokens only in consuming code) is not stated"
-    )
-    assert "archetype" in text and "chrome" in text, (
-        "rule 3 (chrome belongs to the archetype) is not stated"
-    )
-
-
-def test_names_the_five_frontmatter_fields() -> None:
-    text = _text()
-    for field in ("layer", "kind", "status", "owner", "last_updated"):
-        assert field in text, f"frontmatter field {field!r} is not named"
-
-
-def test_names_the_three_token_tiers() -> None:
-    text = _text().lower()
-    for tier in ("primitive", "semantic", "component"):
-        assert tier in text, f"token tier {tier!r} is not named"
 
 
 # --- AC-3: the stack seam is the adopting repo's job, both worked shapes ----
@@ -179,16 +161,28 @@ def _seam_section() -> str:
     )
 
 
-def test_stack_seam_is_the_adopting_repos_job() -> None:
+def test_stack_seam_is_the_adopting_repos_job_with_both_shapes() -> None:
+    """Tripwire — the seam section hands the seam to the adopting repo and
+    shows both worked shapes.
+
+    Terms: ``adopting repo`` / ``your repo`` (whose job it is), ``typed`` or
+    ``typescript`` (the build-time shape), ``css custom propert`` (the runtime
+    shape).
+
+    **This rule has no polarity, and none is faked here.** AC-3 is a *breadth*
+    claim — the seam is delegated, and two worked shapes are shown — not a
+    prohibition. The section's negation tokens are attached to other rules
+    inside it (*generated output never hand-edited*, *the contract does not
+    mandate a package*), so binding a negation to this claim would be
+    decoration that a benign edit elsewhere in the paragraph could satisfy.
+    Whether the section still delegates rather than dictates is the review
+    gate's (ADR 0016).
+    """
     section = _seam_section().lower()
     assert "adopting repo" in section or "your repo" in section, (
         "the stack-seam section must name the seam as the adopting repo's job, "
         "not something this doc implements"
     )
-
-
-def test_cites_both_worked_seam_shapes() -> None:
-    section = _seam_section().lower()
     assert "typescript" in section or "typed" in section, (
         "the build-time typed-module shape is not cited in the seam section"
     )
@@ -199,11 +193,23 @@ def test_cites_both_worked_seam_shapes() -> None:
 
 # --- Boundary guard (Security): no private repo names or local paths --------
 
+#: Tokens that must never appear in a doc that ships to every consuming repo.
+PRIVATE_TOKENS = ("calibrate", "nano-erp", "~/Code/", "/Users/", "/home/")
+
+
+def _private_token_hits(text: str) -> list[str]:
+    """The boundary predicate: which private repo names / local paths leak.
+
+    Shared by the sweep and its control, so the control exercises the *same*
+    predicate the sweep calls rather than a re-spelled copy of it — the class
+    ``craft.md`` → *A positive control must exercise the predicate, not
+    re-implement it* names, and the defect the pre-#459 control carried.
+    """
+    return [token for token in PRIVATE_TOKENS if token in text]
+
 
 def test_doc_carries_no_private_repo_names_or_local_paths() -> None:
-    text = _text()
-    forbidden = ("calibrate", "nano-erp", "~/Code/", "/Users/", "/home/")
-    hits = [token for token in forbidden if token in text]
+    hits = _private_token_hits(_text())
     assert not hits, (
         f"templates/design-system.md names private repo(s)/local path(s) {hits!r} "
         "— this doc ships to every consuming repo; cite worked shapes by stack, "
@@ -215,8 +221,7 @@ def test_boundary_guard_has_teeth() -> None:
     """A copy carrying a forbidden token would be caught (proves the guard is
     not vacuously green on the real file)."""
     tainted = _text() + "\nSee ~/Code/some-repo/design/ for reference.\n"
-    hits = [token for token in ("calibrate", "nano-erp", "~/Code/") if token in tainted]
-    assert hits == ["~/Code/"], hits
+    assert _private_token_hits(tainted) == ["~/Code/"], _private_token_hits(tainted)
 
 
 # --- Anti-vacuity -------------------------------------------------------------

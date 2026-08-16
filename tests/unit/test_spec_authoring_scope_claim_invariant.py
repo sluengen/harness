@@ -1,38 +1,36 @@
-"""CAL-1101 — require a scope-claim invariant to cite its enumeration.
+"""``spec-authoring`` requires a scope-claim invariant to cite its enumeration.
 
-*Source:* ``assessments/2026-07-16-code.md`` (CODE-INSIGHT-2, Medium — systemic
+*Source:* ``assessments/2026-07-16-code.md`` (CODE-INSIGHT-2 — systemic
 insight). A doc-only commit recorded two rules in ``CONTEXT.md`` that both
 overstated what the call graph keeps: the sentinel rule claimed a value's "one
-consumer" when three others read it (one doing arithmetic that put a bar 517px
-off-screen), and the client-aggregate rule cited a function in the past tense
-that was still live. Recording a rule the tree does not follow is worse than not
-recording it — it launders an open violation into a documented invariant that
-future review trusts. The sentinel rule's own text named its falsifier; nobody
-ran the one grep that would have found the extra consumers.
+consumer" when three others read it, and the client-aggregate rule cited a
+function in the past tense that was still live. Recording a rule the tree does
+not follow launders an open violation into a documented invariant that future
+review trusts.
 
-The fix is a design-time rule in ``spec-authoring``: an invariant stated as a
-scope claim ("the only consumer", "exactly one home", "nothing else reads this")
-is a claim about the whole call graph, so the spec must cite the enumeration
-that establishes it. If the enumeration finds a second consumer, it is a finding,
-not an invariant — converting the class from a steward catch to an author-time
-one, the same move CAL-1075 made for vacuous fixtures.
+**What this module asserts, after #459.** Two things, and they are different in
+kind.
 
-This guard pins the *presence* of that rule in the surface. It cannot prove the
-enumeration was genuinely run on any ticket (the honest limit the grounding and
-lifecycle-sweep guards state) — only that the rule the reviewer checks against
-is on record. It is a text-parse content guard in the style of
-``test_lifecycle_sweep_spec`` (CAL-973) and ``test_grounding_step``.
+* **One tripwire** over one rule-home: the ``**Scope-claim invariants``
+  paragraph inside ``## Change spec``. It reads a small term set the rule cannot
+  be stated without, plus the negation anchored to the noun it governs — an
+  enumeration that finds a second consumer means the claim is *not* an
+  invariant. That anchoring is the fix for the inversion-passes class: the three
+  functions this replaced were term co-occurrence over the same window, and term
+  co-occurrence has no direction (ADR 0016).
+* **A negative-space sweep**, kept verbatim: the rule names no single consumer's
+  stack. That one judges no meaning — it only has to find a forbidden token — so
+  it is exempt from the observation above and stays.
 
-Acceptance criteria (this ticket):
+The deleted third function asserted that the rule's bolded marker sits inside
+``## Change spec``; the slicer below starts from that marker *within* the
+section, so the placement was already a precondition of every other assertion —
+a re-check that could not fail alone (``craft.md`` → a control that cannot
+distinguish its subject from its slicer).
 
-* **AC-1** — the skill states the rule: a scope-claim invariant is a whole-call-
-  graph claim, cite the enumeration, and a second consumer makes it a finding.
-  :func:`test_spec_authoring_has_scope_claim_rule`,
-  :func:`test_scope_claim_rule_states_finding_consequence`.
-* **AC-1 (placement)** — the rule lives in the change-spec design guidance.
-  :func:`test_scope_claim_rule_in_change_spec_section`.
-* **AC-3** — the rule is phrased universally, naming no single consumer's stack.
-  :func:`test_scope_claim_rule_is_universal`.
+This guard cannot prove the enumeration was genuinely run on any ticket (the
+honest limit its sibling grounding and lifecycle-sweep guards state) — only that
+the rule the reviewer checks against is on record.
 """
 
 from __future__ import annotations
@@ -42,6 +40,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
+
+#: The rule's direction, anchored to the noun it governs. What the rule says is
+#: that a claim the enumeration falsifies stops being an *invariant*; a bare
+#: negation somewhere in the paragraph would be decoration, since almost any
+#: English paragraph carries one.
+_NOT_AN_INVARIANT = re.compile(
+    r"\binvariant\b(?:\W+\w+){0,3}?\W+\bnot\b|\bnot\b(?:\W+\w+){0,3}?\W+\binvariant\b",
+    re.IGNORECASE,
+)
 
 
 def _spec_authoring_text() -> str:
@@ -62,47 +69,34 @@ def _change_spec_section() -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
-def test_spec_authoring_has_scope_claim_rule() -> None:
-    """AC-1: the skill frames a scope claim as a whole-call-graph claim that must
-    cite its enumeration."""
-    low = _change_spec_section().lower()
-    assert "scope claim" in low, (
-        "spec-authoring must name the trigger — an invariant stated as a 'scope "
-        "claim' (CAL-1101 AC-1)."
-    )
-    assert "whole call graph" in low, (
-        "the rule must state a scope claim is a claim about the 'whole call "
-        "graph', not a local fact (CAL-1101 AC-1)."
-    )
-    assert "cite the enumeration" in low, (
-        "the rule must require the spec to *cite the enumeration* that "
-        "establishes the claim (CAL-1101 AC-1)."
-    )
+def test_the_scope_claim_rule_has_a_home() -> None:
+    """The scope-claim rule is stated in the change-spec design guidance.
 
-
-def test_scope_claim_rule_states_finding_consequence() -> None:
-    """AC-1: the rule states the consequence that gives it teeth — if the
-    enumeration finds a second consumer, the claim is a finding, not an
-    invariant. This clause is what converts the class from steward-catch to
-    author-time."""
-    low = _change_spec_section().lower()
-    assert re.search(r"if the enumeration finds a second consumer", low), (
-        "the rule must state that if the enumeration finds a second consumer, "
-        "the invariant is not recorded (CAL-1101 AC-1)."
-    )
-    assert "finding" in low, (
-        "the rule must name the second-consumer outcome a *finding*, not an "
-        "invariant (CAL-1101 AC-1)."
-    )
-
-
-def test_scope_claim_rule_in_change_spec_section() -> None:
-    """AC-1 (placement): the rule sits inside the change-spec design guidance,
-    beside the sibling grounding / watchlist / lifecycle-sweep rules."""
-    section = _change_spec_section()
-    assert "**Scope-claim invariants" in section, (
-        "the scope-claim rule must live in the '## Change spec' design guidance "
-        "as a bolded conditional rule, beside its siblings (CAL-1101 placement)."
+    Four conjuncts and a negation, all inside the rule's own paragraph.
+    ``call graph`` is what makes the claim global rather than local; the
+    ``enumeration`` is the evidence the rule demands; and the negation beside
+    ``invariant`` is the consequence that gives it teeth — without it the
+    paragraph asks for a grep and says nothing about what a failing grep means.
+    """
+    paragraph = _scope_claim_paragraph(_change_spec_section().lower())
+    for term, why in (
+        ("scope claim", "the rule must name its trigger — an invariant stated "
+                        "as a scope claim"),
+        ("call graph", "a scope claim is a claim about the whole call graph, "
+                       "not a local fact"),
+        ("enumeration", "the spec must cite the enumeration that establishes "
+                        "the claim"),
+        ("finding", "a falsified scope claim is a finding, and naming it that "
+                    "is what routes it somewhere"),
+    ):
+        assert term in paragraph, (
+            f"spec-authoring's scope-claim rule no longer names {term!r} — {why}"
+        )
+    assert _NOT_AN_INVARIANT.search(paragraph), (
+        "the scope-claim rule no longer states that an enumeration finding a "
+        "second consumer means the claim is *not* recorded as an invariant. "
+        "Without the negation beside the noun, a paragraph inviting the claim "
+        "to be recorded anyway would read the same to this guard."
     )
 
 

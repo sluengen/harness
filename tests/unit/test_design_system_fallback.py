@@ -12,6 +12,21 @@ cannot be satisfied by a mention elsewhere in the file. That scoping is
 load-bearing here — "licence to hardcode" already exists in Token
 discipline, so a whole-file assertion would be green before this fallback
 paragraph exists.
+
+**What this module asserts (#459).** Two things, and neither is meaning.
+*Negative space:* the lookup section stays a **pointer** and does not absorb
+the scaffold contract's own layer vocabulary — that sweep and the control
+that proves its predicate has teeth are unchanged. *One tripwire:* the lookup
+section names the scaffold contract and the ``CONTEXT.md`` key, with the
+no-hardcode negation bound to the sentence that mentions hardcoding. The five
+sentence-pins that stood here before (each arm of the trigger, the set-the-key
+instruction, the ``"not a licence to hardcode"`` literal, the Token-discipline
+re-read) were one rule-home pinned five ways: brittle to a rewording that
+preserved the rule and silent on an edit that inverted it (``code-quality``
+Part C → *A guard over prose owns structure and negative space, never
+meaning*; ``craft.md`` → *Mutate the rule into its opposite, not only out of
+existence*). The anti-vacuity floor folds into the tripwire — a term set over
+an empty slice fails on the terms.
 """
 
 from __future__ import annotations
@@ -21,6 +36,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = REPO_ROOT / "skills" / "design-system" / "SKILL.md"
+
+_NEGATION = re.compile(
+    r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
+)
 
 
 def _section(text: str, heading: str) -> str:
@@ -52,58 +71,48 @@ def _lookup_section() -> str:
     return _section(SKILL.read_text(encoding="utf-8"), LOOKUP)
 
 
-def test_fallback_routes_to_the_scaffold_contract() -> None:
-    """AC-1 — names the template and the key, states the unset trigger."""
+def _sentences(block: str) -> list[str]:
+    """*block* flattened to one line and split into sentences.
+
+    The terminator may be followed by markdown emphasis or a closing bracket
+    (``skill.**``, ``(…).``) — consuming those is load-bearing, not cosmetic:
+    a bolded lead-in that ends ``.**`` otherwise glues its sentence to the
+    next one and widens every negation window that reads this (``craft.md`` →
+    *The text unit is part of the predicate*). A dry run of this module's #459
+    mutation table surfaced exactly that: an inverted clause survived on a
+    negation belonging to the sentence after it.
+    """
+    flat = " ".join(block.split())
+    return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
+
+
+def test_lookup_section_routes_to_the_scaffold_contract() -> None:
+    """Tripwire — the lookup section routes a repo with no system to the
+    scaffold contract, and keeps the discipline that routing does not relax.
+
+    Terms: ``templates/design-system.md`` (where to go) and
+    ``paths.design_system`` (the ``CONTEXT.md`` key to read and set). Polarity:
+    the sentence that mentions hardcoding carries the negation — a missing
+    system is a gap to fill, *not* a licence to hardcode. That binding is what
+    a term co-occurrence cannot do: the same two names appear just as happily
+    in a paragraph that told an agent to hand-author values until a system
+    exists.
+    """
     sec = _lookup_section()
-    assert "templates/design-system.md" in sec, (
-        "the lookup section must name templates/design-system.md as the "
-        "fallback when there is no system yet."
+    for term in ("templates/design-system.md", "paths.design_system"):
+        assert term in sec, (
+            f"the two-stage lookup section must name {term!r} as part of the "
+            "no-system-yet route."
+        )
+    hardcode = [s for s in _sentences(sec) if re.search(r"hardcod", s, re.I)]
+    assert hardcode, (
+        "the lookup section must state what a missing system does *not* licence "
+        "— without it, routing ships with no discipline attached."
     )
-    assert "paths.design_system" in sec, (
-        "the lookup section must name the CONTEXT.md key to read and set."
+    assert any(_NEGATION.search(s) for s in hardcode), (
+        "the hardcoding clause must carry its negation inside the lookup "
+        "section: a missing system is a gap to fill, not a licence to hardcode."
     )
-    assert re.search(r"unset|not set", sec), (
-        "the lookup section must state the unset trigger for the fallback."
-    )
-
-
-def test_fallback_trigger_covers_both_arms() -> None:
-    """AC-1 — the trigger is unset *or* nothing at the named location, not
-    just one of the two — a dangling path is the same state as unset."""
-    sec = _lookup_section()
-    assert re.search(r"nothing at|does not exist|no system at", sec), (
-        "the fallback must also fire when paths.design_system names a "
-        "location with nothing at it, not only when the key is unset."
-    )
-
-
-def test_fallback_instructs_setting_the_key() -> None:
-    """AC-1 — the agent is told to set the key after standing the system
-    up, not merely to read it."""
-    sec = _lookup_section()
-    assert re.search(r"set\s+.{0,40}paths\.design_system", sec), (
-        "the fallback must instruct setting paths.design_system to where "
-        "the scaffold landed, not just reading it."
-    )
-
-
-def test_fallback_carries_its_own_no_hardcode_clause() -> None:
-    """AC-3 — the fallback restates the no-hardcode discipline inline, so a
-    future trim of the paragraph cannot leave routing without discipline."""
-    sec = _lookup_section()
-    assert "not a licence to hardcode" in sec, (
-        "the fallback paragraph must restate that a missing system is a "
-        "gap to fill, not a licence to hardcode, inside the lookup section."
-    )
-
-
-def test_token_discipline_rule_undamaged() -> None:
-    """AC-3 — the existing Token discipline rule is untouched: a
-    'consolidating' edit that moves the rule into the new paragraph must
-    not silently pass."""
-    sec = _section(SKILL.read_text(encoding="utf-8"), "Token discipline")
-    assert "never raw values" in sec
-    assert "not a licence to hardcode" in sec
 
 
 SCAFFOLD_TERMS = ("00-brand", "07-flows", "tokens.json", "archetype")
@@ -134,9 +143,3 @@ def test_lookup_section_guard_has_teeth() -> None:
     tampered = _lookup_section() + "\nUse tokens.json and the 00-brand layer directly."
     hits = _scope_creep_hits(tampered)
     assert hits == ["00-brand", "tokens.json"], hits
-
-
-def test_lookup_section_is_non_empty() -> None:
-    """Anti-vacuity — the parsed section is not empty, so the assertions
-    above are not vacuously true against a blank string."""
-    assert _lookup_section().strip(), "the two-stage lookup section parsed empty"

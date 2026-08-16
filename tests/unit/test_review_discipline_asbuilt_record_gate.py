@@ -1,6 +1,6 @@
 """CAL-972 — ``review-discipline`` gates the as-built record on a behaviour change.
 
-From the 2026-07-03 full-review assessment (SYSTEM-INSIGHT-1, Medium — a systemic
+From the 2026-07-03 full-review assessment (SYSTEM-INSIGHT-1 — a systemic
 insight): shipped behaviour changes whose as-built records silently rot. The
 per-change review updated the code but never the mapped feature spec / design
 doc, so the canonical record drifted from what shipped — a class no single
@@ -11,33 +11,35 @@ The accepted fix elevates the reviewer's *record reality on PASS* obligation int
 a hard **as-built-record gate**: when the diff touches a user-facing surface, the
 review must either fold the matching as-built-record update into the change or
 record an explicit deferral naming the reason; a behaviour change with neither is
-a FAIL. It reuses the *Architecture watchlist* trigger mechanism — compare the
-changed paths to the surfaces the record documents — and is layer-aware: the
-record is ``specs/features/`` where ``feature_specs`` is on, otherwise the design
-doc / ``SPEC.md``.
+a FAIL. It is layer-aware — the record is ``specs/features/`` where
+``feature_specs`` is on, otherwise the design doc / ``SPEC.md``.
 
-This guard binds the gate into the guidance so a future re-edit cannot silently
-drop it — a text-parse content guard in the style of
-``test_review_discipline_port_orphan`` (CAL-665) and ``test_distributed_skill_cites``
-(CAL-654): it reads the as-built guidance and asserts the rule is present, in the
-right place, and surfaced by the command and the reviewer agent that operate it.
+**What this module asserts, after #459.** Two tripwires:
 
-Acceptance criteria (CAL-972, harness-side deliverable):
+* **the gate** — the one ``## Reviewer obligations`` bullet that carries it names
+  the trigger, both escapes, both layer forms, and the FAIL, with the consequence
+  anchored to the ``neither … nor`` that earns it;
+* **the pointers** — ``commands/review.md`` and ``agents/reviewer.md`` each name
+  the record and its deferral **on one line**, so neither can state the record
+  step without its escape.
 
-* **AC-1** — ``review-discipline`` carries the as-built-record gate: the
-  user-facing-surface trigger, the record-or-deferral requirement, and the FAIL
-  consequence, layer-aware across ``feature_specs`` on/off. Proven by
-  :func:`test_skill_states_asbuilt_record_gate` and :func:`test_gate_is_layer_aware`.
-* **AC-1 (placement)** — the gate lives in the Reviewer-obligations section, with
-  the record obligation it strengthens (not buried elsewhere). Proven by
-  :func:`test_gate_is_in_reviewer_obligations`.
-* **AC-1 (command + agent)** — ``commands/review.md`` and ``agents/reviewer.md``
-  surface the gate, so neither can state the record step without it. Proven by
-  :func:`test_command_surfaces_gate` and :func:`test_reviewer_agent_surfaces_gate`.
+It also owns :func:`_obligations_section` and :func:`_obligation_bullets`, which
+``test_final_evidence_ordering`` imports rather than re-spelling — the two guards
+read adjacent bullets of the same section and must not disagree about where it is.
+
+Five term co-occurrences collapsed into those two (ADR 0016), three of them
+near-identical: the same four words asserted over the whole skill, over the
+obligations section, and again for the layer forms. Occurrence the anchoring
+cites (``code-quality`` Part C): read over the whole section, ``fail`` is free —
+four other bullets and the section that follows use it — so the pre-#459 form
+proved only that the words *as-built*, *user-facing surface*, *deferral* and
+*fail* each appeared somewhere in a 5-bullet block. The ``craft.md`` class is *A
+guard over prose owns structure and negative space, never meaning*.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
@@ -46,13 +48,30 @@ _SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
 _COMMAND = _REPO_ROOT / "commands" / "review.md"
 _AGENT = _REPO_ROOT / "agents" / "reviewer.md"
 
+#: The subject that selects the gate's bullet out of the obligations list.
+_GATE_TERM = "as-built-record gate"
+
+#: The consequence, **anchored to the condition that earns it**. ``FAIL`` read
+#: anywhere in the obligations section is free — several bullets use it — so the
+#: verdict has to be read next to the ``neither … nor`` that triggers it. This is
+#: the whole content of a *gate*: without it the bullet describes an obligation
+#: that nothing enforces, which is the state CAL-972 found.
+_NEITHER_IS_A_FAIL = re.compile(
+    r"\bneither\b(?:\W+\w+){0,12}?\W+FAIL\b", re.DOTALL
+)
+
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
 def _obligations_section() -> str:
-    """The ``## Reviewer obligations`` section, where the record gate lives."""
+    """The ``## Reviewer obligations`` section, where the record gate lives.
+
+    Imported by ``test_final_evidence_ordering``, which reads the ordering bullet
+    of the same section. One slicer, so the two guards cannot disagree about where
+    the obligations begin and end.
+    """
     text = _text(_SKILL)
     start = text.find("## Reviewer obligations")
     assert start != -1, "review-discipline must have a Reviewer obligations section"
@@ -63,61 +82,108 @@ def _obligations_section() -> str:
     return text[start:end]
 
 
-def test_skill_states_asbuilt_record_gate() -> None:
-    """review-discipline names the gate: trigger, record-or-deferral, FAIL (AC-1)."""
-    text = _text(_SKILL).lower()
-    assert "as-built" in text, "the skill must name the as-built-record gate"
-    assert "user-facing surface" in text, (
-        "the gate's trigger is a diff touching a user-facing surface"
+def _obligation_bullets() -> list[str]:
+    """The section's top-level ``- **`` bullets, one string each.
+
+    The text unit is part of the predicate: the obligations are five separate
+    rules, and a predicate read over the whole section lets a term from one bullet
+    satisfy a claim about another.
+    """
+    bullets: list[str] = []
+    current: list[str] = []
+    for line in _obligations_section().splitlines():
+        if line.startswith("- **"):
+            if current:
+                bullets.append("\n".join(current).strip())
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        bullets.append("\n".join(current).strip())
+    return bullets
+
+
+def _gate_bullets() -> list[str]:
+    """Obligation bullets carrying the as-built-record gate."""
+    return [b for b in _obligation_bullets() if _GATE_TERM in b]
+
+
+def test_the_asbuilt_record_gate_is_stated_where_the_reviewer_reads_it() -> None:
+    """The one tripwire over the gate's bullet (AC-1).
+
+    Four parts:
+
+    * **anchor** — exactly one obligation bullet names the as-built-record gate.
+      Cardinality, not containment: two bullets stating it is how the gate and the
+      obligation it strengthens drift apart, and one is what the reviewer reaches.
+    * **terms** — the trigger (``user-facing surface``), the escape
+      (``deferral``), and both layer forms (``specs/features`` where
+      ``feature_specs`` is on, the design doc / ``SPEC.md`` otherwise). A gate
+      stated for only one layer is off in every repo on the other.
+    * **polarity** — ``FAIL`` anchored to the ``neither … nor`` that earns it.
+      Read section-wide, that token proves nothing.
+    """
+    bullets = _gate_bullets()
+    assert len(bullets) == 1, (
+        f"review-discipline's Reviewer obligations carry {len(bullets)} bullets "
+        f"naming the {_GATE_TERM!r}; there must be exactly one. The gate belongs "
+        "with the record obligation it strengthens — stated twice, the two copies "
+        "agree the day the second is written and drift after (CAL-972)."
     )
-    assert "deferral" in text, (
-        "the gate must offer an explicit deferral as the alternative to updating "
-        "the record"
+    bullet = bullets[0]
+    lowered = bullet.lower()
+
+    assert "user-facing surface" in lowered, (
+        "the as-built-record gate no longer names its trigger. Without 'the diff "
+        "touches a user-facing surface' the gate has no condition and applies to "
+        "everything or nothing (CAL-972)."
+    )
+    assert "deferral" in lowered, (
+        "the as-built-record gate no longer offers an explicit deferral as the "
+        "alternative to updating the record. A gate with no sanctioned escape is "
+        "one every legitimately-blocked review has to route around (CAL-972)."
+    )
+
+    assert "specs/features" in lowered, (
+        "the gate no longer names specs/features as the record where the "
+        "feature_specs layer is on (CAL-972)."
+    )
+    assert "spec.md" in lowered or "design doc" in lowered, (
+        "the gate no longer covers the feature_specs-off case (design doc / "
+        "SPEC.md). Stated for one layer only, it is silently off in every repo on "
+        "the other (CAL-972)."
+    )
+
+    assert _NEITHER_IS_A_FAIL.search(bullet), (
+        "the gate no longer makes a behaviour change with *neither* a record "
+        "update *nor* a recorded deferral a FAIL. Read over the whole obligations "
+        "section the word FAIL is free — several bullets use it — so without the "
+        "verdict anchored to the condition that earns it, this bullet can be "
+        "softened back into the un-enforced obligation CAL-972 found rotting."
     )
 
 
-def test_gate_is_in_reviewer_obligations() -> None:
-    """The gate strengthens the record obligation, in its own section (AC-1)."""
-    section = _obligations_section().lower()
-    assert "as-built" in section, (
-        "the as-built-record gate must live with the record obligation it "
-        "strengthens (the Reviewer obligations section)"
-    )
-    assert "user-facing surface" in section, "the trigger must sit in the gate"
-    assert "deferral" in section, "the deferral escape must sit in the gate"
-    assert "fail" in section, (
-        "a behaviour change with neither a record update nor a deferral is a FAIL"
-    )
+def test_each_operating_surface_names_the_gate_and_its_escape() -> None:
+    """The pointer tripwire: the command and the agent state the gate *in place*.
 
-
-def test_gate_is_layer_aware() -> None:
-    """The as-built record form follows the ``feature_specs`` layer (AC-1)."""
-    section = _obligations_section().lower()
-    assert "specs/features" in section, (
-        "the gate must name specs/features as the record where feature_specs is on"
-    )
-    assert "spec.md" in section or "design doc" in section, (
-        "the gate must cover the feature_specs-off case (design doc / SPEC.md)"
-    )
-
-
-def test_command_surfaces_gate() -> None:
-    """``commands/review.md`` surfaces the gate in its verdict step (AC-1)."""
-    text = _text(_COMMAND).lower()
-    assert "as-built" in text, "the review command must name the as-built record"
-    assert "deferral" in text, (
-        "the review command must surface the record-or-deferral gate, not just the "
-        "unconditional record update"
-    )
-
-
-def test_reviewer_agent_surfaces_gate() -> None:
-    """``agents/reviewer.md`` states the gate where it records reality (AC-1)."""
-    text = _text(_AGENT).lower()
-    assert "as-built" in text or "user-facing surface" in text, (
-        "the reviewer agent must name the as-built-record gate at its record step"
-    )
-    assert "deferral" in text, (
-        "the reviewer agent's record step must offer the deferral escape, so it "
-        "cannot state the PASS-record obligation without its gate"
+    **Line-scoped, and that is the whole point.** Both files name the as-built
+    record for other reasons and both name a deferral for other reasons, so a
+    whole-file check — which is what the two pre-#459 tests did — passes on a file
+    that states the unconditional record obligation and drops its gate. Requiring
+    the two on one line is what ties the escape to the obligation it qualifies.
+    """
+    missing = [
+        str(path.relative_to(_REPO_ROOT))
+        for path in (_COMMAND, _AGENT)
+        if not any(
+            "as-built" in line.lower() and "deferral" in line.lower()
+            for line in _text(path).splitlines()
+        )
+    ]
+    assert not missing, (
+        f"{missing} state the as-built record without its deferral escape on the "
+        "same line. These are the surfaces that operate the gate, and either one "
+        "can name both words for unrelated reasons — so the record step must "
+        "carry the escape where a reader meets it, or the gate is only in the "
+        "skill (CAL-972)."
     )
