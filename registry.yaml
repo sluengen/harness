@@ -1,4 +1,4 @@
-# guidance:registry@0.5.160
+# guidance:registry@0.5.161
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -174,4 +174,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.160 }
+  registry.yaml:                      { id: registry,                 version: 0.5.161 }
