@@ -1,4 +1,4 @@
-<!-- guidance:review-discipline-craft@0.6.0 -->
+<!-- guidance:review-discipline-craft@0.6.1 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
@@ -14,8 +14,9 @@ concrete shape where the wrong thing read as green. The example is the
 load-bearing half; read it to recognise the shape in the diff in front of you.
 
 Additions to this file are raised as a **proposal** for an operator call — an
-entry here is an improvement, so it goes in a review or close report and is
-ratified at `/digest`, never self-filed. The entry bar here is *a defect class
+entry here is an improvement, so it is appended to the proposals ledger with
+`craft.md` as its suggested home and decided when `/assess` drains it, never
+self-filed. The entry bar here is *a defect class
 that reads as green*, which is a standing incentive to grow the file, and every
 entry taxes the context of every future reader. The operator is the budget-holder
 for that tax.

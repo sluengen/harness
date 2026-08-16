@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.11.0 -->
+<!-- guidance:process-harness@0.12.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -75,7 +75,7 @@ The Stop hook can force exactly one extra turn per stop-chain; it is a nudge wit
 | `systematic-debugging` | Any failing test or bug. |
 | `writing-quality` | Specs, decisions, any prose. |
 | `worktree-isolation` | Any multi-commit work. |
-| `tracker` | Any tracker operation — the backend-neutral protocol. Dispatches to `linear` or `github-issues`. |
+| `tracker` | Any tracker operation — the backend-neutral protocol. Dispatches to `linear` or `github-issues`, and owns the proposals ledger. |
 | `assessment-craft` | The methodology for any `/assess` pass (the steward). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |
 | `design-system` | Frontend work without degrading the design system — only when the `design_system` layer is on. |
@@ -105,8 +105,8 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | `/promote <src> to <dst>` | Drive a promotion (`dev → staging → main`) with plain git — merge, gate, then publish — resolving `<src>`/`<dst>` against `CONTEXT.md` `branches:` roles. |
 | `/decision` | Interactive sweep that drains tickets held for the operator's input — present each one, capture the operator's call, write it into the change spec, release the ticket. No build handoff. |
 | `/routine` | One unattended build-cycle tick: discover the next actionable ticket (`work-discovery`), `/build` it, ship to the integration branch; hold the ticket on a red gate or conflict. The versioned home of the standing prompt scheduled runs paste. |
-| `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, the window's proposals for a promote-or-drop call, operator errands. Never mutates ticket state. |
-| `/assess <scope>` | Run the steward over the codebase — `code` or `architecture` (`--deep` for the broad pass). |
+| `/digest` | Read-only morning report: input holds, overnight run outcomes, work parked for a verdict, entries new to the proposals ledger, operator errands. Never mutates ticket state. |
+| `/assess <scope>` | Run the steward over the codebase — `code` or `architecture` (`--deep` for the broad pass) — and drain the proposals ledger with the operator. |
 | `/update-guidance` | Pull upstream guidance changes into this repo. |
 
 Three of these are front doors for work at a different moment, and the boundary is deliberate, not incidental: `/propose` **decides the unconfirmed** (an idea that needs a decision or is too big for one change); `/bug` / `/tweak` **capture the confirmed-small** (an adjustment to as-built behaviour, surfaced by actual use, filed straight to Todo through the shared `templates/adjustment.md`); `/start` **picks up the filed** (a ticket already on the board, ready to build). Do not run a confirmed bug or small tweak through `/propose`, and do not file an unconfirmed idea straight via `/bug`/`/tweak`.

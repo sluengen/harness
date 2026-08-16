@@ -1,11 +1,11 @@
-<!-- guidance:assess@0.11.0 -->
+<!-- guidance:assess@0.12.0 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code` or `architecture`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
 
-Runs the `steward` over the codebase, produces a dated report, and files its findings as tickets. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
+Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's proposals ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
 
 ## One steward, scope selects the standards
 
@@ -34,7 +34,9 @@ Structure and tests stay *lenses inside* `code` — folding them keeps the surfa
 Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following `assessment-craft`: a summary, findings (each with the four parts and a severity), and up to three systemic insights. Zero findings is a valid result.
 
 ### 2. File the findings
-For every finding and every insight, create an issue through the `tracker` skill **in the Todo state**, with the repo's Build project attached (a project is mandatory when filing) and severity-mapped priority, labelled by source (`review-finding` / `review-insight`), and carrying exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*. Severity and assurance are different axes: a finding's severity sets its priority, and neither its severity nor its length decides how much verification the fix has to buy. Filing to Todo — not Backlog — is deliberate: a finding and an insight are confirmed work, so a later unattended Build tick may pick one up without a human in between; the guards on that self-feeding loop are the assessment's severity bar at filing time and the merge-time review gate before anything ships. Insights — which propose edits to the guidance to prevent a class of findings — are the high-value output; file them prominently. Triage happens in the tracker, not at report time. **If this repo has no tracker** (`CONTEXT.md` `tracker: none`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
+For every finding, create an issue through the `tracker` skill **in the Todo state**, with the repo's Build project attached (a project is mandatory when filing) and severity-mapped priority, labelled by source (`review-finding`), and carrying exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*. Severity and assurance are different axes: a finding's severity sets its priority, and neither its severity nor its length decides how much verification the fix has to buy. Filing to Todo — not Backlog — is deliberate: a finding is confirmed work, so a later unattended Build tick may pick one up without a human in between; the guards on that self-feeding loop are the assessment's severity bar at filing time and the merge-time review gate before anything ships. Triage happens in the tracker, not at report time. **If this repo has no tracker** (`CONTEXT.md` `tracker: none`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
+
+**A systemic insight is not filed.** An insight proposes an edit to the guidance to prevent a class of findings, which makes it an improvement rather than something the tree already contradicts (`review-discipline` → *bugs are filed; improvements are proposed*). Append each one to the repo's proposals ledger instead, in the entry shape `review-discipline` → *The proposal channel* defines, and let step 5 decide it alongside everything else the loop proposed. This is the steward's own output going through the same door it asks every other agent to use; a role that reports on the queue's growth cannot be exempt from the rule that bounds it.
 
 **The `architecture` scope files only actionable risks.** An architecture report's value is largely narrative — the verdict, what is working, the trade-offs to preserve (`templates/assessment.md`, the architecture report shape). File **only** the actionable architecture risks and recommendations; do **not** file positive observations or stable trade-offs as tickets — they live in the report, not the backlog. A useful architecture pass may file **zero** tickets while still recording a verdict and a watchlist; that is a valid outcome, not a failed run.
 
@@ -45,6 +47,11 @@ A report is advisory evidence, not a code change, so it needs no merge gate. Com
 
 ### 4. Apply retention
 After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): keep the latest report per scope plus any report with an open finding, and fold every superseded report into a one-line entry in the rolling `assessments/LOG.md`. This runs each pass so the directory stays a live index — the latest verdict per scope plus the open-finding tail — instead of accumulating a point-in-time file per run (at up to seven files a day, ~700 a year) whose findings are already fixed or ticketed. Never fold away a report with an open finding. Commit the compaction in the same step as the report.
+
+### 5. Drain the proposals ledger
+The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is what clears it — the drain, and the only one. Read the accumulation (the `tracker` skill owns how the ledger is found), then turn it into something answerable: **group** entries whose suggested home is the same file or surface, **abstract** several small ones into the pattern-level candidate they are really evidence for, **prioritise** what survives by the cost of leaving it, and present a short **slate** — what the operator can decide in one sitting, each with its case — rather than the raw list. Record every **verdict** back on the ledger thread as a comment, declines included with their reason, so the next drain does not re-present an answered entry. A promoted proposal becomes an operator-promoted ticket: create it through the `tracker` skill in the Todo state, with the Build project attached and exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*.
+
+The slate needs somebody to answer it, so an unattended run does **not** drain: note the ledger's size in the report and stop there. Draining without an operator would mean the pass deciding its own proposals, which is the grant the whole split exists to close.
 
 ## When there are no findings
 Still record the report (it is evidence the assessment ran) and say so plainly. Skip filing. Do not invent findings to justify the run.

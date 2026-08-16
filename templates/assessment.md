@@ -1,4 +1,4 @@
-<!-- guidance:template-assessment@0.4.0 -->
+<!-- guidance:template-assessment@0.5.0 -->
 # Assessment report (the steward's output format)
 
 The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, severity, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
@@ -36,7 +36,7 @@ Each finding is a level-3 heading carrying its ID, a one-line title, the severit
 
 ## Systemic insights
 
-Up to **three**. An insight is a single concrete edit to a skill, agent, command, hook, or template that stops a *class* of findings from recurring. Each names the exact file and edit and cites at least one finding as evidence. Zero insights is legitimate — write "no insights this cycle" rather than inventing one.
+Up to **three**. An insight is a single concrete edit to a skill, agent, command, hook, or template that stops a *class* of findings from recurring. Each names the exact file and edit and cites at least one finding as evidence. Zero insights is legitimate — write "no insights this cycle" rather than inventing one. An insight is an improvement, so it is **not filed as a ticket**: it is appended to the proposals ledger and decided at the drain (`commands/assess.md`).
 
 ### {SCOPE}-INSIGHT-{n} — {one-line title}
 
@@ -61,4 +61,4 @@ An `/assess architecture --deep` pass writes the *same* dated file (`assessments
 
 ---
 
-After the report is written, the `/assess` command files each finding and insight as a tracker issue and commits the dated report (`commands/assess.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections.
+After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight to the proposals ledger, and commits the dated report (`commands/assess.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections.

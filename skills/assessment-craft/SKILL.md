@@ -2,7 +2,7 @@
 name: assessment-craft
 description: Use when running a periodic codebase audit as the steward (via /assess) — the finding bar, severity scale, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.4.0 -->
+<!-- guidance:assessment-craft@0.5.0 -->
 # Assessment Craft
 
 Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, severity, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering-principles` for `architecture`.
@@ -49,6 +49,7 @@ Rules:
 - **Name a specific file and the exact edit.** Not "update the skill" — "add a section to `code-quality` stating X, so the developer catches Y before review."
 - **Cite at least one finding as evidence.** No insight without a pattern behind it.
 - **Zero insights is legitimate.** Say "no insights this cycle" rather than inventing one.
+- **An insight is proposed, not filed.** It is an improvement — an edit that would make the guidance better, not a place the tree contradicts itself today — so it goes to the proposals ledger and is decided when `/assess` drains it (`review-discipline` → *bugs are filed; improvements are proposed*). The cap above still binds what you write; the ledger decides what is built.
 
 ## Narrative scopes — when a report is more than findings
 
