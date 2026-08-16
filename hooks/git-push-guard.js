@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.5.1
+// guidance:hook-git-push-guard@0.5.2
 // size: most of this file is a POSIX shell lexer — quoting, `$(…)`, backticks,
 // ANSI-C escapes, parameter expansion — because deciding a force-push from the
 // raw command string is what CAL-1001 proved cannot be done. A lexer is one
@@ -589,7 +589,7 @@ function forcePushAnywhere(command, depth = 0) {
 }
 
 /**
- * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * Fail open, loudly. See the identical helper in every other hook (#303): the
  * approving payload still goes out, but stderr says this hook did not run, so a
  * silently-disarmed guard is distinguishable from a deliberate pass-through. Built
  * from hook-owned constants and `err.message` only — never the payload, which carries

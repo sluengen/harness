@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.5.0
+// guidance:hook-guidance-freshness@0.6.0
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -23,13 +23,34 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 
 const TTL_MS = 4 * 60 * 60 * 1000;
-const D_DRIFT = path.join(os.tmpdir(), "guidance-freshness-drift");
-const D_SELFVER = path.join(os.tmpdir(), "guidance-freshness-selfver");
-const D_GENERIC = path.join(os.tmpdir(), "guidance-freshness-generic");
-const D_LEAK = path.join(os.tmpdir(), "guidance-freshness-leak");
-const D_ENTRY = path.join(os.tmpdir(), "guidance-freshness-entry");
+
+/**
+ * A temp-directory path scoped to the repository this hook is running in.
+ *
+ * `os.tmpdir()` is machine-global, so a fixed filename means two sessions in two
+ * checkouts share one debounce marker: the first warning suppresses the second
+ * for the whole TTL, in a different repository, about a different file, with
+ * nothing on stderr to say a warning was dropped. The concurrency that triggers
+ * it is the unattended kind, where nobody is watching anyway. The digest of the
+ * working directory is what makes the state per repository; hashed rather than
+ * embedded so the name stays a fixed length and carries no path a listing would
+ * expose. Every marker below is scoped the same way — the dedicated ones exist
+ * so an unrelated warning cannot mask a specific drift, which sharing them
+ * across repositories quietly undid.
+ */
+function scopedState(name) {
+  const key = crypto.createHash("sha256").update(process.cwd()).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `${name}-${key}`);
+}
+
+const D_DRIFT = scopedState("guidance-freshness-drift");
+const D_SELFVER = scopedState("guidance-freshness-selfver");
+const D_GENERIC = scopedState("guidance-freshness-generic");
+const D_LEAK = scopedState("guidance-freshness-leak");
+const D_ENTRY = scopedState("guidance-freshness-entry");
 
 const DIST = /^(skills|agents|commands|templates|process|hooks|settings)\//;
 const META = /^(BOOTSTRAP\.md|registry\.yaml)$/;
@@ -214,7 +235,7 @@ function done(additionalContext) {
 }
 
 /**
- * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * Fail open, loudly. See the identical helper in every other hook (#303): the
  * approving payload still goes out, but stderr says this hook did not run, so a
  * disarmed hook is distinguishable from a clean pass-through. Built from hook-owned
  * constants and `err.message` only — never the payload, which is untrusted text.

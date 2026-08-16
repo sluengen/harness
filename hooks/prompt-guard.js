@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-prompt-guard@0.2.0
+// guidance:hook-prompt-guard@0.2.1
 /**
  * Prompt-injection scanner (PreToolUse: Write|Edit).
  * Scans content being written for known injection patterns and warns.
@@ -68,8 +68,18 @@ function done(additionalContext) {
   process.stdout.write(JSON.stringify(out));
 }
 
-// All five hooks wrap main() the same way (#303 AC-5): an exception raised after the
+// Every hook wraps main() the same way (#303 AC-5): an exception raised after the
 // stdin read falls open with a notice rather than crashing this one hook alone.
+//
+// Deliberately *not* guarded by `require.main === module`, and this hook exports
+// nothing, unlike the three that carry a `module.exports` for their own test
+// suites. Both `require` and `module` are undefined when a consuming repo's
+// `package.json` declares `"type": "module"` and `hooks/package.json` is missing,
+// so either one at top level would turn this hook's ESM behaviour from "fall open
+// loudly" into an uncaught crash — which is #302, the defect this scanner's whole
+// diagnostic story is about (`test_hooks_module_type`). Every `require` here sits
+// inside a function for that reason. `test_prompt_guard_hook` therefore derives
+// its corpus by reading PATTERNS out of this file rather than importing it.
 try { main(); } catch (err) {
   failOpen("crashed before it could decide", err);
   process.stdout.write(JSON.stringify({ continue: true }));

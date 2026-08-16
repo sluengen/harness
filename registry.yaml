@@ -1,4 +1,4 @@
-# guidance:registry@0.5.159
+# guidance:registry@0.5.160
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -151,21 +151,21 @@ files:
   # root — so an ESM root parses these CommonJS scripts as ESM (#302). JSON carries
   # no guidance: header; the version here is authoritative.
   hooks/package.json:                 { id: hook-package-json,        version: 0.1.0, profiles: [harness] }
-  hooks/prompt-guard.js:              { id: hook-prompt-guard,        version: 0.2.0, profiles: [harness] }
-  hooks/workflow-guard.js:            { id: hook-workflow-guard,      version: 0.2.0, profiles: [harness] }
-  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.5.1, profiles: [harness] }
-  hooks/context-monitor.js:           { id: hook-context-monitor,     version: 0.2.0, profiles: [harness] }
-  hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.5.0, profiles: [harness] }
+  hooks/prompt-guard.js:              { id: hook-prompt-guard,        version: 0.2.1, profiles: [harness] }
+  hooks/workflow-guard.js:            { id: hook-workflow-guard,      version: 0.3.0, profiles: [harness] }
+  hooks/git-push-guard.js:            { id: hook-git-push-guard,      version: 0.5.2, profiles: [harness] }
+  hooks/context-monitor.js:           { id: hook-context-monitor,     version: 0.3.0, profiles: [harness] }
+  hooks/guidance-freshness.js:        { id: hook-guidance-freshness,  version: 0.6.0, profiles: [harness] }
   # The two enforcement hooks (#436). Everything above is advisory or narrow;
   # these two decide. They read the gate marker `scripts/verify.sh` writes on
   # green — the Stop hook refuses a completion claim over a tree no marker
   # covers in any worktree this session worked in (#439), the push guard refuses
   # a push to a protected branch carrying one.
-  hooks/push-target-guard.js:         { id: hook-push-target-guard,   version: 0.2.0, profiles: [harness] }
-  hooks/gate-evidence-guard.js:       { id: hook-gate-evidence-guard, version: 0.2.1, profiles: [harness] }
+  hooks/push-target-guard.js:         { id: hook-push-target-guard,   version: 0.3.0, profiles: [harness] }
+  hooks/gate-evidence-guard.js:       { id: hook-gate-evidence-guard, version: 0.2.2, profiles: [harness] }
 
   # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---
-  process/harness.md:                 { id: process-harness,          version: 0.13.0, profiles: [harness] }
+  process/harness.md:                 { id: process-harness,          version: 0.14.0, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
   settings/harness.json:              { id: settings-harness,         version: 0.10.0, profiles: [harness] }
@@ -174,4 +174,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.159 }
+  registry.yaml:                      { id: registry,                 version: 0.5.160 }

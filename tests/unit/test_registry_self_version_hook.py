@@ -37,6 +37,7 @@ Acceptance criteria:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -50,9 +51,26 @@ _HOOK = _REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 #: The unique signal the self-parity warning carries (the enforcing guard's name).
 _GUARD = "test_registry_header_matches_meta_self_version"
-#: The hook's debounce marker filenames inside ``TMPDIR``.
+#: The hook's debounce marker base names inside ``TMPDIR``. Since #457 each one
+#: carries a suffix scoping it to the repository the hook ran in — the markers
+#: live in the machine-wide temp directory, so a fixed name let one checkout's
+#: warning silence another's. :func:`_marker` reproduces the suffix, which is why
+#: these are base names rather than filenames.
 _D_DRIFT = "guidance-freshness-drift"
 _D_SELFVER = "guidance-freshness-selfver"
+
+
+def _marker(repo: Path, base: str) -> Path:
+    """The scoped debounce marker ``base`` resolves to for a hook run in ``repo``.
+
+    Mirrors ``scopedState`` in the hook: a truncated SHA-256 of the working
+    directory. Pre-seeding a marker is how the two AC-2 cases distinguish "keys
+    on its own marker" from "keys on the shared one", and a test that seeded an
+    unscoped name would seed a file the hook never looks at — which reads as
+    "the warning was not suppressed" no matter what the hook does.
+    """
+    key = hashlib.sha256(str(repo).encode()).hexdigest()[:16]
+    return repo / "_tmp" / f"{base}-{key}"
 
 
 def _registry(header_ver: str, self_ver: str) -> str:
@@ -132,7 +150,7 @@ def test_not_masked_by_generic_drift_marker(tmp_path: Path) -> None:
     """A recent D_DRIFT (another file's drift) must NOT mask the warning (AC-2)."""
     repo = _build_repo(tmp_path, header_ver="0.5.0", self_ver="0.4.0")
     # Simulate an unrelated drift warning earlier in the same window.
-    (repo / "_tmp" / _D_DRIFT).write_text("recent")
+    _marker(repo, _D_DRIFT).write_text("recent")
     ctx = _run_hook(repo, repo / "registry.yaml")
     assert _GUARD in ctx, (
         "a recent generic-drift marker must not suppress the self-parity warning "
@@ -143,7 +161,7 @@ def test_not_masked_by_generic_drift_marker(tmp_path: Path) -> None:
 def test_suppressed_by_its_own_marker(tmp_path: Path) -> None:
     """A recent D_SELFVER suppresses the self-parity warning (proves it keys on it)."""
     repo = _build_repo(tmp_path, header_ver="0.5.0", self_ver="0.4.0")
-    (repo / "_tmp" / _D_SELFVER).write_text("recent")
+    _marker(repo, _D_SELFVER).write_text("recent")
     ctx = _run_hook(repo, repo / "registry.yaml")
     assert _GUARD not in ctx, (
         "a recent self-parity marker must debounce the warning — it must key on a "
