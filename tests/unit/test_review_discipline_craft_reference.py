@@ -13,14 +13,19 @@ What this module pins:
   passes;
 * every pattern body clears a character floor;
 * the survivor-ambiguity entry points at the inert-survivor entry **by its exact
-  heading**, and the counterfeited-delimiter entry points at the text-unit entry
-  the same way, so neither pair can drift into unrelated advice about the
+  heading**, the counterfeited-delimiter entry points at the text-unit entry the
+  same way, and the two constant-predicate entries point at each other the same
+  way in **both** directions, so no pair can drift into unrelated advice about the
   question it shares;
+* the two constant-predicate entries are **neighbours**, in that order, pinned by
+  the other's name rather than by a position — the family grouping settles which
+  family, and nothing else settles that nothing sits between them;
 * the three survivor entries sit under ``Mutation discipline``, the ordinal entry
-  under ``Unmeasured claims``, and the counterfeited-delimiter entry under
-  ``Prose predicates and text guards`` — the family set and the pattern set are
-  each derived alone, and neither knows a heading's *home*, so a pattern can
-  migrate between existing families with both of them green;
+  under ``Unmeasured claims``, the counterfeited-delimiter entry under
+  ``Prose predicates and text guards``, and the frame-mismatch entry under
+  ``Vacuity`` — the family set and the pattern set are each derived alone, and
+  neither knows a heading's *home*, so a pattern can migrate between existing
+  families with both of them green;
 * the header states the admission rule — additions are held for an operator call
   rather than self-filed — in the prose above the first family heading, where a
   reader deciding whether to add an entry is looking;
@@ -79,11 +84,12 @@ _CITING_ROOTS = ("skills/review-discipline/SKILL.md", "commands/build.md")
 _MUTATION_FAMILY = "Mutation discipline"
 _UNMEASURED_FAMILY = "Unmeasured claims — prose asserting what nothing checks"
 _PROSE_FAMILY = "Prose predicates and text guards"
+_VACUITY_FAMILY = "Vacuity — the test that cannot fail"
 
 #: The families the reference is organised into, in order. Pinned as an
 #: equality, so both a lost family and an unrecorded new one go red.
 _FAMILIES = (
-    "Vacuity — the test that cannot fail",
+    _VACUITY_FAMILY,
     _PROSE_FAMILY,
     "Deletion, retirement, and re-homing",
     _MUTATION_FAMILY,
@@ -112,12 +118,22 @@ _ORDINAL_PATTERN = "An ordinal reference into an enumeration is invalidated by a
 _TEXT_UNIT_PATTERN = "The text unit is part of the predicate"
 _DELIMITER_PATTERN = "A paired delimiter can be counterfeited by prose that mentions it"
 
+#: The two constant-predicate entries — an assertion that holds for every input,
+#: which is the deadliest vacuity direction. One is constancy from an empty
+#: subject, the other from operands that do not share a frame. Spelled apart from
+#: the membership tuple below because the family pin and both link assertions need
+#: them by exact heading, and a heading spelled twice drifts once.
+_EMPTY_ITERABLE_PATTERN = "`all()` over a possibly-empty iterable is constant-true"
+_FRAME_MISMATCH_PATTERN = "A comparison whose operands live in different frames is constant"
+
 #: Named patterns pinned by membership — one per family at minimum, covering the
 #: lesson classes the change spec names. A rename shows up here as a missing
 #: name rather than as a set that silently lost an entry.
 _REQUIRED_PATTERNS = (
     "Exercise the production path, not merely a production constant",
     "The empty comparison set",
+    _EMPTY_ITERABLE_PATTERN,
+    _FRAME_MISMATCH_PATTERN,
     "A blacklist inversion sweep fails open on an appended grant",
     "The negation window assumes a false converse",
     _TEXT_UNIT_PATTERN,
@@ -133,9 +149,11 @@ _REQUIRED_PATTERNS = (
     _ORDINAL_PATTERN,
 )
 
-#: Measured at 44 patterns. The floor sits just under that: a slack floor set
-#: far below the real count swallows whole families without going red.
-_PATTERN_FLOOR = 42
+#: Measured at 45 patterns. The floor sits just under that: a slack floor set
+#: far below the real count swallows whole families without going red. Re-derived
+#: from the count on each addition rather than incremented, so the slack stays the
+#: two entries it was measured at instead of growing by one every time.
+_PATTERN_FLOOR = 43
 
 #: Measured shortest body is 357 characters. The floor sits just under it. A
 #: pattern stripped back to its one-line statement — the rule with the
@@ -324,6 +342,116 @@ def test_the_delimiter_entry_sits_under_prose_predicates() -> None:
     assert _DELIMITER_PATTERN in grouped[_PROSE_FAMILY], (
         f"{_DELIMITER_PATTERN!r} is no longer under {_PROSE_FAMILY!r} — "
         f"found under {[f for f, names in grouped.items() if _DELIMITER_PATTERN in names]}"
+    )
+
+
+def test_the_frame_entry_points_at_the_empty_iterable_entry() -> None:
+    """The frame-mismatch entry names the empty-iterable entry, exactly.
+
+    The two are the file's constant-predicate pair: both name an assertion that
+    holds for every input, and a reader who has just watched one of them pass over
+    a defect is one step from the other. The mechanisms and the remedies differ —
+    an empty subject, remedied by asserting the subject is non-empty; operands in
+    different frames, remedied by resolving both to a common root — so a reader
+    sent to neither will reach for the wrong remedy.
+
+    Pinned as a link on the exact heading, like the two pairs above, so a rename
+    fails here loudly rather than leaving a dangling pointer. What it cannot prove
+    is that the entry draws the distinction rather than merely mentioning its
+    neighbour — see the module docstring.
+    """
+    patterns = _patterns()
+    assert _FRAME_MISMATCH_PATTERN in patterns, f"the reference lost {_FRAME_MISMATCH_PATTERN!r}"
+    assert _EMPTY_ITERABLE_PATTERN in patterns, f"the reference lost {_EMPTY_ITERABLE_PATTERN!r}"
+    assert _EMPTY_ITERABLE_PATTERN in patterns[_FRAME_MISMATCH_PATTERN], (
+        f"{_FRAME_MISMATCH_PATTERN!r} does not name {_EMPTY_ITERABLE_PATTERN!r} — a "
+        "reader reaching one of the two ways an assertion becomes constant is never "
+        "sent to the other, and the remedies are not interchangeable"
+    )
+
+
+def test_the_empty_iterable_entry_points_back_at_the_frame_entry() -> None:
+    """The empty-iterable entry names the frame-mismatch entry, exactly.
+
+    The other direction of the same pair, and a separate test because it is a
+    separate obligation with a separate killer: deleting either sentence must go
+    red on its own assertion rather than on a shared one that a surviving
+    half keeps green.
+
+    Both directions are pinned on the exact heading deliberately. Measured on the
+    survivor pair, whose forward link is a heading and whose back-pointer is a
+    description: nothing catches the description drifting into advice about
+    something else, and the record says so. A pair asked for in both directions is
+    two links, not a link and a gesture.
+    """
+    patterns = _patterns()
+    assert _EMPTY_ITERABLE_PATTERN in patterns, f"the reference lost {_EMPTY_ITERABLE_PATTERN!r}"
+    assert _FRAME_MISMATCH_PATTERN in patterns, f"the reference lost {_FRAME_MISMATCH_PATTERN!r}"
+    assert _FRAME_MISMATCH_PATTERN in patterns[_EMPTY_ITERABLE_PATTERN], (
+        f"{_EMPTY_ITERABLE_PATTERN!r} does not name {_FRAME_MISMATCH_PATTERN!r} — the "
+        "back half of a cross-reference asked for in both directions is missing"
+    )
+
+
+def test_the_frame_entry_sits_under_vacuity() -> None:
+    """The frame-mismatch entry is in that family, not merely in the file.
+
+    Its home was argued on its ticket and the alternative was rejected there: the
+    class was assessed as an instance of *A green mutation table certifies only
+    what its author thought to mutate* — the entry naming why such a defect is
+    missed — and accepted instead as a constant-predicate class in its own right,
+    on the grounds that being missed by a table is true of every entry in the file
+    and so decides nothing. The vacuity family, beside the empty-iterable entry, is
+    the other half of that call.
+
+    Kept apart from the three family pins above so each has its own killer: moving
+    any one family's heading past its entries must go red on its own test.
+
+    Like those, this pins the family and nothing about the position within it. The
+    ticket settled which family *and* asked for adjacency; adjacency is not
+    something the two links buy — measured at review, an entry interposed between
+    the pair left every assertion in this module green — so it is pinned
+    separately, by the neighbour's name, in the test below.
+    """
+    grouped = _patterns_by_family()
+    assert _VACUITY_FAMILY in grouped, f"no {_VACUITY_FAMILY!r} family: {list(grouped)}"
+    assert _FRAME_MISMATCH_PATTERN in grouped[_VACUITY_FAMILY], (
+        f"{_FRAME_MISMATCH_PATTERN!r} is no longer under {_VACUITY_FAMILY!r} — "
+        f"found under {[f for f, names in grouped.items() if _FRAME_MISMATCH_PATTERN in names]}"
+    )
+
+
+def test_the_constant_predicate_pair_is_adjacent() -> None:
+    """Nothing sits between the two constant-predicate entries, in that order.
+
+    The family pin above settles *which* family. The change spec asked for two
+    things — the entry in that family and **adjacent to** the constant-true entry
+    — and only the first was derivable from the family grouping. Measured at
+    review by an interposed entry: the family set, the membership tuple, both
+    links, both floors and every family pin stayed green while the pair stopped
+    being neighbours, so each entry's `above`/`below` locator for the other went
+    stale with nothing red.
+
+    Pinned by the neighbour's **name**, never by a position, which is the
+    distinction the ordinal entry draws. A name-pinned neighbour goes red only on
+    an insertion *between the two* — the event this exists to detect — where a
+    pinned index rots on any insertion anywhere above it. That is also why this is
+    admissible here and was declined for the ordinal entry: there the ticket said
+    nothing about a neighbour, so a pin would have guarded a decision nobody made.
+
+    The order is part of the claim, not incidental: the constant-true entry
+    locates its sibling *below* and the frame entry locates its sibling *above*,
+    so a swap leaves two sentences that name the right heading and point the wrong
+    way.
+    """
+    under = _patterns_by_family().get(_VACUITY_FAMILY, [])
+    for name in (_EMPTY_ITERABLE_PATTERN, _FRAME_MISMATCH_PATTERN):
+        assert name in under, f"{name!r} is not under {_VACUITY_FAMILY!r}: {under}"
+    after = under[under.index(_EMPTY_ITERABLE_PATTERN) + 1 :]
+    assert after[:1] == [_FRAME_MISMATCH_PATTERN], (
+        f"{_FRAME_MISMATCH_PATTERN!r} no longer follows {_EMPTY_ITERABLE_PATTERN!r} "
+        f"immediately — {after[:1] or ['nothing']} does — so each entry's locator "
+        "for the other is stale while both links stay green"
     )
 
 
