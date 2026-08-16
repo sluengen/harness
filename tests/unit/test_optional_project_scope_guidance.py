@@ -58,7 +58,7 @@ REGISTRY = REPO_ROOT / "registry.yaml"
 
 def _section(text: str, heading_substr: str) -> str:
     """Body of the heading line containing ``heading_substr`` up to the next
-    heading of the same-or-higher level (mirrors ``test_routine_commands``)."""
+    heading of the same-or-higher level."""
     lines = text.splitlines()
     start = None
     level = 0

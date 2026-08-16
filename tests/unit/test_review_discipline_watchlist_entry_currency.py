@@ -22,9 +22,8 @@ watchlist bullet already has the changed file set in hand from its own
 ``git diff --name-only`` comparison, so the confirmation costs nothing extra to
 run, and a stale entry folds into the Medium finding the bullet already grades.
 
-This guard is the universal half. This repo *also* mechanizes the same concern
-locally (#272, ``tests/unit/test_watchlist_entry_currency.py``, which reads the
-notes against the tree) — but no consuming repo is assumed to have such a guard,
+This guard is the universal half; the local mechanization it once sat beside
+(#272) is gone — but no consuming repo was ever assumed to have such a guard,
 and the checklist clause is what covers them. Mechanizing it further is
 explicitly out of scope: the watchlist discipline is reviewer judgement by
 design.

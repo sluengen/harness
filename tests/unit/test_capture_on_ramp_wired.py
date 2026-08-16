@@ -76,19 +76,15 @@ def test_three_way_boundary_stated_explicitly() -> None:
     )
 
 
-# --- AC-2: the mirrors stay byte-identical (generic guard already exists in
-#     test_routine_commands.py::test_process_doc_mirrors_byte_identical; these
-#     two just confirm the new content actually reached the mirrors) ----------
-
-
-def test_mirrors_carry_the_same_bug_tweak_wiring() -> None:
-    canonical = PROCESS_DOC.read_text()
-    for mirror in MIRRORS:
-        assert mirror.read_text() == canonical, (
-            f"{mirror.relative_to(REPO_ROOT)} must be byte-identical to "
-            "process/harness.md, including the new /bug /tweak wiring "
-            "(#202 AC-2)."
-        )
+# --- AC-2: the mirrors stay byte-identical -----------------------------------
+#
+# Nothing is asserted here, deliberately. Byte-identity between
+# ``process/harness.md`` and its three mirrors is owned by
+# ``tests/unit/test_process_doc_mirrors.py``, which compares the whole files;
+# re-comparing them here added no failure mode that guard does not already
+# carry, and the version this replaced said so in its own comment (#459).
+# A second copy of an identity check is not a second guard — it is one guard
+# with two homes to keep in step.
 
 
 # --- AC-3: spec-driven-development / spec-authoring name the on-ramp ---------

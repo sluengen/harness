@@ -10,7 +10,7 @@ merged state (including the close verb's direct pushes), and the ``pull_request`
 run covers dev-targeted PRs.
 
 Parsed as text (PyYAML is not a project dependency), matching
-``test_ci_workflow_permissions.py`` and ``test_release_workflow.py``. That is
+``test_ci_workflow_permissions.py``. That is
 enough to catch the regression this targets — a trigger that drops ``dev`` —
 without pretending to evaluate GitHub's event resolution.
 

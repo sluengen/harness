@@ -5,8 +5,7 @@ block from `design/03-tokens/tokens.json`, and `scripts/verify.sh` drift-checks
 it (#243) — the generator ADR 0004 rejected for the page as a whole. This
 guards that the ADR's amendment records the narrowing honestly: what changed,
 the generated-vs-narrative line, that it narrows rather than reverses the
-decision, and the accepted proposal it traces to — the same shape as
-`test_review_engine_decision.py` guards ADR 0002.
+decision, and the accepted proposal it traces to.
 """
 
 from __future__ import annotations

@@ -76,6 +76,17 @@ If you do open a PR:
   backups. The table stays outside the repo — only the mechanism is versioned.
   Full rationale in the module docstring.
 
+  Before you write the guard the table will prove, read
+  [`skills/code-quality/SKILL.md`](skills/code-quality/SKILL.md) Part C, *A guard
+  over prose owns structure and negative space, never meaning*. Most of this
+  repo's guards read documentation, and that section is what decides whether the
+  thing you are about to assert is a test's job at all. A sentence pinned
+  verbatim is the one shape that fails both ways — it breaks on a benign
+  rewording and stays green when the rule is inverted — so a mutation table over
+  it proves only that the bytes are still there. The decision behind the rule,
+  and the triage that applied it to the guards already in this tree, are in
+  [ADR 0016](specs/decisions/0016-tests-own-structure-and-negative-space.md).
+
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing

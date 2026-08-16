@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.24.0 -->
+<!-- guidance:code-quality@0.25.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -139,6 +139,14 @@ When an acceptance criterion is stated as a quantity — "uses N queries instead
 A guard earns its place by naming the defect that already happened: the entry in `skills/review-discipline/references/craft.md` whose class it belongs to, or the incident — the red gate, the shipped defect, the ticket — where the class was observed in this tree. Write that citation beside the assertion, in the guard's docstring or its comment, where the next reader deciding whether it still earns its keep will find it. A guard nobody can trace to an occurrence is **speculative**, and a speculative guard costs the same to read, run, and maintain as a real one while defending nothing that has ever gone wrong.
 
 The rule has a consequence worth taking, and it runs backwards over the guards already in the tree: an architecture assessment can read a guard with no citable occurrence as a **deletion candidate** rather than as untouchable prose. That is what makes the rule affordable — it prunes as well as it gates, so the corpus does not simply grow one well-intentioned guard at a time.
+
+### A guard over prose owns structure and negative space, never meaning
+
+A test that reads documentation can assert two things honestly: what the prose must **not** contain (retired vocabulary, a forbidden identifier, a path that does not install into a consuming repo), and what must structurally **correspond** (a mirror is byte-identical, a version matches its manifest entry, a generated artifact matches its source). Whether the prose affirmatively **says** the right thing is the reviewer's, because no regex reads meaning.
+
+That is why pinning a sentence is the worst of both worlds. The pin is **brittle** — a benign rewording that preserves the rule exactly breaks the build — and **vacuous** at the same time, because an edit can satisfy the pinned bytes while inverting the rule in the next paragraph. Term co-occurrence is no better: co-occurrence has no direction, so the guard passes just as green when the rule is reversed.
+
+Where a rule is load-bearing enough to deserve a tripwire, write the minimal one: the section exists in its canonical home, plus at most a small term set the rule cannot be stated without, plus the negation token inside the match window where the rule has a polarity. **One tripwire per rule-home, not per sentence.** And apply the same test to the tripwire itself — if you cannot distinguish the defect from legitimate prose without an exemption list, the guard is asserting meaning and belongs to the reviewer instead.
 
 ### A green suite is only evidence if its inputs are real
 
