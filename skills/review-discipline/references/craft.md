@@ -1,12 +1,13 @@
-<!-- guidance:review-discipline-craft@0.2.0 -->
+<!-- guidance:review-discipline-craft@0.3.0 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
 table, or a deletion pass. Those are the diff shapes where an entirely green
 suite is compatible with a shipped defect, and each entry below is a class that
-did exactly that. The last two families are not gated on those shapes: they
-apply wherever their subject appears — the ticket you are building from, and any
-claim written into prose that nothing measures.
+did exactly that. The families not gated on those shapes — *The ticket and its
+criteria* and *Unmeasured claims* — apply wherever their subject appears: the
+ticket you are building from, and any claim written into prose that nothing
+measures.
 
 Every entry has a name, the rule in one line, and a falsifying example — the
 concrete shape where the wrong thing read as green. The example is the
@@ -55,8 +56,8 @@ named types against a set derived by a suffix match. Breaking only the
 derivation left all 72 cases passing — no skip, no warning, nothing in the output
 to notice. The rule this yields: the non-vacuity companion must assert the set
 the comparison **consumes**, not merely that the guard collected cases. "The
-guard ran over N subjects" satisfies the first shape and sails straight through
-this one. A guard with both sets needs a floor on each.
+guard ran over N subjects" satisfies *The empty subject set* and sails straight
+through this one. A guard with both sets needs a floor on each.
 
 ### The conditional guard whose skip reads as green
 
@@ -115,7 +116,7 @@ first sentence of a comment had to carry a qualifier that already appeared in an
 appended tail. A whole-comment containment control passes on the exact defect.
 The control that works is fed the pre-fix wording verbatim and asserts two
 things: the sample is judged non-compliant, **and** the same sample contains the
-word somewhere — the second assertion is what makes the rejected weaker
+word somewhere — the containment half is what makes the rejected weaker
 predicate's blind spot explicit. Then mutate the helper, not the data, and
 confirm the control is what dies.
 
@@ -335,8 +336,9 @@ rots the day a third brief is added. The subsumption reading was the right one,
 and the disposition was to record the survivor with its reason rather than act on
 it. Reading a survivor as "delete it" by default has removed real defences;
 reading it as "add a test" by default has grown suites around dead code. Settle
-the first reading before spending any thought on the other three, because it
-voids them — see *An inert mutation reports a survivor it never earned*.
+the inert reading — did the mutation change anything the guard reads — before
+spending any thought on the rest, because it voids them; see
+*An inert mutation reports a survivor it never earned*.
 
 ### An inert mutation reports a survivor it never earned
 
@@ -537,6 +539,30 @@ supposed to add. The later change landed with the section renamed, and the
 citation pointed at nothing — with no guard, because the citation had been added
 as a promise rather than a fact. Either create the fact before this change
 merges, or write the sentence so it claims nothing about a future artifact.
+
+### An ordinal reference into an enumeration is invalidated by a correct insertion
+
+A sentence that points at a member of an enumeration by position — "the third
+reading", "the last two families" — holds only until something is inserted,
+removed, or reordered ahead of it. Name the referent, never its index.
+
+**Falsifying example.** A change inserted a reading at the head of an entry's
+four-item enumeration, deliberately, because settling that reading voids the
+rest. Every edit involved was correct: the insertion, the ordering rationale,
+and the sentence that broke, which had been true when written. Further down, the
+entry's worked disposition still read "the third reading was the right one" — and
+the third reading was now one the entry itself rejects, so the entry contradicted
+its own example. Nothing could see it: no guard reads ordinals, and any predicate
+that could would be a pinned count, which rots on the next insertion — the same
+trap one level up. The change's own mutation table sat on top of the defect and
+mutated that sentence's count back into self-consistency, reporting a clean
+survivor; the instrument erased the evidence of the defect it was standing on.
+Deletion and relocation each already have an entry under *Deletion, retirement,
+and re-homing*. Insertion is the structural edit missing from that set, and the
+one where the edit, the text it edits, and the sentence it breaks are each
+correct on their own — the defect exists only in the relationship between them.
+Any change that inserts into, removes from, or reorders an enumeration re-reads
+every sentence downstream that refers to a member by position.
 
 ### A docstring claiming coverage the code lacks
 
