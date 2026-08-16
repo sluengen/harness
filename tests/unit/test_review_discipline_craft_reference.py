@@ -15,10 +15,10 @@ What this module pins:
 * the survivor-ambiguity entry points at the inert-survivor entry **by its exact
   heading**, so the two cannot drift into unrelated advice about what a survivor
   means;
-* the three survivor entries sit under ``Mutation discipline`` — the family set
-  and the pattern set are each derived alone, and neither knows a heading's
-  *home*, so a pattern can migrate between existing families with both of them
-  green;
+* the three survivor entries sit under ``Mutation discipline``, and the ordinal
+  entry under ``Unmeasured claims`` — the family set and the pattern set are each
+  derived alone, and neither knows a heading's *home*, so a pattern can migrate
+  between existing families with both of them green;
 * both citing roots name the reference by its repo-relative path.
 
 What this module does **not** prove:
@@ -64,9 +64,10 @@ _CRAFT = _REPO_ROOT / _CRAFT_REL
 #: The roots that must brief a reader on the reference, each by path.
 _CITING_ROOTS = ("skills/review-discipline/SKILL.md", "commands/build.md")
 
-#: Spelled once, because the family-membership assertion below needs it by exact
-#: heading as well and a heading spelled twice drifts once.
+#: Spelled once each, because the family-membership assertions below need them by
+#: exact heading as well and a heading spelled twice drifts once.
 _MUTATION_FAMILY = "Mutation discipline"
+_UNMEASURED_FAMILY = "Unmeasured claims — prose asserting what nothing checks"
 
 #: The families the reference is organised into, in order. Pinned as an
 #: equality, so both a lost family and an unrecorded new one go red.
@@ -76,7 +77,7 @@ _FAMILIES = (
     "Deletion, retirement, and re-homing",
     _MUTATION_FAMILY,
     "The ticket and its criteria",
-    "Unmeasured claims — prose asserting what nothing checks",
+    _UNMEASURED_FAMILY,
 )
 
 #: The three entries that between them decide what a surviving mutation means.
@@ -86,6 +87,11 @@ _FAMILIES = (
 _AMBIGUITY_PATTERN = "A survivor is ambiguous"
 _INERT_PATTERN = "An inert mutation reports a survivor it never earned"
 _PAIRED_SPLICE_PATTERN = "A prose mutation needs a paired splice to prove it was live"
+
+#: The entry naming the ordinal class. Spelled apart from the membership tuple
+#: below for the same reason as the three above: the family pairing needs it by
+#: exact heading too, and a heading spelled twice drifts once.
+_ORDINAL_PATTERN = "An ordinal reference into an enumeration is invalidated by a correct insertion"
 
 #: Named patterns pinned by membership — one per family at minimum, covering the
 #: lesson classes the change spec names. A rename shows up here as a missing
@@ -104,11 +110,12 @@ _REQUIRED_PATTERNS = (
     _PAIRED_SPLICE_PATTERN,
     "A ticket's grounding is its least reliable part",
     "A declined action is not a prevented one",
+    _ORDINAL_PATTERN,
 )
 
-#: Measured at 42 patterns. The floor sits just under that: a slack floor set
+#: Measured at 43 patterns. The floor sits just under that: a slack floor set
 #: far below the real count swallows whole families without going red.
-_PATTERN_FLOOR = 40
+_PATTERN_FLOOR = 41
 
 #: Measured shortest body is 357 characters. The floor sits just under it. A
 #: pattern stripped back to its one-line statement — the rule with the
@@ -246,10 +253,11 @@ def test_the_survivor_entries_sit_under_mutation_discipline() -> None:
     the ambiguity entry and the inert one is argued from their sharing a family:
     a reader who reaches one is meant to be one heading away from the other.
 
-    Only these three are pinned to a home. A hand-written family for all
-    forty-odd would be a second copy of the file's structure, and it would rot
-    into a maintenance tax that teaches a later editor to re-point the map rather
-    than to question the move.
+    Only the entries whose family is argued for on their ticket are pinned to a
+    home — these three, and the ordinal entry. A hand-written family for
+    all forty-odd would be a second copy of the file's structure, and it would
+    rot into a maintenance tax that teaches a later editor to re-point the map
+    rather than to question the move.
     """
     grouped = _patterns_by_family()
     assert _MUTATION_FAMILY in grouped, f"no {_MUTATION_FAMILY!r} family: {list(grouped)}"
@@ -260,6 +268,39 @@ def test_the_survivor_entries_sit_under_mutation_discipline() -> None:
         if name not in under
     ]
     assert not strays, f"pattern(s) no longer under {_MUTATION_FAMILY!r}: {strays}"
+
+
+def test_the_ordinal_entry_sits_under_unmeasured_claims() -> None:
+    """The ordinal entry is in that family, not merely in the file.
+
+    Its home was the open question on its ticket: the deletion family would hold
+    it if the class is read as a structural edit alongside deletion and
+    relocation, and the unmeasured-claims family holds it if the class is read as
+    an internal document reference nothing checks. The document-reference reading
+    was the call, on the boundary that a forward reference was *never* true while
+    an ordinal reference *was* true and a later, individually correct edit
+    invalidated it. A decision that took an argument to
+    reach is pinned, so a silent re-home fails rather than quietly re-deciding it.
+
+    Kept apart from the survivor-family assertion above so each has its own
+    killer: moving either family's heading past its entries must go red on its
+    own test rather than on a shared one.
+
+    Deliberately absent: any pin on where the entry sits *within* the family.
+    Not because adjacency cannot be pinned safely: pinned by a neighbour's
+    *name*, it would go red only on an insertion between the two, which is the
+    event it would be detecting rather than rot — the entry's own rule is that a
+    referent named survives what an index does not. The reason is narrower. The
+    ticket settled this entry's family and said nothing about its neighbour, so a
+    neighbour pin would guard a decision nobody made, and it would start the
+    second copy of the file's structure the paragraph above declines to keep.
+    """
+    grouped = _patterns_by_family()
+    assert _UNMEASURED_FAMILY in grouped, f"no {_UNMEASURED_FAMILY!r} family: {list(grouped)}"
+    assert _ORDINAL_PATTERN in grouped[_UNMEASURED_FAMILY], (
+        f"{_ORDINAL_PATTERN!r} is no longer under {_UNMEASURED_FAMILY!r} — "
+        f"found under {[f for f, names in grouped.items() if _ORDINAL_PATTERN in names]}"
+    )
 
 
 def test_both_citing_roots_name_the_reference() -> None:
