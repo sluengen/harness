@@ -1,4 +1,4 @@
-<!-- guidance:build@1.12.0 -->
+<!-- guidance:build@1.13.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -90,7 +90,10 @@ Launch an implementation sub-agent through the host sub-agent mechanism in
 `worktree_path`. It has normal edit and shell tools but must not commit. Supply
 the ticket, current change spec, design artifact when present, and prior findings. Require it to read
 `test-driven-development` and `code-quality`, work RED → GREEN → REFACTOR, and
-run the lint command before handoff. It never edits the as-built record.
+run the lint command before handoff. It never edits the as-built record. When
+the change adds or edits a guard, a prose predicate, a mutation table, or a
+deletion pass, require it to read
+`skills/review-discipline/references/craft.md` before writing the test.
 
 For a user-facing change, also require it to read `ux-design`; when
 `layers.design_system` is on, require `design-system`. It must consider empty,
@@ -186,6 +189,9 @@ diff, verify output, visual evidence when present, and `reviewed_tree`. Do not
 pass the implementer's conversation. The reviewer follows `review-discipline`:
 Stage 1 checks the criteria, design, scope, and tests; Stage 2 checks correctness,
 security, structure, and principles. Findings state what, where, why, and how.
+For a diff carrying a guard, a prose predicate, a mutation table, or a deletion
+pass, the reviewer also applies
+`skills/review-discipline/references/craft.md`.
 
 The reviewer, not the implementer or orchestrator, records the as-built spec in
 the candidate when heading for PASS or DEFER, then re-runs verification over that

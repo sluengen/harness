@@ -18,6 +18,7 @@ REFERENCE_TREES = {
     ),
     "skills/review-discipline/SKILL.md": (
         "skills/review-discipline/references/diff-shape-checks.md",
+        "skills/review-discipline/references/craft.md",
     ),
 }
 
