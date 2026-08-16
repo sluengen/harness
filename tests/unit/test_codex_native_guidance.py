@@ -14,8 +14,6 @@ CODEX_AGENT_DIR = REPO_ROOT / ".codex" / "agents"
 CODEX_SKILLS = REPO_ROOT / ".codex" / "skills"
 CODEX_GENERATOR = REPO_ROOT / "templates" / "generate_codex_artifacts.py"
 BUILD_COMMAND = REPO_ROOT / "commands" / "build.md"
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
-HARNESS_RUN = REPO_ROOT / "commands" / "harness" / "run.md"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 
 
@@ -70,17 +68,16 @@ def test_codex_local_discovery_skills_include_repo_skills_and_commands() -> None
     assert not (REPO_ROOT / ".codex" / "commands").exists()
 
     build_skill = _text(CODEX_SKILLS / "command-build" / "SKILL.md")
-    harness_skill = _text(CODEX_SKILLS / "command-harness" / "SKILL.md")
+    promote_skill = _text(CODEX_SKILLS / "command-promote" / "SKILL.md")
 
     assert "name: command-build" in build_skill
     assert "`/build`" in build_skill
     assert "commands/build.md" in build_skill
     assert "read and follow the command file completely before acting" in build_skill
 
-    assert "name: command-harness" in harness_skill
-    assert "`/harness run`" in harness_skill
-    assert "`/harness routine`" in harness_skill
-    assert "commands/harness.md" in harness_skill
+    assert "name: command-promote" in promote_skill
+    assert "`/promote`" in promote_skill
+    assert "commands/promote.md" in promote_skill
 
 
 def test_codex_agent_tomls_are_generated_for_all_repo_agents() -> None:
@@ -189,39 +186,81 @@ def test_codex_generator_migrates_old_symlink_surface(tmp_path: Path) -> None:
     assert check.returncode == 0, check.stdout + check.stderr
 
 
+def test_codex_generator_prunes_a_symlink_whose_skill_is_gone(tmp_path: Path) -> None:
+    """A retired skill's generated symlink is removed, and `--check` reports it.
+
+    Retiring a skill (`guidance-coherence`, #435) deletes `skills/<id>/` but the
+    generated `.codex/skills/<id>` symlink pointing into it is not one of the
+    files the generator writes, so nothing rewrites it. It stayed behind as a
+    dangling link that resolved to a directory that no longer existed — and
+    `--check` was clean, because it only inspected the links it *expected*, never
+    the ones it did not. The command-skill half already pruned its strays; the
+    plain-skill half did not.
+    """
+    repo = tmp_path / "consumer"
+    (repo / "agents").mkdir(parents=True)
+    (repo / "commands").mkdir()
+    (repo / "skills" / "code-quality").mkdir(parents=True)
+    (repo / "templates").mkdir()
+    (repo / ".codex" / "skills").mkdir(parents=True)
+
+    shutil.copy2(CODEX_GENERATOR, repo / "templates" / "generate_codex_artifacts.py")
+    (repo / "skills" / "code-quality" / "SKILL.md").write_text(
+        "---\nname: code-quality\ndescription: Use while implementing.\n---\n# Code Quality\n"
+    )
+    retired = repo / ".codex" / "skills" / "guidance-coherence"
+    retired.symlink_to(Path("../../skills/guidance-coherence"))
+    assert retired.is_symlink() and not retired.exists(), "fixture must be a dangling link"
+
+    stale_check = subprocess.run(
+        ["python3", "templates/generate_codex_artifacts.py", "--check"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert stale_check.returncode == 1, stale_check.stdout + stale_check.stderr
+    assert "guidance-coherence" in stale_check.stderr, stale_check.stderr
+
+    result = subprocess.run(
+        ["python3", "templates/generate_codex_artifacts.py"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not retired.is_symlink(), "the stale skill symlink must be pruned"
+    assert (repo / ".codex" / "skills" / "code-quality").is_symlink(), (
+        "pruning must not take the live skills with it"
+    )
+
+
 def test_agent_led_commands_use_tool_neutral_entry_doc() -> None:
     """Reusable command docs should not hard-code Claude's entry file."""
 
     build = _text(BUILD_COMMAND)
-    harness = _text(HARNESS_COMMAND)
 
     assert "entry process doc" in build
     assert "PROJECT_PROCESS_DOC" in build
     assert "host sub-agent mechanism" in build
     assert "CLAUDE_MD" not in build
 
-    assert "orchestrating agent session" in harness
-    assert "entry process doc" in harness
-
 
 def test_repo_context_describes_agent_neutral_orchestration() -> None:
-    """CONTEXT.md should not make Claude the only orchestrating host."""
+    """CONTEXT.md should not make Claude the only orchestrating host.
+
+    The two negative assertions are the guard. The positive one is the floor
+    under them: on a file that said nothing about who drives the work, both
+    negatives would be trivially true. Its anchor was ``orchestrating agent
+    session`` — the phrase describing a session calling the retired runtime's
+    verbs — and #435 deleted the runtime, so the floor moves to the vocabulary
+    the file now uses for the same question. Host-neutral either way, which is
+    the whole point: the anchor must never be a product name.
+    """
 
     context = _text(CONTEXT)
 
-    assert "orchestrating agent session" in context
+    assert "agent-led" in context
     assert "single Claude session" not in context
     assert "orchestrating Claude session" not in context
-
-
-def test_harness_command_defines_strict_native_codex_only_mode() -> None:
-    """The agent-led loop must carry strict engine flags through every stage."""
-    command = _text(HARNESS_RUN)
-
-    assert "/harness run <ISSUE-ID> --codex-only" in command
-    assert "harness doctor --engine codex" in command
-    assert "harness design --run-id <run_id> --engine codex" in command
-    assert "harness review --run-id <run_id> --engine codex --no-fallback" in command
-    assert "native-only" in command.lower()
-    assert "#314" in command
-    assert "never invoke Claude" in command

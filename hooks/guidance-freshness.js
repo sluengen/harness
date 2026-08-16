@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-guidance-freshness@0.4.1
+// guidance:hook-guidance-freshness@0.5.0
 /**
  * Guidance freshness (PostToolUse: Write|Edit). Advisory, never blocks. Debounced.
  *
@@ -40,6 +40,36 @@ const TICKET = /\b([A-Z]{2,5})-\d+\b/g;
 // Standards/abbreviations that share the ticket-ID shape but are not repo facts.
 // AC = acceptance criteria (AC-1, AC-2) used in templates/change.md.
 const STD = new Set(["RFC", "ISO", "SCA", "CVE", "UTF", "SHA", "HTTP", "ADR", "AES", "ID", "UUID", "AC"]);
+// The other ticket-ID shape: a GitHub issue reference (e.g. #1234). A tracker
+// that numbers its issues leaks the same repo fact as one that prefixes them,
+// and PREFIX-1234 is blind to it. Kept a SEPARATE constant rather than folded
+// into TICKET as an alternation, because the two shapes need different
+// treatment on both sides: this one has no STD-style allowlist (`#` prefixes
+// nothing that is a standard's name) and it is swept over prose with fenced
+// code removed. Written with explicit classes, not \w/\d, so the JS engine and
+// the Python `re` that reuses this body (test_distributed_prose_no_repo_ids)
+// agree character for character.
+// The boundary is what keeps it off non-ticket `#`: a word char or `&` before,
+// a word char or hyphen after, disqualifies it — so a hex colour (#2563eb), a
+// heading anchor (#1-locate-the-source) and an HTML entity (&#8212;) all fall
+// outside. Every character in both classes has a control in the guard; none is
+// carried on speculation.
+const HASH_TICKET = /(?<![0-9A-Za-z_&])#[0-9]+(?![-0-9A-Za-z_])/g;
+// Fenced code, stripped before the #-branch sweep only. Inside a fence `#` is
+// live syntax — a design token's hex value, a shell comment, a CSS id selector —
+// and an all-digit hex colour (#123456) is shaped exactly like an issue ref.
+// The PREFIX-1234 branch still scans the whole file: `CAL-42` is a repo fact in
+// a code block as much as in a sentence.
+// A fence delimiter is only a delimiter at the START of a line (indent allowed),
+// which is what the leading lookbehind pins. Without it, prose that MENTIONS a
+// fence mid-sentence — "the one ```python block below" — opens one, and the
+// strip then swallows every line up to the next real fence. That direction is
+// silent: the swept text simply gets shorter, so the sweep reports no offenders
+// over prose it never read. The lookbehind is written `(?<![^\n])` rather than
+// `(?<=^|\n)` because Python `re`, which reuses this body, requires a
+// fixed-width lookbehind; and it is zero-width, so the newline survives the
+// replace and cannot glue a word onto a following `#`.
+const CODE_FENCE = /(?<![^\n])[ \t]*```[\s\S]*?\n[ \t]*```/g;
 
 function recently(f) { try { return Date.now() - fs.statSync(f).mtimeMs < TTL_MS; } catch { return false; } }
 function mark(f) { try { fs.writeFileSync(f, String(Date.now())); } catch { /* best-effort: advisory debounce marker, ignore write failures */ } }
@@ -53,14 +83,16 @@ function registryVersion(reg, relPath) {
 // A path is managed by the source only if it appears as a key in registry.yaml
 // (files: or meta:). A file under a surface dir but absent from the registry is
 // repo-owned (e.g. a repo's own command it keeps under commands/) — not
-// distributed guidance. (commands/harness.md used to be this example; CAL-764
-// registered it, so it is now distributed guidance like any other command.)
+// distributed guidance. The harness's own commands/harness.md was the worked
+// example until CAL-764 registered it and #435 retired it; the rule is about
+// registry membership, not about any particular file.
 function registryMember(reg, relPath) {
   return new RegExp("(^|\\n)\\s*" + relPath.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + ":\\s*\\{").test(reg);
 }
 function leakedIds(content) {
   const hits = new Set();
   for (const m of content.matchAll(TICKET)) if (!STD.has(m[1])) hits.add(m[0]);
+  for (const m of content.replace(CODE_FENCE, "").matchAll(HASH_TICKET)) hits.add(m[0]);
   return [...hits];
 }
 
@@ -97,9 +129,9 @@ function main() {
   if (registry) {
     // Repo-owned files under a surface dir but excluded from the copy-list
     // (e.g. a repo-local command a consuming repo keeps under commands/) are not
-    // distributed guidance — source-mode checks must not apply to them. (This was
-    // commands/harness.md until CAL-764 registered it; the mechanism still guards
-    // any genuinely repo-owned file.) Identify them without naming any repo fact:
+    // distributed guidance — source-mode checks must not apply to them. No such
+    // file exists in this repo today, and the mechanism still guards any
+    // genuinely repo-owned one. Identify them without naming any repo fact:
     // a non-member that carries no `guidance:` header AND is not a `.json` is
     // repo-owned, so skip it. The `.json` carve-out matters because JSON is the
     // *headerless* distributable type (the registry version is authoritative):

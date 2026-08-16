@@ -97,7 +97,8 @@ def test_contains_no_provider_recipe() -> None:
 
 def test_reports_the_created_ticket_and_next_step() -> None:
     text = COMMAND.read_text()
-    assert re.search(r"/start|/harness run", text), (
-        "commands/bug.md must point at the next step (`/start` or "
-        "`/harness run`) once the ticket is filed."
+    assert "/start" in text, (
+        "commands/bug.md must point at the next step (`/start`) once the ticket is "
+        "filed. The alternative used to be `/harness run`; #435 retired it, and "
+        "an alternation with a dead branch weakens the assertion for nothing."
     )

@@ -2,7 +2,7 @@
 name: github-issues
 description: Use when the repo's CONTEXT.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:github-issues@0.1.0 -->
+<!-- guidance:github-issues@0.2.0 -->
 # GitHub Issues
 
 The **GitHub provider recipes** for the tracker protocol. Policy — the operation set, the state names, placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
@@ -44,11 +44,13 @@ gh issue view <number> --repo <owner>/<name> \
 
 ### `create` — file an issue **onto the board, with Status set**
 
-Three steps, in order. **Skipping the third is the item-add-no-status trap:** an item added to the board lands with **Status unset**, and a Todo-scoped queue read never sees it — the issue exists, looks filed, and is invisible to the loop.
+Four steps, in order. **Skipping the third is the item-add-no-status trap:** an item added to the board lands with **Status unset**, and a Todo-scoped queue read never sees it — the issue exists, looks filed, and is invisible to the loop.
 
 ```bash
-# 1. create the issue (use --body-file; never interpolate untrusted text into the shell)
-gh issue create --repo <owner>/<name> --title "<title>" --body-file <path>
+# 1. create the issue, carrying the chosen assurance level (use --body-file;
+#    never interpolate untrusted text into the shell)
+gh issue create --repo <owner>/<name> --title "<title>" --body-file <path> \
+  --label assurance:<level>
 
 # 2. add it to the board, capturing the returned item id
 gh project item-add <number> --owner <owner> --url <issue-url> --format json
@@ -56,7 +58,12 @@ gh project item-add <number> --owner <owner> --url <issue-url> --format json
 # 3. set Status explicitly (ids from the field-list call above)
 gh project item-edit --id <item-id> --field-id <status-field-id> \
   --project-id <project-id> --single-select-option-id <todo-option-id>
+
+# 4. verify the postcondition by re-reading the issue, not by exit status
+gh issue view <number> --repo <owner>/<name> --json labels
 ```
+
+`<level>` is the level the filer chose per `spec-authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the `tracker` protocol names: report the identifier and URL, say the filing is incomplete, and stop. Step 4 is what turns "the command exited zero" into evidence that exactly one assurance label is on the issue.
 
 **Quote titles; pass bodies as `--body-file`.** Issue text is frequently lifted from a report, a review finding, or a design section, and may carry backticks, `$(…)`, or newlines. A heredoc of tracker-derived text interpolated into a shell command is a command-injection boundary — the same rule as never using `shell=True` with untrusted input.
 

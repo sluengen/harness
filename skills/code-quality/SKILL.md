@@ -2,7 +2,7 @@
 name: code-quality
 description: Use while implementing or modifying code, and again before claiming any task done. Covers scope discipline, code structure, and the verification gate — no completion claim without fresh evidence, and a measurable acceptance criterion (query count, latency, payload size, error rate) needs a test that measures it.
 ---
-<!-- guidance:code-quality@0.23.0 -->
+<!-- guidance:code-quality@0.24.0 -->
 # Code Quality
 
 How to build well during implementation: stay in scope, keep the structure sound, and prove the work before claiming it done. The developer follows this while building; the reviewer enforces the same rules (`review-discipline` references this file, so the bar is identical on both sides).
@@ -133,6 +133,12 @@ Skipping a step is not efficiency. It is claiming something you have not checked
 ### A measurable criterion needs a measuring test
 
 When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CONTEXT.md`).
+
+### A new guard cites the occurrence it prevents
+
+A guard earns its place by naming the defect that already happened: the entry in `skills/review-discipline/references/craft.md` whose class it belongs to, or the incident — the red gate, the shipped defect, the ticket — where the class was observed in this tree. Write that citation beside the assertion, in the guard's docstring or its comment, where the next reader deciding whether it still earns its keep will find it. A guard nobody can trace to an occurrence is **speculative**, and a speculative guard costs the same to read, run, and maintain as a real one while defending nothing that has ever gone wrong.
+
+The rule has a consequence worth taking, and it runs backwards over the guards already in the tree: an architecture assessment can read a guard with no citable occurrence as a **deletion candidate** rather than as untouchable prose. That is what makes the rule affordable — it prunes as well as it gates, so the corpus does not simply grow one well-intentioned guard at a time.
 
 ### A green suite is only evidence if its inputs are real
 

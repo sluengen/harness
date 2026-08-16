@@ -25,7 +25,8 @@ htmlcov/
 .env.*
 
 # uv
-# uv.lock is committed — required for reproducible `uv sync --frozen` in Docker builds (SPEC §13 / H-029).
+# uv.lock is committed — it pins the dev toolchain the gate runs on, so a fresh
+# checkout resolves the same ruff/mypy/pytest every other checkout did.
 
 # State / artifacts
 .harness/
@@ -34,7 +35,7 @@ htmlcov/
 *.db-wal
 
 # Worktrees
-# .worktrees/ is the harness's own verb-created root (harness/identity.py);
+# .worktrees/ is where a task is isolated (`worktree-isolation`);
 # .claude/worktrees/ is the Claude Code CLI's agent-dispatch root — different
 # owner, same hazard. Keep comments on their own lines: git does not treat a
 # trailing '#' on a pattern line as a comment.
@@ -55,14 +56,24 @@ htmlcov/
 # .codex/ and .gemini/ are committed like .claude/ in this committed-mode repo.
 # Ignore only genuinely per-machine bits if any appear (e.g. an absolute-path hook config).
 
-# Run artifacts a verb loop stages at the worktree root, because the wrapper
-# mounts only the invoking CWD into each verb's container so `/tmp` never
-# resolves there (`commands/harness.md`). Untracked each reads as a dirty
-# worktree to the close gate; `git add -A` publishes it instead. Not covered by
+# Working artifacts a task stages at the worktree root. Not covered by
 # `.harness/` above — both land at the root.
-#   gate.log   — verify-gate output for `harness review --gate-log` (#259)
-#   /design.md — Step 1.5's design_markdown for `review --design-file`
+#   gate.log   — captured verify-gate output, kept for a review to read
+#   /design.md — the design stage's artifact on a complex run
 # `design.md` is root-anchored: it is a name worth tracking under docs/ or
 # specs/, unlike the distinctive `gate.log`.
 gate.log
 /design.md
+
+# Visual evidence a build loop renders for review (#434). Captures and their
+# manifest land at `.evidence/<TICKET-ID>/` in the run worktree — the one
+# documented location, so `/review` can hand the reviewer a directory
+# (`commands/build.md`). Two failure directions, same rule: untracked, each
+# capture reads as a dirty worktree to any gate that counts untracked files;
+# swept up, `/build`'s `git add -A` in *Independent review* and in *Ship*
+# publishes binary captures of seeded state into permanent history of a public
+# repo. Unanchored, like `gate.log` and unlike `/design.md`: `.evidence` is a
+# distinctive dot-directory nothing tracks at any depth, so anchoring it to the
+# root would narrow the protection and buy nothing. Keep comments on their own
+# lines: git does not treat a trailing '#' on a pattern line as a comment.
+.evidence/

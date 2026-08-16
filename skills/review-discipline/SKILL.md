@@ -1,8 +1,8 @@
 ---
 name: review-discipline
-description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), a severity bar, and the four-part finding format. Load before approving or handing off work.
+description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), the blocking/size 2×2 for findings, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.9.0 -->
+<!-- guidance:review-discipline@0.17.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -34,6 +34,7 @@ Only after Stage 1 passes.
 **For code:**
 - **Correctness** — logic errors, edge cases, off-by-one, null handling, error messages.
 - **Diff-shape checks** — when the change adds a type predicate; deletes or ports a public surface; repeats a helper; introduces placeholder, synchronization, fetch/refetch, watchlist, or CONTEXT/as-built-record changes, load [`skills/review-discipline/references/diff-shape-checks.md`](references/diff-shape-checks.md) and apply only the matching checks.
+- **Craft — defect classes that read as green** — when the change adds or edits a guard, a prose predicate, a mutation table, or a deletion pass, load [`skills/review-discipline/references/craft.md`](references/craft.md) and check the diff against the matching family. Each entry names a shape where a fully green suite shipped the defect.
 - **Over-engineering** — complexity the change *adds* that a simpler form replaces. Tag each finding with the cut it names, and in the finding name *what replaces it* so the fix is concrete, not a vibe:
   - `stdlib:` hand-rolled what the standard library already ships — name the function that replaces it.
   - `native:` a dependency, or a block of code, doing what the language or platform already does — name the built-in feature.
@@ -51,22 +52,31 @@ Only after Stage 1 passes.
 
 **For frontend code, additionally:** design-system adoption and accessibility (`design-system`), and that the surface handles all its states — empty, loading, error, and edge cases (0 / 1 / many / missing), not just the happy path (`ux-design`).
 
-## Severity
+## Findings — the 2×2 (ADR 0015)
 
-| Severity | Definition | Action |
+Two axes decide everything about a finding, each a plain binary:
+
+- **Blocking or not.** A finding blocks when shipping it would ship a defect: a security hole, data loss, a crash, a spec violation, a logic bug, a missing test for an acceptance criterion. Everything else — inefficiency, incomplete error handling, structural drift, an improvement — does not block. There are no severity grades beyond this; "Critical/High/Medium/Low" is retired vocabulary.
+- **Small or large.** Small means cheap **and** contained — a bounded edit whose consequences end where the edit does. A two-line change in a load-bearing area with a wide blast radius is not small. Large is anything that would blow out the diff and the review in flight, or stall the queue behind work the ticket never promised.
+
+|  | Small fix | Large fix |
 |---|---|---|
-| **Critical** | Security hole, data loss, crash, spec violation | Blocks approval |
-| **High** | Logic bug, missing validation, missing test for a criterion | Blocks approval |
-| **Medium** | Minor inefficiency, incomplete error handling, structural drift | Fix now if small (1–5 lines); carry-forward only if out of scope |
-| **Low** | Suggestion, minor improvement | Fix now if trivial; otherwise note and move on |
+| **Blocking** | Fix now, in this branch | **FAIL** — the ticket cannot ship as scoped; *On a FAIL* below, and a human re-scopes if the budget cannot absorb it |
+| **Non-blocking** | Fix now, in this branch | **Propose it** — one line in the report's **Proposals** section, carrying the case for it, and nowhere else. This review does not file it and does not queue it |
 
-Critical and High block. Medium and Low do not, **but fix them in the same pass when the fix is small** — the builder already has the context, so deferring a two-line fix wastes more effort than doing it.
+The default posture is **fix it now — do the job right the first time**. Three of the four cells resolve inside this branch; the builder already has the context, and fixing a small thing costs less than discussing it. Size is the only legitimate reason not to, and blocking is the only thing severity was ever needed for.
 
-### Fix now vs carry-forward
+There is deliberately no "small but not worth doing" case. The finding bar above already filters it: a specific, stateable defect or improvement is a finding, and a small one is always worth its own cost; anything vaguer ("could be improved") never became a finding in the first place. A rule with a subjective override attached is not a rule.
 
-**Fix now:** any mechanical, localised fix on code the task already touched (stale comment, missing validation, wrong helper, a duplicated block). If you can state the fix in one sentence, fix it now.
+**Bugs are filed; improvements are proposed.** The line between the two is **factual, not judged**, and the question is *does the tree contradict its own contract today* — a red gate, a crash, a guard asserting something false, a document describing behaviour the code does not have. That is a **bug**: any agent files it through `tracker`, any time, without asking, carrying exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*. Everything else — a hole, a gap, a could-be-better, and every finding landing in the cell above — is an **improvement**, and an improvement is *proposed*, never filed, by every agent path including this one. Nothing in the split is a judgment call on purpose: a queue anything can add to whenever it thinks something could be better grows without bound, and hardening one filing path at a time never reaches the grant underneath.
 
-**Carry-forward (rare):** genuinely separate work — touches systems the task did not, needs a design decision, or is a broad pre-existing pattern. File it as its own ticket.
+**The proposal channel.** A proposal is one line in the **Proposals** section of a review or close report: what it is, and the case for it. Nothing else happens to it here — no ticket, no label, no queue slot, no second surfacing. What happens to it next is `/digest`'s, and only `/digest`'s.
+
+**A report-borne proposal is not a proposal spec.** The two share a word and nothing else. A **proposal spec** is `specs/proposals/<slug>.md` — options, a recommendation, a breakdown, an explicit outcome (`spec-authoring`). A proposal here is a one-line candidate waiting for a yes or a no. Promotion can produce either artifact: a ticket, where the work is small and now confirmed, or a `/propose` pass, where the answer turns out to carry a decision. Name which one you mean whenever both could be read into the sentence.
+
+State the consequence with the rule, so a later edit cannot keep the mechanism and lose the point: **the improvement volume an agent can file is structurally zero.** The queue holds what an operator decided and what the tree's own contradictions produced, and nothing else has a way in.
+
+**The recursion cap** (ADR 0015), because a queue that grows under review is a failed review process: a ticket filed from a review carries the `review-finding` label — that label marks generation one, and generation one is the last. When the ticket **under review** carries `review-finding`, this review fixes or drops everything it can and files nothing at all — the **Propose it** cell closes with it. A large-and-blocking finding on such a ticket is still a FAIL/hold, never a new ticket. One generation of follow-up, never a lineage.
 
 ## Every finding has four parts
 
@@ -81,8 +91,9 @@ Critical and High block. Medium and Low do not, **but fix them in the same pass 
 
 - **Run the verification yourself.** Do not trust the builder's claim that tests pass. Fresh run, read the output (`code-quality` Part C).
 - **Record reality on PASS — the as-built-record gate.** When the diff touches a **user-facing surface** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it; a surface is not permitted to accumulate more than one shipped ticket without one — the record is where a gap between tickets becomes visible, and it cannot do that job retroactively (`spec-driven-development`).
-- **Close the candidate before you certify it — the final-evidence ordering rule.** The tree you verify and the tree your verdict covers are the tree that merges. So the as-built-record update goes **into the candidate first**: draft it from the diff, commit it onto the branch, and only then run the verify gate and decide. Nothing lands after that — a later commit, documentation included, is uncertified tree content and voids the pass. Order it the other way and the record edit is never gate-checked, which matters because a record is delivered tree content that a link, generated-doc, or drift guard can reject; on the harness path it is refused outright, since `harness close` binds the pass to a SHA and a post-verdict commit is exactly what `stale_review` rejects. Two consequences worth stating: on a **FAIL** there is nothing settled to record, so no record work is done — it is drafted fresh from the *next* diff; and when the certifying gate goes red **because of your own record edit**, you wrote it, so you fix it and re-run (bounded — two attempts, then FAIL carrying the gate output), never the implementation, which would make you the builder. A **deferral** is ordering-neutral: it lands in the report and the ticket, not the tree. Report the SHA the verdict bound to, so the flow that ships can check that HEAD is still it.
-- **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings by severity with the four parts each, the verification output, the `reviewed_sha` the verdict binds to, and a final PASS / FAIL.
+- **Sweep for twins — whatever is derived from, or is a copy of, what changed.** A mechanism in this tree often has a **twin**: a template shipped to consuming repos, a byte-identical mirror of a canonical document, a hook and the guard that measures it, a rule and the reference that renders its shape. When the diff changes such a mechanism, the twin is updated in the **same branch**, or the review records an explicit deferral naming the reason. Derive the question from the changed paths — what else in this tree is generated from, restates, or measures the thing that moved — rather than waiting to be told a twin exists. A stale twin ships green by construction: every guard over the original still passes, and the copy the next reader reaches is the one describing the behaviour that was retired.
+- **Close the candidate before you certify it — the final-evidence ordering rule.** The tree you verify and the tree your verdict covers are the tree that merges. So the as-built-record update goes **into the candidate first**: draft it from the diff, commit it onto the branch, and only then run the verify gate and decide. Nothing lands after that — a later commit, documentation included, is uncertified tree content and voids the pass. Order it the other way and the record edit is never gate-checked, which matters because a record is delivered tree content that a link, generated-doc, or drift guard can reject. Two consequences worth stating: on a **FAIL** there is nothing settled to record, so no record work is done — it is drafted fresh from the *next* diff; and when the certifying gate goes red **because of your own record edit**, you wrote it, so you fix it and re-run (bounded — two attempts, then FAIL carrying the gate output), never the implementation, which would make you the builder. A **deferral** is ordering-neutral: it lands in the report and the ticket, not the tree. Report the SHA the verdict bound to, so the flow that ships can check that HEAD is still it.
+- **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings each placed in the 2×2 (blocking or not, small or large) with the four parts and what happened to it (fixed / proposed / filed / FAIL), a **Proposals** section carrying every improvement this review proposes — one line each with its case, or the word `none`, never an omitted section — the verification output, the `reviewed_sha` the verdict binds to, **whether visual evidence was consulted**, and a final PASS / FAIL. The visual-evidence line reads `consulted`, naming the capture directory it read, or `not consulted` with exactly one reason: **not a user-facing change**, **not supplied**, or **not readable by this reviewer** (an engine with no image-returning read tool). A report that says nothing about visual evidence is incomplete, and a `not consulted` with no reason is that same silence wearing a label — neither is an answer.
 
 ## On a FAIL — the review→fix stop rule
 
@@ -96,6 +107,6 @@ A run may spend `loop.max_review_cycles` review→fix cycles in total. Three win
 
 **An exhausted ticket goes on operator hold — it does not go back to the queue.** Preserve the work (push the branch), then put the ticket in a state the unattended loop will not pick up: apply the operator-hold label **and assign the ticket to the operator**. Assignment is the load-bearing half — `work-discovery` skips an assigned ticket, so this is what stops the next tick re-picking the work and starting a fresh budget on it. A human decides what happens next: re-scope it, split it, or authorise a continuation. Nothing automated may clear the hold or reset the budget, because "start again with five more cycles" is the one outcome that turns a bounded loop back into an unbounded one.
 
-Where the harness app is available, that is `harness checkpoint` followed by `harness defer <TICKET> --needs operator` — the verb posts the comment, applies the label, assigns the operator, and records the hold in the ledger. Elsewhere, reach the same end state through the repo's tracker. Either way the reason posted with it is written by you, from the cycle count and the branch — not a paste of the review engine's own prose, which is derived from an untrusted diff.
+Reach that end state through the `tracker` skill: push the branch, post the reason, apply the `operator` label, assign the operator. The reason is written by you, from the cycle count and the branch — not a paste of the reviewing agent's own prose, which is derived from an untrusted diff.
 
-The harness enforces the budget deterministically at the `review` boundary, so an orchestrator that ignores the rule is refused rather than merely wrong (`commands/harness.md` has the verb-level mechanics: the exit code, the `reason` tag, and the two advisory fields that let a run stop *before* the refusal). The refusal is the backstop; this section is the policy.
+Nothing enforces this budget mechanically. It is a rule the reviewing agent keeps, which is why the convergence judgment above is written down: the record is the only evidence the window was spent deliberately rather than drifted through.

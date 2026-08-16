@@ -224,25 +224,34 @@ def test_assessment_craft_allows_narrative_scopes() -> None:
     )
 
 
-# --- AC-8: existing `code` and `system` scope behavior is unchanged ----------
+# --- AC-8: the `code` scope's behavior is unchanged --------------------------
 
 
-def test_code_and_system_scopes_remain_routed() -> None:
-    """The concise role still routes all three assessment scopes (AC-8)."""
+def test_code_and_architecture_scopes_remain_routed() -> None:
+    """The concise role still routes both surviving assessment scopes (AC-8).
+
+    The `system` scope was the third until ADR 0015 retired `guidance-coherence`,
+    the domain skill that was its entire content; #435 removed it. `code` and
+    `architecture` are the whole set now.
+    """
     steward = STEWARD.read_text()
-    for scope in ("`code`", "`architecture`", "`system`"):
+    for scope in ("`code`", "`architecture`"):
         assert scope in steward
+    assert "`system`" not in steward, (
+        "the `system` scope is retired with `guidance-coherence` (ADR 0015) — "
+        "the steward must not route a scope whose domain skill is gone."
+    )
 
 
 def test_global_id_prefix_lists_name_arch() -> None:
-    """Every *global* scope-ID-prefix enumeration names `ARCH-` beside CODE-/SYSTEM-,
+    """Every *global* scope-ID-prefix enumeration names `ARCH-` beside `CODE-`,
     so the new scope stays coherent with the report convention (review nit).
 
     These are the lists that enumerate *all* scope prefixes together (the steward
     Output section, the assessment template, assessment-craft Output) — not the
     per-scope line that defines a single scope's own prefix."""
     # The steward Output section and the assessment template both phrase it as
-    # "prefixed by scope — `CODE-` / ... / `SYSTEM-`": ARCH- must sit in that list.
+    # "prefixed by scope — `CODE-` / …": ARCH- must sit in that list.
     for path in (ASSESSMENT_TEMPLATE,):
         text = path.read_text()
         m = re.search(r"prefixed by scope — (.+?) —|prefixed by scope — (.+?)\)", text)

@@ -14,10 +14,8 @@ command yet existed to carry it.
 universal command every repo on this guidance installs, with role-based
 argument resolution (`/promote <src> to <dst>` against `CONTEXT.md`
 `branches:`) so the same invocation shape works whether a repo's roles are
-named `dev`/`staging`/`main` or `develop`/`staging`/`production`. `RUNBOOK.md`
-§"The promotion routine" now carries only this repo's own operational facts —
-which trigger fires it, on what cadence — and points at the command for the
-loop mechanics, so the orchestration logic lives in exactly one place.
+named `dev`/`staging`/`main` or `develop`/`staging`/`production`. The
+orchestration logic lives in exactly one place.
 
 These tests are the executable form of the acceptance criteria and — more
 importantly — the **drift guard** that keeps the prose tied to the real
@@ -31,17 +29,25 @@ a new lifecycle state fails this gate until the command doc is updated too.
 * **AC-2 — role resolution is specified**: a repo whose `branches:` are
   `develop` / `staging` / `production` drives `/promote develop to staging`
   unchanged.
-* **AC-3 — the exact commands and structured states** the orchestrator branches
-  on are named — every ``promote`` subcommand and every ``PromotionStatus``.
-* **AC-4 — the forbidden outer-agent actions** are stated: no direct
-  target-branch push, no PR creation outside the harness, no Linear promotion
-  mutation outside the harness.
-* **AC-5 — the bounded repair policy and escalation** behaviour are documented.
-* **AC-6 — `RUNBOOK.md` no longer carries the loop** — the section is a short
-  pointer, not a second copy of the orchestration logic.
-* **The contract stays agent-agnostic** (Design): Hermes is named as the likely
-  local cron driver, but the surface is deterministic and model-free — local
-  inference powers only the outer agent.
+* **AC-3/AC-5 — retired (#435).** ADR 0015 retires the ``harness promote`` verb
+  loop: the five subcommands, the ten lifecycle states, and the one-bounded-repair
+  policy were all properties of that loop. Nothing remains to derive them from.
+* **AC-4 — the forbidden actions** survive, reduced. Three of the four
+  prohibitions were about staying inside the harness lifecycle and went with it;
+  what stands on its own is that the release branch is never direct-pushed, the
+  release PR is never auto-merged, and neither a conflict nor a red gate is
+  repaired.
+* **AC-6 — retired (#435).** ADR 0015 deletes `RUNBOOK.md` with the operator
+  loops it documented, so "the runbook is a pointer, not a second copy" no
+  longer has a subject. The one-place-only property it protected now holds by
+  construction: `commands/promote.md` is the only surviving home.
+
+**#435 also collapsed the two paths into one.** ``commands/promote.md`` used to
+carry a verb-backed loop *and* a reduced no-harness fallback, and the fallback
+checks below were scoped to that section precisely because the verb-backed path
+above them used the same vocabulary. The verb-backed path is gone, so the
+reduced path is the whole command and the checks read the whole document. Their
+subject did not change — only its scope did.
 """
 
 from __future__ import annotations
@@ -49,42 +55,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from harness.cli.promote import promote_app
-from harness.state.promotions import PROMOTION_STATUSES
-from tests._cliutil import registered_command_surface
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COMMAND = _REPO_ROOT / "commands" / "promote.md"
-_RUNBOOK = _REPO_ROOT / "RUNBOOK.md"
 _CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
 
 
 def _command_doc() -> str:
     return _COMMAND.read_text(encoding="utf-8")
-
-
-def _runbook() -> str:
-    return _RUNBOOK.read_text(encoding="utf-8")
-
-
-def _promotion_section() -> str:
-    """The ``RUNBOOK.md`` section documenting the promotion routine — now a
-    pointer to the command, not a second copy of the loop.
-
-    Located by the first ``## `` heading whose text mentions "promotion"
-    (case-insensitive, so the exact wording can be tuned without breaking the
-    guard), sliced up to the next ``## `` heading or end of file.
-    """
-    text = _runbook()
-    headings = list(re.finditer(r"^## .*$", text, re.MULTILINE))
-    for i, h in enumerate(headings):
-        if "promotion" in h.group(0).lower():
-            start = h.start()
-            end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
-            return text[start:end]
-    raise AssertionError(
-        "RUNBOOK.md has no '## …promotion…' section pointing at /promote"
-    )
 
 
 def test_command_exists_and_versioned() -> None:
@@ -127,34 +104,6 @@ def test_ac2_shows_this_repos_own_flows() -> None:
     assert staging_to_main, "the 'staging to main' example is not shown"
 
 
-def test_ac3_names_every_promote_subcommand() -> None:
-    """AC-3: every live ``promote`` subcommand is named (derived from the Typer app)."""
-    doc = _command_doc()
-    names = sorted(registered_command_surface(promote_app))
-    assert names, "the promote app registered no subcommands — introspection is broken"
-    missing = [name for name in names if f"promote {name}" not in doc]
-    assert not missing, (
-        f"AC-3: commands/promote.md does not name these promote subcommands: "
-        f"{missing} (found in the live surface: {names})"
-    )
-
-
-def test_ac3_names_every_lifecycle_state() -> None:
-    """AC-3: every ``PromotionStatus`` the orchestrator can branch on is documented.
-
-    Derived from :data:`PROMOTION_STATUSES`, so a new or renamed state fails this
-    gate until the command doc names it. Each state is matched as a backtick-quoted
-    token (``\\`pr_opened\\```) so ``opened`` is not spuriously satisfied by
-    ``pr_opened``.
-    """
-    doc = _command_doc()
-    missing = sorted(s for s in PROMOTION_STATUSES if f"`{s}`" not in doc)
-    assert not missing, (
-        f"AC-3: commands/promote.md does not document these lifecycle states "
-        f"(as `state` tokens): {missing}"
-    )
-
-
 def _normalized_prose() -> str:
     """The command doc, lowercased with runs of whitespace collapsed to one
     space — so a phrase check is insensitive to markdown's non-semantic soft
@@ -163,100 +112,42 @@ def _normalized_prose() -> str:
 
 
 def _fallback_section() -> str:
-    """The ``commands/promote.md`` section documenting the no-harness,
-    agent-orchestrated fallback (#190) — located by the first ``## `` heading
-    whose text mentions "fallback" (case-insensitive), sliced up to the next
-    ``## `` heading or end of file.
+    """The reduced path — which, since #435, is the whole command document.
 
-    Scoping to this section (rather than the whole doc) matters: the
-    harness-backed path above already uses phrases like "opens no PR" and
-    "pushes only the promotion branch" for its own staging/release hops, so an
-    unscoped search would pass even if the fallback said nothing at all.
+    It was a ``## …fallback…`` slice while a verb-backed loop shared the file,
+    because that loop used the same "opens no PR" / "pushes only the promotion
+    branch" vocabulary and an unscoped search would have passed on *its* prose
+    even if the fallback said nothing. With the verb-backed path retired there is
+    no competing prose left to be confused by, so the scope widens to the file.
     """
-    text = _command_doc()
-    headings = list(re.finditer(r"^## .*$", text, re.MULTILINE))
-    for i, h in enumerate(headings):
-        if "fallback" in h.group(0).lower():
-            start = h.start()
-            end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
-            return text[start:end]
-    raise AssertionError(
-        "commands/promote.md has no '## …fallback…' section for the no-harness path"
-    )
+    return _command_doc()
 
 
 def _normalized_fallback() -> str:
     return re.sub(r"\s+", " ", _fallback_section().lower())
 
 
-def test_ac4_states_forbidden_outer_agent_actions() -> None:
-    """AC-4: the three forbidden outer-agent actions are stated as prohibitions."""
-    doc = _normalized_prose()
-    assert "must not" in doc, (
-        "AC-4: commands/promote.md states no prohibition ('must not') on the outer agent"
-    )
-    # The three forbidden actions: direct target-branch push, PR creation outside
-    # the harness, and tracker promotion mutation outside the harness.
-    assert "push" in doc, "AC-4: direct target-branch push is not forbidden"
-    assert "tracker" in doc, "AC-4: out-of-band tracker mutation is not forbidden"
-    assert re.search(r"\bpr\b|pull request", doc), (
-        "AC-4: out-of-band PR creation is not forbidden"
-    )
-    assert "outside" in doc, (
-        "AC-4: the prohibition does not frame PR/tracker actions as 'outside the harness'"
-    )
+def test_ac4_states_the_forbidden_actions() -> None:
+    """AC-4: the prohibitions that survive the verb loop are stated as such.
 
-
-def test_ac5_documents_bounded_repair_and_escalation() -> None:
-    """AC-5: one bounded repair attempt and the escalation path are documented."""
-    doc = _normalized_prose()
-    assert "bounded" in doc, "AC-5: the bounded repair policy is not documented"
-    assert re.search(r"\bonce\b|one .*attempt|single .*attempt", doc), (
-        "AC-5: the doc does not state repair is a single bounded attempt"
-    )
-    assert "escalat" in doc, "AC-5: escalation behaviour is not documented"
-
-
-def test_ac6_runbook_promotion_section_is_a_pointer() -> None:
-    """AC-6: `RUNBOOK.md` §"The promotion routine" no longer carries the loop —
-    it is a short pointer at `/promote`, not a second copy of the state machine.
+    Three of the original four were "do not do this outside the harness
+    lifecycle", and went with the lifecycle. These three stand on their own: they
+    are about what a promotion may push and what it may repair, which is true
+    whether or not anything audits it — and they matter *more* on the reduced
+    path, because nothing refuses them now except the prose.
     """
-    section = _promotion_section()
-    assert "/promote" in section, (
-        "AC-6: RUNBOOK.md's promotion section does not point at the /promote command"
+    doc = _normalized_prose()
+    assert "never" in doc or "must not" in doc, (
+        "AC-4: commands/promote.md states no prohibition on the driving agent"
     )
-    # The old section (the full loop, state table, forbidden-actions list, and
-    # bounded-repair policy inline) ran ~185 lines. A pointer section is much
-    # shorter; this is the drift guard against orchestration logic creeping back
-    # into both places.
-    assert len(section.splitlines()) < 40, (
-        "AC-6: RUNBOOK.md's promotion section reads as long as the old inline "
-        "loop — the orchestration logic must live only in commands/promote.md"
+    assert re.search(r"never direct-pushed|never push(?:es)? the (?:target|release)", doc), (
+        "AC-4: direct release-branch push is not forbidden"
     )
-    lower = section.lower()
-    assert "agent_may_fix" not in lower and "needs_ticket" not in lower, (
-        "AC-6: RUNBOOK.md's promotion section still enumerates lifecycle states "
-        "inline — that table now belongs only to commands/promote.md"
+    assert re.search(r"(?:auto-?merge|merging it)", doc), (
+        "AC-4: auto-merging the release PR is not forbidden"
     )
-
-
-def test_design_contract_is_agent_agnostic() -> None:
-    """Design — Hermes is the likely driver, but the surface is agent-agnostic.
-
-    The harness surface is deterministic and model-free; local inference powers
-    only the outer agent. The doc must name Hermes as the likely local cron driver
-    yet keep the contract open to any orchestrator.
-    """
-    lower = _normalized_prose()
-    assert "hermes" in lower, (
-        "Design: commands/promote.md does not name Hermes as the likely local cron driver"
-    )
-    assert "agent-agnostic" in lower, (
-        "Design: commands/promote.md does not state the surface is agent-agnostic"
-    )
-    assert "deterministic" in lower, (
-        "Design: commands/promote.md does not state the harness surface is "
-        "deterministic/model-free"
+    assert re.search(r"repair", doc), (
+        "AC-4: repairing a conflict or a red gate is not forbidden"
     )
 
 
@@ -267,17 +158,6 @@ def test_design_contract_is_agent_agnostic() -> None:
 # fallback's acceptance criteria, and — like the AC-1..6 tests above — the
 # drift guard against it drifting into a second, unaudited implementation of
 # the promotion lifecycle.
-
-
-def test_fallback_section_specifies_harness_detection() -> None:
-    """AC: the fallback section exists, and detection of harness presence/absence
-    is specified rather than assumed — the reader must be told exactly how to
-    tell the two paths apart, not left to guess."""
-    doc = _normalized_fallback()
-    assert "$path" in doc or "on path" in doc, (
-        "the fallback does not specify how to detect the harness app's "
-        "presence/absence (expected a $PATH check, mirroring /harness run's own)"
-    )
 
 
 def test_fallback_stops_on_conflict_no_repair() -> None:

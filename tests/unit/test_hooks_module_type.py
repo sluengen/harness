@@ -194,6 +194,93 @@ def _probe_guidance_freshness(fixture: Path, tmp_path: Path) -> bool:
     return "[GUIDANCE-FRESHNESS]" in _advisory_context(out)
 
 
+def _init_repo(fixture: Path, branch: str) -> None:
+    """Make ``fixture`` a real repository with one commit, on ``branch``.
+
+    The branch is stated rather than inherited (#369): these hooks decide from
+    branch names, so a fixture that took the host's ``init.defaultBranch`` would
+    be self-consistent only on the machines configured the way its author's was.
+    The flag is a literal and the name a separate token, because
+    ``test_fixture_git_init_declares_its_branch`` reads argv **constants** — an
+    f-string spelling is invisible to it, and an invisible declaration is what
+    that guard exists to refuse.
+    """
+    for cmd in (
+        ["git", "init", "-b", branch],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-q", "-m", "fixture"],
+    ):
+        subprocess.run(cmd, cwd=fixture, capture_output=True, check=True)
+
+
+def _probe_push_target_guard(fixture: Path, tmp_path: Path) -> bool:
+    """Designed behaviour: deny a push to a protected branch with no gate marker.
+
+    Deliberately *not* the same observable as ``git-push-guard.js``: this hook
+    must refuse a push that is perfectly well-formed and not a force-push at all,
+    which is the whole distinction between the two guards. No marker is written,
+    so the deny is the evidence check firing rather than any parse quirk.
+    """
+    _init_repo(fixture, "main")
+    _, out, _ = _run(
+        "push-target-guard.js",
+        {
+            "tool_name": "Bash",
+            "cwd": str(fixture),
+            "tool_input": {"command": "git push origin main"},
+        },
+        fixture,
+        tmp_path,
+    )
+    try:
+        decision = json.loads(out).get("hookSpecificOutput", {}).get("permissionDecision")
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    return decision == "deny"
+
+
+def _probe_gate_evidence_guard(fixture: Path, tmp_path: Path) -> bool:
+    """Designed behaviour: block a stop that claims completion over an ungated tree.
+
+    Needs the three conditions the hook requires before it has anything to say —
+    a task branch, work to claim, and a completion claim in the last assistant
+    message — so a probe that merely ran the hook would not reach the decision.
+    """
+    _init_repo(fixture, "main")
+    subprocess.run(["git", "checkout", "-q", "-b", "task/x"], cwd=fixture, check=True)
+    (fixture / "wip.txt").write_text("uncommitted work\n")
+    transcript = tmp_path / "esm-transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "This is done; all the tests pass."}],
+                },
+            }
+        )
+        + "\n"
+    )
+    _, out, _ = _run(
+        "gate-evidence-guard.js",
+        {
+            "hook_event_name": "Stop",
+            "stop_hook_active": False,
+            "cwd": str(fixture),
+            "transcript_path": str(transcript),
+        },
+        fixture,
+        tmp_path,
+    )
+    try:
+        return json.loads(out).get("decision") == "block"
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 #: One probe per shipped hook, each asserting that hook's *designed observable*
 #: rather than "it exited 0" — the distinction AC-1 turns on.
 _PROBES = {
@@ -202,6 +289,8 @@ _PROBES = {
     "workflow-guard.js": _probe_workflow_guard,
     "context-monitor.js": _probe_context_monitor,
     "guidance-freshness.js": _probe_guidance_freshness,
+    "push-target-guard.js": _probe_push_target_guard,
+    "gate-evidence-guard.js": _probe_gate_evidence_guard,
 }
 
 

@@ -1,4 +1,4 @@
-<!-- guidance:template-size-guard@0.3.0 -->
+<!-- guidance:template-size-guard@0.4.0 -->
 # Size-marker guard (reference implementation)
 
 A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,
@@ -41,9 +41,25 @@ not pass. To justify via a tracking ticket, name it in the reason:
      they answer to instead of `HARD_LIMIT`, defaulting to 1.5x it. Leave
      `DECLARATIVE_GLOBS` empty (the shipped default) unless you have files that
      qualify.
-   - `SIZE_MARKER` — the marker regex. The default recognizes the common comment
-     leaders (`#`, `//`, `/* */`, `<!-- -->`), so most repos leave it alone; edit
-     it for another comment syntax (SQL `--`, Lisp `;`).
+   - `COMMENT_PREFIXES` — file suffix → the comment leader a `size:` marker
+     takes in that language (`.py`/`.sh` → `#`, `.js`/`.ts` → `//`, `.css` →
+     `/*`, `.html` → `<!--`). The marker is **keyed by file suffix**, so
+     `# size:` cannot justify a `.js` file and `// size:` cannot justify a `.py`
+     file — in neither is it a comment, so neither records a decision. One
+     leader per suffix, so a language with two comment forms is mapped to the
+     one its markers take: `.js`/`.ts` map to `//`, which is the form
+     `code-quality` names for them, so a `/* size: … */` block comment does not
+     justify a `.js` file — change that entry to `/*` if your repo writes its
+     markers that way. Adding a language is one entry here (SQL `".sql": "--"`,
+     Lisp `".el": ";"`) and nothing else: this is the one mapping you extend,
+     never the walker.
+   - `SIZE_MARKER` — the **fallback** pattern, reached only by a suffix
+     `COMMENT_PREFIXES` does not carry. It accepts any of the common comment
+     leaders (`#`, `//`, `/* */`, `<!-- -->`), so an unmapped file is still
+     measured, just loosely: the any-leader fallback is coverage, never a skip.
+     A file you globbed is a file you meant to guard, so the error stays
+     one-directional — reported loosely rather than silently unguarded. Map its
+     suffix to tighten it.
 3. Point `test_source_files_are_under_limit_or_justified` at your repo root —
    adjust the `parents[...]` index to your test's depth.
 
@@ -74,8 +90,8 @@ wrong one: the ceiling still fires when a test module runs away, where an
 exemption never fires again.
 
 Expect the first run to go red on files that have been over the line for a long
-time. That is the guard working — each one takes a one-line `# size:` marker
-recording the cohesion argument, or a split. The deliverable is that each
+time. That is the guard working — each one takes a one-line `size:` marker, in
+that file's own comment syntax, recording the cohesion argument, or a split. The deliverable is that each
 becomes an auditable choice; a marker is cheap, and the value is that the *next*
 one cannot be silent.
 
@@ -94,7 +110,8 @@ scatter); no test can score that, and this one does not try.
 """Size-marker guard — copy into your repo's test suite and edit the config.
 
 Enforces the code-quality rule mechanically: a source file over the hard limit
-must carry a top-of-file ``# size: <reason>`` justification, or this test fails.
+must carry a top-of-file ``size: <reason>`` justification, written in that
+language's own comment syntax (COMMENT_PREFIXES), or this test fails.
 The tripwire's job is to force the cohesion argument to be written down, not to
 forbid the size, so a justified over-limit file passes.
 """
@@ -106,7 +123,7 @@ from pathlib import Path
 
 # --- config: edit these for your repo ---------------------------------------
 # Source globs (relative to the repo root) this guard scans.
-SOURCE_GLOBS: tuple[str, ...] = ("harness/**/*.py",)
+SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py",)
 # The hard line limit above which a file must justify its size.
 HARD_LIMIT: int = 500
 # Repo-relative POSIX paths exempt from the limit — files long by nature, not by
@@ -124,14 +141,56 @@ DECLARATIVE_GLOBS: tuple[str, ...] = ()
 # hard limit (code-quality Part B); a repo may set its own number.
 DECLARATIVE_CEILING: int = HARD_LIMIT * 3 // 2
 
-# The marker: a comment carrying ``size:`` followed by a non-empty reason. The
-# default recognizes the common comment leaders — ``#`` (Python, shell, YAML),
-# ``//`` and ``/* */`` (C, JS, TS, Go, Rust, CSS), ``<!-- -->`` (HTML, XML,
-# Markdown). For another comment syntax (SQL ``--``, Lisp ``;``) edit this regex.
+# The comment leader a ``size:`` marker takes in each language, keyed by file
+# suffix. This is the one mapping to extend: another language is one entry here
+# (SQL ``".sql": "--"``, Lisp ``".el": ";"``), never a change to the walker.
+# Keying by suffix is what stops ``# size:`` from justifying a ``.js`` file and
+# ``// size:`` from justifying a ``.py`` file — in neither is it a comment, so
+# neither records a decision. One leader per suffix: a language with two comment
+# forms is mapped to the one its markers take, so ``.js``/``.ts`` map to ``//``
+# (the form code-quality names for them) and a ``/* size: */`` block comment does
+# not justify a ``.js`` file. Change the entry if your repo writes them that way.
+COMMENT_PREFIXES: dict[str, str] = {
+    ".py": "#",
+    ".sh": "#",
+    ".js": "//",
+    ".ts": "//",
+    ".css": "/*",
+    ".html": "<!--",
+}
+
+# The marker's tail, shared by both patterns below so they cannot drift apart:
+# ``size:`` followed by a non-empty reason **on the marker's own line**. The run
+# between them is ``[ \t]``, not ``\s``, and the line bound is load-bearing: the
+# pattern is searched over the whole file text and ``\s`` matches a newline, so
+# the wider class let the *next line's* first character stand in for the reason
+# — which every real file supplies. That made the empty-marker rule pass on
+# every multi-line file while still failing single-line samples: green in the
+# suite, unfailable in the tree.
 # It keys on the explicit ``size:`` marker, not an incidental ticket cite: a bare
 # issue-key reference is design provenance, not a size decision, and must not
 # satisfy it.
-SIZE_MARKER = re.compile(r"(?:#|//|/\*|<!--).*\bsize:\s*\S")
+MARKER_TAIL = r".*\bsize:[ \t]*\S"
+# The fallback marker, used only for a suffix COMMENT_PREFIXES does not carry:
+# any of the common comment leaders — ``#`` (Python, shell, YAML), ``//`` and
+# ``/* */`` (C, JS, TS, Go, Rust, CSS), ``<!-- -->`` (HTML, XML, Markdown).
+# An unmapped suffix falls back here rather than being skipped, deliberately:
+# you globbed the file, so it is a file you meant to guard. The error stays
+# one-directional — reported loosely, never silently unguarded — and no language
+# loses coverage it had before the mapping existed. Map its suffix to tighten it.
+SIZE_MARKER = re.compile(r"(?:#|//|/\*|<!--)" + MARKER_TAIL)
+
+
+def marker_for(
+    suffix: str,
+    prefixes: dict[str, str] = COMMENT_PREFIXES,
+    fallback: re.Pattern[str] = SIZE_MARKER,
+) -> re.Pattern[str]:
+    """The marker pattern a file with this suffix must carry to justify itself."""
+    prefix = prefixes.get(suffix)
+    if prefix is None:
+        return fallback
+    return re.compile(re.escape(prefix) + MARKER_TAIL)
 
 
 def find_offenders(
@@ -142,6 +201,7 @@ def find_offenders(
     exemptions: frozenset[str] = EXEMPTIONS,
     declarative_globs: tuple[str, ...] = DECLARATIVE_GLOBS,
     declarative_ceiling: int = DECLARATIVE_CEILING,
+    comment_prefixes: dict[str, str] = COMMENT_PREFIXES,
     marker: re.Pattern[str] = SIZE_MARKER,
 ) -> list[str]:
     """Return repo-relative paths of over-limit source files lacking a marker."""
@@ -164,20 +224,22 @@ def find_offenders(
                 continue
             ceiling = declarative_ceiling if rel in declarative else limit
             text = path.read_text(encoding="utf-8")
-            if len(text.splitlines()) > ceiling and not marker.search(text):
+            pattern = marker_for(path.suffix, comment_prefixes, marker)
+            if len(text.splitlines()) > ceiling and not pattern.search(text):
                 offenders.append(rel)
     return offenders
 
 
 def test_source_files_are_under_limit_or_justified() -> None:
-    """Every over-limit source file records a ``# size:`` decision."""
+    """Every over-limit source file records a ``size:`` decision in its own syntax."""
     # Point this at your repo root — adjust parents[...] to your test's depth.
     repo_root = Path(__file__).resolve().parents[2]
     offenders = find_offenders(repo_root)
     assert not offenders, (
         f"these files exceed their line limit ({HARD_LIMIT}; {DECLARATIVE_CEILING} "
-        "for declarative globs) with no `# size: <reason>` justification — add a "
-        "one-line marker recording why the file may exceed the limit, or split "
+        "for declarative globs) with no `size: <reason>` justification in the "
+        "comment syntax COMMENT_PREFIXES gives their suffix — add a one-line "
+        "marker recording why the file may exceed the limit, or split "
         "it:\n" + "\n".join(f"  - {p}" for p in offenders)
     )
 ```

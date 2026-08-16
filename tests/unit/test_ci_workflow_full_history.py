@@ -13,10 +13,17 @@ it, so the failure is now named instead of misattributed to a spec's author. Tha
 makes the truncation loud — it does not make the gate able to run. The checkout
 depth is what lets the guard measure its real subject, and this guard pins it.
 
-The subject set is **derived**: any workflow whose text runs ``scripts/verify.sh``.
-A workflow added later that runs the gate is covered with no edit here. The
-workflows are parsed as text (PyYAML is not a project dependency), matching
-``test_ci_workflow_permissions.py`` and ``test_release_workflow.py``.
+The subject set is **derived**: any workflow that runs ``scripts/verify.sh``,
+directly or through a shell script it invokes. A workflow added later that runs
+the gate is covered with no edit here. The workflows are parsed as text (PyYAML
+is not a project dependency), matching ``test_ci_workflow_permissions.py``.
+
+The one-hop resolution is not a refinement, it is the whole reach (#435). ADR
+0015 retired ``release.yml`` — one of the two workflows that named the gate in
+its own text — while the nightly promotion, which runs the same gate, names only
+``scripts/promotion-step.sh``. A derivation that read workflow text alone would
+have silently shrunk to a single subject and stopped covering the job whose
+shallow clone the guard exists to prevent.
 """
 
 from __future__ import annotations
@@ -39,12 +46,31 @@ _CHECKOUT_RE = re.compile(r"^(\s*)-\s*uses:\s*actions/checkout@\S+\s*$", re.M)
 _FULL_DEPTH_RE = re.compile(r"^\s*fetch-depth:\s*0\s*$", re.M)
 
 
+#: A repo-relative shell script named in a workflow's text.
+_SCRIPT_RE = re.compile(r"(?<![\w./-])(scripts/[\w./-]+\.sh)")
+
+
+def _reachable_text(workflow: Path) -> str:
+    """``workflow``'s text plus that of every ``scripts/*.sh`` it invokes.
+
+    One hop, deliberately. It is the hop the tree actually uses — a workflow step
+    running an extracted script (``specs/architecture-principles.md`` → *CI logic
+    lives in a script, not in a `run:` block*) — and going deeper would trade a
+    property the tree exhibits for one it does not.
+    """
+    text = workflow.read_text(encoding="utf-8")
+    parts = [text]
+    for relpath in dict.fromkeys(_SCRIPT_RE.findall(text)):
+        script = _REPO_ROOT / relpath
+        if script.is_file():
+            parts.append(script.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def _gate_workflows() -> list[Path]:
-    """Every workflow that runs the verify gate."""
+    """Every workflow that runs the verify gate, directly or one hop away."""
     return sorted(
-        p
-        for p in _WORKFLOW_DIR.glob("*.yml")
-        if _GATE_INVOCATION in p.read_text(encoding="utf-8")
+        p for p in _WORKFLOW_DIR.glob("*.yml") if _GATE_INVOCATION in _reachable_text(p)
     )
 
 
@@ -94,9 +120,18 @@ def test_the_workflow_guard_finds_its_subjects() -> None:
     named workflows must be present, and every subject must yield a step.
     """
     subjects = {p.name for p in _gate_workflows()}
-    assert {"ci.yml", "release.yml"} <= subjects, (
+    assert {"ci.yml", "nightly-staging-promotion.yml"} <= subjects, (
         f"expected the gate-running workflows among the derived subjects, got "
         f"{sorted(subjects)} — the {_GATE_INVOCATION!r} derivation is wrong"
+    )
+    # The floor above discriminates the one-hop resolution from a plain text
+    # scan: the nightly names the gate nowhere in its own text, so it can only
+    # be a subject if the script it invokes was followed.
+    nightly = _WORKFLOW_DIR / "nightly-staging-promotion.yml"
+    assert _GATE_INVOCATION not in nightly.read_text(encoding="utf-8"), (
+        "the nightly now names the gate directly, so its presence above no "
+        "longer proves the script hop is followed — pick another subject that "
+        "reaches the gate only through a script, or this floor is decorative"
     )
     for workflow in _gate_workflows():
         assert _checkout_blocks(workflow.read_text(encoding="utf-8")), (

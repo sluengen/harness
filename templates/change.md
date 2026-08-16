@@ -1,4 +1,4 @@
-<!-- guidance:template-change@0.3.0 -->
+<!-- guidance:template-change@0.4.0 -->
 # Change spec
 
 The structure for a single piece of work. This is the body of the **tracker issue** (`tracker`) — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
@@ -21,11 +21,12 @@ How the change lands — the shape of the solution at a glance.
 
 `trivial` | `simple` | `complex`
 
-*Choose exactly one before build. `trivial` requires the repo's conservative
-allowlist certification; `simple` requires an independent review; `complex`
-requires an independent design and review. Missing, conflicting, or unknown
-values default to `simple`. The run may upgrade this value with a recorded reason
-but may not downgrade it.*
+*Choose exactly one before build, per `spec-authoring` → *Choosing assurance* —
+the one home for how that choice is made. What each level then obliges the run to
+pay for: `trivial` requires the repo's conservative allowlist certification;
+`simple` requires an independent review; `complex` requires an independent design
+and review. Missing, conflicting, or unknown values default to `simple`. The run
+may upgrade this value with a recorded reason but may not downgrade it.*
 
 ## Design
 

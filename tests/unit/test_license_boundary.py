@@ -5,7 +5,7 @@ taken proprietary and sold with nothing returned. A single copyleft licence over
 the whole tree is the wrong instrument, because the repo holds two artifacts with
 different distribution models:
 
-* **The engine** (``harness/`` ``bin/`` ``docker/`` ``scripts/``) — a CLI the user
+* **The engine** (``harness/`` ``scripts/``) — a CLI the user
   runs, and the thing a third party would fork and productize. Copyleft here does
   the intended work, so it is **AGPL-3.0-only**.
 * **The installed guidance** — the files the installer physically copies into a
@@ -100,9 +100,11 @@ _AGPL_BODY_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079
 #: ``NOASSERTION`` ("Other"), so the carve-out file must not match this.
 _LICENSE_CANDIDATE = re.compile(r"(?i)(un)?licen[sc]e|copy(ing|right)|\bofl\b")
 
-#: Engine roots — never MIT. ``harness/`` is the load-bearing one (the CLI a
-#: third party would fork); the rest are named so the scope cannot creep.
-_ENGINE_PREFIXES = ("harness/", "tests/", "scripts/", "docker/", "bin/")
+#: Engine roots — never MIT. ``scripts/`` is the load-bearing one since #435
+#: (the gate and the mutation instrument a third party would fork); ``harness/``
+#: was, until ADR 0015 deleted the package. ``tests/`` is named so the scope
+#: cannot creep into the guard suite.
+_ENGINE_PREFIXES = ("tests/", "scripts/")
 
 
 def _mit_scope_prefixes(text: str) -> tuple[str, ...]:
@@ -246,13 +248,40 @@ def test_mit_scope_excludes_the_engine() -> None:
     """The MIT scope never reaches the engine (AC-3).
 
     The engine is the thing copyleft is *for*. A scope prefix that swallowed
-    ``harness/`` would silently relicense the CLI permissively and void the whole
-    point of the change.
+    ``scripts/`` would silently relicense the gate and the mutation instrument
+    permissively and void the whole point of the change.
     """
     prefixes = _mit_scope_prefixes(_GUIDANCE_MIT.read_text())
     for engine in _ENGINE_PREFIXES:
         assert not _is_mit_scoped(engine, prefixes), (
             f"GUIDANCE-MIT.md scope covers engine path {engine!r} — the engine must stay AGPL"
+        )
+
+
+def test_the_document_names_the_engine_trees_that_actually_exist() -> None:
+    """``GUIDANCE-MIT.md``'s illustration of the AGPL side names live trees (#435).
+
+    The operative boundary is *everything outside the Scope block*, and the two
+    tests above hold that against the registry. This pins the sentence that
+    **illustrates** it, which nothing did: after ADR 0015 the document still
+    named "the CLI in ``harness/``, its tests, and its build and container
+    tooling" as the AGPL side, none of which exists. The boundary had not moved,
+    but a licence document whose only concrete description of the copyleft side
+    names three deleted directories is one a reader cannot act on — and
+    :data:`_ENGINE_PREFIXES` had already been updated to ``tests/``/``scripts/``,
+    so the guard and the document it guards disagreed with nobody watching.
+    """
+    text = _GUIDANCE_MIT.read_text()
+    boundary = text.split("MIT License", 1)[0]
+    for engine in _ENGINE_PREFIXES:
+        assert f"`{engine.rstrip('/')}/`" in boundary, (
+            f"GUIDANCE-MIT.md does not name {engine!r} when describing what stays "
+            f"AGPL, though _ENGINE_PREFIXES says it is exactly that."
+        )
+    for retired in ("`harness/`", "container tooling", "the CLI in"):
+        assert retired not in boundary, (
+            f"GUIDANCE-MIT.md still describes the AGPL side as {retired!r}, which "
+            f"ADR 0015 deleted. The boundary is unchanged; the description is not."
         )
 
 
@@ -291,7 +320,7 @@ def test_boundary_check_catches_an_escaped_path() -> None:
     """
     prefixes = _mit_scope_prefixes(_GUIDANCE_MIT.read_text())
     assert _is_mit_scoped("skills/code-quality/SKILL.md", prefixes), "a distributed file must scope"
-    assert not _is_mit_scoped("harness/cli/close.py", prefixes), "an engine file must not scope"
+    assert not _is_mit_scoped("scripts/mutate.py", prefixes), "an engine file must not scope"
     # The registry parse must find the real distributed set, not an empty one.
     files = _registry_files(_REGISTRY.read_text())
     assert "skills/code-quality/SKILL.md" in files, "registry files: parse missed a known entry"

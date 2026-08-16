@@ -119,16 +119,31 @@ _CLASS_A_TRY = re.compile(r"readFileSync\s*\(\s*0\b|\bmain\s*\(\s*\)")
 #: classifier. Pinned counts, not line numbers: moving a site does not touch this,
 #: while a classifier degraded to "nothing is Class A" fails every entry.
 _EXPECTED_CLASS_A = {
-    "prompt-guard.js": 2,        # readStdin + the main() wrapper it gained in #303
-    "git-push-guard.js": 2,      # readStdin + the main() wrapper
-    "workflow-guard.js": 1,      # the main() wrapper (stdin is read inside main)
-    "context-monitor.js": 1,     # ditto
-    "guidance-freshness.js": 1,  # ditto
+    "prompt-guard.js": 2,          # readStdin + the main() wrapper it gained in #303
+    "git-push-guard.js": 2,        # readStdin + the main() wrapper
+    "workflow-guard.js": 1,        # the main() wrapper (stdin is read inside main)
+    "context-monitor.js": 1,       # ditto
+    "guidance-freshness.js": 1,    # ditto
+    "push-target-guard.js": 2,     # readStdin + the main() wrapper (#436)
+    "gate-evidence-guard.js": 2,   # ditto
 }
 
 #: Which hooks carry Class B sites at all, so the silence half of AC-4 is
 #: measured against something rather than trivially satisfied.
-_HOOKS_WITH_CLASS_B = {"workflow-guard.js", "context-monitor.js", "guidance-freshness.js"}
+#:
+#: The two #436 enforcement hooks carry several: a git probe that could not run,
+#: a marker that is not there, a CONTEXT.md a repo never wrote, a transcript line
+#: still being flushed. Each is a **decision input** rather than a failure — "no
+#: marker" is precisely the answer those guards exist to act on — so each is
+#: legitimately swallowed, and each must stay silent or every tool call in a
+#: repo without a CONTEXT.md would chatter.
+_HOOKS_WITH_CLASS_B = {
+    "workflow-guard.js",
+    "context-monitor.js",
+    "guidance-freshness.js",
+    "push-target-guard.js",
+    "gate-evidence-guard.js",
+}
 
 
 def _node() -> str:
@@ -543,10 +558,24 @@ def _valid_payloads(hook: str, tmp_path: Path) -> dict[str, str]:
             ),
             "unwatched": unwatched,
         }
-    if hook == "git-push-guard.js":
+    if hook in ("git-push-guard.js", "push-target-guard.js"):
         return {
             "watched": json.dumps(
                 {"tool_name": "Bash", "tool_input": {"command": "git push origin dev"}}
+            ),
+            "unwatched": unwatched,
+        }
+    if hook == "gate-evidence-guard.js":
+        # A Stop payload naming a transcript that is not there. The trigger
+        # cannot be established, so the hook allows — and the missing-file read
+        # is one of its Class B swallows, which is the point of the case.
+        return {
+            "watched": json.dumps(
+                {
+                    "hook_event_name": "Stop",
+                    "stop_hook_active": False,
+                    "transcript_path": str(tmp_path / "missing.jsonl"),
+                }
             ),
             "unwatched": unwatched,
         }

@@ -1,4 +1,4 @@
-<!-- guidance:bug@0.2.0 -->
+<!-- guidance:bug@0.3.1 -->
 # /bug — capture a bug straight to Todo
 
 Usage: `/bug <description>`
@@ -30,8 +30,10 @@ the outcome, not the implementation.
 - **From actual use** — the situation that surfaced it
 - **Acceptance criteria** — specific, testable outcomes
 
-**Step 3 — file it.** Pass the title and UTF-8 body file to
-`tracker.create`, with any labels and mandatory initial Todo placement. The
+**Step 3 — file it.** Pass the title, the UTF-8 body file, and exactly one
+assurance level — chosen per `spec-authoring` → *Choosing assurance*, never
+restated here — to `tracker.create`, with any labels and mandatory initial Todo
+placement. The
 `tracker` skill reads `CONTEXT.md`, selects the configured provider, and owns
 creation plus queue placement. If it reports a partial creation, surface the
 identifier and URL and stop; never retry by creating a duplicate.
@@ -41,5 +43,5 @@ identifier and URL and stop; never retry by creating a duplicate.
 Print the filed ticket's identifier and URL, then:
 
 ```
-Next: /start <TICKET>   (or /harness run <TICKET>)
+Next: /start <TICKET>   (or /build <TICKET> to drive it unattended)
 ```
