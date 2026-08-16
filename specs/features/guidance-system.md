@@ -126,13 +126,17 @@ The routing half of this behaviour went with the runtime. A `/harness` router se
 
 ### The craft reference under `review-discipline`
 
-`skills/review-discipline/references/craft.md` is the third conditional reference and the second under `review-discipline`. It carries forty named patterns in six families — vacuity, prose predicates and text guards, deletion/retirement/re-homing, mutation discipline, the ticket and its criteria, and unmeasured claims. Each entry is a name, the rule in one line, and the falsifying example where a fully green suite shipped the defect; the example is the load-bearing half, and the file says so.
+`skills/review-discipline/references/craft.md` is the third conditional reference and the second under `review-discipline`. It carries forty-two named patterns in six families — vacuity, prose predicates and text guards, deletion/retirement/re-homing, mutation discipline, the ticket and its criteria, and unmeasured claims. Each entry is a name, the rule in one line, and the falsifying example where a fully green suite shipped the defect; the example is the load-bearing half, and the file says so.
+
+Mutation discipline covers a surviving mutation from both sides. A survivor has four readings, and the first — the mutation changed nothing — voids the other three, so an *inert* survivor is unproven rather than evidence of a weak guard, and the entry that says so is pointed at from the ambiguity entry by name. Where the subject is prose there is no observable to declare, so liveness is built into the experiment instead: a **paired splice** puts a form the predicate is known to catch and the form under test at the same location in the same file, and the known form must die first. Both are stated tool-agnostically, so they carry into a repo with no mutation instrument of its own.
 
 Four diff shapes are the activation trigger both roots state — a guard, a prose predicate, a mutation table, a deletion pass. `skills/review-discipline/SKILL.md` Stage 2 states it for the reviewer, and `commands/build.md` states it twice, at the implementation brief (read it before writing the test) and at the review brief. The last two families are not gated on those shapes and the file's preamble says so: a ticket's grounding and a claim nothing measures are read at different moments in the loop.
 
 The file is distilled rather than transplanted. It states every pattern generally and carries no provenance — no ticket ids, no cites to app-only paths, no nesting of its sibling reference — and those three constraints are already-live sweeps that pick it up as a registered prose member rather than new machinery. It restates nothing its core owns: the finding 2×2, final-evidence ordering, criteria currency, the diff-shape structural checks, and `code-quality`'s fresh-evidence rule stay where they are, and the preamble names each of those homes.
 
-Its guard derives the family and pattern sets from the file rather than listing them. The family set is pinned as an **equality**, so an unrecorded new family is as loud as a lost one; ten named patterns are pinned by **membership**, so a rename surfaces as a missing name instead of shrinking a set behind a count that still passes; and two floors sit just under their measured values — forty patterns and a 357-character shortest body. The non-vacuity assertion is a test of its own rather than a line inside the body sweep, because that sweep iterates the derived pattern set and would pass over an empty one.
+Its guard derives the family and pattern sets from the file rather than listing them. The family set is pinned as an **equality**, so an unrecorded new family is as loud as a lost one; thirteen named patterns are pinned by **membership**, so a rename surfaces as a missing name instead of shrinking a set behind a count that still passes; and two floors sit just under their measured values — forty-two patterns and a 357-character shortest body. The non-vacuity assertion is a test of its own rather than a line inside the body sweep, because that sweep iterates the derived pattern set and would pass over an empty one.
+
+Two assertions pair those derivations rather than extending either. The ambiguity entry must name the inert entry by its exact heading, so the pointer fails loudly on a rename instead of dangling; and the three survivor entries must sit under `Mutation discipline`, because the family set and the pattern set are each derived alone and neither knows a heading's *home* — a pattern migrating between existing families leaves the set, the order, the count and every required name unchanged. Only those three are pinned to a home: a hand-written family for all forty-two would be a second copy of the file's structure. Neither assertion reads the entries for agreement, and the guard's own docstring records that a link to an entry that contradicts it passes.
 
 #### Scenario: the reference is trimmed back to its rule statements
 
@@ -140,6 +144,13 @@ Its guard derives the family and pattern sets from the file rather than listing 
 - WHEN the gate runs
 - THEN the body floor fails, naming each pattern that fell under it
 - AND a pattern renamed rather than removed fails the membership pin, instead of passing behind a count the floor still clears
+
+#### Scenario: a survivor entry is re-homed to another existing family
+
+- GIVEN a later change moves a family heading past one of the three survivor entries
+- WHEN the gate runs
+- THEN the family-home assertion fails, naming the entry that left `Mutation discipline`
+- AND the family equality, the membership pin and the pattern floor all stay green, because the set, the order and the count did not move
 
 ### Two rules are enforced by hooks rather than by prose
 
