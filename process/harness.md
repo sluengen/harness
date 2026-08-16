@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.12.0 -->
+<!-- guidance:process-harness@0.13.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -76,6 +76,7 @@ The Stop hook can force exactly one extra turn per stop-chain; it is a nudge wit
 | `writing-quality` | Specs, decisions, any prose. |
 | `worktree-isolation` | Any multi-commit work. |
 | `tracker` | Any tracker operation — the backend-neutral protocol. Dispatches to `linear` or `github-issues`, and owns the proposals ledger. |
+| `work-discovery` | Picking the next ticket off the queue when a routine runs unattended — how to rank candidates and what to defer. |
 | `assessment-craft` | The methodology for any `/assess` pass (the steward). |
 | `ux-design` | Designing, prototyping, or reviewing any user-facing surface — its flow, information architecture, and states. Any repo with a user-facing surface (independent of the `design_system` layer). |
 | `design-system` | Frontend work without degrading the design system — only when the `design_system` layer is on. |
@@ -87,6 +88,7 @@ Dispatch via the host tool's sub-agent mechanism; in tools without one, read the
 | Agent | Role |
 |---|---|
 | `dev` | Implementation, test-first, in scope. |
+| `researcher` | Read-only grounding investigation; returns a distilled brief, not code. |
 | `reviewer` | The final gate; records what shipped. |
 | `architect` | Data models, contracts, decisions. Produces designs, not code. |
 | `steward` | Periodic health assessment; `/assess <scope>` selects code or architecture. |
