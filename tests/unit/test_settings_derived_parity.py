@@ -242,8 +242,12 @@ def test_automode_sanctions_the_routine_deferral_write() -> None:
 
 
 def test_automode_sanctions_assess_finding_filing() -> None:
-    """CAL-1087: `/assess` step 2 files every finding and insight as an issue —
-    the assessment's entire output. A finding it cannot file is lost."""
+    """CAL-1087: `/assess` step 2 files every **finding** as an issue — the
+    assessment's entire finding output. A finding it cannot file is lost.
+
+    #449 narrowed this: an *insight* is an improvement, so it is no longer filed
+    at all. It goes to the proposals ledger under the clause
+    :func:`test_automode_sanctions_the_proposals_ledger_append` pins."""
     clause = _clause_containing("/assess", "Creating tracker issues")
     assert clause, (
         "autoMode.allow must sanction filing an `/assess` pass's findings as "
@@ -283,6 +287,51 @@ def test_automode_assess_filing_clause_targets_todo_with_its_bounds() -> None:
         "the old Backlog framing ('a new item for a human to triage') must be "
         "gone — Todo means a tick may build the finding without a human between "
         "(CAL-1168)."
+    )
+
+
+def test_automode_sanctions_the_proposals_ledger_append() -> None:
+    """#449: an improvement is proposed, never filed, and the proposals ledger is
+    the only place a proposal durably lands. An unattended run that cannot append
+    to it loses every improvement it noticed the moment the run ends — the same
+    guidance-instructs-what-the-runner-cannot-do shape CAL-1087 fixed elsewhere.
+
+    The bound is unusual and is why a *create* is safe here: the write target is
+    chosen by a **label** rather than by the agent, and a ledger this run opens is
+    **held**, so nothing reaches the Build queue and no unattended tick can pick
+    the ledger up as work. Deciding an entry stays the operator's, at an `/assess`
+    drain.
+
+    Every other autoMode clause in this file is pinned by one test that reads its
+    bound; this clause shipped without one, which is the gap this closes — a
+    clause nothing measures can be deleted (the write is refused again, silently)
+    or widened (the bound goes, the grant stays) with the suite green.
+    """
+    clause = _clause_containing("proposals-ledger")
+    assert clause, (
+        "autoMode.allow must sanction appending to the proposals ledger — the "
+        "write `review-discipline`'s proposal channel and `/assess` step 2 both "
+        "instruct (#449)."
+    )
+    assert sum("proposals-ledger" in c for c in _automode_allow()) == 1, (
+        "more than one autoMode clause names the ledger label, so the selector "
+        "above is returning whichever comes first. Two clauses granting one write "
+        "drift apart and the wider one is the one that applies (#449)."
+    )
+    assert "comment" in clause.lower(), (
+        "the clause must name the comment — appending an entry is the operation "
+        "it exists to permit, and a clause read as create-only sanctions the rare "
+        "half while refusing the common one (#449)."
+    )
+    assert "operator" in clause.lower(), (
+        "the clause must state that a ledger it opens is held — assigned to the "
+        "operator, carrying the `operator` label. Unheld, the ledger is a ticket "
+        "an unattended tick can pick up and try to build (#449)."
+    )
+    assert "queue" in clause.lower(), (
+        "the clause must carry its bound against the Build queue: nothing on it "
+        "is created, changed, or closed by a ledger write. Without the bound this "
+        "reads as a general issue-creation grant (#449)."
     )
 
 

@@ -28,9 +28,24 @@ unit naming every term while saying the opposite would pass here. Polarity over
 these six rules is a reviewer's judgment; where a rule has a cheap inversion
 (rule 4's *propose* becoming *file*) the inversion is a different rule with
 different terms, which the exclusivity assertion sees as the home moving.
+
+**One retirement is on the record here.** Rule 4 originally ended in a
+*ratification step* — the digest promoted a proposal or dropped it, and silence
+was a drop. The proposals ledger replaced that procedure outright: a proposal is
+now appended to a standing tracker issue, entries accumulate as memory rather
+than expiring at the end of a window, and the operator's call happens when
+`/assess` drains the accumulation. Per-window silence-is-a-drop is therefore not
+a rule this tree still states anywhere, so its two placement assertions were not
+kept over a surviving subject — they were replaced by
+:func:`test_the_ratification_procedure_is_retired_from_the_corpus`, which turns
+the same predicate around and asserts **zero** homes, and by the ledger
+assertions that pin what took its place. Turning the predicate around rather
+than deleting it is what keeps the retirement measured: a later edit that
+reintroduces the window-scoped drop goes red instead of quietly coexisting with
+the ledger.
 """
 
-# size: over the declarative ceiling because eleven prose predicates, their tree
+# size: over the declarative ceiling because eighteen prose predicates, their tree
 # assertions and their controls are one unit. The controls feed the
 # same functions the tree assertions call, so splitting them into a second module
 # forks a predicate from the samples that measure it — the defect `craft.md` →
@@ -46,6 +61,7 @@ from tests.unit.test_assurance_filing_rubric import (
     _delegates_the_level_choice,
     _read,
     _registered_markdown,
+    _sentences,
 )
 from tests.unit.test_assurance_filing_surfaces import (
     _FILES_AN_ISSUE,
@@ -63,6 +79,8 @@ _SPEC_AUTHORING = "skills/spec-authoring/SKILL.md"
 _CODE_QUALITY = "skills/code-quality/SKILL.md"
 _DIGEST = "commands/digest.md"
 _BUILD = "commands/build.md"
+_TRACKER = "skills/tracker/SKILL.md"
+_ASSESS = "commands/assess.md"
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +395,7 @@ def _states_the_occurrence_citation(text: str) -> list[str]:
 #: corpus that swapped every home for an unrelated file.
 _CORPUS_FLOOR = 50
 
-#: The six homes plus one file that must stay *outside* every home — pinned by
+#: Every home, plus the files that must stay *outside* a given home — pinned by
 #: name so a narrowed derivation names itself instead of shrinking behind a count.
 _KNOWN_CORPUS_MEMBERS = (
     _REVIEW_DISCIPLINE,
@@ -386,7 +404,8 @@ _KNOWN_CORPUS_MEMBERS = (
     _CODE_QUALITY,
     _DIGEST,
     _BUILD,
-    "skills/tracker/SKILL.md",
+    _TRACKER,
+    _ASSESS,
 )
 
 
@@ -606,21 +625,547 @@ def test_the_report_contract_predicates_discriminate() -> None:
     )
 
 
-def test_the_ratification_step_has_a_home() -> None:
-    """R4: the digest is where a proposal is promoted or dropped, and silence drops it."""
-    assert _states_the_ratification(_read(_DIGEST)), (
-        f"{_DIGEST} does not carry the proposal ratification step — promote, drop, "
-        f"and silence is a drop. A proposal with no terminal answer is the standing "
-        f"queue this rule replaces, wearing a different name."
+def test_the_ratification_procedure_is_retired_from_the_corpus() -> None:
+    """R4's terminal semantics moved: the ledger accumulates, so nothing auto-drops.
+
+    The same predicate that once located the ratification step's single home now
+    asserts it has none. That is the honest shape for a retirement: the subject
+    really is gone — a proposal is appended to a standing issue and decided at the
+    drain, so there is no window for silence to end — and a predicate turned
+    around still fails loudly if the window-scoped drop comes back, which a
+    deleted test could not.
+
+    The floor against deleting too much is the surrounding suite, not this
+    assertion: the digest keeps its five numbered sections, its R line, and a
+    section that surfaces the ledger's new entries, each pinned separately below
+    and above. A digest emptied of its proposal handling passes *this* test and
+    fails those.
+    """
+    assert _states_the_ratification(_read(_DIGEST)) == [], (
+        f"{_DIGEST} still carries the retired per-window ratification procedure — "
+        f"promote, drop, and silence is a drop. Entries in the proposals ledger "
+        f"accumulate until a drain; a window that silently drops what it surfaced "
+        f"is the mechanism the ledger replaced."
+    )
+    homes = {rel for rel in _registered_markdown() if _states_the_ratification(_read(rel))}
+    assert homes == set(), (
+        f"the retired ratification procedure is stated in {sorted(homes)}. Nothing "
+        f"in the tree drops a proposal for want of an answer any more."
     )
 
 
-def test_the_ratification_step_has_exactly_one_home() -> None:
-    """R4's ratification semantics are stated once, in the command that performs them."""
-    homes = {rel for rel in _registered_markdown() if _states_the_ratification(_read(rel))}
-    assert homes == {_DIGEST}, (
-        f"the ratification semantics are stated in {sorted(homes)}; they belong in "
-        f"{_DIGEST} alone."
+# ---------------------------------------------------------------------------
+# The proposals ledger — the durable home that replaced the ratification step
+# ---------------------------------------------------------------------------
+
+_LEDGER = re.compile(r"\bledger\b", re.IGNORECASE)
+#: Discovery **by label**, which is the whole reason the ledger is addressable
+#: from distributed guidance at all: a repo-specific issue number may not appear
+#: in a file every consumer receives, and a guard already refuses one.
+_BY_LABEL = re.compile(r"\bby\b(?:\W+\w+){0,3}?\W+labels?\b", re.IGNORECASE)
+#: Creation when the search comes back empty, anchored to the emptiness it
+#: answers. A recipe that only knows how to *find* stops at the first repo that
+#: has no ledger yet, which is every repo exactly once.
+_CREATE_IF_ABSENT = re.compile(
+    r"\bcreat\w+\b(?:\W+\w+){0,6}?\W+(?:absent|missing|none|no such)\b"
+    r"|\b(?:absent|missing|none|no such)\b(?:\W+\w+){0,6}?\W+creat\w+\b",
+    re.IGNORECASE,
+)
+#: The cardinality bound. Without it, find-or-create races itself: two sessions
+#: that both miss create two ledgers, and each subsequent reader sees half the
+#: entries while every individual operation reports success.
+_ONE_OPEN_INSTANCE = re.compile(
+    r"\bone\b(?:\W+\w+){0,2}?\W+open\b|\bopen\b(?:\W+\w+){0,2}?\W+one\b", re.IGNORECASE
+)
+
+
+def _states_the_ledger_recipe(text: str) -> list[str]:
+    """Units carrying the find-or-create-by-label recipe for the proposals ledger.
+
+    Four conjuncts, and the three beyond ``ledger`` are what make this the recipe
+    rather than a mention of it. Every surface that *uses* the ledger names it;
+    only the surface that owns the procedure says how it is addressed, what
+    happens when it is not there, and how many of it may exist.
+    """
+    return [
+        unit
+        for unit in _units(text)
+        if _LEDGER.search(unit)
+        and _BY_LABEL.search(unit)
+        and _CREATE_IF_ABSENT.search(unit)
+        and _ONE_OPEN_INSTANCE.search(unit)
+    ]
+
+
+_ACCUMULATE = re.compile(r"\baccumulat\w+\b", re.IGNORECASE)
+_MEMORY = re.compile(r"\bmemory\b", re.IGNORECASE)
+#: The negation **anchored to the noun it governs**. A unit that merely contains
+#: a negation and the word *promise* somewhere states nothing; the claim is that
+#: an entry is not one.
+_NOT_A_PROMISE = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,3}?\W+promis\w+\b", re.IGNORECASE
+)
+
+
+def _states_the_accumulation_is_not_a_promise(text: str) -> list[str]:
+    """Units stating that ledger entries accumulate as memory and promise nothing.
+
+    This is the half of the semantics an operator has to be able to trust before
+    the ledger is safe to leave un-drained. Without it, a growing list of entries
+    reads as a second queue — the unbounded backlog the filing rules exist to
+    prevent — rather than a record the drain periodically clears.
+    """
+    return [
+        unit
+        for unit in _units(text)
+        if _LEDGER.search(unit) and _ACCUMULATE.search(unit) and _MEMORY.search(unit)
+        and _NOT_A_PROMISE.search(unit)
+    ]
+
+
+_ONE_LINE_CASE = re.compile(r"\bcase\b", re.IGNORECASE)
+_PROVENANCE = re.compile(r"\bprovenance\b", re.IGNORECASE)
+_SUGGESTED_HOME = re.compile(r"\bsuggested home\b", re.IGNORECASE)
+
+
+def _states_what_an_entry_carries(text: str) -> list[str]:
+    """Units routing a proposal to the ledger **and** defining what an entry holds.
+
+    The three parts are conjuncts because an entry missing any of them is not
+    drainable: without the case the drain cannot judge it, without provenance it
+    cannot be traced back to the work that raised it, and without a suggested home
+    it cannot be grouped with the entries that would land in the same file.
+    """
+    return [
+        unit
+        for unit in _units(text)
+        if _LEDGER.search(unit)
+        and _ONE_LINE_CASE.search(unit)
+        and _PROVENANCE.search(unit)
+        and _SUGGESTED_HOME.search(unit)
+    ]
+
+
+_SURFACES = re.compile(r"\bsurfac\w+\b", re.IGNORECASE)
+_NEW_ENTRIES = re.compile(
+    r"\bnew\b(?:\W+\w+){0,3}?\W+entr\w+\b|\bentr\w+\b(?:\W+\w+){0,3}?\W+new\b", re.IGNORECASE
+)
+
+
+def _states_the_ledger_surfacing(text: str) -> list[str]:
+    """Units where a report reads the ledger and surfaces the entries new to it.
+
+    ``new`` is a conjunct, anchored to the entries: the ledger accumulates, so a
+    report that re-read the whole thing every morning would republish every
+    undrained entry daily and train the operator to skip the section.
+    """
+    return [
+        unit
+        for unit in _units(text)
+        if _LEDGER.search(unit) and _SURFACES.search(unit) and _NEW_ENTRIES.search(unit)
+    ]
+
+
+_DRAIN = re.compile(r"\bdrain\w*\b", re.IGNORECASE)
+_GROUPS = re.compile(r"\bgroup\w*\b", re.IGNORECASE)
+_ABSTRACTS = re.compile(r"\babstract\w*\b", re.IGNORECASE)
+_PRIORITISES = re.compile(r"\bprioriti[sz]\w+\b", re.IGNORECASE)
+_SLATE = re.compile(r"\bslate\b", re.IGNORECASE)
+_VERDICT = re.compile(r"\bverdicts?\b", re.IGNORECASE)
+
+
+def _states_the_drain(text: str) -> list[str]:
+    """Units carrying the drain: group, abstract, prioritise, present, record.
+
+    All five steps are conjuncts because dropping any one turns the drain back
+    into the thing it replaced. Without grouping and abstraction it is a list read
+    aloud; without prioritisation it is the whole accumulation at once; without a
+    slate there is nothing for the operator to answer; and without recorded
+    verdicts the entries survive the pass and are read again next time.
+    """
+    return [
+        unit
+        for unit in _units(text)
+        if _DRAIN.search(unit)
+        and _GROUPS.search(unit)
+        and _ABSTRACTS.search(unit)
+        and _PRIORITISES.search(unit)
+        and _SLATE.search(unit)
+        and _VERDICT.search(unit)
+    ]
+
+
+#: Improvement-class objects — the three nouns this tree uses for a finding that
+#: does not contradict the tree's own contract today.
+_IMPROVEMENT_CLASS = re.compile(r"\binsights?\b|\bimprovements?\b|\bproposals?\b", re.IGNORECASE)
+#: The one sanctioned route from an improvement to a ticket, in the vocabulary the
+#: digest's R line already counts by: the operator promoted it. A filing that
+#: names this is the operator's, made through an agent; a filing that does not is
+#: the agent's own.
+_OPERATOR_PROMOTED = re.compile(r"\boperator[-\s]promot\w+\b", re.IGNORECASE)
+
+
+def _files_an_improvement(text: str) -> list[str]:
+    """Filing **sentences** whose object is an improvement, absent an operator promotion.
+
+    The unit is a sentence, not an instruction unit, and that is load-bearing
+    rather than tidy. ``commands/build.md``'s DEFER bullet files a bug and
+    *declines* to file the improvement in the same bullet, so the wider unit puts
+    the filing verb and the improvement noun in one span and reads a correctly
+    split path as a violation. Measured in the controls below.
+
+    ``_FILES_AN_ISSUE`` is imported — it is the predicate that decides what a
+    filing instruction is everywhere else in this tree, so a sweep that
+    re-implemented it would stop covering what the other module's assertions call.
+    """
+    return [
+        sentence
+        for sentence in _sentences(text)
+        if _FILES_AN_ISSUE.search(sentence)
+        and _IMPROVEMENT_CLASS.search(sentence)
+        and not _OPERATOR_PROMOTED.search(sentence)
+    ]
+
+
+def _spends_the_operator_promotion(text: str) -> list[str]:
+    """The complement: filing sentences the exemption above lets through.
+
+    :func:`_files_an_improvement` grants the exemption on a **token**, and a token
+    is prose. No tree-reader can tell an honest ``operator-promoted`` from a
+    dishonest one, so an exemption that any registered file may spend hands back
+    the general improvement-filing path the split closed — write the token into
+    the sentence and the corpus sweep skips it. What is checkable is *where* the
+    exemption is spent, which is what the assertion below bounds.
+
+    Measured at review, before this predicate existed: the sentence *"For every
+    insight, create an operator-promoted issue through the `tracker` skill in the
+    Todo state."* placed in any registered file left
+    :func:`test_no_registered_file_instructs_an_agent_to_file_an_improvement`
+    green.
+    """
+    return [
+        sentence
+        for sentence in _sentences(text)
+        if _FILES_AN_ISSUE.search(sentence)
+        and _IMPROVEMENT_CLASS.search(sentence)
+        and _OPERATOR_PROMOTED.search(sentence)
+    ]
+
+
+def test_the_ledger_recipe_has_a_home() -> None:
+    """AC-2: the tracker protocol owns find-or-create-by-label."""
+    assert _states_the_ledger_recipe(_read(_TRACKER)), (
+        f"{_TRACKER} does not carry the proposals ledger's find-or-create-by-label "
+        f"recipe — discovery by label, creation when absent, one open instance per "
+        f"repo. Without it every surface that appends an entry has to invent an "
+        f"address for the ledger, and the only address that works in distributed "
+        f"guidance is a label."
+    )
+
+
+def test_the_ledger_recipe_has_exactly_one_home() -> None:
+    """AC-2's stated-once half — the four surfaces that use the ledger point at it."""
+    homes = {rel for rel in _registered_markdown() if _states_the_ledger_recipe(_read(rel))}
+    assert homes == {_TRACKER}, (
+        f"the ledger recipe is stated in {sorted(homes)}; it belongs in {_TRACKER} "
+        f"alone — `review-discipline`, `/digest`, `/assess` and `/build`'s DEFER "
+        f"path cross-reference it. A second copy agrees on the day it is written "
+        f"and drifts after, and a drifted address silently forks the ledger."
+    )
+
+
+def test_the_accumulation_semantics_have_a_home() -> None:
+    """The ledger accumulates as memory and owes nothing — stated where it is defined."""
+    assert _states_the_accumulation_is_not_a_promise(_read(_TRACKER)), (
+        f"{_TRACKER} does not state that ledger entries accumulate as memory rather "
+        f"than as promises. An append-only list of improvements that reads as a "
+        f"commitment is the unbounded queue the filing rules close, relocated."
+    )
+
+
+def test_the_proposal_channel_routes_to_the_ledger() -> None:
+    """AC-1: the proposal channel names the ledger and defines an entry."""
+    assert _states_what_an_entry_carries(_read(_REVIEW_DISCIPLINE)), (
+        f"{_REVIEW_DISCIPLINE}'s proposal channel does not route a proposal into the "
+        f"ledger with its case, its provenance, and a suggested home. A proposal "
+        f"that lives only in the report dies with the report — the gap that made a "
+        f"close report the sole custodian of every improvement the loop ever found."
+    )
+
+
+def test_the_entry_shape_has_exactly_one_home() -> None:
+    """AC-1's stated-once half — the surfaces that append an entry point at the shape.
+
+    Occurrence this guard cites: the first draft of ``commands/assess.md``'s
+    insight clause spelled the three parts out again, four paragraphs after
+    pointing at the channel that defines them. Nothing else would have gone red.
+    """
+    homes = {rel for rel in _registered_markdown() if _states_what_an_entry_carries(_read(rel))}
+    assert homes == {_REVIEW_DISCIPLINE}, (
+        f"what a ledger entry carries is defined in {sorted(homes)}; it belongs in "
+        f"{_REVIEW_DISCIPLINE} alone. Two definitions of an entry agree on the day "
+        f"the second is written, and the drain reads whichever one the appender did."
+    )
+
+
+def test_the_digest_surfaces_the_ledger() -> None:
+    """AC-3: the digest reads the ledger and surfaces what is new since the window."""
+    assert _states_the_ledger_surfacing(_read(_DIGEST)), (
+        f"{_DIGEST} does not read the proposals ledger and surface its new entries. "
+        f"With the ratification step retired, surfacing is the digest's whole "
+        f"remaining duty here, and dropping both leaves the ledger unread."
+    )
+
+
+def test_the_drain_has_a_home() -> None:
+    """AC-4: `/assess` drains the ledger — group, abstract, prioritise, slate, verdicts."""
+    assert _states_the_drain(_read(_ASSESS)), (
+        f"{_ASSESS} does not carry the drain. The ledger accumulates and nothing "
+        f"expires, so a ledger with no drain grows without bound — which is the "
+        f"same failure as the queue it was built to keep entries out of."
+    )
+
+
+def test_the_drain_has_exactly_one_home() -> None:
+    """The drain procedure is stated once, in the command that performs it."""
+    homes = {rel for rel in _registered_markdown() if _states_the_drain(_read(rel))}
+    assert homes == {_ASSESS}, (
+        f"the drain procedure is stated in {sorted(homes)}; it belongs in {_ASSESS} "
+        f"alone."
+    )
+
+
+def test_no_registered_file_instructs_an_agent_to_file_an_improvement() -> None:
+    """AC-4's strong claim, measured: the structural zero is a property of the corpus.
+
+    ``review-discipline`` states that the improvement volume an agent can file is
+    zero. That sentence is a claim about every other file in the corpus, so
+    nothing in ``review-discipline`` can make it true — until this change,
+    ``commands/assess.md`` contradicted it in one sentence while every guard over
+    the rule stayed green.
+
+    The positive control below is that exact sentence, kept verbatim: it is the
+    proof that the sweep can still find a violation, which an all-green corpus
+    otherwise cannot demonstrate.
+    """
+    offenders = {
+        rel: _files_an_improvement(_read(rel))
+        for rel in _registered_markdown()
+        if _files_an_improvement(_read(rel))
+    }
+    assert offenders == {}, (
+        f"registered guidance still instructs an agent to file an improvement: "
+        f"{ {rel: [s[:160] for s in hits] for rel, hits in offenders.items()} }. "
+        f"An improvement is proposed into the ledger; the only route from there to "
+        f"a ticket is an operator-promoted one."
+    )
+
+
+def test_the_improvement_filing_sweep_can_find_a_violation() -> None:
+    """The positive control for the zero-membership sweep above, through the real predicate.
+
+    Verbatim from ``commands/assess.md`` before this change — the surviving
+    counter-example the previous ticket's review recorded and could not close.
+    """
+    pre_change_assess = (
+        "For every finding and every insight, create an issue through the `tracker` "
+        "skill **in the Todo state**, with the repo's Build project attached (a "
+        "project is mandatory when filing) and severity-mapped priority, labelled by "
+        "source (`review-finding` / `review-insight`), and carrying exactly one "
+        "assurance level chosen per `spec-authoring` → *Choosing assurance*."
+    )
+    assert _files_an_improvement(pre_change_assess), (
+        "the improvement-filing sweep no longer detects the instruction it was "
+        "written to find — the zero-membership assertion above is passing over an "
+        "empty predicate rather than a clean corpus"
+    )
+
+
+def test_the_operator_promoted_exemption_has_exactly_one_home() -> None:
+    """The escape clause is bounded by placement, because its honesty is unreadable.
+
+    The sweep above exempts a filing sentence that names an ``operator-promoted``
+    ticket, and it has to: the drain really does turn a promoted entry into one.
+    But the exemption is granted on a token any file could write, so on its own it
+    is the agent-filing grant returning under the one name the sweep is built to
+    skip. The bound is placement. ``/assess`` carries the drain — pinned to that
+    one file by :func:`test_the_drain_has_exactly_one_home` — and the drain is the
+    only procedure in the tree that legitimately turns an improvement into a
+    ticket, so the exemption belongs in the same file and nowhere else.
+
+    This is an equality against a singleton rather than a zero-membership sweep,
+    so it cannot pass vacuously in either direction: a narrowed predicate empties
+    ``homes`` and fails, and a second spender adds to it and fails.
+    """
+    homes = {
+        rel for rel in _registered_markdown() if _spends_the_operator_promotion(_read(rel))
+    }
+    assert homes == {_ASSESS}, (
+        f"the operator-promotion exemption is spent in {sorted(homes)}; it belongs "
+        f"in {_ASSESS} alone, the one file carrying the drain. An exemption "
+        f"available corpus-wide is not an exemption — it is the improvement-filing "
+        f"path reopened under the name the sweep skips."
+    )
+
+
+def test_the_ledger_predicates_discriminate() -> None:
+    """Paired controls for the ledger predicates, through the real functions.
+
+    Every negative is a near-miss about the ledger itself: the recipe missing the
+    conjunct that makes it a recipe, an entry with no drainable content, a digest
+    that reads without surfacing, a drain that presents without recording.
+    """
+    recipe = (
+        "**The proposals ledger.** Find it by its `proposals-ledger` label rather "
+        "than by number, and create it when the search finds none. Exactly one open "
+        "ledger exists per repo; two is a configuration error to report."
+    )
+    assert _states_the_ledger_recipe(recipe) == [" ".join(recipe.split())]
+
+    find_only = (
+        "**The proposals ledger.** Find it by its `proposals-ledger` label rather "
+        "than by number. Exactly one open ledger exists per repo."
+    )
+    assert _states_the_ledger_recipe(find_only) == [], (
+        "a find-only recipe reads as find-or-create — it stops at the first repo "
+        "whose ledger does not exist yet, which is every repo exactly once"
+    )
+
+    unbounded = (
+        "**The proposals ledger.** Find it by its `proposals-ledger` label rather "
+        "than by number, and create it when the search finds none."
+    )
+    assert _states_the_ledger_recipe(unbounded) == [], (
+        "a recipe with no cardinality bound reads as complete — two sessions that "
+        "both miss create two ledgers and each later reader sees half the entries"
+    )
+
+    by_number = (
+        "**The proposals ledger.** Open the standing ledger issue this repo "
+        "records, and create it when there is none. Exactly one open ledger "
+        "exists per repo."
+    )
+    assert _states_the_ledger_recipe(by_number) == [], (
+        "a recipe addressing the ledger by anything but its label reads as the "
+        "recipe — an issue number cannot appear in distributed guidance at all"
+    )
+
+    accumulates = (
+        "Entries accumulate in the ledger as memory, not as promises: nothing "
+        "expires and nothing is owed a build."
+    )
+    assert _states_the_accumulation_is_not_a_promise(accumulates) == [
+        " ".join(accumulates.split())
+    ]
+    just_accumulates = "Entries accumulate in the ledger until a drain clears them."
+    assert _states_the_accumulation_is_not_a_promise(just_accumulates) == [], (
+        "an accumulation with no stated status reads as the semantics — a list of "
+        "improvements that might be commitments is a second queue"
+    )
+
+    entry = (
+        "A proposal is appended to the ledger as one entry: the one-line case, a "
+        "provenance link to the ticket or session that raised it, and the suggested "
+        "home a fix would land in."
+    )
+    assert _states_what_an_entry_carries(entry) == [" ".join(entry.split())]
+    bare_entry = "A proposal is appended to the ledger as one comment carrying its case."
+    assert _states_what_an_entry_carries(bare_entry) == [], (
+        "an entry with no provenance and no suggested home reads as defined — the "
+        "drain cannot trace it or group it with the entries sharing its home"
+    )
+
+    surfacing = (
+        "**Proposals.** Read the ledger and surface the entries new since the last "
+        "digest, one line each."
+    )
+    assert _states_the_ledger_surfacing(surfacing) == [" ".join(surfacing.split())]
+    re_reads_everything = (
+        "**Proposals.** Read the ledger and surface every entry it holds, one line each."
+    )
+    assert _states_the_ledger_surfacing(re_reads_everything) == [], (
+        "a digest that republishes the whole ledger daily reads as the rule — the "
+        "accumulation is unbounded between drains, so the section trains the "
+        "operator to skip it"
+    )
+
+    drain = (
+        "**Drain the ledger.** Read the accumulation, group and abstract the entries "
+        "into pattern-level candidates, prioritise them, present a short slate for "
+        "the operator's call, and record each verdict on the thread."
+    )
+    assert _states_the_drain(drain) == [" ".join(drain.split())]
+    no_verdicts = (
+        "**Drain the ledger.** Read the accumulation, group and abstract the entries "
+        "into pattern-level candidates, prioritise them, and present a short slate "
+        "for the operator's call."
+    )
+    assert _states_the_drain(no_verdicts) == [], (
+        "a drain that records no verdict reads as a drain — every entry it "
+        "presented survives the pass and is presented again next time"
+    )
+
+
+def test_the_improvement_filing_sweep_reads_the_right_unit() -> None:
+    """The sentence boundary is the predicate — measured against the wider unit.
+
+    ``commands/build.md``'s DEFER bullet is a correctly split path: it files the
+    bug and states that the improvement is *not* filed. Read as one instruction
+    unit, the filing verb and the improvement noun share a span and the bullet
+    reads as a violation. This asserts both halves, so the boundary cannot be
+    widened back without going red.
+    """
+    defer = (
+        "- **DEFER:** a **bug** is filed: create the out-of-scope follow-up through "
+        "`tracker` with exactly one assurance level, chosen per `spec-authoring` → "
+        "*Choosing assurance*. An **improvement** is not filed at all; it is "
+        "appended to the proposals ledger."
+    )
+    assert _files_an_improvement(defer) == [], (
+        "a DEFER path that files the bug and refuses the improvement reads as an "
+        "improvement filing — the sentence boundary is what separates them"
+    )
+    wider = [
+        unit
+        for unit in _units(defer)
+        if _FILES_AN_ISSUE.search(unit) and _IMPROVEMENT_CLASS.search(unit)
+    ]
+    assert wider, (
+        "the instruction-unit reading no longer merges the two branches, so the "
+        "sentence boundary above is now a redundant narrowing and should be dropped"
+    )
+
+    files_it = (
+        "Every improvement the review found is filed as a follow-up through "
+        "`tracker`, in the Todo state."
+    )
+    assert _files_an_improvement(files_it) == [" ".join(files_it.split())]
+
+    promoted = (
+        "A promoted proposal is an operator-promoted ticket: create it through the "
+        "`tracker` skill in the Todo state, carrying exactly one assurance level "
+        "chosen per `spec-authoring` → *Choosing assurance*."
+    )
+    assert _files_an_improvement(promoted) == [], (
+        "the operator's own promotion reads as an agent filing an improvement — "
+        "promotion is the one sanctioned route out of the ledger"
+    )
+    # The same sample, from the other side: what the sweep skips is exactly what
+    # the placement bound counts. Asserted on one string so the two predicates
+    # cannot drift into disagreeing about which sentences are exempt — a sample
+    # neither of them claimed would be unbounded by both.
+    assert _spends_the_operator_promotion(promoted) == [" ".join(promoted.split())], (
+        "the exemption predicate no longer sees the sentence the sweep exempts, so "
+        "the placement bound is watching a set the sweep does not fill"
+    )
+
+    bug = (
+        "A bug is filed: create the follow-up through `tracker` with explicit queue "
+        "placement."
+    )
+    assert _files_an_improvement(bug) == [], (
+        "a bug filing reads as an improvement filing — the bug half of the rule "
+        "files tickets, and always did"
     )
 
 

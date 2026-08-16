@@ -1,4 +1,4 @@
-<!-- guidance:build@1.14.0 -->
+<!-- guidance:build@1.15.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -254,8 +254,10 @@ the same refusal to integrate on mismatch.
   — is filed: create the out-of-scope follow-up through `tracker` with explicit
   queue placement and exactly one assurance level, chosen per `spec-authoring` →
   *Choosing assurance*. An **improvement** is not filed at all; it goes in the
-  run report's Proposals section, where `/digest` puts it in front of the
-  operator. Then ship the independently reviewed tree.
+  run report's Proposals section and is appended to the repo's proposals ledger
+  — the `tracker` skill owns how that ledger is found or opened — where
+  `/digest` surfaces it and `/assess` decides it at the drain. Then ship the
+  independently reviewed tree.
 
 A moved integration branch is not a stop and never a question for the operator
 (`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If

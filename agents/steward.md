@@ -1,4 +1,4 @@
-<!-- guidance:steward@0.4.0 -->
+<!-- guidance:steward@0.5.0 -->
 ---
 name: steward
 description: Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture`, optionally `--deep`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix.
@@ -30,5 +30,6 @@ Write the dated `templates/assessment.md` report at
 `assessments/<date>-<scope>.md`: summary, severity-rated four-part findings with
 scope IDs (`CODE-` or `ARCH-`), and up to three systemic insights.
 Zero findings is valid. Report what was not assessed and never invent findings
-to fill the template. The `/assess` command, not this role, files findings and
-commits the report.
+to fill the template. The `/assess` command, not this role, files the findings,
+appends each insight to the proposals ledger — an insight is an improvement, so
+it is proposed rather than filed — and commits the report.
