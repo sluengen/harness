@@ -210,29 +210,40 @@ def test_process_doc_does_not_gate_ux_design_on_design_system() -> None:
     )
 
 
-def test_process_doc_harness_build_rule_is_conditional() -> None:
-    """The harness-only '/build' prohibition must be conditional on repo identity.
+def test_process_doc_states_one_unconditional_build_option() -> None:
+    """The process doc must not carve a repo out of the option it publishes.
 
-    process/harness.md is the single distributed process doc — it installs as
-    every consumer's AGENTS.md. An unconditional "this repo is the harness; do
-    not invoke /build" would misinstruct every non-harness repo, breaking the
-    per-repo execution-option design (CAL-652). The harness steer must be gated on
-    CONTEXT.md repo identity, and the agent-led /build option must stay available
-    elsewhere. Regression guard for the CAL-652 review finding.
+    ``process/harness.md`` is the single distributed process doc — it installs as
+    every consumer's ``AGENTS.md``. CAL-652 found it unconditionally forbidding
+    ``/build`` "here", which misinstructed every consumer, and the fix was to gate
+    the steer on ``CONTEXT.md`` repo identity. #435 removed the thing the carve-out
+    existed for: there is no second execution surface to prefer, so the rule is
+    now that ``/build`` is simply available everywhere.
+
+    The guard therefore keeps the original defect's polarity and tightens it. The
+    original defect — a prohibition on ``/build`` — must still be absent, tested
+    verbatim. The gate that used to make it safe must now *also* be absent: a
+    repo-identity condition on the execution option is exactly the drift that
+    would reintroduce a two-surface split under a new name. And the positive half
+    is asserted, so an edit satisfying both negatives by deleting the option
+    entirely fails.
     """
     text = PROCESS_DOC.read_text()
     assert "Do not invoke `/build` or `/build-codex` here." not in text, (
         "process/harness.md unconditionally forbids /build; as the single "
-        "distributed process doc this misinstructs non-harness repos. Gate the "
-        "rule on CONTEXT.md repo identity (CAL-652)."
+        "distributed process doc this misinstructs non-harness repos (CAL-652)."
     )
-    assert "If this repo is the harness" in text and "`repo.name`" in text, (
-        "the harness-only execution rule must be conditional on CONTEXT.md repo "
-        "identity ('If this repo is the harness ... repo.name') (CAL-652)."
+    assert "If this repo is the harness" not in text, (
+        "process/harness.md carves this repo out of the execution option it "
+        "publishes. ADR 0015 left one surface — the carve-out named a second "
+        "one that no longer exists (#435)."
     )
-    assert re.search(r"elsewhere[^.\n]*`/build`", text), (
-        "the process doc must preserve /build as the normal option "
-        "for non-harness repos (CAL-652)."
+    assert re.search(r"`/build`", text), (
+        "the process doc must name `/build` as the way a ticket is driven."
+    )
+    assert re.search(r"available in every repo|available everywhere", text), (
+        "the process doc must state that the option it publishes is available "
+        "everywhere — the property the retired carve-out used to qualify."
     )
 
 
@@ -250,8 +261,8 @@ def test_no_canonical_file_gates_ux_design_on_design_system() -> None:
     """ux-design is never gated on the design_system layer in canonical metadata.
 
     The fix must hold across every canonical home, not just the process-doc
-    skills table: the merged process doc, the ``registry.yaml`` copy-list
-    comments, and the CHANGELOG record all describe the skills. ux-design applies
+    skills table: the merged process doc and the ``registry.yaml`` copy-list
+    comments both describe the skills. ux-design applies
     to any user-facing surface regardless of a design system; only design-system
     is layer-gated (skills/ux-design/SKILL.md). A line that names ux-design while
     gating it on the design_system layer is the regression — unless it is
@@ -261,7 +272,6 @@ def test_no_canonical_file_gates_ux_design_on_design_system() -> None:
     canonical = {
         "process/harness.md": PROCESS_DOC,
         "registry.yaml": REGISTRY,
-        "CHANGELOG.md": REPO_ROOT / "CHANGELOG.md",
     }
     offenders: list[str] = []
     for name, path in canonical.items():

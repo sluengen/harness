@@ -210,15 +210,16 @@ def _clause_containing(*terms: str) -> str | None:
 
 def test_automode_sanctions_the_routine_deferral_write() -> None:
     """CAL-1087/CAL-1167: `work-discovery` tells the routine to comment on a
-    ticket it judged not-yet-actionable, label it `decision`/`operator`, and
+    ticket it judged not-yet-actionable, label it `input`/`operator`, and
     assign it to the operator. The posture must permit the write the guidance
     instructs, bounded to the queue the routine pulls from — otherwise the
     deferral is refused and the ticket wedges the queue with the reason recorded
     nowhere a human looks."""
-    clause = _clause_containing("`decision`")
+    clause = _clause_containing("`input`")
     assert clause, (
         "autoMode.allow must sanction the deferral write `work-discovery` "
-        "instructs — a comment plus the `decision`/`operator` label (CAL-1087)."
+        "instructs — a comment plus the `input`/`operator` label (CAL-1087; "
+        "ADR 0015 merged the retired `decision` label into `input`)."
     )
     assert "comment" in clause.lower(), (
         "the deferral clause must name the comment, not only the label — the "
@@ -286,20 +287,21 @@ def test_automode_assess_filing_clause_targets_todo_with_its_bounds() -> None:
 
 
 def test_automode_sanctions_the_worktree_cleanup_preflight() -> None:
-    """CAL-1108: `/harness routine build` step 0 instructs the merged-worktree
-    cleanup as its housekeeping pre-flight, and it was refused on every tick —
-    the same guidance-instructs-what-the-runner-cannot-do shape CAL-1087 fixed
-    everywhere else.
+    """CAL-1108: the unattended routine's housekeeping removes the worktree and
+    branch of a run that already merged, and it was refused on every tick — the
+    same guidance-instructs-what-the-runner-cannot-do shape CAL-1087 fixed
+    everywhere else. ADR 0015 retired the `harness worktrees cleanup` verb that
+    performed it; the housekeeping is plain `git worktree`/`git branch` now, and
+    the clause has to sanction *that*, or the refusal simply returns.
 
     The bound is what makes it safe, and it is the whole question for a delete:
-    the command removes only branches already merged into an integration branch,
-    plus orphaned directories past the age threshold. It never touches an
-    unmerged or in-flight worktree — including a reclaimed ticket's preserved WIP
-    branch, which lives on `origin` and is fetched by `--resume`."""
-    clause = _clause_containing("worktrees cleanup")
+    only branches already merged into an integration branch, plus a directory a
+    plain removal can no longer reach. It never touches an unmerged or in-flight
+    worktree."""
+    clause = _clause_containing("git worktree")
     assert clause, (
-        "autoMode.allow must sanction the `harness worktrees cleanup --merged` "
-        "pre-flight that `/harness routine build` step 0 instructs (CAL-1108)."
+        "autoMode.allow must sanction the merged-worktree housekeeping the "
+        "unattended routine performs (CAL-1108)."
     )
     assert "merged" in clause, (
         "the cleanup clause must name the merged-only bound — the property that "
@@ -312,27 +314,28 @@ def test_automode_sanctions_the_worktree_cleanup_preflight() -> None:
 
 
 def test_automode_sanctions_the_gated_close_verb() -> None:
-    """CAL-1087: `harness close` is what lands a finished run — the Linear
-    transition plus the merge. Unsanctioned, the loop can build and review its
-    own work but never ship it.
+    """CAL-1087: closing is what lands a finished run — the tracker transition
+    plus the merge. Unsanctioned, the loop can build and review its own work but
+    never ship it. ADR 0015 retired the `harness close` verb that did it; `/ship`
+    does it now, and the clause has to sanction that or the loop stalls again.
 
-    The clause must carry the bound that makes it safe: the verb refuses unless
-    a passing review is bound to the current HEAD, so it cannot land unreviewed
-    work. That is the same reviewed-work-only condition the dev-push clause
-    rests on — the permission rides on the gate, not on trust."""
-    clause = _clause_containing("harness close")
+    The clause must carry the bound that makes it safe: a passing review bound to
+    the current HEAD, so it cannot land unreviewed work. That is the same
+    reviewed-work-only condition the dev-push clause rests on — the permission
+    rides on a checkable condition, not on trust."""
+    clause = _clause_containing("Closing a shipped ticket")
     assert clause, (
-        "autoMode.allow must sanction `harness close` — without it the loop "
-        "cannot land the work it built and reviewed (CAL-1087)."
+        "autoMode.allow must sanction closing a shipped ticket — without it the "
+        "loop cannot land the work it built and reviewed (CAL-1087)."
     )
-    for term in ("reviewed SHA", "HEAD"):
+    for term in ("reviewed_sha", "HEAD"):
         assert term in clause, (
             f"the close clause must name its gate ({term!r}): the permission is "
-            "safe only because the verb refuses a review that does not cover "
-            "what would merge (CAL-1087)."
+            "safe only because a review that does not cover what would merge "
+            "does not authorise the merge (CAL-1087)."
         )
-    assert "stale_review" in clause, (
-        "the close clause must name the refusal reasons that enforce the gate, "
+    assert "verify gate" in clause, (
+        "the close clause must name the gate evidence the permission rests on, "
         "so the bound is auditable rather than asserted (CAL-1087)."
     )
 

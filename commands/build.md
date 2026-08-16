@@ -1,4 +1,4 @@
-<!-- guidance:build@1.8.0 -->
+<!-- guidance:build@1.14.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -73,6 +73,13 @@ or implementer's conversation. It returns a design artifact covering contracts,
 scenarios, security boundaries, test strategy, and any decision that belongs in
 the governing spec. Resolve design questions on the ticket before implementation.
 
+A `complex` run whose design stage produces no usable design **stops**. No
+artifact, a failed design sub-agent, and an artifact that does not cover the
+contracts and scenarios the change spec asks for are one outcome: the run never
+proceeds to design-blind implementation. Re-run the design sub-agent against the
+corrected change spec; if it still produces nothing usable, abandon safely under
+section 4 and name the design stage as what failed.
+
 `trivial` and `simple` do not receive this stage. Their change spec still states
 enough design for its size; skipping a design agent is not permission to invent a
 contract mid-build.
@@ -83,7 +90,10 @@ Launch an implementation sub-agent through the host sub-agent mechanism in
 `worktree_path`. It has normal edit and shell tools but must not commit. Supply
 the ticket, current change spec, design artifact when present, and prior findings. Require it to read
 `test-driven-development` and `code-quality`, work RED → GREEN → REFACTOR, and
-run the lint command before handoff. It never edits the as-built record.
+run the lint command before handoff. It never edits the as-built record. When
+the change adds or edits a guard, a prose predicate, a mutation table, or a
+deletion pass, require it to read
+`skills/review-discipline/references/craft.md` before writing the test.
 
 For a user-facing change, also require it to read `ux-design`; when
 `layers.design_system` is on, require `design-system`. It must consider empty,
@@ -91,15 +101,49 @@ loading, error, success, mobile, and accessibility states relevant to the change
 
 ### Visual evidence for a user-facing change
 
-Before handoff, render the changed surface in an HTML or simulator window using
-**realistic seeded state**. Capture a screenshot at the repo's reference widths,
-at least one mid-width, and on either side of every breakpoint the change touches.
-Compare each capture against the reference or the applicable design
+**When.** Any diff that touches a user-facing surface obliges this step — a
+screen, route, view, template, or the styles behind one. It is not a judgment
+call about how large or risky the change looks.
+
+**Render.** Before handoff, render the changed surface in an HTML or simulator
+window using **realistic seeded state** — synthetic throughout; never a copy of
+production data. Capture a screenshot at the repo's reference widths, at least
+one mid-width, and on either side of every breakpoint the change touches.
+
+**How.** Set the window to the capture width and a fixed viewport height, and
+capture **viewport-height slices**: one image per viewport, scrolled one viewport
+at a time, numbered in scroll order until the surface is covered. **Never capture
+the full page in one image**, at any width. Measured: a real 1440 × 5726 px
+capture reached the reviewer as an image content block, but 16 px body text
+read 7 of 8 characters correctly, because a capture's long edge is downscaled to
+fit the model's image budget and a surface four viewports tall arrives downscaled
+about fourfold. **No capture exceeds 2000 px in height** — where one viewport
+would, shorten the viewport and take another slice.
+
+**Where.** Captures and their manifest land in `.evidence/<TICKET-ID>/` at the
+worktree root — repo-relative, so `/review` hands the reviewer a directory rather
+than a list, and git-ignored, so a capture never reaches the committed tree
+through `/build`'s `git add -A`. Name each capture
+`<page>-<state>-<width>w-<slice>.png` and the manifest `manifest.md`. The key is
+this ticket: a capture filed under another ticket is not this change's evidence.
+The directory is scratch — a removed worktree takes it with it, and nothing
+re-creates it. **If this repo's `.gitignore` does not already ignore `.evidence/`,
+add that line before capturing anything**; a repo that installed this guidance
+did not receive its ignore rule with it.
+
+**How many.** At most **12 captures** per review — roughly four widths across up
+to three pages. The bound is token and latency cost: several large images are the
+largest input a review carries. Where a change needs more, **narrow the set** to
+the states that carry the change; never shrink or downscale the images to fit,
+which reintroduces the exact failure the slice rule exists to prevent.
+
+**Judge.** Compare each capture against the reference or the applicable design
 archetype and `ux-design` principles; inspect the implementation as well, because
-screenshots do not replace code review. Fix defects, render again, and retain
-only the final screenshots plus a short manifest of page, state, width, reference,
-and accepted deviations. Revert temporary seeded data, simulator settings, and
-capture-only code before verification. Pass the final visual evidence to review.
+screenshots do not replace code review. Fix defects, render again, and retain only
+the final screenshots plus a short manifest of page, state, width, slice,
+reference, and accepted deviations. Revert temporary seeded data, simulator
+settings, and capture-only code before verification. Pass the final visual
+evidence — the directory and its manifest — to review.
 
 ### Verify
 
@@ -124,6 +168,12 @@ surface; that path needs the reviewer who records reality. Any change after
 `certified_tree` invalidates the certificate and upgrades the run to `simple`.
 Do not call an LLM pass merely to label this certification a review.
 
+**No one writes an as-built record on a `trivial` run, and none is missing.** The
+certifier rejects any as-built-record surface, so a certified diff carries no
+shipped behaviour to record; a change that does carry some fails certification
+and becomes a `simple` run, where the reviewer records it. Writing an as-built
+record after `certified_tree` is not an exception to the invalidation rule above.
+
 ### Independent review
 
 Stage all changes and capture the tree to review:
@@ -139,6 +189,9 @@ diff, verify output, visual evidence when present, and `reviewed_tree`. Do not
 pass the implementer's conversation. The reviewer follows `review-discipline`:
 Stage 1 checks the criteria, design, scope, and tests; Stage 2 checks correctness,
 security, structure, and principles. Findings state what, where, why, and how.
+For a diff carrying a guard, a prose predicate, a mutation table, or a deletion
+pass, the reviewer also applies
+`skills/review-discipline/references/craft.md`.
 
 The reviewer, not the implementer or orchestrator, records the as-built spec in
 the candidate when heading for PASS or DEFER, then re-runs verification over that
@@ -147,6 +200,8 @@ evidence against the reference or applicable archetype and reports missing,
 misleading, or inconsistent screenshots as a finding.
 
 ### Record the as-built spec
+
+A `trivial` run does not reach this step; see *Certify trivial work*.
 
 Follow `review-discipline`'s final-evidence ordering: the reviewer writes the
 as-built record from the diff before its certifying gate and verdict. After that
@@ -174,25 +229,41 @@ or failed invocation is a review finding, not a PASS.
 
 ## 3. Ship
 
-- **PASS:** commit only the reviewer-recorded tree, then compare its identity:
+A `trivial` run has no verdict, so it ships `certified_tree` where a reviewed run
+ships `reviewed_tree` — the same identity comparison against `HEAD^{tree}`, and
+the same refusal to integrate on mismatch.
+
+- **PASS:** commit only the tree its assurance stage produced, then compare its
+  identity:
 
   ```bash
   cd "$worktree_path" && git add -A && git commit -m "COMMIT_MESSAGE"
-  cd "$worktree_path" && git rev-parse "HEAD^{tree}"    # must equal reviewed_tree
+  cd "$worktree_path" && git rev-parse "HEAD^{tree}"    # certified_tree or reviewed_tree
   ```
 
-  If `HEAD^{tree}` does not equal `reviewed_tree`, do not integrate; return to
-  review because the committing tree was never certified. On equality, transition
-  to In Review, integrate using the branch model, push, then transition to Done
-  through `tracker`.
+  If `HEAD^{tree}` does not equal that tree, never integrate — the committing
+  tree was never certified. Return to whichever stage produced that tree and run
+  it again over the current candidate. On equality, transition to In Review,
+  integrate using the branch model, push, then transition to Done through
+  `tracker`.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent.
   Re-run the required assurance stages; a changed diff invalidates old evidence.
-- **DEFER:** create the out-of-scope follow-up through `tracker` with explicit
-  queue placement, then ship the independently reviewed tree.
+- **DEFER:** sort the deferred findings by class first (`review-discipline` —
+  *bugs are filed; improvements are proposed*). A **bug** — the tree
+  contradicting its own contract, a red gate, a guard asserting something false
+  — is filed: create the out-of-scope follow-up through `tracker` with explicit
+  queue placement and exactly one assurance level, chosen per `spec-authoring` →
+  *Choosing assurance*. An **improvement** is not filed at all; it goes in the
+  run report's Proposals section, where `/digest` puts it in front of the
+  operator. Then ship the independently reviewed tree.
 
-If integration conflicts, dispatch a fresh conflict-resolution sub-agent. After
-two failed attempts, preserve and push the branch, reset the ticket to Todo via
-`tracker`, comment with the conflict, and stop.
+A moved integration branch is not a stop and never a question for the operator
+(`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If
+reconciliation hits textual conflicts, dispatch a fresh conflict-resolution
+sub-agent. After two failed attempts — or on a genuine functional conflict,
+where both changes want incompatible behaviour and resolving it is a design
+call — preserve and push the branch, hold the ticket via `tracker` (`input`
+label, assigned to the operator), comment naming the conflict, and stop.
 
 ## 4. Abandon safely
 

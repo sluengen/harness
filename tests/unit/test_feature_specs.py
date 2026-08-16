@@ -6,22 +6,55 @@ verb-model subsystem is a ``specs/features/<feature>.md`` in the
 ``templates/feature.md`` shape, not a design doc under ``specs/``. This guard is
 the executable form of the migration's acceptance criteria:
 
-* **AC-1** — each current verb-model subsystem (the verb model, the run ledger,
-  the worktree lifecycle, the CLI surface) has a ``specs/features/<feature>.md``
-  in the feature-spec shape: the ``templates/feature.md`` frontmatter keys and a
-  ``## Behaviour`` section (the canonical "how does it work?" answer).
-* **AC-3** — the SPEC.md index has no dangling links: every relative ``.md``
-  link in SPEC.md resolves to a file git tracks. A row that points the reader at
-  a moved or never-created spec is worse than none.
+* **AC-1** — each subsystem this repo still has has a
+  ``specs/features/<feature>.md`` in the feature-spec shape: the
+  ``templates/feature.md`` frontmatter keys and a ``## Behaviour`` section (the
+  canonical "how does it work?" answer).
+* **AC-3** — the as-built record has no dangling links: every relative ``.md``
+  link in it resolves to a file git tracks. A row that points the reader at a
+  moved or never-created spec is worse than none.
 
 The check is structural: a regression that deletes a feature spec, drops a
-required section, or leaves a dangling SPEC.md link fails here.
+required section, or leaves a dangling link fails here.
+
+**#435 removed the semantic-coverage half, and five of the six subjects.** Six
+guards here tied the specs' prose to the code that implemented it — the
+documented CLI surface against the registered Typer commands, the documented
+flags against the registered options, ``verb-model.md``'s output keys against
+the Pydantic models, the worktree path constants, the verdict and run-status
+literals. ADR 0015 deletes that code, so each was measuring a spec against a
+module that no longer exists; a comparison with one side missing is not a weaker
+guard, it is no guard. Then the specs themselves followed: five records of
+retired subsystems moved to ``specs/retired/`` under dated banners
+(``tests/unit/test_v4_teardown.py`` holds that move), and ``SPEC.md`` — whose
+index this module used to check for dangling links — went with the design it
+described.
+
+What is left is one record and the same structural rule over it.
+``specs/features/guidance-system.md`` is the as-built record of the delivery
+mechanism ADR 0015 explicitly keeps — the registry, the copy-in installer,
+``/update-guidance`` and the freshness hook — and its ``last_updated`` currency
+is what the CI checkout's ``fetch-depth: 0`` exists for.
 
 Since #280 the module also measures one frontmatter **value**. ``last_updated``
 was required to exist and never read, so all four records drifted to declaring a
 currency that was false — the same unmeasured-claim family as #275, one file
 over. The date guard below reads the value against git and is derived from the
 tracked tree, so a fifth feature spec is covered on arrival.
+
+**#446 removes a required key rather than adding a check for it.** ``tickets:``
+compelled every record to list the tracker issues that shaped it — a
+hand-maintained list duplicating what the record's own ``git log`` already holds,
+and one that had gone four tickets stale before anyone read it. ADR 0014 already
+settled this class here when it deleted the changelog-fragment system: *a record
+that is compelled per-change, and that duplicates a record already being written,
+is a tax rather than a control.* That ADR also names the near miss — the fragment
+system's byte guard, "correctly identifying the second copy, then capping its
+length rather than asking why it exists". A guard checking ``tickets:`` against
+git would have been that same mistake one level up, so the key is deleted from
+the schema and from ``templates/feature.md``, and the record points a reader at
+``git log`` instead. Nothing asserts the key stays *absent*: a guard against its
+return is the machinery this removes, and ADR 0014's own deletion added none.
 """
 
 from __future__ import annotations
@@ -32,24 +65,23 @@ from pathlib import Path
 
 import pytest
 
-from tests._cliutil import registered_command_surface
 from tests._gitutil import last_commit_date, tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FEATURES_DIR = _REPO_ROOT / "specs" / "features"
-_SPEC_INDEX = _REPO_ROOT / "SPEC.md"
 
-#: The current verb-model subsystems, each of which must carry a feature spec
+#: The subsystems this repo still has, each of which must carry a feature spec
 #: (AC-1). The slug is the ``specs/features/<slug>.md`` basename.
-_EXPECTED_FEATURES = (
-    "verb-model",
-    "run-ledger",
-    "worktree-lifecycle",
-    "cli-surface",
-)
+#:
+#: One entry since #435. The other four named the verb model, the run ledger,
+#: the worktree lifecycle and the CLI surface — all deleted by ADR 0015, with
+#: their records archived under ``specs/retired/``. Requiring a record for a
+#: subsystem that no longer exists would be the mirror of the defect this list
+#: exists to catch.
+_EXPECTED_FEATURES = ("guidance-system",)
 
 #: Frontmatter keys required by ``templates/feature.md``.
-_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated", "tickets")
+_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated")
 
 
 def _feature_path(slug: str) -> Path:
@@ -102,11 +134,11 @@ def _tracked_feature_spec_md() -> list[Path]:
     """Every tracked ``specs/features/*.md``, sorted.
 
     Derived from the tracked tree rather than from :data:`_EXPECTED_FEATURES`,
-    so a fifth feature spec is governed by the date rule the moment it is
+    so a newly added feature spec is governed by the date rule the moment it is
     committed, with no edit here (AC-3). The two subject sets answer different
     questions and deliberately stay separate: ``_EXPECTED_FEATURES`` encodes
-    *these four subsystems must each have a record* — a claim a derived set
-    cannot make, because deriving it would let the record's absence satisfy it.
+    *these subsystems must each have a record* — a claim a derived set cannot
+    make, because deriving it would let the record's absence satisfy it.
     """
     return sorted(p for p in tracked_files_under("specs/features") if p.suffix == ".md")
 
@@ -182,8 +214,8 @@ def test_the_last_updated_guard_covers_every_expected_feature_spec() -> None:
     A parametrized guard over a derived set passes vacuously when the set
     evaluates to nothing — a wrong pathspec, or tests run outside a checkout —
     and a vacuous pass here reads exactly like a currency it never measured.
-    The floor is the four records AC-1 already requires; it is a subset check,
-    not equality, because the set is meant to grow.
+    The floor is the records AC-1 already requires; it is a subset check, not
+    equality, because the set is meant to grow.
     """
     covered = {p.stem for p in _tracked_feature_spec_md()}
     assert set(_EXPECTED_FEATURES) <= covered, (
@@ -206,7 +238,7 @@ def test_an_uncustomized_template_date_fails_with_a_readable_message(
     spec = tmp_path / "placeholder.md"
     spec.write_text(
         "---\nfeature: x\nstatus: implemented\nlast_updated: YYYY-MM-DD\n"
-        "tickets: [CAL-1]\n---\n\n## Behaviour\n",
+        "---\n\n## Behaviour\n",
         encoding="utf-8",
     )
     with pytest.raises(AssertionError, match="not an ISO-8601"):
@@ -219,7 +251,7 @@ def test_a_missing_last_updated_key_fails_with_a_readable_message(
     """A frontmatter block with no ``last_updated:`` line names the missing key."""
     spec = tmp_path / "keyless.md"
     spec.write_text(
-        "---\nfeature: x\nstatus: implemented\ntickets: [CAL-1]\n---\n\n"
+        "---\nfeature: x\nstatus: implemented\n---\n\n"
         "## Behaviour\n",
         encoding="utf-8",
     )
@@ -232,236 +264,34 @@ def test_a_missing_last_updated_key_fails_with_a_readable_message(
 _MD_LINK = re.compile(r"\]\((?!https?://)([^)#]+\.md)(?:#[^)]*)?\)")
 
 
-def test_spec_index_has_no_dangling_links() -> None:
-    """Every relative ``.md`` link in SPEC.md resolves to a tracked file (AC-3)."""
-    tracked = tracked_files_under(".")
-    text = _SPEC_INDEX.read_text(encoding="utf-8")
-    dangling: list[str] = []
-    for target in _MD_LINK.findall(text):
-        resolved = (_REPO_ROOT / target).resolve()
-        if resolved not in tracked:
-            dangling.append(target)
-    assert not dangling, (
-        "SPEC.md links to spec files that are not tracked (dangling links): "
-        f"{sorted(set(dangling))}"
-    )
+def test_no_dangling_links_in_the_as_built_record() -> None:
+    """Relative ``.md`` links in the **live** as-built record resolve (AC-3).
 
+    Covers ``specs/features/`` — the as-built record, which a reader is expected
+    to follow. Each link is resolved relative to the file that contains it, so a
+    doc moved to a deeper directory whose relative links were not re-based
+    against the new depth is caught (the CAL-661 review surfaced exactly this in
+    the re-homed banners).
 
-def test_no_dangling_links_in_the_migrated_specs() -> None:
-    """Relative ``.md`` links in the migrated surface resolve (AC-3).
-
-    Covers SPEC.md and every file this migration authors or moves —
-    ``specs/features/`` (the as-built record) and ``specs/retired/`` (the
-    re-homed engine docs). Each link is resolved relative to the file that
-    contains it, so a doc moved to a deeper directory whose relative links were
-    not re-based against the new depth is caught (the CAL-661 review surfaced
-    exactly this in the re-homed banners).
+    ``specs/retired/`` is **out of scope**, and that is a decision rather than an
+    oversight. A retired spec is a frozen record of how something worked; its
+    links rot the moment the tree moves past it, and the only way to keep them
+    resolving is to keep editing frozen history — which corrupts the record this
+    guard exists alongside. #435 made the choice concrete: retiring the
+    ``/harness`` command namespace left seven retired engine docs pointing at
+    ``commands/harness.md``, all of them accurate about their own era. The same
+    historical-by-category exemption ``specs/retired/`` already carries in the
+    retirement sweeps applies here.
     """
-    migrated = (
-        {_SPEC_INDEX}
-        | {p for p in tracked_files_under("specs/features") if p.suffix == ".md"}
-        | {p for p in tracked_files_under("specs/retired") if p.suffix == ".md"}
+    records = {p for p in tracked_files_under("specs/features") if p.suffix == ".md"}
+    assert records, (
+        "no tracked specs/features/*.md — this guard resolves links inside a "
+        "derived set, so an empty set is a vacuous pass that reads like a clean "
+        "record"
     )
     dangling: list[str] = []
-    for path in sorted(migrated):
+    for path in sorted(records):
         for target in _MD_LINK.findall(path.read_text(encoding="utf-8")):
             if not (path.parent / target).resolve().exists():
                 dangling.append(f"{path.relative_to(_REPO_ROOT)} -> {target}")
     assert not dangling, f"dangling relative .md links in the migrated specs: {dangling}"
-
-
-# --- Semantic coverage: the canonical record must match production behaviour ---
-# Shape + link checks pass even when the prose contradicts the code. These guards
-# tie specific documented contracts to the code that implements them, so a spec
-# that drifts from production behaviour fails here (CAL-661 review).
-
-
-def _registered_surface() -> set[str]:
-    """Every top-level command and sub-app the Typer app registers."""
-    from harness.cli import app
-
-    return registered_command_surface(app)
-
-
-def _documented_surface() -> set[str]:
-    """The top-level ``harness <cmd>`` tokens in cli-surface.md's surface block."""
-    text = _feature_path("cli-surface").read_text(encoding="utf-8")
-    blocks = re.findall(r"```[a-z]*\n(.*?)```", text, re.DOTALL)
-    surface = next(b for b in blocks if "harness start" in b)
-    cmds: set[str] = set()
-    for line in surface.splitlines():
-        line = line.strip()
-        if line.startswith("harness "):
-            cmds.add(line.split()[1])
-    return cmds
-
-
-def test_cli_surface_spec_matches_registered_commands() -> None:
-    """cli-surface.md documents exactly the commands the CLI registers.
-
-    Catches the drift class the review found (a doc naming a command the CLI
-    does not implement, or omitting one it does).
-    """
-    assert _documented_surface() == _registered_surface()
-
-
-def _verb_model_sections() -> set[str]:
-    """The verb names ``verb-model.md`` gives a ``### `<verb>`` section to.
-
-    A verb's section heading opens ``### `<name>` — …``; the tracker-switch and
-    routing headings under the same H2 carry no backticked leading token and
-    are excluded by the pattern rather than by an exclusion list.
-    """
-    text = (_FEATURES_DIR / "verb-model.md").read_text(encoding="utf-8")
-    return set(re.findall(r"^### `(\w+)`", text, re.MULTILINE))
-
-
-def test_verb_model_spec_documents_every_audited_verb() -> None:
-    """The as-built record carries a section for every audited lifecycle verb.
-
-    ``cli-surface.md`` is current because
-    :func:`test_cli_surface_spec_matches_registered_commands` locks it against
-    the registered surface. ``verb-model.md`` had no equivalent guard, and so
-    ADR 0007's ``design`` verb shipped (#210–#213) into a canonical record that
-    gave it no section at all while ``start``, ``review`` and ``close`` each
-    had one (#224/#228). Under ``feature_specs: true`` that record *is* the
-    contract, so an omission here is a contract defect, not a doc nit.
-
-    The verb set is **derived**, not listed twice: it is
-    :data:`tests.unit.test_cli_surface_locked._AUDITED_VERBS` — the one place
-    the audited set is declared — intersected against what the CLI actually
-    registers, so a verb that is audited but unregistered fails loudly here
-    rather than silently shrinking what this guard covers
-    (``code-quality`` Part C).
-    """
-    from harness.cli import app
-    from tests.unit.test_cli_surface_locked import _AUDITED_VERBS
-
-    registered = registered_command_surface(app)
-    unregistered = _AUDITED_VERBS - registered
-    assert not unregistered, (
-        f"Audited verbs that the CLI does not register: {sorted(unregistered)}. "
-        "Fix the derivation or the registration — do not narrow the audited "
-        "set to match, which would shrink this guard silently."
-    )
-    assert len(_AUDITED_VERBS) >= 2, (
-        f"Derived only {_AUDITED_VERBS} as the audited verb set — too few for "
-        "this guard to mean anything. An empty or singleton set makes the "
-        "check below pass trivially."
-    )
-
-    missing = _AUDITED_VERBS - _verb_model_sections()
-    assert not missing, (
-        f"specs/features/verb-model.md has no '### `<verb>`' section for: "
-        f"{sorted(missing)}. It is the as-built record for the verb model "
-        "(feature_specs: true), so every audited lifecycle verb must be "
-        "documented there as a verb — not only mentioned inside another "
-        "verb's scenarios."
-    )
-
-
-def _registered_flags() -> dict[str, set[str]]:
-    """Map each command / subcommand path to its registered ``--long`` flags."""
-    import click
-    import typer
-
-    from harness.cli import app
-
-    flags: dict[str, set[str]] = {}
-
-    def walk(cmd: object, prefix: list[str]) -> None:
-        if isinstance(cmd, click.Group):
-            for name, sub in cmd.commands.items():
-                walk(sub, [*prefix, name])
-            return
-        opts: set[str] = set()
-        for param in cmd.params:  # type: ignore[attr-defined]
-            for opt in (*param.opts, *param.secondary_opts):
-                if opt.startswith("--"):
-                    opts.add(opt)
-        flags[" ".join(prefix)] = opts
-
-    root = typer.main.get_command(app)
-    for name, sub in root.commands.items():  # type: ignore[attr-defined]
-        walk(sub, [name])
-    return flags
-
-
-def _documented_flags() -> dict[str, set[str]]:
-    """Map each documented command path to the ``--flags`` cli-surface.md shows."""
-    text = _feature_path("cli-surface").read_text(encoding="utf-8")
-    blocks = re.findall(r"```[a-z]*\n(.*?)```", text, re.DOTALL)
-    surface = next(b for b in blocks if "harness start" in b)
-    documented: dict[str, set[str]] = {}
-    for line in surface.splitlines():
-        line = line.split("#", 1)[0].strip()
-        if not line.startswith("harness "):
-            continue
-        tokens = line.split()[1:]
-        path = [t for t in tokens if t[0] not in "<[-"]
-        opts = set(re.findall(r"--[a-z][a-z-]*", line))
-        documented[" ".join(path)] = opts
-    return documented
-
-
-def test_cli_surface_flags_are_real() -> None:
-    """Every flag cli-surface.md documents is a real registered flag (no phantoms)."""
-    registered = _registered_flags()
-    phantom: list[str] = []
-    for path, opts in _documented_flags().items():
-        known = registered.get(path, set())
-        for opt in opts:
-            if opt not in known:
-                phantom.append(f"{path} {opt}")
-    assert not phantom, (
-        f"cli-surface.md documents flags the CLI does not register: {phantom}"
-    )
-
-
-def test_verb_output_keys_match_the_models() -> None:
-    """Every field of the verb output models is documented in verb-model.md."""
-    from harness.cli.close import CloseOutput
-    from harness.cli.review import ReviewOutput
-    from harness.cli.start import StartOutput
-
-    verb_model = _feature_path("verb-model").read_text(encoding="utf-8")
-    missing: list[str] = []
-    for model in (StartOutput, ReviewOutput, CloseOutput):
-        for field in model.model_fields:
-            if f"`{field}`" not in verb_model:
-                missing.append(f"{model.__name__}.{field}")
-    assert not missing, (
-        f"verb-model.md omits documented output keys present in the models: {missing}"
-    )
-
-
-def test_worktree_spec_matches_path_constants() -> None:
-    """worktree-lifecycle.md states the path/branch conventions the code uses."""
-    from harness.identity import WORKTREES_SUBDIR
-
-    text = _feature_path("worktree-lifecycle").read_text(encoding="utf-8")
-    assert str(WORKTREES_SUBDIR) in text, (
-        f"worktree-lifecycle.md must state the worktree root {WORKTREES_SUBDIR}"
-    )
-    assert "harness/<run_id>" in text, (
-        "worktree-lifecycle.md must state the `harness/<run_id>` branch pattern"
-    )
-
-
-def test_verb_specs_name_the_code_verdicts_and_statuses() -> None:
-    """The verdict and run-status literals in the specs match the code."""
-    from typing import get_args
-
-    from harness.cli.review import Verdict
-
-    verb_model = _feature_path("verb-model").read_text(encoding="utf-8")
-    for verdict in get_args(Verdict):
-        assert f"`{verdict}`" in verb_model, (
-            f"verb-model.md must name the `{verdict}` review verdict"
-        )
-
-    ledger = _feature_path("run-ledger").read_text(encoding="utf-8")
-    for status in ("open", "closed"):
-        assert f"`{status}`" in ledger, (
-            f"run-ledger.md must name the `{status}` verb-model run status"
-        )

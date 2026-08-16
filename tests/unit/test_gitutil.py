@@ -112,7 +112,7 @@ def test_default_repo_root_sees_a_tracked_test() -> None:
     tracked = tracked_files_under("tests/unit")
 
     # A committed sibling guard module — present in the index, so reported.
-    expected = Path(__file__).resolve().with_name("test_package_hygiene.py")
+    expected = Path(__file__).resolve().with_name("test_mutate.py")
     assert expected in tracked
 
 
@@ -441,36 +441,3 @@ def test_last_commit_date_trusts_a_non_boundary_answer_in_a_shallow_clone(
     # spec.md's answer still resolves to the grafted commit, so it is refused.
     with pytest.raises(ShallowHistoryError):
         last_commit_date("spec.md", repo_root=clone)
-
-
-#: The guards whose file set must come from ``tracked_py_sources``. Each walked
-#: the working tree with ``rglob("*.py")`` before #215 — the same missing
-#: exclusion independently absent in four modules, which is why the fix is one
-#: shared helper rather than a filter pasted four times.
-_TREE_WALKING_GUARDS = (
-    "tests/unit/test_time.py",
-    "tests/unit/test_cli_surface_locked.py",
-    "tests/unit/test_engine_retired.py",
-    "tests/unit/test_design_marker.py",
-)
-
-
-@pytest.mark.parametrize("relpath", _TREE_WALKING_GUARDS)
-def test_tree_walking_guards_enumerate_from_the_tracked_helper(
-    relpath: str,
-) -> None:
-    """No guard re-inlines a working-tree Python walk.
-
-    Locks the adoption, not just the current behaviour: a future guard added by
-    copying one of these would reintroduce the defect silently. Scoped to the
-    named modules so this lock's own pattern literal cannot self-trip, and
-    matched on ``*.py`` specifically so ``_living_doc_relpaths``'s legitimate
-    ``rglob("*.md")`` walk stays untouched.
-    """
-    source = (Path(__file__).resolve().parents[2] / relpath).read_text()
-
-    assert 'rglob("*.py")' not in source, (
-        f"{relpath} walks the working tree for Python sources; a stray worktree "
-        "or other untracked cruft under the scanned root then reads as living "
-        "source (#215). Enumerate from tests._gitutil.tracked_py_sources instead."
-    )

@@ -20,12 +20,12 @@ WS2 closes this three ways (proposal D2 → **B1 + B2**):
   guidance other repos self-host, so the skill has a real second consumer: every
   self-hosting repo's routine. The routine *invokes* the skill; the criteria are
   single-homed there, not duplicated in command prose.
-* **B1 — de-drift the triggers** with a runbook (``RUNBOOK.md``) documenting how
-  to re-sync the user-local scheduled tasks into thin callers of the versioned
-  routine. The task files live outside the repo, so the fix is operational.
+* **B1 — de-drift the triggers** by keeping the trigger a thin caller of the
+  versioned routine. The scheduled-task files live outside the repo, so that
+  half is operational; ``commands/routine.md`` is the versioned half.
 * **drift guard** — this module: it fails if the discovery-logic *signature*
   (the selection-criteria triad) is inlined into a trigger/caller surface (the
-  routine command or the runbook's trigger spec) instead of living solely in the
+  routine command) instead of living solely in the
   ``work-discovery`` skill and being *invoked* from those surfaces.
 
 Acceptance criteria (CAL-907):
@@ -55,8 +55,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness" / "routine-build.md"
-RUNBOOK = REPO_ROOT / "RUNBOOK.md"
+ROUTINE_COMMAND = REPO_ROOT / "commands" / "routine.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 
@@ -178,14 +177,14 @@ def test_work_discovery_skill_owns_pick_criteria() -> None:
 def test_build_routine_invokes_work_discovery_skill() -> None:
     """AC-1: the Build routine *invokes* the skill by name rather than owning the
     logic — it delegates the pick to ``work-discovery``."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = ROUTINE_COMMAND.read_text()
     assert "work-discovery" in body, (
-        "the Build routine must invoke the `work-discovery` skill for its pick "
+        "the routine must invoke the `work-discovery` skill for its pick "
         "step instead of inlining the discovery logic (CAL-907 AC-1)."
     )
     # It must still retain the pick step itself (the invocation point).
-    assert "pick the next ticket" in body.lower(), (
-        "the Build routine must retain its pick step as the skill's invocation "
+    assert "pick the next" in body.lower(), (
+        "the routine must retain its pick step as the skill's invocation "
         "point (CAL-907 AC-1)."
     )
 
@@ -198,25 +197,12 @@ def test_pick_criteria_not_inlined_into_command() -> None:
     command. The command is a *caller* of the versioned surface — if a future
     edit re-inlines the pick algorithm (the triad) into the Build routine section
     instead of invoking the skill, this guard fails."""
-    body = _section(HARNESS_COMMAND.read_text(), "/harness routine build")
+    body = ROUTINE_COMMAND.read_text()
     assert not _inlines_discovery(body), (
-        "the Build routine section inlines the discovery-logic triad "
+        "the routine command inlines the discovery-logic triad "
         "(dependencies + priority + decision) instead of invoking the "
         "`work-discovery` skill — the pick logic must be single-homed in the "
         "skill, not duplicated in command prose (CAL-907 AC-3)."
-    )
-
-
-def test_runbook_triggers_are_thin_callers() -> None:
-    """AC-3: the runbook's documented triggers are thin callers — they invoke the
-    versioned ``/harness routine`` surface and do NOT inline the discovery logic.
-    Fails if the runbook re-states the pick algorithm in a trigger."""
-    assert RUNBOOK.exists(), "RUNBOOK.md must exist (CAL-907 AC-2/AC-3)."
-    text = RUNBOOK.read_text()
-    assert not _inlines_discovery(text), (
-        "RUNBOOK.md inlines the discovery-logic triad into a trigger spec — a "
-        "scheduled task must be a *thin caller* of `/harness routine build` / "
-        "`quality`, not a re-statement of the pick logic (CAL-907 AC-3)."
     )
 
 
@@ -326,16 +312,17 @@ def test_deferral_instruction_assigns_the_operator() -> None:
     )
 
 
-def test_work_discovery_version_is_0_7_0() -> None:
-    """Bumped by #401 for provider-neutral discovery; the registry row agrees."""
+def test_work_discovery_version_is_0_9_0() -> None:
+    """Bumped by #435 for the routine re-pointing; the registry row agrees."""
     text = SKILL.read_text()
-    assert "guidance:work-discovery@0.7.0" in text, (
-        "the skill stamp must be work-discovery@0.7.0 (#401 — provider neutrality)."
+    assert "guidance:work-discovery@0.9.0" in text, (
+        "the skill stamp must be work-discovery@0.9.0 (#435 — the `/harness "
+        "routine build` caller and its `defer` verb are retired)."
     )
     reg = REGISTRY.read_text()
     assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.7\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.7.0 (#401)."
+        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.9\.0[^}]*\}", reg
+    ), "the registry files: row for work-discovery must be version 0.9.0 (#435)."
 
 
 # --- ADR 0006 / #191: the third hold kind, `input` --------------------------
@@ -365,26 +352,6 @@ def test_work_discovery_states_operator_label_narrowed_meaning() -> None:
     assert re.search(r"narrow", text, re.IGNORECASE), (
         "the skill must state that the `operator` label's meaning narrows now "
         "that `input` exists as its own kind (ADR 0006, #191)."
-    )
-
-
-def test_runbook_documents_trigger_resync() -> None:
-    """AC-2: ``RUNBOOK.md`` documents re-syncing the two user-local scheduled
-    tasks into thin callers of the versioned routine, and names the drift it
-    fixes (the stale "use /build" wording / pre-reclamation logic)."""
-    text = RUNBOOK.read_text()
-    for task in ("harness-work-pull", "harness-code-assess"):
-        assert task in text, (
-            f"RUNBOOK.md must name the `{task}` scheduled task it re-syncs "
-            "(CAL-907 AC-2)."
-        )
-    assert "/harness routine build" in text and "/harness routine quality" in text, (
-        "RUNBOOK.md must direct each trigger to invoke the versioned "
-        "`/harness routine build` / `/harness routine quality` surface (CAL-907 AC-2)."
-    )
-    assert re.search(r"version the logic", text, re.IGNORECASE), (
-        "RUNBOOK.md must state the principle it enforces — version the logic, "
-        "not the schedule (CAL-907 AC-2)."
     )
 
 

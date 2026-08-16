@@ -4,11 +4,12 @@
 ``registry.yaml``, so the reference dangled in every consumer. The task file was also
 stale (the retired 5-domain model; reports written to ``steward-<domain>-<date>.md`` at the
 repo root, contradicting the live 2-scope model and the ``assessments/`` convention), and
-``agents/tasks/release.md`` overlapped ``RELEASING.md``. SYSTEM-3 / SYSTEM-INSIGHT-3 of
-``assessments/2026-06-15-system-and-code.md`` decided to eliminate the layer: a "task" is
-always one of the four durable artifacts in disguise — a **command** (the trigger + scope),
-an **agent role** (who runs it + which skills), a **skill** (the how), and a **template**
-(the output format); the specific instance lives in **Linear**, not in a ``tasks/`` file.
+``agents/tasks/release.md`` overlapped the then-current ``RELEASING.md``. SYSTEM-3 /
+SYSTEM-INSIGHT-3 of ``assessments/2026-06-15-system-and-code.md`` decided to eliminate the
+layer: a "task" is always one of the four durable artifacts in disguise — a **command**
+(the trigger + scope), an **agent role** (who runs it + which skills), a **skill**
+(the how), and a **template** (the output format); the specific instance lives in
+**Linear**, not in a ``tasks/`` file.
 
 These guards pin the eliminated state so the layer cannot regress:
 
@@ -19,8 +20,8 @@ These guards pin the eliminated state so the layer cannot regress:
   for the report format; the registry lists it;
 * AC-4 — the conceptual model (task = command + role + skill + template; the instance lives
   in Linear; no ``tasks/`` artifact) is recorded in ``architecture-principles.md``;
-* the useful half of ``release.md`` (release notes from Linear + a ``dev → main`` PR) is
-  folded into ``RELEASING.md``.
+* the useful half of ``release.md`` (release notes from Linear + a ``dev → main`` PR) was
+  folded into ``RELEASING.md``, which #435 deleted with the release path it described.
 
 *Source:* CAL-716.
 """
@@ -38,7 +39,6 @@ ASSESS_TEMPLATE = REPO_ROOT / "templates" / "assessment.md"
 ASSESSMENT_CRAFT = REPO_ROOT / "skills" / "assessment-craft" / "SKILL.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
-RELEASING = REPO_ROOT / "RELEASING.md"
 
 
 # --- AC-1: the tasks layer is gone ------------------------------------------
@@ -166,20 +166,3 @@ def test_task_conceptual_model_recorded() -> None:
 
 # --- release.md fold --------------------------------------------------------
 
-
-def test_releasing_doc_absorbs_release_notes_procedure() -> None:
-    """The useful half of the removed ``release.md`` is folded into ``RELEASING.md``.
-
-    ``release.md`` summarised completed tracker tickets into release notes and
-    raised the release PR; that procedure must survive its deletion (CAL-716).
-    (The tracker cutover to GitHub, tick #69, means "tracker tickets" reads as
-    GitHub issues here, not Linear tickets — see #196.)
-    """
-    lower = RELEASING.read_text().lower()
-    assert "release notes" in lower, (
-        "RELEASING.md must document generating release notes (folded from "
-        "agents/tasks/release.md, CAL-716)"
-    )
-    assert "completed issues" in lower, (
-        "RELEASING.md must document summarising completed tracker issues into the notes (CAL-716)"
-    )

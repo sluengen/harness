@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# guidance:generate-codex-artifacts@0.2.0
+# guidance:generate-codex-artifacts@0.3.0
 """Generate Codex-local guidance artifacts from the canonical repo guidance."""
 
 from __future__ import annotations
@@ -103,15 +103,9 @@ def _command_skill_name(command: Path) -> str:
     return f"command-{slug}"
 
 
-def _command_invocations(command: Path) -> list[str]:
-    if command.stem == "harness":
-        return ["/harness", "/harness run", "/harness ingest", "/harness routine"]
-    return [f"/{command.stem}"]
-
-
 def _render_command_skill(command: Path) -> str:
     name = _command_skill_name(command)
-    invocations = ", ".join(f"`{item}`" for item in _command_invocations(command))
+    invocations = f"`/{command.stem}`"
     relative_command = command.relative_to(REPO_ROOT).as_posix()
     description = (
         f"Codex-native adapter for the repo command in `{relative_command}`. "
@@ -166,6 +160,26 @@ def _ensure_codex_skills(*, check: bool) -> list[str]:
 
     for link, target in expected_skill_links.items():
         errors.extend(_ensure_symlink(link, target, check=check))
+
+    # A retired skill leaves its generated symlink behind. Nothing else notices:
+    # the link still parses, `--check` only inspects the links it expects, and
+    # Codex resolves it to a directory that no longer exists. So prune every
+    # symlink under the generated skills dir that no canonical skill claims.
+    stale_skill_links = (
+        {
+            path
+            for path in CODEX_SKILLS_DIR.iterdir()
+            if path.is_symlink() and path not in expected_skill_links
+        }
+        if CODEX_SKILLS_DIR.exists()
+        else set()
+    )
+    if check:
+        for stale_link in sorted(stale_skill_links):
+            errors.append(f"{stale_link}: stale generated skill symlink")
+    else:
+        for stale_link in sorted(stale_skill_links):
+            stale_link.unlink()
 
     actual_command_skill_dirs = (
         {path for path in CODEX_SKILLS_DIR.glob("command-*") if path.is_dir()}

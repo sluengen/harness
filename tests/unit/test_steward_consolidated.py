@@ -14,10 +14,10 @@ These guards pin the consolidated state so the split cannot regress:
 * AC-1 — the two old steward agents are gone and unlisted; one ``steward`` agent replaces
   them; no dangling ``code-steward``/``system-steward`` reference survives in the live
   installed surface (history, specs/proposals, assessments, and tests keep their records);
-* AC-2 — ``skills/guidance-coherence/SKILL.md`` exists and carries the 7 guidance checks;
-  the ``system`` scope pulls it;
+* AC-2 — *retired.* ``skills/guidance-coherence`` and the ``system`` scope went with
+  the runtime (ADR 0015 / #435); the steward now has two scopes, not three;
 * AC-3 — ``/assess <scope>`` selects domains; ``code`` pulls the code-domain skills,
-  ``system`` pulls ``guidance-coherence``, and ``--deep`` adds the broad lenses;
+  ``architecture`` pulls the shape-domain standards, and ``--deep`` adds the broad lenses;
 * AC-4 — the design-system lens is layer-gated;
 * AC-6 — the two-surfaces / one-steward layering principle is recorded in
   ``specs/architecture-principles.md``.
@@ -35,7 +35,6 @@ AGENTS_DIR = REPO_ROOT / "agents"
 STEWARD = AGENTS_DIR / "steward.md"
 CODE_STEWARD = AGENTS_DIR / "code-steward.md"
 SYSTEM_STEWARD = AGENTS_DIR / "system-steward.md"
-GUIDANCE_COHERENCE = REPO_ROOT / "skills" / "guidance-coherence" / "SKILL.md"
 ASSESS = REPO_ROOT / "commands" / "assess.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
@@ -104,44 +103,6 @@ def test_no_dangling_steward_reference_in_surface() -> None:
     )
 
 
-# --- AC-2: the guidance-domain standards live in a skill --------------------
-
-
-def test_guidance_coherence_skill_exists_with_seven_checks() -> None:
-    """``skills/guidance-coherence/SKILL.md`` exists and carries the 7 guidance checks."""
-    assert GUIDANCE_COHERENCE.exists(), (
-        "skills/guidance-coherence/SKILL.md must exist — the system-scope domain standard (CAL-704)"
-    )
-    text = GUIDANCE_COHERENCE.read_text()
-    lower = text.lower()
-    assert re.search(r"<!-- guidance:guidance-coherence@\d+\.\d+\.\d+ -->", text), (
-        "the skill must carry a 'guidance:guidance-coherence@<version>' header"
-    )
-    assert re.search(r"^name:\s*guidance-coherence\s*$", text, re.MULTILINE), (
-        "the skill frontmatter must declare 'name: guidance-coherence'"
-    )
-    for check in (
-        "version integrity",
-        "boundary",          # universal/repo-specific boundary
-        "reference resolution",
-        "mece",
-        "lean",
-        "profile coherence",
-        "context currency",
-    ):
-        assert check in lower, (
-            f"guidance-coherence must carry the '{check}' check (one of the 7 guidance areas)"
-        )
-
-
-def test_registry_lists_guidance_coherence() -> None:
-    """The registry lists the new skill with its nested SKILL.md path."""
-    assert re.search(
-        r"skills/guidance-coherence/SKILL\.md:\s*\{\s*id:\s*guidance-coherence,",
-        REGISTRY.read_text(),
-    ), "registry.yaml must list the nested skills/guidance-coherence/SKILL.md entry (CAL-704)"
-
-
 # --- AC-3: /assess selects the scope; scopes pull the expected skills -------
 
 
@@ -151,8 +112,8 @@ def test_assess_documents_scopes_and_deep() -> None:
     lower = text.lower()
     assert "--deep" in text, "commands/assess.md must document the '--deep' modifier (CAL-704)"
     assert "steward" in text, "commands/assess.md must dispatch the single 'steward' agent"
-    assert "code" in lower and "system" in lower, (
-        "commands/assess.md must document the 'code' and 'system' scopes"
+    assert "code" in lower and "architecture" in lower, (
+        "commands/assess.md must document the 'code' and 'architecture' scopes"
     )
 
 
@@ -168,9 +129,9 @@ def test_steward_routes_each_scope_to_its_domain_skills() -> None:
     )
     for skill in code_skills:
         assert skill in text, f"steward.md (code scope) must pull '{skill}' as a domain standard"
-    # The system scope pulls guidance-coherence.
-    assert "guidance-coherence" in text, (
-        "steward.md (system scope) must pull 'guidance-coherence'"
+    # The architecture scope pulls the shape-domain standards.
+    assert "engineering-principles" in text, (
+        "steward.md (architecture scope) must pull 'engineering-principles'"
     )
     # The command owns --deep's detailed lenses; the role points there.
     assess = ASSESS.read_text().lower()

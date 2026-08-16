@@ -4,8 +4,8 @@
 ``skills/<id>/SKILL.md`` cite that resolves to **nothing**. This guard covers
 the inverse failure: a cite that resolves fine *in the harness* but points at a
 path that never installs into a consuming repo — the harness **app**
-(``harness/ docker/ bin/ scripts/ specs/ tests/``) or a repo-root operational
-doc (``RUNBOOK.md``) that is not part of the installed surface. A consumer that
+(``scripts/ specs/ tests/``) or a repo-root operational doc that is not part of
+the installed surface. A consumer that
 self-hosts the surface reads that prose and is sent to a path it does not have.
 
 The class rode in through ``commands/harness.md``: its ``/harness routine``
@@ -19,8 +19,7 @@ The boundary is not re-typed here — it is **parsed from the recorded source**
 (AC-2):
 
 * the **App** side from ``specs/architecture-principles.md``'s "App vs. installed
-  surface" enumeration (``**App** — `harness/ docker/ bin/ scripts/ specs/
-  tests/```);
+  surface" enumeration (``**App** — `scripts/ specs/ tests/```);
 * the **registered** side from ``registry.yaml`` itself — every ``files:`` and
   ``meta:`` entry. A file with *zero* entries in ``registry.yaml`` is the
   discriminator the ticket names for ``RUNBOOK.md`` ("zero entries in
@@ -43,10 +42,13 @@ Scope discriminators (why the guard does not flap on legitimate prose):
 * **Template placeholders** — ``{...}`` segments (the ``CONTEXT.template.md``
   ``{e.g. …}`` syntax) are stripped before scanning; they are examples a consumer
   fills in its own tree, not cites.
-* **Home-path install locations** — ``~/bin/harness`` (the wrapper's documented
-  install path under ``$HOME``) is not a repo cite: a path segment preceded by
-  ``/``, ``~`` or ``.`` is inside a longer path and is not re-matched, so the
-  ``bin/harness`` *inside* ``~/bin/harness`` never fires.
+* **Home-path locations** — a path under ``$HOME`` is not a repo cite: a path
+  segment preceded by ``/``, ``~`` or ``.`` is inside a longer path and is not
+  re-matched, so the ``scripts/verify.sh`` *inside* ``~/scripts/verify.sh``
+  never fires. The control for this was written on ``~/bin/harness``, the
+  wrapper's documented install path, and was repointed in #435: ``bin/`` left
+  the App enumeration with the wrapper, so the old control asserted that a
+  never-flagged path is not flagged.
 * **Registered + consumer-present** — a cite to any ``registry.yaml`` entry
   (installed surface ``templates/feature.md``; documented ``meta:`` machinery
   ``BOOTSTRAP.md``) or a file every repo carries (``CLAUDE.md``, ``README.md``,
@@ -56,7 +58,7 @@ Acceptance criteria (CAL-1109):
 
 * **AC-1** — the guard fails when distributed prose cites an app-only path.
   Proven live by :func:`test_detector_flags_an_app_only_cite` (a synthetic line
-  citing ``harness/cli/close.py`` is flagged) and enforced across the tree by
+  citing ``scripts/mutate.py`` is flagged) and enforced across the tree by
   :func:`test_no_distributed_prose_cites_an_app_only_path`.
 * **AC-2** — the app/surface split is parsed from the recorded boundary, not a
   hand-typed list. Proven by :func:`test_app_prefixes_come_from_the_boundary_doc`
@@ -101,9 +103,9 @@ _PLACEHOLDER = re.compile(r"\{[^}]*\}")
 def _app_prefixes() -> tuple[str, ...]:
     """Parse the **App** enumeration from the recorded boundary (AC-2).
 
-    The boundary line reads ``- **App** — `harness/ docker/ bin/ scripts/ specs/
-    tests/`. …``. The app side of the split is exactly those trailing-slash
-    prefixes; re-typing them here would let the guard drift from the boundary.
+    The boundary line reads ``- **App** — `scripts/ specs/ tests/`. …``. The app
+    side of the split is exactly those trailing-slash prefixes; re-typing them
+    here would let the guard drift from the boundary.
     """
     for line in _PRINCIPLES.read_text().splitlines():
         match = re.search(r"\*\*App\*\*\s*—\s*`([^`]+)`", line)
@@ -204,7 +206,7 @@ def _surface_md_files() -> list[str]:
 
 def test_app_prefixes_come_from_the_boundary_doc() -> None:
     prefixes = _app_prefixes()
-    for expected in ("harness/", "docker/", "bin/", "scripts/", "specs/", "tests/"):
+    for expected in ("scripts/", "specs/", "tests/"):
         assert expected in prefixes, (
             f"the App boundary enumeration must include {expected!r}"
         )
@@ -213,7 +215,7 @@ def test_app_prefixes_come_from_the_boundary_doc() -> None:
 def test_registered_files_come_from_the_registry() -> None:
     registered = _registered_files()
     # non-vacuous anchor: known surface (files:) and machinery (meta:) units
-    assert "commands/harness.md" in registered
+    assert "commands/routine.md" in registered
     assert "agents/steward.md" in registered
     assert "templates/feature.md" in registered
     assert "BOOTSTRAP.md" in registered  # meta: — documented machinery, not app-only
@@ -223,14 +225,22 @@ def test_registered_files_come_from_the_registry() -> None:
 
 
 def test_detector_flags_an_app_only_cite() -> None:
-    """A synthetic line citing an app file is flagged (the mechanism is live)."""
-    flagged = _scan_text("the verb lives in `harness/cli/close.py` today")
-    assert flagged == [(1, "harness/cli/close.py")], flagged
+    """A synthetic line citing an app file is flagged (the mechanism is live).
+
+    The cite was ``harness/cli/close.py`` until #435 deleted the package. A
+    control naming a path that no longer exists resolves to nothing and stops
+    flagging — silently, and while still reading as a control. It is repointed
+    at a surviving app-only file: ``scripts/mutate.py`` is under an App prefix,
+    is tracked, and appears in neither ``registry.yaml`` block, which is exactly
+    the shape this detector must catch.
+    """
+    flagged = _scan_text("the driver lives in `scripts/mutate.py` today")
+    assert flagged == [(1, "scripts/mutate.py")], flagged
 
 
 def test_detector_flags_a_bare_app_root_doc() -> None:
-    flagged = _scan_text("see RUNBOOK.md for the operator loop")
-    assert flagged == [(1, "RUNBOOK.md")], flagged
+    flagged = _scan_text("see SECURITY.md for the disclosure path")
+    assert flagged == [(1, "SECURITY.md")], flagged
 
 
 def test_detector_flags_a_relative_markdown_link() -> None:
@@ -267,9 +277,18 @@ def test_detector_ignores_a_registered_meta_doc() -> None:
     assert _scan_text("the other half of `BOOTSTRAP.md`: version stamps") == []
 
 
-def test_detector_ignores_the_home_dir_install_path() -> None:
-    """``~/bin/harness`` is the wrapper's install path, not a repo cite."""
-    assert _scan_text("`harness` must be on PATH as `~/bin/harness` today") == []
+def test_detector_ignores_a_home_dir_path() -> None:
+    """A path under ``$HOME`` is not a repo cite, even when its tail is one.
+
+    The subject is ``scripts/verify.sh``, which the detector *does* flag on its
+    own (``scripts/`` is an App prefix and the file is in neither registry
+    block) — so this control fails the moment the ``~`` lookbehind stops
+    working. It was written on ``~/bin/harness`` until #435 deleted ``bin/``
+    from the App enumeration, at which point the tail was unflaggable anyway and
+    the control asserted nothing.
+    """
+    assert _scan_text("the gate lives at `scripts/verify.sh`") == [(1, "scripts/verify.sh")]
+    assert _scan_text("a checkout may sit at `~/scripts/verify.sh` on the host") == []
 
 
 # --- AC-1: the tree is clean -------------------------------------------------

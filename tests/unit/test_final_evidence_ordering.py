@@ -94,7 +94,6 @@ _POINTERS = (
     "commands/review.md",
     "commands/build.md",
     "commands/ship.md",
-    "commands/harness/run.md",
 )
 
 #: A topic cue that must sit on the *same line* as the pointer. Without this the
@@ -369,7 +368,13 @@ def test_reviewer_reports_the_reviewed_sha() -> None:
 def test_ship_checks_head_against_the_reviewed_sha() -> None:
     """``/ship`` refuses a branch whose HEAD is not the certified tree (AC-4).
 
-    The agent-led twin of the harness's ``stale_review`` refusal.
+    A third assertion required ``commands/ship.md`` to name the harness engine's
+    ``stale_review`` refusal, so the agent-led rule and the audited one read as
+    one rule. #435 retires the engine, so there is no second path left to be
+    recognisable as; requiring the name would only pin a pointer to something
+    deleted. The two assertions that carry the property — the SHA it compares
+    against, and the command that reads HEAD — are untouched, and they are the
+    ones that fail if the check is dropped.
     """
     text = _text("commands/ship.md")
     assert "reviewed_sha" in text, (
@@ -379,11 +384,6 @@ def test_ship_checks_head_against_the_reviewed_sha() -> None:
         "commands/ship.md must show the check, not merely assert the "
         "precondition — a precondition nobody runs is how the old ordering "
         "survived (#331)"
-    )
-    lowered = text.lower()
-    assert "stale_review" in lowered, (
-        "commands/ship.md must name the harness refusal it mirrors, so the two "
-        "paths are recognisably one rule"
     )
 
 

@@ -10,14 +10,15 @@ unset, it works the whole tracker queue — for ``tracker: linear`` the team nam
 in ``repo.linear``, for ``tracker: github`` the board (already the full queue).
 
 The *guidance surface* half of that change — the ``work-discovery`` skill and the
-``/harness routine build`` command wording (the seam/CLI is issue #174):
+unattended routine's command wording (the seam/CLI was issue #174):
 
 * **#175 AC-1** — the ``work-discovery`` skill states scope **conditionally**
   (set → scope to that project; unset → the whole tracker queue) and drops the
   Linear-only "one Linear project" wording, with the ranking triad unchanged.
-* **#175 AC-2** — ``/harness routine build`` resolves scope from ``CONTEXT`` at
-  runtime and documents the **unscoped** reclaim + pick path when ``repo.project``
-  is absent, while keeping the scoped path intact.
+* **#175 AC-2** — the unattended build command resolved scope from ``CONTEXT`` at
+  runtime. ``/harness routine build`` was retired by ADR 0015 and the scope
+  resolution it restated is single-homed in the skill, which AC-1 covers; there
+  is nothing left here for a second guard to hold.
 * **#175 AC-3** — both ``guidance:`` stamps are bumped past their pre-change
   values and the ``registry.yaml`` rows agree (the surface-header parity guard
   enforces the pairing; this pins the direction of the bump).
@@ -28,13 +29,20 @@ The *CONTEXT schema doc* half — the last spec of the trilogy (issue #176):
   **optional** and documents both modes (set → scope to the project; omit → the
   whole tracker queue) and what "unscoped" means per backend (Linear team /
   GitHub board).
-* **#176 AC-2** — the ``/harness routine quality`` idle arm documents where
-  ``/assess`` findings file when unscoped: the tracker's default backlog, no
-  project (proposal D4).
-* **#176 AC-3** — the optional read path is exercised (a CONTEXT with no
-  ``repo.project`` reads as ``None`` and stays coherent), and the
-  ``template-context`` stamp is bumped past its pre-change value with the
-  ``registry.yaml`` row agreeing.
+* **#176 AC-2** — the idle quality arm documented where ``/assess`` findings file
+  when unscoped: the tracker's default backlog, no project (proposal D4).
+  ``/harness routine quality`` was retired by ADR 0015 with the same reasoning.
+* **#176 AC-3** — the ``template-context`` stamp is bumped past its pre-change
+  value with the ``registry.yaml`` row agreeing.
+
+**#435 dropped one test and kept the rest.** ``test_repo_project_optional_read_path``
+exercised ``harness.repo_config.repo_project`` — the reader that resolved the
+field at runtime — and ADR 0015 deletes the package that read it. Nothing in the
+surviving tree reads ``repo.project``: it is now a field an *agent* resolves from
+``CONTEXT.md`` while following ``work-discovery``, so the guards that matter are
+the prose ones below, and they all still have their subjects. The remaining
+import was that one test's; every other assertion here reads the skill, the
+template or the registry.
 """
 
 from __future__ import annotations
@@ -42,13 +50,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from harness.repo_config import repo_project
-
 REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
-HARNESS_COMMAND = REPO_ROOT / "commands" / "harness.md"
-BUILD_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-build.md"
-QUALITY_ROUTINE = REPO_ROOT / "commands" / "harness" / "routine-quality.md"
 TEMPLATE = REPO_ROOT / "templates" / "CONTEXT.template.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 
@@ -120,68 +123,18 @@ def test_work_discovery_ranking_unchanged() -> None:
 # --- AC-2: the Build routine resolves scope from CONTEXT, documents unscoped --
 
 
-def test_build_routine_documents_unscoped_path() -> None:
-    """AC-2: the Build routine resolves scope from ``CONTEXT`` and documents the
-    unscoped path — a ``harness reclaim --stale`` with no ``--project`` and a
-    whole-queue pick — when ``repo.project`` is absent."""
-    body = BUILD_ROUTINE.read_text()
-    low = body.lower()
-    assert "repo.project" in body, (
-        "the Build routine must name `repo.project` as the runtime scope lever "
-        "(#175 AC-2)."
-    )
-    assert re.search(r"unset|absent", low), (
-        "the Build routine must document the `repo.project` unset/absent branch "
-        "(#175 AC-2)."
-    )
-    assert re.search(r"whole|full", low), (
-        "the unset branch must widen the pick to the whole/full tracker queue "
-        "(#175 AC-2)."
-    )
-    # the unscoped reclaim: a `harness reclaim --stale` command line whose
-    # command portion (before any inline `#` comment) carries no `--project`.
-    reclaim_cmds = [
-        ln.split("#", 1)[0]
-        for ln in body.splitlines()
-        if "harness reclaim --stale" in ln.split("#", 1)[0]
-    ]
-    assert any("--project" not in c for c in reclaim_cmds), (
-        "the Build routine must show a `harness reclaim --stale` command with no "
-        "`--project` for the unscoped path (#175 AC-2)."
-    )
-
-
-def test_build_routine_keeps_scoped_path() -> None:
-    """AC-2 boundary: the scoped path is preserved — the reclaim pre-flight still
-    shows ``--project`` for the ``repo.project``-set case (the existing reclaim
-    guard depends on it)."""
-    body = BUILD_ROUTINE.read_text()
-    assert "reclaim --stale --project" in body, (
-        "the Build routine must retain the scoped `reclaim --stale --project` for "
-        "the `repo.project`-set case (#175 AC-2)."
-    )
-
-
-def test_scope_note_is_tracker_neutral() -> None:
-    """AC-2: the routine's scope note drops 'one Linear project' and the stale
-    'Harness v3' project name."""
-    text = BUILD_ROUTINE.read_text()
-    assert "one Linear project" not in text, (
-        "the routine scope note must drop 'one Linear project' (#175 AC-2)."
-    )
-    assert "Harness v3" not in text, (
-        "the scope note must not carry the stale `Harness v3` project name — this "
-        "repo's project is `Harness` since the GitHub cutover (#175 AC-2)."
-    )
-
-
 # --- AC-3: both guidance stamps bumped, registry rows agree ------------------
 
 
 def test_guidance_stamps_bumped() -> None:
-    """AC-3: ``work-discovery`` is stamped past 0.3.0 and ``harness`` past 0.2.1,
-    with the ``registry.yaml`` rows agreeing (the surface-parity guard enforces
-    the pairing; this pins the bump direction)."""
+    """AC-3: ``work-discovery`` is stamped past 0.3.0, with the ``registry.yaml``
+    row agreeing (the surface-parity guard enforces the pairing; this pins the
+    bump direction).
+
+    The companion half pinned the routine-build command doc past 0.1.0; #435
+    retired that command, and the scope resolution it restated is now
+    single-homed in the skill above — which is what the AC-1 guards cover.
+    """
     skill = SKILL.read_text()
     ms = re.search(r"guidance:work-discovery@(\d+)\.(\d+)\.(\d+)", skill)
     assert ms, "the work-discovery skill must carry a guidance stamp."
@@ -190,32 +143,48 @@ def test_guidance_stamps_bumped() -> None:
         f"work-discovery must be bumped past 0.3.0, got {ms.group(0)} (#175 AC-3)."
     )
 
-    cmd = BUILD_ROUTINE.read_text()
-    mc = re.search(r"guidance:harness-routine-build@(\d+)\.(\d+)\.(\d+)", cmd)
-    assert mc, "commands/harness.md must carry a guidance stamp."
-    cmd_ver = tuple(int(g) for g in mc.groups())
-    assert cmd_ver >= (0, 1, 0)
-
     reg = REGISTRY.read_text()
     sk_str = ".".join(str(n) for n in sk_ver)
-    cmd_str = ".".join(str(n) for n in cmd_ver)
     assert re.search(
         r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*"
         + re.escape(sk_str)
         + r"[^}]*\}",
         reg,
     ), f"registry row for work-discovery must be version {sk_str} (#175 AC-3)."
-    assert re.search(
-            r"commands/harness/routine-build\.md:\s*\{[^}]*version:\s*"
-        + re.escape(cmd_str)
-        + r"[^}]*\}",
-        reg,
-    ), f"registry row for harness command must be version {cmd_str} (#175 AC-3)."
 
 
 # ============================================================================
 # Issue #176 — CONTEXT schema/template + idle-arm filing doc
 # ============================================================================
+
+
+#: ``optional`` as a standalone word. The bare substring is shielded by the
+#: field's own comment, which cites the proposal ``optional-project-scope`` by
+#: name — so a template that dropped every statement of optionality would still
+#: satisfy ``"optional" in doc`` on the citation alone. Hyphen-bounded, because
+#: the citation is the only shape that has to be excluded.
+_OPTIONAL_WORD = re.compile(r"(?<![\w-])optional(?![\w-])", re.IGNORECASE)
+
+
+def _states_optionality(doc: str) -> bool:
+    """Does ``doc`` say the field is optional, in its own words?
+
+    One predicate, called by both assertions below, so tightening it cannot
+    leave one of them reading the loose form.
+    """
+    return bool(_OPTIONAL_WORD.search(doc))
+
+
+def test_the_optionality_predicate_is_not_satisfied_by_the_proposal_name() -> None:
+    """Control: the proposal citation alone does not count as stating the rule.
+
+    The live template contains both, which is why the loose substring test read
+    green against a field that had stopped saying it.
+    """
+    assert not _states_optionality(
+        "# repo.project (proposal optional-project-scope, D3) — set it."
+    ), "the citation `optional-project-scope` satisfies the predicate on its own"
+    assert _states_optionality("project: {optional — the project the loop scopes to}")
 
 
 def _repo_project_doc(text: str) -> str:
@@ -249,7 +218,7 @@ def test_template_marks_repo_project_optional() -> None:
     assert doc.strip().startswith("project:"), (
         "the template must carry a `project:` field under `repo:` (#176 AC-1)."
     )
-    assert "optional" in doc.lower(), (
+    assert _states_optionality(doc), (
         "repo.project must be documented as optional, not required (#176 AC-1)."
     )
 
@@ -291,7 +260,7 @@ def test_template_repo_project_drops_required_only_wording() -> None:
     doc = _repo_project_doc(TEMPLATE.read_text()).lower()
     # the field must not read as merely "omit otherwise" with no mode explanation:
     # both an explicit "optional" and the whole-queue mode must be present.
-    assert "optional" in doc and re.search(r"whole|full", doc), (
+    assert _states_optionality(doc) and re.search(r"whole|full", doc), (
         "the project field must positively document optionality and the "
         "whole-queue mode, not just say 'omit otherwise' (#176 AC-1)."
     )
@@ -300,46 +269,7 @@ def test_template_repo_project_drops_required_only_wording() -> None:
 # --- #176 AC-2: idle-arm filing when unscoped (routine quality) ---------------
 
 
-def test_quality_routine_documents_unscoped_idle_arm_filing() -> None:
-    """#176 AC-2: the ``/harness routine quality`` idle arm states where
-    ``/assess`` findings file when unscoped — the tracker's default backlog with
-    no project (proposal D4)."""
-    body = QUALITY_ROUTINE.read_text()
-    assert body, "commands/harness.md must carry a '/harness routine quality' section."
-    low = body.lower()
-    assert re.search(r"idle arm|idle-arm", low), (
-        "the quality routine must describe its idle arm (#176 AC-2)."
-    )
-    assert re.search(r"default backlog|team backlog", low), (
-        "the idle arm must state the unscoped findings file to the tracker's "
-        "default/team backlog (#176 AC-2)."
-    )
-    assert re.search(r"no project|without a project|unset|absent", low), (
-        "the unscoped filing must be qualified as no-project (#176 AC-2)."
-    )
-
-
 # --- #176 AC-3: optional read path + template-context stamp bump --------------
-
-
-def test_repo_project_optional_read_path(tmp_path: Path) -> None:
-    """#176 AC-3: the optional path — a CONTEXT.md with no ``repo.project`` reads
-    as ``None`` and does not raise; a scoped one still reads its project. This is
-    the schema no longer requiring the field."""
-    (tmp_path / "CONTEXT.md").write_text(
-        "repo:\n  name: some-repo\n  linear: ACME\ntracker: linear\n"
-    )
-    assert repo_project(tmp_path) is None, (
-        "a CONTEXT with no repo.project must read as None, not raise — the field "
-        "is optional (#176 AC-3)."
-    )
-
-    (tmp_path / "CONTEXT.md").write_text(
-        "repo:\n  name: some-repo\n  linear: ACME\n  project: Widgets\ntracker: linear\n"
-    )
-    assert repo_project(tmp_path) == "Widgets", (
-        "a CONTEXT with repo.project set must still read that project (#176 AC-3)."
-    )
 
 
 def test_template_context_stamp_bumped() -> None:

@@ -11,13 +11,13 @@ last_updated: 2026-07-29
 Who the harness is: what it stands for, and the bounded set of visual
 decisions this system governs.
 
-**The harness is an evidence layer for agent-driven development** —
-deterministic, audited verbs an agent calls while it drives a ticket end to
-end. It has no product UI and no end-users; it is infrastructure other repos
-self-host. `docs/index.html` — the page this design system captures — is the
-harness's **one** external-facing artifact: a single, self-contained landing
-page explaining the operating model (the Four Loops), the harness's own
-verbs, and the guidance catalog. There is no app behind it to theme, no
+**The harness is an evidence layer for agent-driven development** — a
+deterministic verify gate and a versioned body of guidance an agent works
+against while it drives a ticket end to end. It has no product UI and no
+end-users; it is infrastructure other repos self-host. `docs/index.html` — the
+page this design system captures — is the harness's **one** external-facing
+artifact: a single, self-contained landing page explaining the operating model
+(the Four Loops), the gate, and the guidance catalog. There is no app behind it to theme, no
 tenant to re-skin, and no second screen.
 
 ## The rules this layer holds

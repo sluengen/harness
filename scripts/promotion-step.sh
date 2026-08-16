@@ -2,10 +2,10 @@
 # The nightly `dev -> staging` promotion, as one shell.
 #
 # It lives here rather than inside the workflow's `run:` block so a test can
-# *execute* it against stubbed verbs instead of reading its text
+# *execute* it against stubbed git instead of reading its text
 # (specs/architecture-principles.md -> "CI logic lives in a script, not in a
-# `run:` block"; specs/proposals/promotion-guard-instrument.md). The executing
-# guard is tests/integration/test_promotion_step_script.py.
+# `run:` block"). The executing guard is
+# tests/unit/test_promotion_step_script.py.
 #
 # Extracting the shell split which ref supplies it, so note where each half comes
 # from. GitHub reads a scheduled workflow from the default branch (`main`), while
@@ -15,47 +15,61 @@
 # change here therefore reaches the next nightly as soon as it lands on `dev`,
 # rather than waiting to be promoted the rest of the way.
 #
+# ADR 0015 retires the `harness promote` verb, not the promotion. The topology
+# (`dev -> staging -> main`) and this nightly automation are kept by decision;
+# what the verb used to supply — a ledgered candidate, a `HARNESS_WORKSPACE_ROOTS`
+# allowlist, a five-state machine, a bounded repair — is gone, and the properties
+# that actually matter are re-expressed in plain git below:
+#
+#   * the gate decides, and only a green gate advances the branch;
+#   * nothing is ever repaired, merged or forced — the job stops and reports;
+#   * the ref moves only as a fast-forward, checked here and again by the server.
+#
 # Two environment inputs, both supplied by Actions and both required:
-# GITHUB_WORKSPACE (the checkout, and the one allowlisted root) and RUNNER_TEMP.
-# `set -u` aborts before any verb runs if either is missing, which is the
-# fail-closed direction.
+# GITHUB_WORKSPACE (the checkout the gate runs in) and RUNNER_TEMP (where the
+# gate log is captured). They are asserted below before anything mutates, which
+# is the fail-closed direction; `set -u` is the backstop, not the check.
 set -euo pipefail
 
-# Every verb resolves `--repo` through the HARNESS_WORKSPACE_ROOTS allowlist,
-# which fails closed: unset means no allowed roots, so the verb refuses the path
-# with exit 2 before it does anything. The Docker wrapper (~/bin/harness) pins
-# that allowlist for a developer; a runner has no wrapper, so the job pins it
-# here, once, for all three calls.
-export HARNESS_WORKSPACE_ROOTS="$GITHUB_WORKSPACE"
+: "${GITHUB_WORKSPACE:?the promotion step needs GITHUB_WORKSPACE (the checkout to gate and promote)}"
+: "${RUNNER_TEMP:?the promotion step needs RUNNER_TEMP (where the gate log is captured)}"
 
-promotion_json="$RUNNER_TEMP/promotion.json"
-uv run harness promote start --repo "$GITHUB_WORKSPACE" --from dev --to staging > "$promotion_json"
+#: The hop. Named rather than inlined so the two branches appear once each and
+#: the ::error:: annotations can say which ref stalled.
+SOURCE_BRANCH="dev"
+TARGET_BRANCH="staging"
 
-promotion_id="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["promotion_id"])' "$promotion_json")"
-status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
-if [ "$status" != "gate_pending" ]; then
-  cat "$promotion_json"
-  echo "::error::Promotion $promotion_id stopped at $status; no automated repair is permitted."
-  exit 1
-fi
+cd "$GITHUB_WORKSPACE"
 
-worktree="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["worktree_path"])' "$promotion_json")"
-gate_log="$RUNNER_TEMP/promotion-gate-$promotion_id.log"
+candidate="$(git rev-parse HEAD)"
+
+# The gate's exit code is *observed*, never rounded. `set +e` around it only so a
+# red gate reaches the report below instead of aborting the script anonymously;
+# `set -e` is restored immediately after.
+gate_log="$RUNNER_TEMP/promotion-gate-$candidate.log"
 set +e
-(
-  cd "$worktree"
-  bash scripts/verify.sh
-) > "$gate_log" 2>&1
+bash scripts/verify.sh > "$gate_log" 2>&1
 gate_exit=$?
 set -e
 
-uv run harness promote continue --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id" \
-  --gate-exit "$gate_exit" --gate-log "$gate_log" > "$promotion_json"
-status="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$promotion_json")"
-if [ "$status" != "pr_ready" ]; then
-  cat "$promotion_json"
-  echo "::error::Promotion $promotion_id stopped at $status; staging was not advanced."
+if [ "$gate_exit" -ne 0 ]; then
+  tail -n 40 "$gate_log"
+  echo "::error::The gate exited $gate_exit on $SOURCE_BRANCH@$candidate; $TARGET_BRANCH was not advanced. No automated repair is permitted."
   exit 1
 fi
 
-uv run harness promote pr --repo "$GITHUB_WORKSPACE" --promotion-id "$promotion_id"
+# A fast-forward, or nothing. Checked here so the refusal names the reason; the
+# plain (unforced) push below refuses the same case server-side, which is the
+# guard that holds if this branch is ever edited away. A target that does not yet
+# exist is created by the push, so the ancestry check is skipped rather than
+# failing on an unknown ref.
+if git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+  git fetch --no-tags --quiet origin "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+  if ! git merge-base --is-ancestor "refs/remotes/origin/$TARGET_BRANCH" "$candidate"; then
+    echo "::error::$TARGET_BRANCH holds commits $SOURCE_BRANCH@$candidate does not contain, so advancing it would not be a fast-forward; $TARGET_BRANCH was not advanced. The nightly never merges or forces — resolve it by hand."
+    exit 1
+  fi
+fi
+
+git push origin "$candidate:refs/heads/$TARGET_BRANCH"
+echo "Promoted $SOURCE_BRANCH@$candidate to $TARGET_BRANCH."

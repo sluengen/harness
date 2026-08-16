@@ -1,11 +1,11 @@
-<!-- guidance:template-context@0.1.18 -->
+<!-- guidance:template-context@0.1.19 -->
 # CONTEXT.md
 
 Agent-facing context for **{repo name}**. This is the one file allowed to name this repo. The guidance files (skills, agents, commands) are universal and point here for everything repo-specific: stack, commands, paths, tools, and principles.
 
 `README.md` is for humans. This is for agents. Read it first.
 
-<!-- The block below is structured so the pipeline harness can parse and inject it.
+<!-- The block below is structured so an agent or a script can parse it.
      Keep it accurate; agents and tooling both rely on it. -->
 ```yaml
 profile: harness               # the single registry profile (one surface); repo type is set by layers below, not by a profile
@@ -13,14 +13,14 @@ visibility: committed          # committed (all guidance in git; enables cloud e
 repo:
   name: {repo name}
   linear: {Linear workspace/team — or 'none' for the rare repo not on Linear (then set tracker: none below). The tracker address; read only when tracker: linear}
-  project: {optional — the project the /harness routine loops scope to; omit to run the whole tracker queue}
+  project: {optional — the project the /routine loop scopes to; omit to run the whole tracker queue}
   # repo.project is OPTIONAL (proposal optional-project-scope, D3 — absence is the
-  # signal; there is no `all` sentinel). Set → the /harness routine loops scope to
-  # that one project; omit → they work the whole tracker queue. What "unscoped"
-  # means per backend: tracker: linear → the team named in repo.linear; tracker:
-  # github → the board (already the full queue, so omitting it is a no-op there).
-  # Only relevant if this repo self-hosts the harness routine loops.
-tracker: linear                # single source of truth for the tracker: linear | github | none. The switch the harness engine reads: none → the verbs run tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and `start <id>` takes an opaque run identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected.
+  # signal; there is no `all` sentinel). Set → /routine scopes to that one
+  # project; omit → it works the whole tracker queue. What "unscoped" means per
+  # backend: tracker: linear → the team named in repo.linear; tracker: github →
+  # the board (already the full queue, so omitting it is a no-op there).
+  # Only relevant if this repo runs the unattended routine.
+tracker: linear                # single source of truth for the tracker: linear | github | none. none → the lifecycle runs tracker-less (no LINEAR_API_KEY, no fetch, no transitions) and a ticket id is an opaque work identifier. Coupled to repo.linear above (linear needs an address; none forbids one); an inconsistent pair is rejected.
 # For tracker: github (the GitHub Projects v2 backend), set tracker:
 # github above, set repo.linear: none (the Linear address is unused), and add the
 # github: block below — a top-level key naming the issues repo and the board. It
@@ -56,22 +56,12 @@ assurance:
 branches:
   integration: {e.g. dev}      # feature branches base from and merge here
   release: {e.g. main}         # how production is fed
-# The autonomous loop's spend bounds, read by the harness engine. Values are
-# bare integers, never {e.g. …} placeholders — the reader matches digits only, so
-# a placeholder silently falls back to the code default while reading to a human
-# as though it were set. Shipped equal to those defaults, so deleting a line
-# changes nothing until you retune it. Only relevant if this repo self-hosts the
-# harness routine loops.
+# The review→fix stop budget, read by `skills/review-discipline/SKILL.md`.
+# Values are bare integers, never {e.g. …} placeholders. Shipped at the defaults
+# the stop rule assumes, so deleting a line changes nothing until you retune it.
 loop:
-  max_review_cycles: 5           # how many review→fix cycles a run may SPEND — the review after them is refused. The stop policy these numbers tune lives in `skills/review-discipline/SKILL.md`; this block is only its numbers.
-  unconditional_review_cycles: 3 # how many of those run with no convergence judgment required. Keep it at or below `max_review_cycles`; the loader clamps rather than erroring.
-  wall_clock_budget_minutes: 110 # the longest a legitimate **unattended** run may take — since ADR 0011 it bounds that mode alone, an attended run being bounded by the operator and, for reclamation, by `attended_idle_minutes` below. ALSO `harness reclaim --stale`'s staleness threshold for an unattended run — one quantity seen from two directions (a run refused at review but spared reclamation would be alive on the board and unable to finish), so this single line moves both.
-  attended_idle_minutes: 480     # `harness reclaim --stale`'s staleness threshold for a run started `--attended`. A longer threshold, not an exemption: a session paused on a question to the operator touches none of the liveness clocks, so the wall clock above would revert its ticket underneath them — while a session abandoned overnight is still reclaimed by morning. Keep it at or above `wall_clock_budget_minutes`.
-  untracked_file_limit: 1000     # how far past its own git index a run worktree may drift before `harness review` refuses to spawn an engine over it — a worktree carrying thousands of untracked files (a stray `.venv`, a build tree) drowns the review engine's tool use, and the observed signature is a review that burns the whole `engine_timeout_seconds` ceiling and returns `engine_timeout` having reviewed nothing. The refusal is instant and costs no review cycle. Coarse on purpose: raise it if your gate legitimately leaves a large untracked tree in the worktree, or set `0` to disable the check entirely.
-  engine_timeout_seconds: 900    # per-subprocess ceiling for BOTH engines, review and design — a hung engine is killed and surfaced as an infra failure (exit 3, reason=engine_timeout) instead of hanging the verb. Raise it if a legitimately slow engine is being killed; sit it at or below any external ops kill so the clean exit wins. Retune it against your own ledger, not this number: if *successful* runs are finishing near the ceiling it is clipping real work and should go up, whereas if they are not, a timeout is a hung engine and a bigger ceiling only spends more per dead attempt.
-  probe_max_entries: 3           # how many mutations `harness review`'s probe stage may run per review (#363): the engine proposes edits to the code under review, each is applied to a throwaway worktree at the reviewed SHA and the suite is run against it, and a survivor comes back as a finding. A mutation table certifies only what its author thought to mutate, and the author is the person being reviewed. Costs one baseline suite run plus one per entry, so keep it small; set `0` to disable the stage entirely.
-  probe_budget_seconds: 720      # ceiling on that probe subprocess, clamped to `engine_timeout_seconds` above — one review's added cost can never exceed one engine's ceiling. Lower it if probing is eating the loop; do NOT raise `engine_timeout_seconds` to buy a probe more time.
-  review_model: opus            # the alias the claude review engine runs on, for every ticket. Not a bound like the keys above — one value, one edit to change, and read as a plain string alias rather than a two-value enum: an enum makes a third alias a code change and coerces a typo to the default, hiding the mistake behind a review that quietly ran the wrong model. An unrecognized alias reaches the claude CLI and fails loudly there. `harness review --model <alias>` overrides it for host/testing. Pick it for the verdict quality your repo needs; a larger model is generally slower, so weigh it against `engine_timeout_seconds` above.
+  max_review_cycles: 5           # how many review→fix cycles a run may SPEND before it must stop. The stop policy these numbers tune lives in `skills/review-discipline/SKILL.md`; this block is only its numbers.
+  unconditional_review_cycles: 3 # how many of those run with no convergence judgment required. Keep it at or below `max_review_cycles`.
 conventions:
   commit_format: "{e.g. type(scope): description — feat/fix/chore/docs/refactor/test — or omit}"
 tools:

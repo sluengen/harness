@@ -1,9 +1,8 @@
-<!-- guidance:steward@0.3.0 -->
+<!-- guidance:steward@0.4.0 -->
 ---
 name: steward
-description: Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture` | `system`, optionally `--deep`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix.
+description: Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture`, optionally `--deep`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix.
 tools: [Read, Write, Glob, Grep, Bash]
-model: sonnet
 isolation: shared
 ---
 
@@ -19,8 +18,7 @@ domain standards:
 
 - `code`: `code-quality`, `test-driven-development`, `architecture`, and
   `engineering-principles`; add `design-system` only when its layer is enabled;
-- `architecture`: `architecture` and `engineering-principles`;
-- `system`: `guidance-coherence`.
+- `architecture`: `architecture` and `engineering-principles`.
 
 Follow those skills and `commands/assess.md` for the detailed lenses, read path,
 deep-mode additions, filing behaviour, and boundaries. A single instance in the
@@ -30,7 +28,7 @@ pattern, history, or a reproducible command.
 
 Write the dated `templates/assessment.md` report at
 `assessments/<date>-<scope>.md`: summary, severity-rated four-part findings with
-scope IDs (`CODE-`, `ARCH-`, or `SYSTEM-`), and up to three systemic insights.
+scope IDs (`CODE-` or `ARCH-`), and up to three systemic insights.
 Zero findings is valid. Report what was not assessed and never invent findings
 to fill the template. The `/assess` command, not this role, files findings and
 commits the report.
