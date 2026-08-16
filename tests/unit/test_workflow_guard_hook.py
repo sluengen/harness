@@ -18,7 +18,11 @@ way — by running the hook, never by reading its regex:
   ``staging`` violates ``worktree-isolation`` exactly as editing it on ``main``
   does, so narrower was not correct — it was stale. The corpus is **derived from
   the push guard's export**, so adding a branch name there is what makes this
-  red (:func:`test_the_vocabulary_covers_the_push_guards_fallback_set`).
+  red (:func:`test_the_vocabulary_covers_the_push_guards_fallback_set`). Review
+  added the opposite direction
+  (:func:`test_the_vocabulary_is_no_wider_than_the_push_guards_fallback_set`):
+  the claim on both hooks is that the two sets are *the same*, and a containment
+  check on its own lets this one grow names the push guard never protects.
 * **AC-6 — the debounce is per repository.** The marker was a fixed name in the
   machine-wide temp directory, so two sessions in two checkouts shared one, and
   the second session's warning was suppressed by the first's — silently, and
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -91,6 +96,28 @@ def _fallback_protected() -> list[str]:
     )
     assert proc.returncode == 0, f"could not read FALLBACK_PROTECTED: {proc.stderr}"
     return [name for name in proc.stdout.strip().split(",") if name]
+
+
+#: ``workflow-guard.js``'s own shared-branch alternation, parsed out of the hook.
+#: Read structurally rather than behaviourally because the *reverse* direction —
+#: a name this guard calls shared that the push guard does not protect — has no
+#: behavioural probe: nothing enumerates the branch names that are **not** in the
+#: set, so a widening cannot be caught by running the hook over a corpus.
+_ALTERNATION = re.compile(r"const SHARED_BRANCH = /\^\(([^)]*)\)\$/")
+
+
+def _shared_branch_vocabulary() -> list[str]:
+    """The names ``workflow-guard.js`` treats as shared, from its own source."""
+    source = _HOOK.read_text(encoding="utf-8")
+    match = _ALTERNATION.search(source)
+    assert match, (
+        "hooks/workflow-guard.js no longer declares SHARED_BRANCH as a literal "
+        "anchored alternation, so this module cannot read the vocabulary it "
+        "compares against push-target-guard's fallback. Re-point this parser at "
+        "wherever the set now lives — deleting it drops the only measurement of "
+        "the widening direction."
+    )
+    return [name for name in match.group(1).split("|") if name]
 
 
 def _run_guard(repo: Path, edited: Path, *, tmpdir: Path | None = None) -> str:
@@ -189,6 +216,52 @@ def test_the_vocabulary_covers_the_push_guards_fallback_set(
         f"{branch!r} is protected by push-target-guard but workflow-guard does "
         f"not recognise it as a shared branch; got: {ctx!r}. Editing source "
         "directly on it breaks worktree-isolation exactly as it does on main."
+    )
+
+
+def test_the_vocabulary_parser_reads_a_source_it_is_given() -> None:
+    """Positive control for :func:`_shared_branch_vocabulary`.
+
+    A parser degraded to "found nothing" would make the equality below a
+    comparison against an empty set on one side, which fails loudly — but a
+    parser that silently returned the *whole* regex body would make it fail for
+    the wrong reason and get loosened. Both shapes are pinned here on synthetic
+    source rather than on the shipped hook.
+    """
+    assert _ALTERNATION.search(
+        "const SHARED_BRANCH = /^(alpha|beta)$/;\n"
+    ).group(1) == "alpha|beta"
+    assert _ALTERNATION.search("const OTHER = /^(alpha)$/;") is None, (
+        "the parser matched a declaration that is not SHARED_BRANCH, so the "
+        "vocabulary it reads is not this guard's"
+    )
+
+
+def test_the_vocabulary_is_no_wider_than_the_push_guards_fallback_set() -> None:
+    """The other direction, which nothing measured until review.
+
+    :func:`test_the_vocabulary_covers_the_push_guards_fallback_set` proves
+    containment one way — every protected branch is one this guard calls shared.
+    Containment is not the claim being made. ``workflow-guard.js``'s own comment
+    says the set "is ``push-target-guard.js``'s ``FALLBACK_PROTECTED``, and
+    deliberately the same set", and #457's design call was to *match* it; a
+    one-directional check turns that equality into an allowlist this hook can
+    quietly grow out of.
+
+    Measured at review: adding ``sandbox`` to this alternation changed the
+    hook's real output — the same payload on a ``sandbox`` branch went from
+    ``{"continue":true}`` to a shared-branch warning — while all 1,781 tests
+    stayed green.
+    """
+    vocabulary = set(_shared_branch_vocabulary())
+    fallback = set(_fallback_protected())
+
+    assert vocabulary, "the parsed vocabulary is empty, so the comparison is vacuous"
+    assert vocabulary - fallback == set(), (
+        f"workflow-guard calls branches shared that push-target-guard does not "
+        f"protect: {sorted(vocabulary - fallback)}. The two hooks answer the same "
+        "question about a branch name and the comment on each says so — either "
+        "add the name to FALLBACK_PROTECTED or take it out of this alternation."
     )
 
 

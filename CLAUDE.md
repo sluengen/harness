@@ -64,7 +64,7 @@ The Stop hook can force exactly one extra turn per stop-chain; it is a nudge wit
 
 ### The advisory hooks
 
-The rest of the bundle never refuses anything: each adds a line to the model's context and gets out of the way. Each is debounced against a state file scoped to the repository it ran in, so concurrent sessions in different checkouts do not silence each other:
+The rest of the bundle never refuses anything: each adds a line to the model's context and gets out of the way. Where one keeps state to debounce itself, that state is keyed to the directory the hook ran in, so concurrent sessions in different checkouts do not silence each other:
 
 | Hook | Event | Advises |
 |---|---|---|

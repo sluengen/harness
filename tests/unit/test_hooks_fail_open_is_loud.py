@@ -57,8 +57,8 @@ Acceptance criteria:
   than by line number: :func:`test_class_a_sites_report_and_class_b_sites_do_not`
   over the source, and :func:`test_failing_best_effort_writes_stay_silent`
   measuring it behaviourally with a ``TMPDIR`` that does not exist.
-* **AC-5** — the five hooks agree on wrapping ``main()``; ``prompt-guard.js`` no
-  longer differs from the other four by accident.
+* **AC-5** — every hook agrees on wrapping ``main()``; ``prompt-guard.js`` no
+  longer differs from the rest by accident.
   :func:`test_every_hook_wraps_main` (structural, derived from the same scanner)
   and :func:`test_a_throw_inside_main_is_caught_and_reported` (behavioural, so a
   wrapper is proven to *catch* rather than merely to be present).
@@ -394,7 +394,7 @@ def test_class_a_sites_report_and_class_b_sites_do_not(hook: str) -> None:
 
 @pytest.mark.parametrize("hook", [h.name for h in _hooks()])
 def test_every_hook_wraps_main(hook: str) -> None:
-    """All five hooks agree on wrapping ``main()`` (AC-5).
+    """Every hook agrees on wrapping ``main()`` (AC-5).
 
     Derived from the same scanner the classification uses, so degrading the
     scanner cannot leave this test passing on its own.
@@ -406,7 +406,7 @@ def test_every_hook_wraps_main(hook: str) -> None:
     ]
     assert wrappers, (
         f"{hook} does not wrap its main() call, so an exception raised after the "
-        "stdin read crashes it while the other hooks fall open. The five hooks "
+        "stdin read crashes it while the other hooks fall open. The hooks "
         "should agree on a posture rather than differ by accident (#303 AC-5)."
     )
 

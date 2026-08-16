@@ -19,6 +19,13 @@ refuser set from what the hook sources actually emit, so the guard fails on the
 next hook added rather than on the two this change fixed. A hand-kept list would
 have shipped a third stale table.
 
+"What the sources emit" is read over the code, with comment-only lines stripped
+(:data:`_COMMENT_LINE`). A hook that documents the payload it emits quotes that
+payload verbatim, so a whole-file scan classifies it as a refuser on the
+strength of its own prose — which is exactly the operand the correspondence must
+not take on trust. :func:`test_a_documented_refusal_is_not_read_as_an_emitted_one`
+is the control for that, in both directions.
+
 The correspondence runs in both directions on purpose. Omitting a tracked hook
 from the inventory fails :func:`test_the_inventory_covers_exactly_the_tracked_hooks`;
 so does inventing a row for a hook that does not exist. Listing a refuser as
@@ -60,12 +67,35 @@ _ADVISORY_HEADING = "### The advisory hooks"
 #: host understands: a ``PreToolUse`` deny decision, or a ``Stop`` block. Derived
 #: from what the hooks emit rather than from a list here — a hand-kept denier
 #: list is the same defect one level down from the table it would be guarding.
-#: The colon-and-value form is what makes this an emission rather than a mention:
-#: ``git-push-guard``'s docblock names ``permissionDecision`` in prose, and must
-#: not be what puts it in this set.
 _REFUSAL_EMISSION = re.compile(
     r"""permissionDecision:\s*["']deny["']|\bdecision:\s*["']block["']"""
 )
+
+#: A line whose first non-whitespace run opens or continues a comment. The
+#: pattern above is scanned over the source with these lines removed, because
+#: ``git-push-guard.js``'s docblock quotes ``permissionDecision: "deny"``
+#: verbatim while documenting the payload it emits. Reading that mention as an
+#: emission is not cosmetic: it pins that hook into the refuser set
+#: unconditionally, so the *tabled-but-cannot-refuse* direction of
+#: :func:`test_the_refusal_table_lists_exactly_the_hooks_that_refuse` — the
+#: direction that catches a table promising enforcement the source stopped
+#: delivering — went unmeasured for the one hook #457 added to that table.
+#: Measured at review by downgrading the shipped emission to ``"ask"``: all six
+#: cases here passed while 69 of ``test_git_push_guard_hook``'s did not.
+#:
+#: The bound is line-leading comments only, stated at its size rather than
+#: widened: a mention in a *trailing* comment on a code line still reads as an
+#: emission. That is a floor against the shape the bundle actually carries, not
+#: a claim that no mention can be phrased past it (``craft.md`` → *A paraphrase
+#: tuple drawn from the sweep's own alternation measures itself*).
+_COMMENT_LINE = re.compile(r"^\s*(?://|/?\*)")
+
+
+def _code_of(source: str) -> str:
+    """``source`` with its comment-only lines removed."""
+    return "\n".join(
+        line for line in source.splitlines() if not _COMMENT_LINE.match(line)
+    )
 
 #: The first column of a markdown table row: ``| `name.js` | … |``.
 _ROW_SUBJECT = re.compile(r"^\|\s*`([^`]+)`\s*\|", re.MULTILINE)
@@ -89,11 +119,18 @@ def _tracked_hooks() -> set[str]:
     return {path.name for path in tracked_files_under("hooks") if path.suffix == ".js"}
 
 
+def _hook_sources() -> dict[str, str]:
+    """Every tracked hook's source, keyed by filename."""
+    return {
+        name: (_HOOKS_DIR / name).read_text(encoding="utf-8") for name in _tracked_hooks()
+    }
+
+
 def _hooks_that_refuse() -> set[str]:
     return {
         name
-        for name in _tracked_hooks()
-        if _REFUSAL_EMISSION.search((_HOOKS_DIR / name).read_text(encoding="utf-8"))
+        for name, text in _hook_sources().items()
+        if _REFUSAL_EMISSION.search(_code_of(text))
     }
 
 
@@ -170,6 +207,53 @@ def test_the_hook_roster_this_guard_reads_is_live() -> None:
     assert refusers < tracked, (
         "every tracked hook now reads as a refuser, so the advisory half of the "
         f"inventory is unmeasured; got {sorted(refusers)}"
+    )
+
+
+def test_a_documented_refusal_is_not_read_as_an_emitted_one() -> None:
+    """The discrimination the refuser set depends on, exercised both ways.
+
+    A hook that *documents* the payload it emits carries the emission's exact
+    text in prose, and a whole-file scan cannot tell the two apart. That is the
+    cheaper degradation this predicate exists to beat, so the control feeds it
+    the shipped docblock's wording verbatim and asserts two things: the mention
+    is not read as an emission, **and** the same text does match the pattern
+    before the strip — the containment half is what makes the rejected
+    predicate's blind spot explicit rather than assumed (``craft.md`` → *A
+    positive control must exercise the predicate, not re-implement it*).
+
+    The last assertion is the floor that keeps the strip load-bearing rather
+    than precautionary: some shipped hook really carries such a mention today.
+    If a rewrite removes the last one, this goes red saying so, and retiring the
+    strip becomes a deliberate edit instead of a silent loss of the direction it
+    protects (``craft.md`` → *The conditional guard whose skip reads as green*).
+    """
+    mention = ' * (``hookSpecificOutput.permissionDecision: "deny"``, exit 0). Otherwise it\n'
+    emission = '        permissionDecision: "deny",\n'
+
+    assert _REFUSAL_EMISSION.search(mention), (
+        "the shipped docblock wording no longer matches the pattern at all, so "
+        "this control is measuring nothing about the strip"
+    )
+    assert not _REFUSAL_EMISSION.search(_code_of(mention)), (
+        "a docblock quoting the refusal payload is read as emitting it, which "
+        "pins its hook into the refuser set whatever the code does"
+    )
+    assert _REFUSAL_EMISSION.search(_code_of(emission)), (
+        "the strip removed a real emission, so every hook now reads as advisory"
+    )
+
+    with_mentions = sorted(
+        name
+        for name, text in _hook_sources().items()
+        if len(_REFUSAL_EMISSION.findall(text))
+        > len(_REFUSAL_EMISSION.findall(_code_of(text)))
+    )
+    assert with_mentions, (
+        "no tracked hook documents a refusal payload in a comment any more, so "
+        "the strip above discriminates nothing on this tree. If that is "
+        "deliberate, retire it in the same change rather than leaving it as "
+        "decoration."
     )
 
 
