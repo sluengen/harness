@@ -2,7 +2,7 @@
 name: github-issues
 description: Use when the repo's CONTEXT.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:github-issues@0.2.1 -->
+<!-- guidance:github-issues@0.3.0 -->
 # GitHub Issues
 
 The **GitHub provider recipes** for the tracker protocol. Policy — the operation set, the state names, placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
@@ -100,6 +100,14 @@ gh issue list --repo <owner>/<name> --state open --limit 100 \
 ```
 
 Skip anything with a non-empty `assignees` (a human holds it) or a hold label. Cross-reference the board for Status when the distinction between Todo and In Progress matters.
+
+**The held pile is the same operation with that filter inverted** — the set `/decision` drains. Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
+
+```bash
+gh issue list --repo <owner>/<name> --state open \
+  --label <input|operator> --assignee @me \
+  --json number,title,url,body,updatedAt
+```
 
 ## Closing an issue
 

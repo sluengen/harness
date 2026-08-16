@@ -171,7 +171,16 @@ def test_the_reconciliation_bound_is_stated_only_in_its_home() -> None:
 
 #: Provider query shapes. Each is a literal an agent could paste, and each
 #: belongs in a provider skill: the GitHub CLI's issue/project/API surface with
-#: its machine-readable output flags, and Linear's GraphQL endpoint and key.
+#: its machine-readable output flags, and Linear's GraphQL endpoint, key, and
+#: filter syntax.
+#:
+#: A blacklist has **sibling slots**, and its own refusal is what routes traffic
+#: into them. ``{ eq: `` was added at review, because the two literals #456
+#: deleted from ``commands/decision.md`` were a ``gh issue list`` *and* a Linear
+#: filter — ``labels: { name: { eq: "input" } }`` — and only the first of them
+#: was in this tuple. Re-embedding the Linear half ran live against a green
+#: suite. Whenever this tuple grows, ask which other spelling of the same
+#: operation the ban leaves reachable, not merely whether the new one is caught.
 _QUERY_SHAPES = (
     "--json",
     "--jq",
@@ -180,6 +189,7 @@ _QUERY_SHAPES = (
     "gh api",
     "api.linear.app",
     "LINEAR_API_KEY",
+    "{ eq: ",
 )
 
 

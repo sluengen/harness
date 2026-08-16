@@ -257,10 +257,11 @@ the same refusal to integrate on mismatch.
   *Choosing assurance*. An **improvement** is not filed at all; it goes in the
   run report's Proposals section and is appended to the repo's proposals ledger
   — the `tracker` skill owns how that ledger is found or opened — where
-  `/digest` surfaces it and `/assess` decides it at the drain. Then hold the
-  ticket via `tracker` (`input` label, assigned to the operator) with the
-  reason, and integrate nothing: a DEFER says the ticket cannot ship as scoped
-  (`review-discipline` → *The verdict vocabulary*).
+  `/digest` surfaces it and `/assess` decides it at the drain. Then integrate
+  nothing and preserve the work exactly as *4. Abandon safely* below prescribes:
+  a DEFER says the ticket cannot ship as scoped (`review-discipline` → *The
+  verdict vocabulary*), and an unshipped tree left uncommitted in a worktree is
+  lost to the operator the run is holding it for.
 
 A moved integration branch is not a stop and never a question for the operator:
 reconcile, re-gate, re-review, ship. If reconciliation hits textual conflicts,
@@ -271,7 +272,7 @@ for the operator rather than forced through.
 
 ## 4. Abandon safely
 
-When convergence fails or the review-cycle budget is spent, commit and push the
-work-in-progress branch. Comment with the reason and all carried-forward findings.
+When convergence fails, the review-cycle budget is spent, or the review returns
+a DEFER, commit and push the work-in-progress branch. Comment with the reason and all carried-forward findings.
 Use `tracker` to apply the operator hold (label and human assignment); do not
 return it to an unattended queue and do not remove its worktree.

@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.6.1 -->
+<!-- guidance:tracker@0.6.2 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -38,7 +38,7 @@ Six operations cover the agent-led lifecycle.
 | `transition` | move to Todo / In Progress / In Review / Done |
 | `comment` | post a PR link, a blocker note, a deferral reason |
 | `hold` | apply a hold label **and** assign the operator |
-| `queue` | list Todo work in scope |
+| `queue` | list issues in scope — the Todo work, or the pile held for the operator |
 
 ### Bundle before you file (ADR 0015)
 

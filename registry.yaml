@@ -1,4 +1,4 @@
-# guidance:registry@0.5.161
+# guidance:registry@0.5.162
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -55,9 +55,9 @@ files:
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
   skills/worktree-isolation/SKILL.md: { id: worktree-isolation,       version: 0.2.2, profiles: [harness] }
-  skills/tracker/SKILL.md: { id: tracker,                     version: 0.6.1, profiles: [harness] }
-  skills/linear/SKILL.md: { id: linear,                       version: 0.8.3, profiles: [harness] }
-  skills/github-issues/SKILL.md: { id: github-issues,         version: 0.2.1, profiles: [harness] }
+  skills/tracker/SKILL.md: { id: tracker,                     version: 0.6.2, profiles: [harness] }
+  skills/linear/SKILL.md: { id: linear,                       version: 0.9.0, profiles: [harness] }
+  skills/github-issues/SKILL.md: { id: github-issues,         version: 0.3.0, profiles: [harness] }
   skills/assessment-craft/SKILL.md: { id: assessment-craft,         version: 0.6.0, profiles: [harness] }
   # Product skills, home from the retired agents repo (CAL-652, D6), part of the
   # one surface. The installer copies the WHOLE profile; the CONTEXT.md layers
@@ -174,4 +174,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.161 }
+  registry.yaml:                      { id: registry,                 version: 0.5.162 }

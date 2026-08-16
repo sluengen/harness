@@ -56,10 +56,11 @@ both conditions, matching the exact state a deferral leaves a ticket in. (In
 an un-migrated repo, also pull the retired `decision` label and treat it as
 `input`.) A read is a tracker operation like any other: go through the
 `tracker` skill's `queue` operation and follow the matching provider's
-list-issues recipe — the `github-issues` skill under `tracker: github`, the
-`linear` skill under `tracker: linear`. The provider skills own the query
-shapes; do not invent one here, and scope the list to `repo.project` when it
-is set.
+**held-pile** recipe — the `github-issues` skill under `tracker: github`, the
+`linear` skill under `tracker: linear`. That recipe, not the Todo read beside
+it, is the one that carries both conditions and returns the body and URL step 3
+needs. The provider skills own the query shapes; do not invent one here, and
+scope the list to `repo.project` when it is set.
 
 Empty pile → report it and **stop**. Do not manufacture a decision to make —
 an honest empty result is correct output, not a failure to route around.
