@@ -120,8 +120,17 @@ def _sentences(block: str) -> list[str]:
     return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
 
 
-_NEGATION = re.compile(
-    r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
+#: The negation **bound to the verb it governs**. A bare negation alternation
+#: searched over the whole sentence is direction-free in the way that matters
+#: here: the sentence carries two verbs (*resolve at runtime*, *hardcode*), so
+#: swapping which one the negation attaches to inverts the rule — *hardcode it
+#: here, and never resolve it at runtime* — while a sentence-scoped search still
+#: finds its token and reads green. Measured under review of #459
+#: (``craft.md`` → *The negation window assumes a false converse*).
+_NEVER_HARDCODED = re.compile(
+    r"\b(?:never|not|no|nor|cannot|can't|rather than|instead of)\b"
+    r"(?:\W+\w+){0,4}?\W*hardcod\w*",
+    re.IGNORECASE,
 )
 
 
@@ -130,10 +139,12 @@ def test_work_discovery_queue_states_scope_conditionally() -> None:
 
     Terms: ``repo.project`` (the lever), an optionality word, and a
     whole/full word (what the unset branch widens to). Polarity: the sentence
-    naming ``repo.project`` carries a negation — resolve it at runtime, *never*
-    hardcode it. Without that binding the term set reads identically on a
-    section that told an agent to bake a project address into the guidance,
-    which is the pre-change defect this rule closed (#175 AC-1).
+    naming ``repo.project`` negates *hardcoding* specifically — resolve it at
+    runtime, **never hardcode it**. The negation is bound to that verb rather
+    than searched over the sentence, because the sentence names two verbs and a
+    free-floating token attaches to whichever one is convenient: *hardcode it
+    here, and never resolve it at runtime* keeps every term and every negation
+    while stating the pre-change defect this rule closed (#175 AC-1).
     """
     body = _section(SKILL.read_text(), "The queue")
     assert body, "work-discovery must carry a 'The queue' section."
@@ -149,10 +160,12 @@ def test_work_discovery_queue_states_scope_conditionally() -> None:
     )
     lever = [s for s in _sentences(low) if "repo.project" in s]
     assert lever, "no sentence in the queue section names repo.project (#175 AC-1)."
-    assert any(_NEGATION.search(s) for s in lever), (
-        "the scope lever must carry its negation — resolved at runtime, never "
-        "hardcoded. A scope named as a literal address is the drift this rule "
-        "exists to prevent (#175 AC-1)."
+    assert any(_NEVER_HARDCODED.search(s) for s in lever), (
+        "the scope lever must negate *hardcoding* specifically — resolved at "
+        "runtime, never hardcoded. A negation loose in the sentence is satisfied "
+        "by an inversion that re-attaches it to the other verb, which leaves a "
+        "scope named as a literal address — the drift this rule exists to "
+        "prevent (#175 AC-1)."
     )
 
 

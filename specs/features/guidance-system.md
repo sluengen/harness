@@ -1,7 +1,7 @@
 ---
 feature: guidance-system
 status: implemented
-last_updated: 2026-08-16
+last_updated: 2026-08-17
 ---
 
 # Guidance system
@@ -461,6 +461,57 @@ That module pins every other `autoMode` clause with one test that reads the clau
 
 Every scenario above was run as a mutation at review rather than reasoned about: six edits, each killing exactly the assertions predicted and nothing else, against a 1,862-test baseline. The one that mattered most is the one that could not be predicted from the diff — the exemption spent outside the drain — because before the assertion it names existed, that edit was a silent pass.
 
+### A guard over prose owns structure and negative space, never meaning
+
+ADR 0015 deleted the runtime, which left `tests/unit/` as the largest thing in the repo a change has to satisfy. Measured on `5194fb3` and re-derived at review: **137 guard modules, 1,162 test functions, 1,863 collected tests**. Roughly a fifth of the modules execute code; the rest read the published guidance and assert something about its text, in two coexisting generations. The older generation pins sentences, and #459's ratified finding is that a positive-meaning pin is **brittle and vacuous at the same time** — it breaks on a rewording that preserves the rule exactly, and it stays green on an edit that satisfies the pinned bytes while inverting the rule. `test_review_discipline_current_criteria` was the worked example: two functions of term co-occurrence over the whole Stage 1 section, both of which passed if the rule they guarded was reversed.
+
+**The policy is one sentence with two exemptions.** Tests assert what prose must **not** contain and what must structurally **correspond**; whether prose affirmatively says the right thing is the review gate's job, because no regex reads meaning. Negative space — retired vocabulary, forbidden identifiers, cites into app-only paths, a deleted subsystem's names — never has to judge meaning, only find a token. Structural correspondence — byte-identical mirrors, a version against its registry entry, a generated artifact against its source, the topology, the licence boundary — compares two things in the tree, and neither operand is an opinion. Both classes stay. `skills/code-quality/SKILL.md` Part C (@0.25.0) is the rule's home in the installed surface, and `CONTRIBUTING.md`'s mutation section points at it *before* the guard is written rather than after; ADR 0016 is the decision, cited from `CONTRIBUTING.md` only, since distributed prose may not cite `specs/`.
+
+**The converted form is an anchor, a term set, and a bound negation.** Where a rule is load-bearing enough to deserve a tripwire, the tripwire reads: the section, bullet or numbered item exists in its canonical home and is the only window the assertions see; plus a small term set the rule cannot be stated without; plus, where the rule has a polarity, the negation token bound to the verb it governs. **One tripwire per rule-home, not per sentence.** An anchor that cannot resolve — a renamed heading, or a subject appearing in two items where the rule needs one — returns the empty string and the assertion **rejects** it; the failing-closed direction is the point, since a window that silently widens to the whole section is what the pre-change form read. Sixty-six modules converted this way. Five were deleted outright — museum guards over frozen records, polarity-free co-occurrence checks, and a floor that asserted `len(corpus) >= 5` over a hardcoded five-element tuple. Sixty-six were kept untouched.
+
+**The triage is the record, and `tests/unit/test_prose_guard_triage.py` binds it to the tree.** ADR 0016 buckets every one of the 137 modules with a one-line reason; re-derived at review, the table covers the tracked set at `5194fb3` exactly, in both directions, with no module bucketed twice. The guard reads absence from `git ls-files` rather than by grep — a `.pyc`, an editor backup or an untracked leftover must not read as a surviving module — and pairs it with a did-not-delete-too-much floor that pins **membership** of the KEEP and CONVERT rows rather than a count, because a surviving-module number is what the next deletion silently lowers. The two sweeps fail in opposite directions, so an empty tracked set fails the floor rather than passing the absence check. A positive control exercises the row parser itself, since a parser that stopped matching would make both sweeps constant-true over an empty set. The totals are pinned exactly rather than as a floor, deliberately: the record describes one tree at one commit and never grows.
+
+**The invariant the triage is measured against is that the behaviour tests are untouched.** Re-measured independently at review under three separate definitions of "executes code" — 24 modules / 624 node ids, 25 / 724, 25 / 790 — the node-id sets are **identical before and after**, none added and none removed, and no module carrying a behaviour reason appears in the diff at all. Collected tests fall 1,863 → 1,684; the reduction is overwhelmingly collapse, not deletion.
+
+**The rule was applied to itself, and cost a guard.** The first guard the change produced swept for prose citing a `test_*.py` absent from the index, and found eight live citations where the ticket's author had found three by hand. It was deleted before shipping: it cannot separate a stale pointer from accurate history — the difference is tense and framing, which is pure meaning — and separating them needs an exemption list, which inside a zero-membership sweep is opt-out prose rather than a guard. The eight were triaged by reading them. Review found a ninth that the change itself created: `test_review_discipline_context_currency`'s docstring claimed, in the present tense, that its helpers were imported by a module the same commit deleted. That is the class the deleted sweep would have caught and the reason it was worth writing; it is also the class no sweep can be trusted to close, which is why the reviewer is the instrument of record for it.
+
+Two conversions did not deliver the polarity they claimed, both found by independent mutation at review and fixed in the branch. `test_review_discipline_current_criteria` anchored `FAIL` to `commit body` and called that the fix for the inversion-passes class; because the clause carries its own legitimate negation (*never amended on the ticket*), containment alone has no direction, and inserting one word — *is **not** a Stage 1 FAIL* — inverted the rule with the guard green. `test_optional_project_scope_guidance` searched a bare negation alternation over the sentence naming `repo.project`; the sentence names two verbs, so *hardcode it here, and never resolve it at runtime* kept every term and every negation while stating the drift the rule exists to refuse. Both now assert the negation **at the point it governs** — an absence of negation immediately before the verdict, and a negation bound to `hardcod*` — and both keep a benign-reword control that survives, so the fix bought direction without buying back brittleness.
+
+#### Scenario: a guarded rule is reworded without changing what it says
+
+- GIVEN a later change rewrites a tripwired rule's sentence — different words, same terms, same direction
+- WHEN the gate runs
+- THEN nothing fails, which is the change #459 made: the pin that would have broken here verified bytes rather than meaning
+- AND the reviewer still reads the rewording, because that was always the only instrument that could
+
+#### Scenario: a tripwired rule is inverted
+
+- GIVEN a later change leaves the anchor, the term set and the surrounding prose intact and reverses the rule's direction
+- WHEN the gate runs
+- THEN the tripwire's polarity assertion fails on its own, with the term set still green
+- AND that separation is the requirement, not an accident — presence and inversion written as one assertion hide each other, because either mutation reports a kill and the other half is never exercised
+
+#### Scenario: a tripwire's anchor stops resolving
+
+- GIVEN a later change renames the heading a tripwire anchors on, or states the rule in two numbered items where the guard needs one
+- WHEN the gate runs
+- THEN the tripwire fails on the anchor, naming the heading or the ambiguity
+- AND it does not fall back to the enclosing section, which would silently restore the over-wide window the conversion removed
+
+#### Scenario: a module the triage recorded as surviving is deleted later
+
+- GIVEN a later change deletes a module ADR 0016 bucketed KEEP or CONVERT
+- WHEN the gate runs
+- THEN the did-not-delete-too-much floor fails, naming that module
+- AND the failure is clearable only by amending the record, which is the point — a deletion beyond the recorded one is a decision, not a quiet subtraction
+
+#### Scenario: a behaviour test is caught up in a later collapse
+
+- GIVEN a later change edits one of the modules that execute code
+- WHEN the reviewer re-derives the behaviour node-id set
+- THEN the comparison is against a set, not a count, so a test swapped for another of the same number is visible
+- AND nothing in the gate performs that comparison, which is why it is recorded here as a reviewer measurement rather than as a guard
+
 ### Source-version integrity
 
 For an equal source and lock version, `/update-guidance` classifies a file as `current` or `LOCAL` only when the fetched source hash matches the locked hash. A mismatch is `SOURCE DRIFT` regardless of the consumer's on-disk state. It stops the entire update before apply, reports the file and source/locked hashes, and requires the source file and registry version to be repaired.
@@ -538,6 +589,11 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - Every hook payload and transcript fixture in the suite is a **hand-authored model of the host's contract**, and the suite is self-consistent with that model whether or not the model is right. Three things are now observed rather than assumed: the Stop payload, captured verbatim from Claude Code 2.1.220 and driven through the hook as-is; the deny-over-allow precedence the push guard rests on, watched live refusing a command a standing `permissions.allow` entry covered; and, since #439, the transcript entry's envelope — one verbatim host-written JSONL line with its path redacted, from which every scope fixture is built by rebinding `cwd`, establishing that `cwd` is a top-level sibling of `type` and `sessionId` rather than something nested under `message`. Two live headless runs recorded on #439 validate the model end to end, and the same reading of eight real `/build` transcripts confirms the shape independently. Everything else — the `PreToolUse` payload's own shape included — remains a model, and a live run is the only validation available for it.
 - The feature-spec key set has two homes and nothing derives one from the other: `templates/feature.md`'s frontmatter, and `_REQUIRED_FRONTMATTER` in `tests/unit/test_feature_specs.py`. Measured at review by an independent mutation with an observable — dropping `status` from the tuple moved the observable and killed nothing, so the required set can shrink in either home with the suite green. That hazard is what #446 walked through by hand, twice, and got right. Deriving the tuple from the template was considered on the ticket and declined as a widening, which leaves the docstring's claim that the tuple is what the template requires a reading judgment rather than a mechanism. Two hand-maintained copies of one rule with nothing holding them in agreement is the shape `templates/size-guard.md` and `tests/unit/test_source_file_size_justification.py` are also in, recorded here by a different review in the same window. The class recurs wherever this repo publishes a contract and separately checks itself against it, and neither instance is guarded.
 - A consuming repo's existing feature specs still carry `tickets:` after `/update-guidance` installs the 0.6.0 template. Nothing in the distributed surface reads the key or rejects it, so the leftover is inert rather than invalid, and the repo publishes no migration note: the only thing that could have made one true is the guard this change removed.
+- **The policy accepts, by design, that a rule can be reworded into a weaker rule with nothing failing.** That was already true — a co-occurrence guard passes on inversion — and ADR 0016 makes it honest about who catches it rather than closing it. The review gate is now the primary check on guidance meaning rather than a second opinion behind a regex, and the cost of that is a real one: a reviewer who does not read the reworded rule is the whole failure mode.
+- A converted tripwire's polarity is a **token bound to a verb inside a bounded window**, and the window is where it can still be escaped. An inversion that re-attaches a negation to a *different* verb in the same sentence keeps every term and every negation the guard reads; two instances were measured and closed at review, and eleven modules still search a bare negation alternation over a sentence-scoped window, so the shape is present wherever such a sentence names more than one verb. The remedy is per-rule — bind the token to the verb it governs — and no sweep finds the cases, because whether a sentence has two candidate verbs is a reading judgment.
+- The triage record's correspondence with the tree runs **one way**, from record to tree, and is deliberately not asserted back: a module written next month does not belong in a table dated 2026-08-16. Measured at review by an independent mutation: substituting one row's module name for another tracked module preserves the totals, the tracked-ness of every row and the no-duplicates check, so the record can silently swap *which* module it triaged. The disposition is to record it rather than close it — pinning the exact 137-name set would duplicate the table it reads.
+- ADR 0016's Context states **26 behaviour modules and 675 test node ids** and names no derivation for either number. Three independent definitions at review gave 24–25 modules and 624–790 node ids; the invariant those figures express — the behaviour node-id set is identical before and after — is independently true under all three, but the specific pair cannot be re-derived from the record. The line-count and literal-pin figures beside them are hedged as lower bounds in the record itself and likewise do not reproduce exactly.
+- Five modules were deleted over subjects that **survive** — ADR 0004's amendment block, the `rebase-stable-certification` proposal record, and two bullets in `review-discipline`'s diff-shape checks. That is the ratified exception to *delete a guard if and only if its subject is gone*: the operator's call is that regression probability on a frozen historical record is approximately zero and the maintenance surface is permanent. Nothing imported the deleted modules; the one shared helper they used stayed in the surviving module that defines it. What is genuinely unguarded now is the RELEASING.md clause of the CONTEXT.md-currency bullet, which had its own module and no longer has one.
 - The pointer line is prose nothing runs. `git log --follow` takes exactly one pathspec and resolves it against the caller's directory, so the line answers from the repository root and finds nothing from inside `specs/features/`.
 
 ## Decisions

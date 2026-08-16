@@ -34,13 +34,14 @@ those to the review gate. A third test re-derived the ``### Stage 2`` →
 ``## Severity`` slice the bullet reader already performs, so it could only fail
 where the slicer already fails.
 
-**This module is the Stage-2 slicer's home.** ``_skill_text`` and
-``_context_currency_bullet`` are imported by
-``test_review_discipline_asbuilt_record_currency``, and ``_stage_two_bullet`` is
-imported by the five sibling Stage-2 bullet guards, which each carried a private
-copy of it before #459. One slicer, called by every assertion it protects
-(``craft.md`` → *A positive control must exercise the predicate, not
-re-implement it*).
+**This module is the Stage-2 slicer's home.** ``_stage_two_bullet`` is imported
+by the five sibling Stage-2 bullet guards, which each carried a private copy of
+it before #459: one slicer, called by every assertion it protects (``craft.md``
+→ *A positive control must exercise the predicate, not re-implement it*).
+``_skill_text`` and ``_context_currency_bullet`` are this module's own, with no
+importer outside it — ``test_review_discipline_asbuilt_record_currency`` was
+their one external caller and #459 deleted it as a redundant re-check of this
+same bullet.
 """
 
 from __future__ import annotations

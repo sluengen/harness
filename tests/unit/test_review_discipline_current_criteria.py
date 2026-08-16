@@ -44,6 +44,19 @@ _COMMIT_BODY_IS_A_FAIL = re.compile(
     r"commit body\b(?:\W+\w+){0,20}?\W+FAIL\b", re.DOTALL
 )
 
+#: …and the verdict is **not** negated. The window above proves ``commit body``
+#: and ``FAIL`` sit in one clause; it says nothing about which way that clause
+#: points, because a legitimate negation already lives inside it (*never amended
+#: on the ticket*). So the polarity is asserted as an **absence** at the verdict
+#: itself: no negation within a few words *before* ``FAIL``. Inserting one word —
+#: *is **not** a Stage 1 FAIL* — inverts the rule while leaving the containment
+#: window, the term set and ``never amended`` all intact, and the presence half
+#: alone reads green on it (``craft.md`` → *The negation window assumes a false
+#: converse*; measured under review of #459).
+_VERDICT_NOT_A_FAIL = re.compile(
+    r"\b(?:not|never|no|nor|neither)\b(?:\W+\w+){0,3}?\W+FAIL\b", re.IGNORECASE
+)
+
 #: The other half of the same clause: the amendment belongs on the ticket. A rule
 #: that names the commit body without saying where the amendment *should* have
 #: gone leaves the reviewer nothing to check against.
@@ -92,9 +105,14 @@ def test_stage1_checks_the_current_criteria_and_fails_a_commit_body_renegotiatio
     * **terms** — ``current`` and ``criteria`` (review against the ticket as it
       stands now, not a remembered earlier version) and ``report`` (the amendment
       is surfaced, not silently accepted).
-    * **polarity, part one** — ``FAIL`` anchored to ``commit body``. Read over the
-      whole section this token is free: Stage 1's closing line issues a FAIL for
-      an unrelated reason.
+    * **polarity, part one** — ``FAIL`` anchored to ``commit body``, *and* the
+      verdict not negated at the point it is stated. Read over the whole section
+      the token is free: Stage 1's closing line issues a FAIL for an unrelated
+      reason. Read as containment alone it is still free of direction, because
+      the clause carries its own legitimate negation — which is why the
+      absence half is a separate assertion with its own exclusive killer
+      (``craft.md`` → *Every prose obligation needs a pair with separate
+      exclusive killers*).
     * **polarity, part two** — a negation anchored to ``amend``: the criterion was
       never amended where it counts. That is what makes the commit body *only* a
       commit body.
@@ -121,6 +139,14 @@ def test_stage1_checks_the_current_criteria_and_fails_a_commit_body_renegotiatio
         "make: `FAIL` read anywhere in Stage 1 is satisfied by the section's own "
         "closing line, so the rule could be inverted — a renegotiation buried in a "
         "commit body accepted as sound — with nothing going red (AC-2)."
+    )
+    assert not _VERDICT_NOT_A_FAIL.search(item), (
+        "the Stage 1 criteria-currency item negates its own verdict — a "
+        "commit-body-only renegotiation is written as *not* a FAIL. The "
+        "containment window above cannot see this: `commit body` and `FAIL` are "
+        "still one clause, and the clause's legitimate negation (*never amended "
+        "on the ticket*) sits between them, so presence alone reads green on the "
+        "one-word inversion (#459 review)."
     )
     assert _NEVER_AMENDED.search(item), (
         "the item no longer says the criterion was never amended on the ticket. "
