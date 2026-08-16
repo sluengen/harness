@@ -1,4 +1,4 @@
-# guidance:registry@0.5.159
+# guidance:registry@0.5.160
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -48,7 +48,7 @@ files:
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.25.0, profiles: [harness] }
   skills/code-quality/references/untrusted-fetch.md: { id: code-quality-untrusted-fetch, version: 0.1.0, profiles: [harness] }
   skills/code-quality/references/specialized-verification.md: { id: code-quality-specialized-verification, version: 0.1.1, profiles: [harness] }
-  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.18.0, profiles: [harness] }
+  skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.19.0, profiles: [harness] }
   skills/review-discipline/references/diff-shape-checks.md: { id: review-discipline-diff-shape-checks, version: 0.1.2, profiles: [harness] }
   skills/review-discipline/references/craft.md: { id: review-discipline-craft, version: 0.6.1, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.7.3, profiles: [harness] }
@@ -77,18 +77,18 @@ files:
   # --- agents ---
   agents/dev.md:                      { id: dev,                      version: 0.2.2, profiles: [harness] }
   agents/researcher.md:               { id: researcher,               version: 0.1.3, profiles: [harness] }
-  agents/reviewer.md:                 { id: reviewer,                 version: 0.7.1, profiles: [harness] }
+  agents/reviewer.md:                 { id: reviewer,                 version: 0.8.0, profiles: [harness] }
   agents/architect.md:                { id: architect,                version: 0.4.1, profiles: [harness] }
   agents/steward.md:                  { id: steward,                  version: 0.5.0, profiles: [harness] }
 
   # --- commands ---
   commands/propose.md:                { id: propose,                  version: 0.3.0, profiles: [harness] }
   commands/start.md:                  { id: start,                    version: 0.5.2, profiles: [harness] }
-  commands/review.md:                 { id: review,                   version: 0.5.1, profiles: [harness] }
-  commands/ship.md:                   { id: ship,                     version: 0.4.2, profiles: [harness] }
+  commands/review.md:                 { id: review,                   version: 0.6.0, profiles: [harness] }
+  commands/ship.md:                   { id: ship,                     version: 0.5.0, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.12.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 1.1.0, profiles: [harness] }
-  commands/build.md:                  { id: build,                    version: 1.15.0, profiles: [harness] }
+  commands/build.md:                  { id: build,                    version: 1.16.0, profiles: [harness] }
   # /promote — the versioned universal caller for a promotion hop. Role-resolves
   # <src>/<dst> against CONTEXT.md branches: so the same invocation drives any
   # repo's own branch names (#189). ADR 0003 set the topology; ADR 0015 retired
@@ -98,12 +98,12 @@ files:
   # the operator's input (ADR 0006, #191/#192/#193; hold labels consolidated by
   # ADR 0015). Delegates the clearable test and the "released" definition to
   # work-discovery's Return path section rather than restating it.
-  commands/decision.md:                { id: decision,                 version: 0.3.1, profiles: [harness] }
+  commands/decision.md:                { id: decision,                 version: 0.4.0, profiles: [harness] }
   # /routine — one unattended build-cycle tick (ADR 0015): work-discovery →
   # /build → ship to the integration branch, with the standing branch
   # authorisation and the hold-don't-force rule. The versioned home of the
   # standing prompt scheduled runs used to paste.
-  commands/routine.md:                { id: routine,                  version: 0.2.0, profiles: [harness] }
+  commands/routine.md:                { id: routine,                  version: 0.3.0, profiles: [harness] }
   # /digest — the read-only morning report (ADR 0015): input holds, overnight
   # outcomes, work parked for a verdict, the window's proposals for a
   # promote-or-drop call, operator errands. The versioned home of the
@@ -168,10 +168,10 @@ files:
   process/harness.md:                 { id: process-harness,          version: 0.13.0, profiles: [harness] }
 
   # --- settings (Claude Code; the single surface settings file; JSON has no guidance: header, so the version here is authoritative) ---
-  settings/harness.json:              { id: settings-harness,         version: 0.10.0, profiles: [harness] }
+  settings/harness.json:              { id: settings-harness,         version: 0.11.0, profiles: [harness] }
 
 # Source-managed + version-stamped, but NOT installed into a repo (the installer and the registry itself).
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.159 }
+  registry.yaml:                      { id: registry,                 version: 0.5.160 }

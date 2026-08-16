@@ -371,18 +371,30 @@ def test_automode_sanctions_the_gated_close_verb() -> None:
     The clause must carry the bound that makes it safe: a passing review bound to
     the current HEAD, so it cannot land unreviewed work. That is the same
     reviewed-work-only condition the dev-push clause rests on — the permission
-    rides on a checkable condition, not on trust."""
+    rides on a checkable condition, not on trust.
+
+    #456 turned the identity around rather than dropping it: the shipping
+    equality is the git **tree** object, matching the gate marker the
+    enforcement hooks read and the comparison `/ship` now performs. The pin
+    follows the identity — a clause left naming `reviewed_sha` would sanction a
+    close against a condition no command still checks."""
     clause = _clause_containing("Closing a shipped ticket")
     assert clause, (
         "autoMode.allow must sanction closing a shipped ticket — without it the "
         "loop cannot land the work it built and reviewed (CAL-1087)."
     )
-    for term in ("reviewed_sha", "HEAD"):
+    for term in ("reviewed_tree", "HEAD"):
         assert term in clause, (
             f"the close clause must name its gate ({term!r}): the permission is "
             "safe only because a review that does not cover what would merge "
             "does not authorise the merge (CAL-1087)."
         )
+    assert "reviewed_sha" not in clause, (
+        "the close clause still gates on the retired commit-sha identity. The "
+        "shipping equality is tree to tree (#456), so a clause naming "
+        "`reviewed_sha` sanctions a close against a condition `/ship` no longer "
+        "checks — the permission would ride on nothing."
+    )
     assert "verify gate" in clause, (
         "the close clause must name the gate evidence the permission rests on, "
         "so the bound is auditable rather than asserted (CAL-1087)."

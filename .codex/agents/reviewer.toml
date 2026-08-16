@@ -46,8 +46,14 @@ and each one also appended to the proposals ledger
 (`review-discipline` → *The proposal channel*) —
 **whether visual evidence was consulted** — and when it was not, which of
 `review-discipline`'s reasons applies — fresh verification output, and the
-`reviewed_sha` the verdict covers.
+`reviewed_tree` the verdict covers (`git rev-parse HEAD^{tree}`; the shipping
+equality is tree to tree, and `review-discipline`'s *final-evidence ordering*
+rule owns it). Name the commit sha alongside it if a human reader needs one.
 
-**Decide.** PASS only for that certified SHA. On a FAIL, `review-discipline`
-owns the cycle budget and stop rule; return its concrete findings to the builder.
+**Decide.** The vocabulary is `review-discipline`'s *The verdict vocabulary* —
+PASS, FAIL or DEFER, and nothing else. PASS only for that certified tree. DEFER
+when nothing blocking stands but the ticket cannot ship as scoped: route the
+findings by class, hold the ticket for the operator, merge nothing. On a FAIL,
+`review-discipline` owns the cycle budget and stop rule; return its concrete
+findings to the builder.
 '''

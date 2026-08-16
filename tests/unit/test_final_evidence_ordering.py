@@ -36,9 +36,9 @@ Four properties, each measured separately:
   :func:`test_reviewer_records_before_it_decides` and
   :func:`test_build_records_before_it_ships`.
 * **AC-4 (the checkable contracts)** — ``/ship`` and ``/build`` gain an identity
-  check for the certified tree, and the reviewer reports the SHA it bound to.
-  Proven by :func:`test_ship_checks_head_against_the_reviewed_sha`,
-  :func:`test_reviewer_reports_the_reviewed_sha`, and
+  check for the certified tree, and the reviewer reports the tree it bound to.
+  Proven by :func:`test_ship_checks_head_against_the_reviewed_tree`,
+  :func:`test_reviewer_reports_the_reviewed_tree`, and
   :func:`test_build_checks_the_committed_tree_against_the_reviewed_tree`.
 * **AC-5 (pointers resolve)** — each file that stopped stating the rule names its
   home *on the line where it stops*, with a topic cue. Whole-file containment
@@ -58,9 +58,23 @@ section slicer is now **imported** from
 what this module's own docstring already claimed in prose — the ``craft.md``
 class *A positive control must exercise the predicate, not re-implement it*,
 applied to a shared slicer. Everything else here is untouched: the retired-ordering
-sweep with both of its controls, the positional offsets, the literal
-``reviewed_sha`` / ``write-tree`` / ``HEAD^{tree}`` contracts, and the line-scoped
-pointers with their control were already the shape ADR 0016 asks for.
+sweep with both of its controls, the positional offsets, the identity contracts,
+and the line-scoped pointers with their control were already the shape ADR 0016
+asks for.
+
+**#456 turned one identity contract around rather than deleting it.** The AC-4
+assertions used to require the literal ``reviewed_sha`` in ``agents/reviewer.md``
+and ``commands/ship.md``, and ``/ship`` to read a bare ``git rev-parse HEAD``.
+The verdict now binds to the **git tree object**, which is what the gate's own
+marker is named after and what ``/build`` already compared, so the pins move to
+``reviewed_tree`` and to the tree form of the command — the same property, over
+the identity the enforcement hooks actually read. The retired spelling is not
+merely unpinned but **swept out**: :func:`test_the_commit_sha_identity_is_retired`
+asserts it survives in no registered prose, because a surviving copy in a file
+nobody re-pinned is exactly how the two identities came to disagree. The
+distinction the sweep respects is the one AC-2 draws — a report may still *name*
+a commit sha for a human; what may not survive is `reviewed_sha` as the thing
+shipping is gated on.
 """
 
 from __future__ import annotations
@@ -92,6 +106,16 @@ _HOME = "skills/review-discipline/SKILL.md"
 #: The rule's name — greppable on purpose, so the home states it and the
 #: pointers can name it without restating it.
 _RULE_NAME = "final-evidence ordering"
+
+#: The identity a verdict binds to (#456): the git **tree** object, which is
+#: what the verify gate's marker is named after and what ``/build`` already
+#: compared. ``/ship`` reads it with the tree form of ``git rev-parse``.
+_REVIEWED_TREE = "reviewed_tree"
+_TREE_OF_HEAD = "git rev-parse HEAD^{tree}"
+
+#: The retired identity. A commit sha is both weaker (an amend that rewrites no
+#: bytes fails it) and different from the object the enforcement hooks read.
+_RETIRED_IDENTITY = "reviewed_sha"
 
 #: The retired ordering. Anchored on the two clauses that place the record
 #: *after* the reviewed tree. Deliberately NOT a bare "last commit":
@@ -380,38 +404,77 @@ def test_build_records_before_it_ships() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_reviewer_reports_the_reviewed_sha() -> None:
-    """The reviewer names the SHA its verdict binds to (AC-4).
+def test_reviewer_reports_the_reviewed_tree() -> None:
+    """The reviewer names the tree its verdict binds to (AC-4).
 
     The agent-led flow has no ledger, so the identity of the certified tree has
-    to travel in the report — it is what ``/ship`` checks HEAD against.
+    to travel in the report — it is what ``/ship`` checks the branch against.
+    #456 moved that identity from the commit sha to the git tree object; the
+    property is unchanged and the pin follows the identity rather than the
+    spelling.
     """
     text = _text("agents/reviewer.md")
-    assert "reviewed_sha" in text, (
-        "agents/reviewer.md must report the reviewed_sha — without an identity "
-        "for the certified tree, /ship has nothing to compare HEAD to (#331)"
+    assert _REVIEWED_TREE in text, (
+        f"agents/reviewer.md must report the {_REVIEWED_TREE} — without an "
+        "identity for the certified tree, /ship has nothing to compare against "
+        "(#331, re-based on the tree oid by #456)"
     )
 
 
-def test_ship_checks_head_against_the_reviewed_sha() -> None:
-    """``/ship`` refuses a branch whose HEAD is not the certified tree (AC-4).
+def test_ship_checks_head_against_the_reviewed_tree() -> None:
+    """``/ship`` refuses a branch whose tree is not the certified one (AC-4).
 
     A third assertion required ``commands/ship.md`` to name the harness engine's
     ``stale_review`` refusal, so the agent-led rule and the audited one read as
     one rule. #435 retires the engine, so there is no second path left to be
     recognisable as; requiring the name would only pin a pointer to something
-    deleted. The two assertions that carry the property — the SHA it compares
-    against, and the command that reads HEAD — are untouched, and they are the
-    ones that fail if the check is dropped.
+    deleted. The two assertions that carry the property — the identity it
+    compares against, and the command that reads it — are the ones that fail if
+    the check is dropped.
+
+    Both moved to the tree form under #456. A bare ``git rev-parse HEAD`` would
+    now satisfy neither: it prints the commit, and a commit that rewrites no
+    bytes is a mismatch the tree comparison correctly ignores.
     """
     text = _text("commands/ship.md")
-    assert "reviewed_sha" in text, (
-        "commands/ship.md must name the reviewed_sha it checks HEAD against"
+    assert _REVIEWED_TREE in text, (
+        f"commands/ship.md must name the {_REVIEWED_TREE} it checks the branch "
+        "against"
     )
-    assert "git rev-parse HEAD" in text, (
-        "commands/ship.md must show the check, not merely assert the "
-        "precondition — a precondition nobody runs is how the old ordering "
-        "survived (#331)"
+    assert _TREE_OF_HEAD in text, (
+        "commands/ship.md must show the check in its tree form, not merely "
+        "assert the precondition — a precondition nobody runs is how the old "
+        "ordering survived (#331), and a commit-sha comparison is not the "
+        "identity the gate's own evidence is named after (#456)"
+    )
+
+
+def test_the_commit_sha_identity_is_retired() -> None:
+    """No registered prose gates shipping on the commit sha any more (AC-2).
+
+    The turned-around half of the two pins above. Deleting them and pinning the
+    new spelling would have left the retired identity alive in every file this
+    ticket did not happen to open — the shape that let ``/build``'s tree
+    comparison and ``/ship``'s sha comparison disagree for four releases. Scoped
+    over the same derived corpus as AC-2's sweep, so a file nobody listed is
+    covered.
+
+    Absence of the **identifier**, not of the word *sha*: AC-2 permits a report
+    to name a commit sha for a human reader, and forbids only that the shipping
+    equality be stated over one.
+    """
+    violations: list[str] = []
+    for path in _swept_files():
+        body = path.read_text(encoding="utf-8")
+        if _RETIRED_IDENTITY in body:
+            violations.append(_rel(path))
+
+    assert not violations, (
+        f"guidance still names {_RETIRED_IDENTITY!r} as the identity a verdict "
+        f"binds to. The shipping equality is tree to tree ({_REVIEWED_TREE}), "
+        f"single-homed in {_HOME}'s {_RULE_NAME} rule, and matching the object "
+        "the verify gate's own evidence is named after (#456): "
+        + ", ".join(sorted(violations))
     )
 
 

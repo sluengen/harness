@@ -1,4 +1,4 @@
-<!-- guidance:decision@0.3.1 -->
+<!-- guidance:decision@0.4.0 -->
 # /decision — drain the tickets held for your input
 
 Usage: `/decision`
@@ -54,16 +54,12 @@ whole tracker queue, same nullable-scope rule `work-discovery` uses).
 carrying the `input` label **and** assigned to the operator (the viewer) —
 both conditions, matching the exact state a deferral leaves a ticket in. (In
 an un-migrated repo, also pull the retired `decision` label and treat it as
-`input`.) This is a read, not a lifecycle mutation, so it is done directly
-against the tracker:
-
-- **`tracker: github`** — `gh issue list --repo <github.repo> --label input
-  --assignee @me --state open --json number,title,url,body,updatedAt` (add
-  `--search 'project:<github.project>'` when `repo.project` is set and the
-  queue should scope to one board).
-- **`tracker: linear`** — the `linear` skill's issue-search recipe, filtered to
-  `labels: { name: { eq: "input" } }`, `assignee: { isMe: { eq: true } }`,
-  and (when `repo.project` is set) `project: { name: { eq: <repo.project> } }`.
+`input`.) A read is a tracker operation like any other: go through the
+`tracker` skill's `queue` operation and follow the matching provider's
+list-issues recipe — the `github-issues` skill under `tracker: github`, the
+`linear` skill under `tracker: linear`. The provider skills own the query
+shapes; do not invent one here, and scope the list to `repo.project` when it
+is set.
 
 Empty pile → report it and **stop**. Do not manufacture a decision to make —
 an honest empty result is correct output, not a failure to route around.
@@ -77,10 +73,10 @@ the same way.
 
 - Title, URL, and current change-spec body (context for what's being decided).
 - The deferring comment — the reason text the deferring run posted — since that
-  comment names exactly what the ticket needs. Read it via
-  `gh issue view <n> --comments` (github) or the `linear` skill's comment-read
-  recipe (linear); take the **latest** comment carrying the hold's triage
-  reason if more than one exists.
+  comment names exactly what the ticket needs. Read it through the `tracker`
+  skill's `open` operation and the matching provider's comment-read recipe;
+  take the **latest** comment carrying the hold's triage reason if more than
+  one exists.
 
 Ask the operator for their call. Do not answer for them, and do not proceed
 past a ticket the operator wants to skip for this session (leave it held; move

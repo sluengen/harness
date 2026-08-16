@@ -1,4 +1,4 @@
-<!-- guidance:build@1.15.0 -->
+<!-- guidance:build@1.16.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -194,7 +194,7 @@ pass, the reviewer also applies
 `skills/review-discipline/references/craft.md`.
 
 The reviewer, not the implementer or orchestrator, records the as-built spec in
-the candidate when heading for PASS or DEFER, then re-runs verification over that
+the candidate when heading for PASS, then re-runs verification over that
 tree. Its verdict must bind the resulting tree. A UI reviewer inspects the visual
 evidence against the reference or applicable archetype and reports missing,
 misleading, or inconsistent screenshots as a finding.
@@ -212,7 +212,7 @@ cd "$worktree_path" && git add -A && git write-tree    # reviewed_tree after rec
 ```
 
 If the reviewer changes the candidate after capturing `reviewed_tree`, it must
-repeat the certifying gate and this capture. A PASS or DEFER over any other tree
+repeat the certifying gate and this capture. A PASS over any other tree
 is a FAIL.
 
 With `--engine codex`, run the independent Codex reviewer from the worktree in a
@@ -223,9 +223,10 @@ machine-readable verdict:
 cd "$worktree_path" && codex exec --sandbox read-only --ephemeral - < /tmp/review_TICKET_ID.txt
 ```
 
-Parse its `SUBMIT:` result as `PASS`, `FAIL`, or `DEFER`. A Codex usage-limit
-message triggers the Claude reviewer-sub-agent fallback once; another malformed
-or failed invocation is a review finding, not a PASS.
+Parse its `SUBMIT:` result as `PASS`, `FAIL`, or `DEFER` — the three verdicts
+`review-discipline`'s *The verdict vocabulary* defines, and the only three. A
+Codex usage-limit message triggers the Claude reviewer-sub-agent fallback once;
+another malformed or failed invocation is a review finding, not a PASS.
 
 ## 3. Ship
 
@@ -256,16 +257,17 @@ the same refusal to integrate on mismatch.
   *Choosing assurance*. An **improvement** is not filed at all; it goes in the
   run report's Proposals section and is appended to the repo's proposals ledger
   — the `tracker` skill owns how that ledger is found or opened — where
-  `/digest` surfaces it and `/assess` decides it at the drain. Then ship the
-  independently reviewed tree.
+  `/digest` surfaces it and `/assess` decides it at the drain. Then hold the
+  ticket via `tracker` (`input` label, assigned to the operator) with the
+  reason, and integrate nothing: a DEFER says the ticket cannot ship as scoped
+  (`review-discipline` → *The verdict vocabulary*).
 
-A moved integration branch is not a stop and never a question for the operator
-(`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If
-reconciliation hits textual conflicts, dispatch a fresh conflict-resolution
-sub-agent. After two failed attempts — or on a genuine functional conflict,
-where both changes want incompatible behaviour and resolving it is a design
-call — preserve and push the branch, hold the ticket via `tracker` (`input`
-label, assigned to the operator), comment naming the conflict, and stop.
+A moved integration branch is not a stop and never a question for the operator:
+reconcile, re-gate, re-review, ship. If reconciliation hits textual conflicts,
+dispatch a fresh conflict-resolution sub-agent. `/ship`'s *base-drift rule* owns
+that rule and the bound on retrying it; when the bound is spent, or on a genuine
+functional conflict, the branch is preserved and pushed and the ticket is held
+for the operator rather than forced through.
 
 ## 4. Abandon safely
 
