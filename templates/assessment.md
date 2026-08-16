@@ -1,7 +1,7 @@
-<!-- guidance:template-assessment@0.5.0 -->
+<!-- guidance:template-assessment@0.6.0 -->
 # Assessment report (the steward's output format)
 
-The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, severity, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
+The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, how a finding is placed on the 2×2, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
 
 **Filename.** `assessments/<YYYY-MM-DD>-<scope>.md` — e.g. `assessments/2026-06-15-code.md`. The dated `assessments/` directory is the convention; do **not** write `steward-<domain>-<date>.md` at the repo root.
 
@@ -23,9 +23,9 @@ The one- or two-paragraph headline — the state of the scope and where the risk
 
 ## Findings
 
-Each finding is a level-3 heading carrying its ID, a one-line title, the severity, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` — and numbered within the pass.
+Each finding is a level-3 heading carrying its ID, a one-line title, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` — and numbered within the pass.
 
-### {SCOPE}-{n} — {one-line title} — {Critical | High | Medium | Low}
+### {SCOPE}-{n} — {one-line title}
 
 **What:** the specific issue.
 **Where:** `file:line` (code) or the section (docs) — a real, clickable reference.
@@ -51,7 +51,7 @@ An `/assess architecture --deep` pass writes the *same* dated file (`assessments
 - **Verdict** — the one- or two-paragraph headline: is the system shape still right for the product, and where does the risk concentrate?
 - **System map / current shape** — the boundaries and major components as they actually stand, so a reader can place everything that follows.
 - **What is working** — the positive bets to preserve and the trade-offs worth keeping. **These are not findings and are not filed as tickets** — recording them is the point of a holistic review.
-- **Architectural risks** — the actionable concerns, each with the four parts (`assessment-craft`) and a severity, IDs prefixed `ARCH-`. These *are* filed.
+- **Architectural risks** — the actionable concerns, each with the four parts (`assessment-craft`), IDs prefixed `ARCH-`. These *are* filed.
 - **Watchlist / triggers** — files or boundaries to add to the repo's `architecture_watchlist` (`skills/architecture/SKILL.md`) so the next change there trips a conditional refactor.
 - **Recommended actions** — the concrete changes the risks imply, ordered by leverage.
 - **Findings / tickets to file** — the subset above that becomes tracker issues: the actionable risks and recommendations only.

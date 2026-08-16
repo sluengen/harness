@@ -2,7 +2,7 @@
 name: architecture
 description: Use when making a cross-cutting design decision — data models, contracts, interfaces — and recording it in the spec it governs. Load when shaping how something is built; every decision should trace to engineering-principles.
 ---
-<!-- guidance:architecture@0.7.3 -->
+<!-- guidance:architecture@0.7.4 -->
 # Architecture
 
 How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
@@ -81,4 +81,4 @@ Assess against these lenses — each grounded in `engineering-principles` and th
 7. **Spec-record health** — do the as-built records (feature specs / `SPEC.md` / `specs/`) still match shipped behaviour?
 8. **Watchlist recommendations** — which files or boundaries should trip a conditional refactor on the next touch? Propose them for the repo's `architecture_watchlist` (above).
 
-The assessment names **positive bets to preserve** as first-class output, not only risks: a holistic review that records what is working and which trade-off to keep is doing its job even when it files no ticket. Calibrate risks with the `assessment-craft` finding bar — evidence first, a concrete fix, honest severity — but keep the narrative (verdict, what is working, trade-offs) in the report rather than forcing it into the tracker.
+The assessment names **positive bets to preserve** as first-class output, not only risks: a holistic review that records what is working and which trade-off to keep is doing its job even when it files no ticket. Calibrate risks with the `assessment-craft` finding bar — evidence first, a concrete fix, an honest blocking call — but keep the narrative (verdict, what is working, trade-offs) in the report rather than forcing it into the tracker.

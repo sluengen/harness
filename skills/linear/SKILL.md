@@ -2,7 +2,7 @@
 name: linear
 description: Use when the repo's CONTEXT.md says tracker linear and you need to read or update a ticket — opening an issue, filing one, resolving team/state/label IDs, moving status, or commenting. The Linear provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:linear@0.8.2 -->
+<!-- guidance:linear@0.8.3 -->
 # Linear
 
 The **Linear provider recipes** for the tracker protocol. Policy — the operation set, the state names, filing and placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against Linear's API.
@@ -20,7 +20,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the `tr
 | Type | `Feature`, `Bug`, `Improvement` | One per issue. Feature = new capability; bug = broken; improvement = tweak or internal work. |
 | Stack | repo-defined (e.g. `frontend`, `backend`) | One or more. Routes to the matching builder; both = fullstack. |
 | Source | `review-finding` | Applied when a steward files a finding (`assess`). A steward's *insight* is an improvement and is never filed — it goes to the proposals ledger — so the `review-insight` label is retired vocabulary; leave any already applied, and do not apply it to new work. |
-| Hold | `decision`, `input`, `operator` | Why a human holds a ticket (`tracker` → Filing and placement). All three imply the ticket is **assigned** to that human. |
+| Hold | `input`, `operator` | Why a human holds a ticket (`tracker` → Filing and placement). Both imply the ticket is **assigned** to that human. |
 | Assurance | `assurance:trivial`, `assurance:simple`, `assurance:complex` | Exactly one, always — the lifecycle assurance the ticket was filed with. Which one is `spec-authoring` → *Choosing assurance*; this table only says the group exists and is mandatory. |
 
 > **Case matters — match by group, not a hardcoded case.** The type labels are **workspace-level and capitalized** in the live workspace (`Feature` / `Bug` / `Improvement`); the source, stack, and hold labels are **team-scoped**. A lowercase `feature` lookup silently misses the capitalized workspace label — resolve a label by its group (and case-insensitively) rather than assuming a fixed spelling.

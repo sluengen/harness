@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), the blocking/size 2×2 for findings, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.19.0 -->
+<!-- guidance:review-discipline@0.19.1 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -64,7 +64,7 @@ Two axes decide everything about a finding, each a plain binary:
 | **Blocking** | Fix now, in this branch | **FAIL** — the ticket cannot ship as scoped; *On a FAIL* below, and a human re-scopes if the budget cannot absorb it |
 | **Non-blocking** | Fix now, in this branch | **Propose it** — one line in the report's **Proposals** section carrying the case for it, and one entry in the proposals ledger. This review does not file it and does not queue it |
 
-The default posture is **fix it now — do the job right the first time**. Three of the four cells resolve inside this branch; the builder already has the context, and fixing a small thing costs less than discussing it. Size is the only legitimate reason not to, and blocking is the only thing severity was ever needed for.
+The default posture is **fix it now — do the job right the first time**. Three of the four cells resolve inside this branch; the builder already has the context, and fixing a small thing costs less than discussing it. Size is the only legitimate reason not to, and blocking is the only thing the **retired** severity scale was ever needed for.
 
 There is deliberately no "small but not worth doing" case. The finding bar above already filters it: a specific, stateable defect or improvement is a finding, and a small one is always worth its own cost; anything vaguer ("could be improved") never became a finding in the first place. A rule with a subjective override attached is not a rule.
 

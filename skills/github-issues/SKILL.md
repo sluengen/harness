@@ -2,7 +2,7 @@
 name: github-issues
 description: Use when the repo's CONTEXT.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:github-issues@0.2.0 -->
+<!-- guidance:github-issues@0.2.1 -->
 # GitHub Issues
 
 The **GitHub provider recipes** for the tracker protocol. Policy — the operation set, the state names, placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
@@ -89,7 +89,7 @@ Both, per the `tracker` skill: the assignee is the machine-readable skip signal,
 
 ```bash
 gh issue edit <number> --repo <owner>/<name> \
-  --add-label <decision|input|operator> --add-assignee <operator-login>
+  --add-label <input|operator> --add-assignee <operator-login>
 ```
 
 ### `queue` — the Todo work
