@@ -41,6 +41,20 @@ was required to exist and never read, so all four records drifted to declaring a
 currency that was false — the same unmeasured-claim family as #275, one file
 over. The date guard below reads the value against git and is derived from the
 tracked tree, so a fifth feature spec is covered on arrival.
+
+**#446 removes a required key rather than adding a check for it.** ``tickets:``
+compelled every record to list the tracker issues that shaped it — a
+hand-maintained list duplicating what the record's own ``git log`` already holds,
+and one that had gone four tickets stale before anyone read it. ADR 0014 already
+settled this class here when it deleted the changelog-fragment system: *a record
+that is compelled per-change, and that duplicates a record already being written,
+is a tax rather than a control.* That ADR also names the near miss — the fragment
+system's byte guard, "correctly identifying the second copy, then capping its
+length rather than asking why it exists". A guard checking ``tickets:`` against
+git would have been that same mistake one level up, so the key is deleted from
+the schema and from ``templates/feature.md``, and the record points a reader at
+``git log`` instead. Nothing asserts the key stays *absent*: a guard against its
+return is the machinery this removes, and ADR 0014's own deletion added none.
 """
 
 from __future__ import annotations
@@ -67,7 +81,7 @@ _FEATURES_DIR = _REPO_ROOT / "specs" / "features"
 _EXPECTED_FEATURES = ("guidance-system",)
 
 #: Frontmatter keys required by ``templates/feature.md``.
-_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated", "tickets")
+_REQUIRED_FRONTMATTER = ("feature", "status", "last_updated")
 
 
 def _feature_path(slug: str) -> Path:
@@ -224,7 +238,7 @@ def test_an_uncustomized_template_date_fails_with_a_readable_message(
     spec = tmp_path / "placeholder.md"
     spec.write_text(
         "---\nfeature: x\nstatus: implemented\nlast_updated: YYYY-MM-DD\n"
-        "tickets: [CAL-1]\n---\n\n## Behaviour\n",
+        "---\n\n## Behaviour\n",
         encoding="utf-8",
     )
     with pytest.raises(AssertionError, match="not an ISO-8601"):
@@ -237,7 +251,7 @@ def test_a_missing_last_updated_key_fails_with_a_readable_message(
     """A frontmatter block with no ``last_updated:`` line names the missing key."""
     spec = tmp_path / "keyless.md"
     spec.write_text(
-        "---\nfeature: x\nstatus: implemented\ntickets: [CAL-1]\n---\n\n"
+        "---\nfeature: x\nstatus: implemented\n---\n\n"
         "## Behaviour\n",
         encoding="utf-8",
     )

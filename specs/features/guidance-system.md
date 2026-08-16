@@ -2,12 +2,13 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-16
-tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#436", "#437", "#438", "#439", "#444"]
 ---
 
 # Guidance system
 
 > Versioned, progressively disclosed instructions give agents the current contract for this repo without loading unrelated provider, workflow, or review detail.
+
+*Change history: `git log --follow -- specs/features/guidance-system.md`.*
 
 ## Behaviour
 
@@ -286,6 +287,25 @@ The reason must sit on the marker's own line, and that bound is load-bearing rat
 - THEN the tree derivation reports that directory, and the blind-spot check fails until it has a ceiling
 - AND a file past that ceiling fails until it records a `size:` decision in its own comment syntax
 
+### The as-built record's schema declares no ticket list
+
+`templates/feature.md` @0.6.0 declares three frontmatter keys — `feature`, `status`, `last_updated` — and `tests/unit/test_feature_specs.py` requires those three of this record. A fourth, `tickets:`, compelled every record to hand-maintain the tracker issues that shaped it. #446 deleted it from the schema, from this record, and from the required set. Removing a key from a published schema is not a patch, so the template's stamp and its `registry.yaml` row both moved to `0.6.0`; a stamp left behind fails twice, on the whole-registry parity sweep and on the per-file parametrized version check.
+
+The ticket was filed to add two missing entries. There were three — #440, #441 and #443 each changed this file and none reached the list, while #442 correctly did not — and the first pass built the guard the ticket had left as a judgement call: derive the expected set from `git log` over the record's own path, then assert the declared list covers it. It worked, and went red naming exactly those three. It was still the wrong fix, and this repo had already written down why. [ADR 0014](../decisions/0014-changelog-from-commits.md) deleted the changelog-fragment system on the rule that *a record that is compelled per-change, and that duplicates a record already being written, is a tax rather than a control*, and it names the near miss it was correcting: the fragment system's byte guard, "correctly identifying the second copy, then capping its length rather than asking why it exists". A guard measuring `tickets:` against git is that move one level up. `skills/spec-authoring/SKILL.md` § *Feature spec* states the general form the harness distributes to every consumer — a prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member — so the published schema had been compelling the shape its own guidance forbids.
+
+One line in this record replaces the key, pointing a reader at `git log --follow -- specs/features/guidance-system.md`. Measured rather than assumed: that command returns 16 commits against the plain form's 22, and all six it drops are reconciliation merges whose content reaches the reader through the commits they merged. This file has never been renamed, so `--follow` buys nothing today and costs nothing.
+
+The tracker-neutrality ban outlived the requirement it was paired with. `tests/unit/test_tracker_neutral_lifecycle.py`'s AC-6 asserted two things about the same frontmatter: that it uses the neutral `tickets:` key, and that it uses no provider-named one. The first lost its subject and went with the key. The second kept its subject — the block is still there, and a `linear:` key can still be put into it — so it stays, over both the distributed template and the shipped record. Reviewer mutation proved all three survivors live: `linear: <id>` spliced into the template's frontmatter kills the template assertion, the same splice into this record's frontmatter kills the record assertion, and deriving the record set to nothing kills the floor rather than passing a ban over an empty set.
+
+Nothing asserts the deleted key stays deleted. That is the decision rather than an oversight — a guard against its return is the machinery this change removes, and ADR 0014's own deletion added none — and it was measured rather than argued. `tickets:` re-added to `templates/feature.md` at the exact offset where the `linear:` splice dies survives the whole suite, which is the paired splice that separates *no predicate matches this key* from *nothing reads this file*.
+
+#### Scenario: a later change puts a ticket list back into the schema
+
+- GIVEN a change re-adds `tickets:` to `templates/feature.md` or to an as-built record
+- WHEN the gate runs
+- THEN nothing fails, by decision, because no guard asserts the key's absence
+- AND the same line spelled `linear:` fails at both homes, because the neutrality ban outlived the requirement it was paired with
+
 ### Source-version integrity
 
 For an equal source and lock version, `/update-guidance` classifies a file as `current` or `LOCAL` only when the fetched source hash matches the locked hash. A mismatch is `SOURCE DRIFT` regardless of the consumer's on-disk state. It stops the entire update before apply, reports the file and source/locked hashes, and requires the source file and registry version to be repaired.
@@ -322,6 +342,7 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - `process/harness.md` → *Enforcement hooks* is the one home for what the hooks refuse and what clears a refusal. `BOOTSTRAP.md`'s verification checklist calls out the `Stop` block specifically, because a settings file merged by hand from an older install can drop a new event type, and a hook that never fires looks exactly like one that always allows.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 - `tests/unit/test_source_file_size_justification.py` is the one home for the repo's size-ceiling enforcement — the tree set, the language classification, and the marker's per-language form — and its classifier is a single function every synthetic control and both derivations route through. `templates/size-guard.md` is a separate artifact: the reference walker shipped to consuming repos, carrying its own globs/limit/exemption contract for an adopting repo to edit, derived from nothing here.
+- `templates/feature.md` is the one home for the as-built-record schema a consuming repo copies. `tests/unit/test_feature_specs.py`'s `_REQUIRED_FRONTMATTER` is this repo's own restatement of that key set, checked against this record alone; `tests/unit/test_tracker_neutral_lifecycle.py` holds what is left of the tracker-neutral record contract, a ban on a provider-named ticket key at both homes with no requirement to declare one.
 
 ## Known limitations
 
@@ -355,6 +376,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - The Stop hook asks whether there is anything to claim by comparing the current tree against `HEAD^{tree}` and, for committed work, `HEAD` against the branch `CONTEXT.md` names as `integration`. A repo declaring no `branches:` block gets only the first comparison, so a clean task branch carrying committed but ungated work is not blocked there. The push guard is unaffected: its fallback protected set needs no declaration.
 - Both hooks read a file any process with repository write access can create, and both run in the same trust domain as the agent they check. A model with `Bash` can forge a marker, delete a real one, or edit the hook. They are evidence plumbing, not an authority: what they buy is that the default path now requires the gate to have actually run over the exact bytes, and that manufacturing the evidence is a discrete, transcript-visible act instead of a silent omission. The controls of record remain server-side branch protection and the gate output in CI. `permissions.deny` globs back the force-push guard; nothing in that block covers a push to `dev` by target, so a fail-open in the target guard has nothing behind it.
 - Every hook payload and transcript fixture in the suite is a **hand-authored model of the host's contract**, and the suite is self-consistent with that model whether or not the model is right. Three things are now observed rather than assumed: the Stop payload, captured verbatim from Claude Code 2.1.220 and driven through the hook as-is; the deny-over-allow precedence the push guard rests on, watched live refusing a command a standing `permissions.allow` entry covered; and, since #439, the transcript entry's envelope — one verbatim host-written JSONL line with its path redacted, from which every scope fixture is built by rebinding `cwd`, establishing that `cwd` is a top-level sibling of `type` and `sessionId` rather than something nested under `message`. Two live headless runs recorded on #439 validate the model end to end, and the same reading of eight real `/build` transcripts confirms the shape independently. Everything else — the `PreToolUse` payload's own shape included — remains a model, and a live run is the only validation available for it.
+- The feature-spec key set has two homes and nothing derives one from the other: `templates/feature.md`'s frontmatter, and `_REQUIRED_FRONTMATTER` in `tests/unit/test_feature_specs.py`. Measured at review by an independent mutation with an observable — dropping `status` from the tuple moved the observable and killed nothing, so the required set can shrink in either home with the suite green. That hazard is what #446 walked through by hand, twice, and got right. Deriving the tuple from the template was considered on the ticket and declined as a widening, which leaves the docstring's claim that the tuple is what the template requires a reading judgment rather than a mechanism.
+- A consuming repo's existing feature specs still carry `tickets:` after `/update-guidance` installs the 0.6.0 template. Nothing in the distributed surface reads the key or rejects it, so the leftover is inert rather than invalid, and the repo publishes no migration note: the only thing that could have made one true is the guard this change removed.
+- The pointer line is prose nothing runs. `git log --follow` takes exactly one pathspec and resolves it against the caller's directory, so the line answers from the repository root and finds nothing from inside `specs/features/`.
 
 ## Decisions
 

@@ -483,24 +483,35 @@ def test_assess_degrades_on_tracker_none() -> None:
     )
 
 
-# --- AC-6: the as-built records carry a tracker-neutral ticket key ------------
+# --- AC-6: the as-built records carry no provider-specific ticket key ---------
+#
+# #446 deleted the ``tickets:`` key itself from the feature-spec schema, so the
+# positive half of AC-6 ("must use the neutral `tickets:` key") lost its subject
+# and is gone with it. The **ban** half did not: the frontmatter block survives,
+# and a provider-specific key can still be reintroduced into it. That is a
+# different property from the one #446 retired — neutrality of the schema, not
+# compulsion of an audit trail — so it is kept rather than swept up in the
+# deletion. The record's change history now comes from ``git log``, which is
+# tracker-neutral by construction.
 
 
-def test_feature_template_uses_a_neutral_ticket_key() -> None:
+def test_feature_template_carries_no_provider_specific_ticket_key() -> None:
+    """The distributed template names no Linear-specific frontmatter key."""
     text = FEATURE_TEMPLATE.read_text()
-    assert re.search(r"^tickets:", text, re.M), (
-        "templates/feature.md frontmatter must use the neutral `tickets:` key (#327)."
-    )
     assert not re.search(r"^linear:", text, re.M), (
-        "templates/feature.md must not carry a Linear-specific `linear:` key (#327)."
+        "templates/feature.md must not carry a Linear-specific `linear:` key "
+        "(#327). A record's change history is read from git, not declared in "
+        "frontmatter (#446)."
     )
 
 
-def test_shipped_feature_specs_migrated_to_the_neutral_key() -> None:
-    """Every as-built record uses the neutral key.
+def test_shipped_feature_specs_carry_no_provider_specific_ticket_key() -> None:
+    """No as-built record carries a Linear-specific frontmatter key.
 
     Their values already mixed Linear ids and ``#244``-style GitHub ids, which
-    is exactly why the neutral name is the correct one.
+    is what made a provider-specific key wrong. #446 went further and removed
+    the ticket list altogether — a hand-maintained duplicate of ``git log`` —
+    so what remains here is the ban, not a requirement to declare anything.
 
     The floor was four records until #435 retired five of the six subsystems
     they described and archived their specs under ``specs/retired/``. It is one
@@ -516,5 +527,6 @@ def test_shipped_feature_specs_migrated_to_the_neutral_key() -> None:
     offenders = [p.name for p in records if re.search(r"^linear:", p.read_text(), re.M)]
     assert not offenders, (
         f"feature spec(s) still carry the Linear-specific frontmatter key: "
-        f"{offenders}. Use `tickets:` (#327)."
+        f"{offenders}. Delete it — a record's change history is read from git, "
+        "not declared in frontmatter (#327, #446)."
     )

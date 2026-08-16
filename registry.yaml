@@ -132,7 +132,7 @@ files:
   templates/CONTEXT.template.md:      { id: template-context,         version: 0.1.19, profiles: [harness] }
   # Feature-spec template, home from the retired agents repo (CAL-652, D6). Used
   # where a repo's CONTEXT.md feature_specs layer is on (records to specs/features/).
-  templates/feature.md:               { id: template-feature,         version: 0.5.0, profiles: [harness] }
+  templates/feature.md:               { id: template-feature,         version: 0.6.0, profiles: [harness] }
   # Reference implementation of the size-marker guard, distributed so a consuming
   # repo can adopt the mechanical check with its own globs/limit/exemptions. The
   # rule lives in skills/code-quality; this is the ~30-line walker that enforces it.
