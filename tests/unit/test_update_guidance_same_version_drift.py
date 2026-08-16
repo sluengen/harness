@@ -57,11 +57,30 @@ def _section(start: str, end: str) -> str:
 
 
 def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
-    """The corrected commands publish coordinated, intentional version bumps."""
-    assert _version(DECISION, "decision") == "0.3.1"
-    assert _registry_version("commands/decision.md") == "0.3.1"
-    assert _version(UPDATE_GUIDANCE, "update-guidance") == "1.0.0"
-    assert _registry_version("commands/update-guidance.md") == "1.0.0"
+    """The corrected commands publish coordinated, intentional version bumps.
+
+    The property is **parity plus a floor**, not a frozen constant, for all three
+    files. The registry half already worked that way, with the reasoning written
+    out below; the two command halves were exact pins, and they failed the first
+    time either file was legitimately edited again (#436 added a gate-before-push
+    sentence to ``update-guidance``). An exact pin on a file that is expected to
+    keep changing measures nothing about the property it was written for — it
+    just makes every future editor delete a number — so both are brought onto the
+    same shape the registry uses. What is preserved is what this module owns: a
+    file's own header and its registry row agree, and neither has slipped below
+    the version #407 published.
+    """
+    for path, guidance_id, registry_path, floor in (
+        (DECISION, "decision", "commands/decision.md", (0, 3, 1)),
+        (UPDATE_GUIDANCE, "update-guidance", "commands/update-guidance.md", (1, 0, 0)),
+    ):
+        version = _version(path, guidance_id)
+        assert _as_tuple(version) >= floor, f"{registry_path} regressed to {version}"
+        assert _registry_version(registry_path) == version, (
+            f"{registry_path}'s header says {version} but its registry row does "
+            "not — a version stamp and the registry must never disagree, or "
+            "/update-guidance classifies the file wrongly"
+        )
 
     # #407 bumped the registry to 0.5.131. Pinning that exact value would fail on
     # every later registry edit, so assert the floor it published rather than a

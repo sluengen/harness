@@ -47,7 +47,7 @@ echo "=== pytest ==="
 # The floor is set just under the measured value at the time of the teardown
 # and is a ratchet, not a target: raise it when coverage rises, and treat a drop
 # below it as the regression it is.
-uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=79
+uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=82
 
 echo "=== landing-page drift guard ==="
 # Fail the gate if docs/index.html names a command/skill/agent the registry no
@@ -61,6 +61,15 @@ echo "=== design-token drift guard ==="
 # narrowed (#243): the guidance catalog above stays guarded and hand-authored;
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
+
+echo "=== gate marker ==="
+# Record that the gate exited 0 over *these exact bytes* (#436). The marker is
+# named after the git tree object of this working tree and lives in the git
+# common directory, so it cannot be swept into the tree it records. Two hooks
+# read it: the Stop hook refuses a completion claim over a tree no marker
+# covers, and the push guard refuses a push to a protected branch carrying one.
+# Last, because `set -e` is what makes "after every stage" mean "only on green".
+uv run --extra dev python scripts/gate_marker.py write
 
 echo ""
 echo "All checks passed."
