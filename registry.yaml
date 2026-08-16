@@ -172,5 +172,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-
   registry.yaml:                      { id: registry,                 version: 0.5.143 }

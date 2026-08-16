@@ -138,13 +138,26 @@ def _write_marker(cwd: Path) -> str:
     return proc.stdout.split(":", 1)[1].split("->")[0].strip()
 
 
-def _decision(command: str, cwd: Path, *, env: dict[str, str] | None = None) -> str | None:
-    """The hook's ``permissionDecision`` for a Bash call running ``command``."""
+def _decision(
+    command: str,
+    cwd: Path,
+    *,
+    env: dict[str, str] | None = None,
+    proc_cwd: Path | None = None,
+) -> str | None:
+    """The hook's ``permissionDecision`` for a Bash call running ``command``.
+
+    ``proc_cwd`` is the directory the **hook process itself** is launched in, as
+    distinct from the payload's ``cwd``. They are the same in every ordinary
+    case and the tests leave it alone; it exists because a relative path in the
+    command — ``git -C .`` — is resolved by whichever of the two the hook
+    consults, and those two answers are only distinguishable when they differ.
+    """
     payload = {"tool_name": "Bash", "cwd": str(cwd), "tool_input": {"command": command}}
     proc = subprocess.run(
         [_node(), str(HOOK)],
         input=json.dumps(payload),
-        cwd=cwd,
+        cwd=proc_cwd if proc_cwd is not None else cwd,
         capture_output=True,
         text=True,
         timeout=60,
@@ -323,6 +336,36 @@ def test_mirror_and_all_are_denied(repo: Path) -> None:
     assert _denied("git push --all origin", repo)
 
 
+def test_mirror_is_denied_even_where_the_repo_has_no_protected_branch(
+    repo: Path,
+) -> None:
+    """``--mirror`` is the one flag whose danger *increases* when the local repo
+    holds no protected branch.
+
+    It does not merely push refs; it makes the remote match the local set, so a
+    protected branch the local repo does not have is a protected branch
+    ``--mirror`` **deletes**. Deciding it on whether a protected branch exists
+    locally therefore has the polarity exactly backwards, and this test is the
+    one that separates the two readings: the only branch here is ``feat/x``.
+
+    ``--all`` is the opposite case and is allowed in the same repository — it
+    pushes the local branches and nothing else, so with no protected branch
+    among them there is genuinely no protected target. Asserting both on one
+    fixture is what keeps the two flags from being conflated again.
+    """
+    _git(repo, "checkout", "-q", "-b", "feat/x")
+    _git(repo, "branch", "-q", "-D", "main")
+
+    assert _denied("git push --mirror origin", repo), (
+        "a mirror push from a repo with no protected branch deletes every "
+        "protected branch on the remote — the case the guard most has to refuse"
+    )
+    assert not _denied("git push --all origin", repo), (
+        "--all moves only the local branches; with no protected branch among "
+        "them there is no protected target, and denying it would be a false deny"
+    )
+
+
 def test_tags_alone_are_allowed(repo: Path) -> None:
     """A tag is not a branch. Denying ``--tags`` would block release tagging for
     no protection at all."""
@@ -411,6 +454,102 @@ def test_the_push_directory_is_the_one_the_cd_names(repo: Path, tmp_path: Path) 
     assert not _denied(f"cd {repo} && git push origin HEAD:main", repo), (
         "a cd back into the verified checkout must still pass, or the guard is "
         "merely denying every command that contains a cd"
+    )
+
+
+# --- the refspec the guard has to infer rather than read ----------------------
+
+
+def _with_upstream(repo: Path, tmp_path: Path, branch: str) -> None:
+    """Give ``repo``'s current branch a tracking branch called ``branch``.
+
+    A bare ``git push`` names no refspec at all, so the target has to be inferred
+    from ``@{upstream}``. That inference is the only part of the predicate with
+    no literal text to read, which is why it needs a fixture of its own.
+    """
+    bare = tmp_path / "origin.git"
+    _git(repo, "init", "-q", "--bare", str(bare))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
+    _git(repo, "branch", "--set-upstream-to", f"origin/{branch}")
+
+
+def test_a_bare_push_to_a_protected_upstream_is_denied(repo: Path, tmp_path: Path) -> None:
+    """``git push`` with no arguments is the commonest spelling there is, and it
+    is the one shape where the target is not written down anywhere in the
+    command.
+
+    Both directions on the same command, so the deny is attributable to the
+    evidence rather than to the guard refusing every argument-less push: with no
+    marker the push to the protected upstream is refused, and the identical
+    command over the identical tree is allowed once the gate has covered it.
+    """
+    _with_upstream(repo, tmp_path, "dev")
+
+    assert _denied("git push", repo), (
+        "a bare push resolves its target through @{upstream}; the upstream here "
+        "is a protected branch and no marker covers the tree"
+    )
+
+    _write_marker(repo)
+
+    assert not _denied("git push", repo)
+
+
+def test_a_bare_push_to_an_unprotected_upstream_passes(repo: Path, tmp_path: Path) -> None:
+    """The negative control on the inferred target. Without it a guard that
+    denied every refspec-less push would satisfy the case above."""
+    _with_upstream(repo, tmp_path, "feat/x")
+
+    assert not _denied("git push", repo)
+
+
+def test_a_variable_in_the_target_slot_is_denied(repo: Path) -> None:
+    """A parameter expansion is as unreadable as a command substitution.
+
+    ``git push origin HEAD:$T`` reads statically as a push to a branch named
+    ``$T`` — a name no protected set contains — while at run time the shell hands
+    git whatever ``T`` holds. The guard cannot establish the target, and a target
+    it cannot establish is state 2 of the design's fail-open split, which closes.
+    A marker is present, so the deny is about the ambiguity and not about
+    missing evidence.
+    """
+    _write_marker(repo)
+
+    assert _denied("T=main; git push origin HEAD:$T", repo)
+    assert _denied("git push origin HEAD:${T}", repo)
+    assert _denied("git push origin $T", repo)
+
+
+def test_a_relative_dash_c_is_resolved_against_the_command_not_the_hook_process(
+    repo: Path, tmp_path: Path
+) -> None:
+    """``git -C .`` means *the directory this command runs in*, not the directory
+    the hook happens to have been launched in.
+
+    The two are set to different repositories on purpose, and the hook process's
+    one is the **verified** one: a guard that resolved a relative ``-C`` against
+    its own cwd would find that repo's marker and authorise a push of a tree it
+    has never seen. That is the same defect as ignoring the ``cd``, one operand
+    further along.
+    """
+    _write_marker(repo)  # the hook process's own cwd IS verified
+    ungated = tmp_path / "ungated"
+    ungated.mkdir()
+    _git(ungated, "init", "-q", "--initial-branch=main")
+    _git(ungated, "config", "user.email", "t@example.com")
+    _git(ungated, "config", "user.name", "t")
+    _commit(ungated, "never-gated.txt", "no gate has seen this\n")
+
+    assert _denied(f"cd {ungated} && git -C . push origin HEAD:main", repo, proc_cwd=repo), (
+        "the guard resolved a relative -C against its own working directory, so "
+        "a marker belonging to an entirely different repository authorised this "
+        "push"
+    )
+    absolute = f"cd {ungated} && git -C {repo} push origin HEAD:main"
+    assert not _denied(absolute, repo, proc_cwd=repo), (
+        "an absolute -C into the verified checkout must still pass, or the guard "
+        "is merely denying every command that carries a -C"
     )
 
 

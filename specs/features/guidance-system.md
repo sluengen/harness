@@ -2,7 +2,7 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-16
-tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#437"]
+tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#436", "#437"]
 ---
 
 # Guidance system
@@ -141,6 +141,34 @@ Its guard derives the family and pattern sets from the file rather than listing 
 - THEN the body floor fails, naming each pattern that fell under it
 - AND a pattern renamed rather than removed fails the membership pin, instead of passing behind a count the floor still clears
 
+### Two rules are enforced by hooks rather than by prose
+
+`scripts/verify.sh` writes a **gate marker** on green: a file named after the git **tree object** of the working tree it verified, at `<git-common-dir>/harness/gate/<tree-oid>.json`. `scripts/gate_marker.py` is its only writer, and the whole decision predicate is `exists(path)` plus its mtime — no reader parses the body, because anyone who can write the file can write valid JSON, so parsing would buy nothing.
+
+Two Claude Code hooks read that one artifact from opposite sides of one equality. `hooks/gate-evidence-guard.js` (`Stop`) blocks the end of a turn whose message claims the work is finished when no fresh marker covers the worktree's current tree. `hooks/push-target-guard.js` (`PreToolUse: Bash`) denies a `git push` whose **target** is a protected branch unless a fresh marker covers the tree of the commit being pushed. `commands/build.md` already makes those the same object — its ship step refuses to integrate unless `HEAD^{tree}` equals the tree the gate ran over — so one marker authorises both, and **no slash command is exempt**: `/ship`, `/routine` and `/promote` are authorised because they push a gated tree, which is the only authorisation a hook can actually check. `/assess` and `/update-guidance` were the two sanctioned flows that pushed without one, and each gained a gate-before-push sentence rather than an exemption.
+
+The tree is computed against a **temporary index** in both the writer and the Stop hook, so measuring never stages the session's work; `git add -A` honours `.gitignore`, so the gate's own log and the venv are excluded exactly as they are excluded from a commit. The marker lives in the git common directory rather than the working tree: a marker inside the tree would be swept up by the very `git add -A` that computes the tree, moving the oid away from the one just recorded — a silent, permanent fail-closed wedge in any consuming repo that skipped a `.gitignore` line. The git directory cannot be tracked by construction, is shared by every linked worktree, and needs no install step anywhere.
+
+Prose is the Stop hook's **trigger** and never its **evidence**. The completion-claim pattern set is a narrowing filter whose only failure direction is a false negative, and the trigger text is the payload's top-level `last_assistant_message` — not the transcript, which at Stop time does not yet contain the turn being stopped. That was measured live rather than modelled: an early build read the transcript, passed every unit test, and could not fire in production even once. The transcript read survives as a fallback for a host that sends no such field.
+
+The push guard reuses `hooks/git-push-guard.js`'s hardened lexer rather than growing a second one, `require`d lazily inside the fail-open path. The two guards decide on different predicates — that one on a push's *form*, this one on its *target* — and only pure parsing functions cross between them, so the force guard's verdicts are unchanged.
+
+Four evasions of the target predicate were found at review, each a path where the guard approved what it exists to refuse, and all four were fixed in the same change. A bare `git push` resolved its target through `rev-parse --abbrev-ref @{upstream}`, whose `origin/dev` no branch-name reduction can safely shorten — `feature/x` must not become `x` — so the commonest spelling of a push was compared against the protected set as the string `origin/dev` and always passed; it now resolves `--symbolic-full-name`. A relative `git -C .` was resolved against the hook process's own working directory instead of the directory the command runs in, so a marker belonging to an entirely different repository could authorise the push; a relative operand now composes with the `cd` the way git composes it, and stays unknowable — hence denied — when the `cd` is. A shell **parameter** expansion in the target slot (`HEAD:$T`) read statically as a branch nobody protects while the shell handed git whatever the variable held; an expansion is now as unreadable as a command substitution. And `--mirror` was decided on whether a protected branch existed locally, which is that flag's polarity inverted: `--mirror` makes the remote match this clone, so a protected branch the clone does *not* hold is one `--mirror` **deletes**. `--mirror` is refused outright; `--all` keeps the local-branch condition, because it moves only the branches this repo has.
+
+#### Scenario: one more file is edited after a green gate
+
+- GIVEN a task branch whose current tree a gate marker covers
+- WHEN a file is edited and the turn's message claims the work is finished
+- THEN the Stop hook blocks, naming the tree and the marker path it looked for
+- AND the block clears only by running the repo's verify command over the new tree, because a marker from before the edit is not evidence about it
+
+#### Scenario: a push to the integration branch carries no gate evidence
+
+- GIVEN a worktree whose commit no fresh marker covers
+- WHEN a push to a protected branch is issued in any spelling — an explicit refspec, a bare `git push` riding its upstream, a nested `sh -c`, or one behind a `cd` or a `git -C`
+- THEN the hook denies before git runs, and names the tree it wanted evidence about
+- AND a push to an unprotected branch is unaffected, with no marker present at all
+
 ### Roles and distribution
 
 Reviewer and steward agent bodies contain role, authority, supplied inputs, output expectations, and skill routing. Review method, assessment lenses, and repo-runtime engine history stay in their owning skills, commands, specs, and decisions.
@@ -179,6 +207,8 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - `skills/code-quality/SKILL.md` and `skills/review-discipline/SKILL.md` are the always-loaded cores for their domains and directly declare every conditional checklist trigger.
 - `commands/build.md` → *Visual evidence for a user-facing change* is the one home for the capture convention — trigger, location, slice rule, height ceiling, and capture cap. `commands/review.md` → *Run the reviewer* owns the handoff of that directory; `skills/review-discipline/SKILL.md` → *Reviewer obligations* → `Report:` owns the consulted / not-consulted line and its closed three-reason set. `commands/start.md`, `agents/reviewer.md`, and `commands/review.md` step 5 are renderings that point rather than restate.
 - `skills/review-discipline/references/craft.md` is the one home for the defect classes that read as green. `skills/review-discipline/SKILL.md` Stage 2 and `commands/build.md`'s implementation and review briefs are the triggers that load it; none of the three restates a pattern.
+- `scripts/gate_marker.py` is the one writer of the gate marker and the reference implementation of its path, tree and freshness rules; `scripts/verify.sh` invokes it last, so `set -e` is what makes "on green" mean it. `hooks/gate-evidence-guard.js` and `hooks/push-target-guard.js` are the two readers, and `tests/unit/test_gate_marker_contract.py` pins all three by executing them rather than by comparing restated constants.
+- `process/harness.md` → *Enforcement hooks* is the one home for what the hooks refuse and what clears a refusal. `BOOTSTRAP.md`'s verification checklist calls out the `Stop` block specifically, because a settings file merged by hand from an older install can drop a new event type, and a hook that never fires looks exactly like one that always allows.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 
 ## Known limitations
@@ -196,8 +226,34 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - Both roots naming the reference is asserted as *the path appears somewhere in the file*, so `commands/build.md`'s second cite has no exclusive killer: deleting one of its two briefs survives every guard. Measured and left deliberately — a count would be the cardinality floor the reference itself warns against, and it would rot the first time a third brief is added.
 - The repo-id sweep over distributed prose keys on the `PREFIX-1234` ticket shape parsed from `hooks/guidance-freshness.js`, so a GitHub-style `#1234` id in registered prose is not caught. The craft reference is clean of both shapes by measurement, not because the guard covers the second one.
 - Nothing authenticates that a capture depicts the reviewed SHA, and `consulted` records only that the reviewer looked. The guidance states the capture convention; it adds no refusal for a user-facing change whose builder produced nothing, so a missing capture set is a Stage-1 finding a reviewer makes rather than a mechanism.
+- The Stop hook can force **exactly one** extra turn per stop-chain, because it honours the platform's `stop_hook_active` flag. It is a nudge with a memory, not a lock: a hook that re-blocked unconditionally would wedge a session whose gate is genuinely red and which cannot fix it.
+- The completion-claim trigger is a small pattern set over model prose, so a claim worded outside it escapes the nudge. The direction is deliberate — a false negative costs the nudge, a false positive costs a gate run on every ordinary turn — and it is tolerable only because the irreversible half is guarded on the command rather than on the words.
+- A Claude Code session's working directory is fixed at launch, so a `/build` driven from the repo root sees a clean integration branch and the Stop hook never fires, however ungated the worktree its sub-agents are editing. Accepted for v1; the push guard covers the irreversible half. Filed as #439, which carries the two closures this design rejected and why — enumerating `git worktree list` would let one stale worktree from a finished ticket block every future session in the repo, permanently.
+- The Stop hook asks whether there is anything to claim by comparing the current tree against `HEAD^{tree}` and, for committed work, `HEAD` against the branch `CONTEXT.md` names as `integration`. A repo declaring no `branches:` block gets only the first comparison, so a clean task branch carrying committed but ungated work is not blocked there. The push guard is unaffected: its fallback protected set needs no declaration.
+- Both hooks read a file any process with repository write access can create, and both run in the same trust domain as the agent they check. A model with `Bash` can forge a marker, delete a real one, or edit the hook. They are evidence plumbing, not an authority: what they buy is that the default path now requires the gate to have actually run over the exact bytes, and that manufacturing the evidence is a discrete, transcript-visible act instead of a silent omission. The controls of record remain server-side branch protection and the gate output in CI. `permissions.deny` globs back the force-push guard; nothing in that block covers a push to `dev` by target, so a fail-open in the target guard has nothing behind it.
+- Every hook payload and transcript fixture in the suite is a **hand-authored model of the host's contract**, and the suite is self-consistent with that model whether or not the model is right. Two things are now observed rather than assumed: the Stop payload, captured verbatim from Claude Code 2.1.220 and driven through the hook as-is, and the deny-over-allow precedence the push guard rests on, watched live refusing a command a standing `permissions.allow` entry covered. Everything else — the `PreToolUse` payload's own shape included — remains a model, and a live run is the only validation available for it.
 
 ## Decisions
+
+### Decision: The gate marker is the authorisation, and it lives in the git directory
+
+*Decided 2026-08-16 (#436), implementing ADR 0015's* Enforcement moves to hooks *and amending that bullet in place.*
+
+**Context.** ADR 0015 moved enforcement into hooks and said the Stop hook blocks a "done" claim "unless the gate ran green **this session**". No session identifier reaches `scripts/verify.sh`, and none is documented in a Bash-tool environment, so that sentence was unenforceable as written. The push half carried the harder question: `settings/harness.json` explicitly authorises `git push origin dev`, because `/ship` and `/routine` push there as the normal path — so "refuse pushes to the integration branch" cannot mean a blanket refusal, and a hook cannot see which slash command is driving.
+
+**Decision.** One artifact answers both. The gate writes a marker named after the git **tree object** it verified, in the git common directory, and a fresh marker covering a tree **is** the authorisation — for a completion claim about that tree and for a push carrying it. There is no command-based exemption, because none is needed: every authorised push path already pushes a tree the gate covered, and an exemption a hook cannot verify is not a control.
+
+**Alternatives.**
+
+- *Session scope, as the ADR worded it* — unenforceable, and weaker even where it is available: a session that edits three files after its green run still satisfies it.
+- *A marker under `.harness/`* — gitignored in this repo only. In a consuming repo without that rule the marker is swept into the tree it records, so the recorded oid can never match again: a silent, permanent fail-closed wedge in exactly the repos that skipped an install step.
+- *A command-authorisation token* — a hook cannot authenticate the command that set it, so it authorises whoever writes it, which is the agent.
+- *A second shell parser for the target guard* — `sh -c "git push origin HEAD:dev"` is a push the force guard's lexer already sees; a naive parser would refuse the plain spelling and wave the nested one through, which is an invitation rather than a gap.
+- *`ask` instead of `deny`* — whether a hook's `ask` overrides an existing `permissions.allow` entry is not documented well enough to bet enforcement on, and an unattended run needs a deterministic answer. Deny-over-allow is what the force guard already relies on, and it was observed live here.
+- *A purely state-based Stop trigger* — blocks every ordinary conversational turn in a task worktree, and blocks the TDD **RED** phase, where the correct report is that a test fails and the demanded gate cannot go green.
+- *A path-based exemption for `/assess`* — needs the remote tip, so network calls inside a hook, and bakes repo-specific path policy into a universal one.
+
+**Consequences.** Fail-open is three states rather than one. A hook that **could not run** opens loudly on stderr, both hooks, per #303. A hook that **ran but could not establish the facts** splits on recoverability: the push guard denies, because one gate run clears a false deny while the act it guards is irreversible; the Stop hook allows, because a Stop hook blocking on an unreadable git wedges a session with no exit. A hook that **established the facts and found no evidence** is not failing open at all — that is the decision it exists to make. The marker directory is a bounded cache, pruned by age and count; ADR 0015 retired the run ledger and this does not revive it. The contract is duplicated in three languages and therefore pinned by *execution* rather than by inspection — the path in all three, the tree in two, the freshness bound in three — because a shared `hooks/lib/` module would be invisible to three `hooks/*.js` scanners that walk the directory non-recursively, and its own load failure would disarm both enforcement hooks at once.
 
 ### Decision: The capture convention lands in `/build`, not in `ux-design`
 

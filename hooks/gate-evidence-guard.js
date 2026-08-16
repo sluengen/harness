@@ -42,9 +42,14 @@
  *
  * **The reason is injected into the model context**, so it is built exclusively
  * from hook-owned constants plus a tree oid and a filesystem path. It never
- * carries transcript text: transcripts are model- and user-authored, and echoing
- * one back through the channel added to report on it is how an injection gets a
- * second reading.
+ * carries the trigger text — neither the payload message nor the transcript:
+ * both are model- and user-authored, and echoing one back through the channel
+ * added to report on it is how an injection gets a second reading.
+ *
+ * **The trigger text comes from the payload, not the transcript.** The host sends
+ * the turn's message as a top-level ``last_assistant_message``; the transcript
+ * does not contain that turn yet when a Stop hook runs, so reading the trigger
+ * from there yields the previous turn or nothing at all. See ``triggerText``.
  *
  * **Stated limitation.** A session cwd is fixed at launch, so when ``/build``
  * runs from the repo root and drives sub-agents that cd into ``.worktrees/<id>``,
@@ -90,7 +95,7 @@ const FALLBACK_PROTECTED = [
 ];
 
 //: The claim-pattern set. Small, anchored to this process own vocabulary, and
-//: applied to the **last** assistant message only — a claim earlier in the
+//: applied to the message of **this** turn only — a claim earlier in the
 //: conversation is not a claim about this turn. False positives cost one gate
 //: run; false negatives cost the nudge, which the push guard backs up.
 const CLAIM_PATTERNS = [
@@ -355,6 +360,31 @@ function lastAssistantText(transcriptPath) {
   return null;
 }
 
+/** The text of the turn being stopped, or null when it cannot be established.
+ *
+ * The host hands it over directly, as the top-level ``last_assistant_message``,
+ * and that is the only source that works. **At Stop time the transcript does not
+ * yet contain the turn being stopped** — the host appends the assistant message
+ * to the JSONL after the hook returns. Measured live against Claude Code 2.1.220
+ * with a snapshot hook that copied the transcript at the instant this one ran:
+ * zero assistant entries. A trigger read from there reads the *previous* turn, or
+ * nothing at all, so it can never fire on the claim it exists to catch.
+ *
+ * ``lastAssistantText`` stays behind it as a fallback rather than being deleted:
+ * a host that sends no such field still has a transcript, and that read is proven
+ * against that shape. What it may no longer be is the primary source.
+ *
+ * A present-but-empty field counts as absent — a field the host declared and did
+ * not fill is not a statement that the turn said nothing. A present field that
+ * simply does not *match* is the answer, though, not a reason to go looking in
+ * the previous turn: falling back there would resurrect a stale claim and block
+ * an ordinary turn that followed one. */
+function triggerText(input) {
+  const direct = input && input.last_assistant_message;
+  if (typeof direct === "string" && direct !== "") return direct;
+  return lastAssistantText(input && input.transcript_path);
+}
+
 /** True iff ``text`` reads as a claim that the work is finished. */
 function claimsCompletion(text) {
   return typeof text === "string" && CLAIM_PATTERNS.some((pattern) => pattern.test(text));
@@ -385,7 +415,7 @@ function main() {
   const input = readStdin();
   const cwd = input.cwd || process.cwd() || process.env.CLAUDE_PROJECT_DIR;
 
-  const claim = lastAssistantText(input.transcript_path);
+  const claim = triggerText(input);
   if (!claimsCompletion(claim)) return allow();
 
   const tree = currentTree(cwd);

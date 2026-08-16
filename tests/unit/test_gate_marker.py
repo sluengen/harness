@@ -26,8 +26,8 @@ test here:
   marker that can never match, i.e. a permanent fail-closed wedge in any
   consuming repo that did not add a ``.gitignore`` rule.
   :func:`test_writing_a_marker_does_not_perturb_the_tree_it_records` measures
-  exactly that, and :func:`test_the_marker_is_not_in_the_working_tree` states
-  the structural half.
+  exactly that, and :func:`test_writing_a_marker_leaves_the_working_tree_untouched`
+  states the structural half.
 * **Shared across worktrees.** The git *common* directory is shared by every
   linked worktree, and two worktrees at the same tree OID have byte-identical
   content, so cross-worktree visibility is correct rather than merely

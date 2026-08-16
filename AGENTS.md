@@ -53,7 +53,7 @@ Two of this rulebook's rules are enforced mechanically rather than by prose. The
 | Hook | Event | Refuses |
 |---|---|---|
 | `gate-evidence-guard.js` | `Stop` | Ending a turn that claims the work is finished when no fresh marker covers the worktree's current tree. |
-| `push-target-guard.js` | `PreToolUse: Bash` | A `git push` whose **target** is a branch `CONTEXT.md` `branches:` declares, unless a fresh marker covers the tree of the commit being pushed. Deleting such a branch, and `--mirror` / `--all`, are refused outright. |
+| `push-target-guard.js` | `PreToolUse: Bash` | A `git push` whose **target** is a branch `CONTEXT.md` `branches:` declares, unless a fresh marker covers the tree of the commit being pushed. Deleting such a branch is refused outright, as is `--mirror` (it makes the remote match this clone, so it deletes any protected branch the clone does not hold); `--all` is refused wherever a protected branch exists to move. |
 
 The marker is named by tree, not by session, so the claim it licenses is *the gate exited 0 over these exact bytes* — which one more edit invalidates and no rewording can talk past. **There is no exemption for a particular command:** `/ship`, `/routine` and `/promote` are authorised because they push a gated tree, which is the only authorisation a hook can actually check. Clearing either refusal is the same one move — run `CONTEXT.md`'s `commands.verify` where the claim is being made, and read its output.
 

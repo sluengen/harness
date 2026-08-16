@@ -33,7 +33,7 @@
  *   1. The hook could not run (crash, unparseable stdin, failed require) — it has
  *      no opinion: pass through, loudly, on stderr.
  *   2. The hook ran but could not establish the facts (git unavailable, an
- *      unresolvable source, an ambiguous push directory, a substitution in a
+ *      unresolvable source, an ambiguous push directory, a shell expansion in a
  *      decision slot) — **deny**. Cheap-to-clear guards fail closed: one gate run
  *      clears a false deny, while a false allow is the irreversible act.
  *   3. The hook ran, established the facts, and found no evidence — **deny**. Not
@@ -253,7 +253,7 @@ function protectedBranches(dir) {
 
 /** Parse one command's tokens as a ``git push``, or return null.
  *
- * Returns ``{ dir, refspecs, isDelete, movesAllRefs, tagsOnly }`` where ``dir``
+ * Returns ``{ dir, refspecs, isDelete, mirrors, movesAllRefs, tagsOnly }`` where ``dir``
  * is a ``git -C`` operand if one was given. A command substitution in the
  * sub-command slot is left to ``git-push-guard.js``, which already fails closed
  * on it — a second deny here would only re-deny a command already refused. */
@@ -280,6 +280,7 @@ function parsePush(rawTokens, parser) {
 
   const operands = [];
   let isDelete = false;
+  let mirrors = false;
   let movesAllRefs = false;
   let tagsOnly = false;
   let sawDoubleDash = false;
@@ -292,6 +293,7 @@ function parsePush(rawTokens, parser) {
     if (!sawDoubleDash && token.length > 1 && token.startsWith("-")) {
       if (PUSH_OPTS_WITH_ARG.has(token)) j += 1;
       if (token === "--delete" || /^-[A-Za-z]*d[A-Za-z]*$/.test(token)) isDelete = true;
+      if (token === "--mirror") mirrors = true;
       if (token === "--mirror" || token === "--all") movesAllRefs = true;
       if (token === "--tags") tagsOnly = true;
       continue;
@@ -300,7 +302,37 @@ function parsePush(rawTokens, parser) {
   }
   // git push [<repository> [<refspec>...]] — the first operand is always the
   // repository, so a refspec can never claim that slot.
-  return { dir, refspecs: operands.slice(1), isDelete, movesAllRefs, tagsOnly };
+  return { dir, refspecs: operands.slice(1), isDelete, mirrors, movesAllRefs, tagsOnly };
+}
+
+/** The directory a push actually runs in, given its ``git -C`` operand (or
+ * null) and the directory the command has cd'd to (or null when that is itself
+ * unknowable).
+ *
+ * ``git -C`` is **relative to the process's working directory**, so a relative
+ * operand composes with the ``cd`` rather than replacing it. Resolving one
+ * against the hook's own cwd instead is the same defect as ignoring the ``cd``,
+ * one operand further along, and it fails in the dangerous direction: the hook's
+ * cwd is usually the repo root, which usually *has* a marker, so a push from an
+ * unverified worktree would be authorised by a tree nobody is pushing. A
+ * relative operand with no known base stays null, which the caller denies. */
+function resolveDir(operand, cwd) {
+  if (operand === null) return cwd;
+  if (path.isAbsolute(operand)) return operand;
+  return cwd === null ? null : path.resolve(cwd, operand);
+}
+
+/** True iff ``token`` carries a shell expansion, so its value is not knowable
+ * before the command runs.
+ *
+ * Command substitution and parameter expansion are the same problem in a
+ * decision slot: ``git push origin HEAD:$T`` reads statically as a push to a
+ * branch called ``$T``, which no protected set contains, while the shell hands
+ * git whatever ``T`` holds. The sibling guard's helper covers ``$(…)`` and
+ * backticks because those are what a *force* flag can hide behind; a target has
+ * the wider exposure, so a bare ``$`` counts here too. */
+function isUnreadable(token, parser) {
+  return parser.hasCommandSubstitution(token) || token.includes("$");
 }
 
 /** Every ``git push`` reachable from ``command``, each with the directory it
@@ -326,7 +358,7 @@ function pushesIn(command, startDir, parser, depth) {
       continue;
     }
     const push = parsePush(tokens, parser);
-    if (push) found.push({ ...push, dir: push.dir !== null ? push.dir : dir });
+    if (push) found.push({ ...push, dir: resolveDir(push.dir, dir) });
     for (const script of parser.nestedScripts(tokens)) {
       found.push(...pushesIn(script, dir, parser, depth + 1));
     }
@@ -342,7 +374,12 @@ function pushesIn(command, startDir, parser, depth) {
 function movements(push, dir, parser) {
   if (push.refspecs.length === 0) {
     if (push.tagsOnly) return []; // a tag is not a branch
-    const upstream = git(dir, ["rev-parse", "--abbrev-ref", "@{upstream}"]);
+    // ``--symbolic-full-name`` and not ``--abbrev-ref``: the abbreviated form of
+    // an upstream is ``origin/dev``, which ``branchName`` cannot reduce (and must
+    // not, or ``feature/x`` would reduce to ``x``). The full ref
+    // ``refs/remotes/origin/dev`` it can, so a bare ``git push`` resolves to the
+    // branch it will actually move rather than to a name no protected set holds.
+    const upstream = git(dir, ["rev-parse", "--symbolic-full-name", "@{upstream}"]);
     const current = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
     const target = upstream !== null ? branchName(upstream) : current;
     if (target === null) return null;
@@ -350,7 +387,7 @@ function movements(push, dir, parser) {
   }
   const moves = [];
   for (const raw of push.refspecs) {
-    if (parser.hasCommandSubstitution(raw)) return null;
+    if (isUnreadable(raw, parser)) return null;
     const spec = raw.startsWith("+") ? raw.slice(1) : raw;
     const colon = spec.indexOf(":");
     if (colon === -1) {
@@ -404,17 +441,32 @@ function verdict(push, parser) {
   const moves = movements(push, dir, parser);
   if (moves === null) {
     return (
-      "Blocked a push whose refspec carries a command substitution. It executes " +
-      "inline, so the branch it targets cannot be established before the push " +
-      "runs. Spell the refspec literally."
+      "Blocked a push whose refspec carries a shell expansion, or whose target " +
+      "cannot be resolved. The branch it moves cannot be established before the " +
+      "push runs, so there is nothing to check evidence against. Spell the " +
+      "refspec literally."
+    );
+  }
+  if (push.mirrors) {
+    // Unconditional, and deliberately not conditioned on a protected branch
+    // existing here. --mirror makes the remote match the local ref set, so a
+    // protected branch this repo does **not** have is one --mirror deletes:
+    // "no protected branch locally" is the most dangerous case, not the safe one.
+    return (
+      "Blocked a --mirror push. It makes the remote match this repository's refs " +
+      "exactly, so it moves protected branches with no refspec naming them and " +
+      "deletes any it does not hold locally. No gate evidence authorises that. " +
+      "Push an explicit refspec."
     );
   }
   if (push.movesAllRefs) {
+    // --all moves the local branches and nothing else, so a repo holding none of
+    // the protected names has no protected target and a deny would be false.
     const anyProtected = [...guarded].some((name) => git(dir, ["rev-parse", "--verify", name]));
     if (anyProtected) {
       return (
-        "Blocked a --mirror / --all push. It moves every ref, including protected " +
-        "branches, with no refspec naming them — so there is no target to verify " +
+        "Blocked a --all push. It moves every local branch, including protected " +
+        "ones, with no refspec naming them — so there is no target to verify " +
         "and no tree to check. Push an explicit refspec."
       );
     }
