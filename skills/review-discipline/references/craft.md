@@ -1,4 +1,4 @@
-<!-- guidance:review-discipline-craft@0.1.0 -->
+<!-- guidance:review-discipline-craft@0.2.0 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
@@ -321,19 +321,39 @@ nothing new.
 
 ### A survivor is ambiguous
 
-A surviving mutation has three readings — the code is genuinely redundant, it
-defends something no test exercises, or a sibling assertion already subsumes
-every shape the tests cover — and choosing between them is the work.
+A surviving mutation has four readings — the mutation changed nothing, the code
+is genuinely redundant, it defends something no test exercises, or a sibling
+assertion already subsumes every shape the tests cover — and choosing between
+them is the work.
 
 **Falsifying example.** A document briefed its reader on a reference twice, and
 deleting one of the two cites survived every guard, because the assertion was
 "the root names the path", not "names it twice". Read as redundancy it says
 delete the second brief, which removes a pointer a reader depends on; read as a
 coverage gap it says pin the count, which is exactly the cardinality floor that
-rots the day a third brief is added. The third reading was the right one, and the
-disposition was to record the survivor with its reason rather than act on it.
-Reading a survivor as "delete it" by default has removed real defences; reading
-it as "add a test" by default has grown suites around dead code.
+rots the day a third brief is added. The subsumption reading was the right one,
+and the disposition was to record the survivor with its reason rather than act on
+it. Reading a survivor as "delete it" by default has removed real defences;
+reading it as "add a test" by default has grown suites around dead code. Settle
+the first reading before spending any thought on the other three, because it
+voids them — see *An inert mutation reports a survivor it never earned*.
+
+### An inert mutation reports a survivor it never earned
+
+A mutation that left the subject's behaviour unchanged also reports SURVIVED,
+and that reads as a weak guard while being no evidence of one.
+
+**Falsifying example.** An adversarial review filed a blocking finding off a
+surviving mutation. The finding was right — the guard did have the gap — and its
+proof was invalid, because the mutation never changed anything the guard reads,
+so its survival measured nothing. That is the expensive shape: a correct
+conclusion resting on an invalid proof passes review on the strength of being
+correct, and the next reader inherits both. It is the twin of the false-kill
+entry below, and the worse half, because a survivor is the verdict a reviewer is
+hoping for. Before citing a survivor against a guard, name the observable that
+changed — a differing digest, a differing output, one differing byte. With no
+observable the entry is *unproven*, not weak, and a table that cannot tell those
+apart is reporting its author's expectations back to them.
 
 ### A mutation that changes no behaviour reports a kill it never made
 
@@ -346,6 +366,24 @@ tests supply. The suite went red for an unrelated reason and the mutation was
 recorded as killed. Every mutation needs a landing assert (the old text was
 found), a containment assert (the edit landed in the intended tree, not a sibling
 checkout), and a claim about which behaviour it changed.
+
+### A prose mutation needs a paired splice to prove it was live
+
+When the subject is prose, there is usually no observable to declare — nothing
+digests a paragraph — so liveness has to be built into the experiment instead.
+
+**Falsifying example.** A sweep for identifiers of one shape was suspected of
+missing a second shape. Splicing only the suspected shape and watching it survive
+would have been equally consistent with the sweep never reading that file at all:
+a path outside its scope, a directory it excludes, a membership rule that drops
+the file one level up. The paired splice separates those — insert a form the
+predicate is **known** to catch and the form under test at the same location in
+the same file, and require the known form to die first. Same file and same
+location is the entire control; a splice that dies somewhere else proves only
+that the sweep reads *some* text, not this line. Once the control dies, the
+other's survival is a gap rather than an unproven claim, and the finding is sound
+by construction where no observable was available to make it sound by
+measurement.
 
 ### A mispredicted killer is how a guard gap surfaces
 

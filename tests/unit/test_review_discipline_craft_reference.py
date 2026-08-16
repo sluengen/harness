@@ -12,6 +12,13 @@ What this module pins:
   rename names itself instead of shrinking the set behind a count that still
   passes;
 * every pattern body clears a character floor;
+* the survivor-ambiguity entry points at the inert-survivor entry **by its exact
+  heading**, so the two cannot drift into unrelated advice about what a survivor
+  means;
+* the three survivor entries sit under ``Mutation discipline`` — the family set
+  and the pattern set are each derived alone, and neither knows a heading's
+  *home*, so a pattern can migrate between existing families with both of them
+  green;
 * both citing roots name the reference by its repo-relative path.
 
 What this module does **not** prove:
@@ -26,6 +33,10 @@ What this module does **not** prove:
 * That the patterns are correct, mutually exclusive, or free of restatement of
   what the core skill already owns. Those are review judgments over prose, not
   properties of the tracked tree.
+* **That the cross-referenced entries agree.** The link assertion proves the
+  ambiguity entry *names* the inert one; it cannot read either and decide they
+  say compatible things about what a survivor means. A link to an entry that
+  contradicts it passes here, and only a reviewer catches that.
 * That any reader loads the file. A root naming the path is necessary, not
   sufficient.
 * That a root names the path in every place it should. The build command cites
@@ -53,16 +64,28 @@ _CRAFT = _REPO_ROOT / _CRAFT_REL
 #: The roots that must brief a reader on the reference, each by path.
 _CITING_ROOTS = ("skills/review-discipline/SKILL.md", "commands/build.md")
 
+#: Spelled once, because the family-membership assertion below needs it by exact
+#: heading as well and a heading spelled twice drifts once.
+_MUTATION_FAMILY = "Mutation discipline"
+
 #: The families the reference is organised into, in order. Pinned as an
 #: equality, so both a lost family and an unrecorded new one go red.
 _FAMILIES = (
     "Vacuity — the test that cannot fail",
     "Prose predicates and text guards",
     "Deletion, retirement, and re-homing",
-    "Mutation discipline",
+    _MUTATION_FAMILY,
     "The ticket and its criteria",
     "Unmeasured claims — prose asserting what nothing checks",
 )
+
+#: The three entries that between them decide what a surviving mutation means.
+#: Named apart from the membership tuple below because the link assertion needs
+#: two of them by exact heading and the family assertion needs all three, and a
+#: heading spelled twice drifts once.
+_AMBIGUITY_PATTERN = "A survivor is ambiguous"
+_INERT_PATTERN = "An inert mutation reports a survivor it never earned"
+_PAIRED_SPLICE_PATTERN = "A prose mutation needs a paired splice to prove it was live"
 
 #: Named patterns pinned by membership — one per family at minimum, covering the
 #: lesson classes the change spec names. A rename shows up here as a missing
@@ -76,13 +99,16 @@ _REQUIRED_PATTERNS = (
     "A deletion pass that moves a definition must move its killer",
     "The wiring-field survivor",
     "Never re-run the builder's table as verification",
+    _AMBIGUITY_PATTERN,
+    _INERT_PATTERN,
+    _PAIRED_SPLICE_PATTERN,
     "A ticket's grounding is its least reliable part",
     "A declined action is not a prevented one",
 )
 
-#: Measured at 40 patterns. The floor sits just under that: a slack floor set
+#: Measured at 42 patterns. The floor sits just under that: a slack floor set
 #: far below the real count swallows whole families without going red.
-_PATTERN_FLOOR = 38
+_PATTERN_FLOOR = 40
 
 #: Measured shortest body is 357 characters. The floor sits just under it. A
 #: pattern stripped back to its one-line statement — the rule with the
@@ -118,6 +144,23 @@ def _families() -> list[str]:
 
 def _patterns() -> dict[str, str]:
     return {heading: body for level, heading, body in _sections() if level == 3}
+
+
+def _patterns_by_family() -> dict[str, list[str]]:
+    """``family -> [pattern, ...]``, from the same derivation as the two above.
+
+    The two sets above are derived independently of each other, so between them
+    they know every heading and no heading's *home*. This pairs them.
+    """
+    grouped: dict[str, list[str]] = {}
+    family: str | None = None
+    for level, heading, _ in _sections():
+        if level == 2:
+            family = heading
+            grouped.setdefault(family, [])
+        elif family is not None:
+            grouped[family].append(heading)
+    return grouped
 
 
 def test_families_are_the_recorded_set() -> None:
@@ -163,6 +206,60 @@ def test_every_pattern_body_clears_the_floor() -> None:
     assert not thin, (
         f"pattern bodies under {_BODY_FLOOR} chars (statement with no example?): {thin}"
     )
+
+
+def test_survivor_ambiguity_points_at_the_inert_reading() -> None:
+    """The ambiguity entry names the inert entry, by its exact heading.
+
+    A reader who lands on *A survivor is ambiguous* is choosing between readings
+    of a survivor, and "the mutation changed nothing" is a reading — the one
+    that makes the other three moot. Left unlinked, the two entries sit in the
+    same family answering the same question without either mentioning the other,
+    and a reader working from the ambiguity entry alone never reaches the check
+    that would have voided their evidence.
+
+    Pinned as a link rather than a keyword sweep for the *idea*: the heading is
+    a string the file already commits to, so a rename fails here loudly instead
+    of leaving a dangling pointer. What it cannot prove is that the two agree —
+    see the module docstring.
+    """
+    patterns = _patterns()
+    assert _AMBIGUITY_PATTERN in patterns, f"the reference lost {_AMBIGUITY_PATTERN!r}"
+    assert _INERT_PATTERN in patterns, f"the reference lost {_INERT_PATTERN!r}"
+    assert _INERT_PATTERN in patterns[_AMBIGUITY_PATTERN], (
+        f"{_AMBIGUITY_PATTERN!r} does not point at {_INERT_PATTERN!r} — a reader "
+        "choosing between readings of a survivor is never sent to the inert one"
+    )
+
+
+def test_the_survivor_entries_sit_under_mutation_discipline() -> None:
+    """The three survivor entries are in that family, not merely in the file.
+
+    Membership above proves a name exists *somewhere*; the family equality proves
+    no family was gained or lost. Neither pairs the two, so a pattern can migrate
+    to a different existing family with the set, the order, the count and every
+    required name unchanged — measured, by moving the family heading past a
+    pattern and watching every assertion in this module stay green.
+
+    That matters here because "in the Mutation discipline family" is the wording
+    of the criteria these three entries answer to, and because the link between
+    the ambiguity entry and the inert one is argued from their sharing a family:
+    a reader who reaches one is meant to be one heading away from the other.
+
+    Only these three are pinned to a home. A hand-written family for all
+    forty-odd would be a second copy of the file's structure, and it would rot
+    into a maintenance tax that teaches a later editor to re-point the map rather
+    than to question the move.
+    """
+    grouped = _patterns_by_family()
+    assert _MUTATION_FAMILY in grouped, f"no {_MUTATION_FAMILY!r} family: {list(grouped)}"
+    under = grouped[_MUTATION_FAMILY]
+    strays = [
+        name
+        for name in (_AMBIGUITY_PATTERN, _INERT_PATTERN, _PAIRED_SPLICE_PATTERN)
+        if name not in under
+    ]
+    assert not strays, f"pattern(s) no longer under {_MUTATION_FAMILY!r}: {strays}"
 
 
 def test_both_citing_roots_name_the_reference() -> None:
