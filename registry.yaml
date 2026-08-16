@@ -50,7 +50,7 @@ files:
   skills/code-quality/references/specialized-verification.md: { id: code-quality-specialized-verification, version: 0.1.0, profiles: [harness] }
   skills/review-discipline/SKILL.md: { id: review-discipline, version: 0.16.0, profiles: [harness] }
   skills/review-discipline/references/diff-shape-checks.md: { id: review-discipline-diff-shape-checks, version: 0.1.1, profiles: [harness] }
-  skills/review-discipline/references/craft.md: { id: review-discipline-craft, version: 0.3.0, profiles: [harness] }
+  skills/review-discipline/references/craft.md: { id: review-discipline-craft, version: 0.4.0, profiles: [harness] }
   skills/architecture/SKILL.md: { id: architecture,             version: 0.7.3, profiles: [harness] }
   skills/systematic-debugging/SKILL.md: { id: systematic-debugging,     version: 0.2.0, profiles: [harness] }
   skills/writing-quality/SKILL.md: { id: writing-quality,          version: 0.2.0, profiles: [harness] }
@@ -85,7 +85,7 @@ files:
   commands/propose.md:                { id: propose,                  version: 0.3.0, profiles: [harness] }
   commands/start.md:                  { id: start,                    version: 0.5.2, profiles: [harness] }
   commands/review.md:                 { id: review,                   version: 0.4.0, profiles: [harness] }
-  commands/ship.md:                   { id: ship,                     version: 0.4.1, profiles: [harness] }
+  commands/ship.md:                   { id: ship,                     version: 0.4.2, profiles: [harness] }
   commands/assess.md:                 { id: assess,                   version: 0.11.0, profiles: [harness] }
   commands/update-guidance.md:        { id: update-guidance,          version: 1.1.0, profiles: [harness] }
   commands/build.md:                  { id: build,                    version: 1.13.1, profiles: [harness] }
