@@ -2,7 +2,7 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-16
-tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#437"]
+tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#437", "#438"]
 ---
 
 # Guidance system
@@ -147,6 +147,21 @@ Reviewer and steward agent bodies contain role, authority, supplied inputs, outp
 
 Every conditional reference is a normal versioned registry entry. The generator creates adapters only for top-level commands, and skill-directory exposure includes their reference directories. Generated agent TOML preserves the concise source role body.
 
+### Registered prose names no repo facts
+
+`hooks/guidance-freshness.js` owns the leak detector, and `tests/unit/test_distributed_prose_no_repo_ids.py` parses it out of the hook rather than restating it, so the hook's per-edit warning and the standing sweep over the committed tree cannot drift apart. Two shapes are recognised. `PREFIX-1234` is scanned over the whole file, less a small allowlist of standards that share its shape (`RFC`, `ADR`, `AC`). `#1234` — a GitHub issue reference — is scanned over the file with fenced code removed, and carries no allowlist, because `#` prefixes nothing that is a standard's name.
+
+They are two constants rather than one alternation because only the `#` branch needs the fence strip: inside a fence `#` is live syntax and an all-digit hex colour is shaped exactly like an issue reference, while `CAL-42` is a repo fact in a code block as much as in a sentence. What keeps the `#` branch off ordinary punctuation is a pair of boundaries — a word character or `&` before, a word character or hyphen after — which is what excludes a hex colour, a heading anchor and an HTML entity; each excluded character has its own control, and the hex colour is asserted both synthetically and against the real shipped line, because the real one sits inside a fence and would otherwise be excluded by the strip rather than by the boundary under test.
+
+A fence delimiter counts only at the start of a line, indent allowed. Prose that *mentions* a fence mid-sentence would otherwise open one and the strip would swallow every line up to the next real fence — the failure is silent, since the swept text merely gets shorter and the sweep reports no offenders over prose it never read. Both patterns use explicit character classes rather than `\w`/`\d` so the JS engine and the Python `re` that reuses the body agree character for character; `g` is the only flag permitted, because a flag changes what a pattern means and is the one part of the literal that does not cross over.
+
+#### Scenario: a GitHub issue id reaches a registered prose file
+
+- GIVEN a registered universal prose file gains a bare `#1234` outside a fenced block
+- WHEN the gate runs
+- THEN the standing sweep fails, naming the file and the id
+- AND the hook warns on the edit that introduced it, through its own matcher rather than the guard's
+
 ### Source-version integrity
 
 For an equal source and lock version, `/update-guidance` classifies a file as `current` or `LOCAL` only when the fetched source hash matches the locked hash. A mismatch is `SOURCE DRIFT` regardless of the consumer's on-disk state. It stops the entire update before apply, reports the file and source/locked hashes, and requires the source file and registry version to be repaired.
@@ -194,7 +209,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - The visual-evidence inversion sweeps are **blacklists of release vocabulary**, so like every sweep here they fail open on a grant worded outside that vocabulary. Measured at review, one wording at a time against the real documents rather than assumed: the full-page sweep caught six of ten independently written permissions and missed *"one image of the entire page is preferable to slices"*, *"a short page may be captured whole"*, and *"prefer a single full-page image where the surface fits"* — all three release in an adjective or a comparative rather than a verb the release arm names. The report-line sweep is the weaker of the two and caught **none** of six (*"at the reviewer's judgment"*, *"recommended but not mandatory"*, *"where it adds value"*, *"skip … for a docs-only diff"*, *"encouraged"*, *"nothing requires …"*). The paraphrase tuples that guard both sweeps are drawn from the same vocabulary the sweeps recognise, so they measure coverage of themselves rather than robustness; they are a floor against a single-wording check, not evidence of paraphrase completeness. Widening the alternation was considered and declined at review: a blacklist has no completion condition, and each widening risks flagging the rule it protects. The presence halves, which are value-asserted, are what actually hold a deleted or re-worded rule.
 - The craft reference's body floor measures **length**, not the presence of a falsifying example. A long entry with nothing concrete in it passes. No tree-readable predicate separates an example from a restatement, and a keyword sweep for one would be the fail-open blacklist the reference itself warns about; the floor catches the degradation a distillation actually suffers, an entry trimmed back to its rule. Whether each entry carries a real example stays a review judgment over prose, and one entry was rewritten at review for exactly that reason.
 - Both roots naming the reference is asserted as *the path appears somewhere in the file*, so `commands/build.md`'s second cite has no exclusive killer: deleting one of its two briefs survives every guard. Measured and left deliberately — a count would be the cardinality floor the reference itself warns against, and it would rot the first time a third brief is added.
-- The repo-id sweep over distributed prose keys on the `PREFIX-1234` ticket shape parsed from `hooks/guidance-freshness.js`, so a GitHub-style `#1234` id in registered prose is not caught. The craft reference is clean of both shapes by measurement, not because the guard covers the second one.
+- The repo-id sweep now covers the GitHub `#1234` shape as well as `PREFIX-1234`, and the two live leaks it found were rewritten. What it still does not decide is *meaning*: `#` followed by digits is treated as an issue reference wherever it appears in unfenced prose, so an ordinary English "step #1" and an all-digit hex colour outside a fence both read as leaks. Both have a cheap workaround — reword, or fence the sample — and the alternative, a numeric floor or a keyword whitelist, would be the fail-open blacklist the craft reference warns against.
+- Fenced code is exempt from the `#` branch by design, so an issue id written inside a code block is not caught. That is the deliberate price of not flagging every hex value and shell comment in the corpus; the `PREFIX-1234` branch has no such exemption and still scans fences.
+- The two engines are pinned to agree by explicit character classes and a `g`-only flag rule, and were measured identical over sixty adversarial inputs. One pre-existing divergence remains on the untouched `PREFIX-1234` branch: JS `\b` is ASCII-only where Python's is Unicode-aware, so an id abutting a non-ASCII letter (`ÉCAL-42`) warns in the hook and not in the sweep.
 - Nothing authenticates that a capture depicts the reviewed SHA, and `consulted` records only that the reviewer looked. The guidance states the capture convention; it adds no refusal for a user-facing change whose builder produced nothing, so a missing capture set is a Stage-1 finding a reviewer makes rather than a mechanism.
 
 ## Decisions

@@ -1,4 +1,4 @@
-<!-- guidance:build@1.13.0 -->
+<!-- guidance:build@1.13.1 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -113,8 +113,8 @@ one mid-width, and on either side of every breakpoint the change touches.
 **How.** Set the window to the capture width and a fixed viewport height, and
 capture **viewport-height slices**: one image per viewport, scrolled one viewport
 at a time, numbered in scroll order until the surface is covered. **Never capture
-the full page in one image**, at any width. Measured in #361: a real 1440 × 5726
-px capture reached the reviewer as an image content block, but 16 px body text
+the full page in one image**, at any width. Measured: a real 1440 × 5726 px
+capture reached the reviewer as an image content block, but 16 px body text
 read 7 of 8 characters correctly, because a capture's long edge is downscaled to
 fit the model's image budget and a surface four viewports tall arrives downscaled
 about fourfold. **No capture exceeds 2000 px in height** — where one viewport
