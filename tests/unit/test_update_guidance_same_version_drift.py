@@ -4,6 +4,33 @@ The updater uses versions to choose a source revision and hashes to distinguish
 source changes from consumer edits. A source file changed without a version bump
 must not look current or local, because accepting that state lets a consumer
 advance ``source.ref`` without installing the fetched bytes.
+
+**What this module asserts, after #459.** Three things:
+
+* header⇄registry version parity for the two commands #407 changed, plus the
+  registry's own self-entry — structural correspondence, untouched;
+* ``commands/decision.md`` names no ledger — negative space over a subsystem ADR
+  0015 deleted, untouched;
+* **one tripwire** over the SOURCE DRIFT rule: its classification-table row, the
+  refusal that follows the table, and step 3's apply-time consequence.
+
+Five sentence-pin tests collapsed into that tripwire under #459 (ADR 0016), along
+with ``test_decision_keeps_the_tracker_only_audit_trail``'s four positive
+half-sentence regexes (``"audit trail is the tracker issue itself"``, ``"resolution
+in the body"``, ``"label gone"``, ``"assignment cleared"``) — each a literal that
+breaks on a benign rewording while saying nothing about whether the tracker is
+still the audit trail. Its negative half survives, because a zero-membership
+sweep never has to read meaning.
+
+Occurrence the tripwire's polarity cites (``code-quality`` Part C): the pre-#459
+row check asserted ``"stop" in row`` and a ``source hash != lock`` regex, but
+took no position on the *contrast* with the ``current`` row's ``==``. The
+classification is a comparison, so the operator that distinguishes SOURCE DRIFT
+from *current* is the load-bearing token, and a row rewritten to ``==`` — the
+inversion that makes drift look current, which is exactly the failure #407
+closed — satisfied every pin. The ``craft.md`` class is *Operands in different
+frames make a constant comparison*, one level up: the comparison **operator** is
+the rule, so it is what has to be read.
 """
 
 from __future__ import annotations
@@ -15,6 +42,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 DECISION = REPO_ROOT / "commands" / "decision.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
+
+#: The state whose refusal this module owns. Its sibling module
+#: ``test_update_guidance_lock_untracked_adoption`` owns the adoption rule in the
+#: same step — two tripwires, two rule-homes, one file.
+_DRIFT = "SOURCE DRIFT"
 
 
 def _text(path: Path) -> str:
@@ -56,6 +88,15 @@ def _section(start: str, end: str) -> str:
     return text[text.index(start) : text.index(end)]
 
 
+def _units_naming(section: str, term: str) -> list[str]:
+    """Paragraphs of ``section`` that name ``term``, whitespace collapsed."""
+    return [
+        " ".join(block.split())
+        for block in section.split("\n\n")
+        if term in block and block.strip()
+    ]
+
+
 def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
     """The corrected commands publish coordinated, intentional version bumps.
 
@@ -92,92 +133,82 @@ def test_changed_commands_and_registry_carry_the_registered_versions() -> None:
 
 
 def test_decision_keeps_the_tracker_only_audit_trail() -> None:
-    """The version bump preserves #338's tracker-only audit decision."""
+    """The version bump preserves #338's tracker-only audit decision.
+
+    Only the negative half survives #459. #338's "not a ledger event" clause went
+    with the ledger (ADR 0015 / #435), and the decision it recorded — the tracker
+    issue *is* the audit trail — is now asserted the one way a tree-reader can
+    assert it honestly: the command must not name a second, off-tracker record.
+    A zero-membership sweep never has to read meaning; the four half-sentence
+    literals that stood beside it did, and broke on any rewording.
+    """
     text = " ".join(_text(DECISION).lower().split())
-    assert re.search(r"audit trail is the tracker issue itself", text)
-    assert re.search(r"resolution in the body", text)
-    assert re.search(r"label gone", text)
-    assert re.search(r"assignment cleared", text)
-    # #338's "not a ledger event" clause went with the ledger (ADR 0015 / #435).
-    # The decision it recorded survives as the positive claim above: the tracker
-    # issue is the audit trail. Assert the negative directly instead — the command
-    # must not reintroduce a second, off-tracker record of the release.
     assert "ledger" not in text, (
         "commands/decision.md must not name a ledger — ADR 0015 retired it, and "
         "the tracker issue is the whole audit trail (#338)."
     )
 
 
-def test_current_requires_equal_versions_and_both_hash_matches() -> None:
-    """Current means source and consumer bytes both match the locked bytes."""
-    row = _table_row("current").lower()
-    assert "source version == lock version" in row
-    assert re.search(r"source hash (?:==|matches) lock", row)
-    assert re.search(r"(?:on-disk|disk) hash (?:==|matches) lock", row)
+#: The refusal, anchored to the state it is about. SOURCE DRIFT is repaired at
+#: source; it is *not* offered to the operator as a CONFLICT to accept.
+_REFUSES_ACCEPTANCE = re.compile(
+    r"\b(?:not|never|do not|cannot)\b(?:\W+\w+){0,8}?\W+(?:accept|overwrite|conflict)\w*\b",
+    re.IGNORECASE,
+)
 
 
-def test_equal_version_source_hash_mismatch_is_source_drift() -> None:
-    """The new state takes precedence regardless of the consumer's disk state."""
-    row = _table_row("SOURCE DRIFT").lower()
-    assert "source version == lock version" in row
-    assert re.search(r"source hash (?:!=|differs from) lock", row)
-    assert re.search(r"regardless of (?:the )?(?:on-disk|disk|consumer)", row)
-    assert "stop" in row
+def test_source_drift_fails_closed() -> None:
+    """The one tripwire: drift is classified, refused, and applies nothing.
 
+    Three windows, one rule. Each is anchored — the pre-#459 form searched
+    whole multi-step slices with ``re.DOTALL`` gap regexes, which match across
+    unrelated steps:
 
-def test_source_drift_stops_before_apply_and_requires_source_repair() -> None:
-    """Source drift is repaired at source and cannot enter conflict resolution."""
+    * **the classification row.** Its condition cell must compare the source hash
+      to the lock with ``!=``, and its action cell must be ``stop``. The
+      comparison operator is the polarity here: rewritten to ``==`` the row
+      *is* the ``current`` row, drift reads as up-to-date, and every term pin
+      the old form carried still passed.
+    * **the refusal that follows the table.** A paragraph naming SOURCE DRIFT
+      must carry a negation anchored to accepting, overwriting, or reclassifying
+      it as a CONFLICT. Without it the state is named and then handled like any
+      other divergence, which is the behaviour #407 closed.
+    * **step 3.** A paragraph naming SOURCE DRIFT must leave the installed files,
+      the lock, and ``source.ref`` unchanged. Advancing ``source.ref`` over
+      un-installed bytes is the concrete corruption the whole rule exists to
+      prevent, so it is asserted by name.
+    """
+    condition, action = (cell.strip() for cell in _table_row(_DRIFT).split("|")[:2])
+    assert re.search(r"source hash\s*(?:!=|differs from)\s*lock", condition, re.I), (
+        f"the {_DRIFT} row's condition no longer compares the source hash to the "
+        f"lock with an inequality: {condition!r}. With '==' this row is the "
+        "`current` row, and a source file changed without a version bump reads as "
+        "up to date."
+    )
+    assert "stop" in action.lower(), (
+        f"the {_DRIFT} row's action is {action!r}, not a stop — the whole state "
+        "exists so the update halts before installing anything (#407)."
+    )
+
     classification = _section("### 2.", "### 3.")
-    apply = _section("### 3.", "### 4.")
-    contract = f"{classification}\n{apply}".lower()
-
-    assert re.search(r"source drift.{0,120}stop.{0,80}before.{0,40}apply", contract, re.S)
-    assert re.search(r"name.{0,40}(?:affected )?file", contract, re.S)
-    assert re.search(r"source hash.{0,80}lock(?:ed)? hash", contract, re.S)
-    assert re.search(r"repair.{0,80}source file.{0,80}registry version", contract, re.S)
-    assert re.search(r"source drift.{0,160}(?:not|never).{0,40}conflict", contract, re.S)
-    assert re.search(
-        r"source drift.{0,200}(?:cannot|never|do not).{0,80}(?:accept|overwrite)",
-        contract,
-        re.S,
+    refusals = [u for u in _units_naming(classification, _DRIFT) if _REFUSES_ACCEPTANCE.search(u)]
+    assert refusals, (
+        f"step 2 names {_DRIFT} but never refuses it: no paragraph says it is not "
+        "a CONFLICT and must not be accepted or overwritten. Named without the "
+        "refusal, the state is just another divergence the operator can confirm "
+        "past — which is how a consumer advances source.ref over bytes it never "
+        "installed (#407)."
     )
 
-
-def test_source_drift_leaves_consumer_and_lock_untouched() -> None:
-    """The refusal mutates neither installed guidance nor lock metadata."""
-    apply = _section("### 3.", "### 5.").lower()
-    assert re.search(
-        r"source drift.{0,220}leave.{0,100}(?:installed|on-disk|consumer).{0,80}unchanged",
-        apply,
-        re.S,
+    apply_step = _section("### 3.", "### 4.")
+    consequences = [u for u in _units_naming(apply_step, _DRIFT) if "unchanged" in u.lower()]
+    assert consequences, (
+        f"step 3 does not state that {_DRIFT} leaves the installed files and the "
+        "lock unchanged. A refusal that still applies the clean pulls has not "
+        "failed closed (#407)."
     )
-    assert re.search(
-        r"source drift.{0,260}(?:lock entr(?:y|ies)|\.guidance-lock\.yaml).{0,100}unchanged",
-        apply,
-        re.S,
+    assert any("source.ref" in u for u in consequences), (
+        f"step 3's {_DRIFT} refusal does not name `source.ref`. That marker is "
+        "what claims the whole source tree was installed cleanly; advancing it "
+        "over drifted bytes is the exact corruption this state prevents."
     )
-    assert re.search(
-        r"source\.ref.{0,100}(?:not advance|unchanged|untouched)",
-        apply,
-        re.S,
-    )
-
-
-def test_existing_non_drift_classifications_keep_their_semantics() -> None:
-    """Valid source states still pull, preserve local edits, or conflict."""
-    pull = _table_row("PULL").lower()
-    local = _table_row("LOCAL").lower()
-    conflict = _table_row("CONFLICT").lower()
-
-    assert "source version > lock version" in pull
-    assert re.search(r"(?:on-disk|disk) hash (?:==|matches) lock", pull)
-    assert "copy" in pull and "update the lock" in pull
-
-    assert "source version == lock version" in local
-    assert re.search(r"source hash (?:==|matches) lock", local)
-    assert re.search(r"(?:on-disk|disk) hash (?:!=|differs from) lock", local)
-    assert "leave" in local
-
-    assert "source version > lock version" in conflict
-    assert re.search(r"(?:on-disk|disk) hash (?:!=|differs from) lock", conflict)
-    assert "3-way diff" in conflict and "choose" in conflict

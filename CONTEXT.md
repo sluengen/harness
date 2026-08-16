@@ -90,6 +90,7 @@ Use `specs/decisions/` only for cross-cutting choices that are consequential and
 - [0012 — persistent runtime host](specs/decisions/0012-persistent-runtime-host.md) — superseded in mechanism by 0015
 - [0014 — changelog from commits](specs/decisions/0014-changelog-from-commits.md) — the rule stands (the commit body *is* the entry); the `CHANGELOG.md` a release assembled into is deleted by 0015, since there is nothing left to release
 - [0015 — harness v4: retire the runtime, thin verification layer](specs/decisions/0015-harness-v4-thin-verification-layer.md)
+- [0016 — tests own structure and negative space; the reviewer owns meaning](specs/decisions/0016-tests-own-structure-and-negative-space.md)
 
 ## Where deeper truth lives
 

@@ -13,19 +13,28 @@ branch diff, only between two trees at merge time, so the actor who can catch it
 is whoever executes a reconciliation. This module pins the rule where that actor
 reads.
 
-What this module pins:
+What this module pins, after #459:
 
-* the ``### 2. Integrate`` section and the base-drift paragraph inside it are
-  each derived from the file and non-empty — a renamed heading fails loudly here
-  rather than leaving the assertions below scanning an empty string;
-* the rule sits **inside** that paragraph, not merely somewhere in the file,
-  because a reader mid-reconciliation is reading that paragraph;
-* the rule names its obligation — detect a collision rather than accept an
-  agreement, and advance past both sides;
-* the rule names the field class through several instances rather than one, so
-  it is not read as being about the one example it gives;
-* the rule is generically phrased: it names no artifact filename, proven by a
-  predicate with a paired splice into the real rule text as its control.
+* **one tripwire** — the ``### 2. Integrate`` section and its base-drift
+  paragraph resolve, the sentence unit discriminates, the rule's term set is
+  present, its negation sits beside the noun it governs, and the rule is stated
+  only in that paragraph;
+* **the artifact sweep and its splice control**, unchanged — the rule is
+  generically phrased, naming no source-repo filename, because this command ships
+  into consuming repos where such a name is a fact about somebody else's tree.
+
+Six assertions collapsed into the tripwire under #459 (ADR 0016): four were
+derivation floors and placement re-checks the tripwire performs in one pass, one
+pinned three exact example phrases (``"a version number"``, ``"a migration
+ordinal"``, ``"a sequence id"``) — a breadth claim expressed as literals, so any
+rewording of the examples broke it while a gutted rule passed — and one pinned
+the obligation as three exact clauses. Occurrence the surviving polarity check
+cites (``code-quality`` Part C): a term-set predicate over *collision*, *detect*,
+*accept* and *advance* is satisfied word for word by prose saying a same-valued
+monotonic field is an agreement to accept rather than a collision to detect. The
+negation anchored to ``agreement`` is what separates the rule from its inversion;
+the ``craft.md`` class is *A guard over prose owns structure and negative space,
+never meaning*.
 
 What this module does **not** prove:
 
@@ -124,12 +133,48 @@ def _artifact_tokens(text: str) -> list[str]:
     return [m.group(0) for m in _ARTIFACT.finditer(text)]
 
 
-def test_the_integrate_section_resolves() -> None:
-    """The section boundaries actually resolved to prose.
+#: The words the rule cannot be stated without. Words, not clauses: how the
+#: obligation is phrased is the review gate's business, and the pre-#459 form
+#: pinned three exact clauses that any rewording broke.
+_RULE_TERMS = ("collision", "detect", "accept", "advance")
 
-    Kept as its own test so a heading rename names itself here, instead of
-    emptying the derivation and leaving every assertion below scanning ``""`` —
-    the shape where a containment check quietly stops checking anything.
+#: The negation **anchored to the noun it governs**. This is the whole polarity
+#: of the rule: identical text is *not* agreement. A bare ``"not" in rule`` is
+#: decoration — almost any English sentence satisfies it — and a term-set check
+#: over :data:`_RULE_TERMS` alone passes word for word on the inversion ("treat a
+#: same-valued monotonic field as an agreement to accept rather than a collision
+#: to detect"). Six words of gap covers every legitimate spelling and stops short
+#: of a negation governing something else in the same sentence.
+_NOT_AGREEMENT = re.compile(
+    r"\b(?:not|never|no|rather than)\b(?:\W+\w+){0,6}?\W+agreement\b", re.IGNORECASE
+)
+
+
+def test_the_collision_rule_is_stated_where_a_reconciler_reads() -> None:
+    """The one tripwire: the rule resolves, reads, and lives in one paragraph.
+
+    Four parts, in the order a failure is easiest to read:
+
+    * **anchor** — ``### 2. Integrate`` resolves to prose that still describes
+      reconciliation, and exactly one paragraph inside it names ``base-drift``. A
+      heading rename names itself here instead of emptying the derivation and
+      leaving the artifact sweep below scanning ``""``.
+    * **unit** — the sentence splitter divides that paragraph without dropping or
+      duplicating text, and the rule it selects is strictly shorter than the
+      paragraph. The text unit is part of the predicate, so it needs its own
+      killer: a splitter that never fires returns the whole paragraph as one
+      sentence and silently widens the artifact sweep to prose this change never
+      wrote.
+    * **terms** — :data:`_RULE_TERMS` are present in the selected rule.
+    * **polarity** — :data:`_NOT_AGREEMENT` fires inside it. Without this the
+      three assertions above are all satisfied by the rule's exact inversion.
+
+    **Placement** closes it: ``monotonic`` occurs in ``commands/ship.md`` only
+    inside this paragraph. Not a cardinality pin — nothing fixes how many times
+    the word appears — only that no occurrence sits outside the paragraph a
+    reconciler is actually reading. A second copy under *Preconditions* would
+    satisfy a file-wide containment check and reach nobody at the moment it
+    applies; it dies here.
     """
     section = _integrate_section()
     assert section, f"{_SHIP_REL} has no {_SECTION_HEADING!r} section"
@@ -139,33 +184,17 @@ def test_the_integrate_section_resolves() -> None:
         "the rule is gone"
     )
 
-
-def test_the_base_drift_paragraph_resolves() -> None:
-    """Exactly one paragraph in that section states the base-drift rule."""
-    section_paragraphs = _paragraphs(_integrate_section())
+    section_paragraphs = _paragraphs(section)
     matching = [p for p in section_paragraphs if _PARAGRAPH_ANCHOR in p]
     assert len(matching) == 1, (
         f"expected exactly one paragraph naming {_PARAGRAPH_ANCHOR!r} in "
         f"{_SECTION_HEADING!r}; found {len(matching)} of {len(section_paragraphs)}"
     )
-
-
-def test_the_sentence_unit_splits_the_real_paragraph() -> None:
-    """The splitter divides the real paragraph, and the rule is a part of it.
-
-    The text unit is part of the predicate, so it needs its own killer. A
-    splitter that never fires returns the whole paragraph as one sentence, and
-    every selection below silently widens to the whole paragraph — which would
-    hand the artifact sweep prose this change never wrote. The strict-shortness
-    assertion is what separates "selected the rule" from "selected everything".
-    """
-    paragraph = _base_drift_paragraph()
-    assert paragraph, "no base-drift paragraph derived"
+    paragraph = matching[0]
 
     sentences = _sentences(paragraph)
     assert len(sentences) > 1, f"the paragraph did not split: {sentences}"
-    squashed = re.sub(r"\s+", "", "".join(sentences))
-    assert squashed == re.sub(r"\s+", "", paragraph), (
+    assert re.sub(r"\s+", "", "".join(sentences)) == re.sub(r"\s+", "", paragraph), (
         "the split dropped or duplicated text — the unit is not covering the paragraph"
     )
 
@@ -176,92 +205,24 @@ def test_the_sentence_unit_splits_the_real_paragraph() -> None:
         "discriminating, so the assertions below measure the paragraph, not the rule"
     )
 
+    missing = [term for term in _RULE_TERMS if term not in rule.lower()]
+    assert not missing, (
+        f"the base-drift collision rule no longer states {missing}. A sentence that "
+        "names the hazard without the disposition leaves a reader who agrees with "
+        "it and does nothing."
+    )
+    assert _NOT_AGREEMENT.search(rule), (
+        "the rule does not say identical text is *not* agreement. Without the "
+        "negation beside the noun it governs, the terms above are satisfied word "
+        "for word by the opposite instruction — accept the agreement rather than "
+        "detect the collision — which is exactly the merge this rule refuses."
+    )
 
-#: The three load-bearing halves of the rule. "Detect" and "accept" are its
-#: polarity — dropping either inverts the instruction — and "advance past both
-#: sides" is the action, which is the half a reader cannot re-derive from the
-#: hazard. Spelled once, because the positional assertion and the obligation
-#: assertion both need them and a phrase spelled twice drifts once.
-_OBLIGATION = ("collision to detect", "agreement to accept", "advance past both sides")
-
-
-def test_the_collision_rule_sits_inside_the_base_drift_paragraph() -> None:
-    """The rule lives in the paragraph a reconciler reads, and only there.
-
-    Positional, deliberately. The actor who can catch this defect is whoever is
-    executing a reconciliation, and they are reading one paragraph; the same
-    sentence under *Preconditions* or in the report section would satisfy a
-    file-wide containment and reach nobody at the moment it applies.
-
-    Asserted as *every* occurrence in the file falling inside that paragraph,
-    which is what gives this test a killer the obligation assertion below does not
-    share. Containment alone cannot have one: the rule is **derived** from the
-    paragraph, so a sentence moved out of it stops being the rule and takes the
-    obligation assertion down with this one — the same edit killing both, which is
-    the shape where two assertions hide each other. A second copy pasted elsewhere
-    dies here and nowhere else.
-
-    It is not a cardinality pin: nothing here fixes how many times the phrase
-    appears, only that no occurrence sits outside the paragraph. Quoting the rule
-    in another section is exactly the drift being refused, not collateral.
-    """
     text = _ship_text()
-    paragraph = _base_drift_paragraph()
-    assert paragraph, "no base-drift paragraph derived"
-
-    strays = {
-        phrase: text.count(phrase) - paragraph.count(phrase)
-        for phrase in _OBLIGATION
-        if text.count(phrase) != paragraph.count(phrase)
-    }
-    assert not strays, (
-        f"the collision rule appears outside the base-drift paragraph: {strays} — "
+    assert text.count(_RULE_TERM) == paragraph.count(_RULE_TERM) > 0, (
+        f"{_RULE_TERM!r} appears in {_SHIP_REL} outside the base-drift paragraph — "
         "a reconciler reads one paragraph, and a second home is where the two "
         "copies start disagreeing"
-    )
-    absent = [phrase for phrase in _OBLIGATION if paragraph.count(phrase) == 0]
-    assert not absent, (
-        f"the base-drift paragraph does not carry {absent} — without this the "
-        "equality above is satisfied by the phrase being nowhere at all"
-    )
-
-
-def test_the_collision_rule_names_its_obligation() -> None:
-    """The rule states what to do, not only that the hazard exists.
-
-    Three phrases, because a sentence that names the hazard without the
-    disposition leaves a reader who agrees with it and does nothing. Read over the
-    *derived rule* rather than the paragraph, so the obligation is pinned to the
-    sentences this change wrote and not to the paragraph they sit in.
-    """
-    rule = _rule_text()
-    assert rule, "no collision rule derived"
-    missing = [phrase for phrase in _OBLIGATION if phrase not in rule]
-    assert not missing, f"the base-drift collision rule does not state {missing}"
-
-
-def test_the_rule_names_the_field_class_by_more_than_one_instance() -> None:
-    """The rule names the class through several instances, not one.
-
-    "A monotonic field" read against a single example is read as being about that
-    example. The three the assessment wrote span three different mechanisms —
-    a released version, a schema ordinal, an allocated id — so a reader
-    reconciling a fourth kind recognises it. Pinned by membership rather than by
-    count, so adding a fourth is free and dropping one names itself.
-
-    Its own test, because its killer is a wording edit inside the rule's example
-    list, which every other assertion here is deliberately blind to.
-    """
-    rule = _rule_text()
-    assert rule, "no collision rule derived"
-    missing = [
-        instance
-        for instance in ("a version number", "a migration ordinal", "a sequence id")
-        if instance not in rule
-    ]
-    assert not missing, (
-        f"the rule no longer names {missing} — with one instance left, the class "
-        "reads as being about that instance"
     )
 
 

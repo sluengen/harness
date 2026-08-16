@@ -1,30 +1,34 @@
-"""CAL-973 — require a lifecycle sweep in change-spec design sections.
+"""``spec-authoring`` requires a lifecycle sweep in change-spec design sections.
 
-*Source:* ``assessments/2026-07-03-full-review.md`` (CODE-INSIGHT-1, Medium —
-systemic insight). One review pass surfaced three separate write/delete paths
-that shipped their primary mutation but missed a *derived* artifact of the same
-entity: a brew POST that never invalidated its cache, a deletion that never
-revoked the entity's share token, and an anonymisation that filtered some
-``use_count`` aggregates but not others. The class of defect is "a state change
-that forgets its derived artifacts."
+*Source:* ``assessments/2026-07-03-full-review.md`` (CODE-INSIGHT-1 — systemic
+insight). One review pass surfaced three separate write/delete paths that
+shipped their primary mutation but missed a *derived* artifact of the same
+entity: a POST that never invalidated its cache, a deletion that never revoked
+the entity's share token, and an anonymisation that filtered some aggregates but
+not others. The class of defect is "a state change that forgets its derived
+artifacts", and the fix is to do the sweep at spec time, where it is cheapest.
 
-The fix is a guidance rule in ``spec-authoring``: a change spec's design section
-must, for any state-changing operation, enumerate the derived artifacts of the
-affected entity and say per artifact what happens to it — so the sweep happens
-at spec time (where it is cheapest), not after review finds the gap.
+**What this module asserts, after #459.** One tripwire over one rule-home: the
+``**Lifecycle sweep`` paragraph inside ``skills/spec-authoring/SKILL.md`` →
+``## Change spec``. It reads a small term set the rule cannot be stated without,
+plus the negation anchored to the noun it governs — *silence* is not an
+acceptable answer. Whether the surrounding prose argues the rule well is the
+review gate's, per ADR 0016: no regex reads meaning, so a pinned sentence is
+brittle and vacuous at the same time.
 
-This guard pins the *presence* of that rule in the surface. It cannot prove the
-sweep was genuinely performed on any ticket (the same honest limit the grounding
-guard states) — only that the rule the reviewer checks against is on record.
+Craft class this conversion answers (``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Three of the four
+deleted functions read the **whole skill file** rather than the rule's window,
+so any of their terms appearing anywhere in ``spec-authoring`` satisfied them;
+one of those pinned four example artifact kinds (``cache``, ``share token``,
+``aggregate``, ``session``), which are illustrations the rule survives losing.
+The fourth asserted that ``derived artifact`` appears somewhere in
+``## Change spec`` — the placement the slicer below now performs as a
+precondition, so it could not fail alone.
 
-Acceptance criteria (CAL-973):
-
-* **AC-1** — the upstream skill carries the exact rule wording.
-  :func:`test_spec_authoring_has_lifecycle_sweep_rule`,
-  :func:`test_lifecycle_sweep_names_derived_artifact_kinds`,
-  :func:`test_lifecycle_sweep_unaffected_clause`.
-* **AC-1 (placement)** — the rule lives in the change-spec design guidance, not
-  some unrelated section. :func:`test_lifecycle_sweep_in_change_spec_section`.
+This guard cannot prove the sweep was genuinely performed on any ticket (the
+same honest limit its sibling grounding guard states) — only that the rule the
+reviewer checks against is on record.
 """
 
 from __future__ import annotations
@@ -35,71 +39,78 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent.parent
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 
+#: The rule's direction, anchored to the noun it governs. "Unaffected" being an
+#: acceptable answer is only half a rule; what closes the gap is that *silence*
+#: is not one, which is what turns an omission into a spec defect. A bare
+#: negation over the paragraph would be decoration.
+_SILENCE_IS_NOT = re.compile(
+    r"\bsilence\b(?:\W+\w+){0,3}?\W+\bnot\b|\bnot\b(?:\W+\w+){0,3}?\W+\bsilence\b",
+    re.IGNORECASE,
+)
+
 
 def _spec_authoring_text() -> str:
     return SPEC_AUTHORING.read_text()
 
 
-def test_spec_authoring_has_lifecycle_sweep_rule() -> None:
-    """AC-1: the skill states the rule — for any state-changing operation,
-    enumerate the *derived artifacts* of the affected entity."""
-    low = _spec_authoring_text().lower()
-    assert "state-changing operation" in low, (
-        "spec-authoring must scope the sweep to any 'state-changing operation' "
-        "(CAL-973 AC-1)."
-    )
-    assert "derived artifact" in low, (
-        "spec-authoring must require enumerating the 'derived artifacts' of the "
-        "affected entity (CAL-973 AC-1)."
-    )
-    assert re.search(r"enumerate the .{0,40}derived artifact", low), (
-        "the rule must say to *enumerate* the derived artifacts, not merely "
-        "mention them (CAL-973 AC-1)."
-    )
-
-
-def test_lifecycle_sweep_names_derived_artifact_kinds() -> None:
-    """AC-1: the rule names the concrete artifact kinds the class covers — caches /
-    query keys, share tokens, counts / aggregates, sessions — so the checklist is
-    actionable, not abstract. Each probe word is absent from the skill before this
-    rule (``aggregate`` is used rather than ``count``, whose substring pre-exists in
-    "accounts"), so the check is non-vacuous — drop the rule and it fails."""
-    low = _spec_authoring_text().lower()
-    kinds = ("cache", "share token", "aggregate", "session")
-    missing = [k for k in kinds if k not in low]
-    assert not missing, (
-        "the lifecycle-sweep rule must name every derived-artifact kind "
-        f"(caches/query keys, share tokens, counts/aggregates, sessions); "
-        f"missing {missing} (CAL-973 AC-1)."
-    )
-
-
-def test_lifecycle_sweep_unaffected_clause() -> None:
-    """AC-1: the rule closes the silence gap — 'Unaffected' is an acceptable answer,
-    but saying nothing is not. This clause is what makes an omission a spec defect
-    rather than an oversight."""
-    low = _spec_authoring_text().lower()
-    assert "unaffected" in low, (
-        "the rule must allow 'Unaffected' as an explicit per-artifact answer "
-        "(CAL-973 AC-1)."
-    )
-    assert "silence is not" in low, (
-        "the rule must state that silence is not an acceptable answer "
-        "(CAL-973 AC-1)."
-    )
-
-
-def test_lifecycle_sweep_in_change_spec_section() -> None:
-    """AC-1 (placement): the rule sits inside the change-spec design guidance — the
-    ``## Change spec`` section — not an unrelated part of the skill."""
+def _change_spec_section() -> str:
+    """The ``## Change spec`` section body, bounded to the next top-level heading."""
     text = _spec_authoring_text()
     m = re.search(r"^##\s+Change spec\b", text, re.MULTILINE)
     assert m, "spec-authoring must have a '## Change spec' section."
-    # bound the section to the next top-level heading
-    rest = text[m.end():]
+    rest = text[m.end() :]
     nxt = re.search(r"^##\s+", rest, re.MULTILINE)
-    section = rest[: nxt.start()] if nxt else rest
-    assert "derived artifact" in section.lower(), (
-        "the lifecycle-sweep rule must live in the '## Change spec' design "
-        "guidance (CAL-973 AC-1 placement)."
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _lifecycle_sweep_paragraph() -> str:
+    """The rule's own paragraph, sliced from its bolded marker inside the section.
+
+    The window is a paragraph, not the section: ``enumerate``, ``artifact`` and
+    ``unaffected`` all have neighbours in ``## Change spec`` that could supply
+    them, and a section-wide conjunction would then be satisfied by prose that
+    says nothing about a state change — the over-wide unit ``craft.md`` → *The
+    text unit is part of the predicate* names.
+    """
+    section = _change_spec_section()
+    marker = "**Lifecycle sweep"
+    start = section.find(marker)
+    assert start != -1, (
+        "spec-authoring's '## Change spec' section must carry the bolded "
+        "`Lifecycle sweep` rule, beside its sibling conditional rules"
+    )
+    rest = section[start:]
+    end = rest.find("\n\n")
+    return (rest if end == -1 else rest[:end]).lower()
+
+
+def test_the_lifecycle_sweep_rule_has_a_home() -> None:
+    """The change-spec guidance carries the lifecycle sweep, with its direction.
+
+    Four conjuncts and a negation. The trigger scopes the rule to a state
+    change; ``derived artifact`` is its subject; ``enumerate`` is the obligation
+    (mentioning them is not doing the sweep); ``unaffected`` is the sanctioned
+    cheap answer; and the negation beside ``silence`` is what makes an omission
+    a spec defect rather than an oversight.
+    """
+    paragraph = _lifecycle_sweep_paragraph()
+    for term, why in (
+        ("state-changing operation", "the sweep is scoped to a state-changing "
+                                     "operation; unscoped it is advice"),
+        ("derived artifact", "the derived artifacts of the affected entity are "
+                             "the sweep's subject"),
+        ("enumerat", "the rule must require *enumerating* them, not merely "
+                     "mentioning that they exist"),
+        ("unaffected", "'Unaffected' is the sanctioned per-artifact answer, and "
+                       "without it the rule reads as demanding work per artifact"),
+    ):
+        assert term in paragraph, (
+            f"spec-authoring's lifecycle-sweep rule no longer names {term!r} — {why}"
+        )
+    assert _SILENCE_IS_NOT.search(paragraph), (
+        "the lifecycle-sweep rule no longer states that silence is *not* an "
+        "acceptable answer. That clause is the whole difference between a "
+        "checklist and a hint: without it a change spec that says nothing about "
+        "a derived artifact has complied, which is the defect class the rule "
+        "exists to close."
     )

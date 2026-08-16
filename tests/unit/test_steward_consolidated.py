@@ -6,23 +6,37 @@
 *process* lived in two files; only the *domain standards* differed. B1 of the pre-launch
 consolidation (``specs/proposals/pre-launch-consolidation.md``) adopts the layering —
 **command = the scope; agent = the process; skills = the domain standards, pulled
-just-in-time** — merging the two stewards into one ``agents/steward.md`` and extracting the
-guidance-domain standards into ``skills/guidance-coherence/SKILL.md``.
+just-in-time** — merging the two stewards into one ``agents/steward.md``.
 
-These guards pin the consolidated state so the split cannot regress:
+AC-2 is *retired*: ``skills/guidance-coherence`` and the ``system`` scope went with the
+runtime (ADR 0015 / #435), so the steward has two scopes, not three.
 
-* AC-1 — the two old steward agents are gone and unlisted; one ``steward`` agent replaces
-  them; no dangling ``code-steward``/``system-steward`` reference survives in the live
-  installed surface (history, specs/proposals, assessments, and tests keep their records);
-* AC-2 — *retired.* ``skills/guidance-coherence`` and the ``system`` scope went with
-  the runtime (ADR 0015 / #435); the steward now has two scopes, not three;
-* AC-3 — ``/assess <scope>`` selects domains; ``code`` pulls the code-domain skills,
-  ``architecture`` pulls the shape-domain standards, and ``--deep`` adds the broad lenses;
-* AC-4 — the design-system lens is layer-gated;
-* AC-6 — the two-surfaces / one-steward layering principle is recorded in
-  ``specs/architecture-principles.md``.
+**What this module asserts, after #459.** Four negative-space / identity checks — both
+old agent files are gone, the surviving agent is versioned and named, the registry lists
+it and neither retired name, and no live installed-surface file mentions either — plus
+**two tripwires**:
 
-*Source:* CAL-704.
+* the scope routing gates the ``design-system`` lens on its layer (``agents/steward.md``
+  and ``commands/assess.md``, one rule across two surfaces);
+* ``specs/architecture-principles.md`` records the layering that makes one steward
+  possible (AC-6).
+
+Four prose tests collapsed into those two under #459 (ADR 0016). One of them,
+``assert "code" in lower and "architecture" in lower`` over the whole of
+``commands/assess.md``, was **deleted outright rather than converted**: two extremely
+common English words, unanchored, over a file about assessing code and architecture. It
+could not fail while the file existed, and the routed-scope claim it gestured at is
+already measured — with the retired ``system`` scope asserted absent — by
+``test_assess_architecture_scope::test_code_and_architecture_scopes_remain_routed``.
+
+Occurrence the layer-gate polarity cites (``code-quality`` Part C): the pre-#459 form was
+``assert "design-system adherence" in text and "layer-gated" in text`` over the whole
+command file. The two tokens sat in one table cell, but nothing said so — prose adding a
+``design-system`` lens to an ungated scope, with ``layer-gated`` surviving in a sentence
+about something else, passed unchanged. The ``craft.md`` class is *A guard over prose owns
+structure and negative space, never meaning*.
+
+*Source:* CAL-704, reshaped by #459.
 """
 
 from __future__ import annotations
@@ -53,6 +67,10 @@ _SURFACE = [
     REPO_ROOT / "GEMINI.md",
     REGISTRY,
 ]
+
+
+def _blocks(text: str) -> list[str]:
+    return [block.strip() for block in text.split("\n\n") if block.strip()]
 
 
 # --- AC-1: one steward replaces two -----------------------------------------
@@ -103,68 +121,137 @@ def test_no_dangling_steward_reference_in_surface() -> None:
     )
 
 
-# --- AC-3: /assess selects the scope; scopes pull the expected skills -------
+# --- AC-3 / AC-4: the scope routing, and the gate on the design-system lens ---
+
+#: The restrictor, **anchored to the condition it names**. This is the polarity of
+#: the whole rule: the lens is pulled *only* when its layer is on. A routing block
+#: naming ``design-system`` unconditionally reads as the rule to every term check.
+_ONLY_WHEN_THE_LAYER = re.compile(
+    r"\bonly\b(?:\W+\w+){0,4}?\W+layer\b", re.IGNORECASE
+)
+
+#: The domain standards the ``code`` scope pulls just-in-time.
+_CODE_DOMAIN_SKILLS = (
+    "code-quality",
+    "test-driven-development",
+    "architecture",
+    "engineering-principles",
+)
 
 
-def test_assess_documents_scopes_and_deep() -> None:
-    """``/assess`` documents the ``code``/``system`` scopes and the ``--deep`` modifier."""
-    text = ASSESS.read_text()
-    lower = text.lower()
-    assert "--deep" in text, "commands/assess.md must document the '--deep' modifier (CAL-704)"
-    assert "steward" in text, "commands/assess.md must dispatch the single 'steward' agent"
-    assert "code" in lower and "architecture" in lower, (
-        "commands/assess.md must document the 'code' and 'architecture' scopes"
+def _scope_routing_blocks() -> list[str]:
+    """``agents/steward.md`` bullet blocks that route the ``code`` scope."""
+    return [
+        b for b in _blocks(STEWARD.read_text()) if b.startswith("- `") and "`code`" in b
+    ]
+
+
+def _design_system_lens_lines() -> list[str]:
+    """``commands/assess.md`` lines naming the design-system adherence lens."""
+    return [ln for ln in ASSESS.read_text().splitlines() if "design-system adherence" in ln]
+
+
+def test_the_design_system_lens_is_gated_on_its_layer() -> None:
+    """One rule across two surfaces: the lens is conditional, and both say so (AC-3/AC-4).
+
+    Two anchored windows, because the rule is only true if both carry it — the
+    agent decides what it loads, the command decides what the deep pass looks at:
+
+    * **the steward's scope-routing block** — exactly one bullet block names the
+      ``code`` scope; it must list the code-domain standards and carry the
+      restrictor ``only … layer`` beside ``design-system``.
+    * **the command's deep-pass row** — exactly one line of ``commands/assess.md``
+      names ``design-system adherence``, and that same line must carry
+      ``layer-gated`` and ``--deep``. Line-scoped on purpose: before #459 the two
+      tokens were asserted independently over the whole file, so nothing tied the
+      gate to the lens it gates.
+    """
+    routing = _scope_routing_blocks()
+    assert len(routing) == 1, (
+        f"agents/steward.md has {len(routing)} scope-routing bullet blocks naming the "
+        "`code` scope; it must have exactly one. The routing is what makes a single "
+        "steward possible — split across two blocks, the two scopes start drifting "
+        "back into two agents (CAL-704 AC-3)."
+    )
+    block = routing[0]
+    missing = [skill for skill in _CODE_DOMAIN_SKILLS if skill not in block]
+    assert not missing, (
+        f"the steward's `code` scope no longer pulls {missing} as domain standards "
+        "(CAL-704 AC-3)."
+    )
+    assert "design-system" in block and _ONLY_WHEN_THE_LAYER.search(block), (
+        "the steward's scope routing no longer gates `design-system` on its layer. "
+        "Loaded unconditionally, a repo with no design system gets an assessment "
+        "against standards it never adopted — and every term check here still passes "
+        "(CAL-704 AC-4)."
     )
 
-
-def test_steward_routes_each_scope_to_its_domain_skills() -> None:
-    """The steward names the domain skills each scope pulls just-in-time (AC-3)."""
-    text = STEWARD.read_text()
-    # The code scope pulls the code-domain standards.
-    code_skills = (
-        "code-quality",
-        "test-driven-development",
-        "architecture",
-        "engineering-principles",
+    lens_lines = _design_system_lens_lines()
+    assert len(lens_lines) == 1, (
+        f"commands/assess.md names the design-system adherence lens on "
+        f"{len(lens_lines)} lines; it must name it on exactly one — the deep-pass row."
     )
-    for skill in code_skills:
-        assert skill in text, f"steward.md (code scope) must pull '{skill}' as a domain standard"
-    # The architecture scope pulls the shape-domain standards.
-    assert "engineering-principles" in text, (
-        "steward.md (architecture scope) must pull 'engineering-principles'"
-    )
-    # The command owns --deep's detailed lenses; the role points there.
-    assess = ASSESS.read_text().lower()
-    assert "--deep" in text and "commands/assess.md" in text
-    assert "coverage" in assess
-    assert "spec" in assess and "coherence" in assess
-
-
-# --- AC-4: the design-system lens is layer-gated ----------------------------
-
-
-def test_design_system_lens_is_layer_gated() -> None:
-    """The design-system lens runs only when ``layers.design_system`` is on (AC-4)."""
-    text = ASSESS.read_text().lower()
-    assert "design-system adherence" in text and "layer-gated" in text, (
-        "commands/assess.md must keep the design-system lens layer-gated"
+    assert "layer-gated" in lens_lines[0] and "--deep" in lens_lines[0], (
+        "the design-system adherence lens is listed without `layer-gated` on the same "
+        f"deep-pass row: {lens_lines[0]!r}. Asserting the two tokens anywhere in the "
+        "file is satisfied by an ungated lens beside an unrelated mention of gating "
+        "(CAL-704 AC-4)."
     )
 
 
 # --- AC-6: the layering principle is recorded -------------------------------
 
+#: The negation **anchored to the alternative it rejects**. "One steward" is only
+#: a decision because the obvious alternative — one steward per domain — is the
+#: shape it replaced, and is what a later editor would re-derive.
+_NOT_PER_DOMAIN = re.compile(
+    r"\b(?:not|never|no)\b(?:\W+\w+){0,4}?\W+per domain\b", re.IGNORECASE
+)
 
-def test_layering_principle_recorded() -> None:
-    """``architecture-principles.md`` records the two-surfaces / one-steward layering (AC-6)."""
-    text = PRINCIPLES.read_text()
-    lower = text.lower()
-    assert "one steward" in lower or "single steward" in lower, (
-        "architecture-principles.md must record the one-steward decision (CAL-704 AC-6)"
+
+def _layering_principles() -> list[str]:
+    """``specs/architecture-principles.md`` paragraphs recording a single steward."""
+    return [
+        " ".join(b.split())
+        for b in _blocks(PRINCIPLES.read_text())
+        if re.search(r"\b(?:single|one) steward\b", b, re.IGNORECASE)
+    ]
+
+
+def test_the_assessment_layering_is_recorded() -> None:
+    """``architecture-principles.md`` records command=scope, agent=process, skills=standards (AC-6).
+
+    One tripwire over one rule-home. **Anchor:** exactly one paragraph names a
+    single steward. **Terms:** the three layers the principle assigns —
+    ``scope``, ``process``, ``domain standard`` — plus ``just-in-time``, which is
+    what makes the skills a *pull* rather than a fifth artifact. **Polarity:** the
+    rejected alternative, one steward per domain, anchored to ``per domain``. The
+    pre-#459 form asserted the four terms independently over the whole file, where
+    all four occur for unrelated reasons.
+    """
+    paragraphs = _layering_principles()
+    assert len(paragraphs) == 1, (
+        f"specs/architecture-principles.md has {len(paragraphs)} paragraphs recording a "
+        "single steward; it must have exactly one. Two statements of one principle is "
+        "the duplication the principle itself rejects (CAL-704 AC-6)."
     )
-    # The layering: command = scope, agent = process, skills = domain standards.
-    assert "domain standard" in lower, (
-        "architecture-principles.md must record that skills hold the domain standards"
+    principle = paragraphs[0]
+    lowered = principle.lower()
+
+    missing = [
+        term
+        for term in ("scope", "process", "domain standard", "just-in-time")
+        if term not in lowered
+    ]
+    assert not missing, (
+        f"the assessment-layering principle no longer states {missing}. The layering is "
+        "the whole reason one steward is enough: the command names the scope, the agent "
+        "is the process, and the domain standards are skills pulled just-in-time "
+        "(CAL-704 AC-6)."
     )
-    assert "just-in-time" in lower or "just in time" in lower, (
-        "architecture-principles.md must record that domain skills are pulled just-in-time"
+    assert _NOT_PER_DOMAIN.search(principle), (
+        "the principle names a single steward but no longer rejects one per domain. "
+        "Without the alternative it replaced, it reads as a description of today's "
+        "tree rather than a decision — and the next domain added gets its own agent "
+        "with nothing going red (CAL-704 AC-6)."
     )

@@ -1,76 +1,70 @@
-"""#206 — broaden the mirroring self-admission trigger from helper to any duplicated unit.
+"""#206 — the mirroring admission trigger covers a duplicated shell, not just a
+duplicated function.
 
-From the form repo's `/assess code` steward pass (2026-07-24, CODE-INSIGHT-1;
-originating Linear ticket CAL-1214). `code-quality`'s "Extract on the third
-strike" admission-comment rule (CAL-800, pinned by
-``test_mirrors_admission_third_strike.py``) is worded around "a helper
-mirrors ... a sibling", which reads naturally as scoped to pure-logic
-functions. The sibling ticket CAL-1213 (CODE-1, same assessment pass) is the
-exact failure mode this framing invites: three UI components each carried a
-doc comment admitting they mirror the previous one, yet the rule as worded
-did not visibly apply to a component, so the trigger was never pulled across
-three separate, individually-reasonable reviews.
+From the form repo's ``/assess code`` steward pass (2026-07-24, CODE-INSIGHT-1;
+originating Linear ticket CAL-1214). ``code-quality``'s "Extract on the third
+strike" admission-comment rule (CAL-800) was worded around "a helper mirrors …
+a sibling", which reads naturally as scoped to pure-logic functions. The sibling
+ticket CAL-1213 is the exact failure mode that framing invites: three UI
+components each carried a doc comment admitting they mirrored the previous one,
+yet the rule as worded did not visibly apply to a component, so the trigger was
+never pulled across three separate, individually-reasonable reviews.
 
-The fix broadens the trigger's subject from "a helper" to "a helper,
-component, or module", and states explicitly that the trigger applies to a
-duplicated rendering/structural shell exactly as it applies to a duplicated
-function — so a mirrored component or screen is caught by the same rule a
-mirrored helper already was.
+**Converted under #459** (ADR 0016, and ``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Two tests carrying two
+literal-phrase regexes — ``a helper,\\s*component,\\s*or module\\s+\\*\\*mirrors\\*\\*``
+and ``"exactly as it applies to a duplicated function"`` — became the single
+tripwire below, and **half of this module's subject moved next door**: #206's
+AC-1 claim (the trigger's subjects are ``helper``, ``component`` *and*
+``module``) now lives in
+:func:`tests.unit.test_mirrors_admission_third_strike.test_the_builder_home_states_the_admission_trigger`'s
+term set, because that tripwire already reads the same paragraph and one
+rule-home takes one tripwire. Moving it rather than dropping it is what keeps the
+claim measured (``craft.md`` → *A deletion pass that moves a definition must move
+its killer*); the sibling module's mutation table carries the entry that proves
+the killer arrived.
 
-Acceptance criteria (this ticket):
+**What this module now asserts.** #206's other half — the **coverage-parity**
+claim, which nothing else in the tree measures: a duplicated rendering or
+structural shell is covered exactly as a duplicated function is.
 
-* **AC-1** — the "Extract on the third strike" section names "component" and
-  "module" as subjects of the mirrors/duplicates/kept-in-sync admission
-  trigger, alongside "helper".
-* **AC-2** — the section states the trigger applies to a duplicated
-  rendering/structural shell exactly as it applies to a duplicated function.
+* **Anchor** — the admission paragraph of ``### Extract on the third strike``.
+  The slicer is **imported** from the sibling module rather than re-spelled, so
+  both tripwires read the same window and a fork cannot open between them
+  (``craft.md`` → *A positive control must exercise the predicate, not
+  re-implement it*). The window is the paragraph, not the section: the
+  rule-of-three paragraph beside it already says "shared UI in a component".
+* **Term set** — ``rendering``, ``structural``, ``function``.
+* **Polarity — none exists.** The claim is a *breadth* claim: it widens what the
+  trigger already covers. There is no direction to invert, so no negation token
+  is asserted; a bare ``not`` over the paragraph would be decoration, and the
+  paragraph's own negation belongs to the sibling tripwire's polarity, not this
+  one's.
+
+**What it does not prove.** That the parity is stated the right way round — a
+sentence naming a rendering shell, a structural shell and a function while
+*excluding* them from the trigger carries all three terms. Breadth claims have
+no cheap mechanical inversion, and this one is the reviewer's.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+from tests.unit.test_mirrors_admission_third_strike import _admission_paragraph
 
-
-def _extract_section(text: str) -> str:
-    """The 'Extract on the third strike' subsection of code-quality Part B."""
-    m = re.search(r"^### Extract on the third strike\s*$", text, re.MULTILINE)
-    assert m, "code-quality must have an '### Extract on the third strike' section"
-    rest = text[m.end() :]
-    end = re.search(r"^#{2,3} ", rest, re.MULTILINE)
-    return rest[: end.start()] if end else rest
+#: The words the coverage-parity claim cannot be stated without.
+_TERMS = (r"\brendering\b", r"\bstructural\b", r"\bfunction\b")
 
 
-def test_admission_trigger_names_component_and_module() -> None:
-    """The admission trigger's subject is broadened past "a helper" (AC-1)."""
-    section = _extract_section(_CODE_QUALITY.read_text())
-    low = section.lower()
-    assert "component" in low and "module" in low, (
-        "the admission trigger must name 'component' and 'module' alongside "
-        f"'helper' as subjects that can mirror/duplicate a sibling (AC-1); got:\n{section}"
-    )
-    # The trigger phrase itself, not just an incidental mention elsewhere.
-    trigger = re.search(
-        r"a helper,\s*component,\s*or module\s+\*\*mirrors\*\*", section
-    )
-    assert trigger, (
-        "the trigger phrase must read 'a helper, component, or module mirrors "
-        f"...' (AC-1); got:\n{section}"
-    )
-
-
-def test_admission_trigger_covers_duplicated_rendering_shell() -> None:
-    """The section states the trigger applies to a duplicated shell exactly as
-    it applies to a duplicated function (AC-2)."""
-    section = _extract_section(_CODE_QUALITY.read_text()).lower()
-    assert "rendering" in section and "structural" in section, (
-        "the section must call out a duplicated rendering/structural shell "
-        f"as covered by the trigger (AC-2); got:\n{section}"
-    )
-    assert "exactly as it applies to a duplicated function" in section, (
-        "the section must state the trigger applies to a duplicated shell "
-        f"exactly as it applies to a duplicated function (AC-2); got:\n{section}"
+def test_the_trigger_covers_a_duplicated_shell_like_a_duplicated_function() -> None:
+    """AC-2: the admission trigger reaches a rendering/structural shell."""
+    para = _admission_paragraph()
+    missing = [t for t in _TERMS if not re.search(t, para, re.IGNORECASE)]
+    assert not missing, (
+        "the admission paragraph no longer states that the trigger covers a "
+        f"duplicated rendering/structural shell as it covers a duplicated function; "
+        f"missing {missing}. Without it the rule reads as scoped to pure-logic "
+        "helpers, which is the framing that let three mirrored components through "
+        f"three reviews (#206 AC-2). Paragraph read:\n{para}"
     )

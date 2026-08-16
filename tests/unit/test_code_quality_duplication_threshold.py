@@ -1,27 +1,39 @@
-"""#180 — scope discipline needs a numeric duplication threshold.
+"""#180 — the numeric duplication threshold has a home in ``code-quality`` Part A.
 
 *Source:* nano-erp assessment ``assessments/2026-07-22-code.md``, systemic
 insight CODE-INSIGHT-1 (nano-erp ERP-137). Per-ticket review sees only its own
 diff, so it cannot notice that the Nth screen re-implemented a concern the
 previous N-1 already implemented — "consider extracting" is what let five
-copies land in nano-erp. A numeric threshold, checked before the helper is
-even written, is what makes the duplication checkable at review time.
+copies land in nano-erp. A numeric threshold, checked before the helper is even
+written, is what makes the duplication checkable at review time.
 
-This guard pins the *presence* of that rule in the surface (the same honest
-limit the removal-sweep and mirrors-admission guards state — it evidences the
-rule, not that a grep was performed on any change).
+**Converted under #459** (ADR 0016, and ``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Four sentence-pins —
+``"before writing a helper"``, ``"one other place"``, ``"if it exists in two"``,
+``"not a judgement call"``, one of them a verbatim re-assertion of another —
+became the single tripwire below. The pins were brittle and vacuous at once:
+each broke on a benign rewording that preserved the rule exactly, while none of
+them could see the rule inverted in the sentence beside it.
 
-Acceptance criteria (#180):
+**What this module now asserts.** One tripwire, one rule-home:
 
-* **AC-1** — code-quality's scope-discipline section (Part A) tells builders
-  to grep sibling modules for the concern a new helper would handle *before*
-  writing it. Proven by :func:`test_code_quality_has_pre_write_grep_rule` and
-  :func:`test_duplication_rule_in_scope_section`.
-* **AC-2** — the rule states the numeric threshold: one existing near-identical
-  copy must be named and justified in the change spec; two existing copies
-  means extract now — the third copy is not a judgement call. Proven by
-  :func:`test_duplication_rule_states_one_copy_case` and
-  :func:`test_duplication_rule_states_two_copy_case`.
+* **Anchor** — ``### Grep before writing a helper`` resolves *from inside*
+  ``## Part A — Scope``. The nesting is the placement claim: a subsection moved
+  to Part B or Part C stops resolving, so there is no separate placement test
+  (the dropped one was a strict subset of this slice — the class ``craft.md`` →
+  *The text unit is part of the predicate* names).
+* **Term set** — ``grep``, ``sibling``, ``change spec``, ``two``, ``extract``.
+  The rule cannot be stated without them: drop ``two`` and the threshold stops
+  being numeric, which is the whole point of the ticket.
+* **Polarity** — the negation bound to what it governs: *the third copy is
+  **not** a judgement call*. A bare ``not`` in the paragraph would be
+  decoration; anchoring it to ``judgement`` is what makes the inversion ("the
+  third copy is a judgement call") go red. ``craft.md`` → *Mutate the rule into
+  its opposite, not only out of existence*.
+
+**What it does not prove.** That the numbers are the right numbers, or that a
+builder greps. A rewrite that keeps every term and reverses the advice around
+them passes here and is the reviewer's to catch.
 """
 
 from __future__ import annotations
@@ -29,73 +41,63 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+from tests.unit.test_assurance_filing_rubric import _section
+
+# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+
+_PART_A = "## Part A — Scope"
+_HEADING = "### Grep before writing a helper"
+
+#: The words the rule cannot be stated without, as whole-word patterns.
+_TERMS = (
+    r"\bgrep\b",
+    r"\bsiblings?\b",
+    r"\bchange spec\b",
+    r"\btwo\b",
+    r"\bextract\w*\b",
+)
+
+#: The negation **bound to the thing it governs**. ``not`` alone is satisfied by
+#: almost any English paragraph; ``not`` within a couple of words of
+#: ``judgement`` is the clause that inverts with the rule.
+_NOT_A_JUDGEMENT_CALL = re.compile(
+    r"\b(?:not|never)\b(?:\W+\w+){0,2}?\W+judge?ment\b", re.IGNORECASE
+)
 
 
-def _code_quality_text() -> str:
-    return CODE_QUALITY.read_text()
+def _rule() -> str:
+    """``### Grep before writing a helper``, sliced from inside ``## Part A``.
+
+    ``_section`` is **imported**, not re-spelled: re-implementing the slicer
+    forks it from the samples that measure it (``craft.md`` → *A positive
+    control must exercise the predicate, not re-implement it*). Nesting the two
+    calls is what folds the placement claim into the anchor.
+    """
+    text = _CODE_QUALITY.read_text(encoding="utf-8")
+    return _section(_section(text, _PART_A), _HEADING)
 
 
-def _scope_section() -> str:
-    text = _code_quality_text()
-    m = re.search(r"^##\s+Part A\b.*Scope", text, re.MULTILINE)
-    assert m, "code-quality must have a 'Part A — Scope' section."
-    rest = text[m.end() :]
-    nxt = re.search(r"^##\s+Part B\b", rest, re.MULTILINE)
-    return rest[: nxt.start()] if nxt else rest
-
-
-def test_code_quality_has_pre_write_grep_rule() -> None:
-    """AC-1: the rule tells builders to grep sibling modules before writing a
-    helper for the concern it would handle."""
-    low = _scope_section().lower()
-    assert "before writing a helper" in low, (
-        "code-quality must tell builders to check for duplication 'before "
-        "writing a helper' (#180 AC-1)."
-    )
-    assert "grep" in low and "sibling" in low, (
-        "the rule must say to grep the sibling modules for the concern the "
-        "new helper would handle (#180 AC-1)."
-    )
-
-
-def test_duplication_rule_in_scope_section() -> None:
-    """AC-1 (placement): the rule sits inside 'Part A — Scope' discipline —
-    checking for duplication before writing code is a scope-discipline concern,
-    not a Part B structural cleanup."""
-    section = _scope_section().lower()
-    assert "before writing a helper" in section, (
-        "the pre-write duplication-grep rule must live in the 'Part A — Scope' "
-        "discipline (#180 AC-1 placement)."
-    )
-
-
-def test_duplication_rule_states_one_copy_case() -> None:
-    """AC-2: a single near-identical existing copy must be named and justified
-    in the change spec, not silently duplicated."""
-    low = _scope_section().lower()
-    assert "one other place" in low, (
-        "the rule must state the one-copy case: a near-identical helper "
-        "existing in one other place (#180 AC-2)."
-    )
-    assert "change spec" in low and "justified" in low, (
-        "the one-copy case must require naming the existing helper in the "
-        "change spec and saying why the copy is justified (#180 AC-2)."
+def test_the_pre_write_duplication_threshold_has_a_home() -> None:
+    """One tripwire: the rule is in Part A, names its terms, keeps its polarity."""
+    rule = _rule()
+    assert rule.strip(), (
+        f"{_HEADING!r} is empty — a heading with no rule under it states nothing "
+        "(#180)."
     )
 
+    missing = [t for t in _TERMS if not re.search(t, rule, re.IGNORECASE)]
+    assert not missing, (
+        f"{_HEADING!r} no longer carries the terms the pre-write duplication rule "
+        f"cannot be stated without; missing {missing}. The rule greps the sibling "
+        "modules, names the one existing copy in the change spec, and extracts at "
+        f"two (#180). Section read:\n{rule}"
+    )
 
-def test_duplication_rule_states_two_copy_case() -> None:
-    """AC-2: two existing copies means extract now — the numeric threshold
-    that makes the rule checkable, not a judgement call."""
-    low = _scope_section().lower()
-    assert "if it exists in two" in low or "exists in two" in low, (
-        "the rule must state the two-copy case explicitly (#180 AC-2)."
-    )
-    assert "extract it" in low, (
-        "the two-copy case must require extracting the helper (#180 AC-2)."
-    )
-    assert "third copy" in low and "not a judgement call" in low, (
-        "the rule must state that a third copy is not a judgement call — the "
-        "numeric threshold is the point (#180 AC-2)."
+    assert _NOT_A_JUDGEMENT_CALL.search(rule), (
+        "the threshold has lost its polarity: the third copy must be stated as "
+        "*not a judgement call*. Without the negation bound to `judgement`, the "
+        "inverted rule — the third copy is a judgement call — carries every term "
+        f"above and passes (#180). Section read:\n{rule}"
     )

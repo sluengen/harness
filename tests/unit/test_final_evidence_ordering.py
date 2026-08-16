@@ -23,7 +23,8 @@ statements of one policy is how the policy came to contradict itself.
 Four properties, each measured separately:
 
 * **AC-1 (single home)** — ``review-discipline`` states the ordering rule under
-  its own name. Proven by :func:`test_review_discipline_states_the_ordering_rule`.
+  its own name, in the bullet that carries it. Proven by
+  :func:`test_the_home_states_the_ordering_rule`.
 * **AC-2 (no competing statement)** — the retired ordering survives in no
   registered prose file, template, or entry-doc mirror. Derived from the tracked,
   registered tree rather than hand-listed, so a file nobody thought to list is in
@@ -44,6 +45,22 @@ Four properties, each measured separately:
   would be vacuous here: four of the five already name ``review-discipline`` for
   unrelated reasons (``commands/review.md:6`` has since forever). Proven by
   :func:`test_each_former_copy_points_at_the_home`.
+
+**#459 changed two things and nothing else.** The two AC-1 home tests — one
+reading the rule's name, one reading the gate-before-verdict half — were one rule
+pinned twice over the same section, so they merge into
+:func:`test_the_home_states_the_ordering_rule`, which reads the *bullet* rather
+than the whole section. Section-wide, ``gate``, ``before``, ``verdict`` and
+``fail`` are all free: the four sibling obligations use every one of them, so the
+pre-#459 pair could not tell the ordering rule from its neighbours. And the
+section slicer is now **imported** from
+``test_review_discipline_asbuilt_record_gate`` rather than copy-pasted, which is
+what this module's own docstring already claimed in prose — the ``craft.md``
+class *A positive control must exercise the predicate, not re-implement it*,
+applied to a shared slicer. Everything else here is untouched: the retired-ordering
+sweep with both of its controls, the positional offsets, the literal
+``reviewed_sha`` / ``write-tree`` / ``HEAD^{tree}`` contracts, and the line-scoped
+pointers with their control were already the shape ADR 0016 asks for.
 """
 
 from __future__ import annotations
@@ -52,6 +69,7 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit.test_review_discipline_asbuilt_record_gate import _obligation_bullets
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -141,18 +159,13 @@ def _text(rel: str) -> str:
     return (_REPO_ROOT / rel).read_text(encoding="utf-8")
 
 
-def _obligations_section() -> str:
-    """``review-discipline``'s *Reviewer obligations* section.
-
-    Parsed exactly as ``test_review_discipline_asbuilt_record_gate`` parses it,
-    so the two guards cannot disagree about where the gate lives.
-    """
-    text = _text(_HOME)
-    start = text.find("## Reviewer obligations")
-    assert start != -1, "review-discipline must have a Reviewer obligations section"
-    end = text.find("## On a FAIL", start)
-    assert end != -1, "review-discipline must have an 'On a FAIL' section after it"
-    return text[start:end]
+#: The ordering rule's own clause: nothing lands after the certifying gate. The
+#: negation is **anchored to what it governs** — a bare negation in a bullet this
+#: long is decoration, and ``before`` on its own is satisfied by prose putting the
+#: record before anything at all.
+_NOTHING_LANDS_AFTER = re.compile(
+    r"\b(?:nothing|never|not|no)\b(?:\W+\w+){0,3}?\W+(?:after|later)\b", re.IGNORECASE
+)
 
 
 # ---------------------------------------------------------------------------
@@ -235,39 +248,54 @@ def test_the_retired_ordering_predicate_admits_unrelated_last_commits() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_review_discipline_states_the_ordering_rule() -> None:
-    """The home names the rule and states what it forbids (AC-1)."""
-    section = _obligations_section()
-    lowered = section.lower()
-
-    assert _RULE_NAME in lowered, (
-        f"{_HOME}'s Reviewer obligations must name the {_RULE_NAME} rule — it is "
-        "the home every other surface points at"
-    )
-    assert "as-built" in lowered, (
-        "the ordering rule must sit with the as-built-record gate it strengthens"
-    )
-    assert "verdict" in lowered, (
-        "the rule is about what the verdict covers — it must say so"
-    )
-    assert "fail" in lowered, (
-        "a pass issued over a tree that is not the merged tree is a FAIL, not a "
-        "style note"
-    )
+def _ordering_bullets() -> list[str]:
+    """Reviewer-obligation bullets naming the final-evidence ordering rule."""
+    return [b for b in _obligation_bullets() if _RULE_NAME in b.lower()]
 
 
-def test_the_home_states_the_gate_runs_over_the_record() -> None:
-    """The certifying gate runs over the tree that already holds the record (AC-1).
+def test_the_home_states_the_ordering_rule() -> None:
+    """The home names the rule, in the bullet that carries it (AC-1).
 
-    This is the half that makes the rule load-bearing rather than tidy: a record
-    edit is tree content a link, generated-doc, or drift guard may reject, and
-    the whole point is that it is rejected *before* a verdict exists.
+    One tripwire where #459 found two, and read from the *bullet* rather than the
+    ``## Reviewer obligations`` section: section-wide, every term below is free.
+    The gate obligation beside it names ``as-built`` and ``FAIL``; the twin sweep
+    names ``branch`` and ``deferral``; the report contract names ``verdict``,
+    ``gate`` and ``fail``. So a pair of section-scoped term checks proved only
+    that four common words appeared somewhere in five bullets.
+
+    * **anchor** — exactly one obligation names :data:`_RULE_NAME`. That name is
+      greppable on purpose, because every other surface points at it by name;
+      stated twice, the pointers stop having one referent.
+    * **terms** — ``as-built`` (the gate it strengthens), ``gate`` and ``verdict``
+      (the two things the record has to precede).
+    * **polarity** — :data:`_NOTHING_LANDS_AFTER`. The ordering is a claim about
+      what may *not* follow the certified tree, and it is the half a later edit
+      drops while keeping the rest: "record before the gate" reads as advice
+      without it, and a documentation commit after the verdict is exactly the
+      state the rule exists to refuse.
     """
-    lowered = _obligations_section().lower()
-    assert "gate" in lowered, "the rule must name the verify gate"
-    assert "before" in lowered, (
-        "the rule must state the ordering — the record lands before the "
-        "certifying gate and the verdict, not after"
+    bullets = _ordering_bullets()
+    assert len(bullets) == 1, (
+        f"{_HOME}'s Reviewer obligations carry {len(bullets)} bullets naming the "
+        f"{_RULE_NAME} rule; there must be exactly one. It is the home every other "
+        "surface points at by name, and two homes is how the policy came to "
+        "contradict itself (#331)."
+    )
+    bullet = bullets[0]
+    lowered = bullet.lower()
+
+    missing = [term for term in ("as-built", "gate", "verdict") if term not in lowered]
+    assert not missing, (
+        f"the {_RULE_NAME} rule no longer states {missing}. It sits with the "
+        "as-built-record gate it strengthens, and it is about the tree the verify "
+        "gate and the verdict both cover."
+    )
+    assert _NOTHING_LANDS_AFTER.search(bullet), (
+        f"the {_RULE_NAME} rule no longer refuses anything landing after the "
+        "certified tree. Without that clause the bullet reads as a preference "
+        "about ordering: a record commit added after the verdict is uncertified "
+        "tree content, and it is what made the merged commit a commit nobody had "
+        "reviewed (#331)."
     )
 
 

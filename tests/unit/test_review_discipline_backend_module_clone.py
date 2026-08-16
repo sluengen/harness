@@ -1,38 +1,50 @@
-"""#209 — extend review-discipline's sibling-duplication check to backend
-module files.
+"""#209 / #459 — the Stage-2 **Cloned backend module helper** rule, as one tripwire.
 
-*Origin:* filed by ``/assess code`` in nano-erp (steward, 2026-07-24, systemic
-insight CODE-INSIGHT-2; tracked as ``ERP-179`` in nano-erp's Linear).
+*Origin:* filed by ``/assess code`` in nano-erp (steward, 2026-07-24).
 ``review-discipline``'s only mechanized check for the "new code copies a
-sibling's helper instead of extracting it" shape was **Misplaced pure
-helper** (CAL-796/CAL-823), scoped to frontend view/screen files under a
-``lib/`` coverage ratchet — there was no equivalent instruction for a
-reviewer looking at a new backend module (nano-erp's evidence: ``GetOrgConfig``
-in ``inventory/acceptHook.ts`` mirroring ``quotes/service.ts``;
-``asNullableString``/``requireName`` in ``procurement/input.ts`` duplicating
-``customers/input.ts``). This adds a sibling Stage 2 bullet for backend
-modules, alongside Misplaced pure helper, in the same style as its precedent
-guards (``test_review_discipline_misplaced_helper.py``, CAL-823).
+sibling's helper instead of extracting it" shape was **Misplaced pure helper**,
+scoped to frontend view/screen files under a ``lib/`` coverage ratchet — there
+was no equivalent instruction for a reviewer looking at a new backend module.
+This bullet is that sibling: grep the function and type names a new module
+declares against the equivalent files in the modules beside it.
 
-Acceptance criteria (#209):
+**What this module asserts, after #459.** One tripwire over one rule-home, plus
+the version parity that is structural correspondence and stays (ADR 0016,
+``code-quality`` Part C → *A guard over prose owns structure and negative space,
+never meaning*):
 
-* **AC-1** — ``review-discipline`` Stage 2 carries a rule that a new backend
-  module's declared function/type names must be grepped against sibling
-  modules; a name that already exists in a sibling with a matching signature
-  is a clone that belongs in a shared home, not copied module-to-module.
-  Proven by :func:`test_review_discipline_has_backend_module_clone_rule`.
-* **AC-2** — the rule sits in Stage 2 quality, beside Misplaced pure helper,
-  not buried elsewhere. Proven by
-  :func:`test_backend_module_clone_rule_is_in_stage_two`.
-* **AC-3** — ``review-discipline``'s ``guidance:`` header version and its
-  ``registry.yaml`` entry are bumped consistently. Proven by
-  :func:`test_review_discipline_header_matches_registry`.
+1. **Anchor** — the ``- **Cloned backend module helper**`` bullet exists inside
+   ``### Stage 2``, and the assertion reads only that slice. The pre-conversion
+   slicer found the bullet *positionally*, as "the first bullet after Misplaced
+   pure helper", which a correct insertion between them silently redirects —
+   ``craft.md`` → *An ordinal reference into an enumeration is invalidated by a
+   correct insertion*. It now anchors on the bullet's own title.
+2. **Term set** — ``sibling``, ``grep``, ``shared home``: the comparison set,
+   the mechanism, and the destination.
+3. **Polarity** — ``a clone, not a coincidence``, with the negation anchored to
+   the noun it governs. That is the rule's whole judgement call, resolved: a
+   matching name in a sibling module is not to be explained away. An edit
+   keeping every term above while allowing the coincidence reading inverts the
+   rule and nothing else in the tree would notice.
+
+What went: ``module``, ``clone``, ``coincidence`` and ``module-to-module`` as
+separate literal pins, and ``test_backend_module_clone_rule_is_in_stage_two``,
+which re-checked the placement the slicer enforces by construction *and* pinned
+the ordinal described above.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+# The slicer lives in the module that exports it to this family rather than in a
+# private copy per bullet (``craft.md`` → *A positive control must exercise the
+# predicate, not re-implement it*); it carries its own missing-bullet assertion.
+from tests.unit.test_review_discipline_context_currency import (
+    _skill_text,
+    _stage_two_bullet,
+)
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,9 +53,18 @@ _REGISTRY = _REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
 
+_BULLET_TITLE = "Cloned backend module helper"
 
-def _skill_text() -> str:
-    return _SKILL.read_text(encoding="utf-8")
+#: The comparison set, the mechanism, and the destination.
+_TERMS = ("sibling", "grep", "shared home")
+
+#: The judgement, with the negation **anchored to the noun it governs**. A bare
+#: negation token would be satisfied by the grep recipe's own exclusion
+#: (``| grep -v <this-module>``); this only matches while the bullet still
+#: refuses to read a matching sibling name as coincidence.
+_NOT_A_COINCIDENCE = re.compile(
+    r"\bnot\b(?:\W+\w+){0,2}?\W+coincidence\b", re.IGNORECASE
+)
 
 
 def _header_version(path: Path) -> str:
@@ -61,82 +82,27 @@ def _registry_version(rel_path: str) -> str:
     return m.group(1)
 
 
-def _stage_two(text: str) -> str:
-    """review-discipline's Stage 2 quality body (where structural checks live)."""
-    start = text.index("### Stage 2")
-    end = text.index("## Severity", start)
-    return text[start:end]
+def _bullet() -> str:
+    return _stage_two_bullet(_skill_text(), _BULLET_TITLE)
 
 
-def _backend_module_clone_bullet(text: str) -> str:
-    """The Stage 2 bullet for the backend-module-clone rule.
+def test_the_backend_clone_rule_sends_a_matching_sibling_name_to_a_shared_home() -> None:
+    """A declared name that already exists in a sibling module is a clone, not a coincidence."""
+    bullet = _bullet().lower()
 
-    Find the ``- **...**`` bullet that follows "Misplaced pure helper" and
-    slice to the next top-level bullet or heading, mirroring
-    ``_misplaced_helper_bullet`` in ``test_review_discipline_misplaced_helper.py``.
-    """
-    stage_two = _stage_two(text)
-    anchor = re.search(r"^- \*\*Misplaced pure helper\*\*", stage_two, re.MULTILINE)
-    assert anchor, (
-        "review-discipline Stage 2 must still carry the Misplaced-pure-helper "
-        "bullet this rule sits beside (CAL-796/CAL-823)."
+    missing = [t for t in _TERMS if t not in bullet]
+    assert not missing, (
+        f"the Cloned backend module helper bullet no longer states {missing}. "
+        f"Without the sibling comparison set the rule has nothing to grep "
+        f"against, and without the shared home it names the defect and no fix "
+        f"(#209)."
     )
-    rest = stage_two[anchor.end() :]
-    m = re.search(r"^- \*\*(?!Misplaced pure helper)", rest, re.MULTILINE)
-    assert m, (
-        "review-discipline Stage 2 has no bullet following Misplaced pure "
-        "helper naming the backend-module-clone rule (#209 AC-1)."
-    )
-    nxt = re.search(r"^(?:- \*\*|#{2,3} )", rest[m.start() + 1 :], re.MULTILINE)
-    end = m.start() + 1 + nxt.start() if nxt else len(rest)
-    return rest[m.start() : end]
-
-
-def test_review_discipline_has_backend_module_clone_rule() -> None:
-    """The skill states the backend-module-clone rule (AC-1)."""
-    bullet = _backend_module_clone_bullet(_skill_text()).lower()
-    # It is about a new backend *module*...
-    assert "module" in bullet, "the rule must name a new backend module"
-    # ...whose declared names must be grepped against *sibling* modules...
-    assert "sibling" in bullet, (
-        "the rule must compare against sibling modules, the reuse signal"
-    )
-    assert "grep" in bullet, (
-        "the rule must instruct grepping declared names against siblings, "
-        "in the style of its precedent structural checks"
-    )
-    # ...where a match is a clone, not a coincidence...
-    assert "clone" in bullet and "coincidence" in bullet, (
-        "a name that already exists in a sibling module must be named a "
-        "clone, not a coincidence"
-    )
-    # ...that belongs in a shared home, not copied module-to-module.
-    assert "shared home" in bullet, (
-        "the rule must send the clone to a shared home, not leave it copied"
-    )
-    assert "module-to-module" in bullet, (
-        "the rule must reject copying the helper/type module-to-module"
-    )
-
-
-def test_backend_module_clone_rule_is_in_stage_two() -> None:
-    """AC-2: the rule sits in Stage 2 quality, beside Misplaced pure helper."""
-    text = _skill_text()
-    stage_two_start = text.find("### Stage 2")
-    assert stage_two_start != -1, "review-discipline must have a Stage 2 section"
-    severity_start = text.find("## Severity")
-    assert severity_start != -1, "review-discipline must have a Severity section"
-    stage_two = text[stage_two_start:severity_start]
-    misplaced_idx = stage_two.find("**Misplaced pure helper**")
-    assert misplaced_idx != -1, (
-        "Stage 2 must still carry the Misplaced-pure-helper bullet"
-    )
-    # the new bullet must appear, and after Misplaced pure helper (siblings)
-    bullet = _backend_module_clone_bullet(text)
-    assert bullet.strip(), "the backend-module-clone bullet must be non-empty"
-    assert stage_two.index(bullet.strip()[:20]) > misplaced_idx, (
-        "the backend-module-clone rule must sit after Misplaced pure helper, "
-        "as its sibling structural check"
+    assert _NOT_A_COINCIDENCE.search(bullet), (
+        "the bullet no longer calls a matching sibling name a clone rather than "
+        "a coincidence. That refusal is the rule: each ticket introduces one "
+        "module, so no single reviewer ever sees the third strike, and a "
+        "reviewer permitted to read the match as coincidence never extracts "
+        "anything (#209, #459)."
     )
 
 

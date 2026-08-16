@@ -37,15 +37,39 @@ Acceptance criteria (CAL-907):
   :func:`test_work_discovery_skill_owns_pick_criteria`,
   :func:`test_build_routine_invokes_work_discovery_skill`, and the single-home
   drift guard :func:`test_pick_criteria_not_inlined_into_command`.
-* **AC-2** — a runbook documents re-syncing the local scheduled tasks to call
-  the versioned routine. Proven by
-  :func:`test_runbook_documents_trigger_resync`.
 * **AC-3** — a guard test fails when discovery logic is inlined into a trigger
   rather than invoked from the versioned surface. Proven by
-  :func:`test_pick_criteria_not_inlined_into_command`,
-  :func:`test_runbook_triggers_are_thin_callers`, and the detector-boundary pins
-  :func:`test_inlines_detector_flags_the_full_triad` /
+  :func:`test_pick_criteria_not_inlined_into_command` and the detector-boundary
+  pins :func:`test_inlines_detector_flags_the_full_triad` /
   :func:`test_inlines_detector_ignores_a_lone_token`.
+
+(AC-2's runbook half lived in ``commands/harness.md``, which ADR 0015 deleted
+along with the scheduled-task runbook it named. Its two functions went with
+their subject; this docstring cited them for several releases after they were
+gone — the class ``craft.md`` → *A docstring claiming coverage the code lacks*
+names, corrected under #459.)
+
+**What this module asserts (#459).** The detector and its two boundary
+controls are unchanged — ``_inlines_discovery`` is an executable predicate, and
+both the drift guard and the single-home claim call it. What changed is the
+prose half: eleven section pins across four rule-homes collapse to one anchored
+tripwire per home —
+
+* ``## Held tickets`` — the skip rule, polarity bound to *pick*;
+* ``## Actionability`` — the three-way deferral record and the three hold
+  kinds, polarity bound to *label* (all three, **not** the label alone);
+* ``## Return path`` — clearable / released / re-defer, polarity bound to
+  *unassign*;
+* ``## When a tracker write is refused`` — the posture lever, polarity bound to
+  *skill* (fix the posture, **not** this skill). This one was previously read
+  over the whole file, so it could be satisfied by a mention anywhere.
+
+``test_work_discovery_version_is_0_9_0`` went: a literal version pin needs
+hand-editing on every legitimate bump while tree-wide header⇄registry parity
+(``test_guidance_source.py::test_surface_headers_match_registry``) already
+holds the claim that matters. Whether the prose still means what it says is
+the review gate's (``code-quality`` Part C → *A guard over prose owns structure
+and negative space, never meaning*; ADR 0016).
 """
 
 from __future__ import annotations
@@ -61,7 +85,7 @@ REGISTRY = REPO_ROOT / "registry.yaml"
 
 def _section(text: str, heading_substr: str) -> str:
     """The body of the heading line containing ``heading_substr`` up to the next
-    heading of the same-or-higher level (mirrors ``test_routine_commands``)."""
+    heading of the same-or-higher level."""
     lines = text.splitlines()
     start = None
     level = 0
@@ -94,6 +118,39 @@ def _inlines_discovery(text: str) -> bool:
     """True iff *text* inlines the discovery-logic signature (the full triad)."""
     low = text.lower()
     return all(token in low for token in _TRIAD)
+
+
+_NEGATION = re.compile(
+    r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
+)
+
+
+def _sentences(block: str) -> list[str]:
+    """*block* flattened to one line and split into sentences.
+
+    The terminator may be followed by markdown emphasis or a closing bracket
+    (``skill.**``, ``(…).``) — consuming those is load-bearing, not cosmetic:
+    a bolded lead-in that ends ``.**`` otherwise glues its sentence to the
+    next one and widens every negation window that reads this (``craft.md`` →
+    *The text unit is part of the predicate*). A dry run of this module's #459
+    mutation table surfaced exactly that: an inverted clause survived on a
+    negation belonging to the sentence after it.
+    """
+    flat = " ".join(block.split())
+    return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
+
+
+def _negation_bound_to(block: str, term: str) -> bool:
+    """Does some sentence of *block* carry both *term* and a negation token?
+
+    The binding is the point: a bare ``"not" in block`` over a paragraph is
+    satisfied by almost any English prose, so the negation is asserted against
+    the clause whose direction is the rule (ADR 0016; ``craft.md`` → *Mutate
+    the rule into its opposite, not only out of existence*).
+    """
+    return any(
+        _NEGATION.search(s) for s in _sentences(block.lower()) if term in s
+    )
 
 
 # --- detector boundary (keeps the drift guard honest / non-vacuous) -----------
@@ -206,74 +263,85 @@ def test_pick_criteria_not_inlined_into_command() -> None:
     )
 
 
-# --- AC-2: the runbook documents the scheduled-task re-sync --------------------
+# --- the four prose rule-homes, one anchored tripwire each --------------------
 
 
-# --- CAL-1108: a refused write is a config gap, not a bug in this skill -------
+def test_actionability_records_a_deferral_three_ways() -> None:
+    """Tripwire — the deferral step keeps all three writes and all three hold kinds.
 
+    Terms: ``comment`` (what the ticket needs), ``assign`` + ``operator`` (the
+    machine-readable hold signal and its holder), and the three hold labels
+    ``decision`` / ``input`` / ``operator`` with the *skips all three* rule and
+    the ``narrower`` note that ADR 0006 added.
 
-def test_work_discovery_still_instructs_the_deferral_write() -> None:
-    """CAL-1108 (the regression guard proper): the deferral step must keep
-    instructing the tracker write — a comment naming what the ticket needs, and
-    the ``decision`` label.
-
-    This is pinned because it was once removed. A CAL-1087 build rewrote the step
-    to "surface it in the run's report" on the premise that an unattended runner
-    cannot write to a tracker; the premise was false (the refusal names writes
-    *the task file requests* — a **configuration** gap), and the rewrite would
-    have shipped, auto-pulling, to every consuming repo whose posture already
-    permits the write, telling a capable runner to go quiet. Reverted whole; this
-    guard is what makes the reversion stick."""
+    **No negation is asserted, and none is faked.** The rule here is an
+    *obligation* — record the deferral three ways — not a prohibition, and the
+    section's negation tokens attach to other clauses inside the same bullet
+    (*something the run cannot supply*), so a bound negation would stay green
+    with the obligation gutted. What carries the claim instead is the breadth:
+    all three writes and all three hold kinds named in one window (ADR 0016).
+    The direction — that the label alone is not enough — is the review gate's.
+    """
     body = _section(SKILL.read_text(), "Actionability")
-    assert "comment" in body.lower(), (
-        "work-discovery's deferral step must still instruct a comment naming "
-        "what the ticket needs. If a refusal prompted its removal, fix the "
-        "posture instead — the write is sanctioned in settings, not disowned "
-        "here (CAL-1108)."
+    assert body, "the skill must carry an 'Actionability' section (CAL-1108)."
+    low = body.lower()
+    for term in ("comment", "assign", "operator", "narrow"):
+        assert term in low, (
+            "work-discovery's deferral step must state the record in terms of "
+            f"{term!r} — if a refusal prompted its removal, fix the posture "
+            "instead (CAL-1108 / CAL-1166 / ADR 0006)."
+        )
+    for label in ("`decision`", "`input`", "`operator`"):
+        assert label in body, (
+            f"the deferral step must name the {label} hold kind (ADR 0006, #191)."
+        )
+    assert re.search(r"skips? all three", body, re.IGNORECASE), (
+        "the deferral step must state that the loop skips all three hold kinds "
+        "— the outbound semantics are unchanged by adding a kind (ADR 0006)."
     )
-    assert "`decision`" in body, (
-        "work-discovery's deferral step must still instruct the `decision` "
-        "label — it is what removes the ticket from the next tick's candidate "
-        "set (CAL-1108)."
-    )
-
-
-def test_work_discovery_names_the_posture_lever() -> None:
-    """CAL-1108: the skill must name the lever, so an agent whose write is
-    refused fixes the configuration rather than concluding this skill is wrong.
-
-    Without this, the refusal reads as a guidance bug — and the agent's next move
-    is to hand-edit its *installed* guidance, which the process doc forbids, or
-    to file an upstream ticket against a step that was never broken. It has gone
-    that way twice."""
-    text = SKILL.read_text()
-    assert "autoMode" in text, (
-        "work-discovery must name `autoMode.allow` — the natural-language "
-        "allowlist that sanctions an unattended run's writes — as the lever to "
-        "reach for when a write is refused (CAL-1108)."
-    )
-    assert "settings/" in text, (
-        "work-discovery must name where the posture lives (the profile's "
-        "settings file), not merely that one exists (CAL-1108)."
-    )
-    assert re.search(r"configuration|posture", text, re.IGNORECASE), (
-        "work-discovery must state the direction of the fix: a refused write is "
-        "a configuration gap, so change the posture, not this skill (CAL-1108)."
+    assert re.search(r"all three", body, re.IGNORECASE), (
+        "the deferral must require all three of comment, label and assignment — "
+        "assignment is what the skip rule actually reads (CAL-1166 AC-2)."
     )
 
 
-# --- CAL-1166: skip rule keyed on assignment; deferral assigns the operator ---
+def test_refused_write_section_names_the_posture_lever() -> None:
+    """Tripwire — a refused write routes to the configuration, not to this skill.
+
+    Anchored on ``## When a tracker write is refused``; the version this
+    replaces read the whole file, so a mention of ``autoMode`` anywhere in the
+    skill satisfied it. Terms: ``automode`` (the allowlist), ``settings/``
+    (where it lives), ``posture`` (what to change). Polarity: a sentence naming
+    this skill carries a negation — *fix the posture, **not** this skill*.
+    Without that binding the guard reads the same green on a section that told
+    an agent the skill itself was the bug, which has been attempted twice.
+    """
+    body = _section(SKILL.read_text(), "When a tracker write is refused")
+    assert body, "the skill must carry a refused-write section (CAL-1108)."
+    low = body.lower()
+    for term in ("automode", "settings/", "posture"):
+        assert term in low, (
+            "the refused-write section must name the lever in terms of "
+            f"{term!r} — a refused write is a configuration gap (CAL-1108)."
+        )
+    assert _negation_bound_to(body, "skill"), (
+        "the section must state the direction of the fix: change the posture, "
+        "not this skill. Rewriting the deferral step into 'report it instead' "
+        "reads like a fix and is not one (CAL-1108)."
+    )
 
 
 def test_held_tickets_section_keys_on_assignment() -> None:
-    """CAL-1166 AC-1: the skip rule names a ticket **assigned to a human** as the
-    *primary* held signal (any state), with the transitional ``decision`` /
-    ``operator`` label OR that keeps existing deferred tickets safe until the
-    queue backfill assigns them. This replaces the label-only "The ``decision``
-    label" skip section — assignment is the machine-readable human-hold signal,
-    the label is the human-readable explanation of *why*."""
-    text = SKILL.read_text()
-    section = _section(text, "Held")
+    """Tripwire — the skip rule is keyed on assignment, with the label OR as bridge.
+
+    Terms: ``assign`` (the signal), ``primary`` (its rank against the labels),
+    and the three hold labels the transitional OR still covers. Polarity: a
+    sentence naming what the loop picks carries a negation — a ticket a human
+    holds is **not** the loop's to pick. The four-term co-occurrence this
+    replaces reads identically on a section that told the loop to pick held
+    tickets up.
+    """
+    section = _section(SKILL.read_text(), "Held")
     assert section, (
         "the skill must carry a 'Held tickets' section naming what the loop "
         "skips — it replaces the label-only skip section (CAL-1166 AC-1)."
@@ -287,129 +355,55 @@ def test_held_tickets_section_keys_on_assignment() -> None:
         "the held section must name assignment as the *primary* signal, the "
         "label OR as transitional (CAL-1166 AC-1)."
     )
-    assert "`operator`" in section and "`decision`" in section, (
-        "the held section must name the transitional `decision`/`operator` label "
-        "OR — the fallback until the queue backfill assigns held tickets "
-        "(CAL-1166 AC-1)."
+    for label in ("`operator`", "`decision`", "`input`"):
+        assert label in section, (
+            f"the held section must name the transitional {label} label OR — the "
+            "fallback until the queue backfill assigns held tickets (CAL-1166)."
+        )
+    assert _negation_bound_to(section, "pick"), (
+        "the held section must say the loop does *not* pick a held ticket — "
+        "without that negation the section reads the same whether held work is "
+        "skipped or claimed (CAL-1166 AC-1)."
     )
 
 
-def test_deferral_instruction_assigns_the_operator() -> None:
-    """CAL-1166 AC-2: the deferral step assigns the ticket to the operator — in
-    addition to the comment and label — because assignment is the signal the
-    held-tickets skip rule now reads. (The `defer` *verb* performing the
-    assignment write, and its `autoMode.allow` clause, are CAL-1167's scope; this
-    skill instructs it, and the transitional OR covers the gap in between.)"""
-    body = _section(SKILL.read_text(), "Actionability")
-    low = body.lower()
-    assert "assign" in low, (
-        "the deferral step must assign the held ticket to the operator "
-        "(CAL-1166 AC-2)."
-    )
-    assert "operator" in low, (
-        "the deferral must name the operator as the assignee — the human who "
-        "then holds the ticket (CAL-1166 AC-2)."
-    )
+def test_return_path_defines_clearable_and_released() -> None:
+    """Tripwire — the return path defines both halves and its re-defer case.
 
-
-def test_work_discovery_version_is_0_9_0() -> None:
-    """Bumped by #435 for the routine re-pointing; the registry row agrees."""
-    text = SKILL.read_text()
-    assert "guidance:work-discovery@0.9.0" in text, (
-        "the skill stamp must be work-discovery@0.9.0 (#435 — the `/harness "
-        "routine build` caller and its `defer` verb are retired)."
-    )
-    reg = REGISTRY.read_text()
-    assert re.search(
-        r"skills/work-discovery/SKILL\.md:\s*\{[^}]*version:\s*0\.9\.0[^}]*\}", reg
-    ), "the registry files: row for work-discovery must be version 0.9.0 (#435)."
-
-
-# --- ADR 0006 / #191: the third hold kind, `input` --------------------------
-
-
-def test_work_discovery_names_three_hold_kinds() -> None:
-    """ADR 0006 (#191): the skill names all three hold kinds — `decision`,
-    `input`, `operator` — partitioning held work by what kind of human input a
-    ticket waits on, and states that the loop skips all three (the outbound
-    hold semantics are unchanged; only the return path distinguishes them)."""
-    text = SKILL.read_text()
-    assert "`decision`" in text and "`input`" in text and "`operator`" in text, (
-        "the skill must name all three hold kinds — decision, input, operator "
-        "(ADR 0006, #191)."
-    )
-    assert re.search(r"skips? all three", text, re.IGNORECASE), (
-        "the skill must state that the loop skips all three hold kinds — the "
-        "outbound skip semantics are unchanged by adding a kind (ADR 0006, #191)."
-    )
-
-
-def test_work_discovery_states_operator_label_narrowed_meaning() -> None:
-    """ADR 0006 (#191): the skill states that `operator`'s meaning narrows to an
-    interactive session only — it no longer also covers "the operator owes this
-    ticket something" now that `input` exists for that case."""
-    text = SKILL.read_text()
-    assert re.search(r"narrow", text, re.IGNORECASE), (
-        "the skill must state that the `operator` label's meaning narrows now "
-        "that `input` exists as its own kind (ADR 0006, #191)."
-    )
-
-
-# --- #192: the return path — when a held ticket is clearable + released ------
-
-
-def test_return_path_section_present() -> None:
-    """#192: the skill states the return-path test — the inverse of the
-    deferral test — so `/decision` (#193) delegates the judgment here instead
-    of restating it."""
+    Terms: ``clearable`` and ``acceptance criteria`` (when a hold lifts),
+    ``released`` with ``change spec`` / ``label removed`` / ``unassign`` (the
+    three steps), ``load-bearing`` (why the third one is not optional), and a
+    ``re-defer`` word (the incomplete-answer case). Polarity: a sentence naming
+    the unassignment carries a negation — a sweep that records an answer
+    *without* unassigning leaves the ticket held forever. Five separate
+    functions over one section could not see that direction between them.
+    """
     section = _section(SKILL.read_text(), "Return path")
     assert section, (
         "the skill must carry a return-path section naming when a held ticket "
         "is clearable and what releasing it means (#192)."
     )
-
-
-def test_return_path_defines_clearable() -> None:
-    """#192: a held ticket is clearable when the only thing missing is input
-    the operator has now supplied — for a `decision` hold, an answer that
-    makes the acceptance criteria checkable."""
-    section = _section(SKILL.read_text(), "Return path")
     low = section.lower()
-    assert "clearable" in low, "the section must define 'clearable' (#192)."
-    assert "acceptance criteria" in low, (
-        "clearable must be tied to the acceptance criteria becoming checkable "
-        "(#192)."
-    )
-
-
-def test_return_path_defines_released_three_steps() -> None:
-    """#192: released means all three of: the resolution written into the
-    change spec, the hold label removed, and the operator unassigned — with
-    the unassignment called out as load-bearing."""
-    section = _section(SKILL.read_text(), "Return path")
-    low = section.lower()
-    assert "released" in low, "the section must define 'released' (#192)."
-    assert "change spec" in low, (
-        "released must require the resolution written into the change spec, "
-        "not left only in a comment thread (#192)."
-    )
-    assert "label removed" in low, (
-        "released must require the hold label removed (#192)."
-    )
-    assert "unassign" in low, "released must require the operator unassigned (#192)."
-    assert "load-bearing" in low, (
-        "the unassignment must be called out as load-bearing — a sweep that "
-        "records an answer without unassigning leaves the ticket held forever "
-        "(#192)."
-    )
-
-
-def test_return_path_covers_re_defer_case() -> None:
-    """#192: a ticket released but still not wholly actionable is re-deferred,
-    not left half-cleared."""
-    section = _section(SKILL.read_text(), "Return path")
+    for term in (
+        "clearable",
+        "acceptance criteria",
+        "released",
+        "change spec",
+        "label removed",
+        "unassign",
+        "load-bearing",
+    ):
+        assert term in low, (
+            f"the return-path section must define the release in terms of {term!r} "
+            "(#192)."
+        )
     assert re.search(r"re-?defer", section, re.IGNORECASE), (
         "the section must cover the re-defer case — a ticket released but "
         "still not actionable goes back through deferral, not left "
         "half-cleared (#192)."
+    )
+    assert _negation_bound_to(section, "unassign"), (
+        "the unassignment must carry its negation — a sweep that records an "
+        "answer *without* unassigning leaves the ticket held forever, which is "
+        "the failure mode this section exists to name (#192)."
     )

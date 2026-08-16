@@ -143,24 +143,16 @@ def _section(text: str, header: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The vocabulary, derived from the policy module rather than typed
+#
+# #459 removed ``test_the_level_vocabulary_is_populated`` from here. It asserted
+# that ``ASSURANCE_LEVELS`` is non-empty and contains ``complex``, and that
+# ``ASSURANCE_LABEL_PREFIX`` ends in a colon — all three over literals declared
+# a few dozen lines above it in this same module. No edit to the guidance tree
+# these guards read can make it fail; only an edit to this file can, and the
+# author of that edit is holding the assertion in the same diff. That is the
+# constant-asserting-on-itself shape ADR 0016 names, and it is not a floor: it
+# never observed the subject.
 # ---------------------------------------------------------------------------
-
-
-def test_the_level_vocabulary_is_populated() -> None:
-    """FLOOR on the vocabulary every predicate below derives from.
-
-    An empty ``ASSURANCE_LEVELS`` would make the rubric's "names exactly the
-    vocabulary" assertion pass against a rubric naming nothing, and would empty
-    the fixed-level ban in the GitHub recipe. Naming ``complex`` pins that the
-    tuple is the decided vocabulary and not, say, a filtered subset.
-    """
-    assert ASSURANCE_LEVELS, "the ASSURANCE_LEVELS vocabulary is empty"
-    assert "complex" in ASSURANCE_LEVELS, (
-        f"the level vocabulary no longer contains `complex`: {ASSURANCE_LEVELS}"
-    )
-    assert ASSURANCE_LABEL_PREFIX.endswith(":"), (
-        f"the label prefix {ASSURANCE_LABEL_PREFIX!r} is not a label namespace"
-    )
 
 
 # ---------------------------------------------------------------------------

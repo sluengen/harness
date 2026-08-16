@@ -1,35 +1,52 @@
 """#231 — a sync-critical pattern extracts on the second copy, not the third.
 
-`code-quality` Part B's rule-of-three tells the builder to extract on the
-*third* strike. The steward's cross-file-duplication lens (`agents/steward.md`
-lens 2) already applies a stricter bar — *two or more* — when the duplicated
-pattern is a security check, an auth gate, or a domain rule that must stay in
-sync, since two copies that can drift are already a latent bug. That gap let a
-duplicated authorization predicate accumulate multiple hand-written copies
-through separate merge reviews without a build-time rule ever naming it: at
-copy two, the rule-of-three's own wording says "twice is a coincidence."
+``code-quality`` Part B's rule-of-three tells the builder to extract on the
+*third* strike. The steward's cross-file-duplication lens already applies a
+stricter bar — *two or more* — when the duplicated pattern is a security check,
+an auth gate, or a domain rule that must stay in sync, since two copies that can
+drift are already a latent bug. That gap let a duplicated authorization predicate
+accumulate hand-written copies through separate merge reviews without a
+build-time rule ever naming it: at copy two, the rule-of-three's own wording says
+"twice is a coincidence."
 
-Filed via a downstream repo's steward assessment, routed upstream per this
-repo's own guidance-fix-routing rule (`CLAUDE.md`).
+Filed via a downstream repo's steward assessment, routed upstream per this repo's
+own guidance-fix-routing rule (`CLAUDE.md`).
 
-Acceptance criteria (this ticket):
+**Converted under #459** (ADR 0016, and ``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Five functions over one
+paragraph became the single tripwire below. Three went for cause:
 
-* **AC-1** — `code-quality` Part B, "Extract on the third strike", states that
-  a permission check, an auth gate, or a domain rule that must stay in sync
-  extracts on the **second** copy, immediately after the rule-of-three
-  paragraph and before the mirrors-admission paragraph. Proven by
-  :func:`test_second_copy_paragraph_names_the_subjects`,
-  :func:`test_second_copy_paragraph_states_the_threshold_and_rationale`, and
-  :func:`test_second_copy_paragraph_sits_between_its_neighbours`.
-* **AC-2** — the guard is scoped to the *new* paragraph, not the section as a
-  whole: the existing rule-of-three sentence already contains the phrase "a
-  permission check", so an unscoped guard would be green before this ticket's
-  text exists. Proven by :func:`test_selector_is_a_proper_subset_of_the_section`.
-* **AC-3** — the same subject vocabulary ("auth gate", the stay-in-sync domain
-  rule) that grounds this paragraph is not orphaned from the steward's lens
-  that already applies the two-copy bar, so a later edit cannot silently drop
-  one surface's half of the rule. Proven by
-  :func:`test_subject_vocabulary_still_present_in_steward_lens`.
+* the **paragraph-index ordering** test (``rot_idx < second_copy_idx <
+  mirrors_idx``) encoded no rule — paragraph order inside a subsection is
+  editorial, and a correct insertion invalidates the ordinal (``craft.md`` → *An
+  ordinal reference into an enumeration is invalidated by a correct insertion*);
+* the **proper-subset selector control** re-asserted what the content-based
+  selector already guarantees by construction;
+* the **duplicate vocabulary** test asserted a strict subset of the term set.
+
+**One acceptance criterion is retired, not moved.** AC-3 claimed the sync-critical
+vocabulary is not orphaned from the steward's lens that already applies the
+two-copy bar, and named ``test_subject_vocabulary_still_present_in_steward_lens``
+as its proof. No such function existed: the module's actual
+``test_subject_vocabulary_stays_in_code_quality`` read the *code-quality*
+paragraph, so the cross-surface claim was never measured — ``craft.md`` → *A
+docstring claiming coverage the code lacks*. Restoring it would mean adding a
+positive-meaning pin over ``agents/steward.md`` prose, which is the shape ADR
+0016 removes. The claim is therefore retired here and left to the reviewer, and
+this paragraph is the record of that call.
+
+**What this module now asserts.** One tripwire, one rule-home:
+
+* **Anchor** — the second-copy paragraph inside ``### Extract on the third
+  strike``, sliced from inside ``## Part B — Structure``. The window is the
+  paragraph because the rule-of-three paragraph beside it already contains the
+  phrase "a permission check" as an example pattern, so a section-scoped
+  assertion would be green before this rule was ever written.
+* **Term set** — ``second``, ``permission check``, ``auth gate``, ``domain
+  rule``, ``coincidence``.
+* **Polarity** — the negation bound to what it governs: the coincidence
+  allowance *does **not** apply* to these subjects (``craft.md`` → *Mutate the
+  rule into its opposite, not only out of existence*).
 """
 
 from __future__ import annotations
@@ -37,148 +54,70 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.unit.test_assurance_filing_rubric import _section
+
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
+_PART_B = "## Part B — Structure"
 _HEADING = "### Extract on the third strike"
 
+#: The words the rule cannot be stated without.
+_TERMS = (
+    r"\bsecond\b",
+    r"\bpermission check\b",
+    r"\bauth gate\b",
+    r"\bdomain rule\b",
+    r"\bcoincidence\b",
+)
 
-def _section() -> str:
-    """The 'Extract on the third strike' subsection's own span.
-
-    Sliced from its heading to the next ``###``/``##`` heading so the
-    assertions see only this rule, not the neighbouring Structure subsections
-    or the mirrors-admission paragraph that already lives in the same section.
-    """
-    text = _CODE_QUALITY.read_text()
-    m = re.search(rf"^{re.escape(_HEADING)}\s*$", text, re.MULTILINE)
-    assert m, f"code-quality must have a {_HEADING!r} section"
-    rest = text[m.end() :]
-    end = re.search(r"^#{2,3} ", rest, re.MULTILINE)
-    return (rest if end is None else rest[: end.start()]).strip()
-
-
-def _paragraphs() -> list[str]:
-    """The section's paragraphs, blank-line separated, in file order."""
-    return [block.strip() for block in _section().split("\n\n") if block.strip()]
+#: The negation **bound to the allowance it withdraws**. A bare ``not`` over the
+#: paragraph would be decoration; within a few words of ``apply`` it is the
+#: clause that inverts with the rule.
+_DOES_NOT_APPLY = re.compile(
+    r"\b(?:not|never)\b(?:\W+\w+){0,3}?\W+appl(?:y|ies)\b", re.IGNORECASE
+)
 
 
 def _second_copy_paragraph() -> str:
-    """The new paragraph, selected by content — not by index.
+    """The sync-critical paragraph, selected by content — never by index.
 
-    ``_paragraphs()[1]`` would be the pre-existing rule-of-three paragraph
-    until this ticket's text lands, and a later insertion elsewhere in the
-    section would silently redirect a hardcoded index. Select the block that
-    states the **second**-copy threshold instead.
+    ``_section`` is imported rather than re-spelled, and the two calls are
+    nested so Part B membership lives in the anchor instead of a second test.
     """
-    hits = [b for b in _paragraphs() if "second" in b.lower()]
+    text = _CODE_QUALITY.read_text(encoding="utf-8")
+    section = _section(_section(text, _PART_B), _HEADING)
+    paragraphs = [block.strip() for block in section.split("\n\n") if block.strip()]
+    hits = [p for p in paragraphs if re.search(r"\bsecond\b", p, re.IGNORECASE)]
     assert hits, (
-        "no paragraph in 'Extract on the third strike' states a second-copy "
-        "threshold — the sync-critical exception (permission check / auth "
-        "gate / domain rule that must stay in sync) is missing (AC-1)."
+        f"no paragraph in {_HEADING!r} states a second-copy threshold — the "
+        "sync-critical exception (permission check / auth gate / domain rule that "
+        "must stay in sync) is missing (#231 AC-1)."
     )
-    return "\n\n".join(hits)
-
-
-def _rule_of_three_paragraph() -> str:
-    hits = [b for b in _paragraphs() if "coincidence" in b.lower()]
-    assert hits, "the rule-of-three paragraph ('twice is a coincidence') is missing"
+    assert len(hits) == 1, (
+        f"{_HEADING!r} states a second-copy threshold in {len(hits)} paragraphs; "
+        "this guard's window can no longer tell which one it is pinning."
+    )
     return hits[0]
 
 
-def _mirrors_admission_paragraph() -> str:
-    hits = [b for b in _paragraphs() if "mirrors" in b.lower()]
-    assert hits, "the mirrors-admission paragraph is missing"
-    return hits[0]
+def test_the_sync_critical_second_copy_rule_has_a_home() -> None:
+    """One tripwire: the paragraph is in Part B, names its subjects, keeps polarity."""
+    para = _second_copy_paragraph()
 
-
-# --- AC-1: the paragraph exists, names its subjects, states the threshold -----
-
-
-def test_second_copy_paragraph_names_the_subjects() -> None:
-    """The paragraph names all three sync-critical subjects (AC-1)."""
-    para = _second_copy_paragraph().lower()
-    for phrase in ("permission check", "auth gate", "domain rule"):
-        assert phrase in para, (
-            f"the second-copy paragraph must name {phrase!r} as a sync-critical "
-            f"subject; got: {para!r} (AC-1)."
-        )
-    assert "stay in sync" in para or "sync" in para, (
-        "the second-copy paragraph must state that the domain rule must stay "
-        f"in sync; got: {para!r} (AC-1)."
+    missing = [t for t in _TERMS if not re.search(t, para, re.IGNORECASE)]
+    assert not missing, (
+        "the second-copy paragraph no longer carries the terms the rule cannot be "
+        f"stated without; missing {missing}. A permission check, an auth gate or a "
+        "domain rule that must stay in sync extracts on the second copy, because two "
+        f"copies that can drift are already a latent bug (#231 AC-1). Paragraph "
+        f"read:\n{para}"
     )
 
-
-def test_second_copy_paragraph_states_the_threshold_and_rationale() -> None:
-    """The paragraph states 'second copy' extraction and the drift rationale (AC-1)."""
-    para = _second_copy_paragraph().lower()
-    assert "second" in para and "extract" in para, (
-        "the paragraph must require extraction on the second copy; got: "
-        f"{para!r} (AC-1)."
+    assert _DOES_NOT_APPLY.search(para), (
+        "the rule has lost its polarity: the coincidence allowance must be stated as "
+        "*not applying* to these subjects. Without the negation bound to `apply`, a "
+        "paragraph naming all three subjects while granting them the same "
+        f"twice-is-a-coincidence latitude passes (#231 AC-1). Paragraph read:\n{para}"
     )
-    assert "drift" in para or "latent bug" in para, (
-        "the paragraph must state the rationale — two copies that can drift "
-        f"are already a latent bug; got: {para!r} (AC-1)."
-    )
-    assert "coincidence" in para, (
-        "the paragraph must say the coincidence allowance does not apply to "
-        f"these subjects; got: {para!r} (AC-1)."
-    )
-
-
-def test_second_copy_paragraph_sits_between_its_neighbours() -> None:
-    """The paragraph lands directly after rule-of-three, before mirrors-admission (AC-1)."""
-    paragraphs = _paragraphs()
-    rot = _rule_of_three_paragraph()
-    mirrors = _mirrors_admission_paragraph()
-    second_copy = _second_copy_paragraph()
-
-    assert second_copy != rot and second_copy != mirrors, (
-        "the second-copy paragraph must be distinct from its neighbours, not "
-        "folded into either (AC-1)."
-    )
-    rot_idx = paragraphs.index(rot)
-    mirrors_idx = paragraphs.index(mirrors)
-    second_copy_idx = paragraphs.index(second_copy.split("\n\n")[0])
-
-    assert rot_idx < second_copy_idx < mirrors_idx, (
-        "the second-copy paragraph must sit strictly between the rule-of-three "
-        f"paragraph (index {rot_idx}) and the mirrors-admission paragraph "
-        f"(index {mirrors_idx}); got index {second_copy_idx} (AC-1)."
-    )
-
-
-# --- AC-2: the guard is scoped to the new paragraph, not the whole section ----
-
-
-def test_selector_is_a_proper_subset_of_the_section() -> None:
-    """The second-copy paragraph is a proper subset of the section (AC-2).
-
-    The existing rule-of-three sentence already contains the exact phrase "a
-    permission check" (as an example load-bearing pattern), so an unscoped
-    guard checking the whole section for that phrase would be green before
-    this ticket's paragraph ever existed. Pin the selector to a strict subset.
-    """
-    section = _section()
-    second_copy = _second_copy_paragraph()
-    assert second_copy != section, (
-        "the second-copy selector must not degenerate to the whole section — "
-        "that would make the AC-1 tests pass on pre-existing wording (AC-2)."
-    )
-    assert second_copy in section
-    assert second_copy != _rule_of_three_paragraph(), (
-        "the second-copy paragraph must be its own paragraph, distinct from "
-        "the rule-of-three paragraph that already mentions 'a permission "
-        "check' as an example pattern (AC-2)."
-    )
-
-
-# --- AC-3: the subject vocabulary stays in the domain-standard home -----------
-
-
-def test_subject_vocabulary_stays_in_code_quality() -> None:
-    """The domain-standard home retains the sync-critical subjects (AC-3)."""
-    para = _second_copy_paragraph().lower()
-    assert "auth gate" in para
-    assert "domain rule" in para and "sync" in para

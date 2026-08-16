@@ -35,6 +35,31 @@ The *CONTEXT schema doc* half — the last spec of the trilogy (issue #176):
 * **#176 AC-3** — the ``template-context`` stamp is bumped past its pre-change
   value with the ``registry.yaml`` row agreeing.
 
+**What this module asserts (#459).** Two rule-homes, one tripwire each, plus
+the negative space and the registry correspondence.
+
+* ``skills/work-discovery/SKILL.md`` § *The queue* — the conditional scope
+  rule, with the **negation bound to hardcoding**: the scope is resolved at
+  runtime, never hardcoded. The provider-neutrality ban beside it stays as its
+  own test: it is a zero-membership sweep (no backend name may appear in the
+  active queue policy) and needs no judgement of meaning.
+* ``templates/CONTEXT.template.md`` § the ``project:`` field — that the field
+  is documented optional, in both modes, with the per-backend meaning of
+  "unscoped". **This rule has no negation to bind to**, and none is faked: it
+  is an affirmative claim about a config field. What carries discrimination
+  instead is ``_states_optionality`` and its control, which proves the
+  predicate is not satisfied by the proposal name the field cites.
+
+Two guards went. ``test_work_discovery_ranking_unchanged`` was a whole-file
+co-occurrence of three common words, satisfied by almost any version of the
+skill; ``test_template_repo_project_drops_required_only_wording`` re-ran two
+assertions already made above it. The two ``>`` version floors went with them:
+a floor pinned to a shipped version only ever weakens as the version climbs,
+while the registry-agreement half beside it is the assertion that actually
+holds (``craft.md`` → *Floors decay into decoration*). Whether the prose still
+means what it says is the review gate's (``code-quality`` Part C → *A guard
+over prose owns structure and negative space, never meaning*; ADR 0016).
+
 **#435 dropped one test and kept the rest.** ``test_repo_project_optional_read_path``
 exercised ``harness.repo_config.repo_project`` — the reader that resolved the
 field at runtime — and ADR 0015 deletes the package that read it. Nothing in the
@@ -58,7 +83,7 @@ REGISTRY = REPO_ROOT / "registry.yaml"
 
 def _section(text: str, heading_substr: str) -> str:
     """Body of the heading line containing ``heading_substr`` up to the next
-    heading of the same-or-higher level (mirrors ``test_routine_commands``)."""
+    heading of the same-or-higher level."""
     lines = text.splitlines()
     start = None
     level = 0
@@ -80,10 +105,47 @@ def _section(text: str, heading_substr: str) -> str:
 # --- AC-1: work-discovery states scope conditionally, tracker-neutral --------
 
 
+def _sentences(block: str) -> list[str]:
+    """*block* flattened to one line and split into sentences.
+
+    The terminator may be followed by markdown emphasis or a closing bracket
+    (``skill.**``, ``(…).``) — consuming those is load-bearing, not cosmetic:
+    a bolded lead-in that ends ``.**`` otherwise glues its sentence to the
+    next one and widens every negation window that reads this (``craft.md`` →
+    *The text unit is part of the predicate*). A dry run of this module's #459
+    mutation table surfaced exactly that: an inverted clause survived on a
+    negation belonging to the sentence after it.
+    """
+    flat = " ".join(block.split())
+    return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
+
+
+#: The negation **bound to the verb it governs**. A bare negation alternation
+#: searched over the whole sentence is direction-free in the way that matters
+#: here: the sentence carries two verbs (*resolve at runtime*, *hardcode*), so
+#: swapping which one the negation attaches to inverts the rule — *hardcode it
+#: here, and never resolve it at runtime* — while a sentence-scoped search still
+#: finds its token and reads green. Measured under review of #459
+#: (``craft.md`` → *The negation window assumes a false converse*).
+_NEVER_HARDCODED = re.compile(
+    r"\b(?:never|not|no|nor|cannot|can't|rather than|instead of)\b"
+    r"(?:\W+\w+){0,4}?\W*hardcod\w*",
+    re.IGNORECASE,
+)
+
+
 def test_work_discovery_queue_states_scope_conditionally() -> None:
-    """AC-1: the 'The queue' section names ``repo.project`` as the optional scope
-    lever and states both branches — set → scope to that project; unset → the
-    whole tracker queue."""
+    """Tripwire — 'The queue' states the scope conditionally and resolves it late.
+
+    Terms: ``repo.project`` (the lever), an optionality word, and a
+    whole/full word (what the unset branch widens to). Polarity: the sentence
+    naming ``repo.project`` negates *hardcoding* specifically — resolve it at
+    runtime, **never hardcode it**. The negation is bound to that verb rather
+    than searched over the sentence, because the sentence names two verbs and a
+    free-floating token attaches to whichever one is convenient: *hardcode it
+    here, and never resolve it at runtime* keeps every term and every negation
+    while stating the pre-change defect this rule closed (#175 AC-1).
+    """
     body = _section(SKILL.read_text(), "The queue")
     assert body, "work-discovery must carry a 'The queue' section."
     low = body.lower()
@@ -95,6 +157,15 @@ def test_work_discovery_queue_states_scope_conditionally() -> None:
     )
     assert re.search(r"whole|full", low), (
         "the unset branch must widen to the whole/full tracker queue (#175 AC-1)."
+    )
+    lever = [s for s in _sentences(low) if "repo.project" in s]
+    assert lever, "no sentence in the queue section names repo.project (#175 AC-1)."
+    assert any(_NEVER_HARDCODED.search(s) for s in lever), (
+        "the scope lever must negate *hardcoding* specifically — resolved at "
+        "runtime, never hardcoded. A negation loose in the sentence is satisfied "
+        "by an inversion that re-attaches it to the other verb, which leaves a "
+        "scope named as a literal address — the drift this rule exists to "
+        "prevent (#175 AC-1)."
     )
 
 
@@ -110,38 +181,25 @@ def test_work_discovery_queue_is_tracker_neutral() -> None:
     )
 
 
-def test_work_discovery_ranking_unchanged() -> None:
-    """AC-1: the ranking triad (dependencies, priority, decision-skip) stays
-    single-homed in the skill — the scoping change does not disturb it."""
-    low = SKILL.read_text().lower()
-    assert all(t in low for t in ("dependencies", "priority", "decision")), (
-        "the ranking/actionability logic must be unchanged by the scoping edit "
-        "(#175 AC-1)."
-    )
-
-
 # --- AC-2: the Build routine resolves scope from CONTEXT, documents unscoped --
 
 
-# --- AC-3: both guidance stamps bumped, registry rows agree ------------------
+# --- AC-3: the guidance stamp and its registry row agree ---------------------
 
 
-def test_guidance_stamps_bumped() -> None:
-    """AC-3: ``work-discovery`` is stamped past 0.3.0, with the ``registry.yaml``
-    row agreeing (the surface-parity guard enforces the pairing; this pins the
-    bump direction).
+def test_guidance_stamp_agrees_with_registry() -> None:
+    """AC-3: the ``work-discovery`` header stamp and its ``registry.yaml`` row
+    are the same version.
 
-    The companion half pinned the routine-build command doc past 0.1.0; #435
-    retired that command, and the scope resolution it restated is now
-    single-homed in the skill above — which is what the AC-1 guards cover.
+    The ``> (0, 3, 0)`` floor this carried is gone: a floor pinned to a shipped
+    version can only ever weaken as the version climbs past it, and it never
+    measured anything the correspondence below does not (``craft.md`` →
+    *Floors decay into decoration*).
     """
     skill = SKILL.read_text()
     ms = re.search(r"guidance:work-discovery@(\d+)\.(\d+)\.(\d+)", skill)
     assert ms, "the work-discovery skill must carry a guidance stamp."
     sk_ver = tuple(int(g) for g in ms.groups())
-    assert sk_ver > (0, 3, 0), (
-        f"work-discovery must be bumped past 0.3.0, got {ms.group(0)} (#175 AC-3)."
-    )
 
     reg = REGISTRY.read_text()
     sk_str = ".".join(str(n) for n in sk_ver)
@@ -212,8 +270,21 @@ def _repo_project_doc(text: str) -> str:
 # --- #176 AC-1: template marks repo.project optional, both modes, per-backend -
 
 
-def test_template_marks_repo_project_optional() -> None:
-    """#176 AC-1: the CONTEXT template documents ``repo.project`` as optional."""
+def test_template_documents_repo_project_as_optional_in_both_modes() -> None:
+    """Tripwire — the ``project:`` field doc states optionality and both modes.
+
+    Anchor: the ``project:`` line plus its trailing comment block, so a mention
+    of "optional" against some other key cannot satisfy this. Terms: an
+    optionality word (through ``_states_optionality``, whose control below
+    proves the field's own proposal citation does not satisfy it), an
+    omit/unset word, a whole/full word, and ``team`` + ``board`` + ``repo.linear``
+    for the per-backend meaning of "unscoped".
+
+    **No polarity is asserted, and none is faked.** "This field is optional" is
+    an affirmative claim about a config schema; there is no clause in it whose
+    inversion a negation token would catch. Discrimination comes from
+    ``_states_optionality`` and its control instead (ADR 0016).
+    """
     doc = _repo_project_doc(TEMPLATE.read_text())
     assert doc.strip().startswith("project:"), (
         "the template must carry a `project:` field under `repo:` (#176 AC-1)."
@@ -221,12 +292,7 @@ def test_template_marks_repo_project_optional() -> None:
     assert _states_optionality(doc), (
         "repo.project must be documented as optional, not required (#176 AC-1)."
     )
-
-
-def test_template_documents_both_project_scope_modes() -> None:
-    """#176 AC-1: both modes are documented — set → scope to the project;
-    omit/unset → the whole tracker queue."""
-    low = _repo_project_doc(TEMPLATE.read_text()).lower()
+    low = doc.lower()
     assert re.search(r"\bset\b", low), (
         "the project field must document the `set` mode (scope to the project) "
         "(#176 AC-1)."
@@ -237,33 +303,11 @@ def test_template_documents_both_project_scope_modes() -> None:
     assert re.search(r"whole|full", low), (
         "the unset mode must widen to the whole/full tracker queue (#176 AC-1)."
     )
-
-
-def test_template_names_per_backend_unscoped_meaning() -> None:
-    """#176 AC-1: "unscoped" is defined per backend — the Linear team and the
-    GitHub board as each backend's natural full queue."""
-    low = _repo_project_doc(TEMPLATE.read_text()).lower()
-    assert "team" in low and "board" in low, (
-        "the unset mode must name both the Linear team and the GitHub board as "
-        "the per-backend meaning of 'unscoped' (#176 AC-1)."
-    )
-    assert "repo.linear" in low, (
-        "the Linear unscoped meaning must name `repo.linear` as the team it "
-        "widens to (#176 AC-1)."
-    )
-
-
-def test_template_repo_project_drops_required_only_wording() -> None:
-    """#176 AC-1 boundary: the old required-only framing ('only needed if this
-    repo self-hosts … omit otherwise') no longer stands alone as the sole word on
-    scope — the field must positively state optionality and both modes."""
-    doc = _repo_project_doc(TEMPLATE.read_text()).lower()
-    # the field must not read as merely "omit otherwise" with no mode explanation:
-    # both an explicit "optional" and the whole-queue mode must be present.
-    assert _states_optionality(doc) and re.search(r"whole|full", doc), (
-        "the project field must positively document optionality and the "
-        "whole-queue mode, not just say 'omit otherwise' (#176 AC-1)."
-    )
+    for term in ("team", "board", "repo.linear"):
+        assert term in low, (
+            "the unset mode must name the per-backend meaning of 'unscoped' — "
+            f"missing {term!r} (#176 AC-1)."
+        )
 
 
 # --- #176 AC-2: idle-arm filing when unscoped (routine quality) ---------------
@@ -272,17 +316,18 @@ def test_template_repo_project_drops_required_only_wording() -> None:
 # --- #176 AC-3: optional read path + template-context stamp bump --------------
 
 
-def test_template_context_stamp_bumped() -> None:
-    """#176 AC-3: the ``template-context`` stamp is bumped past 0.1.11 and the
-    ``registry.yaml`` row agrees (the surface-parity guard enforces the pairing;
-    this pins the bump direction)."""
+def test_template_context_stamp_agrees_with_registry() -> None:
+    """#176 AC-3: the ``template-context`` header stamp and its ``registry.yaml``
+    row are the same version.
+
+    The ``> (0, 1, 11)`` floor is gone for the same reason as its sibling above:
+    a floor pinned to a shipped version only weakens with time and measures
+    nothing the correspondence does not.
+    """
     tpl = TEMPLATE.read_text()
     m = re.search(r"guidance:template-context@(\d+)\.(\d+)\.(\d+)", tpl)
     assert m, "the CONTEXT template must carry a guidance stamp."
     ver = tuple(int(g) for g in m.groups())
-    assert ver > (0, 1, 11), (
-        f"template-context must be bumped past 0.1.11, got {m.group(0)} (#176 AC-3)."
-    )
     ver_str = ".".join(str(n) for n in ver)
     reg = REGISTRY.read_text()
     assert re.search(

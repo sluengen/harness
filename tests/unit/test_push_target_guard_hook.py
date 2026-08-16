@@ -57,8 +57,15 @@ Acceptance criteria:
 * **AC-6** — the fail-open/fail-closed split of the design's §8. State 1 (the
   hook could not run) opens loudly and is owned by
   ``test_hooks_fail_open_is_loud.py``; state 2 (it ran but could not establish
-  the facts) closes. :func:`test_an_unresolvable_source_is_denied` and
-  :func:`test_an_ambiguous_push_directory_is_denied`.
+  the facts) closes. :func:`test_an_unresolvable_source_is_denied`,
+  :func:`test_an_ambiguous_push_directory_is_denied`, and — #452, where it fell
+  open on the shipped ``cd "$worktree_path"`` idiom —
+  :func:`test_a_variable_in_the_cd_target_is_denied`, floored by
+  :func:`test_a_literal_cd_target_still_names_the_push_directory`. A directory is
+  a decision slot in **both** of its spellings, so
+  :func:`test_an_expansion_in_the_git_dash_c_operand_is_denied` covers the one the
+  refusal itself points at; its over-denial floor is
+  :func:`test_a_relative_dash_c_is_resolved_against_the_command_not_the_hook_process`.
 """
 
 from __future__ import annotations
@@ -138,14 +145,19 @@ def _write_marker(cwd: Path) -> str:
     return proc.stdout.split(":", 1)[1].split("->")[0].strip()
 
 
-def _decision(
+def _hook_output(
     command: str,
     cwd: Path,
     *,
     env: dict[str, str] | None = None,
     proc_cwd: Path | None = None,
-) -> str | None:
-    """The hook's ``permissionDecision`` for a Bash call running ``command``.
+) -> dict[str, str]:
+    """The hook's ``hookSpecificOutput`` for a Bash call running ``command``.
+
+    Empty on a pass-through, which carries no such block at all. Most tests only
+    need the decision and go through :func:`_decision`; a test that has to
+    distinguish *which* refusal was reached reads the reason from here, because a
+    deny reached for an unrelated cause satisfies a bare decision check.
 
     ``proc_cwd`` is the directory the **hook process itself** is launched in, as
     distinct from the payload's ``cwd``. They are the same in every ordinary
@@ -165,7 +177,19 @@ def _decision(
     )
     assert proc.returncode == 0, f"hook errored (rc={proc.returncode}): {proc.stderr}"
     assert proc.stdout.strip(), f"hook produced no output for {command!r}: {proc.stderr}"
-    return json.loads(proc.stdout).get("hookSpecificOutput", {}).get("permissionDecision")
+    output: dict[str, str] = json.loads(proc.stdout).get("hookSpecificOutput", {})
+    return output
+
+
+def _decision(
+    command: str,
+    cwd: Path,
+    *,
+    env: dict[str, str] | None = None,
+    proc_cwd: Path | None = None,
+) -> str | None:
+    """The hook's ``permissionDecision`` for a Bash call running ``command``."""
+    return _hook_output(command, cwd, env=env, proc_cwd=proc_cwd).get("permissionDecision")
 
 
 def _denied(command: str, cwd: Path, **kwargs: object) -> bool:
@@ -566,11 +590,118 @@ def test_an_unresolvable_source_is_denied(repo: Path) -> None:
 
 
 def test_an_ambiguous_push_directory_is_denied(repo: Path) -> None:
-    """A ``cd`` target carrying a command substitution cannot be resolved
-    statically, so the tree the push carries is unknowable."""
+    """A ``cd`` target carrying a shell expansion cannot be resolved statically,
+    so the tree the push carries is unknowable.
+
+    Three spellings, because the predicate is two conditions and ``$(…)`` alone
+    cannot tell them apart: ``token.includes("$")`` already catches it, so a
+    ``$(…)``-only suite certifies a predicate with no command-substitution arm at
+    all. The backtick is the input that separates the arms. The tilde is the
+    third expansion a shell performs on a bare word, and the one that reads least
+    like an expansion — which is why it survived the first widening.
+    """
     _write_marker(repo)
 
     assert _denied("cd $(mktemp -d) && git push origin HEAD:main", repo)
+    assert _denied("cd `mktemp -d` && git push origin HEAD:main", repo), (
+        "a backtick is the only input that distinguishes hasCommandSubstitution "
+        "from the bare-$ arm beside it; without it that arm has no killer"
+    )
+    assert _denied("cd ~/nowhere && git push origin HEAD:main", repo), (
+        "the shell expands a leading tilde, so the guard reading it as a literal "
+        "path segment resolves a directory that does not exist and falls open"
+    )
+
+
+def test_a_variable_in_the_cd_target_is_denied(repo: Path) -> None:
+    """#452 — a parameter expansion in a ``cd`` target is as unreadable as ``$(…)``.
+
+    ``/build``'s ship step is literally ``cd "$worktree_path" && git push origin
+    HEAD:dev``, the idiom the directory tracking exists for at all. After lexing,
+    the quotes are gone and the target is the literal string ``$worktree_path``,
+    which resolved against the payload's cwd to a path that does not exist; the
+    guard then asked git about a non-directory, got no answer, and **allowed the
+    push with no marker check at all**. State 2 of the design's fail-open split
+    fell open on the one shape the tracking was written for.
+
+    A marker is present, so the deny is attributable to the ambiguity rather than
+    to missing evidence — the construction
+    :func:`test_an_ambiguous_push_directory_is_denied` and
+    :func:`test_a_variable_in_the_target_slot_is_denied` both use. The **reason**
+    is asserted rather than the bare decision: a deny reached for any other cause
+    would satisfy a decision-only check, and here the cause is the whole claim.
+
+    Two assertions, because the refusal carries two obligations. The first is the
+    cause; the second is the *remedy*, which is what makes this deny clearable
+    rather than a wall — an agent that cannot see what to do instead re-runs the
+    same command. Only the actionable half is pinned: the prose around it must
+    stay free to be rewritten, and a mutation of that prose is expected to
+    survive both assertions.
+    """
+    _write_marker(repo)
+
+    output = _hook_output('cd "$worktree_path" && git push origin HEAD:main', repo)
+    reason = output.get("permissionDecisionReason", "")
+
+    assert output.get("permissionDecision") == "deny"
+    assert "working directory cannot be resolved" in reason
+    assert "Spell the directory literally" in reason, (
+        "a refusal that does not name the way out is not clearable. The remedy is "
+        "pinned rather than the surrounding prose, and it is the *literal* "
+        "spelling rather than a git -C rewrite — that slot is refused too "
+        "(:func:`test_an_expansion_in_the_git_dash_c_operand_is_denied`), so a "
+        "message offering it as the escape would route the reader at a deny"
+    )
+
+
+def test_a_literal_cd_target_still_names_the_push_directory(repo: Path, tmp_path: Path) -> None:
+    """The floor under the deny above: an *expansion* makes the directory
+    unknowable, a ``cd`` on its own does not.
+
+    The literal target is a second worktree at a **different tree**, gated by the
+    production writer, while the checkout the payload names is gated by nothing.
+    So this passes only if the guard both followed the ``cd`` and found that
+    directory's own marker: a fix that collapsed every ``cd`` to ``dir: null``
+    denies here, and one that ignored the ``cd`` reads the ungated checkout the
+    second assertion proves is refused.
+    """
+    worktree = tmp_path / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task", str(worktree))
+    _commit(worktree, "gated.txt", "the gate covers this\n")
+    _write_marker(worktree)
+
+    assert not _denied(f"cd {worktree} && git push origin HEAD:main", repo)
+    assert _denied("git push origin HEAD:main", repo), (
+        "the checkout the payload names must itself be refused, or the assertion "
+        "above would hold for a guard that simply never denies"
+    )
+
+
+def test_an_expansion_in_the_git_dash_c_operand_is_denied(repo: Path) -> None:
+    """The **other** directory decision slot — and the one the refusal above
+    names as the way out.
+
+    ``cd`` and ``git -C`` answer the same question, so an expansion makes the
+    directory equally unknowable in either. Only the ``cd`` half was closed, and
+    that asymmetry is worse than a plain gap: the deny an expanded ``cd`` now
+    earns tells its reader to spell the directory literally, and the mechanical
+    rewrite an agent reaches for first — ``cd "$w" && git push`` becoming
+    ``git -C "$w" push`` — moved the expansion into the slot with no predicate on
+    it. Measured before the fix, with **no marker anywhere in the repository**:
+    ``git push origin HEAD:main`` denied while all three spellings below were
+    allowed with no marker check at all. So the refusal was one guided rewrite
+    from being fully bypassable.
+
+    The over-denial floor for this slot is
+    :func:`test_a_relative_dash_c_is_resolved_against_the_command_not_the_hook_process`,
+    whose second assertion requires a literal ``-C`` into a gated checkout to
+    still pass.
+    """
+    _write_marker(repo)
+
+    assert _denied('git -C "$worktree_path" push origin HEAD:main', repo)
+    assert _denied("git -C $(mktemp -d) push origin HEAD:main", repo)
+    assert _denied("git -C `mktemp -d` push origin HEAD:main", repo)
 
 
 # --- AC-5: the hook is wired --------------------------------------------------

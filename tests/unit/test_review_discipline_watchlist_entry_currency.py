@@ -1,55 +1,51 @@
-"""#273 — a seam extraction must refresh the watchlist entry it invalidates.
+"""#273 / #459 — a seam extraction must refresh the watchlist entry it invalidates.
 
 Two adjacent Stage-2 bullets in ``review-discipline`` check different things
 about the same touch, and neither covered the space between them. **Architecture
 watchlist** checks that a *decision* was recorded (a seam extraction, or a
 deferral with a reason). **CONTEXT.md currency** checks the ``stack`` /
-``commands`` / ``layers`` blocks, on a trigger list — a test runner, a gate
-step, a workspace, a top-level path — that is deliberately narrow and does not
-reach the ``architecture_watchlist`` block at all.
+``commands`` / ``layers`` blocks, on a trigger list that is deliberately narrow
+and does not reach the ``architecture_watchlist`` block at all.
 
 So a change could record its ``Watchlist trigger`` correctly, pass both bullets,
-and leave the watchlist entry describing a decomposition and a size state that
-the extraction had just replaced. That happened three times running in this repo
-(#262, #263, #270) and produced #272 — including an entry that ended up stating
-the *opposite* of the truth, claiming a file had retired its ``# size:``
-justification when the intervening change had re-added it.
+and leave the watchlist entry describing a decomposition the extraction had just
+replaced. That happened three times running in this repo (#262, #263, #270) —
+including an entry that ended up stating the *opposite* of the truth. The fix is
+one clause on the **Architecture watchlist** bullet, folded into the Medium
+finding that bullet already grades.
 
-The fix is one clause on the **Architecture watchlist** bullet, not a fifth
-trigger on **CONTEXT.md currency**: that bullet's narrowness is load-bearing and
-says so in its own text ("it is not 'read ``CONTEXT.md`` every time'"). The
-watchlist bullet already has the changed file set in hand from its own
-``git diff --name-only`` comparison, so the confirmation costs nothing extra to
-run, and a stale entry folds into the Medium finding the bullet already grades.
+**What this module asserts, after #459.** One tripwire over one clause-home
+(ADR 0016, ``code-quality`` Part C → *A guard over prose owns structure and
+negative space, never meaning*), plus the slicer-boundary controls that were
+already the target shape:
 
-This guard is the universal half. This repo *also* mechanizes the same concern
-locally (#272, ``tests/unit/test_watchlist_entry_currency.py``, which reads the
-notes against the tree) — but no consuming repo is assumed to have such a guard,
-and the checklist clause is what covers them. Mechanizing it further is
-explicitly out of scope: the watchlist discipline is reviewer judgement by
-design.
+1. **Anchor** — the ``- **Architecture watchlist**`` bullet, sliced by
+   :func:`~tests.unit.test_architecture_watchlist._review_watchlist_bullet`, and
+   narrowed again to the *sentences* naming the decomposition. The narrowing is
+   load-bearing: the bullet is nearly two thousand characters and holds four
+   separate obligations, so a bullet-wide term set is the over-wide unit
+   ``craft.md`` → *The text unit is part of the predicate* names.
+2. **Term set** — ``decomposition`` selects the clause; ``entry`` is what is
+   refreshed, and it is the word that keeps this off the neighbouring bullet's
+   territory (refreshing ``CONTEXT.md`` generally is that bullet's job, and its
+   narrowness is deliberate).
+3. **Polarity — there is none, and none is faked.** The clause is an obligation
+   with no negation token: it says an extraction *also* confirms the entry. What
+   carries direction instead is the **binding**, asserted as a relation rather
+   than as co-presence — every sentence naming the decomposition must also name
+   the extraction, so a clause demanding the refresh on *every* watchlist touch
+   goes red. That is the drift toward "read `CONTEXT.md` every time" the
+   neighbouring bullet rules out in its own text, and mutating a relation means
+   mutating the relation, not the relata.
 
-Acceptance criteria (this ticket):
+What went: the four-term bullet-wide pin (``entry`` / ``decomposition`` /
+``size`` / ``medium``). ``medium`` is still measured over this same bullet by
+``test_review_discipline_extraction_test_home``'s severity sweep, which asserts
+the other three grades absent; the rest were positive-meaning pins.
 
-* **AC-1** — the clause lives on the **Architecture watchlist** bullet and the
-  guidance version stamp is bumped. The stamp half needs no new test: the
-  durable, base-independent invariant is header ↔ registry parity, already
-  asserted by
-  ``test_review_discipline_backend_module_clone::test_review_discipline_header_matches_registry``
-  and the tree-wide sweep in ``test_guidance_source``, so a stamp edited without
-  its registry entry (or vice versa) goes red there. The clause half is proven
-  by :func:`test_watchlist_bullet_requires_refreshing_the_context_entry`.
-* **AC-2** — the assertion is *anchored to that bullet*, not a bare substring
-  match over the file. Proven by
-  :func:`test_the_clause_lives_inside_the_watchlist_bullet` and
-  :func:`test_the_refresh_obligation_is_bound_to_the_extraction_outcome`.
-* **AC-3** — the verify gate is green (the gate, not a test).
-
-Why the tokens below and not the obvious ones: the pre-change bullet already
-contains ``CONTEXT.md``, ``architecture_watchlist.files``, ``seam extraction``,
-``diff``, ``deferral`` and ``Medium``. A guard keyed on any of those is green
-against the *unmodified* file and measures nothing. Each token asserted here was
-confirmed absent from the bullet before the clause was written.
+**This module exports ``_sentences``**, imported by
+``test_review_discipline_extraction_test_home`` and
+``test_v4_records_only_what_remains``.
 """
 
 from __future__ import annotations
@@ -87,49 +83,22 @@ def _sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_BREAK.split(text.strip()) if s.strip()]
 
 
-def test_watchlist_bullet_requires_refreshing_the_context_entry() -> None:
-    """The bullet obliges a check of the watchlist entry's own prose (AC-1)."""
-    bullet = _bullet().lower()
-
-    # What is refreshed is the *entry's* descriptive comment, not `CONTEXT.md`
-    # generally — that distinction is what keeps this off `:48`'s trigger list.
-    assert "entry" in bullet, (
-        "the Architecture watchlist bullet must name the "
-        "`architecture_watchlist.files` *entry* as the thing to confirm — "
-        "refreshing `CONTEXT.md` generally is the neighbouring bullet's job, "
-        "and its narrowness is deliberate (#273)"
-    )
-    # The two facts an extraction invalidates, and the two #272 got wrong.
-    assert "decomposition" in bullet, (
-        "the bullet must require confirming the entry still names the file's "
-        "current *decomposition* — the modules carved out of it (#273)"
-    )
-    assert "size" in bullet, (
-        "the bullet must require confirming the entry still names the file's "
-        "current *size state*: #272's entry claimed a `size:` justification had "
-        "been retired while the file still carried one (#273)"
-    )
-    # Folded into the finding the bullet already grades — one finding, not a
-    # second checklist item with its own severity.
-    assert "medium" in bullet, (
-        "a stale watchlist entry must fold into the bullet's existing Medium "
-        "structural finding, not introduce a new severity (#273)"
-    )
-
-
-def test_the_refresh_obligation_is_bound_to_the_extraction_outcome() -> None:
-    """The refresh is owed on an *extraction*, not on every watchlist touch (AC-2).
+def test_the_entry_refresh_is_owed_on_a_seam_extraction() -> None:
+    """The refresh is owed on an *extraction*, and what is refreshed is the entry.
 
     A deferral carves nothing out, so the entry's description of the
-    decomposition is still whatever it was. A clause demanding the refresh on
-    every touch would satisfy the token test above and fail here — and it should,
-    because that is the drift toward "read `CONTEXT.md` every time" that the
-    neighbouring bullet rules out in its own text.
+    decomposition is still whatever it was. The assertion is therefore a
+    relation, not a co-occurrence: every sentence that names the decomposition
+    must bind the obligation to the extraction outcome in that same sentence. A
+    clause demanding the refresh on every watchlist touch satisfies any
+    bullet-wide term set and fails here — and it should, because that is the
+    drift toward "read `CONTEXT.md` every time" the neighbouring bullet rules
+    out in its own text.
     """
     bearing = [s for s in _sentences(_bullet()) if "decomposition" in s.lower()]
     assert bearing, (
         "no sentence in the Architecture watchlist bullet names the entry's "
-        "decomposition — the obligation this ticket adds is missing (#273)"
+        "decomposition — the obligation this clause adds is missing (#273)"
     )
     for sentence in bearing:
         assert "extraction" in sentence.lower(), (
@@ -138,10 +107,17 @@ def test_the_refresh_obligation_is_bound_to_the_extraction_outcome() -> None:
             "the bullet; an unbound clause reads as 'refresh on every watchlist "
             f"touch' (#273). Offending sentence: {sentence!r}"
         )
+    assert any("entry" in s.lower() for s in bearing), (
+        "the sentences stating the refresh do not name the "
+        "`architecture_watchlist.files` *entry* as the thing to confirm. "
+        "Refreshing `CONTEXT.md` generally is the neighbouring bullet's job and "
+        "its narrowness is deliberate, so an unqualified clause lands the "
+        "obligation on the wrong rule (#273)"
+    )
 
 
 def test_the_clause_lives_inside_the_watchlist_bullet() -> None:
-    """The claim is anchored to `:47`, not matched anywhere in the file (AC-2)."""
+    """The claim is anchored to the bullet, not matched anywhere in the file (AC-2)."""
     text = _SKILL.read_text(encoding="utf-8")
     bullet = _bullet()
 

@@ -1,42 +1,50 @@
 """#204 — a placeholder/stub returning fabricated data must be flag-gated.
 
-*Origin:* form repo, Linear CAL-1130 (``/assess code`` steward pass
-2026-07-17, CODE-INSIGHT-1; report ``assessments/2026-07-17-code-review.md``).
-Decision made 2026-07-24: adopt as drafted. Two instances one day apart in
-the originating repo — a share-card stub and an OCR stub — both wired to
-live, ungated surfaces, both filed after the fact rather than caught at
-merge. The originating repo owns a gating mechanism (feature-visibility
-flags) but had no rule mandating its use for incomplete features.
+*Origin:* form repo, Linear CAL-1130 (``/assess code`` steward pass 2026-07-17,
+CODE-INSIGHT-1; report ``assessments/2026-07-17-code-review.md``). Decision made
+2026-07-24: adopt as drafted. Two instances one day apart in the originating
+repo — a share-card stub and an OCR stub — both wired to live, ungated surfaces,
+both filed after the fact rather than caught at merge. The originating repo owned
+a gating mechanism (feature-visibility flags) but had no rule mandating its use
+for incomplete features.
 
-These are text-parse content guards in the style of
-``test_code_quality_security_contract_predicate.py`` (#183) and
-``test_mirrors_admission_third_strike.py`` (CAL-800): they read the as-built
-guidance and assert the rule is present, so a later re-edit cannot silently
-drop it.
+**Converted under #459** (ADR 0016, and ``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Four prose tests became
+**two tripwires, one per rule-home** — the builder's home and the reviewer's. The
+two dropped tests were placement re-checks their own slicers already performed
+(``craft.md`` → *The text unit is part of the predicate*): each asserted a term
+against the very window the sibling test had already sliced.
 
-Acceptance criteria (#204, per the ticket's "Proposed edit" / "Next step"):
+**What this module now asserts.**
 
-* **AC-1** — ``code-quality`` Part A (Scope) states that a function
-  returning hardcoded/faked/placeholder data in place of real logic must
-  not be reachable from a user-facing control unless gated behind an
-  off-by-default feature flag. Proven by
-  :func:`test_code_quality_states_placeholder_gating_rule` and
-  :func:`test_placeholder_rule_lives_in_part_a`.
-* **AC-2** — the rule is mirrored into ``review-discipline`` Stage 2, so a
-  reviewer catches an ungated stub the same way a builder is told to avoid
-  shipping one. Proven by
-  :func:`test_review_discipline_mirrors_placeholder_gating_rule` and
-  :func:`test_placeholder_bullet_is_in_stage_two`.
-* **AC-3** — both files' ``guidance:`` header versions and their
-  ``registry.yaml`` entries are bumped consistently. Proven by
-  :func:`test_code_quality_header_matches_registry` and
-  :func:`test_review_discipline_header_matches_registry`.
+* **Two tripwires, two homes.** ``code-quality`` Part A states the rule for the
+  builder; ``review-discipline``'s diff-shape checks state it for the reviewer.
+  Both are anchored — the Part A subsection is sliced *from inside* ``## Part A
+  — Scope`` so the slice carries the placement claim, and the reviewer's copy is
+  sliced to its own Stage 2 bullet, never the whole file.
+* **Term set** — the stub shape (``hardcoded``/``faked``/``placeholder``), the
+  gate (``off-by-default``, ``feature flag``) and what must not reach it
+  (``user-facing control``). The rule cannot be stated without them: drop
+  ``off-by-default`` and a flag that ships on satisfies the rest.
+* **Polarity** — the negation bound to what it governs: the stub *must **not** be
+  reachable*. A bare ``not`` in the paragraph would be decoration; bound to
+  ``reachable`` it inverts with the rule (``craft.md`` → *Mutate the rule into
+  its opposite, not only out of existence*).
+* **Two identity assertions stay byte-for-byte** — each file's ``guidance:``
+  header against its ``registry.yaml`` entry. Neither operand is an opinion, so
+  neither is affected by this conversion.
+
+**What it does not prove.** That any repo's flag is actually off by default, or
+that the prose around these terms still advises what it used to. That is the
+reviewer's.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from tests.unit.test_assurance_filing_rubric import _section
 
 # ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +59,26 @@ _REVIEW_DISCIPLINE = (
 _REGISTRY = _REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
+
+_PART_A = "## Part A — Scope"
+_HEADING = "### Placeholder and stub gating"
+_STAGE_TWO = "### Stage 2 — Diff-shape checks"
+
+#: The words the rule cannot be stated without. The first is an alternation
+#: because the three spellings of a fabricated-data body are interchangeable.
+_TERMS = (
+    r"\bhardcoded\b|\bfaked\b|\bplaceholder\b",
+    r"\boff-by-default\b",
+    r"\bfeature flag\b",
+    r"\buser-facing control\b",
+)
+
+#: The negation **bound to the reachability it denies**. ``not`` alone is
+#: satisfied by almost any English sentence; within a couple of words of
+#: ``reachable`` it is the clause that inverts with the rule.
+_MUST_NOT_BE_REACHABLE = re.compile(
+    r"\b(?:not|never)\b(?:\W+\w+){0,2}?\W+reachable\b", re.IGNORECASE
+)
 
 
 def _header_version(path: Path) -> str:
@@ -68,89 +96,72 @@ def _registry_version(rel_path: str) -> str:
     return m.group(1)
 
 
-def _part_a_section() -> str:
-    text = _CODE_QUALITY.read_text()
-    m = re.search(r"^## Part A\b", text, re.MULTILINE)
-    assert m, "code-quality must have a 'Part A — Scope' section."
-    rest = text[m.end() :]
-    nxt = re.search(r"^## Part B\b", rest, re.MULTILINE)
-    return rest[: nxt.start()] if nxt else rest
+def _builder_rule() -> str:
+    """``### Placeholder and stub gating``, sliced from inside ``## Part A``.
+
+    ``_section`` is imported rather than re-spelled, and the two calls are
+    nested so the placement claim lives in the anchor instead of a second test.
+    """
+    text = _CODE_QUALITY.read_text(encoding="utf-8")
+    return _section(_section(text, _PART_A), _HEADING)
 
 
-def _stage_two() -> str:
-    text = _REVIEW_DISCIPLINE.read_text()
-    start = text.index("### Stage 2")
-    end = text.index("## Severity", start)
-    return text[start:end]
+def _reviewer_bullet() -> str:
+    """The Stage 2 bullet carrying the placeholder/stub check.
 
-
-def _placeholder_bullet() -> str:
-    """The Stage 2 bullet for the placeholder/stub gating rule."""
-    stage_two = _stage_two()
+    Sliced to the bullet, never the file: an assertion over the whole reference
+    is satisfied by a neighbouring bullet's vocabulary and would stay green with
+    this rule deleted.
+    """
+    stage_two = _section(_REVIEW_DISCIPLINE.read_text(encoding="utf-8"), _STAGE_TWO)
     m = re.search(r"^- \*\*[^\n]*(?:laceholder|stub)[^\n]*$", stage_two, re.MULTILINE)
     assert m, (
-        "review-discipline Stage 2 has no bullet naming the placeholder/stub "
-        "gating rule (#204 AC-2)."
+        "review-discipline's Stage 2 diff-shape checks have no bullet naming the "
+        "placeholder/stub reachability rule (#204 AC-2)."
     )
     rest = stage_two[m.start() :]
     nxt = re.search(r"^(?:- \*\*|#{2,3} )", rest[1:], re.MULTILINE)
     return rest[: nxt.start() + 1] if nxt else rest
 
 
-# --- AC-1: code-quality Part A states the rule ---------------------------
+def _assert_states_the_gating_rule(window: str, *, where: str, ac: str) -> None:
+    """The tripwire body, shared by both homes.
 
+    One predicate, two call sites — re-spelling it per home would fork the
+    predicate from the samples that measure it (``craft.md`` → *A positive
+    control must exercise the predicate, not re-implement it*).
+    """
+    assert window.strip(), f"{where} is empty — a heading with no rule states nothing."
 
-def test_code_quality_states_placeholder_gating_rule() -> None:
-    """AC-1: the rule names the stub shape and the off-by-default flag gate."""
-    section = _part_a_section().lower()
-    assert "hardcoded" in section or "faked" in section or "placeholder" in section, (
-        "code-quality Part A must describe a hardcoded/faked/placeholder-data "
-        "stub (#204 AC-1)."
-    )
-    assert "off-by-default" in section and "feature flag" in section, (
-        "the rule must require gating behind an off-by-default feature flag "
-        "(#204 AC-1)."
-    )
-    assert "user-facing control" in section, (
-        "the rule must name a user-facing control as what must not reach an "
-        "ungated stub (#204 AC-1)."
+    missing = [t for t in _TERMS if not re.search(t, window, re.IGNORECASE)]
+    assert not missing, (
+        f"{where} no longer carries the terms the placeholder-gating rule cannot be "
+        f"stated without; missing {missing}. A body returning hardcoded/faked/"
+        "placeholder data must sit behind an off-by-default feature flag before any "
+        f"user-facing control can reach it ({ac}). Window read:\n{window}"
     )
 
-
-def test_placeholder_rule_lives_in_part_a() -> None:
-    """AC-1 (placement): the rule sits in Part A — Scope, not Part B/C."""
-    section = _part_a_section().lower()
-    assert "off-by-default" in section, (
-        "the placeholder/stub gating rule must live in 'Part A — Scope' "
-        "(#204 AC-1 placement)."
-    )
-    # Sanity check: Part A must still contain a sibling subsection.
-    assert "smallest working solution" in section
-
-
-# --- AC-2: review-discipline mirrors the rule in Stage 2 ------------------
-
-
-def test_review_discipline_mirrors_placeholder_gating_rule() -> None:
-    """AC-2: the Stage 2 bullet states the same rule for reviewers."""
-    bullet = _placeholder_bullet().lower()
-    assert "hardcoded" in bullet or "faked" in bullet or "placeholder" in bullet, (
-        f"the placeholder bullet must describe the stub shape; got: {bullet!r} "
-        "(#204 AC-2)."
-    )
-    assert "off-by-default" in bullet and "feature flag" in bullet, (
-        f"the placeholder bullet must require the off-by-default feature flag "
-        f"gate; got: {bullet!r} (#204 AC-2)."
+    assert _MUST_NOT_BE_REACHABLE.search(window), (
+        f"{where} has lost its polarity: the stub must be stated as *not reachable* "
+        "from a user-facing control unless gated. Without the negation bound to "
+        "`reachable`, a passage carrying every term above while permitting the "
+        f"ungated stub passes ({ac}). Window read:\n{window}"
     )
 
 
-def test_placeholder_bullet_is_in_stage_two() -> None:
-    """AC-2: the placeholder/stub finding lives in Stage 2, beside the other
-    structural/quality checks."""
-    stage_two = _stage_two().lower()
-    assert "off-by-default" in stage_two, (
-        "the placeholder/stub gating rule must live in the Stage 2 quality "
-        "checks (#204 AC-2)."
+def test_the_builder_home_states_the_gating_rule() -> None:
+    """AC-1: ``code-quality`` Part A is the builder's home for the rule."""
+    _assert_states_the_gating_rule(
+        _builder_rule(), where=f"code-quality {_HEADING!r}", ac="#204 AC-1"
+    )
+
+
+def test_the_reviewer_home_states_the_gating_rule() -> None:
+    """AC-2: the diff-shape checks state the same rule for the reviewer."""
+    _assert_states_the_gating_rule(
+        _reviewer_bullet(),
+        where="the review-discipline Stage 2 placeholder/stub bullet",
+        ac="#204 AC-2",
     )
 
 

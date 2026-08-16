@@ -1,5 +1,4 @@
-"""#173 — ``/update-guidance`` step 2 adopts a registry-listed, on-disk,
-lock-untracked file instead of silently ignoring it.
+"""#173 — ``/update-guidance`` adopts a registry-listed, on-disk, lock-untracked file.
 
 A file that graduates from repo-owned/hand-copied to a registry-tracked
 distributable (the exact transition ``commands/harness.md`` made in CAL-764)
@@ -9,92 +8,158 @@ the lock at all). A consumer installed before the graduation stays silently
 stranded on a stale copy of a file the registry now owns, as happened to the
 ``form`` repo (issue #173).
 
-These tests pin the fix: step 2 explicitly classifies a **registry-listed /
-on-disk / lock-untracked** file two ways —
+**What this module asserts, after #459.** One tripwire over one rule-home: the
+run of step-2 blocks that classify a **registry-listed / on-disk / lock-untracked**
+file. It reads that window for the case's three-part name, its two outcomes
+(adopt, or a CONFLICT-shaped reconcile), the negation that forbids a third, and
+the two downstream steps the outcome has to reach.
 
-* **hash matches the source** — adopt it into the lock silently, no
-  confirmation (it is already correct).
-* **hash differs** — treat it as a CONFLICT-shaped reconcile (show a diff, ask
-  before overwriting) — a 2-way diff, since there is no locked version to serve
-  as a 3-way base.
+Six prose pins collapsed into it, four of them exact-phrase regexes
+(``"CONFLICT-shaped reconcile"``, ``adopt.{0,80}silently``, the
+``registry-listed.{0,40}on-disk.{0,40}lock-untracked`` gap pattern, and the
+``never leave`` sentence template). Each read the **whole file**, so nothing tied
+the case's name to its outcomes; and each broke on a benign rewording of prose
+that a migrator doc has every reason to keep editing.
 
-— and states the file must never be left lock-untracked-and-ignored.
+Occurrence the tripwire's polarity cites (``code-quality`` Part C): the pre-#459
+form pinned ``never leave … un-adopted … ignored`` as a sentence template, which
+means the negation was verified as *bytes* rather than as a negation attached to
+the case. Anchoring it to ``lock-untracked`` inside the window is what makes the
+inversion — a step that names the case, describes adoption, and then permits
+leaving the file alone — go red. The ``craft.md`` class is *A guard over prose
+owns structure and negative space, never meaning*.
+
+**Coordinated with ``test_update_guidance_same_version_drift``**, which owns the
+SOURCE DRIFT rule in the same step. Two tripwires, two rule-homes, one file; the
+section slicer is imported from there rather than re-spelled, so the two guards
+cannot disagree about where a step begins.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
+from tests.unit.test_update_guidance_same_version_drift import _section
+
+#: The three-part name the case is classified under. All three are conjuncts:
+#: dropping any one turns the rule into a claim about a different, already-handled
+#: state (a lock-tracked file, an absent file, or a file the registry does not own).
+_CASE_TERMS = ("registry-listed", "on-disk", "lock-untracked")
+
+#: The two sanctioned outcomes. ``adopt`` is the silent path when the on-disk copy
+#: is already correct; ``CONFLICT`` is the reconcile when it is not.
+_OUTCOME_TERMS = ("adopt", "CONFLICT")
+
+#: The negation **anchored to the outcome it forbids**. The claim is that a file
+#: in this shape is never left *ignored* — that third outcome is the #173 defect.
+#:
+#: Anchored to ``ignored`` rather than to ``lock-untracked``, and the difference
+#: was measured. The case's own definition opens *"exists on disk but is **not**
+#: in the lock at all — a **registry-listed / on-disk / lock-untracked** file"*:
+#: a negation ten words ahead of ``lock-untracked``, in a sentence that only
+#: *names* the case. Anchored there, the predicate matched the definition, and an
+#: inverted refusal — "a file may be left lock-untracked and ignored" — stayed
+#: green. ``ignored`` appears once in the window, in the refusal itself, so it is
+#: the token that cannot be borrowed from a neighbour. Found while authoring this
+#: conversion's mutation table (#459), before the table was run.
+_NEVER_LEFT_UNRESOLVED = re.compile(
+    r"\b(?:never|not|no)\b(?:\W+\w+){0,12}?\W+ignored?\b", re.IGNORECASE
+)
 
 
-def _text() -> str:
-    return UPDATE_GUIDANCE.read_text(encoding="utf-8")
+def _adoption_window() -> str:
+    """Step 2's run of blocks classifying a lock-untracked file.
+
+    From the first block naming ``lock-untracked`` to the last, inclusive — so
+    the two outcome bullets between them are in scope even though neither repeats
+    the case's name. Derived from the term the rule is *about* rather than from a
+    heading or an ordinal, because the case is one classification among several
+    inside one step and an ordinal into that step is invalidated by a correct
+    insertion.
+    """
+    blocks = _section("### 2.", "### 3.").split("\n\n")
+    hits = [i for i, block in enumerate(blocks) if "lock-untracked" in block]
+    if not hits:
+        return ""
+    return "\n\n".join(blocks[hits[0] : hits[-1] + 1])
 
 
-def test_step2_names_the_registry_listed_on_disk_lock_untracked_case() -> None:
-    """Step 2 explicitly names the case a file in this shape falls into."""
-    text = _text()
-    assert re.search(r"registry-listed.{0,40}on-disk.{0,40}lock-untracked", text), (
-        "commands/update-guidance.md step 2 must explicitly name the "
-        "registry-listed / on-disk / lock-untracked case (#173) — the gap that "
-        "let a graduated file (e.g. commands/harness.md, CAL-764) stay silently "
-        "stranded on a stale copy in a consumer repo."
+def test_a_lock_untracked_file_is_adopted_or_reconciled() -> None:
+    """The one tripwire: the case is named, resolved two ways, and never ignored.
+
+    Four parts:
+
+    * **anchor** — step 2 carries a run of blocks naming ``lock-untracked``. An
+      empty window fails here rather than leaving containment checks scanning
+      ``""``, which is what a whole-file search degrades into once the case is
+      renamed.
+    * **terms** — the case's three-part name and its two outcomes, read from the
+      same window. Before #459 the name and the outcomes were pinned by separate
+      whole-file regexes, so an ``adopt`` sentence about an unrelated state
+      satisfied the outcome half.
+    * **polarity** — the negation anchored to ``lock-untracked``: a file in this
+      shape is never left un-adopted and ignored. That third outcome *is* #173.
+    * **downstream** — the outcome has to reach the lock rewrite (step 4) and the
+      report (step 6). An adoption the lock never records is a file re-adopted on
+      every run; one the report never counts is invisible to the operator.
+    """
+    window = _adoption_window()
+    assert window, (
+        "commands/update-guidance.md step 2 no longer classifies a "
+        "registry-listed / on-disk / lock-untracked file. That is the gap #173 "
+        "closes: a file that graduated to a registry-tracked distributable after "
+        "install matches no lock-keyed state and is silently skipped, stranding "
+        "the consumer on a stale copy."
+    )
+
+    missing = [term for term in _CASE_TERMS if term not in window]
+    assert not missing, (
+        f"step 2's lock-untracked case no longer names {missing}. All three parts "
+        "are what distinguish it from the states the table already handles."
+    )
+
+    missing_outcomes = [term for term in _OUTCOME_TERMS if term.lower() not in window.lower()]
+    assert not missing_outcomes, (
+        f"step 2's lock-untracked case no longer offers {missing_outcomes}. A "
+        "matching hash is adopted into the lock silently; a differing one is a "
+        "CONFLICT-shaped reconcile — 2-way, since there is no locked version to "
+        "serve as a 3-way base."
+    )
+
+    assert _NEVER_LEFT_UNRESOLVED.search(window), (
+        "step 2 describes the two outcomes but never forbids the third. Without "
+        "the refusal anchored to the case, prose that names it, explains adoption, "
+        "and then leaves the file alone satisfies every term above — which is the "
+        "silent skip #173 is about."
+    )
+
+    assert re.search(r"adopt", _section("### 4.", "### 5."), re.IGNORECASE), (
+        "step 4 does not state that a newly-adopted lock-untracked file gets a "
+        "fresh lock entry, the same as a first-time PULL. An adoption the lock "
+        "never records is re-adopted on every subsequent run (#173)."
+    )
+    assert "adopted" in _section("### 6.", "## Note"), (
+        "step 6 does not report a count of adopted (previously lock-untracked) "
+        "files alongside pulled/local/conflict/current. A resolution the operator "
+        "never sees is indistinguishable from the skip it replaced (#173)."
     )
 
 
-def test_step2_adopts_silently_when_hash_matches_source() -> None:
-    """A lock-untracked file whose on-disk content already equals the source is
-    adopted into the lock silently — no confirmation needed."""
-    text = _text()
-    assert re.search(r"adopt.{0,80}silently", text, re.IGNORECASE), (
-        "step 2 must adopt a lock-untracked file into the lock silently when its "
-        "on-disk hash already matches the source (#173) — it is already correct, "
-        "so no confirmation is needed."
-    )
+def test_the_adoption_window_is_narrower_than_the_step() -> None:
+    """Control: the window is a slice of step 2, not the whole of it.
 
-
-def test_step2_conflict_reconciles_when_hash_differs() -> None:
-    """A lock-untracked file whose on-disk content differs from the source is
-    treated as a CONFLICT-shaped reconcile, not silently overwritten or ignored."""
-    text = _text()
-    assert re.search(r"CONFLICT-shaped reconcile", text), (
-        "step 2 must treat a lock-untracked file that differs from the source as "
-        "a CONFLICT-shaped reconcile (show a diff, ask) rather than silently "
-        "overwriting or ignoring it (#173)."
-    )
-
-
-def test_step2_states_never_leave_it_unresolved() -> None:
-    """The doc states the file must never be left lock-untracked and ignored."""
-    text = _text()
-    assert re.search(
-        r"never leave.{0,60}(lock-untracked|un-?adopted).{0,60}(ignored|unresolved)",
-        text,
-        re.IGNORECASE,
-    ), (
-        "step 2 must state a registry-listed/on-disk/lock-untracked file must "
-        "never be left un-adopted and unflagged — the gap #173 closes."
-    )
-
-
-def test_step4_lock_rewrite_covers_adopted_files() -> None:
-    """Step 4 (rewrite the lock) covers newly-adopted files, not just PULLs."""
-    text = _text()
-    step4 = text[text.index("### 4."):text.index("### 5.")]
-    assert re.search(r"adopt", step4, re.IGNORECASE), (
-        "step 4 must state that a newly-adopted lock-untracked file gets a fresh "
-        "lock entry, the same as a first-time PULL (#173)."
-    )
-
-
-def test_step6_report_names_adopted_count() -> None:
-    """Step 6's reported counts include adopted files, not just pulled/local/conflict."""
-    text = _text()
-    step6 = text[text.index("### 6."):]
-    assert "adopted" in step6, (
-        "step 6 must report a count of adopted (previously lock-untracked) files "
-        "alongside pulled/local/conflict/current (#173)."
+    The text unit is part of the predicate. If the block scan degraded into
+    returning the entire step — or the entire file — every containment check
+    above would silently widen to prose written for the classification table, the
+    LOCAL-edit aside, and the new/removed-file paragraph, none of which this rule
+    governs. Asserted as strict shortness against the step it is cut from, which
+    is the one comparison a widened slicer cannot satisfy.
+    """
+    window = _adoption_window()
+    step = _section("### 2.", "### 3.")
+    assert window, "no adoption window derived — see the tripwire above"
+    assert len(window) < len(step), (
+        "the adoption window is the whole of step 2, so the assertions above are "
+        "reading the classification table and the new/removed-file paragraph as if "
+        "they were the lock-untracked rule"
     )

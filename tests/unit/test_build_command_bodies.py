@@ -36,8 +36,8 @@ The four CAL-659 defects (the first three still guarded here):
   whole class is gone — there is no embedded mutation left to mis-parameterize. The two
   guards that pinned the *parameterized embed* are therefore retired; the stronger
   invariant (``build.md`` embeds **no** Linear GraphQL at all) is owned by
-  ``test_linear_skill.py`` (``test_no_command_embeds_linear_graphql`` +
-  ``test_embed_allowlist_shrinks``).
+  ``test_linear_skill.py`` (``test_no_command_embeds_linear_graphql``, whose
+  allowlist is now empty, so the sweep is absolute).
 
 *Source:* CAL-659, CAL-703, CAL-715.
 """

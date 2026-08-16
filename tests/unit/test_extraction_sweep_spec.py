@@ -8,21 +8,30 @@ fixer. The class of defect is "an extraction whose green diff certifies a
 unification that did not actually happen, because a divergent copy survived
 outside the finding's location list."
 
-``code-quality`` Part A already carries the mirror-image rule for a *removal*
-(*A removal sweeps for its dependents*); this guard pins the presence of the
-matching rule for an *extraction*: grep the whole tree, and a copy whose body
-differs is the finding, not the leftover.
+**Converted under #459** (ADR 0016, and ``code-quality`` Part C → *A guard over
+prose owns structure and negative space, never meaning*). Five exact-sentence
+pins — ``"extraction is not complete"``, ``"grep the whole tree"``, ``"starting
+point, not the boundary"``, ``"is the finding, not the leftover"``, ``"certifies
+a unification that did not happen"`` — plus a placement re-check became the
+single tripwire below. Those pins verified bytes, not meaning: any of them broke
+on a rewording that preserved the rule, and none could see the rule reversed.
 
-This guard evidences the *rule*, not that a sweep was performed on any change —
-the same honest limit the removal-sweep guard states.
+**What this module now asserts.** One tripwire, one rule-home:
 
-Acceptance criteria (CAL-1172):
+* **Anchor** — ``### An extraction sweeps for its copies`` resolves *from inside*
+  ``## Part A — Scope``. The nesting carries the placement claim the dropped
+  third test re-checked; that test was a strict subset of this slice.
+* **Term set** — ``extraction``, ``grep``, ``whole tree``, ``copy``. Drop
+  ``whole tree`` and the rule collapses back into "sweep the locations the
+  finding named", which is the defect it was written against.
+* **Polarity** — the negation bound to what it governs: an extraction *is **not**
+  complete* until the sweep runs. A bare ``not`` over the paragraph would be
+  decoration (``craft.md`` → *Mutate the rule into its opposite, not only out of
+  existence*).
 
-* **AC-1** — the ``code-quality`` skill carries the extraction-sweep rule.
-  :func:`test_code_quality_has_extraction_sweep_rule`,
-  :func:`test_extraction_sweep_flags_divergent_copy`.
-* **AC-1 (placement)** — the rule lives in the Part A — Scope discipline.
-  :func:`test_extraction_sweep_in_scope_section`.
+**What it does not prove.** That a sweep was performed on any change — the same
+honest limit the removal-sweep guard beside it states — nor that the prose still
+says the right thing around these terms. That is the reviewer's.
 """
 
 from __future__ import annotations
@@ -30,62 +39,60 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+from tests.unit.test_assurance_filing_rubric import _section
+
+# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+
+_PART_A = "## Part A — Scope"
+_HEADING = "### An extraction sweeps for its copies"
+
+#: The words the rule cannot be stated without, as whole-word patterns.
+_TERMS = (
+    r"\bextraction\b",
+    r"\bgrep\b",
+    r"\bwhole tree\b",
+    r"\bcop(?:y|ies)\b",
+)
+
+#: The negation **bound to the completeness it denies**. ``not`` on its own is
+#: satisfied by any paragraph of English; ``not`` within a couple of words of
+#: ``complete`` is the clause that inverts with the rule.
+_IS_NOT_COMPLETE = re.compile(
+    r"\b(?:not|never)\b(?:\W+\w+){0,2}?\W+complete\b", re.IGNORECASE
+)
 
 
-def _code_quality_text() -> str:
-    return CODE_QUALITY.read_text()
+def _rule() -> str:
+    """``### An extraction sweeps for its copies``, sliced from inside Part A.
+
+    ``_section`` is imported rather than re-spelled, and the two calls are
+    nested so the placement claim lives in the anchor instead of a second test.
+    """
+    text = _CODE_QUALITY.read_text(encoding="utf-8")
+    return _section(_section(text, _PART_A), _HEADING)
 
 
-def test_code_quality_has_extraction_sweep_rule() -> None:
-    """AC-1: the skill states the core rule — an extraction is not complete until
-    you grep the whole tree for the extracted pattern, and a finding's location
-    list is a starting point, not the boundary."""
-    low = _code_quality_text().lower()
-    assert "extraction is not complete" in low, (
-        "code-quality must state that an 'extraction is not complete' until the "
-        "whole tree has been swept for copies (CAL-1172 AC-1)."
+def test_the_extraction_sweep_rule_has_a_home() -> None:
+    """One tripwire: the rule is in Part A, names its terms, keeps its polarity."""
+    rule = _rule()
+    assert rule.strip(), (
+        f"{_HEADING!r} is empty — a heading with no rule under it states nothing "
+        "(CAL-1172)."
     )
-    assert "grep the whole tree" in low, (
-        "the rule must say to grep the whole tree for the extracted pattern, not "
-        "just the named locations (CAL-1172 AC-1)."
-    )
-    assert "starting point, not the boundary" in low, (
-        "the rule must state that a finding's location list is a starting point, "
-        "not the sweep boundary (CAL-1172 AC-1)."
-    )
 
-
-def test_extraction_sweep_flags_divergent_copy() -> None:
-    """AC-1: the load-bearing sentence — diff every copy against the canonical
-    body before deleting it, because a copy whose body *differs* is the finding,
-    not the leftover; a surviving divergent copy makes the green diff certify a
-    unification that did not happen."""
-    low = _code_quality_text().lower()
-    assert "is the finding, not the leftover" in low, (
-        "the rule must say a copy whose body differs is the finding, not the "
-        "leftover — the sentence that turns the divergent copy from something a "
-        "sweep deletes into something a sweep reports (CAL-1172 AC-1)."
-    )
-    assert "certifies a unification that did not happen" in low, (
-        "the rule must warn that a surviving divergent copy makes the "
-        "extraction's green diff certify a unification that did not happen "
-        "(CAL-1172 AC-1)."
+    missing = [t for t in _TERMS if not re.search(t, rule, re.IGNORECASE)]
+    assert not missing, (
+        f"{_HEADING!r} no longer carries the terms the extraction-sweep rule cannot "
+        f"be stated without; missing {missing}. The sweep greps the *whole tree* for "
+        "copies of the extracted pattern, not just the locations a finding named "
+        f"(CAL-1172). Section read:\n{rule}"
     )
 
-
-def test_extraction_sweep_in_scope_section() -> None:
-    """AC-1 (placement): the rule sits inside 'Part A — Scope' — an extraction's
-    completeness is a scope-discipline concern — not an unrelated part of the
-    skill."""
-    text = _code_quality_text()
-    m = re.search(r"^##\s+Part A\b.*Scope", text, re.MULTILINE)
-    assert m, "code-quality must have a 'Part A — Scope' section."
-    rest = text[m.end():]
-    nxt = re.search(r"^##\s+Part B\b", rest, re.MULTILINE)
-    section = rest[: nxt.start()] if nxt else rest
-    assert "extraction is not complete" in section.lower(), (
-        "the extraction-sweep rule must live in the 'Part A — Scope' discipline "
-        "(CAL-1172 AC-1 placement)."
+    assert _IS_NOT_COMPLETE.search(rule), (
+        "the rule has lost its polarity: an extraction must be stated as *not "
+        "complete* until the sweep runs. Without the negation bound to `complete`, "
+        "a paragraph describing extraction and grepping in the opposite direction "
+        f"carries every term above and passes (CAL-1172). Section read:\n{rule}"
     )

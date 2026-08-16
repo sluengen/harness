@@ -20,8 +20,30 @@ This ticket lands the rule itself:
   own header + ``files:`` entry move together).
 * the proposal's breakdown item 1 is marked shipped / linked to this issue.
 
-These guards pin that the rule actually landed with the elements the
-proposal's resolved decisions require, not just a placeholder mention.
+**What this module asserts (#459).** Structural correspondence, plus one
+tripwire.
+
+*Correspondence, unchanged* — the three mirrors are byte-identical to
+``process/harness.md``; the process doc's header matches its ``registry.yaml``
+entry; ``registry.yaml``'s own header matches its ``meta:`` self-entry; and
+``commands/update-guidance.md`` cross-references the rule next to its
+LOCAL-edit branch.
+
+*One tripwire* — the ``## Updating the guidance`` section, read as its own
+slice, names the artifacts the rule cannot be stated without and carries the
+negation bound to hardcoding. The seven ``test_names_*`` functions it replaces
+were one rule-home pinned seven ways, each on a literal phrase
+(``"search existing issues"``, ``"draft a github issue"``, ``"fix the defect
+at source"``…): brittle to any rewording that preserved the rule and blind to
+an edit that kept the bytes while inverting it (``code-quality`` Part C → *A
+guard over prose owns structure and negative space, never meaning*; ADR 0016).
+
+*Two guards retired.* ``test_process_harness_version_bumped_from_0_4_8``
+froze a shipped version number, which the header⇄registry parity assertion
+beside it already subsumes and which only ever needs hand-editing on a
+legitimate bump. ``test_proposal_breakdown_item_marked_shipped_or_linked``
+read a decided proposal's ``status:`` field — a museum record with one commit
+in its history and no regression to catch.
 """
 
 from __future__ import annotations
@@ -34,7 +56,10 @@ PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 MIRRORS = [REPO_ROOT / name for name in ("AGENTS.md", "CLAUDE.md", "GEMINI.md")]
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
-PROPOSAL = REPO_ROOT / "specs" / "proposals" / "guidance-feedback-upstream.md"
+
+_NEGATION = re.compile(
+    r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
+)
 
 
 def _registry_entry(path: str) -> str:
@@ -74,73 +99,49 @@ def _updating_guidance_section() -> str:
 # --- AC-1: the rule's required elements are in "Updating the guidance" ------
 
 
-def test_names_the_trigger() -> None:
-    body = _updating_guidance_section().lower()
-    assert "defect" in body and "friction" in body and "idea" in body, (
-        "process/harness.md's 'Updating the guidance' section must name the "
-        "trigger — a guidance defect, process friction, or feature idea "
-        "(#205 AC-1)."
-    )
+def _sentences(block: str) -> list[str]:
+    """*block* flattened to one line and split into sentences.
+
+    The terminator may be followed by markdown emphasis or a closing bracket
+    (``skill.**``, ``(…).``) — consuming those is load-bearing, not cosmetic:
+    a bolded lead-in that ends ``.**`` otherwise glues its sentence to the
+    next one and widens every negation window that reads this (``craft.md`` →
+    *The text unit is part of the predicate*). A dry run of this module's #459
+    mutation table surfaced exactly that: an inverted clause survived on a
+    negation belonging to the sentence after it.
+    """
+    flat = " ".join(block.split())
+    return [s for s in re.split(r"(?<=[.!?])[*_`\"')\]]*\s+", flat) if s.strip()]
 
 
-def test_names_search_existing_issues_first() -> None:
-    body = _updating_guidance_section().lower()
-    assert "search existing issues" in body, (
-        "the rule must say to search existing issues first, mitigating "
-        "duplicate/noise filing (#205 AC-1, proposal Risks)."
-    )
+def test_updating_guidance_routes_feedback_to_the_recorded_source() -> None:
+    """Tripwire — the section routes upstream feedback without guessing a URL.
 
-
-def test_names_source_repo_resolution_never_hardcoded() -> None:
+    Terms the rule cannot be stated without: ``.guidance-lock.yaml`` and
+    ``source.repo`` (where the destination is resolved from), ``draft`` (what
+    an agent produces rather than sends), ``operator`` (who sends it), and
+    ``proprietary`` (the scope bound on the body). Polarity: the sentence
+    naming hardcoding carries a negation — the upstream repo is resolved,
+    *never* hardcoded. That direction is the whole fork-attribution risk the
+    proposal named, and it is invisible to term co-occurrence: a section
+    telling an agent to hardcode the owner/repo names every term above.
+    """
     body = _updating_guidance_section()
-    assert ".guidance-lock.yaml" in body and "source.repo" in body, (
-        "the rule must resolve the upstream repo from .guidance-lock.yaml's "
-        "source.repo, never hardcode an owner/repo (#205 AC-1)."
-    )
-    assert "never hardcod" in body.lower(), (
-        "the rule must explicitly say never to hardcode an owner/repo "
+    lowered = body.lower()
+    for term in (".guidance-lock.yaml", "source.repo", "draft", "operator", "proprietary"):
+        assert term in lowered, (
+            "process/harness.md's 'Updating the guidance' section must state the "
+            f"upstream-routing rule in terms of {term!r} (#205 AC-1)."
+        )
+    hardcoded = [s for s in _sentences(lowered) if re.search(r"hardcod", s)]
+    assert hardcoded, (
+        "the rule must say something about hardcoding the upstream repo "
         "(#205 AC-1, proposal Risks: fork attribution)."
     )
-
-
-def test_names_draft_and_surface_posture() -> None:
-    body = _updating_guidance_section().lower()
-    assert "draft a github issue" in body, (
-        "the rule must say to draft a GitHub issue, not send one directly "
-        "(#205 AC-1, resolved decision: draft and surface)."
-    )
-    assert "operator" in body and (
-        "review and send" in body or "surface" in body
-    ), (
-        "the rule must surface the draft to the operator to review and send "
-        "— no unattended public write (#205 AC-1)."
-    )
-
-
-def test_names_scope_guard() -> None:
-    body = _updating_guidance_section().lower()
-    assert "proprietary" in body, (
-        "the rule must scope the issue body to the guidance itself, never "
-        "the consumer's proprietary code (#205 AC-1)."
-    )
-
-
-def test_names_source_repo_fix_and_file_case() -> None:
-    body = _updating_guidance_section().lower()
-    assert "fix the defect at source" in body and "public record" in body, (
-        "the rule must fold the source-repo case to fix-at-source AND file "
-        "the issue — the issue is the public record, not a substitute for "
-        "fixing (#205 AC-1, resolved decision)."
-    )
-
-
-def test_names_no_lock_file_degradation() -> None:
-    body = _updating_guidance_section()
-    assert "no `.guidance-lock.yaml`" in body or "no .guidance-lock.yaml" in body, (
-        "the rule must degrade gracefully when there is no "
-        ".guidance-lock.yaml or its source.repo does not resolve — surface "
-        "to the operator instead of guessing a URL (#205 AC-1, proposal "
-        "Risks: consumer without a lock file)."
+    assert any(_NEGATION.search(s) for s in hardcoded), (
+        "the source.repo resolution must carry its negation — resolved from the "
+        "lock file, never hardcoded. Without it this guard reads the same green "
+        "on prose that told an agent to hardcode an owner/repo (#205 AC-1)."
     )
 
 
@@ -183,14 +184,6 @@ def test_process_harness_header_matches_registry() -> None:
     )
 
 
-def test_process_harness_version_bumped_from_0_4_8() -> None:
-    header = re.search(r"guidance:process-harness@([\d.]+)", PROCESS_DOC.read_text())
-    assert header and header.group(1) != "0.4.8", (
-        "process/harness.md's guidance: header must be bumped from 0.4.8 "
-        "since this ticket changes its content (#205 AC-3)."
-    )
-
-
 def test_registry_self_version_header_matches_meta_entry() -> None:
     """registry.yaml itself changes in this ticket (the files: entry for
     process/harness.md moves), so its own header and meta: self-entry must be
@@ -204,19 +197,4 @@ def test_registry_self_version_header_matches_meta_entry() -> None:
     assert header.group(1) == meta_version, (
         f"registry.yaml header {header.group(1)!r} must match its own meta: "
         f"self-entry {meta_version!r} (#205 AC-3)."
-    )
-
-
-# --- AC-4: the proposal's breakdown item 1 is marked shipped / linked -------
-
-
-def test_proposal_breakdown_item_marked_shipped_or_linked() -> None:
-    text = PROPOSAL.read_text()
-    status = re.search(r"^status:\s*(\S+)", text, re.MULTILINE)
-    assert status, "the proposal must carry a status: field."
-    linked_in_breakdown = "#205" in _section(text, "Breakdown")
-    assert status.group(1) == "shipped" or linked_in_breakdown, (
-        "specs/proposals/guidance-feedback-upstream.md's breakdown item 1 "
-        "must be marked shipped (status: shipped) or linked to #205 (#205 "
-        "AC-4)."
     )

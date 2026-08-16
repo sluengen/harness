@@ -135,16 +135,28 @@ def test_spec_authoring_conditionalises_adr_storage() -> None:
 def test_spec_authoring_states_the_threshold_and_its_negative_case() -> None:
     """Both halves of the bar: what qualifies, and what explicitly does not.
 
-    The bar is a **conjunction** of three properties, so it is asserted as the
-    written phrase rather than as three free-floating tokens: ``cross-cutting``
-    and ``consequential`` each appear in the section's *unchanged* bullets, so
-    keying on them separately would let a rule stating only one third of the bar
-    pass against prose that predates this change.
+    The bar is a **conjunction** of three properties, and the conjunction is
+    what is asserted — the three terms must co-occur in **one paragraph**, not
+    merely somewhere in the section. That narrowing is load-bearing rather than
+    tidy: ``cross-cutting`` and ``consequential`` each appear in the section's
+    *unchanged* bullets, in different paragraphs, so a section-wide check of the
+    three tokens would pass against prose stating only one third of the bar.
+
+    #459 replaced the exact-phrase regex that used to carry this
+    (``cross-cutting, consequential, and expensive to reverse``, comma placement
+    included) with the paragraph-scoped conjunction. The regex was the class ADR
+    0016 names — brittle to a benign reordering of the three properties, while
+    verifying bytes rather than the rule — and the paragraph window keeps the
+    non-vacuity the regex was actually buying (``craft.md`` → *The text unit is
+    part of the predicate*).
     """
     section = _decision_section().lower()
-    assert re.search(
-        r"cross-cutting,\s*consequential,?\s*and\s*expensive to reverse", section
-    ), "the rule must state the bar as the conjunction of all three properties"
+    bar = ("cross-cutting", "consequential", "expensive to reverse")
+    assert [p for p in section.split("\n\n") if all(t in p for t in bar)], (
+        "no single paragraph of the decision-storage section states the bar as "
+        f"the conjunction of all three properties {bar}; spread across "
+        "paragraphs, the terms are satisfied by prose that predates the rule"
+    )
     assert "several files" in section, (
         "the negative case must be stated — a decision that merely touches "
         "several files does not clear the bar (#330 resolution)."
