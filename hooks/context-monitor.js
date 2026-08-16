@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-context-monitor@0.2.0
+// guidance:hook-context-monitor@0.3.0
 /**
  * Context monitor (PostToolUse).
  * Estimates context usage from the session transcript size and warns when it
@@ -14,11 +14,30 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 
 const CONTEXT_BUDGET = 200000;       // approx token window
 const WARN = 0.7, CRITICAL = 0.85;   // fractions of budget used
-const STATE = path.join(os.tmpdir(), "guidance-context-monitor-state");
 const EVERY = 5;                      // only check every N tool uses
+
+/**
+ * A temp-directory path scoped to the repository this hook is running in.
+ *
+ * `os.tmpdir()` is machine-global, so a fixed filename means two sessions in two
+ * checkouts share one state file. That is worse here than for a plain debounce:
+ * the state carries the last level *reported*, and the report is on a rising
+ * edge, so the second session inherits a level it never reached, sees no rise,
+ * and stays silent about a context that is already critical. Silence is the
+ * failure mode, which is why nothing surfaced it. The digest of the working
+ * directory is what makes the state per repository; hashed rather than embedded
+ * so the name stays a fixed length and carries no path a listing would expose.
+ */
+function scopedState(name) {
+  const key = crypto.createHash("sha256").update(process.cwd()).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), `${name}-${key}`);
+}
+
+const STATE = scopedState("guidance-context-monitor-state");
 
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { return { n: 0, level: 0 }; }
@@ -59,7 +78,7 @@ function done(additionalContext) {
 }
 
 /**
- * Fail open, loudly. See the identical helper in the other four hooks (#303): the
+ * Fail open, loudly. See the identical helper in every other hook (#303): the
  * approving payload still goes out, but stderr says this hook did not run, so a
  * disarmed hook is distinguishable from a clean pass-through. Built from hook-owned
  * constants and `err.message` only — never the payload, which is untrusted text.
@@ -73,7 +92,16 @@ function failOpen(reason, err) {
   );
 }
 
-try { main(); } catch (err) {
-  failOpen("crashed before it could decide", err);
-  process.stdout.write(JSON.stringify({ continue: true }));
+if (require.main === module) {
+  try { main(); } catch (err) {
+    failOpen("crashed before it could decide", err);
+    process.stdout.write(JSON.stringify({ continue: true }));
+  }
 }
+
+// The thresholds, exported so `test_context_monitor_hook` can size its fixtures
+// from the shipped numbers rather than restating them — retuning the budget then
+// moves every case with it instead of silently reclassifying one. The
+// `require.main === module` guard above means importing for that introspection
+// never runs the monitor, which would otherwise block reading stdin.
+module.exports = { CONTEXT_BUDGET, WARN, CRITICAL, EVERY };

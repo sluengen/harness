@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-gate-evidence-guard@0.2.1
+// guidance:hook-gate-evidence-guard@0.2.2
 // size: one Stop decision, and its three halves cannot be separated from it —
 // the claim filter, the worktree-scope derivation (#439: transcript cwds
 // intersected with `git worktree list`), and the tree/marker evidence. #436
@@ -660,7 +660,12 @@ function allow() {
 
 function main() {
   const input = readStdin();
-  const sessionCwd = input.cwd || process.cwd() || process.env.CLAUDE_PROJECT_DIR;
+  // No `|| process.env.CLAUDE_PROJECT_DIR` third arm: `process.cwd()` either
+  // returns a non-empty absolute path or throws, so the arm was unreachable and
+  // read as a fallback nothing could ever reach. `CLAUDE_PROJECT_DIR` is still
+  // consulted where it can matter — in `candidates()`, as the repository anchor
+  // when the session cwd is not a work tree at all.
+  const sessionCwd = input.cwd || process.cwd();
 
   const claim = triggerText(input);
   if (!claimsCompletion(claim)) return allow();
@@ -720,4 +725,21 @@ if (require.main === module) {
 // equivalence test that runs all of them is what catches it. The
 // ``require.main === module`` guard above means importing for that introspection
 // never runs the hook.
-module.exports = { markerPath, maxAgeSeconds, currentTree, CLAIM_PATTERNS };
+//
+// ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
+// one duplication further along: ``CONTEXT.md``'s ``branches:`` block is parsed
+// here **and** in ``push-target-guard.js``, and the two have already drifted in
+// shape (a map here, an array there). A drift in what the two consider
+// *protected* is silent in both directions — this hook would stop skipping a
+// worktree the push guard still refuses to publish from, or skip one it does
+// not — so ``test_context_branch_parsing_contract.py`` executes both over one
+// fixture corpus and compares the sets that fall out, exactly as
+// ``test_gate_marker_contract.py`` does for the marker half.
+module.exports = {
+  markerPath,
+  maxAgeSeconds,
+  currentTree,
+  declaredBranches,
+  protectedBranches,
+  CLAIM_PATTERNS,
+};

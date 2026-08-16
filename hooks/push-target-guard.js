@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// guidance:hook-push-target-guard@0.2.0
+// guidance:hook-push-target-guard@0.3.0
 // size: one deny decision over a `git push`, which needs the whole path from
 // tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
 // resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.
-// #436 declined a shared `hooks/lib/`, so `node <path>` must resolve this hook
-// with no module beside it, and the marker reading it shares with
+// #436 declined a shared `hooks/lib/`, so the marker reading this shares with
 // `gate-evidence-guard.js` is duplicated by that decision rather than by
-// accident. Filed as #444.
+// accident. What that decision did not remove is a dependency on one flat
+// sibling: the shell lexer comes from `git-push-guard.js`, and deleting that
+// file disarms this guard completely. `main()` therefore checks the sibling is
+// there before requiring it, so the disarm is announced by name instead of
+// arriving as a crash notice. Filed as #444.
 /**
  * Push-target guard (PreToolUse: Bash) — #436.
  *
@@ -34,7 +37,12 @@
  * catches and this one would not. The require is **lazy, inside main()**: a
  * top-level sibling require sits outside the try that owns the fail-open path, so
  * an ESM-root load failure would turn "approve loudly" into "crash before writing
- * stdout" (the contract #303 forbids).
+ * stdout" (the contract #303 forbids). The sibling's *existence* is checked
+ * before the require, because the two failures are worth different messages: a
+ * broken module is a bug in this bundle, while a missing one means this guard is
+ * disarmed and one named file restores it. Without the check both arrive as the
+ * generic crash notice, and the total loss of push-target enforcement reads as an
+ * ordinary hook error.
  *
  * **Fail open or fail closed, split three ways.**
  *   1. The hook could not run (crash, unparseable stdin, failed require) — it has
@@ -80,10 +88,20 @@ const DEFAULT_MAX_AGE_SECONDS = 86400;
 //: Where markers live under the git common directory.
 const MARKER_SUBDIR = ["harness", "gate"];
 
+//: The one sibling this hook depends on. Named once, so the existence check and
+//: the message it emits cannot disagree about which file is missing.
+const SIBLING_PARSER = "git-push-guard.js";
+
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
 //: is recoverable in one command (run the gate), a false allow lands unverified
 //: work on the integration branch of a repo that told the guidance nothing about
-//: itself. Extends the vocabulary ``workflow-guard.js`` already hardcodes.
+//: itself. ``workflow-guard.js`` hardcodes the same vocabulary — the two answer
+//: the same question about a branch name, and answering it differently is how
+//: ``staging`` became a branch you could edit source on directly and could not
+//: push to. It cannot import this set (that would give the advisory hooks a
+//: sibling dependency the bundle keeps to exactly one), so
+//: ``test_workflow_guard_hook`` derives its corpus from this export instead:
+//: adding a name here is what makes that hook's list red.
 const FALLBACK_PROTECTED = [
   "main",
   "master",
@@ -540,6 +558,19 @@ function main() {
 
   // Lazy, inside main()'s try: a top-level sibling require sits outside the
   // fail-open path, turning an ESM-root load failure into a crash before stdout.
+  // Existence first, so a *missing* sibling gets its own message: node names the
+  // file in its module error too, but that arrives through the generic crash arm
+  // and reads as a bug in this hook rather than as "this guard is disarmed and
+  // git-push-guard.js is what restores it".
+  const sibling = path.join(__dirname, SIBLING_PARSER);
+  if (!fs.existsSync(sibling)) {
+    failOpen(
+      `the shell parser it requires is missing, so this guard is disarmed and refuses ` +
+        `nothing until ${SIBLING_PARSER} is restored`,
+      { message: `looked for ${sibling}` }
+    );
+    return passThrough();
+  }
   const parser = require("./git-push-guard.js");
 
   const cwd = input.cwd || process.cwd();
@@ -567,4 +598,21 @@ if (require.main === module) {
 // that drifts silently; an equivalence test that runs all three is what catches
 // it. The ``require.main === module`` guard above means importing for that
 // introspection never runs the hook.
-module.exports = { markerPath, maxAgeSeconds, FALLBACK_PROTECTED };
+// ``declaredBranches`` and ``protectedBranches`` are exported for the same
+// reason and by the same argument, one duplication further along:
+// ``CONTEXT.md``'s ``branches:`` block is parsed here **and** in
+// ``gate-evidence-guard.js``, and the two have already drifted in shape (an
+// array here, a map there). Drift in what the two consider *protected* is
+// silent in both directions — this guard would stop refusing a push the Stop
+// hook still treats as shared, or refuse one it does not — so
+// ``test_context_branch_parsing_contract.py`` executes both over one fixture
+// corpus and compares the sets that fall out. The differing return shapes are
+// deliberate and are not being unified; the equivalence test is the drift
+// control the no-shared-lib decision asks for.
+module.exports = {
+  markerPath,
+  maxAgeSeconds,
+  declaredBranches,
+  protectedBranches,
+  FALLBACK_PROTECTED,
+};

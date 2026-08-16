@@ -6,10 +6,10 @@ from the **nearest** ``package.json`` walking up from the file. The harness ship
 the hooks as bare ``.js`` with no ``hooks/package.json``, so in a consuming repo
 that walk terminates at *that repo's root* — a root the harness does not control.
 Where it declares ``"type": "module"`` (any modern TS/Vite/ESM repo), Node parses
-all five hooks as ESM.
+every hook as ESM.
 
-Four then die loudly with ``ReferenceError: require is not defined in ES module
-scope``. The fifth is worse: ``prompt-guard.js``'s only ``require`` sits inside
+All but one then die loudly with ``ReferenceError: require is not defined in ES
+module scope``. ``prompt-guard.js`` is worse: its only ``require`` sits inside
 ``readStdin``'s ``try``, whose ``catch`` returns ``{}``, so under ESM it swallows
 the failure, sees an empty payload, and **exits 0 with an approving
 ``{"continue": true}`` having scanned nothing**. A prompt-injection scanner that
@@ -355,9 +355,9 @@ def test_removing_the_manifest_breaks_every_hook(hook: str, tmp_path: Path) -> N
 
 
 def test_removing_the_manifest_disarms_prompt_guard_but_says_so(tmp_path: Path) -> None:
-    """The asymmetry, pinned: prompt-guard falls open where the other four crash.
+    """The asymmetry, pinned: prompt-guard falls open where the others crash.
 
-    Four hooks crash with a non-zero exit under ESM. ``prompt-guard.js`` exits 0
+    Every other hook crashes with a non-zero exit under ESM; ``prompt-guard.js`` exits 0
     and emits a well-formed approving payload, which is why AC-1 cannot be an
     exit-status assertion. Stated as its own test so the distinction survives a
     future refactor of the shared predicate.
