@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-// guidance:hook-push-target-guard@0.1.0
+// guidance:hook-push-target-guard@0.1.1
+// size: one deny decision over a `git push`, which needs the whole path from
+// tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
+// resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.
+// #436 declined a shared `hooks/lib/`, so `node <path>` must resolve this hook
+// with no module beside it, and the marker reading it shares with
+// `gate-evidence-guard.js` is duplicated by that decision rather than by
+// accident. Filed as #444.
 /**
  * Push-target guard (PreToolUse: Bash) — #436.
  *
