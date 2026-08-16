@@ -58,9 +58,9 @@ things to that loop and nothing else:
 - **The gate**, `bash scripts/verify.sh` — the one command whose output is
   evidence. It is the same command in CI, in a local checkout, and in the
   nightly `dev → staging` promotion.
-- **The guards**, under `tests/` — roughly 1,300 tests, most of which read the
-  tracked tree and fail when a document, a version stamp, or a generated
-  artifact stops matching its source.
+- **The guards**, under `tests/` — most of them read the tracked tree and fail
+  when a document, a version stamp, or a generated artifact stops matching its
+  source.
 
 There are **no non-goals worth listing as absences** any more, but two are worth
 stating because the repo used to do them: it runs no long-lived process and

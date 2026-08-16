@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.6.0 -->
+<!-- guidance:tracker@0.6.1 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -12,7 +12,7 @@ The **backend-neutral protocol** for keeping the tracker and the in-flight work 
 | `tracker:` | Provider recipes | Address fields |
 |---|---|---|
 | `linear` | the **`linear`** skill | `repo.linear` (team key), `repo.project` |
-| `github` | the **`github-issues`** skill | `github: { repo, project, status_field? }` |
+| `github` | the **`github-issues`** skill | `github.repo`, `github.project`, and optionally `github.status_field` |
 | `none` | none — degrade, see below | — |
 
 There is no second switch. A `layers.linear` key is the **retired** form: it was replaced by `tracker:` because its name collided with the `repo.linear` address and its state was derivable from that address. Do not read it, and do not add a layer for it.
@@ -82,10 +82,10 @@ A first-class field carries the machine-readable signal; a label carries the hum
 | **Assignee = a human** | that human holds the ticket; the unattended loop **never picks it, in any state** | the loop's single skip rule |
 | **`input` label** | held because the operator must supply something the run cannot — an answer, a judgment call, a credential, a fact | the operator's "to answer / go do" filter |
 | **`operator` label** | held for an interactive session (setup, hands-on, a visual check) | the operator's "at the keyboard" filter |
-
-There are exactly two hold labels. `decision` is the **retired** third: it merged into `input` (ADR 0015) — a judgment call is just one more thing only the operator can supply. Treat a `decision` label encountered in an un-migrated repo as `input`, and do not apply it to new holds.
 | **Todo** | confirmed work — a review follow-up or a filed finding lands here | the pull queue |
 | **Backlog** | existence uncertain, or a proposal/direction trigger | triage |
+
+There are exactly two hold labels. `decision` is the **retired** third: it merged into `input` (ADR 0015) — a judgment call is just one more thing only the operator can supply. Treat a `decision` label encountered in an un-migrated repo as `input`, and do not apply it to new holds.
 
 **Todo vs Backlog.** Todo receives anything already decided to be done — review follow-ups, deferred findings, decided improvements: **confirmed work**. Backlog receives only work whose *existence* is uncertain. A ticket blocked on a *detail* of confirmed work **stays in Todo**, assigned + labelled; it is still confirmed, just held.
 

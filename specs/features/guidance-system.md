@@ -570,6 +570,55 @@ Two conversions did not deliver the polarity they claimed, both found by indepen
 - THEN the comparison is against a set, not a count, so a test swapped for another of the same number is visible
 - AND nothing in the gate performs that comparison, which is why it is recorded here as a reviewer measurement rather than as a guard
 
+### The published surface is mechanically well-formed, not only well-worded
+
+The prose guards above ask what the surface *says*. A second class of defect never reaches that question: the bytes are copied verbatim into consuming repos and rendered there, and a defect in their **mechanics** — a table the renderer breaks apart, a heading promising a section the file does not carry, template-brace syntax that reads as an instruction to substitute — is invisible in this repo, where nobody renders these files, and unmissable in every repo that installs them. Four were live at once and are repaired: the Signal table in `skills/tracker/SKILL.md` had a paragraph interposed between its header block and its `Todo`/`Backlog` rows, so those two rows rendered as literal pipes; `skills/code-quality/references/specialized-verification.md` carried a heading with no body at all, whose content lives in the parent skill; `skills/review-discipline/references/diff-shape-checks.md` shipped `{e.g. RELEASING.md}` unexpanded, and `skills/tracker/SKILL.md`'s provider table shipped a brace-wrapped field list beside it; and `README.md` stated a test count. `tests/unit/test_published_prose_mechanics.py` is the standing sweep over the class. It sits wholly on the tests' side of ADR 0016's line — every property is structural, and no regex has to read meaning to see any of them.
+
+**Both AC-3 sites were reworded rather than exempted.** One of the two live brace tokens sat inside backticks and so did the other, which is why the sweep deliberately reads inline code and excludes only fenced *blocks*: an inline-code exemption would have hidden both of the leaks it was written to find. Refusing the exemption is the point — an exemption token inside a sweep needs its own placement guard, or the sweep is opt-out prose — so the ambiguity was removed at the subject instead, and the module carries no allowlist of any kind.
+
+**Fenced code is excluded by a line-state toggle, not a span regex, and that is a second definition of "fence" in the test tree.** These are line-oriented guards: a violation is reported *at a line number*, so the filter has to answer "is this line inside a fence" rather than delete text. The first definition, in `test_distributed_prose_no_repo_ids.py`, is parsed straight out of `hooks/guidance-freshness.js` and returns a stripped string — it cannot carry line numbers, and re-pointing it would drift it from the hook it exists to mirror. The duplication buys the line numbers, and both definitions anchor the marker to the line's first non-whitespace run, which is what stops a sentence *mentioning* a fence mid-clause from opening one and swallowing the prose after it.
+
+**Every subject set is derived from `registry.yaml`, and the floor pins membership rather than a count.** The window runs between the `files:` and `meta:` keys, so `BOOTSTRAP.md` and the registry — version-stamped but never installed — are not published prose. Three of the four sweeps are narrowed off that set, and each narrowing is pinned by a different assertion, because they fail in different directions. The reference-file sweep excludes `SKILL.md`, and the floor asserts that exclusion directly; widening it fails on `skills/test-driven-development/SKILL.md` → `### REPEAT for the next criterion.`, the one live heading where the heading *is* the content. The skill-prose sweeps exclude `templates/`, whose brace placeholders are the convention the two leaks copied, and a paired assertion fails if that convention ever expires — a scope narrowing whose reason has quietly gone is an unexamined narrowing, not a justified one. The skill-prose set also pins a **reference file** in its membership, not only a `SKILL.md`: narrowing that set to `SKILL.md` alone leaves both anchors and the all-under-`skills/` invariant intact while dropping the surface AC-3's second leak was found on, and review measured exactly that narrowing as a live survivor before the assertion existed.
+
+**Table adjacency is physical.** Neighbours are compared by line number, never by position in the fence-filtered list. Comparing filtered positions makes the two halves of a table severed by a fenced code block adjacent — the fence lines are gone from the list — so the renderer breaks the table and the sweep reports it contiguous. Review proved that by paired splice, a paragraph and a fenced block spliced at the same offset of the same file: the paragraph flagged, the fence silently not. The repair is behaviour-identical across all 162 tracked markdown files and changes only the shape the filter could hide.
+
+**The README loses the count and gains no pin.** A number in prose that nothing measures is wrong the day after it is written, and this one demonstrated the point twice over: the README claimed roughly 1,300, the ticket reporting it asserted ~1,850, and the tree that ships collects **1,709** — a figure measured at review and recorded here against that tree rather than as a standing fact. The guard therefore pins *no* count. Pinning the README to what the gate collects would move the re-measurement onto every ticket that adds a test, which is the same decay with more ceremony.
+
+#### Scenario: a paragraph is interposed inside a published table
+
+- GIVEN a later change writes a paragraph between a table's header block and its remaining rows in a registered `skills/` file
+- WHEN the gate runs
+- THEN the sweep fails at the row that lost its header, because a row opening a table with no `| --- |` beneath it is severed from it
+- AND the same failure covers a fenced code block interposed at that position, because adjacency is measured on line numbers rather than on the fence-filtered list
+
+#### Scenario: a reference file gains a heading with nothing under it
+
+- GIVEN a later change adds a heading to a registered reference file and leaves its body empty, with a sibling or shallower heading next
+- WHEN the gate runs
+- THEN the empty-leaf sweep fails, naming the file, the line and the title
+- AND a heading followed by a *deeper* one stays silent, because a container's subsections are its content
+
+#### Scenario: template-brace syntax reaches the installed skill surface
+
+- GIVEN a later change copies a `{…}` placeholder out of `templates/` into a registered `skills/` file, inside backticks
+- WHEN the gate runs
+- THEN the placeholder sweep fails, because it reads inline code and excludes only fenced blocks
+- AND no exemption can be added to clear it without deleting the assertion, since the module carries no allowlist to add one to
+
+#### Scenario: a sweep's subject set is narrowed away from the surface it was written for
+
+- GIVEN a later change narrows the skill-prose subject set to `SKILL.md` files, or widens the reference-file set onto them
+- WHEN the gate runs
+- THEN the derivation floor fails on membership, in whichever direction was moved
+- AND the sweeps themselves stay green in the narrowing direction, which is why the floor is a separate test rather than a case inside them
+
+#### Scenario: the README states a test count again
+
+- GIVEN a later change writes a digit group next to the word "tests" in `README.md`, in either order
+- WHEN the gate runs
+- THEN the count sweep fails, naming the line and the phrase
+- AND a bare `tests/` path near an unrelated number does not fail, nor do two figures separated by more than the pinned adjacency window
+
 ### Source-version integrity
 
 For an equal source and lock version, `/update-guidance` classifies a file as `current` or `LOCAL` only when the fetched source hash matches the locked hash. A mismatch is `SOURCE DRIFT` regardless of the consumer's on-disk state. It stops the entire update before apply, reports the file and source/locked hashes, and requires the source file and registry version to be repaired.

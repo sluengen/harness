@@ -1,4 +1,4 @@
-<!-- guidance:code-quality-specialized-verification@0.1.0 -->
+<!-- guidance:code-quality-specialized-verification@0.1.1 -->
 # Specialized verification checks
 
 Load only the section whose trigger matches the change.
@@ -9,7 +9,6 @@ Load only the section whose trigger matches the change.
 
 When a test proves a security control is in place — an RLS policy, an auth guard, a CSP directive, a permission grant — asserting that the control *exists* (by name, by presence in a list) proves only that someone typed the right string. Assert what it evaluates to: the policy's `USING`/`WITH CHECK` expression, the guard's refusal, the directive's value. Pair it with a negative fixture whose control is present but *wrong*, and watch the test fail.
 
-### A green suite is only evidence if its inputs are real
 ### A file over the hard limit is an auditable choice, not silent drift
 
 A file past the hard line limit (Part B — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in Part B implies, made concrete and enforced at review.
