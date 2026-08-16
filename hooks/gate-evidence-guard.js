@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-gate-evidence-guard@0.1.0
+// guidance:hook-gate-evidence-guard@0.2.0
 /**
  * Gate-evidence guard (Stop) — #436.
  *
@@ -51,13 +51,35 @@
  * does not contain that turn yet when a Stop hook runs, so reading the trigger
  * from there yields the previous turn or nothing at all. See ``triggerText``.
  *
- * **Stated limitation.** A session cwd is fixed at launch, so when ``/build``
- * runs from the repo root and drives sub-agents that cd into ``.worktrees/<id>``,
- * this hook sees the root — on the integration branch, clean — and never fires.
- * v1 accepts that; the push guard covers the irreversible half. Enumerating
- * ``git worktree list`` and blocking on any task worktree with ungated work was
- * considered and rejected: one stale worktree from a finished ticket would block
- * every future session in the repo, permanently, with no way to clear it.
+ * **Scope: the worktrees this session worked in** (#439). The payload ``cwd`` is
+ * evaluated first and by its existing rules, then the derived candidates. The
+ * decision is
+ *
+ *     block ⟺ ∃ w ∈ (W ∩ S) : ungated(w)
+ *
+ * where ``W`` is ``git worktree list --porcelain`` for this repository and ``S``
+ * is the set of top-level ``cwd`` values this session's transcript records. ``S``
+ * is a **selector**, never a source of paths: it can only choose among members of
+ * ``W``, so its influence is bounded above by "check every worktree of this repo"
+ * and below by "check none" — which was v1's behaviour. Every string that reaches
+ * ``spawnSync``, ``currentTree`` or the injected ``reason`` is one git printed;
+ * the transcript value is a set-membership key and is then discarded.
+ *
+ * That is the same rule as ever, not an exception to it: what is read is a
+ * host-written structured field on a host-written envelope, per physical line
+ * via ``JSON.parse`` and top-level own-property only — never a regex over
+ * transcript bytes, never ``tool_input.command``, never message content.
+ *
+ * v1 stated the opposite limitation, and its grounding was wrong: the payload
+ * ``cwd`` is **not** fixed at launch (it tracks the main session's shell across
+ * Bash calls, and a sub-agent's ``cd`` never propagates back), so ``/build``
+ * driven from the repo root left the guard installed and inert for the shape it
+ * exists to catch. Enumerating ``git worktree list`` and blocking on any task
+ * worktree with ungated work is still rejected as a **source** of candidates —
+ * one stale worktree from a finished ticket would block every future session in
+ * the repo. It returns only as a membership filter, and the intersection is what
+ * removes the permanence: a stale worktree has to be in *this* session's
+ * transcript to be reached at all.
  *
  * **Honest limit.** Evidence plumbing, not an authority. The marker is a file
  * any process with write access can create, and this hook runs in the same trust
@@ -112,6 +134,21 @@ const CLAIM_PATTERNS = [
 //: Recursion is not involved here, but a transcript can be large; only the tail
 //: is ever needed, so the scan walks backwards and stops at the first assistant
 //: entry it finds.
+
+//: Ceilings on work, not windows on the file. A byte or line window silently
+//: narrows the candidate set as sessions grow, and a hook that quietly stopped
+//: firing looks exactly like a hook that allows. These count *distinct values*
+//: and *tree computations* instead, both sit well above measured reality (largest
+//: observed distinct-cwd set: 10; largest observed set of live non-detached
+//: same-repo worktrees in one session: 4), and both drop the oldest-visited
+//: first, which is the least likely to be the current work.
+const MAX_DISTINCT_CWDS = 32;
+const MAX_DERIVED_CHECKED = 4;
+
+//: The reported path is git's, but a worktree path is chosen by whoever created
+//: the worktree — in an unattended run, the agent. Collapsing whitespace removes
+//: the newline-injection shape and the bound keeps the reason readable.
+const MAX_REPORTED_PATH = 200;
 
 /**
  * Fail open, loudly. See the identical helper in the other hooks (#303): the
@@ -216,6 +253,8 @@ function hasFreshMarker(tree, cwd) {
  * Mirrors ``scripts/gate_marker.py``; the equivalence is measured by
  * ``test_gate_marker_contract.py``, because drift between the writer tree and
  * the reader tree would be silent and total. */
+let scratchIndexSerial = 0;
+
 function currentTree(cwd) {
   const dir = markerDir(cwd);
   if (dir === null) return null;
@@ -226,7 +265,11 @@ function currentTree(cwd) {
     void err;
     return null;
   }
-  const index = path.join(dir, `.index-${process.pid}-${Date.now()}`);
+  // The counter, not just pid+ms: this is now called up to five times per
+  // process (#439), and two calls inside one millisecond would otherwise name
+  // the same scratch index.
+  scratchIndexSerial += 1;
+  const index = path.join(dir, `.index-${process.pid}-${Date.now()}-${scratchIndexSerial}`);
   const env = Object.assign({}, process.env, { GIT_INDEX_FILE: index });
   try {
     if (git(cwd, ["read-tree", "HEAD"], env) === null) {
@@ -403,6 +446,204 @@ function hasWorkToClaim(cwd, tree, declared) {
   return head !== tip;
 }
 
+/** ``dir`` resolved through symlinks, or null when it does not resolve.
+ *
+ * macOS spells the same directory two ways (``/tmp`` and ``/private/tmp``), and
+ * both spellings appear in real transcripts, so every path on both sides of the
+ * membership test is normalized before it is compared. A path that does not
+ * resolve is a deleted directory, which is a fact rather than an error. */
+function resolved(dir) {
+  try {
+    return fs.realpathSync(dir);
+  } catch (err) {
+    // A directory that is gone cannot be a candidate and cannot be a worktree.
+    void err;
+    return null;
+  }
+}
+
+/** Every worktree of ``dir``'s repository, from ``git worktree list --porcelain``.
+ *
+ * One spawn, and it answers four questions at once that a per-candidate probe
+ * would need four of: is this directory a worktree of *this* repository, what is
+ * its root (so a cwd inside it normalizes), what branch is it on, and is it
+ * detached or stale. Git failing yields ``[]`` — an incomplete opinion allows.
+ *
+ * Porcelain is blank-line-delimited blocks: ``worktree <path>``, ``HEAD <oid>``,
+ * ``branch refs/heads/<name>``, plus bare or key-value attribute lines. */
+function worktreesOf(dir) {
+  const out = git(dir, ["worktree", "list", "--porcelain"]);
+  if (out === null) return [];
+  const found = [];
+  let current = null;
+  for (const raw of out.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("worktree ")) {
+      current = {
+        path: line.slice("worktree ".length),
+        branch: null,
+        detached: false,
+        bare: false,
+        prunable: false,
+      };
+      found.push(current);
+      continue;
+    }
+    if (current === null) continue;
+    if (line.startsWith("branch ")) current.branch = branchName(line.slice("branch ".length));
+    else if (line === "detached") current.detached = true;
+    else if (line === "bare") current.bare = true;
+    else if (line.startsWith("prunable")) current.prunable = true;
+  }
+  const live = [];
+  for (const worktree of found) {
+    const real = resolved(worktree.path);
+    if (real === null) continue; // the directory is gone; git prints it prunable
+    worktree.path = real;
+    live.push(worktree);
+  }
+  return live;
+}
+
+/** The distinct top-level ``cwd`` values in a transcript, most-recent first.
+ *
+ * **The only thing read out of the transcript, and it is read structurally.**
+ * Each *physical line* is parsed with ``JSON.parse`` and only the resulting
+ * object's own top-level ``cwd`` is taken, and only when it is a non-empty
+ * string. A tool result's text is a JSON string value nested under
+ * ``message.content``; JSON escapes newlines, so untrusted content cannot
+ * introduce a physical line of its own and therefore cannot present a top-level
+ * key. A regex over the file's bytes would have neither property.
+ *
+ * Walks backwards and stops at ``MAX_DISTINCT_CWDS`` distinct values, so the
+ * values it drops are the oldest-visited. A missing, rotated or compacted
+ * transcript yields ``[]``, which is v1's behaviour. */
+function sessionCwds(transcriptPath) {
+  if (!transcriptPath) return [];
+  let raw;
+  try {
+    raw = fs.readFileSync(transcriptPath, "utf8");
+  } catch (err) {
+    // No transcript is ordinary; there is simply nothing to select with.
+    void err;
+    return [];
+  }
+  const lines = raw.split("\n");
+  const seen = new Set();
+  const found = [];
+  for (let i = lines.length - 1; i >= 0 && found.length < MAX_DISTINCT_CWDS; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (err) {
+      // A transcript being written concurrently ends in a partial line, and a
+      // line this hook cannot parse is a line it has no opinion about.
+      void err;
+      continue;
+    }
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    if (!Object.prototype.hasOwnProperty.call(entry, "cwd")) continue;
+    const value = entry.cwd;
+    if (typeof value !== "string" || value === "") continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    found.push(value);
+  }
+  return found;
+}
+
+/** The **longest** worktree in ``universe`` that contains ``dir``, or null.
+ *
+ * Longest, not first, and that is load-bearing: this repo's worktrees live at
+ * ``<root>/.worktrees/<id>``, *inside* the root worktree's path. A first match
+ * maps every one of them to the root, the root is skipped as protected, and the
+ * hook is silently inert in its own default layout. */
+function containingWorktree(dir, universe) {
+  let best = null;
+  for (const worktree of universe) {
+    if (dir !== worktree.path && !dir.startsWith(worktree.path + path.sep)) continue;
+    if (best === null || worktree.path.length > best.path.length) best = worktree;
+  }
+  return best;
+}
+
+/** The directories to ask about, in order, lazily.
+ *
+ * The payload ``cwd`` is always first and always evaluated, which preserves v1
+ * exactly — when the session is inside the build worktree, nothing else is
+ * consulted and no #436 test changes meaning. Derived candidates follow in
+ * most-recently-visited order, and only when the first did not block, so the
+ * transcript is not even read on the ordinary path.
+ *
+ * The detached and protected-branch filters here apply to derived candidates
+ * only. The payload ``cwd`` keeps its existing rules: it is where the session
+ * *is* — a directory it chose and can act in — while a derived candidate is a
+ * place it *visited*, and a ``--detach`` checkout is an artifact of the gate that
+ * nobody claims work in. Filtering at admission rather than in ``verdictFor``
+ * also keeps a skipped worktree from spending the ``MAX_DERIVED_CHECKED``
+ * budget on a directory that could never block. */
+function* candidates(input, sessionCwd) {
+  yield { dir: sessionCwd, derived: false };
+
+  let anchor = null;
+  if (git(sessionCwd, ["rev-parse", "--is-inside-work-tree"]) === "true") anchor = sessionCwd;
+  else if (process.env.CLAUDE_PROJECT_DIR) anchor = process.env.CLAUDE_PROJECT_DIR;
+  if (anchor === null) return; // no anchor, so no notion of "this repository"
+
+  const universe = worktreesOf(anchor);
+  if (universe.length === 0) return;
+
+  const top = git(sessionCwd, ["rev-parse", "--show-toplevel"]);
+  const sessionTop = top === null ? null : resolved(top) || top;
+  const declared = sessionTop === null ? {} : declaredBranches(path.join(sessionTop, "CONTEXT.md"));
+  const skip = protectedBranches(declared, anchor);
+
+  let checked = 0;
+  const yielded = new Set();
+  for (const value of sessionCwds(input && input.transcript_path)) {
+    if (checked >= MAX_DERIVED_CHECKED) return;
+    const real = resolved(value);
+    if (real === null) continue;
+    const worktree = containingWorktree(real, universe);
+    if (worktree === null) continue; // not a worktree of this repository
+    if (worktree.bare || worktree.prunable || worktree.detached) continue;
+    if (worktree.branch !== null && skip.has(worktree.branch)) continue;
+    if (worktree.path === sessionTop) continue; // already evaluated, as the cwd
+    if (yielded.has(worktree.path)) continue;
+    yielded.add(worktree.path);
+    checked += 1;
+    yield { dir: worktree.path, derived: true };
+  }
+}
+
+/** The tree and marker path a block would be about, or null for *no opinion*.
+ *
+ * A behaviour-preserving extraction of v1's sequence — ``currentTree`` →
+ * protected-branch skip → ``hasWorkToClaim`` → ``hasFreshMarker`` — so that one
+ * question can be asked of more than one directory. */
+function verdictFor(dir) {
+  const tree = currentTree(dir);
+  if (tree === null) return null; // not a worktree, or git had no answer
+
+  const top = git(dir, ["rev-parse", "--show-toplevel"]);
+  const declared = top === null ? {} : declaredBranches(path.join(top, "CONTEXT.md"));
+  const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (branch !== null && protectedBranches(declared, dir).has(branch)) return null;
+
+  if (!hasWorkToClaim(dir, tree, declared)) return null;
+  if (hasFreshMarker(tree, dir)) return null;
+  return { tree, marker: markerPath(tree, dir) };
+}
+
+/** A path made safe to inject. Whitespace-collapsed and bounded, the existing
+ * ``failOpen`` idiom, because ``reason`` is written straight into the model's
+ * context. */
+function reportable(value) {
+  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+}
+
 function block(reason) {
   process.stdout.write(JSON.stringify({ decision: "block", reason: `${TAG} ${reason}` }));
 }
@@ -413,42 +654,47 @@ function allow() {
 
 function main() {
   const input = readStdin();
-  const cwd = input.cwd || process.cwd() || process.env.CLAUDE_PROJECT_DIR;
+  const sessionCwd = input.cwd || process.cwd() || process.env.CLAUDE_PROJECT_DIR;
 
   const claim = triggerText(input);
   if (!claimsCompletion(claim)) return allow();
 
-  const tree = currentTree(cwd);
-  if (tree === null) return allow(); // not a worktree, or git had no answer
+  for (const candidate of candidates(input, sessionCwd)) {
+    const verdict = verdictFor(candidate.dir);
+    if (verdict === null) continue;
 
-  const top = git(cwd, ["rev-parse", "--show-toplevel"]);
-  const declared = top === null ? {} : declaredBranches(path.join(top, "CONTEXT.md"));
-  const branch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (branch !== null && protectedBranches(declared, cwd).has(branch)) return allow();
+    if (input.stop_hook_active === true) {
+      // The platform re-entry flag, checked *after* a candidate qualifies so the
+      // notice still names the tree it would have blocked on. Exactly one
+      // additional turn per stop-chain is the ceiling of a Stop hook — scanning
+      // several worktrees does not raise it — and re-blocking would wedge a
+      // session whose gate is genuinely red.
+      process.stderr.write(
+        `${TAG} not re-blocking: no gate marker covers tree ${verdict.tree.slice(0, 12)}, ` +
+          "but stop_hook_active is set and one block per stop-chain is the ceiling.\n"
+      );
+      return allow();
+    }
 
-  if (!hasWorkToClaim(cwd, tree, declared)) return allow();
-  if (hasFreshMarker(tree, cwd)) return allow();
-
-  if (input.stop_hook_active === true) {
-    // The platform re-entry flag. Exactly one additional turn per stop-chain is
-    // the ceiling of a Stop hook; re-blocking would wedge a session whose gate
-    // is genuinely red. Say so, so a disarmed second pass is still visible.
-    process.stderr.write(
-      `${TAG} not re-blocking: no gate marker covers tree ${tree.slice(0, 12)}, ` +
-        "but stop_hook_active is set and one block per stop-chain is the ceiling.\n"
+    // Everything interpolated below is hook-owned constants, a tree oid, and a
+    // path git printed — never the transcript string that selected it.
+    const where = reportable(candidate.dir);
+    const scope = candidate.derived
+      ? `That directory is a worktree this session worked in rather than the ` +
+        `current directory. `
+      : "";
+    return block(
+      `This turn claims the work is finished, but no gate marker covers the current ` +
+        `tree ${verdict.tree.slice(0, 12)} in ${where}. ${scope}The gate has not been ` +
+        `run green over these exact bytes — a marker from before the last edit is not ` +
+        `evidence about them. Run the repo verify command (CONTEXT.md commands.verify) ` +
+        `in ${where}, read its output, and name the test that proves each acceptance ` +
+        `criterion; then say you are done. Expected marker: ${reportable(verdict.marker)}. ` +
+        `If the gate is red and you cannot fix it, say so plainly instead of claiming ` +
+        `completion.`
     );
-    return allow();
   }
-
-  block(
-    `This turn claims the work is finished, but no gate marker covers the current ` +
-      `tree ${tree.slice(0, 12)}. The gate has not been run green over these exact ` +
-      `bytes — a marker from before the last edit is not evidence about them. Run ` +
-      `the repo verify command (CONTEXT.md commands.verify) in ${cwd}, read its ` +
-      `output, and name the test that proves each acceptance criterion; then say ` +
-      `you are done. Expected marker: ${markerPath(tree, cwd)}. If the gate is red ` +
-      `and you cannot fix it, say so plainly instead of claiming completion.`
-  );
+  return allow();
 }
 
 if (require.main === module) {
