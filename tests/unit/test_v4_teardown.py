@@ -68,8 +68,7 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import (
-    ShallowHistoryError,
-    last_commit_date,
+    path_ever_existed,
     tracked_files_under,
     tracked_py_sources,
 )
@@ -484,25 +483,25 @@ def test_a_retired_path_is_one_that_really_existed(pathspec: str) -> None:
     while measuring nothing at all. Fifteen such entries would look exactly like
     fifteen successful deletions.
 
-    ``last_commit_date`` answers from ``git log`` and returns ``None`` for a path
-    with no commit, so a name that was never real fails here.
+    ``path_ever_existed`` answers from ``git log`` and returns ``False`` for a
+    path with no commit, so a name that was never real fails here.
 
-    :class:`ShallowHistoryError` is caught and treated as a **pass**, which is
-    the opposite of how every other caller treats it and needs saying why. That
-    exception is raised only when git *did* find a commit touching the path and
-    the answer resolved to a shallow clone's graft boundary — it carries that
-    SHA in its message. What is untrustworthy there is the **date**, and this
-    test does not read the date; it asks only whether any commit ever touched
-    the path. Existence is exactly what a boundary answer proves. Re-raising
-    would make the guard red on any shallow checkout for the one reason that has
-    nothing to do with what it measures, and a guard that fails for an unrelated
-    reason gets weakened by whoever hits it next.
+    The question has to be asked over the **whole history graph**, which is why
+    this calls a helper of its own rather than reusing the date one. Git's
+    default history simplification prunes a path created and deleted entirely on
+    one side of a merge, so on a release candidate — a merge of the release
+    branch and the integration branch — a module retired since the last release
+    reads as "never existed". Measured on one such candidate, two of this
+    module's parameters failed that way and the guard went red on a legitimate
+    tree (#451). A simplified answer is a fact about the topology it was asked
+    over, and this guard is asking about the path.
+
+    The shallow-history reasoning that used to sit here as an ``except`` clause
+    now lives in ``path_ever_existed``'s docstring, where it belongs: a graft
+    boundary makes a *date* untrustworthy and leaves *existence* proven, which is
+    a property of the question rather than of this caller.
     """
-    try:
-        dated = last_commit_date(pathspec)
-    except ShallowHistoryError:
-        return
-    assert dated is not None, (
+    assert path_ever_existed(pathspec), (
         f"git has no commit touching {pathspec!r}, so it never existed under that "
         f"name and its absence assertion proves nothing. Fix the spelling — an "
         f"absence guard over a path that was never real is the failure mode this "

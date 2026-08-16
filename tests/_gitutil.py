@@ -1,6 +1,6 @@
 """Shared test git helpers.
 
-Four of them, all about not hand-rolling git in test modules.
+Five of them, all about not hand-rolling git in test modules.
 
 :func:`init_repo` makes a throw-away directory a real repository. Since #214 the
 verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
@@ -46,6 +46,19 @@ fetched — a truncated answer that looks exactly like a real one — so
 :func:`last_commit_date` refuses it with :class:`ShallowHistoryError` rather than
 returning it (#326). #280 returned it, which is how CI (``actions/checkout``
 defaults to ``fetch-depth: 1``) read every feature spec as touched at HEAD.
+
+:func:`path_ever_existed` answers whether a path was ever real at all.
+
+An absence guard — "this retired module is gone from the tree" — is satisfied by
+a name that never existed, so it needs a companion proving the name was real.
+That is a question about the whole history graph, and asking it with a plain
+``git log`` gets a topology-dependent answer: default simplification prunes a
+path born and deleted entirely on one side of a merge, so on a release candidate
+the companion reported "never existed" about a module the repo demonstrably had
+(#451). This helper asks ``--full-history`` instead, and — unlike
+:func:`last_commit_date` — treats a graft-boundary answer as existence rather
+than refusing it. The two questions diverge because a truncated history makes a
+*date* untrustworthy and leaves *existence* proven.
 """
 
 from __future__ import annotations
@@ -218,6 +231,59 @@ def last_commit_date(
             "real (#326)."
         )
     return date.fromisoformat(stamp)
+
+
+def path_ever_existed(
+    path: str | Path,
+    *,
+    repo_root: Path = _DEFAULT_REPO_ROOT,
+) -> bool:
+    """Return whether any commit anywhere in history ever touched ``path``.
+
+    ``path`` is a pathspec relative to ``repo_root``. ``True`` means git found a
+    commit that touched it; ``False`` means the name was never real — a typo, or
+    a path that never existed under that spelling. A path that was *renamed
+    away* is not that case: the rename commit touches the old name, so both
+    spellings answer ``True``. That is the question an absence guard must be
+    measured against, and it is a *different* question from
+    :func:`last_commit_date`'s, which is why the two do not share a query.
+
+    ``--full-history`` is load-bearing, not decoration. Git's default history
+    simplification stops at a merge that is TREESAME to one parent and walks
+    only that side, so a path created **and** deleted entirely on one side of a
+    merge is pruned out of the answer: ``git log -1 -- <path>`` reports no
+    commit at all. That is exactly the shape of a release candidate — a merge of
+    the release branch and the integration branch — where a module was born and
+    retired since the last release, and it made an absence guard go red on a
+    legitimate candidate while staying green on the integration branch it was
+    written against (#451). A simplified answer is a fact about the topology it
+    was asked over; the full-graph answer is a fact about the path.
+
+    **A shallow clone's graft boundary counts as existence**, deliberately, and
+    this is the second divergence from :func:`last_commit_date`, which refuses
+    such an answer with :class:`ShallowHistoryError`. What truncated history
+    makes untrustworthy is the *date*: the boundary commit stands in for however
+    much history was never fetched, so reading its date as the path's last change
+    is wrong. It does not make existence untrustworthy — git found a commit
+    touching the path, and existence is precisely what that proves. Refusing here
+    would red every caller on any shallow checkout for the one reason that has
+    nothing to do with what they measure, and a guard that fails for an unrelated
+    reason gets weakened by whoever hits it next. No boundary probe is therefore
+    run at all.
+
+    A git-level failure raises rather than degrading to ``False``, so a broken
+    invocation can never read as "this path never existed"
+    (``engineering-principles``: errors are never swallowed). That covers not
+    being a repository, git being missing, and a repository holding no commits.
+    """
+    completed = subprocess.run(
+        ["git", "log", "--full-history", "-1", "--format=%H", "--", str(path)],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return bool(completed.stdout.strip())
 
 
 def tracked_py_sources(
