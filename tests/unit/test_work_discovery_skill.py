@@ -267,37 +267,51 @@ def test_pick_criteria_not_inlined_into_command() -> None:
 
 
 def test_actionability_records_a_deferral_three_ways() -> None:
-    """Tripwire — the deferral step keeps all three writes and all three hold kinds.
+    """Tripwire — the deferral step keeps all three writes and both hold kinds.
 
     Terms: ``comment`` (what the ticket needs), ``assign`` + ``operator`` (the
-    machine-readable hold signal and its holder), and the three hold labels
-    ``decision`` / ``input`` / ``operator`` with the *skips all three* rule and
-    the ``narrower`` note that ADR 0006 added.
+    machine-readable hold signal and its holder), and the two live hold labels
+    ``input`` / ``operator`` with the *skips both* rule.
 
-    **No negation is asserted, and none is faked.** The rule here is an
-    *obligation* — record the deferral three ways — not a prohibition, and the
-    section's negation tokens attach to other clauses inside the same bullet
+    **The hold-kind half is turned around, not dropped (#455).** This assertion
+    required three labels and a *skips all three* rule, which is ADR 0006's
+    model; ADR 0015 merged ``decision`` into ``input`` and left exactly two. A
+    guard for a retired requirement that is simply deleted leaves the section
+    free to grow the third kind back with nothing red, so the same claim is now
+    made in the other direction: both live kinds present, the skip rule stated
+    over both, and ``decision`` **absent** as a kind this section teaches. The
+    surviving-``decision`` skip rule lives in *Held tickets*, out of this
+    window, where it carries its own retirement marker.
+
+    **No negation is asserted for the writes, and none is faked.** That rule is
+    an *obligation* — record the deferral three ways — not a prohibition, and
+    the section's negation tokens attach to other clauses inside the same bullet
     (*something the run cannot supply*), so a bound negation would stay green
     with the obligation gutted. What carries the claim instead is the breadth:
-    all three writes and all three hold kinds named in one window (ADR 0016).
-    The direction — that the label alone is not enough — is the review gate's.
+    all three writes named in one window (ADR 0016).
     """
     body = _section(SKILL.read_text(), "Actionability")
     assert body, "the skill must carry an 'Actionability' section (CAL-1108)."
     low = body.lower()
-    for term in ("comment", "assign", "operator", "narrow"):
+    for term in ("comment", "assign", "operator"):
         assert term in low, (
             "work-discovery's deferral step must state the record in terms of "
             f"{term!r} — if a refusal prompted its removal, fix the posture "
             "instead (CAL-1108 / CAL-1166 / ADR 0006)."
         )
-    for label in ("`decision`", "`input`", "`operator`"):
+    for label in ("`input`", "`operator`"):
         assert label in body, (
-            f"the deferral step must name the {label} hold kind (ADR 0006, #191)."
+            f"the deferral step must name the {label} hold kind (ADR 0015, #455)."
         )
-    assert re.search(r"skips? all three", body, re.IGNORECASE), (
-        "the deferral step must state that the loop skips all three hold kinds "
-        "— the outbound semantics are unchanged by adding a kind (ADR 0006)."
+    assert "`decision`" not in body, (
+        "the deferral step teaches `decision` as a hold kind again. ADR 0015 "
+        "merged it into `input` and there are exactly two; a third kind taught "
+        "here contradicts `tracker`, `commands/decision.md`, and this file's own "
+        "Held-tickets section (#455)."
+    )
+    assert re.search(r"skips? both", body, re.IGNORECASE), (
+        "the deferral step must state that the loop skips both hold kinds — the "
+        "outbound semantics do not depend on which label was applied (ADR 0015)."
     )
     assert re.search(r"all three", body, re.IGNORECASE), (
         "the deferral must require all three of comment, label and assignment — "

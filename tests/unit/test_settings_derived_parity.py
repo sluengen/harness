@@ -266,18 +266,28 @@ def test_automode_assess_filing_clause_targets_todo_with_its_bounds() -> None:
 
     A wider grant must carry the bound that makes it safe, because the clause
     text is what the classifier reads. The two guards the operator named are the
-    assessment's **severity bar** at filing time and the merge-time **review
-    gate** before anything ships; the clause must state both, and it must no
-    longer frame every filing as landing in a human-triaged holding state."""
+    assessment's filing-time bar and the merge-time **review gate** before
+    anything ships; the clause must state both, and it must no longer frame
+    every filing as landing in a human-triaged holding state.
+
+    #455 renamed the first of the two rather than dropping it. It was the
+    *severity bar* until the Critical/High/Medium/Low scale was retired for the
+    blocking×size 2×2, but the control it names survives unchanged as
+    ``assessment-craft``'s **finding bar** (specific or silent, evidence leads,
+    no hypotheticals). Following the bar keeps the assertion measuring the same
+    thing; deleting it would leave a widened permission clause carrying one
+    stated bound instead of two, which is the direction this guard exists to
+    refuse."""
     clause = _clause_containing("/assess", "Creating tracker issues")
     assert clause, "the assess-filing clause must exist (CAL-1087/CAL-1168)."
     assert "Todo" in clause, (
         "the filing clause must name Todo as the target — the operator decided "
         "findings file to Todo always, not Backlog (CAL-1168)."
     )
-    assert "severity bar" in clause.lower(), (
-        "the widened clause must name the severity bar — one of the two guards "
-        "the operator accepted for the self-feeding loop (CAL-1168)."
+    assert "finding bar" in clause.lower(), (
+        "the widened clause must name the assessment's finding bar — one of the "
+        "two guards the operator accepted for the self-feeding loop (CAL-1168), "
+        "renamed from `severity bar` when the severity scale was retired (#455)."
     )
     assert "review gate" in clause.lower(), (
         "the widened clause must name the merge-time review gate — the second "

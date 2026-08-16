@@ -4,9 +4,8 @@
 `/assess` finding files into, so each run decided ad hoc. The operator decided
 (2026-07-18, `specs/proposals/ticket-protocol-hygiene.md`): findings file to
 **Todo always**, with the Build project attached (project is mandatory on this
-workspace) and severity-mapped priority — accepting that the unattended loop
-becomes self-feeding, guarded by the assessment severity bar and the merge-time
-review gate.
+workspace) — accepting that the unattended loop becomes self-feeding, guarded by
+the assessment's filing-time bar and the merge-time review gate.
 
 **What this module asserts, after #459.** One tripwire over the step-2 body: the
 three parts of the filing instruction, plus the negation that makes the placement
@@ -36,9 +35,18 @@ ASSESS = REPO_ROOT / "commands" / "assess.md"
 #: The step whose placement rule this ticket pins.
 STEP_HEADER = "### 2. File the findings"
 
-#: The three parts of the filing instruction. Words, not sentences: how the
-#: instruction is phrased is the review gate's business.
-_FILING_TERMS = ("todo", "project", "severity", "priority")
+#: The two surviving parts of the filing instruction. Words, not sentences: how
+#: the instruction is phrased is the review gate's business.
+_FILING_TERMS = ("todo", "project")
+
+#: The parts #448 retired, kept here **as the inverse of the same assertion**
+#: rather than deleted. The severity→priority mapping was the third and fourth
+#: term above until the Critical/High/Medium/Low scale went (ADR 0015, #455), and
+#: a retired requirement whose test is simply removed leaves the step free to
+#: grow it back with nothing red — the `craft.md` remedy for a retired predicate
+#: is to turn it around, not to drop it. So the same paragraph that must name the
+#: state and the project must now *not* name these.
+_RETIRED_FILING_TERMS = ("severity", "priority")
 
 #: The placement, **anchored to the state it rejects**. This is the whole content
 #: of the rule — Todo is chosen *over* Backlog, deliberately, because a finding is
@@ -93,8 +101,9 @@ def test_step_two_files_to_todo_and_not_to_backlog() -> None:
       the state. ``_step_two`` asserts the header exists, so a rename names
       itself rather than emptying the window; the paragraph narrowing is what
       keeps a sibling rule's negation out of the polarity check.
-    * **terms** — the state, the mandatory project, and the severity-to-priority
-      mapping, all read from that one paragraph.
+    * **terms** — the state and the mandatory project, read from that one
+      paragraph, and — the same assertion inverted — the retired
+      severity-to-priority mapping absent from it.
     * **polarity** — ``not Backlog``, anchored to the state it rejects. Without
       it the terms above are satisfied word for word by the inversion, which is
       the run this rule exists to stop repeating.
@@ -113,8 +122,15 @@ def test_step_two_files_to_todo_and_not_to_backlog() -> None:
     assert not missing, (
         f"step 2's filing instruction no longer names {missing}. A finding files "
         "into a named state, with the repo's Build project attached (a project is "
-        "mandatory when filing here) and its severity mapped to a priority "
-        "(CAL-1168)."
+        "mandatory when filing here) (CAL-1168)."
+    )
+
+    returned = [term for term in _RETIRED_FILING_TERMS if term in lowered]
+    assert not returned, (
+        f"step 2's filing instruction names {returned} again. The severity scale "
+        "is retired for the blocking×size 2×2, so a finding no longer carries a "
+        "grade to map onto a priority — placing one there would send the filer "
+        "back to a vocabulary `review-discipline` no longer defines (#455)."
     )
 
     assert _NOT_BACKLOG.search(step), (

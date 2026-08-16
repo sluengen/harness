@@ -12,18 +12,20 @@ demonstrably has the convention — three extractions in one window each got the
 own test module — but nothing stated it, so adherence was coincidental, and a
 fourth family's four extractions all landed their tests back in a single
 2,768-line module. The fix is one clause on the same bullet, bound to the same
-*extraction* outcome and folded into the same **Medium** finding.
+*extraction* outcome and folded into the same **non-blocking** finding (the
+same bullet, in the vocabulary #455 left behind after the grade scale went).
 
 **What this module asserts, after #459.** One tripwire over one clause-home
 (ADR 0016, ``code-quality`` Part C → *A guard over prose owns structure and
-negative space, never meaning*), plus the severity sweep, which is negative
-space and stays:
+negative space, never meaning*), plus the second-placement sweep, which is
+negative space and stays:
 
 1. **Anchor** — the ``- **Architecture watchlist**`` bullet, sliced by
    :func:`~tests.unit.test_architecture_watchlist._review_watchlist_bullet`, and
    narrowed again to the *sentences* naming tests. The narrowing is load-bearing:
-   the bullet already contains ``module``, ``reason``, ``extraction``, ``Medium``
-   and ``diff`` for other reasons, so any bullet-wide key is green against the
+   the bullet already contains ``module``, ``reason``, ``extraction``,
+   ``non-blocking`` and ``diff`` for other reasons, so any bullet-wide key is
+   green against the
    pre-clause file and measures nothing — the over-wide unit ``craft.md`` → *The
    text unit is part of the predicate* names.
 2. **Term set** — ``test`` selects the clause; ``stay`` is what makes the
@@ -59,10 +61,14 @@ from tests.unit.test_review_discipline_watchlist_entry_currency import _sentence
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 
-# The severities the repo grades findings at. `medium` is the one this bullet
-# already uses; the rest must stay absent, because the clause folds into that
-# finding rather than introducing a tier of its own.
-_OTHER_SEVERITIES = ("critical", "high", "low")
+# The placements a finding can carry. `non-blocking` is the one this bullet
+# already uses; the other must stay absent, because the clause folds into that
+# finding rather than introducing a placement of its own. These were the four
+# retired grade names (`critical`/`high`/`medium`/`low`) until #455 replaced the
+# scale with the blocking×size 2×2 — the claim is unchanged, and it is now
+# written in the vocabulary `review-discipline` actually defines.
+_THIS_PLACEMENT = "non-blocking"
+_OTHER_PLACEMENTS = ("blocking",)
 
 #: The escape hatch, with the negation **anchored to the reason it governs**.
 #: ``reason`` alone is present elsewhere in the bullet (the deferral clause), so
@@ -114,18 +120,24 @@ def test_the_extracted_modules_test_home_is_owed_on_an_extraction() -> None:
     )
 
 
-def test_the_clause_adds_no_new_severity() -> None:
-    """The clause folds into the bullet's existing Medium finding (AC-3)."""
+def test_the_clause_adds_no_second_placement() -> None:
+    """The clause folds into the bullet's existing non-blocking finding (AC-3)."""
     bullet = _bullet().lower()
 
-    assert "medium" in bullet, (
-        "the Architecture watchlist bullet must keep grading its structural "
-        "finding Medium — the tests clause folds into it (#276)"
+    assert _THIS_PLACEMENT in bullet, (
+        "the Architecture watchlist bullet must keep placing its structural "
+        "finding non-blocking — the tests clause folds into it (#276)"
     )
-    for severity in _OTHER_SEVERITIES:
-        assert not re.search(rf"\b{severity}\b", bullet), (
-            f"the bullet now grades a {severity!r} finding. The tests clause "
-            "reuses the bullet's existing severity rather than introducing a "
-            "tier of its own; a second severity makes one check produce two "
+    # `blocking` is a substring of `non-blocking`, so the absence half is read
+    # over the bullet with this bullet's own placement removed. Without that
+    # removal the assertion is constant-false the moment the bullet states its
+    # own placement — the frame mismatch `craft.md` names, reached through an
+    # overlapping vocabulary rather than through an empty subject.
+    residue = bullet.replace(_THIS_PLACEMENT, "")
+    for placement in _OTHER_PLACEMENTS:
+        assert not re.search(rf"\b{placement}\b", residue), (
+            f"the bullet now places a finding as {placement!r}. The tests clause "
+            "reuses the bullet's existing placement rather than introducing one "
+            "of its own; a second placement makes one check produce two "
             "findings (#276)"
         )

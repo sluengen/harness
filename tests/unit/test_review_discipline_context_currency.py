@@ -30,9 +30,11 @@ negative space, never meaning*):
 What went, and why: the severity grade, the ``stack`` / ``commands`` / ``layers``
 block names and the *first file* rationale were positive-meaning pins — brittle
 against a benign rewording and silent on an inversion. ``#459``'s policy hands
-those to the review gate. A third test re-derived the ``### Stage 2`` →
-``## Severity`` slice the bullet reader already performs, so it could only fail
-where the slicer already fails.
+those to the review gate. A third test re-derived the slice the bullet reader
+already performs, so it could only fail where the slicer already fails. That
+slice ran ``### Stage 2`` → ``## Severity`` at the time; #455 retired the
+severity scale and the heading went with it, so the terminator below is the next
+level-2 heading and the pair named here is history rather than a pointer.
 
 **This module is the Stage-2 slicer's home.** ``_stage_two_bullet`` is imported
 by the five sibling Stage-2 bullet guards, which each carried a private copy of
@@ -75,10 +77,33 @@ def _skill_text() -> str:
 
 
 def _stage_two(text: str) -> str:
-    """The ``### Stage 2`` body, to the ``## Severity`` section that follows it."""
+    """The ``### Stage 2`` body, to the next level-2 heading after it.
+
+    The terminator was the literal ``## Severity`` until #455 retired the
+    severity scale and renamed that section. Naming the *next* heading of the
+    enclosing level rather than one particular title is what keeps six guards
+    from breaking again the next time the section after Stage 2 is renamed —
+    and it is not a widening: ``### Stage 2`` is a level-3 heading inside it, so
+    the slice ends in exactly the same place. Both anchors still fail loudly
+    when they resolve to nothing, which is the property that matters.
+    """
     start = text.index("### Stage 2")
-    end = text.index("## Severity", start)
-    return text[start:end]
+    # Past the heading's own line. ``^## `` cannot match ``### Stage 2`` at any
+    # offset: the third character is a hash rather than a space, and ``^`` under
+    # MULTILINE anchors only at a line start, so no interior offset is even a
+    # candidate — measured, not assumed. Skipping the line is therefore a bound
+    # on the *next* heading style rather than a repair of this one: it keeps the
+    # search from ever being asked about the anchor line, so a level-2 anchor
+    # would not resolve to offset zero and hand every assertion below an empty
+    # slice, which reads as an absent bullet rather than as a broken slicer.
+    after = text.index("\n", start) + 1
+    end = re.search(r"^## ", text[after:], re.MULTILINE)
+    assert end, (
+        "`skills/review-discipline/references/diff-shape-checks.md` has no "
+        "level-2 heading after `### Stage 2` — the slice every guard below "
+        "reads would run to the end of the file"
+    )
+    return text[start : after + end.start()]
 
 
 def _stage_two_bullet(text: str, title: str) -> str:
