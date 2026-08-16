@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-push-target-guard@0.1.1
+// guidance:hook-push-target-guard@0.2.0
 // size: one deny decision over a `git push`, which needs the whole path from
 // tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
 // resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.
@@ -322,9 +322,16 @@ function parsePush(rawTokens, parser) {
  * one operand further along, and it fails in the dangerous direction: the hook's
  * cwd is usually the repo root, which usually *has* a marker, so a push from an
  * unverified worktree would be authorised by a tree nobody is pushing. A
- * relative operand with no known base stays null, which the caller denies. */
-function resolveDir(operand, cwd) {
+ * relative operand with no known base stays null, which the caller denies.
+ *
+ * An operand carrying a shell expansion stays null for the same reason a ``cd``
+ * target does — this is the *other* directory decision slot, and closing only
+ * the ``cd`` one left the refusal one rewrite from being bypassed along the path
+ * its own message recommends: ``git -C "$w" push`` is ``cd "$w" && git push``
+ * one operand further along. */
+function resolveDir(operand, cwd, parser) {
   if (operand === null) return cwd;
+  if (isUnreadable(operand, parser)) return null;
   if (path.isAbsolute(operand)) return operand;
   return cwd === null ? null : path.resolve(cwd, operand);
 }
@@ -337,9 +344,21 @@ function resolveDir(operand, cwd) {
  * branch called ``$T``, which no protected set contains, while the shell hands
  * git whatever ``T`` holds. The sibling guard's helper covers ``$(…)`` and
  * backticks because those are what a *force* flag can hide behind; a target has
- * the wider exposure, so a bare ``$`` counts here too. */
+ * the wider exposure, so a bare ``$`` counts here too. A leading ``~`` is the
+ * third expansion a shell performs on a bare word and the one that reads least
+ * like one, so it is named rather than left to be rediscovered.
+ *
+ * This governs **both directory decision slots** — the ``cd`` target in
+ * :func:`pushesIn` and the ``git -C`` operand in :func:`resolveDir` — as well as
+ * a refspec: a directory is a decision slot for the same reason a branch name
+ * is, and keying those on the narrower predicate is what let
+ * ``cd "$worktree_path" && git push origin HEAD:dev`` through with no marker
+ * check at all (#452). Every arm is separately killable: ``$(…)`` is caught by
+ * the ``$`` arm alone, so the backtick is the only input that proves the
+ * substitution arm is live, and ``test_an_ambiguous_push_directory_is_denied``
+ * carries one for that reason. */
 function isUnreadable(token, parser) {
-  return parser.hasCommandSubstitution(token) || token.includes("$");
+  return parser.hasCommandSubstitution(token) || token.includes("$") || token.startsWith("~");
 }
 
 /** Every ``git push`` reachable from ``command``, each with the directory it
@@ -349,8 +368,11 @@ function isUnreadable(token, parser) {
  * ``cd "$worktree_path" && git push origin HEAD:dev``, and resolving ``HEAD`` at
  * the session cwd reads the wrong branch — and could find a marker for a tree
  * nobody is pushing. So a ``cd`` preceding a push in the same lexed sequence
- * moves the directory, and a ``cd`` target carrying a command substitution makes
- * it unknowable (``dir: null``, which the caller denies). */
+ * moves the directory, and a ``cd`` target carrying any shell expansion —
+ * ``isUnreadable``, so a bare ``$VAR`` as much as a ``$(…)`` — makes it
+ * unknowable (``dir: null``, which the caller denies). That the shipped idiom is
+ * the *expansion* spelling is the whole point: keying this on the narrower
+ * command-substitution predicate exempted the one command it was written for. */
 function pushesIn(command, startDir, parser, depth) {
   if (depth > MAX_DEPTH) return [];
   const found = [];
@@ -360,12 +382,12 @@ function pushesIn(command, startDir, parser, depth) {
     const resolved = parser.resolveCommand(tokens);
     if (resolved.length && parser.basename(resolved[0]) === "cd") {
       const target = resolved.slice(1).find((t) => !t.startsWith("-"));
-      if (target === undefined || parser.hasCommandSubstitution(target)) dir = null;
+      if (target === undefined || isUnreadable(target, parser)) dir = null;
       else if (dir !== null) dir = path.resolve(dir, target);
       continue;
     }
     const push = parsePush(tokens, parser);
-    if (push) found.push({ ...push, dir: resolveDir(push.dir, dir) });
+    if (push) found.push({ ...push, dir: resolveDir(push.dir, dir, parser) });
     for (const script of parser.nestedScripts(tokens)) {
       found.push(...pushesIn(script, dir, parser, depth + 1));
     }
@@ -437,9 +459,11 @@ function verdict(push, parser) {
   if (dir === null) {
     return (
       "Blocked a push whose working directory cannot be resolved statically (a cd " +
-      "target carrying a command substitution). The tree this push would carry is " +
-      "unknowable, so there is nothing to verify. Run the push from a literal " +
-      "directory, or with an explicit git -C <path>."
+      "target or a git -C operand carrying a shell expansion — a variable or a " +
+      "leading tilde as much as a command substitution). The tree this push would " +
+      "carry is unknowable, so there is nothing to verify. Spell the directory " +
+      "literally: an expanded git -C <path> is the same unknowable directory one " +
+      "operand further along, and is refused here too."
     );
   }
   if (git(dir, ["rev-parse", "--is-inside-work-tree"]) !== "true") return null;

@@ -161,7 +161,7 @@ files:
   # green — the Stop hook refuses a completion claim over a tree no marker
   # covers in any worktree this session worked in (#439), the push guard refuses
   # a push to a protected branch carrying one.
-  hooks/push-target-guard.js:         { id: hook-push-target-guard,   version: 0.1.1, profiles: [harness] }
+  hooks/push-target-guard.js:         { id: hook-push-target-guard,   version: 0.2.0, profiles: [harness] }
   hooks/gate-evidence-guard.js:       { id: hook-gate-evidence-guard, version: 0.2.1, profiles: [harness] }
 
   # --- process doc (the single surface process; derived into AGENTS/CLAUDE/GEMINI.md) ---

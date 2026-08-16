@@ -13,6 +13,12 @@ their file set from the helper rather than re-inlining a working-tree walk.
 last actually changed, which is what a doc declaring its own currency must be
 measured against. Its commits pin ``GIT_AUTHOR_DATE`` so the assertions read a
 known day rather than whenever the suite runs.
+
+``path_ever_existed`` (#451) is the fourth: whether any commit ever touched a
+path, which is what an absence guard must be measured against. It is a
+deliberately *different* question from the third — full-graph rather than
+simplified history, and a shallow clone's graft boundary counts as an answer
+rather than being refused — so the two diverge in the cases pinned below.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import pytest
 from tests._gitutil import (
     ShallowHistoryError,
     last_commit_date,
+    path_ever_existed,
     tracked_files_under,
     tracked_py_sources,
 )
@@ -439,5 +446,157 @@ def test_last_commit_date_trusts_a_non_boundary_answer_in_a_shallow_clone(
     assert last_commit_date("other.md", repo_root=clone) == date(2026, 5, 1)
 
     # spec.md's answer still resolves to the grafted commit, so it is refused.
+    with pytest.raises(ShallowHistoryError):
+        last_commit_date("spec.md", repo_root=clone)
+
+
+# ---------------------------------------------------------------------------
+# #451 — ``path_ever_existed``: the full-graph existence question an absence
+# guard is measured against, and the two places it diverges from the date.
+
+
+def _repo_with_a_one_sided_merge(tmp_path: Path) -> Path:
+    """A repo whose HEAD is a merge pruning ``gone.md`` out of default history.
+
+    The topology, which is the whole fixture: ``gone.md`` is created *and*
+    deleted entirely on ``side``, while ``dev`` moves independently and never
+    holds it. Merging ``side`` into ``dev`` with ``--no-ff`` leaves a two-parent
+    commit whose tree carries no ``gone.md`` — TREESAME to the first parent for
+    that path, so default history simplification follows ``dev`` alone and
+    reports no commit at all.
+
+    This is a release candidate in miniature: the merge of a release branch and
+    an integration branch where a module was born and retired since the last
+    release.
+    """
+    repo = tmp_path / "merged"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "base.md").write_text("base\n")
+    _commit_on(repo, "base.md", "2026-01-05T12:00:00+00:00", "add base")
+
+    _git(repo, "checkout", "-q", "-b", "side")
+    (repo / "gone.md").write_text("transient\n")
+    _commit_on(repo, "gone.md", "2026-02-05T12:00:00+00:00", "add gone")
+    (repo / "gone.md").unlink()
+    _commit_on(repo, "gone.md", "2026-02-06T12:00:00+00:00", "delete gone")
+
+    _git(repo, "checkout", "-q", "dev")
+    (repo / "base.md").write_text("base v2\n")
+    _commit_on(repo, "base.md", "2026-03-05T12:00:00+00:00", "edit base")
+    _git(repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+    return repo
+
+
+def test_path_ever_existed_sees_a_path_pruned_by_default_simplification(
+    tmp_path: Path,
+) -> None:
+    """A path pruned out of simplified history is still reported as having existed.
+
+    This is the #451 defect. ``git log -1 -- <path>`` runs under git's default
+    history simplification, which stops at a merge that is TREESAME to one
+    parent and walks only that side. On a release candidate — a merge of the
+    release branch and the integration branch — a module born and deleted
+    entirely on the integration side is invisible to that query, so an existence
+    check built on it reports "this path never existed" about a path that
+    demonstrably did. ``--full-history`` walks every parent, which is the only
+    query whose answer does not depend on the topology it is asked over.
+    """
+    repo = _repo_with_a_one_sided_merge(tmp_path)
+
+    # The trap is real: git's simplified answer for gone.md is no answer at all.
+    # Without this, a fixture that failed to build the pruning topology would
+    # let the contract below pass while exercising nothing.
+    pruned = subprocess.run(
+        ["git", "log", "-1", "--format=%H", "--", "gone.md"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert pruned == "", (
+        f"git's default-simplification query still reports {pruned} for gone.md "
+        f"— the fixture did not build the pruning topology this test exists to "
+        f"pin, so it proves nothing"
+    )
+
+    assert path_ever_existed("gone.md", repo_root=repo) is True
+
+
+def test_path_ever_existed_is_false_for_a_name_that_was_never_real(
+    tmp_path: Path,
+) -> None:
+    """Polarity: a path git has never seen answers ``False``.
+
+    The half that makes the helper worth calling. An existence predicate that
+    answered ``True`` unconditionally would satisfy every absence guard's
+    "this path was real" parameter — including the misspelled ones the guard
+    exists to catch — while measuring nothing at all.
+
+    The rename case is pinned here too, because it is the near neighbour a
+    reader is most likely to file under "never existed" and it answers the
+    other way.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "keep.md").write_text("real\n")
+    _commit_on(tmp_path, "keep.md", "2026-03-04T12:00:00+00:00", "add keep")
+
+    assert path_ever_existed("keep.md", repo_root=tmp_path) is True
+    assert path_ever_existed("kepp.md", repo_root=tmp_path) is False
+
+    # A path *renamed away* is not a "never existed" case: the rename commit
+    # touches the old name, so both spellings answer True. Pinned because the
+    # helper's docstring draws the line there and nothing else measured it.
+    _git(tmp_path, "mv", "keep.md", "moved.md")
+    _commit_on(tmp_path, "moved.md", "2026-03-05T12:00:00+00:00", "rename keep.md")
+    assert path_ever_existed("keep.md", repo_root=tmp_path) is True
+    assert path_ever_existed("moved.md", repo_root=tmp_path) is True
+
+
+def test_path_ever_existed_raises_on_a_git_level_failure(tmp_path: Path) -> None:
+    """A git-level failure raises rather than degrading to ``False``.
+
+    Same contract as ``last_commit_date``, for the same reason: a guard pointed
+    at a non-repository must go red, not read as "this path never existed" and
+    fail the absence check for a reason that has nothing to do with the tree.
+    """
+    with pytest.raises(subprocess.CalledProcessError):
+        path_ever_existed("spec.md", repo_root=tmp_path)
+
+    empty_repo = tmp_path / "empty"
+    empty_repo.mkdir()
+    _init_repo(empty_repo)
+    with pytest.raises(subprocess.CalledProcessError):
+        path_ever_existed("spec.md", repo_root=empty_repo)
+
+
+def test_path_ever_existed_counts_a_shallow_boundary_answer_as_existence(
+    tmp_path: Path,
+) -> None:
+    """A graft-boundary answer is existence here, and a refusal for the date.
+
+    The deliberate divergence, pinned in one test so it cannot be read as an
+    oversight. What a shallow clone makes untrustworthy is *when* a path last
+    changed — the boundary commit stands in for however much history was never
+    fetched. It does not make the answer to *whether* a commit touched the path
+    untrustworthy: git found one, and existence is exactly what that proves.
+    """
+    origin = _origin_with_three_commits(tmp_path)
+    clone = _shallow_clone(origin, tmp_path / "shallow", depth=1)
+
+    is_shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert is_shallow == "true", "the clone is not shallow — --depth was ignored"
+
+    assert path_ever_existed("spec.md", repo_root=clone) is True
+    # The refusal below is this test's liveness control as well as half its
+    # subject: it fires only when git's answer for spec.md really did resolve to
+    # a graft boundary, so a clone that quietly fetched the whole history could
+    # not let the assertion above pass as if it had crossed one.
     with pytest.raises(ShallowHistoryError):
         last_commit_date("spec.md", repo_root=clone)
