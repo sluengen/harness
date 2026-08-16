@@ -2,7 +2,7 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.5.0 -->
+<!-- guidance:tracker@0.5.1 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.
@@ -17,7 +17,7 @@ The **backend-neutral protocol** for keeping the tracker and the in-flight work 
 
 There is no second switch. A `layers.linear` key is the **retired** form: it was replaced by `tracker:` because its name collided with the `repo.linear` address and its state was derivable from that address. Do not read it, and do not add a layer for it.
 
-> **Un-migrated consumer.** A repo whose `CONTEXT.md` predates `tracker:` has no such key. That is *not* `none` — a tracker-less run must never be **inferred** from a missing key. Fall back the same way the harness engine does: no `tracker:` key means read the retired `layers.linear` if present (`false` → `none`), otherwise `linear`. Report the fallback rather than silently assuming.
+> **Un-migrated consumer.** A repo whose `CONTEXT.md` predates `tracker:` has no such key. That is *not* `none` — a tracker-less run must never be **inferred** from a missing key. Fall back explicitly: no `tracker:` key means read the retired `layers.linear` if present (`false` → `none`), otherwise `linear`. Report the fallback rather than silently assuming.
 
 ## The dispatch rule
 
@@ -29,7 +29,7 @@ A lifecycle command that re-encodes `api.linear.app` or `gh project item-…` in
 
 ## The operations
 
-Six operations cover the agent-led lifecycle. (Marker and resume operations are verb-internal and deliberately not part of this vocabulary.)
+Six operations cover the agent-led lifecycle.
 
 | Operation | Does |
 |---|---|
@@ -93,7 +93,7 @@ There are exactly two hold labels. `decision` is the **retired** third: it merge
 
 **Assignment is the hold signal.** A ticket assigned to a human is held by that human: the unattended loop never picks it, whatever its state (agents authenticate with the operator's credential and have no tracker identity of their own, so the assignee field is free to carry this). Assignment also disambiguates **In Review**: *assigned* = a closed run parked for human review; *unassigned* = agent review inside a live run. The rule is "assigned to *any* human," not to a named person.
 
-**Deferring held work.** Comment the specific reason, apply the matching hold label, and **assign the operator** — all three. (Where a routine provides a `defer` verb, it does all three as one audited action.)
+**Deferring held work.** Comment the specific reason, apply the matching hold label, and **assign the operator** — all three, as one action. Doing two of the three leaves the ticket held in a way nobody can see.
 
 ## Sync rules
 
@@ -117,7 +117,7 @@ The lifecycle still runs; only the tracker touchpoints degrade. Nothing about a 
 | `hold` | report to the operator |
 | `queue` | none — there is no queue to pull |
 
-**Only an explicit `tracker: none` degrades.** A *misconfiguration* — `tracker: github` with no `github:` block, `tracker: linear` with no `repo.linear` — is an error: stop and report it, matching the engine's own `tracker_config_error`. Never silently fall back to a different backend, and never treat a broken config as "no tracker".
+**Only an explicit `tracker: none` degrades.** A *misconfiguration* — `tracker: github` with no `github:` block, `tracker: linear` with no `repo.linear` — is an error: stop and report it as a tracker configuration error. Never silently fall back to a different backend, and never treat a broken config as "no tracker".
 
 ## Credentials
 

@@ -1,9 +1,8 @@
-<!-- guidance:template-feature@0.5.0 -->
+<!-- guidance:template-feature@0.6.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned
 last_updated: YYYY-MM-DD    # day of the last commit that changed this file — bump it on every content edit
-tickets: [<id>, ...]       # tracker issues that shaped this feature
 ---
 
 # {Feature name}

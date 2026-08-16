@@ -16,8 +16,8 @@ concurrency:
   group: nightly-dev-to-staging
   cancel-in-progress: false
 
-# The finalizer can advance only the derived staging ref through `harness
-# promote pr`; it has no pull-request, package, OIDC, or broader grant.
+# The step advances only the derived staging ref, as a fast-forward; it has no
+# pull-request, package, OIDC, or broader grant.
 permissions:
   contents: write
 
@@ -41,11 +41,13 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      - name: Install promotion caller
+      # The gate runs entirely through `uv run --extra dev`, so the environment
+      # it needs is still installed here rather than resolved mid-gate.
+      - name: Install the gate toolchain
         run: uv sync --extra dev --frozen
 
-      # `promote start` creates the candidate with `git merge --no-ff`; Actions
-      # runners do not provide a repository-local author by default.
+      # Actions runners do not provide a repository-local author by default, and
+      # a git operation that needs one fails obscurely when it is missing.
       - name: Configure promotion commit author
         run: |
           git config user.name "github-actions[bot]"
@@ -55,7 +57,7 @@ jobs:
         shell: bash
         # The step's logic lives in the script so a test can execute it rather
         # than read it (specs/architecture-principles.md -> CI logic lives in a
-        # script, not in a `run:` block; proposal promotion-guard-instrument).
-        # Nothing may be appended here: `::error::` annotations are interpreted
-        # only on the step's own stdout, so a `| tee` would silence them.
+        # script, not in a `run:` block). Nothing may be appended here:
+        # `::error::` annotations are interpreted only on the step's own stdout,
+        # so a `| tee` would silence them.
         run: bash scripts/promotion-step.sh

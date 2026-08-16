@@ -1,49 +1,48 @@
 """#354 — assurance is chosen once, at filing, and every filing surface delegates.
 
-`harness/assurance.py` (#352) answers *"given a level, what must this run pay
-for?"* — labels in, required stages out, everything unresolved failing safe to
-``simple``. Nothing answered the other direction: *"given this work, which level
-does the filer put on it?"*. Every ticket since #352 nevertheless carries a
-level, applied out of an operator's head — which is the state that drifts.
+`harness/assurance.py` (#352) answered *"given a level, what must this run pay
+for?"* — labels in, required stages out. Nothing answered the other direction:
+*"given this work, which level does the filer put on it?"*. Every ticket since
+#352 nevertheless carries a level, applied out of an operator's head — which is
+the state that drifts.
+
+**#435 restored this module after the package it imported went.** Its whole
+filing-time subject survives verbatim, so the only edit was to write the level
+vocabulary here rather than import it. Claims about the deleted package stay in
+the past tense; they are why these assertions are shaped the way they are.
 
 This ticket puts that second answer in exactly one place (``spec-authoring`` →
 *Choosing assurance*), makes assurance a mandatory input **and** postcondition of
-the backend-neutral ``create`` contract, and has every filing surface point at
-the rubric rather than restate it.
+the ``create`` contract, and has every filing surface point at it.
 
 This module owns the **rubric**: that it exists in one place, that its two
 load-bearing rules are stated with the right polarity and quantifier and are not
 restated anywhere else, and that the ``create`` contract makes a level mandatory
 without saying which one. Its companion,
-:mod:`tests.unit.test_assurance_filing_surfaces`, owns the **reach** — the
-derived set of files that file an issue, their pointers, the two provider
-recipes, and version parity — and imports every predicate from here rather than
-re-implementing one.
+:mod:`tests.unit.test_assurance_filing_surfaces`, owns the **reach** — the files
+that file an issue, their pointers, the provider recipes, and version parity —
+and imports every predicate from here rather than re-implementing one.
 
 **What these two files measure, and what they deliberately do not.**
 
-* AC-5a (ambiguous / missing / conflicting → ``simple``) is *runtime* behaviour
-  and is already measured by ``test_assurance_policy.py`` —
-  ``test_no_labels_resolve_to_simple``,
-  ``test_two_distinct_recognized_labels_fail_safe``,
-  ``test_an_unrecognized_value_fails_safe`` and
-  ``test_coercion_is_total_and_falls_back_to_simple``. AC-7's measurable half
-  (an unlabelled issue stays supported) is the first of those. Duplicating them
-  here would add a second home for the very relation #352 gave one home.
+* AC-5a (ambiguous / missing / conflicting → ``simple``) was *runtime* behaviour,
+  measured against ``resolve_assurance``; both went with the package in #435.
+  Nothing here replaces it — the fail-safe was a property of code that no longer
+  runs. What survives is the filing-time rule that made it rarely necessary: R1
+  below, *uncertain is* ``simple``.
 * AC-1 (the three labels exist, with descriptions distinguishing lifecycle
   assurance from engine/model choice) has no honest test: its subject lives on
   the tracker, not in the tree, and a guard for it would hard-code this repo's
   backend and label ids into a *distributed* surface. It is re-measured with
-  ``gh label list`` and recorded on the ticket. ``test_model_tiering_retired.py``
-  is the standing guard against #321's model-tier labels being re-invented.
+  ``gh label list``.
 
 **Craft.** Every rule assertion is paired — the rule is *stated*, and its
 *inversion* is absent across the registered tree — because a substring guard over
 prose is blind to polarity (#399). Every predicate is a named function called by
 the real-tree assertion **and** by its controls (#179/#327). Every derived set
 carries a floor that is non-empty, names known members, and discriminates. The
-level vocabulary is imported from :mod:`harness.assurance` rather than typed, so
-a fourth level is covered the day it is added.
+level vocabulary has one home here and every predicate derives from it, so a
+fourth level is covered the day it is added.
 
 **The pairing rests on two things below it, and both were once the defect.** A
 polarity predicate asks *"does this unit say the opposite?"*, so it is only as
@@ -52,25 +51,29 @@ emphasis merged with the sentence contradicting it and lent it the rule's own
 ``Never``) and what each polarity token is **anchored to**
 (:data:`_NEGATED_INFERENCE`, :func:`_levels_chosen` — a negation forbids the verb
 it governs, not the whole sentence). Clean standalone samples cannot fail for
-either reason, so ``test_the_rule_predicates_read_the_real_rubrics_unit_boundaries``
-splices each inversion into the **real** rubric instead.
+either reason, so the unit-boundary test splices each inversion into the **real**
+rubric instead.
 
 **Section-scoped, not file-scoped.** Two strings already in the pre-change tree
-make the naive file-wide predicates vacuous on arrival:
-``skills/spec-authoring/SKILL.md`` already contains *"exactly one home"*, and
-``commands/build.md:24`` already contains *"carries exactly one assurance
-value"*. Every quantifier assertion below is therefore scoped to the section or
-instruction that **is** the rule.
+make the naive file-wide predicates vacuous on arrival: ``spec-authoring``
+already contains *"exactly one home"*, and ``commands/build.md`` already contains
+*"carries exactly one assurance value"*. Every quantifier assertion below is
+therefore scoped to the section or instruction that **is** the rule.
 """
 
+# size: over the ceiling on the shared prose-predicate primitives re-homed here
+# by #435, which are ~90 lines of recorded measurement — which escape each
+# negation anchor still misses, and what each emphasis half was measured letting
+# through — attached to five short definitions. Splitting the primitives from
+# `_sentences`/`_section` would fork the unit boundary every polarity predicate
+# in this tree is anchored on, which is the one thing that must not have two
+# renderings.
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
 import pytest
-
-from harness.assurance import ASSURANCE_LABEL_PREFIX, ASSURANCE_LEVELS
 
 # The registered-surface derivation has exactly one home in the suite; #327's
 # guard owns it and its own floor asserts it parses ≥ 25 files. Re-deriving it
@@ -80,6 +83,13 @@ from tests.unit.test_tracker_neutral_lifecycle import _registered_surface
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REGISTRY = _REPO_ROOT / "registry.yaml"
+
+#: The assurance vocabulary — its one remaining home. Imported from
+#: ``harness.assurance`` until #435 deleted the package; ADR 0015 keeps the
+#: levels and the namespace, which are tracker labels a filer applies rather
+#: than runtime machinery. The floor below pins the decided set.
+ASSURANCE_LEVELS = ("trivial", "simple", "complex")
+ASSURANCE_LABEL_PREFIX = "assurance:"
 
 #: The one home of the filing-time rubric.
 _RUBRIC_HOME = "skills/spec-authoring/SKILL.md"
@@ -136,15 +146,15 @@ def _section(text: str, header: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_level_vocabulary_is_importable_and_populated() -> None:
-    """FLOOR on the imported vocabulary every predicate below derives from.
+def test_the_level_vocabulary_is_populated() -> None:
+    """FLOOR on the vocabulary every predicate below derives from.
 
     An empty ``ASSURANCE_LEVELS`` would make the rubric's "names exactly the
-    module's levels" assertion pass against a rubric naming nothing, and would
-    empty the fixed-level ban in the GitHub recipe. Naming ``complex`` pins that
-    the tuple is the decided vocabulary and not, say, a filtered subset.
+    vocabulary" assertion pass against a rubric naming nothing, and would empty
+    the fixed-level ban in the GitHub recipe. Naming ``complex`` pins that the
+    tuple is the decided vocabulary and not, say, a filtered subset.
     """
-    assert ASSURANCE_LEVELS, "harness.assurance.ASSURANCE_LEVELS is empty"
+    assert ASSURANCE_LEVELS, "the ASSURANCE_LEVELS vocabulary is empty"
     assert "complex" in ASSURANCE_LEVELS, (
         f"the level vocabulary no longer contains `complex`: {ASSURANCE_LEVELS}"
     )
@@ -312,12 +322,12 @@ def test_the_rubric_has_a_home() -> None:
     )
 
 
-def test_the_rubric_names_exactly_the_policy_modules_levels() -> None:
-    """The rubric's vocabulary is the module's, derived rather than typed.
+def test_the_rubric_names_exactly_the_decided_levels() -> None:
+    """The rubric's vocabulary is the decided one, derived rather than re-typed.
 
     A rubric that named two of three levels, or invented a fourth, would send a
-    filer to apply a label ``resolve_assurance`` does not recognize — which fails
-    safe to ``simple`` silently, so nothing else would ever notice.
+    filer to apply a label the tracker has no taxonomy row for — and an
+    unrecognized level reads to a reviewer as no level at all.
     """
     named = {
         match.group(1)
@@ -325,7 +335,7 @@ def test_the_rubric_names_exactly_the_policy_modules_levels() -> None:
         if match.group(1) in ASSURANCE_LEVELS
     }
     assert named == set(ASSURANCE_LEVELS), (
-        f"the rubric names {sorted(named)}; the policy module's vocabulary is "
+        f"the rubric names {sorted(named)}; the decided vocabulary is "
         f"{sorted(ASSURANCE_LEVELS)} (#354 AC-2)."
     )
 
@@ -333,11 +343,11 @@ def test_the_rubric_names_exactly_the_policy_modules_levels() -> None:
 def test_the_rubric_disclaims_the_runtime_direction() -> None:
     """The boundary that stops the rubric being read as a copy of the policy module.
 
-    The rubric answers *work → level*; ``harness/assurance.py`` answers *level →
-    required stages*. Without a sentence saying so, the next author to touch
-    either one has no way to tell which of the two they are editing, and the
-    required-stages mapping grows a second home in prose — the exact defect
-    ``test_assurance_single_home`` exists to prevent on the Python side.
+    The rubric answers *work → level*; the other direction — *level → required
+    stages* — is what ``commands/build.md`` reads to decide which stages a run
+    pays for. Without a sentence saying so, the next author to touch either one
+    has no way to tell which of the two they are editing, and the required-stages
+    mapping grows a second home inside the rubric.
     """
     rubric = " ".join(_rubric().split())
     assert re.search(r"\bstages?\b", rubric, re.IGNORECASE), (
@@ -364,11 +374,10 @@ def test_the_trivial_inference_ban_has_exactly_one_home() -> None:
     """AC-2: R2 is stated in the rubric and **nowhere else**.
 
     Exclusivity is the right assertion for R2 and the wrong one for R1: R2 is a
-    filing-time rule with no runtime counterpart, while R1 (*uncertain →
-    simple*) legitimately has one — ``commands/build.md`` and
-    ``harness/assurance.py``'s ``DEFAULT_ASSURANCE`` both state the runtime form
-    of it. Writing exclusivity for both out of symmetry would fail on correct
-    prose.
+    filing-time rule with nothing downstream of it, while R1 (*uncertain →
+    simple*) legitimately has a counterpart — ``commands/build.md`` states the
+    run-time form of the same default. Writing exclusivity for both out of
+    symmetry would fail on correct prose.
     """
     homes = {rel for rel in _registered_markdown() if _states_the_trivial_inference_ban(_read(rel))}
     assert homes == {_RUBRIC_HOME}, (
@@ -746,3 +755,91 @@ def test_the_create_contract_carries_no_classification_criteria() -> None:
         f"the `create` contract must name `spec-authoring` → "
         f"*{_RUBRIC_SECTION_TITLE}* as where the level comes from (#354 AC-2)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared prose-predicate primitives
+# ---------------------------------------------------------------------------
+# `_units`, `_BLOCKING_VERBS`/`_NEGATION_GAP` and `_EMPHASIS` were #288's and
+# lived in `test_build_assurance_workflow`, which #435 deleted with the verb
+# loop it described. They are re-homed here, beside `_sentences` and `_section`,
+# rather than re-spelled at each call site: every polarity predicate in this
+# tree is only as honest as this boundary, and a fork of it is a fork of the
+# unit the controls were written to hold.
+
+def _units(text: str) -> str:
+    """``text`` re-joined one :func:`_sentences` unit per paragraph.
+
+    Loss-free for every predicate here, because every one of them runs over
+    ``_sentences`` units and ``_sentences`` already normalizes whitespace inside
+    a unit. What it buys is **wrap-insensitivity for the controls below**: a
+    control anchored on a hard-wrapped phrase stops landing the moment the
+    paragraph is re-wrapped at another column width, and a re-wrap must not read
+    as a finding. Call it on a section body, never on the whole file — ``_section``
+    needs its headers on lines of their own.
+    """
+    return "\n\n".join(_sentences(text))
+
+
+# ---------------------------------------------------------------------------
+# The shared negation gap — what a negation is allowed to reach across
+# ---------------------------------------------------------------------------
+
+#: Verbs that **block** whatever follows them. A negation landing on one of
+#: these states the *opposite* of the rule it appears to state: *"does not
+#: preclude proceeding"*, *"does not block integration"* and *"does not forbid
+#: writing"* each read to a negation-then-verb anchor as the prohibition intact,
+#: while granting exactly what the prohibition forbids. Measured, one sentence at
+#: a time, against the real file: each of those three left the whole module at
+#: **25 passed**. So the gap a negation may reach across excludes them — a
+#: negation whose object is a blocking verb governs the blocking, not the verb
+#: beyond it, and the predicate must decline to treat the occurrence as covered.
+#:
+#: ``fail`` and ``hesitat`` are here for the double negation (*"never fails to
+#: proceed"*), which is the same false converse reached by a different idiom.
+#: Prefixes, not whole words: ``preclud`` covers *precludes/precluding*, ``rul``
+#: covers *rule out/rules out*.
+_BLOCKING_VERBS = (
+    r"preclud|prevent|block|forbid|prohibit|bar|stop|halt|refus|restrict|"
+    r"impede|hinder|obstruct|disallow|deter|rul|fail|hesitat"
+)
+#: The gap between a negation and the verb it governs: up to two words, none of
+#: them a blocking verb. Two is #354's measured bound — every legitimate spelling
+#: here keeps them adjacent or within two words (*"never proceeds"*, *"No one
+#: writes"*, *"never integrate"*, *"refusal to integrate"*), and a negation
+#: further off governs something else.
+#:
+#: **What this does not catch, measured rather than assumed.** Eighteen further
+#: grant-shaped wordings were spliced into the real file one at a time, and the
+#: line falls in a describable place:
+#:
+#: *Caught.* A grant whose blocking word is a noun or an idiom wider than the gap
+#: — *"is no bar to proceeding"*, *"does not stand in the way of proceeding"*,
+#: *"Nothing here prevents proceeding"*, *"is not a reason to withhold
+#: proceeding"* — matches **no** negation at all, so the occurrence stays
+#: uncovered and the sweep flags it. That is the fail-closed side, and it is why
+#: the exclusion only has to rescue the cases where a negation *does* match.
+#:
+#: *Escapes.* **An outer negation over a well-formed inner prohibition** — *"It
+#: is not true that no one writes an as-built record on a `trivial` run"*,
+#: *"There is no rule that a mismatch must not be integrated"*, *"A thin design
+#: is not a reason the run cannot proceed"*. The inner clause is exactly the rule
+#: these predicates look for, spelled correctly, with a clean gap; the grant
+#: lives in the matrix clause, which no token-window anchor can reach. All three
+#: were measured escaping all three predicates. It is a different class from the
+#: one fixed here — sentential negation scope, not a verb inside a gap — and it
+#: is **not** closed. Closing it needs clause structure, not a wider window, so
+#: it is recorded here at its measured size rather than papered over.
+_NEGATION_GAP = rf"(?:\s+(?!(?:{_BLOCKING_VERBS})\w*\b)\w+){{0,2}}"
+
+
+#: Emphasis, stripped before any *anchored* predicate runs: this tree bolds its
+#: rules, so ``**stops**`` puts a ``*`` between the verb and the words that
+#: release it, and a "verb, then up to N words" anchor never crosses it.
+#: **Asterisks only** — ``_`` emphasis is unused here and ``certified_tree`` is
+#: not, and splitting one identifier into two tokens spends two of an anchor's
+#: gap allowance on a single word. Both halves measured: the first let
+#: ``**stops** only when the operator asks`` read as unconditional, the second
+#: let ``Comparing `HEAD^{tree}` to `certified_tree` is optional`` escape.
+_EMPHASIS = re.compile(r"\*+")
+#: A stop **released by a qualifier**. The rule is unconditional by design —

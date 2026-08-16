@@ -1,15 +1,21 @@
-"""The CONTEXT template's tracker fields match what the engine honours — CAL-1104, CAL-1164.
+"""The CONTEXT template's tracker fields say one coherent thing — CAL-1104, CAL-1164.
 
 CAL-1104 advertised two fields that were not interchangeable: ``repo.linear`` (the
-address) and ``layers.linear`` (the switch the engine read), a pairing a repo
+address) and ``layers.linear`` (the switch the engine then read), a pairing a repo
 could set inconsistently. CAL-1164 collapses the switch to a single ``tracker:``
 field — the sole on/off-plus-backend fact — coupled to ``repo.linear`` so the two
 cannot contradict.
 
-These tests pin the template against the engine rather than against a copy of its
-own words: each one feeds the template's own example to
-:func:`harness.layers.tracker` / :func:`harness.layers.tracker_config_error`, so
-the docs cannot drift from the reader.
+**#435 kept the text half and dropped the end-to-end half.** Four tests fed the
+template's own examples to ``harness.layers``' reader — the strongest form of
+this guard, because the docs were pinned against what actually parsed rather
+than against a copy of their own words. ADR 0015 deletes that reader, and with
+no code reading ``CONTEXT.md`` there is nothing left to drift *from*: the
+template is now read by an agent following the ``tracker`` skill. What survives
+is the five assertions over the template's own text, whose subject is the
+template itself and which are the only guard left on the file — the neutral-surface
+sweep in ``test_tracker_neutral_lifecycle.py`` exempts it by name, so losing
+these left it wholly unguarded.
 """
 
 from __future__ import annotations
@@ -17,13 +23,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from harness.layers import (
-    github_settings,
-    linear_enabled,
-    tracker,
-    tracker_config_error,
-)
 
 _TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "CONTEXT.template.md"
 
@@ -37,11 +36,10 @@ def _uncomment_github_block(template_text: str) -> str:
     """Recover the ``github:`` block the template shows as a commented example.
 
     The template's default tracker is ``linear``, so the ``github:`` alternative
-    lives commented (each line prefixed with ``# ``) — invisible to the reader
-    (:data:`harness.layers._GITHUB_HEADER` matches only a column-0 ``github:``).
-    This strips the comment prefix so the recovered block can be fed back to the
-    reader, pinning the documented example against what actually parses rather
-    than against a copy of its words.
+    lives commented (each line prefixed with ``# ``), where anything scanning for
+    a column-0 ``github:`` key would not see it. This strips the comment prefix
+    so the block can be checked as the config it is meant to become, rather than
+    as the comment it currently is.
     """
     lines = template_text.splitlines()
     start = next(
@@ -55,14 +53,14 @@ def _uncomment_github_block(template_text: str) -> str:
     return "\n".join(body) + "\n"
 
 
-def test_template_documents_tracker_as_the_engine_switch(template_text: str) -> None:
+def test_template_documents_tracker_as_the_single_switch(template_text: str) -> None:
     """The ``tracker:`` line names the tracker-less behaviour ``none`` triggers."""
     line = next(
         ln for ln in template_text.splitlines() if ln.strip().startswith("tracker:")
     )
     assert "tracker-less" in line, (
-        "the tracker: line must say what none does — it is the switch the engine "
-        "reads, not documentation of a preference"
+        "the tracker: line must say what none does — it is the switch every "
+        "lifecycle step dispatches on, not documentation of a preference"
     )
 
 
@@ -90,43 +88,6 @@ def test_template_couples_repo_linear_none_to_the_tracker(template_text: str) ->
     assert "tracker: none" in line
 
 
-def test_the_templates_tracker_less_example_reads_as_off(tmp_path: Path) -> None:
-    """A repo filled in per the template's tracker-less guidance is read as off.
-
-    The end-to-end check: what the template tells a reader to write (``tracker:
-    none`` with ``repo.linear: none``) is what the reader reports as tracker-less,
-    and the pairing is coherent.
-    """
-    (tmp_path / "CONTEXT.md").write_text(
-        "repo:\n"
-        "  name: some-repo\n"
-        "  linear: none\n"
-        "tracker: none\n"
-        "layers:\n"
-        "  design_system: false\n"
-        "  feature_specs: true\n"
-    )
-    assert tracker(tmp_path) == "none"
-    assert linear_enabled(tmp_path) is False
-    assert tracker_config_error(tmp_path) is None
-
-
-def test_the_templates_default_example_reads_as_on(tmp_path: Path) -> None:
-    """The template's *default* (``tracker: linear``) leaves the tracker on and coherent."""
-    (tmp_path / "CONTEXT.md").write_text(
-        "repo:\n"
-        "  name: some-repo\n"
-        "  linear: ACME\n"
-        "tracker: linear\n"
-        "layers:\n"
-        "  design_system: false\n"
-        "  feature_specs: true\n"
-    )
-    assert tracker(tmp_path) == "linear"
-    assert linear_enabled(tmp_path) is True
-    assert tracker_config_error(tmp_path) is None
-
-
 def test_template_documents_a_github_block_alongside_the_tracker(
     template_text: str,
 ) -> None:
@@ -141,34 +102,6 @@ def test_template_documents_a_github_block_alongside_the_tracker(
     block = _uncomment_github_block(template_text)
     for key in ("repo:", "project:", "status_field:"):
         assert key in block, f"the github: example must document {key}"
-
-
-def test_the_templates_github_example_reads_as_github(tmp_path: Path) -> None:
-    """A repo filled in per the template's github guidance is read as ``github``.
-
-    The end-to-end pin: the block the template documents, fed to the engine's own
-    reader, resolves to a coherent ``tracker: github`` config — so the docs cannot
-    drift from :func:`harness.layers.github_settings`.
-    """
-    block = _uncomment_github_block(_TEMPLATE.read_text())
-    (tmp_path / "CONTEXT.md").write_text(
-        "repo:\n"
-        "  name: some-repo\n"
-        "  linear: none\n"
-        "tracker: github\n"
-        f"{block}"
-        "layers:\n"
-        "  design_system: false\n"
-        "  feature_specs: true\n"
-    )
-    assert tracker(tmp_path) == "github"
-    assert linear_enabled(tmp_path) is False
-    assert tracker_config_error(tmp_path) is None
-    settings = github_settings(tmp_path)
-    assert settings is not None
-    assert "/" in settings.repo  # owner/name
-    assert "/" in settings.project  # owner/number
-    assert settings.status_field  # a non-empty status field (documented or defaulted)
 
 
 def test_template_documents_github_token_under_env(template_text: str) -> None:

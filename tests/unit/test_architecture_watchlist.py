@@ -155,9 +155,17 @@ def test_architecture_names_design_stage_as_watchlist_trigger_carrier() -> None:
         "the section must state that review confirms the record rather than "
         "being the only place it could be remembered (#251)."
     )
-    assert "harness/cli/" not in block, (
-        "the paragraph must stay capability-shaped — no concrete "
-        "`harness/cli/...` path in universal guidance (#251)."
+    # The ban is on *this repo's own* paths appearing in universal guidance, and
+    # it is stated as a shape rather than as one literal: `harness/cli/` was the
+    # example when the rule was written, and #435 deleted that tree, which left
+    # the old single-literal assertion unfalsifiable. A repo-rooted source path
+    # is the shape — a leading `harness/`, `scripts/` or `tests/` segment inside
+    # a backticked token.
+    repo_paths = re.findall(r"`((?:harness|scripts|tests)/[^`]*)`", block)
+    assert not repo_paths, (
+        f"the paragraph must stay capability-shaped — it names this repo's own "
+        f"source paths {repo_paths} in universal guidance, which every consuming "
+        f"repo receives and none of which has those files (#251)."
     )
 
 

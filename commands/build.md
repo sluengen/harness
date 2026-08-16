@@ -1,4 +1,4 @@
-<!-- guidance:build@1.12.0 -->
+<!-- guidance:build@1.14.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`
@@ -90,7 +90,10 @@ Launch an implementation sub-agent through the host sub-agent mechanism in
 `worktree_path`. It has normal edit and shell tools but must not commit. Supply
 the ticket, current change spec, design artifact when present, and prior findings. Require it to read
 `test-driven-development` and `code-quality`, work RED → GREEN → REFACTOR, and
-run the lint command before handoff. It never edits the as-built record.
+run the lint command before handoff. It never edits the as-built record. When
+the change adds or edits a guard, a prose predicate, a mutation table, or a
+deletion pass, require it to read
+`skills/review-discipline/references/craft.md` before writing the test.
 
 For a user-facing change, also require it to read `ux-design`; when
 `layers.design_system` is on, require `design-system`. It must consider empty,
@@ -110,8 +113,8 @@ one mid-width, and on either side of every breakpoint the change touches.
 **How.** Set the window to the capture width and a fixed viewport height, and
 capture **viewport-height slices**: one image per viewport, scrolled one viewport
 at a time, numbered in scroll order until the surface is covered. **Never capture
-the full page in one image**, at any width. Measured in #361: a real 1440 × 5726
-px capture reached the reviewer as an image content block, but 16 px body text
+the full page in one image**, at any width. Measured: a real 1440 × 5726 px
+capture reached the reviewer as an image content block, but 16 px body text
 read 7 of 8 characters correctly, because a capture's long edge is downscaled to
 fit the model's image budget and a surface four viewports tall arrives downscaled
 about fourfold. **No capture exceeds 2000 px in height** — where one viewport
@@ -186,6 +189,9 @@ diff, verify output, visual evidence when present, and `reviewed_tree`. Do not
 pass the implementer's conversation. The reviewer follows `review-discipline`:
 Stage 1 checks the criteria, design, scope, and tests; Stage 2 checks correctness,
 security, structure, and principles. Findings state what, where, why, and how.
+For a diff carrying a guard, a prose predicate, a mutation table, or a deletion
+pass, the reviewer also applies
+`skills/review-discipline/references/craft.md`.
 
 The reviewer, not the implementer or orchestrator, records the as-built spec in
 the candidate when heading for PASS or DEFER, then re-runs verification over that
@@ -242,9 +248,14 @@ the same refusal to integrate on mismatch.
   `tracker`.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent.
   Re-run the required assurance stages; a changed diff invalidates old evidence.
-- **DEFER:** create the out-of-scope follow-up through `tracker` with explicit
+- **DEFER:** sort the deferred findings by class first (`review-discipline` —
+  *bugs are filed; improvements are proposed*). A **bug** — the tree
+  contradicting its own contract, a red gate, a guard asserting something false
+  — is filed: create the out-of-scope follow-up through `tracker` with explicit
   queue placement and exactly one assurance level, chosen per `spec-authoring` →
-  *Choosing assurance*, then ship the independently reviewed tree.
+  *Choosing assurance*. An **improvement** is not filed at all; it goes in the
+  run report's Proposals section, where `/digest` puts it in front of the
+  operator. Then ship the independently reviewed tree.
 
 A moved integration branch is not a stop and never a question for the operator
 (`/ship`'s *base-drift rule*): reconcile, re-gate, re-review, ship. If

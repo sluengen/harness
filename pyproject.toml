@@ -5,23 +5,19 @@ description = "Evidence layer that keeps agent-driven development honest"
 readme = "README.md"
 requires-python = ">=3.11"
 # The engine is copyleft; the guidance the installer copies into other repos is
-# MIT (GUIDANCE-MIT.md). This declares the engine's licence — the package built
-# from `packages = ["harness"]` is engine only, so the carve-out does not apply
-# to the distributed wheel.
+# MIT (GUIDANCE-MIT.md). ADR 0015 retires the engine, so nothing is built or
+# distributed from here any more — this declares the licence of the repo's own
+# remaining code (`scripts/`), which the carve-out does not cover.
 license = "AGPL-3.0-only"
 authors = [{ name = "Scott Luengen" }]
 
-dependencies = [
-    "pydantic>=2.5",
-    "typer>=0.9",
-    "aiosqlite>=0.19",
-    "ulid-py>=1.1",
-]
+# No runtime dependencies. ADR 0015 replaces the runtime with deterministic
+# gates and agent-host hooks; `scripts/` is stdlib only, and everything the gate
+# needs is in the `dev` extra below.
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
-    "pytest-asyncio>=0.23",
     "pytest-cov>=4.1",
     "pytest-timeout>=2.3",
     # The gate's parallel stage (#358). Deliberately not wired into `addopts`:
@@ -32,15 +28,13 @@ dev = [
     "mypy>=2.0.0",
 ]
 
-[project.scripts]
-harness = "harness.cli:app"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["harness"]
+# This repo is no longer a distributable Python package (ADR 0015): there is no
+# importable module, no console script, and nothing to build a wheel from. The
+# whole gate still runs through `uv run --extra dev`, which needs a venv — so
+# tell uv to build the environment without attempting to install the project
+# itself. Without this, `uv sync` looks for a build backend and fails.
+[tool.uv]
+package = false
 
 [tool.ruff]
 line-length = 100
@@ -52,11 +46,6 @@ ignore = ["S101"]  # allow `assert` in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
-# Typer's idiomatic signature uses ``= typer.Option(...)`` and
-# ``= typer.Argument(...)`` in argument defaults (B008). Subprocess calls
-# in worktrees.py use ``git`` from PATH with list-form args, never shell=True
-# (S603/S607).
-"harness/cli/**" = ["B008", "S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -64,23 +53,14 @@ strict = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+# No marker survives this repo's own suite — the tier markers went with the
+# runtime (#435), and the one `@pytest.mark.fast` in the tree is a string
+# literal in a synthetic child project that registers it in its own ini. The
+# flag is kept anyway: with no `markers` list, *any* marker is a collection
+# error, so a typo'd or reintroduced marker fails loudly instead of warning.
 # Per-test timeout (requires pytest-timeout). Prevents a hung test from
 # consuming the full CI job budget; the job-level timeout-minutes is a
 # secondary backstop.
 timeout = 120
-# The three dependency tiers, applied to every collected test by
-# tests/conftest.py from the classifier in tests/_tiers.py — which is where the
-# boundary definitions, the selectors and the escape hatch live. Registered here
-# because --strict-markers turns an unregistered marker into a collection error;
-# tests/unit/test_tiers.py checks this list against tests._tiers.TIERS, so a new
-# tier cannot ship unregistered. `docker` is orthogonal: a capability that
-# narrows `integration`, not a tier of its own.
-markers = [
-    "unit: no dependency outside the process (#336)",
-    "guard: reads the checked-out tree, read-only (#336)",
-    "integration: a real repo/worktree, the SQLite ledger, a spawned process, or a whole verb through CliRunner (#336)",
-    "docker: marks tests that require a running Docker daemon",
-]

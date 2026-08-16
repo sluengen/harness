@@ -61,12 +61,20 @@ from tests._gitutil import tracked_files_under
 # any anchored predicate runs) and `_NEGATION_GAP` (what a negation may reach
 # across, blocking verbs excluded) are #354's and #288's, and every polarity
 # predicate below is only as honest as they are. Importing across test modules
-# is the established pattern here — `test_build_assurance_workflow` imports
-# `_section`/`_sentences` from `test_assurance_filing_rubric` for the same
-# reason. Re-spelling them here would fork the very boundary #288's controls
-# were written to hold.
-from tests.unit.test_assurance_filing_rubric import _section, _sentences
-from tests.unit.test_build_assurance_workflow import _EMPHASIS, _NEGATION_GAP, _units
+# is the established pattern here — `test_assurance_filing_surfaces` imports
+# from `test_assurance_filing_rubric` for the same reason. (`_units`,
+# `_EMPHASIS` and `_NEGATION_GAP` were #288's and reached this module from
+# `test_build_assurance_workflow` until #435 deleted it with the verb loop it
+# described; they now live beside `_sentences` and `_section` in the one module
+# that owns the boundary.) Re-spelling them here would fork the very boundary
+# #288's controls were written to hold.
+from tests.unit.test_assurance_filing_rubric import (
+    _EMPHASIS,
+    _NEGATION_GAP,
+    _section,
+    _sentences,
+    _units,
+)
 from tests.unit.test_worktree_ignore_hygiene import _git, _init_hermetic_repo
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1209,4 +1217,41 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
         "a release sharing a sentence with the prohibition escapes the "
         "full-page sweep — the negation is being credited with governing every "
         "capture verb after it, which is the per-sentence fail-open #288 closed."
+    )
+
+    # 11. Emphasis *inside* the anchor window — the one property `_EMPHASIS`
+    #     exists for, and the one nothing else in this tree reaches. Every real
+    #     unit and every splice above bolds a rule at its edges (`**Never
+    #     capture … image**`), where the asterisks fall outside the negation-to-
+    #     verb gap and stripping them changes nothing. Put emphasis *between*
+    #     the negation and the verb it governs and the anchor must still cross
+    #     it: unstripped, `\w+` cannot match `*ever*`, the gap closes, the
+    #     negation stops reaching `capture`, and the rule reads as its own
+    #     release. Measured on the merged tree: `_EMPHASIS` compiled to a
+    #     pattern that never matches, and to `\*\*` alone, both leave the whole
+    #     suite green without this splice — the control that held them lived in
+    #     `test_build_assurance_workflow`, which #435 deleted with the verb loop
+    #     it described, and the primitive outlived its guard.
+    emphasised = section.replace("**Never capture", "**Never *ever* capture")
+    assert emphasised != section, "the full-page prohibition moved — re-anchor this control"
+    assert len(_released(emphasised, _FULL_PAGE, _FULL_PAGE_RELEASE)) == len(
+        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+    ), (
+        "emphasis between the negation and the verb it governs makes the "
+        "prohibition read as released — `_EMPHASIS` is not stripping every "
+        "spelling this tree bolds its rules with, so an anchored predicate "
+        "cannot cross it."
+    )
+    #     The exclusive killer for that equality: the sweep must still *reach*
+    #     the emphasised unit, or the count above matches for the reason that it
+    #     stopped looking rather than the reason that it looked and found
+    #     nothing.
+    released = emphasised.replace("**Never *ever* capture", "**Capture")
+    assert released != emphasised, "the emphasis splice moved — re-anchor this control"
+    assert len(_released(released, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
+        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+    ), (
+        "flipping the emphasised prohibition releases nothing — the sweep is "
+        "not reading the emphasised unit at all, so the equality above holds "
+        "vacuously."
     )

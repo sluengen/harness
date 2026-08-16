@@ -65,7 +65,6 @@ _POINTERS = (
     "agents/reviewer.md",
     "commands/build.md",
     "commands/review.md",
-    "commands/harness/run.md",
 )
 
 #: The CONTEXT keys the home must name, so a reader of the policy can find the
@@ -80,8 +79,7 @@ _RETIRED_RULE = re.compile(r"(second|two|2nd) consecutive fail", re.IGNORECASE)
 #: noun. This is the shape a competing policy statement takes — "the 6th
 #: review→fix cycle", "cycles 1–3", "the first 3 iterations". Prose that names a
 #: *field* or a *reason tag* carries no numeral and is unaffected, which is what
-#: lets the verb mechanics stay in ``commands/harness.md`` while the policy does
-#: not.
+#: lets a doc name a *field* or a *reason tag* while the policy stays here.
 _CYCLE_NOUN = r"(?:review→fix |review/fix |fix→review )?(?:cycle|iteration)s?"
 _COUNT_LITERAL = re.compile(
     rf"(?:"
@@ -198,6 +196,32 @@ def test_review_discipline_states_the_policy() -> None:
         f"{_HOME} must state that an exhausted ticket goes on operator hold — "
         "without it the unattended loop re-picks the work and starts a fresh budget"
     )
+
+
+def test_the_template_declares_the_keys_the_home_sends_readers_to() -> None:
+    """The other half of the number-free policy: the keys have somewhere to live.
+
+    The policy above is written without numerals and points at ``CONTEXT.md``'s
+    ``loop:`` block for them. That is only honest if a repo bootstrapped from
+    ``templates/CONTEXT.template.md`` actually receives the block — otherwise the
+    policy sends every new repo to a key it does not have, which is the exact
+    defect #291 found when the template shipped no ``loop:`` block at all.
+
+    Re-homed here by #435. It used to sit in a module whose subject was the
+    retired ``harness.loop_budget`` reader and the eight engine bounds that went
+    with it; these two keys are read by the policy, not by any runtime, so their
+    guard belongs beside the policy.
+    """
+    template = (_REPO_ROOT / "templates" / "CONTEXT.template.md").read_text(
+        encoding="utf-8"
+    )
+    for key in _CONFIG_KEYS:
+        bare = key.split(".", 1)[1]
+        assert re.search(rf"^\s*{re.escape(bare)}:\s*\d+", template, re.MULTILINE), (
+            f"templates/CONTEXT.template.md must declare `{bare}` in its `loop:` "
+            f"block as a bare integer — the stop policy names `{key}` and sends "
+            f"the reader there for the value (#291)."
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,17 +1,20 @@
 """CAL-1160 — the verify gate signals a toolchain failure as *blocked*, not red.
 
-``promote``'s classifier keys ``blocked`` (infrastructure) apart from
-``needs_ticket`` (a red tree) off a **reserved exit code** the gate emits when its
-toolchain cannot even launch. That reserved code is single-sourced in
-:data:`harness.gate.GATE_UNRUNNABLE_EXIT`; ``scripts/verify.sh`` carries the same
-literal in a preflight. This module pins both halves:
+``scripts/verify.sh`` reserves an exit code for "the gate could not run at all":
+a missing tool or a broken venv is infrastructure, not a red tree, and a caller
+reading only the exit code cannot otherwise tell the two apart. This module pins
+that the preflight exists and that a **real** run of the script against a broken
+toolchain actually produces the reserved code — the property a line-match on the
+script would not prove.
 
-* the two-place literal cannot drift (the bash value must equal the Python
-  constant);
-* a **real** run of ``scripts/verify.sh`` with the toolchain made unavailable
-  exits that reserved code — the proof a real gate can *produce* the ``blocked``
-  signal, which the old ``exit_code=None`` monkeypatch faked. Together with the
-  CLI test that maps the code to ``blocked``, this closes the reachability gap.
+**#435 inlined the reserved code.** It was single-sourced in
+``harness.gate.GATE_UNRUNNABLE_EXIT`` and cross-checked against the bash literal,
+because the promotion classifier read the Python constant to key ``blocked``
+apart from ``needs_ticket``. ADR 0015 retires that classifier with the package,
+so there is no second home to drift from and the two-place-literal test went with
+it. The script is now the only home, and 97 is written here as the expected
+value: the executing test below is what binds it, and it fails if the preflight
+is dropped, reordered after a check, or made to exit anything else.
 """
 
 from __future__ import annotations
@@ -21,10 +24,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from harness.gate import GATE_UNRUNNABLE_EXIT
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
+
+#: The reserved "gate could not run" exit code. Distinct from 1 (a red tree) and
+#: from pytest's 4 (usage error), which is the whole point of reserving it.
+GATE_UNRUNNABLE_EXIT = 97
 
 
 def _reserved_exit_literal() -> int:
@@ -40,16 +45,6 @@ def _reserved_exit_literal() -> int:
         "preflight (CAL-1160)."
     )
     return int(match.group(1))
-
-
-def test_verify_reserved_code_matches_python_constant() -> None:
-    """The bash literal equals :data:`harness.gate.GATE_UNRUNNABLE_EXIT` — the two
-    homes of the reserved code cannot drift, or an infra failure would classify as a
-    red tree again."""
-    assert _reserved_exit_literal() == GATE_UNRUNNABLE_EXIT, (
-        "scripts/verify.sh's reserved exit code must equal "
-        "harness.gate.GATE_UNRUNNABLE_EXIT (CAL-1160)."
-    )
 
 
 def test_verify_exits_reserved_code_when_toolchain_unavailable(tmp_path: Path) -> None:
@@ -82,16 +77,20 @@ def test_verify_exits_reserved_code_when_toolchain_unavailable(tmp_path: Path) -
         f"toolchain; got {result.returncode}\nstdout={result.stdout}\n"
         f"stderr={result.stderr}"
     )
+    assert _reserved_exit_literal() == GATE_UNRUNNABLE_EXIT, (
+        "the script's reserved literal must be the code this module expects — "
+        "otherwise the executing assertion above would silently start pinning a "
+        "different contract than the one documented here (CAL-1160)."
+    )
 
 
 def test_verify_preflights_the_parallel_plugin() -> None:
     """The xdist probe is part of the preflight, not a bare ``-n`` on the stage (#358).
 
     ``-n`` is pytest-xdist's flag: without the plugin, pytest exits **4** (usage
-    error), which the promotion classifier cannot tell from a red tree — so a
-    developer venv predating the parallel gate would file a ticket blaming the
-    code. Probing it alongside ruff/mypy/pytest routes that case to the same
-    reserved ``blocked`` code.
+    error), which a caller cannot tell from a red tree — so a developer venv
+    predating the parallel gate would read as a code failure. Probing it alongside
+    ruff/mypy/pytest routes that case to the same reserved code.
 
     Pinned as *probe implies reserved exit* rather than as a line match, so the
     check cannot be satisfied by a probe that fails the gate red instead.
@@ -107,5 +106,5 @@ def test_verify_preflights_the_parallel_plugin() -> None:
     guarded = tail[: tail.find("\nfi")] if "\nfi" in tail else tail
     assert 'exit "$GATE_UNRUNNABLE_EXIT"' in guarded, (
         "the xdist preflight must exit the reserved GATE_UNRUNNABLE_EXIT so a "
-        "stale venv classifies as `blocked`, not `needs_ticket` (#358, CAL-1160)."
+        "stale venv reads as a toolchain failure, not a red tree (#358, CAL-1160)."
     )

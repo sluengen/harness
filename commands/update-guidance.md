@@ -1,4 +1,4 @@
-<!-- guidance:update-guidance@1.0.0 -->
+<!-- guidance:update-guidance@1.1.0 -->
 # /update-guidance — pull guidance changes
 
 Usage: `/update-guidance` (run inside a repo that was bootstrapped)
@@ -58,6 +58,8 @@ Update `.guidance-lock.yaml` with the new versions and hashes for everything pul
 
 ### 6. Commit, integrate, and report
 A guidance pull is maintenance, not feature work: it carries no ticket, spec, or review gate, so it lands without ceremony — don't make the user ask for the commit. Commit the pulled files, the re-derived artifacts, and the rewritten lock, then integrate per the repo's branch model (`CONTEXT.md` `branches`) exactly as `/ship` does — fast-forward or merge to the integration branch and push if the model pushes. Never force-push; never push to a protected branch unless `CONTEXT.md` says that is the path.
+
+**Run the repo's verify gate on the committed tree before pushing** (`CONTEXT.md` `commands.verify`). Step 5 checks the derived artifacts; that is not the same question. A pull replaces hook scripts, settings and prose the consuming repo's *own* guards assert things about, so a guidance update is one of the few changes that can break a repo without touching a line of its code — and it arrives with no review gate to catch it. The push is refused without this in any repo that installs the enforcement hooks. If the gate goes red, leave the commit unpushed and report it: the pull is the suspect.
 
 Commit only what resolved cleanly. Leave any unresolved CONFLICT/LOCAL files out of the commit and name them for the user to handle — do not block the clean pulls on them. If nothing was pulled (everything already current), there is nothing to commit: say so and stop.
 

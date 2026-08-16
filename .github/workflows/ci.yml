@@ -20,11 +20,9 @@ permissions:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    # Must exceed the longest single test. The docker integration module builds
-    # the image with no layer cache and is allowed 600s (CAL-1110); at the old
-    # 10 minutes the job budget and that one test were the same number, so the
-    # backstop would fire before the thing it backstops. Pinned by
-    # tests/unit/test_timeout_budgets_coherent.py.
+    # A backstop, not a budget: it must exceed the whole gate with room to
+    # spare. The gate runs in well under a minute since #435 deleted the docker
+    # stage that used to build an uncached image under a 600s allowance.
     timeout-minutes: 20
 
     steps:
@@ -47,40 +45,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Run verification gate
-        # pytest-timeout kills any single test that stalls past 120 s — except
-        # the docker integration module, which overrides to 600 s for its
-        # uncached image build (CAL-1110). The job-level timeout-minutes is a
-        # secondary backstop and must stay above both.
+        # pytest-timeout kills any single test that stalls past 120 s
+        # (pyproject.toml). The job-level timeout-minutes above is a secondary
+        # backstop and must stay above it.
         run: bash scripts/verify.sh
-
-  release-cadence:
-    # The staging → main PR *is* the release (RELEASING.md), so this is where a
-    # cadence breach blocks — and only here. Its own job, not a step in
-    # lint-and-test, because #350 is precisely that the two verdicts must be
-    # separable: as a distinct status the cadence result stays legible when the
-    # correctness job is red, and a breach never halts an unrelated change.
-    # Pinned by tests/unit/test_ci_workflow_release_cadence.py.
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # The cadence check reads files, not history, so it does not need this
-          # itself. tests/unit/test_ci_workflow_full_history.py scopes its rule
-          # to the workflow *file*, deliberately conservatively, so every
-          # checkout here declares it rather than the guard growing a per-job
-          # exemption for one job that would not benefit from one.
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Check release cadence
-        run: uv run python scripts/cadence.py check
