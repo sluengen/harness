@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.5.0
+// guidance:hook-git-push-guard@0.5.1
+// size: most of this file is a POSIX shell lexer — quoting, `$(…)`, backticks,
+// ANSI-C escapes, parameter expansion — because deciding a force-push from the
+// raw command string is what CAL-1001 proved cannot be done. A lexer is one
+// concern whose length is case coverage, and it has no second consumer to be
+// factored towards: #436 declined a shared `hooks/lib/`, so `node <path>` must
+// resolve this hook with no module beside it. Filed as #444.
 /**
  * Git force-push guard (PreToolUse: Bash).
  *

@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// guidance:hook-gate-evidence-guard@0.2.0
+// guidance:hook-gate-evidence-guard@0.2.1
+// size: one Stop decision, and its three halves cannot be separated from it —
+// the claim filter, the worktree-scope derivation (#439: transcript cwds
+// intersected with `git worktree list`), and the tree/marker evidence. #436
+// declined a shared `hooks/lib/`, so `node <path>` must resolve this hook with
+// no module beside it; splitting a concern out means shipping a file the
+// installer does not install and the host cannot require. Filed as #444.
 /**
  * Gate-evidence guard (Stop) — #436.
  *
