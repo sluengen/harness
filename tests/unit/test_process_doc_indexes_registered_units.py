@@ -30,6 +30,11 @@ SKILL_ENTRY = re.compile(r"^ {2}skills/[\w-]+/SKILL\.md:\s*\{\s*id:\s*([\w-]+)\s
 #: Registered skills deliberately absent from the Skills table, each carrying the
 #: reason it is untabled. An exemption whose reason is not written down decays
 #: into a silent hole in the index — the thing this guard exists to prevent.
+#: Two assertions bound this set in opposite directions, because a comment is not
+#: a predicate: an entry the table *does* list is stale
+#: (:func:`test_no_untabled_skill_exemption_outlives_its_reason`), and an entry the
+#: Skills section never names at all has not earned its exemption
+#: (:func:`test_an_untabled_skill_is_still_named_by_the_table_that_skips_it`).
 UNTABLED_SKILLS = {
     # `linear` and `github-issues` are provider recipes, not independently chosen
     # skills: `tracker` is the front door and selects between them, and the
@@ -104,13 +109,22 @@ def test_each_roster_reads_its_own_section_of_the_doc() -> None:
     """The Agents and Skills tables are read as two sections, not one open span.
 
     Placement is the point: #453 was filed because ``researcher`` was missing
-    from the *Agents table*, not from the document. #453's own mutation table
-    measured the gap — dropping the ``(?=^## |\\Z)`` bound from :func:`_section`
-    lets each heading run to end-of-file, so every later table's rows count as
-    this section's, and both membership assertions above survive the edit
-    (``section-scope-runs-past-its-heading``: SURVIVED (LIVE), the observable
-    digest moved, so the mutation changed what the guard reads). Disjointness is
-    what dies when the sections stop being sections.
+    from the *Agents table*, not from the document. Mutation measured the gap in
+    both directions, and they are not the same edit.
+
+    *Widening* — narrowing :func:`_section`'s bound from ``(?=^## |\\Z)`` to
+    ``(?=\\Z)`` — runs every heading to end-of-file, so each later table's rows
+    count as this section's. Both membership assertions above survive it by
+    construction: they only ever *admit* ids, and a wider span cannot remove one.
+    Disjointness is the exclusive killer, and it is what dies when the sections
+    stop being sections.
+
+    *Deleting* the bound outright does the opposite, because ``.*?`` is lazy and
+    nothing is left to force it open: each section collapses to its own heading
+    line, both tabled sets derive to empty, and there the two membership
+    assertions are the exclusive killers while this one passes over ``set() &
+    set()``. Neither assertion covers the other's direction, which is why both
+    exist.
     """
     overlap = sorted(_tabled_ids("Agents") & _tabled_ids("Skills"))
     assert not overlap, (
@@ -126,4 +140,34 @@ def test_no_untabled_skill_exemption_outlives_its_reason() -> None:
     assert not stale, (
         f"UNTABLED_SKILLS still exempts skills the Skills table now lists: {stale}. "
         "Drop them from the allowlist — an exemption nothing needs reads as a rule."
+    )
+
+
+def test_an_untabled_skill_is_still_named_by_the_table_that_skips_it() -> None:
+    """An exemption has to be earned from the doc, not asserted by this file.
+
+    Staleness is only half the discipline. Nothing above reads what goes *into*
+    :data:`UNTABLED_SKILLS`, so the allowlist is otherwise a silent opt-out from
+    the guard: adding a registered skill's id to it and deleting that skill's row
+    leaves every assertion in this module green over exactly the omission #453
+    was filed for. Review measured that — a mutation adding an arbitrary id to
+    the set survived the whole suite (``allowlist-admits-an-arbitrary-id``:
+    SURVIVED (LIVE), observable digest ``0867b7de…`` → ``8289cde5…``, so the
+    mutation was live and nothing noticed).
+
+    The exemption's stated reason is the predicate that closes it, and it happens
+    to be structural rather than semantic: ``linear`` and ``github-issues`` are
+    untabled *because the tracker row already names them*. So an exempted skill
+    must still be named somewhere in the Skills section — just not as a row of
+    its own. A skill the section never mentions is not "reached some other way";
+    it is missing, and the exemption is a way of not saying so.
+    """
+    section = _section("Skills")
+    unearned = sorted(skill for skill in UNTABLED_SKILLS if f"`{skill}`" not in section)
+    assert not unearned, (
+        f"UNTABLED_SKILLS exempts skills the Skills table never names: {unearned}. "
+        "An exemption is only true of a skill the table reaches some other way, and "
+        "the table has to show that route. Give it a row, or name it in the row of "
+        "the skill that dispatches it — an allowlist entry no reader can corroborate "
+        "is an opt-out from this guard, not a documented exception."
     )
