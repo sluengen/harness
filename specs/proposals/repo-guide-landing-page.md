@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: repo-guide-landing-page
-status: accepted            # draft | under-decision | accepted | shipped | rejected | split
+status: shipped            # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-20
 related: [four-loops.html]
 ---
@@ -19,6 +19,8 @@ The five breakdown items ship as three change specs (content sections merged int
 
 
 # Proposal: A one-page repo guide, hosted as the harness landing page
+
+***Shipped.** The one-page repo guide is `docs/index.html`, hosted from `docs/`, and kept honest against the tree by the drift guard `tests/unit/test_landing_page_drift_guard.py`.*
 
 > Grow the internal Four Loops diagram into a single self-contained page that also explains the harness (the verbs, how the agent drives them) and the guidance it distributes, and host it on GitHub Pages as the project's landing page.
 

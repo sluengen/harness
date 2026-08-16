@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: design-system-scaffold
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: shipped         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-28
 related: [repo-guide-landing-page, specs/decisions/0004-repo-guide-drift-guard.md]
 ---
@@ -22,6 +22,8 @@ Decided 2026-07-28 (operator):
 -->
 
 # Proposal: Distribute the eight-layer design-system scaffold, and use it on the landing page
+
+***Shipped.** The eight-layer scaffold is `design/` (`00-brand` through `07-flows`), with `design/03-tokens/tokens.json` as the token source the landing page renders from.*
 
 > Bring the layered design-system scaffold that `calibrate` and `nano-erp` both run into the harness — as distributable guidance any repo with `design_system: true` can stand up, and applied to `docs/index.html`, the one external-facing surface the harness owns.
 

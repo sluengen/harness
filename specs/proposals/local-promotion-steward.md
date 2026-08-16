@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: local-promotion-steward
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: superseded         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-16
 related: [harness-as-tool, harden-loop-layer, run-ledger, verb-model, cli-surface, specs/decisions/0001-cloud-runnable-harness-loop.md]
 ---
 
 # Proposal: Local promotion steward
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the `harness promote` verbs, the promotion ledger rows and the escalation events this proposes went with the runtime. **Read this as a dead mechanism, not a dead goal:** the outcome arrived by other means and is live — `scripts/promotion-step.sh` carries the deterministic step, the `/promote` command drives `dev` → `staging` → `main` with plain git, and ADR 0003's branch topology and its nightly automation are untouched. Kept for the audit; nothing below describes the machinery in use.*
 
 > Add a first-class promotion lifecycle to the harness so any orchestrator can cheaply move completed work from `dev` to `staging` to `main` while the harness owns git, ledger, gate, PR, and escalation state.
 

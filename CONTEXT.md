@@ -56,7 +56,7 @@ The source of a spec-driven development process, and the deterministic gates tha
 
 Three parts, and nothing else:
 
-- **The guidance surface** — `skills/`, `agents/`, `commands/`, `templates/`, `hooks/`, `process/harness.md` and its three byte-identical mirrors (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`). `registry.yaml` is the manifest: what each file is, what version it carries, and whether the installer copies it into a consuming repo.
+- **The guidance surface** — `skills/`, `agents/`, `commands/`, `templates/`, `hooks/`, `settings/`, `process/harness.md` and its three byte-identical mirrors (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`). `registry.yaml` is the manifest: what each file is, its version, and whether the installer copies it into a consuming repo.
 - **The gate** — `scripts/verify.sh`, the one command that decides whether a tree is green: ruff, mypy over `scripts`/`templates`, the pytest suite with a coverage floor over `scripts/`, and the two drift guards over `docs/index.html`.
 - **The guards** — `tests/unit/`, which is almost entirely tree-readers: guidance modules asserting that the published prose says what the process requires, that versions and the registry agree, and that a retired subsystem is actually gone. `scripts/mutate.py` is the mutation instrument that proves a guard can fail.
 
@@ -105,7 +105,7 @@ Use `specs/decisions/` only for cross-cutting choices that are consequential and
 
 - Drive work through the agent-led `/build <ISSUE-ID>`, or `/start → /review → /ship` when attended.
 - `mypy` checks `scripts` and `templates`. There is no application package to type-check.
-- Coverage measures `scripts/` — the only executable code the repo owns. Everything under `tests/unit/` reads the tracked tree instead of exercising a module.
+- Coverage measures `scripts/` — the only executable code the repo owns. Most of `tests/unit/` reads the tracked tree rather than exercising a module; the rest run hooks, `scripts/` and the instrument (ADR 0016).
 - The gate runs one pytest stage. The Docker/non-Docker partition and the three-tier marker machinery went with the runtime.
 - Long verification output may need capture to `/tmp/<file>.txt` and a final read.
 

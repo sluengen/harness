@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: codex-engines-and-the-container-sandbox
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: superseded         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-04
 decided: 2026-08-04
 related:
@@ -13,6 +13,8 @@ related:
 ---
 
 # Proposal: Codex as an in-container engine for `design` and `review`
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the container, the in-container engines and the seccomp profile this turns on were all retired. Cross-model review survived by a different route: `/build --engine codex` runs the reviewer through Codex on the host, with no sandbox to configure. Kept for the audit; nothing below describes current behaviour.*
 
 > ADR 0002 rejected an in-container Codex engine on a cost that measurement shows is wrong; a targeted seccomp profile — no added capability — makes Codex's sandbox start, which is the precondition for cross-model review and for taking the design stage's unconditional Opus call off the Claude subscription.
 

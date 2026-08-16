@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: ticket-protocol-hygiene
-status: accepted
+status: shipped
 date: 2026-07-18
 related: []
 ---
 
 # Proposal: Ticket protocol and hygiene — assignment, placement, and what a label means
+
+***Shipped** into `skills/tracker/SKILL.md`, where its substance is live: assignment as the hold signal, mandatory Todo placement on create, and the Todo-vs-Backlog line. One definition did not survive intact — the `decision` hold label this proposal defined was merged into `input` by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md), leaving exactly two hold labels.*
 
 > Codify the ticket protocol the queue already needs: assignment as the "a human holds this" signal, mandatory project attachment, explicit Todo-vs-Backlog filing rules, and an end to the `decision` label doing three jobs.
 

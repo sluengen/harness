@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: size-criterion-process
-status: accepted
+status: shipped
 date: 2026-07-17
 related: [CAL-666, CAL-1107, CAL-1014, CAL-1139]
 ---
 
 # Proposal: file size is a tripwire, never an acceptance criterion
+
+***Shipped.** All four changes of Option D landed. Items 1 and 3 — file size is never an acceptance criterion, and renegotiation lives on the ticket — are stated in `skills/spec-authoring/SKILL.md` and `skills/review-discipline/SKILL.md` and guarded by `tests/unit/test_spec_authoring_no_size_ac.py`. Item 2, the mechanized marker-presence walker, is `tests/unit/test_source_file_size_justification.py`; the `harness/` tree it was first written against was deleted by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md), but the guard was rescoped rather than retired and walks `scripts/`, `templates/`, `hooks/` and `tests/` today at a ceiling per tree.*
 
 > Keep the 500-line advisory limit and the `# size:` justification convention; mechanically check marker *presence*; forbid raw file-size acceptance criteria; give mid-build criterion renegotiation a home in the ticket.
 

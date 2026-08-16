@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: assurance-led-lifecycle
-status: accepted
+status: shipped
 date: 2026-08-05
 related: [design-verb, verb-model, run-ledger, 0007-design-verb, issue-332]
 ---
 
 # Proposal: Assurance-led lifecycle stages
+
+***Shipped.** Assurance is a level carried on the ticket as an `assurance:<level>` label — exactly one, confirmed by re-reading the issue (`skills/tracker/SKILL.md`) — and consumed by `commands/build.md`, which runs the stages that level earns and defaults to `simple` when the value is missing, conflicting or unrecognised.*
 
 > Replace the unconditional design attempt with an issue-carried assurance policy that spends design and review effort only where the change warrants it.
 

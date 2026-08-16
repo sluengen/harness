@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: review-probing
-status: accepted
+status: superseded
 date: 2026-08-07
 related: [specs/features/verb-model.md, specs/features/run-ledger.md, specs/proposals/engine-activity-aware-timeouts.md, specs/proposals/visual-evidence-for-review.md]
 ---
 
 # Proposal: let the reviewer run an experiment, not only read a diff
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the `review` verb this gives an execution budget to was deleted along with the engine that could not run anything. The capability it argued for is no longer a feature to add: the reviewer is an agent with a shell, and the mutation instrument `scripts/mutate.py`, driven by `CONTRIBUTING.md`, is the sanctioned form of running the mutations the builder did not think of. Kept for the audit; nothing below describes current behaviour.*
 
 > Give `review` execute against a throwaway tree at the reviewed SHA and a bounded budget for the experiments it may run, so a finding can move from argued to demonstrated — starting with the mutations the builder did not think of.
 

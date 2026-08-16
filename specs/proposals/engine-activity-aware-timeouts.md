@@ -1,11 +1,13 @@
 ---
 proposal: engine-activity-aware-timeouts
-status: accepted
+status: superseded
 date: 2026-08-06
 related: [specs/features/verb-model.md, specs/features/run-ledger.md, specs/proposals/per-engine-timeout-ceiling.md]
 ---
 
 # Proposal: classify engine inactivity before killing a design or review
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — there is no runner, no headless engine process and no containment timeout left to make activity-aware. Kept for the audit; nothing below describes current behaviour.*
 
 > Stream headless-engine activity into the shared runner, so the harness can distinguish a silent session from a slow active one without removing its containment limit.
 

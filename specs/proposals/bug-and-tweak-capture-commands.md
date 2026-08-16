@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: bug-and-tweak-capture-commands
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: shipped         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-24
 related:
   - commands/propose.md
@@ -12,6 +12,8 @@ related:
 ---
 
 # Proposal: a capture front door for bugs and tweaks
+
+***Shipped.** The capture front door is `/bug` and `/tweak` (`commands/bug.md`, `commands/tweak.md`), both filing straight to Todo through the shared `templates/adjustment.md`.*
 
 > When actual use surfaces a bug or a small tweak, there is no lightweight way to get it onto the board. `/propose` is the wrong shape (it decides the unconfirmed; these are already confirmed) and manual issue plumbing is fiddly and trap-laden. Add a thin capture command — one shared template, one process — for the *as-built adjustment*.
 

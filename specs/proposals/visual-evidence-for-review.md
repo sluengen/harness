@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: visual-evidence-for-review
-status: accepted
+status: shipped
 date: 2026-08-07
 related: [specs/features/verb-model.md, specs/features/cli-surface.md, specs/proposals/review-probing.md]
 ---
 
 # Proposal: rendered evidence as a first-class review input
+
+***Shipped as #434 — with its placement reversed.** The channel exists, but not where this proposal put it. Change 2 of 2 placed the capture convention in the build step **and** in the `ux-design` skill; #434 reversed that to a single home in `commands/build.md` → *Visual evidence for a user-facing change*, leaving `ux-design` untouched. The reversal and its reasoning are recorded in `specs/features/guidance-system.md` → *Decision: The capture convention lands in `/build`, not in `ux-design`* — read that before treating anything below as the plan of record.*
 
 > Give `review` a channel for screenshots the builder already captured, so a reviewer judging a user-facing surface can see it instead of inferring it from a class list.
 

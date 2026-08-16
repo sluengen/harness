@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: persistent-runtime-host
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: superseded         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-03
 decided: 2026-08-03      # operator; decisions recorded in specs/decisions/0012-persistent-runtime-host.md
 related:
@@ -12,6 +12,8 @@ related:
 ---
 
 # Proposal: a persistent runtime host for the verbs
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the container wrapper, the one-shot verb containers and the credential brokering this reorganises were all deleted, and ADR 0012 is superseded in mechanism with them. Kept for the audit; nothing below describes current behaviour.*
 
 > The wrapper has become a credential broker, a deployment controller, and a container spawner that re-derives all three on every single verb call — and one of its jobs is structurally impossible in that shape. Give those responsibilities a process that stays up, while every verb stays a one-shot container.
 

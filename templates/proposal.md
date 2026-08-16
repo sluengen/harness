@@ -1,7 +1,7 @@
-<!-- guidance:template-proposal@0.1.3 -->
+<!-- guidance:template-proposal@0.1.4 -->
 ---
 proposal: {short-slug}
-status: draft            # draft | under-decision | accepted | shipped | rejected | split
+status: draft            # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: YYYY-MM-DD
 related: []              # feature specs or other proposals
 ---
@@ -47,3 +47,5 @@ What could go wrong, what is not yet understood, what would invalidate the recom
 ---
 
 **Lifecycle.** A proposal ends in one explicit state: **accepted** (spawn the change specs as tracker issues; record its decisions in the relevant specs), **rejected** (keep this file as the record of why), or **split** (replace with smaller proposals). It does not sit half-decided. Lives in `specs/proposals/`.
+
+Two further states apply *after* the decision rather than instead of it: **shipped**, once the change specs it spawned have landed, and **superseded**, when the machinery it describes is retired — whether it was built first or not. Advance the status and amend the file **in place**, with a dated banner naming the record that superseded it; never move or delete it, so links stay stable and the audit keeps the reasoning. An `accepted` proposal is a standing instruction to build, so leaving one accepted after its subject died is how a later ticket inherits instructions targeting deleted code.

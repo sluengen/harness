@@ -1,6 +1,6 @@
 ---
 proposal: design-verb
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: superseded         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-25
 related:
   - specs/decisions/0005-per-ticket-model-tiering.md
@@ -9,6 +9,8 @@ related:
 ---
 
 # Proposal: A `design` verb — a deterministic Opus seam before the build
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the verb lifecycle this adds a fourth verb to was retired, taking ADR 0007 and the `design` stage with it; the agent-led `/build` carries design in the change spec instead. Kept for the audit; nothing below describes current behaviour.*
 
 > Add a fourth verb to the run lifecycle — `start → design → implement → review → close` — that runs a top-tier engine to produce the change spec's technical design before the (typically Sonnet) session builds, giving the build dimension the deterministic model seam ADR 0005 said it lacked.
 

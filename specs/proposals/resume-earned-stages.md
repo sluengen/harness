@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: resume-earned-stages
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: superseded         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-30
 related: [run-ledger, verb-model, stale-run-reclamation, design-verb, 0007-design-verb, 0008-inherited-ledger-events]
 ---
 
 # Proposal: A reclaimed ticket should not re-earn the stages it already has
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the run ledger, the `run_id`-scoped certification and the paid stages this rescopes are gone. A gate marker named after the git tree now carries the only certification the process keeps, which makes the re-earning problem structurally impossible rather than solved. Kept for the audit; nothing below describes current behaviour.*
 
 > Since ADR 0007 made `design` unconditional, a reclaimed-and-re-picked ticket pays for an Opus design engine call and a full review cycle it has already paid for — because both gates key on `run_id`, and a resumed run is a new run. This proposes scoping *certification* to the ticket and the tree (where it belongs) while leaving *budget* scoped to the run (where it belongs).
 

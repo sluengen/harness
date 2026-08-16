@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: changelog-from-commits
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: shipped         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-04
 decided: 2026-08-04      # operator; Option B. Decisions recorded in specs/decisions/0014-changelog-from-commits.md
 related:
@@ -10,6 +10,8 @@ related:
 ---
 
 # Proposal: the changelog derives from commits; the fragment system is deleted
+
+***Shipped, then partly outlived.** The rule was decided as [ADR 0014](../decisions/0014-changelog-from-commits.md) — the commit body *is* the entry, and the fragment system was deleted. The `CHANGELOG.md` it assembled into was itself deleted by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md), since with no runtime there is nothing to release: the derive-from-commits rule stands, its assembly target does not.*
 
 > 1,874 lines of enforcement have produced zero released changelog entries, and a fifth of the files it compels say "no entry warranted". The conflict fix underneath it was earned; the ceremony on top of it was not.
 

@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: close-merge-in-throwaway-worktree
-status: accepted   # draft | under-decision | accepted | shipped | rejected | split
+status: superseded   # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-18
 related: [CAL-1154, CAL-1151]
 ---
 
 # Proposal: close merges in a throwaway worktree, not the main checkout
+
+***Superseded 2026-08-15** by [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md) — the `close` verb whose merge step this reshapes was deleted with the runtime, and nothing replaced it: integration is plain git driven by `/ship`. Kept for the audit; nothing below describes current behaviour.*
 
 > Move `close`'s integrate-and-merge off the shared main checkout into a disposable worktree, so the merge cannot strand the checkout and two concurrent closes cannot collide — and settle the one contract this forces: what happens to the local `<base>` branch the other verbs read.
 

@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: optional-project-scope
-status: accepted   # draft | under-decision | accepted | shipped | rejected | split
+status: shipped   # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-22
 related: [stale-run-reclamation]
 ---
 
 # Proposal: Make project scoping optional in the build routine
+
+***Shipped** as issues #175 and #176. `repo.project` is optional: `skills/work-discovery/SKILL.md` states the scope conditionally — set means that one project, unset means the configured provider's natural full queue — and the Linear-only wording is gone, guarded by `tests/unit/test_optional_project_scope_guidance.py`. The runtime half of the change (the tracker seam) went with the runtime in [ADR 0015](../decisions/0015-harness-v4-thin-verification-layer.md); the guidance half is what survives, and it is live.*
 
 > Let a consuming repo run the build loop across a whole tracker queue, not just one named project — by making `repo.project` optional rather than required.
 

@@ -1,7 +1,7 @@
 <!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: promote-and-decision-commands
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: shipped         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-07-23
 related:
   - specs/decisions/0003-promotion-lifecycle.md
@@ -10,6 +10,8 @@ related:
 ---
 
 # Proposal: two missing loop commands — `/promote` and `/decision`
+
+***Shipped.** Both commands exist: `commands/promote.md` drives `dev` → `staging` → `main` with plain git, and `commands/decision.md` drains the tickets held for the operator's input.*
 
 > Two operator moves are performed repeatedly today from unversioned prose or a retyped ad-hoc prompt. Both should become versioned guidance commands: `/promote` to drive a branch hop, `/decision` to drain the queue of tickets held for a judgment call.
 

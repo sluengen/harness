@@ -11,6 +11,13 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 
 `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`
 
+**Each entry preserves the scope vocabulary in force when that pass ran**, so
+`system`, `code-deep`, and the same-day `-am` / `-pm` / `-eve` stems appear below
+even though ADR 0015 narrowed `/assess` to `code | architecture`. They are
+records of passes that really happened, not instructions — restating them in
+today's vocabulary would falsify the audit, so a stem here is read as history and
+never as a scope you can still run.
+
 Every report folded below had **no open finding** at fold time — verified against
 the tracker, not assumed. (First fold, CAL-1089: AC-3 named `2026-07-02-code.md`
 as a keep "while CAL-937 is open", but that report's own finding is CAL-866, and
@@ -62,3 +69,4 @@ findings referenced across the folded reports were confirmed completed/canceled.
 - 2026-08-01 · code-am · the earlier same-day pass (tick #152's idle arm), superseded the same day by the kept `2026-08-01-code.md` at a moved HEAD (`42c84b0` → `f2b67cd`); `CONTEXT.md`'s `architecture_watchlist` prose was stale for both gravity wells and factually wrong for `close.py` (claimed the `# size:` marker retired at ~450 lines; the file was 531 lines with a marker at `:112`) · findings: CODE-1 → #272, CODE-INSIGHT-1 → #273, both resolved and shipped
 - 2026-08-01 · code · the second same-day pass (tick #154's idle arm), superseded the same day by the kept `2026-08-01-code-pm2.md` at a moved HEAD (`f2b67cd` → `08d0401`); pushed the structure and test-health lenses into the test tree for the first time and found the size guard's year-old `tests/` deferral had never been decided, leaving 14 files past the declarative ceiling · findings: CODE-1 → #274, CODE-2 → #275, CODE-3 → #276, CODE-INSIGHT-1 → #277, CODE-INSIGHT-2 → #278, all resolved and shipped
 - 2026-06-19 · system · mechanically coherent guidance with one distributed-prose ticket-ID leak; superseded by the 2026-08-04 system pass after the leak was removed from the live tree · findings: SYSTEM-1 / SYSTEM-INSIGHT-1 resolved
+- 2026-08-01 · code-pm2 · the third same-day pass (the routine's idle arm), superseded by the kept `2026-08-04-code.md`; healthy — it confirmed the five-ticket batch had landed as claimed, and three of its four findings were one class, a field or list asserted to exist but never measured · findings: CODE-1/2/3/4 → #279/#280/#281/#282, CODE-INSIGHT-1/2/3 → #283/#284/#285, all seven closed

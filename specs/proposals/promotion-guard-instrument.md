@@ -1,12 +1,14 @@
 <!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: promotion-guard-instrument
-status: accepted
+status: shipped
 date: 2026-08-11
 related: [specs/features/cli-surface.md, specs/decisions/0012-persistent-runtime-host.md, specs/architecture-principles.md]
 ---
 
 # Proposal: replace the nightly promotion guard's text-derivation instrument
+
+***Shipped.** The nightly promotion's logic was extracted to `scripts/promotion-step.sh`, so a test executes the invocation instead of parsing the workflow's text. `specs/architecture-principles.md` records the resulting rule under *Derived from: proposal `promotion-guard-instrument`*.*
 
 > The guard that checks the nightly promotion workflow passes a legal `--repo` has taken four tickets in four attempts, and it structurally forbids the one-line refactor that would remove the defect class outright. The instrument is the problem, not the regex inside it.
 
