@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), the blocking/size 2×2 for findings, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.15.0 -->
+<!-- guidance:review-discipline@0.16.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -34,6 +34,7 @@ Only after Stage 1 passes.
 **For code:**
 - **Correctness** — logic errors, edge cases, off-by-one, null handling, error messages.
 - **Diff-shape checks** — when the change adds a type predicate; deletes or ports a public surface; repeats a helper; introduces placeholder, synchronization, fetch/refetch, watchlist, or CONTEXT/as-built-record changes, load [`skills/review-discipline/references/diff-shape-checks.md`](references/diff-shape-checks.md) and apply only the matching checks.
+- **Craft — defect classes that read as green** — when the change adds or edits a guard, a prose predicate, a mutation table, or a deletion pass, load [`skills/review-discipline/references/craft.md`](references/craft.md) and check the diff against the matching family. Each entry names a shape where a fully green suite shipped the defect.
 - **Over-engineering** — complexity the change *adds* that a simpler form replaces. Tag each finding with the cut it names, and in the finding name *what replaces it* so the fix is concrete, not a vibe:
   - `stdlib:` hand-rolled what the standard library already ships — name the function that replaces it.
   - `native:` a dependency, or a block of code, doing what the language or platform already does — name the built-in feature.

@@ -2,7 +2,7 @@
 feature: guidance-system
 status: implemented
 last_updated: 2026-08-16
-tickets: ["#401", "#407", "#354", "#288", "#434", "#435"]
+tickets: ["#401", "#407", "#354", "#288", "#434", "#435", "#437"]
 ---
 
 # Guidance system
@@ -111,11 +111,11 @@ Every obligation is guarded as a **pair** on the pattern already established for
 
 ### One-level progressive disclosure
 
-The `code-quality` core keeps scope, structure, production-real test inputs, measuring tests, fresh evidence, and gate ordering. It directly links the untrusted-fetch checklist and the specialized verification checklist, each with an explicit activation trigger. The `review-discipline` core keeps the two review stages, general quality bar, severity, finding shape, reviewer obligations, final-evidence ordering, and review-cycle stop policy. It directly links the diff-shape checklist and names the shapes that activate it.
+The `code-quality` core keeps scope, structure, production-real test inputs, measuring tests, fresh evidence, and gate ordering. It directly links the untrusted-fetch checklist and the specialized verification checklist, each with an explicit activation trigger. The `review-discipline` core keeps the two review stages, general quality bar, severity, finding shape, reviewer obligations, final-evidence ordering, and review-cycle stop policy. It directly links the diff-shape checklist and the craft reference, and names the shapes that activate each.
 
 Conditional references are one level deep. The topology guard discovers the reference directories, requires the exact registered set, checks matching version stamps, and rejects nested conditional references. Ticket content cannot choose a reference.
 
-The routing half of this behaviour went with the runtime. A `/harness` router selected one of four registered workflow bodies for `run`, `routine build`, `routine quality` and `ingest`; #435 deleted all five documents, so the only conditional references left are the two checklists below, reached from their cores by an explicit trigger.
+The routing half of this behaviour went with the runtime. A `/harness` router selected one of four registered workflow bodies for `run`, `routine build`, `routine quality` and `ingest`; #435 deleted all five documents, so the conditional references left are the three below, each reached from its core by an explicit trigger.
 
 #### Scenario: a conditional checklist is activated
 
@@ -123,6 +123,23 @@ The routing half of this behaviour went with the runtime. A `/harness` router se
 - WHEN it resolves the trigger the core states
 - THEN it reads that one checklist completely
 - AND it does not load the diff-shape checklist, which belongs to a different core
+
+### The craft reference under `review-discipline`
+
+`skills/review-discipline/references/craft.md` is the third conditional reference and the second under `review-discipline`. It carries forty named patterns in six families — vacuity, prose predicates and text guards, deletion/retirement/re-homing, mutation discipline, the ticket and its criteria, and unmeasured claims. Each entry is a name, the rule in one line, and the falsifying example where a fully green suite shipped the defect; the example is the load-bearing half, and the file says so.
+
+Four diff shapes are the activation trigger both roots state — a guard, a prose predicate, a mutation table, a deletion pass. `skills/review-discipline/SKILL.md` Stage 2 states it for the reviewer, and `commands/build.md` states it twice, at the implementation brief (read it before writing the test) and at the review brief. The last two families are not gated on those shapes and the file's preamble says so: a ticket's grounding and a claim nothing measures are read at different moments in the loop.
+
+The file is distilled rather than transplanted. It states every pattern generally and carries no provenance — no ticket ids, no cites to app-only paths, no nesting of its sibling reference — and those three constraints are already-live sweeps that pick it up as a registered prose member rather than new machinery. It restates nothing its core owns: the finding 2×2, final-evidence ordering, criteria currency, the diff-shape structural checks, and `code-quality`'s fresh-evidence rule stay where they are, and the preamble names each of those homes.
+
+Its guard derives the family and pattern sets from the file rather than listing them. The family set is pinned as an **equality**, so an unrecorded new family is as loud as a lost one; ten named patterns are pinned by **membership**, so a rename surfaces as a missing name instead of shrinking a set behind a count that still passes; and two floors sit just under their measured values — forty patterns and a 357-character shortest body. The non-vacuity assertion is a test of its own rather than a line inside the body sweep, because that sweep iterates the derived pattern set and would pass over an empty one.
+
+#### Scenario: the reference is trimmed back to its rule statements
+
+- GIVEN a later change strips the falsifying examples out of the patterns
+- WHEN the gate runs
+- THEN the body floor fails, naming each pattern that fell under it
+- AND a pattern renamed rather than removed fails the membership pin, instead of passing behind a count the floor still clears
 
 ### Roles and distribution
 
@@ -161,6 +178,7 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - `commands/build.md` → `## Assurance` is the one home for what a level obliges a run to pay for, and carries the stop, ship-binding, and as-built-record-owner obligations that nothing else enforces now the ledger is gone.
 - `skills/code-quality/SKILL.md` and `skills/review-discipline/SKILL.md` are the always-loaded cores for their domains and directly declare every conditional checklist trigger.
 - `commands/build.md` → *Visual evidence for a user-facing change* is the one home for the capture convention — trigger, location, slice rule, height ceiling, and capture cap. `commands/review.md` → *Run the reviewer* owns the handoff of that directory; `skills/review-discipline/SKILL.md` → *Reviewer obligations* → `Report:` owns the consulted / not-consulted line and its closed three-reason set. `commands/start.md`, `agents/reviewer.md`, and `commands/review.md` step 5 are renderings that point rather than restate.
+- `skills/review-discipline/references/craft.md` is the one home for the defect classes that read as green. `skills/review-discipline/SKILL.md` Stage 2 and `commands/build.md`'s implementation and review briefs are the triggers that load it; none of the three restates a pattern.
 - `agents/reviewer.md` and `agents/steward.md` define role boundaries and route domain method to skills and commands.
 
 ## Known limitations
@@ -174,6 +192,9 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - The `## 3. Ship` inversion sweeps recognise an enumerated release and mismatch vocabulary, unlike the design sweep, which flags any continuation verb no negation governs and so fails closed. An appended grant outside that vocabulary (*"the `certified_tree` check is a formality"*, *"integration proceeds even when the trees differ"*) escapes, and the permissive as-built-record sweep requires the literal noun `as-built record`, so a grant spelled *"record what shipped"* escapes too. Deleting or replacing a rule is caught in every case; appending a contradiction in fresh vocabulary is not.
 
 - The visual-evidence inversion sweeps are **blacklists of release vocabulary**, so like every sweep here they fail open on a grant worded outside that vocabulary. Measured at review, one wording at a time against the real documents rather than assumed: the full-page sweep caught six of ten independently written permissions and missed *"one image of the entire page is preferable to slices"*, *"a short page may be captured whole"*, and *"prefer a single full-page image where the surface fits"* — all three release in an adjective or a comparative rather than a verb the release arm names. The report-line sweep is the weaker of the two and caught **none** of six (*"at the reviewer's judgment"*, *"recommended but not mandatory"*, *"where it adds value"*, *"skip … for a docs-only diff"*, *"encouraged"*, *"nothing requires …"*). The paraphrase tuples that guard both sweeps are drawn from the same vocabulary the sweeps recognise, so they measure coverage of themselves rather than robustness; they are a floor against a single-wording check, not evidence of paraphrase completeness. Widening the alternation was considered and declined at review: a blacklist has no completion condition, and each widening risks flagging the rule it protects. The presence halves, which are value-asserted, are what actually hold a deleted or re-worded rule.
+- The craft reference's body floor measures **length**, not the presence of a falsifying example. A long entry with nothing concrete in it passes. No tree-readable predicate separates an example from a restatement, and a keyword sweep for one would be the fail-open blacklist the reference itself warns about; the floor catches the degradation a distillation actually suffers, an entry trimmed back to its rule. Whether each entry carries a real example stays a review judgment over prose, and one entry was rewritten at review for exactly that reason.
+- Both roots naming the reference is asserted as *the path appears somewhere in the file*, so `commands/build.md`'s second cite has no exclusive killer: deleting one of its two briefs survives every guard. Measured and left deliberately — a count would be the cardinality floor the reference itself warns against, and it would rot the first time a third brief is added.
+- The repo-id sweep over distributed prose keys on the `PREFIX-1234` ticket shape parsed from `hooks/guidance-freshness.js`, so a GitHub-style `#1234` id in registered prose is not caught. The craft reference is clean of both shapes by measurement, not because the guard covers the second one.
 - Nothing authenticates that a capture depicts the reviewed SHA, and `consulted` records only that the reviewer looked. The guidance states the capture convention; it adds no refusal for a user-facing change whose builder produced nothing, so a missing capture set is a Stage-1 finding a reviewer makes rather than a mechanism.
 
 ## Decisions
