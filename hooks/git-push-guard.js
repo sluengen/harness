@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.4.1
+// guidance:hook-git-push-guard@0.5.0
 /**
  * Git force-push guard (PreToolUse: Bash).
  *
@@ -648,10 +648,41 @@ if (require.main === module) {
   }
 }
 
+// Two kinds of export, one mechanism.
+//
 // The recognition sets whose *membership* decides push-ness. Exported so the
 // guard's own test suite can derive its per-member deny corpus from the real
 // values rather than restating them (CAL-1088) — a set cannot gain a member
 // without a matching deny case. The ``require.main === module`` guard above means
 // importing the module for this introspection never runs the hook (which would
 // block reading stdin); run directly as a hook, ``main()`` still executes.
-module.exports = { WRAPPERS, SHELLS, GIT_GLOBAL_WITH_ARG };
+//
+// The **lexer and its helpers**, exported for ``push-target-guard.js`` (#436),
+// which decides on a push's *target* rather than on its force form. That guard
+// needs the same answers to the same questions — where does the command
+// substitution sit, what is this wrapper really running, which token is the git
+// sub-command — and a second parser built to answer them would be the weaker
+// one. Concretely: ``sh -c "git push origin HEAD:dev"`` is a push this lexer
+// already sees and a naive split would not, so a target guard with its own
+// parser would refuse the plain spelling and wave the nested one through. That
+// asymmetry is not theoretical; it is an invitation.
+//
+// Nothing below is a decision: these are pure functions over a command string,
+// so the force-push verdicts this hook reaches are unchanged by exporting them.
+// A shared ``hooks/lib/`` module was the alternative and was rejected —
+// ``test_hooks_fail_open_is_loud.py``, ``test_hooks_module_type.py`` and
+// ``test_hooks_no_empty_catch.py`` all scan ``hooks/*.js`` non-recursively, so a
+// subdirectory would be a silent hole in three guards at once.
+module.exports = {
+  WRAPPERS,
+  SHELLS,
+  GIT_GLOBAL_WITH_ARG,
+  lex,
+  stripPrefixes,
+  resolveCommand,
+  basename,
+  isGit,
+  nestedScripts,
+  hasCommandSubstitution,
+  isBareShellFedExternally,
+};

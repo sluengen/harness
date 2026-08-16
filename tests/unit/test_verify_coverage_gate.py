@@ -34,8 +34,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 
 #: The floor the gate enforces, set just under the coverage measured at the
-#: teardown. A ratchet, not a target: raise it when coverage rises.
-COVERAGE_FLOOR = 79
+#: time it was last raised. A ratchet, not a target: raise it when coverage
+#: rises. 79 at the #435 teardown; 82 since #436 added ``scripts/gate_marker.py``
+#: with tests that actually exercise it (measured 82.12%).
+COVERAGE_FLOOR = 82
 
 #: The tree coverage is measured over — the only executable code the repo owns
 #: since ADR 0015 deleted the ``harness`` package.

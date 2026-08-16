@@ -1,4 +1,4 @@
-<!-- guidance:bootstrap@0.5.6 -->
+<!-- guidance:bootstrap@0.5.7 -->
 # Bootstrap the guidance into a repo
 
 > Paste this into an agent running **inside the target repo**, with the guidance source available (cloned locally or reachable). It installs a versioned copy of the guidance and scaffolds the repo's `CONTEXT.md`.
@@ -94,6 +94,7 @@ Installs come in two **visibility modes**, controlling what is committed to git:
 > - Every file in the lock exists and still carries its `guidance:` header — **except** the registry-managed JSON files (`settings/*.json` and `hooks/package.json`), which carry no header; verify their recorded version against `registry.yaml` instead.
 > - `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are byte-identical (one derived process artifact under three names).
 > - `.claude/agents`, `.claude/skills`, `.claude/commands`, `.claude/hooks` resolve. On a Windows clone using step 3's junctions, `dir .claude` shows `<JUNCTION>` for each and `git status` reports those four paths **unmodified** — a deletion or modification there means `--skip-worktree` did not take.
+> - `.claude/settings.json` carries a **`Stop`** hooks block as well as `PreToolUse` and `PostToolUse`. Called out because `Stop` is a newer event type than the rest: a settings file merged by hand from an older install can keep every other block and silently drop this one, and a Stop hook that never fires looks exactly like one that always allows. It wires `gate-evidence-guard.js` (see the process doc's *Enforcement hooks*).
 > - `templates/generate_codex_artifacts.py --check` passes. `.codex/agents/*.toml` exists for each generated Codex role and references the current `skills/<id>/SKILL.md` paths, not retired flat skill files; `.codex/skills/<id>` resolves to each repo skill; and `.codex/skills/command-<id>/SKILL.md` exists for each `commands/*.md` file.
 > - `CONTEXT.md` has no remaining `{placeholder}` tokens and is **not** git-ignored (always committed).
 > - **committed mode:** `git check-ignore` confirms no installed guidance path is excluded. **local mode:** `git status` shows only `CONTEXT.md` (and the `.gitignore` change) as guidance-related tracked changes; the internals are ignored but still present on disk.

@@ -61,7 +61,15 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/git-push-guard.js" }
+          { "type": "command", "command": "node .claude/hooks/git-push-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/push-target-guard.js" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/gate-evidence-guard.js", "timeout": 15 }
         ]
       }
     ],

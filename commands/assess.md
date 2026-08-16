@@ -1,4 +1,4 @@
-<!-- guidance:assess@0.10.1 -->
+<!-- guidance:assess@0.11.0 -->
 
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /assess — run a periodic assessment
@@ -40,6 +40,8 @@ For every finding and every insight, create an issue through the `tracker` skill
 
 ### 3. Commit the report
 A report is advisory evidence, not a code change, so it needs no merge gate. Commit the dated report directly to the integration branch (`CONTEXT.md`) — no branch, no PR. The findings already live in the tracker; a PR per run would carry nothing reviewable and, under a scheduled cadence, pile up trivial approvals. Surface the summary, the finding counts by severity, and the filed ticket IDs to the user. (When the tracker is off, the report file *is* the deliverable — commit it the same way.)
+
+**Run the repo's verify gate on the committed tree before pushing** (`CONTEXT.md` `commands.verify`). No *merge* gate, as above — a report carries nothing reviewable — but this pass writes to a tracked directory, and step 4's retention deletes files from it, so "advisory" describes the content and not the blast radius. The push is refused without it in any repo that installs the enforcement hooks. If the gate is red on the integration branch before this run touched anything, say so and stop rather than pushing on top of it.
 
 ### 4. Apply retention
 After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): keep the latest report per scope plus any report with an open finding, and fold every superseded report into a one-line entry in the rolling `assessments/LOG.md`. This runs each pass so the directory stays a live index — the latest verdict per scope plus the open-finding tail — instead of accumulating a point-in-time file per run (at up to seven files a day, ~700 a year) whose findings are already fixed or ticketed. Never fold away a report with an open finding. Commit the compaction in the same step as the report.

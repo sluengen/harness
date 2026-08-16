@@ -1,4 +1,4 @@
-<!-- guidance:process-harness@0.8.1 -->
+<!-- guidance:process-harness@0.9.0 -->
 # How work happens here
 
 This is the **one shared process** for working in a repo set up with this guidance. It is universal: everything specific to *this* repo — stack, commands, paths, tracker, principles, and which **layers** are on — lives in [`CONTEXT.md`](CONTEXT.md). Read that first, then this.
@@ -45,6 +45,21 @@ The builder writes the change spec and builds. The reviewer records what actuall
 The process is agent-led, and there is one way to drive it. Unattended, that is `/build <TICKET>` — implement, verify, review, and ship, end to end (`--engine codex` runs the review through Codex). Attended, it is the same lifecycle taken a step at a time: `/start → /review → /ship`. Both are available in every repo on this guidance, and neither depends on any tool beyond the agent host and the repo's own verify gate.
 
 `/build` carries the assurance stages, the isolated review agent, and the evidence requirements. What it deliberately does not carry is a wall-clock budget or a run ledger: the bounds that matter are the review→fix stop rule (`review-discipline`) and the verify gate, both of which are properties of the work rather than of a runtime.
+
+## Enforcement hooks
+
+Two of this rulebook's rules are enforced mechanically rather than by prose. The verify gate writes a **gate marker** on green — a file named after the git **tree object** it verified, in the repository's git directory — and two Claude Code hooks read it:
+
+| Hook | Event | Refuses |
+|---|---|---|
+| `gate-evidence-guard.js` | `Stop` | Ending a turn that claims the work is finished when no fresh marker covers the worktree's current tree. |
+| `push-target-guard.js` | `PreToolUse: Bash` | A `git push` whose **target** is a branch `CONTEXT.md` `branches:` declares, unless a fresh marker covers the tree of the commit being pushed. Deleting such a branch, and `--mirror` / `--all`, are refused outright. |
+
+The marker is named by tree, not by session, so the claim it licenses is *the gate exited 0 over these exact bytes* — which one more edit invalidates and no rewording can talk past. **There is no exemption for a particular command:** `/ship`, `/routine` and `/promote` are authorised because they push a gated tree, which is the only authorisation a hook can actually check. Clearing either refusal is the same one move — run `CONTEXT.md`'s `commands.verify` where the claim is being made, and read its output.
+
+The Stop hook can force exactly one extra turn per stop-chain; it is a nudge with a memory, not a lock. Both hooks fail **open** when they cannot run at all, and both say so on stderr. They are evidence plumbing, not an authority — anything with shell access can forge a marker — so the controls of record remain server-side branch protection and the gate output in CI. What they buy is that the default path now requires the gate to have actually run, and that faking it is a deliberate, visible act instead of a silent omission.
+
+`BOOTSTRAP.md` installs both; a repo that wants neither removes the entries from its `.claude/settings.json`.
 
 ## Skills (the durable rules)
 
