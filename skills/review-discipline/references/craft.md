@@ -1,4 +1,4 @@
-<!-- guidance:review-discipline-craft@0.3.0 -->
+<!-- guidance:review-discipline-craft@0.4.0 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation
@@ -12,6 +12,12 @@ measures.
 Every entry has a name, the rule in one line, and a falsifying example — the
 concrete shape where the wrong thing read as green. The example is the
 load-bearing half; read it to recognise the shape in the diff in front of you.
+
+Additions to this file are held for an operator call — filed with the `input`
+hold label and assigned — never self-filed. The entry bar here is *a defect class
+that reads as green*, which is a standing incentive to grow the file, and every
+entry taxes the context of every future reader. The operator is the budget-holder
+for that tax.
 
 These extend the core bar, they do not restate it. The finding 2×2, the
 final-evidence ordering rule and the reviewer's obligations stay in
@@ -194,6 +200,38 @@ excuse the whole span — the sweep reported zero offenders while live. Feed the
 controls **synthetic** text spliced into the real document, not a standalone
 clean sentence: a control that cannot fail for the reason the real assertion
 fails is not a control.
+
+### A paired delimiter can be counterfeited by prose that mentions it
+
+A guard that strips or scopes the region between paired delimiters will open one
+on a *mention* of the delimiter in ordinary prose. Anchor the opener to where the
+syntax actually admits it, and splice-prove the interior is still reachable.
+
+**Falsifying example.** A sweep for ticket-shaped identifiers stripped fenced
+code before reading a document, because the character it keys on is live syntax
+inside code and not in a sentence. The strip used the obvious pattern: the fence
+marker, a lazy body, the fence marker again. A live guidance file carried a
+sentence *mentioning* a fence mid-clause; that mention was read as an opener, and
+the strip swallowed 1,355 characters of real prose through to the next genuine
+fence, mis-pairing every fence after it. Nothing errored. The scanned corpus
+simply got shorter, so the sweep reported zero offenders over text it never
+opened, and the guard read green. It surfaced only under three splices: a shape
+the predicate was **known** to catch died at one offset, the shape under test
+survived at that same offset, and the same shape under test died earlier in the
+same file — one conclusion, that the region between the two deaths was
+invisible. The remedy is to anchor the opener to line start with indent
+tolerance; Python's `re` needs each lookbehind branch fixed-width, so
+`(?<![^\n])` rather than `(?<=^|\n)`. It generalises past fences to every paired
+delimiter a text guard strips or scopes — HTML and JSX comment markers, a
+front-matter rule, a heredoc terminator, a BEGIN/END block — and documentation
+*about* a syntax is the structurally most exposed corpus for it, because prose
+there reliably carries that syntax's delimiters as its subject matter. This is
+the neighbour of *The text unit is part of the predicate*, not an instance of it:
+that entry is a splitter reading too much as one unit, remedied by choosing the
+unit deliberately and pinning it; this one is the corpus silently shrinking
+before any unit is chosen, remedied by anchoring the delimiter and proving by
+splice that the interior is reachable. A guard can have both defects at once, and
+each remedy leaves the other standing.
 
 ### A paraphrase tuple drawn from the sweep's own alternation measures itself
 
