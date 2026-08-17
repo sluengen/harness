@@ -129,9 +129,9 @@
   .tcard{border:1px solid var(--line); border-radius:13px; padding:16px 16px 14px; background:#fbfcff}
   .tcard.is-now{border-color:#bfe6d6; background:#f3fbf8}
   .tcard h4{margin:0 0 6px; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .tcard h4 code{font:700 12.5px/1 ui-monospace,Menlo,monospace; background:#eef1fb; color:#23348f; padding:4px 7px; border-radius:6px}
+  .tcard h4 code{font:700 12.5px/1 ui-monospace,Menlo,monospace; background:#eef1fb; color:var(--product-ink); padding:4px 7px; border-radius:6px}
   .tcard h4 small{font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
-    color:#0a5e44; background:#d8f2e8; padding:3px 7px; border-radius:999px}
+    color:var(--build-ink); background:#d8f2e8; padding:3px 7px; border-radius:999px}
   .tcard h4 small.later{color:var(--muted); background:#eef0f6}
   .tcard p{margin:0; font-size:13.5px; color:var(--ink-2)}
   .pill-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
@@ -144,7 +144,7 @@
 
   /* ---------- SPECS ---------- */
   .section-intro{margin:-4px 0 18px; color:var(--ink-2); max-width:900px; font-size:15px}
-  .section-intro b{color:var(--ink)} .section-intro code{font-size:12.5px;background:#eef1fb;color:#23348f;padding:2px 6px;border-radius:5px}
+  .section-intro b{color:var(--ink)} .section-intro code{font-size:12.5px;background:#eef1fb;color:var(--product-ink);padding:2px 6px;border-radius:5px}
   .spec-flow{display:flex; flex-wrap:wrap; align-items:stretch; gap:0; margin-bottom:18px}
   .spec-stage{flex:1 1 250px; position:relative; background:var(--card); border:1px solid var(--line);
     border-radius:16px; padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden;
@@ -210,7 +210,7 @@
   .inv p{margin:0; font-size:13px; color:var(--ink-2)}
   .inv code{font-size:11.5px; background:#d4efe4; color:var(--build-ink); padding:2px 5px; border-radius:5px}
   .drive{border:1px solid var(--line); background:#fbfcff; border-radius:13px; padding:16px 18px; font-size:14px; color:var(--ink-2)}
-  .drive b{color:var(--ink)} .drive code{font-size:12.5px; background:#eef1fb; color:#23348f; padding:2px 6px; border-radius:5px}
+  .drive b{color:var(--ink)} .drive code{font-size:12.5px; background:#eef1fb; color:var(--product-ink); padding:2px 6px; border-radius:5px}
 
   /* ---------- THE GUIDANCE (catalog) ---------- */
   .catalog{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
@@ -260,17 +260,17 @@
         </defs>
 
         <!-- concentric bands (largest first so inner overlays) -->
-        <circle cx="460" cy="400" r="304" fill="#f1eafd" stroke="#7c3aed" stroke-width="2.5"/>
-        <circle cx="460" cy="400" r="230" fill="#fdf1df" stroke="#d97706" stroke-width="2.5" stroke-dasharray="9 7"/>
-        <circle cx="460" cy="400" r="156" fill="#e9edfd" stroke="#3b5bdb" stroke-width="2.5"/>
-        <circle cx="460" cy="400" r="82"  fill="#d6f2e8" stroke="#0f9d6e" stroke-width="3"/>
+        <circle cx="460" cy="400" r="304" style="fill:var(--strategy-soft); stroke:var(--strategy)" stroke-width="2.5"/>
+        <circle cx="460" cy="400" r="230" style="fill:var(--quality-soft); stroke:var(--quality)" stroke-width="2.5" stroke-dasharray="9 7"/>
+        <circle cx="460" cy="400" r="156" style="fill:var(--product-soft); stroke:var(--product)" stroke-width="2.5"/>
+        <circle cx="460" cy="400" r="82"  fill="#d6f2e8" style="stroke:var(--build)" stroke-width="3"/>
 
         <!-- per-ring rotation motif (upper-right, away from labels) -->
         <g fill="none" stroke-width="2.6">
-          <path d="M 514.9,339.1 A 82 82 0 0 1 537.1,372.0"   stroke="#0f9d6e" marker-end="url(#rot)"/>
-          <path d="M 564.4,284.1 A 156 156 0 0 1 606.6,346.6" stroke="#3b5bdb" marker-end="url(#rot)"/>
-          <path d="M 613.9,229.1 A 230 230 0 0 1 676.2,321.3" stroke="#d97706" marker-end="url(#rot)"/>
-          <path d="M 663.4,174.1 A 304 304 0 0 1 745.8,296.0" stroke="#7c3aed" marker-end="url(#rot)"/>
+          <path d="M 514.9,339.1 A 82 82 0 0 1 537.1,372.0"   style="stroke:var(--build)" marker-end="url(#rot)"/>
+          <path d="M 564.4,284.1 A 156 156 0 0 1 606.6,346.6" style="stroke:var(--product)" marker-end="url(#rot)"/>
+          <path d="M 613.9,229.1 A 230 230 0 0 1 676.2,321.3" style="stroke:var(--quality)" marker-end="url(#rot)"/>
+          <path d="M 663.4,174.1 A 304 304 0 0 1 745.8,296.0" style="stroke:var(--strategy)" marker-end="url(#rot)"/>
         </g>
 
         <!-- intent inward (left) / feedback outward (right) -->
@@ -284,21 +284,21 @@
         </g>
 
         <!-- Quality feeds Build's queue directly — a maintenance band, not a steering layer -->
-        <path d="M 300,560 L 401,459" stroke="#d97706" stroke-width="2.2" stroke-dasharray="6 5" fill="none" marker-end="url(#rot)"/>
-        <g><rect x="299" y="511" width="120" height="20" rx="6" fill="#ffffff" stroke="#f0c890"/><text x="359" y="525" font-size="11" font-weight="700" fill="#a9701f" text-anchor="middle">findings → Build</text></g>
+        <path d="M 300,560 L 401,459" style="stroke:var(--quality)" stroke-width="2.2" stroke-dasharray="6 5" fill="none" marker-end="url(#rot)"/>
+        <g><rect x="299" y="511" width="120" height="20" rx="6" style="fill:var(--card)" stroke="#f0c890"/><text x="359" y="525" font-size="11" font-weight="700" fill="#a9701f" text-anchor="middle">findings → Build</text></g>
 
         <!-- ring labels, stacked at 12 o'clock down into the core -->
         <g text-anchor="middle">
-          <text x="460" y="131" font-size="16" font-weight="800" fill="#4c1d95" letter-spacing=".04em">STRATEGY</text>
+          <text x="460" y="131" font-size="16" font-weight="800" style="fill:var(--strategy-ink)" letter-spacing=".04em">STRATEGY</text>
           <text x="460" y="148" font-size="11" font-weight="600" fill="#6d4bb0">Periodic · human-led</text>
 
-          <text x="460" y="205" font-size="16" font-weight="800" fill="#8a4b06" letter-spacing=".04em">QUALITY</text>
+          <text x="460" y="205" font-size="16" font-weight="800" style="fill:var(--quality-ink)" letter-spacing=".04em">QUALITY</text>
           <text x="460" y="222" font-size="11" font-weight="600" fill="#a9701f">Weekly / on idle · maintenance band</text>
 
-          <text x="460" y="279" font-size="16" font-weight="800" fill="#23348f" letter-spacing=".04em">PRODUCT</text>
+          <text x="460" y="279" font-size="16" font-weight="800" style="fill:var(--product-ink)" letter-spacing=".04em">PRODUCT</text>
           <text x="460" y="296" font-size="11" font-weight="600" fill="#4d63c8">Daily · human + Claude</text>
 
-          <text x="460" y="390" font-size="19" font-weight="800" fill="#0a5e44" letter-spacing=".03em">BUILD</text>
+          <text x="460" y="390" font-size="19" font-weight="800" style="fill:var(--build-ink)" letter-spacing=".03em">BUILD</text>
           <text x="460" y="408" font-size="11.5" font-weight="700" fill="#0f7d59">Hourly · autonomous</text>
           <text x="460" y="424" font-size="10" font-weight="600" fill="#3a8f72">agent-led · pulls from the tracker</text>
         </g>

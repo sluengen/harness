@@ -9,9 +9,13 @@ this settles (the page's existing hand-authored variable names, e.g.
 ``--build``, are kept; a page-wide rename to the new namespaced scheme
 (``--color-loop-build-accent``) is out of scope for this ticket).
 
-These tests exercise the pure resolver/region functions against fixture files
-under ``tests/fixtures/build_design_tokens/`` so they never depend on the
-real, evolving ``docs/index.html``.
+The resolver and region-writer are exercised against pages synthesised in
+``tmp_path``, so nothing about the page's evolving prose can reach them. The
+consumer sweep ``--check`` grew in #466 cannot be tested that way: its subject
+*is* the real ``docs/index.html``, and a control spliced into a shorter corpus
+would prove only that the sweep reads some text. Those tests therefore splice
+into the real page and assert about the splice — see
+:func:`test_planted_duplicate_control_paired_splice_into_the_real_page`.
 """
 
 from __future__ import annotations
@@ -29,6 +33,16 @@ SCRIPT = REPO_ROOT / "scripts" / "build_design_tokens.py"
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 PAGE = REPO_ROOT / "docs" / "index.html"
 TOKENS = REPO_ROOT / "design" / "03-tokens" / "tokens.json"
+
+# size: one script's acceptance suite — case enumeration over the four surfaces
+# of build_design_tokens.py (the token resolver, the region write, the region
+# check, and the consumer sweep #466 added to --check). Over the ceiling on
+# recorded reasoning rather than on logic: better than a quarter of these lines
+# are docstrings and comments, most of them naming the mutation a given control
+# is the exclusive killer for, which is the half a later reader cannot
+# reconstruct. Splitting by surface would put the sweep's controls in a
+# different file from the markers and the resolver they are derived from, and a
+# control separated from its subject is the shape that goes inert unnoticed.
 
 
 def _module():
@@ -336,3 +350,521 @@ def test_check_cli_fails_when_tokens_changed_without_regenerating(tmp_path: Path
     assert "--build" in (result.stdout + result.stderr), (
         "the failure must name the drifted property"
     )
+
+
+# --------------------------------------------------------------------------- #
+# #466 — no token value is hand-copied as a hex literal outside the region
+# --------------------------------------------------------------------------- #
+
+#: The sweep is ``scripts/build_design_tokens.py``'s own — the same function the
+#: gate's drift stage runs. Every assertion and every control below calls it, so
+#: a change to how the shipped stage scans is a change to what they measure. A
+#: control that re-implements the predicate agrees with itself and stops
+#: controlling the thing that ships (``review-discipline`` craft: *exercise the
+#: production path*).
+_sweep = bdt.find_token_literals_outside_region
+
+
+def _duplicate_vars(findings: list) -> set[str]:
+    return {f.css_var for f in findings}
+
+
+def test_hex_token_subject_set_is_live() -> None:
+    """Non-vacuity floor for the sweep: its derived subject set is non-empty and
+    still holds the vars the page binds by name.
+
+    Membership with named anchors, never cardinality — a pinned count is the very
+    drift this guard exists to remove, and it rots on the next token.
+    """
+    hex_values = bdt.hex_token_values(_tokens())
+    assert hex_values, "no token resolves to a hex colour — the sweep has no subjects"
+    for anchor in ("--card", "--product-ink", "--quality", "--strategy-ink"):
+        assert anchor in hex_values, f"{anchor} is no longer a hex-valued semantic token"
+    # The filter's default branch means "not my subject", so a token whose value
+    # is not a bare hex literal leaves the sweep silently. Pin the exclusion set
+    # by membership rather than pinning only ``--shadow``'s absence: a token
+    # added tomorrow as a gradient, ``rgba(…)`` or ``color-mix(…)`` then has to
+    # be placed here deliberately — swept in some other form, or recorded as
+    # unsweepable — instead of falling through into a hole nothing reports.
+    unswept = set(bdt.resolve_css_vars(_tokens())) - set(hex_values)
+    assert unswept == {"--shadow"}, (
+        "--shadow resolves to a box-shadow declaration, not a hex literal, and is "
+        "the only token the hex sweep may skip. These fell out of it unplaced: "
+        f"{sorted(unswept - {'--shadow'})}"
+    )
+
+
+def test_the_subject_set_re_derives_from_the_tokens_it_is_handed() -> None:
+    """The sweep looks for the values it was *given*, not the ones it shipped with.
+
+    The floor above pins the subject set's **keys**, which come from this
+    module's own ``SEMANTIC_TO_CSS_VAR`` map — so it holds identically whether
+    the values are resolved from ``tokens.json`` or hand-listed. Every other
+    test here feeds the real tokens, whose answer is eighteen six-digit values,
+    so that answer written out as a literal satisfies all of them, and so does a
+    subject filter narrowed to exactly six digits. Both were measured live at
+    review and neither killed anything.
+
+    So feed a synthetic token tree whose correct answer *differs* from today's —
+    one value revalued, one in the 3-digit form, one in the 8-digit form with an
+    alpha pair — and require the production sweep to find those and to have
+    stopped looking for the values they replaced. That second half is what a
+    subject set carrying both the derived and the shipped answer would fail.
+    """
+    shipped = bdt.hex_token_values(_tokens())
+    tokens = _tokens()  # a fresh parse, so the edits below cannot leak sideways
+    tokens["color"]["primitive"]["neutral"]["card"]["value"] = "#abcdef"
+    tokens["color"]["primitive"]["neutral"]["bg"]["value"] = "#fed"
+    tokens["color"]["primitive"]["build"]["base"]["value"] = "#11223344"
+    revalued = {"--card": "#abcdef", "--bg": "#fed", "--build": "#11223344"}
+
+    derived = bdt.hex_token_values(tokens)
+    assert {var: derived.get(var) for var in revalued} == revalued, (
+        "the subject set does not re-derive from the tokens it is handed — the "
+        f"3-digit and 8-digit forms are token values too: {derived}"
+    )
+
+    lines = PAGE.read_text(encoding="utf-8").split("\n")
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+    planted = "  .planted{" + "; ".join(
+        f"--p{i}:{value}" for i, value in enumerate(list(revalued.values()) + [
+            shipped["--card"], shipped["--bg"], shipped["--build"]
+        ])
+    ) + "}"
+    page = "\n".join(lines[: end + 2] + [planted] + lines[end + 2 :])
+
+    found = {(f.css_var, f.value) for f in _sweep(page, tokens)}
+    assert found == set(revalued.items()), (
+        "the sweep must flag the three revalued token values and must no longer "
+        f"be looking for the values they replaced: {sorted(found)}"
+    )
+
+
+def test_no_token_value_is_hand_copied_outside_the_generated_region() -> None:
+    """#466 AC-1: the page has one source for every token value.
+
+    Every hex literal outside the generated region that byte-duplicates a
+    resolved token value is a second copy the drift gate cannot see.
+    """
+    duplicates = _sweep(PAGE.read_text(encoding="utf-8"), _tokens())
+    assert not duplicates, (
+        "docs/index.html hand-copies token values outside the generated region. "
+        "The drift gate certifies only the region, so a token revalue leaves "
+        "these stale. Use the var() instead:\n  "
+        + "\n  ".join(d.describe() for d in duplicates)
+    )
+
+
+def test_planted_duplicate_control_paired_splice_into_the_real_page() -> None:
+    """#466 AC-2: the sweep is not inert, and its window is neither empty nor
+    the whole file.
+
+    A paired splice, per ``review-discipline`` craft: the *same* token value is
+    inserted at three locations in the *real* page — after the region, before it,
+    and inside it — and the inside splice must get the opposite verdict from the
+    other two. The outside splices dying is what proves the sweep reads the
+    page's live prose rather than some shorter corpus; the inside splice
+    surviving is what proves the exclusion window is really the certified region
+    and not the entire file.
+
+    Both sides of that window are exercised on purpose. The window is a closed
+    interval, so losing its lower half (``i < begin`` scanned) changes nothing
+    the page can show today — the twenty lines above the marker are ``<meta>``
+    tags carrying no colour — and a head splice is the only thing that fails when
+    it goes. A landing page acquires a ``theme-color`` meta the day someone wants
+    a tinted mobile chrome, and that is a hand copy in exactly that dead zone.
+    """
+    page_text = PAGE.read_text(encoding="utf-8")
+    tokens = _tokens()
+    hex_values = bdt.hex_token_values(tokens)
+    baseline = _sweep(page_text, tokens)
+
+    # Plant a value the page does not already carry outside the region, so each
+    # verdict is about the splice alone. Derived, so the control keeps working
+    # as the page's own duplicates come and go; if every token were already
+    # duplicated there would be no clean probe, and this fails rather than
+    # quietly measuring nothing.
+    clean = [v for v in sorted(hex_values) if v not in _duplicate_vars(baseline)]
+    assert clean, "no token value is free of existing duplicates — no clean probe"
+    planted_var = clean[0]
+    planted = hex_values[planted_var]
+
+    lines = page_text.split("\n")
+    begin = bdt._find_marker(lines, bdt.BEGIN_MARKER)
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+
+    # Outside: two lines past the region's end marker — must be flagged, at the
+    # line it was planted on.
+    outside = lines[: end + 2] + [f"  .planted{{color:{planted}}}"] + lines[end + 2 :]
+    planted_line = end + 3  # 1-based line number of the spliced line
+    flagged = [f for f in _sweep("\n".join(outside), tokens) if f.css_var == planted_var]
+    assert flagged, (
+        f"a planted {planted} ({planted_var}) outside the generated region was "
+        "not flagged — the sweep is inert"
+    )
+    assert [f.line for f in flagged] == [planted_line], (
+        f"the finding must name the planted site (line {planted_line}): {flagged}"
+    )
+    assert flagged[0].value == planted, "the finding must carry the literal it found"
+
+    # Before: the same value twice on one line above the begin marker — must be
+    # flagged at line 1, and the finding must carry the multiplicity, because a
+    # site with three stale copies and a site with one are different repairs.
+    head = [f"  .planted{{color:{planted}; background:{planted}}}", *lines]
+    head_flagged = [f for f in _sweep("\n".join(head), tokens) if f.css_var == planted_var]
+    assert head_flagged, (
+        f"a planted {planted} ({planted_var}) BEFORE the begin marker was not "
+        "flagged — the sweep's window has lost its lower half"
+    )
+    assert (head_flagged[0].line, head_flagged[0].copies) == (1, 2), (
+        f"the finding must name the planted site and how many copies sit on it: "
+        f"{head_flagged[0]!r}"
+    )
+    assert "line 1 (x2)" in head_flagged[0].describe(), (
+        f"the report line must render the multiplicity: "
+        f"{head_flagged[0].describe()!r}"
+    )
+
+    # Inside: the same value, inside the region — must not be flagged at all.
+    inside = lines[: begin + 1] + [f"    --planted:{planted};"] + lines[begin + 1 :]
+    inside_findings = _sweep("\n".join(inside), tokens)
+    assert planted_var not in _duplicate_vars(inside_findings), (
+        f"a {planted} spliced INSIDE the generated region must not be flagged; "
+        f"the exclusion window is wrong:\n  {inside_findings}"
+    )
+
+
+def test_the_exclusion_window_stops_exactly_at_the_markers() -> None:
+    """The two lines the window *touches* are swept, not swallowed.
+
+    The splices above plant two lines clear of the region, which proves the
+    window is roughly right and leaves either bound free to move by one: at
+    review, ``end`` → ``end + 1`` and ``begin`` → ``begin - 1`` were both live
+    and both survived this module. Each swallows one line of reachable page
+    text — the line abutting a marker is ordinary CSS, and it is where a hand
+    copy of a token value is *most* likely to be written, because it is the
+    text sitting next to the block those values come from.
+
+    So plant on both abutting lines at once and require both back. The two
+    findings also have to name distinct sites: a window that collapsed to a
+    single line would still report something.
+    """
+    page_text = PAGE.read_text(encoding="utf-8")
+    tokens = _tokens()
+    value = bdt.hex_token_values(tokens)["--product-ink"]
+
+    lines = page_text.split("\n")
+    begin = bdt._find_marker(lines, bdt.BEGIN_MARKER)
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+    spliced = (
+        lines[:begin]
+        + [f"  .before{{color:{value}}}"]
+        + lines[begin : end + 1]
+        + [f"  .after{{color:{value}}}"]
+        + lines[end + 1 :]
+    )
+    # 1-based: the splice above shifts the end marker down by one, so the line
+    # abutting it below is ``end + 1 + 1`` in 0-based terms, ``end + 3`` here.
+    abutting = [begin + 1, end + 3]
+
+    findings = _sweep("\n".join(spliced), tokens)
+    assert [f.line for f in findings] == abutting, (
+        f"a {value} on the line abutting each marker must be swept — the "
+        f"window may not eat either neighbour. Expected {abutting}: {findings}"
+    )
+
+
+def test_the_sweep_is_word_bounded_on_the_right() -> None:
+    """A token value that is merely a *prefix* of a longer hex literal is a
+    different colour, and must not be flagged.
+
+    Splices ``#RRGGBBaa`` — the 8-digit form, whose first six digits are a live
+    token value — outside the region. Without the right-hand boundary the sweep
+    reads that as the token and reports a duplicate that is not one. The page
+    carries no such literal today, so this is the only thing standing between
+    the boundary clause and a silent regression: deleting it leaves the rest of
+    this module green.
+    """
+    page_text = PAGE.read_text(encoding="utf-8")
+    tokens = _tokens()
+    hex_values = bdt.hex_token_values(tokens)
+    baseline = _sweep(page_text, tokens)
+
+    probe_var = "--product-ink"
+    probe = hex_values[probe_var]
+    assert len(probe) == 7, f"{probe_var} is not a 6-digit hex; pick another probe"
+
+    lines = page_text.split("\n")
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+    # ``#23348f`` + an alpha pair: a longer literal that merely starts with it.
+    longer = lines[: end + 2] + [f"  .planted{{color:{probe}a1}}"] + lines[end + 2 :]
+
+    findings = _sweep("\n".join(longer), tokens)
+    assert findings == baseline, (
+        f"{probe}a1 is not {probe} — the sweep matched a token value inside a "
+        f"longer hex literal:\n  {findings}"
+    )
+
+
+def test_the_sweep_matches_a_token_value_in_any_case() -> None:
+    """``#23348F`` is the same colour as ``#23348f`` and is the same stale copy.
+
+    ``tokens.json`` and the page both happen to be lowercase today, so nothing
+    else in this module distinguishes a case-insensitive sweep from a
+    case-sensitive one — dropping the flag would leave every other test green
+    while an uppercase hand copy walked straight past the guard.
+    """
+    page_text = PAGE.read_text(encoding="utf-8")
+    tokens = _tokens()
+    hex_values = bdt.hex_token_values(tokens)
+
+    probe_var = "--product-ink"
+    probe = hex_values[probe_var]
+    assert probe.islower(), f"{probe_var} is not lowercase; this probe assumes it is"
+
+    lines = page_text.split("\n")
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+    upper = lines[: end + 2] + [f"  .planted{{color:{probe.upper()}}}"] + lines[end + 2 :]
+    planted_line = end + 3
+
+    findings = _sweep("\n".join(upper), tokens)
+    flagged = [f for f in findings if f.css_var == probe_var]
+    assert flagged and flagged[0].line == planted_line, (
+        f"an uppercase {probe.upper()} outside the region was not flagged as a "
+        f"copy of {probe_var}: {findings}"
+    )
+
+
+def test_sweep_refuses_a_page_whose_markers_do_not_resolve() -> None:
+    """An unresolvable anchor must fail, never sweep an empty or whole-file
+    window (``review-discipline`` craft: the empty comparison set).
+
+    Two ways a marker pair fails to resolve, and only one of them makes
+    ``_find_marker`` raise on its own. A *missing* marker it answers for; a pair
+    in the wrong order it answers happily, and ``begin <= i <= end`` over a
+    reversed pair excludes nothing, so the sweep would silently take the whole
+    file as its window — the certified region included. Both cases belong here,
+    or the order check has no killer.
+    """
+    tokens = _tokens()
+    hex_values = bdt.hex_token_values(tokens)
+    page_text = PAGE.read_text(encoding="utf-8")
+
+    unmarked = page_text.replace(bdt.BEGIN_MARKER, "/* relocated */")
+    with pytest.raises(bdt.GeneratedRegionError):
+        _sweep(unmarked, tokens)
+
+    reversed_pair = "\n".join(
+        [
+            f"  {bdt.END_MARKER}",
+            f"  .planted{{color:{hex_values['--card']}}}",
+            f"  {bdt.BEGIN_MARKER}",
+        ]
+    )
+    with pytest.raises(bdt.GeneratedRegionError):
+        _sweep(reversed_pair, tokens)
+
+
+# --------------------------------------------------------------------------- #
+# #466 (amended) — the consumer sweep runs inside the gate, not only in the
+# test suite: ``build_design_tokens.py --check`` is the drift stage
+# ``scripts/verify.sh`` runs, so the sweep has to fail *there*.
+# --------------------------------------------------------------------------- #
+
+
+def _page_with_lines_after_the_region(extra: list[str]) -> str:
+    """The real page with ``extra`` spliced in two lines past the end marker."""
+    lines = PAGE.read_text(encoding="utf-8").split("\n")
+    end = bdt._find_marker(lines, bdt.END_MARKER)
+    return "\n".join(lines[: end + 2] + extra + lines[end + 2 :])
+
+
+#: The 1-based line number of the first line ``_page_with_lines_after_the_region``
+#: splices in — two past the end marker.
+_FIRST_PLANTED_LINE = (
+    bdt._find_marker(PAGE.read_text(encoding="utf-8").split("\n"), bdt.END_MARKER) + 3
+)
+
+
+def _planted_page(tmp_path: Path, extra: list[str]) -> Path:
+    page_path = tmp_path / "index.html"
+    page_path.write_text(_page_with_lines_after_the_region(extra), encoding="utf-8")
+    return page_path
+
+
+def _check(page_path: Path) -> int:
+    """``main`` in ``--check`` mode — the exact call ``scripts/verify.sh``'s
+    design-token stage makes, minus the process boundary (the script's entry
+    point is ``raise SystemExit(main())``)."""
+    return bdt.main(["--check", "--page", str(page_path), "--tokens", str(TOKENS)])
+
+
+def test_check_reports_a_token_value_hand_copied_outside_the_region(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#466 AC-1 (amended): the gate stage itself sweeps the consumer.
+
+    Two planted sites, one carrying two copies, so the report has to name the
+    literal, the line it sits on, the ``var(--…)`` that replaces it, and how
+    many copies that line carries — a site with two stale copies and a site
+    with one are different repairs.
+    """
+    value = bdt.resolve_css_vars(_tokens())["--product-ink"]
+    page_path = _planted_page(
+        tmp_path,
+        [
+            f"  .planted-a{{color:{value}}}",
+            f"  .planted-b{{color:{value}; border-color:{value}}}",
+        ],
+    )
+
+    assert _check(page_path) == 1, (
+        "a token value hand-copied outside the generated region must fail the "
+        "gate's drift stage"
+    )
+    captured = capsys.readouterr()
+    report = captured.out + captured.err
+    assert value in report, "the failure must name the literal"
+    assert "var(--product-ink)" in report, "the failure must name the replacement var"
+    assert f"line {_FIRST_PLANTED_LINE}:" in report, (
+        f"the failure must name the first site's line:\n{report}"
+    )
+    assert f"line {_FIRST_PLANTED_LINE + 1} (x2):" in report, (
+        f"the failure must name the second site and its multiplicity:\n{report}"
+    )
+
+
+def test_check_ignores_a_page_local_shade_outside_the_region(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#466 AC-2 (amended): the sweep does not over-reach.
+
+    ``#eef1fb`` is a page-local shade the page already carries three times
+    outside the region; the nearest token, ``--product-soft``, is ``#e9edfd`` —
+    a different colour. Planting more copies exactly where the probe above
+    plants its duplicates must leave the gate green, or the stage would be
+    demanding a ``var(--…)`` that does not exist. The two probes differ in one
+    variable — whether the planted literal is a token value — so this one is
+    what separates "the sweep found a hand copy" from "the sweep flags any hex
+    literal outside the region".
+    """
+    shade = "#eef1fb"
+    assert shade not in set(bdt.resolve_css_vars(_tokens()).values()), (
+        f"{shade} has become a token value; this probe needs a non-token shade"
+    )
+    page_path = _planted_page(
+        tmp_path,
+        [
+            f"  .planted-a{{color:{shade}}}",
+            f"  .planted-b{{color:{shade}; border-color:{shade}}}",
+        ],
+    )
+
+    assert _check(page_path) == 0, (
+        "a page-local shade with no token identity must not fail the gate:\n"
+        + "".join(capsys.readouterr())
+    )
+
+
+def test_the_sweep_is_an_additional_failure_condition_not_a_replacement(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#466 AC-3 (amended): ``--check`` still certifies the generated region.
+
+    Three pages, differing only in which of the two conditions they break, so
+    each report is shown to be reachable on its own. A drift-only page must
+    still fail with the drift report and *without* the hand-copy report — the
+    shape that catches the sweep having been wired in as a replacement for the
+    region check, or either report being emitted whenever the other fires.
+    """
+    value = bdt.resolve_css_vars(_tokens())["--product-ink"]
+    drifted = _page_with_lines_after_the_region([]).replace(
+        "--ink:#0e1430", "--ink:#000000"
+    )
+    copied = _page_with_lines_after_the_region([f"  .planted{{color:{value}}}"])
+    both = copied.replace("--ink:#0e1430", "--ink:#000000")
+
+    verdicts = {}
+    for name, text in (("drift", drifted), ("copy", copied), ("both", both)):
+        page_path = tmp_path / f"{name}.html"
+        page_path.write_text(text, encoding="utf-8")
+        code = _check(page_path)
+        captured = capsys.readouterr()
+        verdicts[name] = (code, captured.out + captured.err)
+
+    for name, (code, report) in verdicts.items():
+        assert code == 1, f"the {name} page must fail the gate:\n{report}"
+
+    assert "has drifted from" in verdicts["drift"][1]
+    assert "hand-copies token values" not in verdicts["drift"][1], (
+        "a page whose only fault is region drift must not be reported as "
+        f"hand-copying anything:\n{verdicts['drift'][1]}"
+    )
+    assert "hand-copies token values" in verdicts["copy"][1]
+    assert "has drifted from" not in verdicts["copy"][1], (
+        "a page whose region is clean must not be reported as drifted:\n"
+        f"{verdicts['copy'][1]}"
+    )
+    assert "has drifted from" in verdicts["both"][1]
+    assert "hand-copies token values" in verdicts["both"][1], (
+        "a page breaking both conditions must report both — the sweep is an "
+        f"additional condition, not a replacement:\n{verdicts['both'][1]}"
+    )
+
+
+def test_main_writes_the_region_in_write_mode(tmp_path: Path) -> None:
+    """``main`` with no ``--check`` regenerates rather than reporting."""
+    tokens_path = tmp_path / "tokens.json"
+    tokens_path.write_text(json.dumps(_tokens()))
+    page_path = tmp_path / "index.html"
+    page_path.write_text(_page_with_markers([]))
+
+    assert bdt.main(["--page", str(page_path), "--tokens", str(tokens_path)]) == 0
+    assert bdt.check_generated_region(page_path, tokens_path) == []
+
+
+def test_main_exits_2_when_the_page_markers_do_not_resolve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unresolvable region is infrastructure, not drift, and keeps its own
+    exit code.
+
+    Both halves of ``--check`` resolve the markers, so both can raise; the
+    entry point has to turn either into exit 2 rather than a traceback, or the
+    gate's failure would be indistinguishable from a red tree.
+    """
+    page_path = tmp_path / "index.html"
+    page_path.write_text(
+        PAGE.read_text(encoding="utf-8").replace(bdt.BEGIN_MARKER, "/* relocated */"),
+        encoding="utf-8",
+    )
+
+    assert _check(page_path) == 2
+    err = capsys.readouterr().err
+    assert bdt.BEGIN_MARKER in err and "found 0" in err, (
+        f"the refusal must name the marker it could not resolve: {err!r}"
+    )
+
+
+def test_check_cli_exits_nonzero_on_a_hand_copied_token_value(tmp_path: Path) -> None:
+    """The gate reads an exit code, not a return value.
+
+    ``scripts/verify.sh`` runs this module as a script under ``set -e``, so the
+    report above only stops the gate if the process exits non-zero. Runs the
+    real command line to prove the entry point carries the verdict across the
+    process boundary.
+    """
+    value = bdt.resolve_css_vars(_tokens())["--product-ink"]
+    page_path = _planted_page(tmp_path, [f"  .planted{{color:{value}}}"])
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--check", "--page", str(page_path), "--tokens", str(TOKENS)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, (
+        f"the script must exit 1 on a hand-copied token value, not "
+        f"{result.returncode}:\n{result.stdout}\n{result.stderr}"
+    )
+    assert "var(--product-ink)" in result.stdout + result.stderr

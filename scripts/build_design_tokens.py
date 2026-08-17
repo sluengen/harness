@@ -25,6 +25,15 @@ marker region, and nothing outside it changes.
 Missing or unpaired markers are a hard error: this script never guesses at
 its region, and never writes anything when it cannot find it precisely.
 
+``--check`` certifies two things (#466). The first is the generated region
+itself: what is committed there is what this build would write. The second is
+the page *outside* that region — a hex literal there that byte-equals a
+resolved token value is a hand copy the first check cannot see, and a token
+revalue rewrites the region and leaves the copy silently stale. The assessment
+finding that prompted this measured 21 such copies of 12 distinct token values.
+So the drift stage sweeps the consumer as well, and names the literal, the line
+it sits on, and the ``var(--…)`` that replaces it.
+
 Stdlib only (mirrors ``scripts/check_landing_page_guidance.py``): no
 Style Dictionary, no npm build.
 """
@@ -33,9 +42,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 #: ``scripts/build_*.py`` -> ``parent.parent`` is the repo (or worktree) root.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -190,6 +200,92 @@ def check_generated_region(page_path: Path, tokens_path: Path) -> list[str]:
     ] or [f"generated region has {len(expected)} lines, page has {len(committed)}"]
 
 
+#: A resolved token value that is a bare hex colour, and so *can* be hand-copied
+#: into the page as a literal. ``--shadow`` resolves to a whole ``box-shadow``
+#: declaration rather than a colour, so it is not a subject of the sweep.
+HEX_TOKEN_VALUE = re.compile(r"\A#[0-9a-fA-F]{3,8}\Z")
+
+
+class TokenLiteralDuplicate(NamedTuple):
+    """One line outside the generated region carrying a token value verbatim."""
+
+    #: The hex literal as it appears in the page.
+    value: str
+    #: The CSS custom property whose resolved value it duplicates.
+    css_var: str
+    #: 1-based line number in the page.
+    line: int
+    #: How many copies sit on that line — two stale copies and one are
+    #: different repairs, so the report carries the multiplicity. Named
+    #: ``copies`` rather than ``count``: ``NamedTuple`` inherits ``tuple.count``.
+    copies: int
+
+    def describe(self) -> str:
+        """The report line: literal, site, and the replacement to use."""
+        multiplicity = f" (x{self.copies})" if self.copies > 1 else ""
+        return (
+            f"line {self.line}{multiplicity}: {self.value} is the value of "
+            f"var({self.css_var}) — use var({self.css_var}) instead of the literal"
+        )
+
+
+def hex_token_values(tokens: dict[str, Any]) -> dict[str, str]:
+    """The sweep's subject set: ``{css_var: value}`` for every semantic token
+    resolving to a bare hex colour.
+
+    Derived from ``resolve_css_vars``, never hand-listed, so a token added to or
+    revalued in ``tokens.json`` is swept without editing this file.
+    """
+    return {
+        css_var: value
+        for css_var, value in resolve_css_vars(tokens).items()
+        if HEX_TOKEN_VALUE.match(value)
+    }
+
+
+def find_token_literals_outside_region(
+    page_text: str, tokens: dict[str, Any]
+) -> list[TokenLiteralDuplicate]:
+    """Token values hand-copied into ``page_text`` outside the generated region.
+
+    The exclusion window is resolved by this module's own ``_find_marker`` over
+    its own markers, so it is the region ``check_generated_region`` certifies
+    (``lines[begin + 1:end]``) plus the two marker lines bounding it, which
+    ``_find_marker`` requires to hold nothing but the marker. Both neighbours
+    of that window are swept. An unresolvable or reversed marker pair raises
+    ``GeneratedRegionError`` rather than quietly sweeping an empty or whole-file
+    window.
+    """
+    lines = page_text.split("\n")
+    begin = _find_marker(lines, BEGIN_MARKER)
+    end = _find_marker(lines, END_MARKER)
+    if begin >= end:
+        raise GeneratedRegionError("the begin marker must precede the end marker")
+
+    found: list[TokenLiteralDuplicate] = []
+    for css_var, value in sorted(hex_token_values(tokens).items()):
+        # Word-bounded on the right so ``#e9edfd`` does not match inside
+        # ``#e9edfda1``, which is a different colour. ``#`` is its own boundary
+        # on the left. Case-insensitive: ``#23348F`` is the same stale copy.
+        pattern = re.compile(re.escape(value) + r"(?![0-9a-fA-F])", re.IGNORECASE)
+        for i, line in enumerate(lines):
+            if begin <= i <= end:
+                continue
+            copies = len(pattern.findall(line))
+            if copies:
+                found.append(TokenLiteralDuplicate(value, css_var, i + 1, copies))
+    return found
+
+
+def check_token_literals(
+    page_path: Path, tokens_path: Path
+) -> list[TokenLiteralDuplicate]:
+    """``find_token_literals_outside_region`` over the files on disk."""
+    page_text = page_path.read_text(encoding="utf-8")
+    tokens = json.loads(tokens_path.read_text(encoding="utf-8"))
+    return find_token_literals_outside_region(page_text, tokens)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
     parser.add_argument(
@@ -209,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.check:
             drift = check_generated_region(args.page, args.tokens)
+            duplicates = check_token_literals(args.page, args.tokens)
             if drift:
                 print(
                     f"design-token drift guard: {args.page} has drifted from "
@@ -221,8 +318,27 @@ def main(argv: list[str] | None = None) -> int:
                     "  fix: run scripts/build_design_tokens.py to regenerate.",
                     file=sys.stderr,
                 )
+            if duplicates:
+                print(
+                    f"design-token drift guard: {args.page} hand-copies token "
+                    f"values outside the generated region, where the check above "
+                    f"cannot see them go stale:",
+                    file=sys.stderr,
+                )
+                for duplicate in duplicates:
+                    print(f"  {duplicate.describe()}", file=sys.stderr)
+                print(
+                    "  fix: replace each literal with the var(--…) named beside "
+                    "it, so the generated region stays the only source.",
+                    file=sys.stderr,
+                )
+            if drift or duplicates:
                 return 1
-            print(f"design-token drift guard: OK — {args.page} matches {args.tokens}.")
+            print(
+                f"design-token drift guard: OK — {args.page} matches "
+                f"{args.tokens}, and copies no token value outside the "
+                f"generated region."
+            )
             return 0
         write_generated_region(args.page, args.tokens)
         print(f"design tokens: wrote the generated region in {args.page}.")
