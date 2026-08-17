@@ -12,7 +12,14 @@ their file set from the helper rather than re-inlining a working-tree walk.
 ``last_commit_date`` (#280) is the third contract pinned here: the day a path
 last actually changed, which is what a doc declaring its own currency must be
 measured against. Its commits pin ``GIT_AUTHOR_DATE`` so the assertions read a
-known day rather than whenever the suite runs.
+known day rather than whenever the suite runs. Since #463 two of those stamps
+carry a non-zero offset on purpose: every stamp that predates it is ``+00:00``,
+where a rendered day and a UTC day agree by construction, so the corpus could
+not observe the frame the helper reads in however many zero-offset cases were
+added to it. The same shape held one axis over, and review measured it: every
+fixture pinned the author and committer dates to the *same* value, so reading
+``%ct`` instead of ``%at`` survived the whole suite. The case below separates
+them.
 
 ``path_ever_existed`` (#451) is the fourth: whether any commit ever touched a
 path, which is what an absence guard must be measured against. It is a
@@ -228,11 +235,21 @@ def test_tracked_py_sources_with_no_match_is_empty(tmp_path: Path) -> None:
     assert tracked_py_sources(repo_root=tmp_path) == []
 
 
-def _commit_on(repo: Path, relpath: str, stamp: str, message: str) -> None:
+def _commit_on(
+    repo: Path,
+    relpath: str,
+    stamp: str,
+    message: str,
+    *,
+    committer_stamp: str | None = None,
+) -> None:
     """Stage ``relpath`` and commit it with author+committer date ``stamp``.
 
     Both dates are pinned so the assertions below are on a known day rather than
-    on whenever the suite happens to run.
+    on whenever the suite happens to run. ``committer_stamp`` drives them apart,
+    which is the only way a fixture can tell the helper's documented **author**
+    date from the committer date; defaulting it to ``stamp`` keeps every other
+    caller on the "one instant" shape it already assumes.
     """
     _git(repo, "add", relpath)
     subprocess.run(
@@ -253,7 +270,7 @@ def _commit_on(repo: Path, relpath: str, stamp: str, message: str) -> None:
         env={
             **os.environ,
             "GIT_AUTHOR_DATE": stamp,
-            "GIT_COMMITTER_DATE": stamp,
+            "GIT_COMMITTER_DATE": committer_stamp or stamp,
         },
     )
 
@@ -263,6 +280,110 @@ def test_last_commit_date_reports_the_commit_day(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "spec.md").write_text("first\n")
     _commit_on(tmp_path, "spec.md", "2026-03-04T12:00:00+00:00", "add spec")
+
+    assert last_commit_date("spec.md", repo_root=tmp_path) == date(2026, 3, 4)
+
+
+def test_last_commit_date_reads_the_day_in_utc_not_the_commits_own_offset(
+    tmp_path: Path,
+) -> None:
+    """The day is read in UTC, not in the offset the commit happens to carry (#463).
+
+    The #463 defect. ``git log --date=short`` renders the author date **in the
+    commit's own recorded UTC offset** — a third frame, declared by neither side
+    of the comparison it feeds. A feature spec's ``last_updated`` is a zoneless
+    calendar day, so the only way the two operands live in one frame is to fix
+    that frame in code.
+
+    The fixture is the real failing commit's shape: ``3cf7fce`` was authored at
+    ``2026-08-17T00:03:38+10:00``, which is ``2026-08-16`` in UTC and
+    ``2026-08-17`` in its own offset. The record declared ``2026-08-16``, so the
+    currency guard read ``2026-08-16 >= 2026-08-17`` and went red on a record
+    that was accurate. For a ``+10:00`` committer the two frames disagree for
+    every commit between 14:00Z and 24:00Z, and the nightly promotion is
+    scheduled at 14:10Z — inside that window by construction.
+
+    Every other fixture in this module stamps ``+00:00``, where the two frames
+    agree by construction and cannot observe this at all. The non-zero offset is
+    the whole point of the case.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "spec.md").write_text("first\n")
+    _commit_on(tmp_path, "spec.md", "2026-08-17T00:03:38+10:00", "add spec")
+
+    # The trap is real: git's own rendering disagrees with UTC for this commit.
+    # Without this, a git that already rendered UTC would let the contract below
+    # pass while exercising nothing.
+    rendered = subprocess.run(
+        ["git", "log", "-1", "--format=%ad", "--date=short", "--", "spec.md"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert rendered == "2026-08-17", (
+        f"git rendered {rendered} for a +10:00 commit past local midnight — the "
+        "frame disagreement this test exists to pin did not happen"
+    )
+
+    assert last_commit_date("spec.md", repo_root=tmp_path) == date(2026, 8, 16)
+
+
+def test_last_commit_date_reads_utc_for_a_negative_offset_too(
+    tmp_path: Path,
+) -> None:
+    """The other direction: a west-of-UTC commit also answers in UTC (#463).
+
+    The mirror of the case above, and not a redundant copy of it: the two
+    discriminate *different* wrong frames, which review measured rather than
+    assumed by pinning the helper to a fixed offset instead of UTC. A ``+10:00``
+    pin kills the eastward case and passes here; a ``-08:00`` pin passes there
+    and kills only this one, because this commit's own day is ``2026-08-16``
+    while UTC's is ``2026-08-17``. So an implementation that fixes a frame west
+    of UTC is caught here and nowhere else in the suite. Fixing *a* frame is only
+    correct if the frame fixed is the declared one.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "spec.md").write_text("first\n")
+    _commit_on(tmp_path, "spec.md", "2026-08-16T20:00:00-08:00", "add spec")
+
+    rendered = subprocess.run(
+        ["git", "log", "-1", "--format=%ad", "--date=short", "--", "spec.md"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert rendered == "2026-08-16", (
+        f"git rendered {rendered} for a -08:00 commit before UTC midnight — the "
+        "frame disagreement this test exists to pin did not happen"
+    )
+
+    assert last_commit_date("spec.md", repo_root=tmp_path) == date(2026, 8, 17)
+
+
+def test_last_commit_date_reads_the_author_date_not_the_committer_date(
+    tmp_path: Path,
+) -> None:
+    """The **author** date, which is the one a writer can know in advance.
+
+    The committer date is rewritten by whatever rebase or merge lands the
+    commit, so a ``last_updated`` value measured against it would be
+    unwriteable — the documented reason the helper reads ``%at``. Nothing
+    measured that until review mutated ``%at`` to ``%ct`` and watched it survive
+    the whole suite: every other fixture pins the two dates to one value, where
+    the choice is unobservable. Here they are two months apart, so exactly one
+    of them can satisfy the assertion.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "spec.md").write_text("first\n")
+    _commit_on(
+        tmp_path,
+        "spec.md",
+        "2026-03-04T12:00:00+00:00",
+        "add spec",
+        committer_stamp="2026-05-01T12:00:00+00:00",
+    )
 
     assert last_commit_date("spec.md", repo_root=tmp_path) == date(2026, 3, 4)
 
