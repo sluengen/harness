@@ -18,15 +18,29 @@ nobody added to it. So this one **derives** its subject set from the tracked,
 registered tree — the same scope rule ``test_distributed_prose_no_repo_ids`` uses
 — and a new command that restates the policy is in scope the day it lands.
 
-Three properties, each a separate measure:
+#461 moved the policy one level down, out of ``review-discipline``'s core and
+into ``skills/review-discipline/references/fail-stop-rule.md``, to buy the core
+back its budget headroom. That splits the first property in two — the *policy*
+and the *route to it* are now different files — and it is the reason this module
+carries both a ``_HOME`` and a ``_CORE``. A re-home of a single-homed rule fails
+in two directions: the policy can arrive somewhere nothing sweeps, or the core
+can keep the heading and lose the link, leaving a section that announces a rule
+and resolves nowhere. Both are measured below.
 
-1. **Single home** — ``review-discipline`` states the policy and names the
+Four properties, each a separate measure:
+
+1. **Single home** — the reference states the policy and names the
    ``CONTEXT.md`` keys the numbers live in.
-2. **No competing statement** — no other registered prose file states a rule of
+2. **The route survives the re-home** — the core keeps its ``## On a FAIL``
+   section *and* links the reference directly from it, so the entry point every
+   other document points at still reaches the rule.
+3. **No competing statement** — no other registered prose file states a rule of
    its own: no cycle-count literal bound to a cycle noun, and no survival of the
    retired consecutive-FAIL rule anywhere, including the two files the old guard
-   never looked at.
-3. **Pointers resolve** — each file that *used* to carry a copy now names
+   never looked at. Only the home is exempt; the core is swept like any other
+   file, because after the re-home it states no policy and a numeral appearing
+   there is exactly the duplication this module exists to prevent.
+4. **Pointers resolve** — each file that *used* to carry a copy now names
    ``review-discipline`` in the region where it stops.
 
 The numbers themselves are not asserted here. They live in ``CONTEXT.md`` and are
@@ -54,8 +68,13 @@ _REGISTRY = _REPO_ROOT / "registry.yaml"
 #: literal ban below would flag the one file that is supposed to carry them.
 _PROSE_DIRS = ("skills", "agents", "commands", "process")
 
-#: The one file that owns the policy.
-_HOME = "skills/review-discipline/SKILL.md"
+#: The one file that owns the policy. It is a conditional reference rather than
+#: a skill core since #461: the rule is read on one verdict, not on every review.
+_HOME = "skills/review-discipline/references/fail-stop-rule.md"
+
+#: The skill core the rest of the surface points at. It owns the *route*, not
+#: the policy — the ``## On a FAIL`` section and the link out of it.
+_CORE = "skills/review-discipline/SKILL.md"
 
 #: The files that carried a competing copy before this ticket, and must now
 #: point at the home instead. Hand-named on purpose — this is the *historical*
@@ -134,6 +153,7 @@ def test_the_sweep_finds_the_prose_it_governs() -> None:
 
     assert rels, "no registered universal prose found — the sweep is scanning nothing"
     assert _HOME in rels, f"{_HOME} must be in scope — it is the policy's home"
+    assert _CORE in rels, f"{_CORE} must be in scope — it owns the route to {_HOME}"
     for pointer in _POINTERS:
         assert pointer in rels, f"{pointer} must be in scope"
 
@@ -182,11 +202,10 @@ def test_the_literal_predicate_admits_the_verb_mechanics() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_review_discipline_states_the_policy() -> None:
+def test_the_stop_rule_reference_states_the_policy() -> None:
     """The home carries the whole rule, and points at the numbers' home."""
     body = (_REPO_ROOT / _HOME).read_text(encoding="utf-8")
 
-    assert "## On a FAIL" in body, "review-discipline must keep its FAIL-handling section"
     for key in _CONFIG_KEYS:
         assert key in body, (
             f"{_HOME} must name `{key}` — the policy is written number-free and "
@@ -195,6 +214,42 @@ def test_review_discipline_states_the_policy() -> None:
     assert "operator" in body.lower(), (
         f"{_HOME} must state that an exhausted ticket goes on operator hold — "
         "without it the unattended loop re-picks the work and starts a fresh budget"
+    )
+
+
+def test_the_core_keeps_the_section_and_routes_to_the_home() -> None:
+    """The entry point survives the re-home: heading kept, link kept.
+
+    Two assertions rather than one, because a re-home can lose either half on
+    its own. The heading is what every other document's pointer, and the core's
+    own two ``*On a FAIL*`` cross-references, resolve against; the link is what
+    turns that heading into a route. A stub that kept the heading and dropped
+    the link would leave the section announcing a rule it no longer reaches —
+    the pointer-that-resolves-nowhere shape this module was written to bound,
+    reappearing one level up from where it first appeared.
+
+    The link half is scoped to the section rather than to the file. A
+    whole-file containment check is already made by
+    ``test_guidance_efficiency_topology.test_required_reference_roots_link_directly_to_every_conditional_file``,
+    and it passes on a link parked anywhere in the core — including in a
+    section a reader following *On a FAIL* never reaches. Scoping is what gives
+    this assertion an exclusive killer, and what makes it measure the sentence
+    the docstring above claims: the route runs *from the section*.
+    """
+    body = (_REPO_ROOT / _CORE).read_text(encoding="utf-8")
+
+    assert "## On a FAIL" in body, (
+        f"{_CORE} must keep its FAIL-handling section — it is the heading every "
+        "pointer into this policy resolves against"
+    )
+
+    remainder = body[body.index("## On a FAIL") :]
+    end = remainder.find("\n## ", 1)
+    section = remainder if end == -1 else remainder[:end]
+    assert _HOME in section, (
+        f"{_CORE} keeps the FAIL section but does not link {_HOME} from inside "
+        "it, so a reader who follows a pointer to that heading finds no route "
+        "to the policy behind it (#461)"
     )
 
 
@@ -230,7 +285,14 @@ def test_the_template_declares_the_keys_the_home_sends_readers_to() -> None:
 
 
 def test_no_competing_policy_statement() -> None:
-    """No registered prose file outside the home states a stop rule of its own."""
+    """No registered prose file outside the home states a stop rule of its own.
+
+    Exactly one exemption, and it is the home. ``_CORE`` is deliberately *not*
+    exempt: since #461 it carries a route and no rule, so a cycle count written
+    there is a second statement of the policy, which is the thing this sweep
+    exists to catch — exempting it to be safe would hand the widest-read file on
+    the surface a licence the sweep gives nothing else.
+    """
     violations: list[str] = []
     for path in _registered_prose_files():
         rel = _rel(path)

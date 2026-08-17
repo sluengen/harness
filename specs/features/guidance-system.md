@@ -134,11 +134,13 @@ Every obligation is guarded as a **pair** on the pattern already established for
 
 ### One-level progressive disclosure
 
-The `code-quality` core keeps scope, structure, production-real test inputs, measuring tests, fresh evidence, and gate ordering. It directly links the untrusted-fetch checklist and the specialized verification checklist, each with an explicit activation trigger. The `review-discipline` core keeps the two review stages, general quality bar, severity, finding shape, reviewer obligations, final-evidence ordering, and review-cycle stop policy. It directly links the diff-shape checklist and the craft reference, and names the shapes that activate each.
+The `code-quality` core keeps scope, structure, production-real test inputs, measuring tests, fresh evidence, and gate ordering. It directly links the untrusted-fetch checklist and the specialized verification checklist, each with an explicit activation trigger. The `review-discipline` core keeps the two review stages, general quality bar, the finding 2×2, finding shape, the verdict vocabulary, reviewer obligations, and final-evidence ordering. It directly links the diff-shape checklist, the craft reference and the review→fix stop rule, and names what activates each.
+
+The stop rule is the one that left the core, at #461. What the core keeps is the `## On a FAIL` heading every other document's pointer resolves against, plus the route out of it — the section names the trigger, names `CONTEXT.md`'s `loop:` keys, and links the reference. The policy itself, the three windows and the operator-hold end state, lives in the reference and is read on the one verdict that spends a cycle.
 
 Conditional references are one level deep. The topology guard discovers the reference directories, requires the exact registered set, checks matching version stamps, and rejects nested conditional references. Ticket content cannot choose a reference.
 
-The routing half of this behaviour went with the runtime. A `/harness` router selected one of four registered workflow bodies for `run`, `routine build`, `routine quality` and `ingest`; #435 deleted all five documents, so the conditional references left are the untrusted-fetch and specialized-verification checklists under `code-quality`, and the diff-shape checklist and the craft reference under `review-discipline`, each reached from its core by an explicit trigger.
+The routing half of this behaviour went with the runtime. A `/harness` router selected one of four registered workflow bodies for `run`, `routine build`, `routine quality` and `ingest`; #435 deleted all five documents, so the conditional references left are the untrusted-fetch and specialized-verification checklists under `code-quality`, and the diff-shape checklist, the craft reference and the review→fix stop rule under `review-discipline`, each reached from its core by an explicit trigger.
 
 #### Scenario: a conditional checklist is activated
 
@@ -149,7 +151,7 @@ The routing half of this behaviour went with the runtime. A `/harness` router se
 
 ### The craft reference under `review-discipline`
 
-`skills/review-discipline/references/craft.md` is the conditional reference `review-discipline` links alongside the diff-shape checklist. It carries forty-six named patterns in six families — vacuity, prose predicates and text guards, deletion/retirement/re-homing, mutation discipline, the ticket and its criteria, and unmeasured claims. Each entry is a name, the rule in one line, and the falsifying example where a fully green suite shipped the defect; the example is the load-bearing half, and the file says so.
+`skills/review-discipline/references/craft.md` is one of the conditional references `review-discipline` links, alongside the diff-shape checklist and the stop rule. It carries forty-six named patterns in six families — vacuity, prose predicates and text guards, deletion/retirement/re-homing, mutation discipline, the ticket and its criteria, and unmeasured claims. Each entry is a name, the rule in one line, and the falsifying example where a fully green suite shipped the defect; the example is the load-bearing half, and the file says so.
 
 Mutation discipline covers a surviving mutation from both sides. A survivor has four readings, and the inert one — the mutation changed nothing — voids the rest, so an *inert* survivor is unproven rather than evidence of a weak guard, and the entry that says so is pointed at from the ambiguity entry by name. Where the subject is prose there is no observable to declare, so liveness is built into the experiment instead: a **paired splice** puts a form the predicate is known to catch and the form under test at the same location in the same file, and the known form must die first. Both are stated tool-agnostically, so they carry into a repo with no mutation instrument of its own.
 
@@ -777,17 +779,46 @@ For an equal source and lock version, `/update-guidance` classifies a file as `c
 
 `SOURCE DRIFT` leaves every installed file and `.guidance-lock.yaml` entry unchanged, including `source.ref`. It cannot enter conflict resolution or be accepted or overwritten locally.
 
+### A budget is enforced with a tenth of its cap held back
+
+`tests/unit/test_guidance_efficiency_topology.py` bounds what a session pays for context before it starts: the required startup path (`AGENTS.md` + `CONTEXT.md`) and each hot skill core. Both go through one helper, `_assert_within_budget`, which admits a subject only at or below `cap * (1 - BUDGET_RESERVE)` with `BUDGET_RESERVE = 0.10`. There is deliberately no second assertion at the bare cap: a `measured <= cap` standing beside a stricter reserve check is subsumed by it, and a subsumed assertion reads as a second measure while being decoration. The reserve is what makes budget pressure surface as its own failure rather than as a red gate on whatever unrelated change happened to write the crossing sentence — the guard now fails 700 estimated tokens (2,800 B) before the startup cap and 500 (2,000 B) before a core's.
+
+Measured over the reviewed tree, with the guard's own `bytes / 4` estimate:
+
+| Subject | Cap | Reserve limit | Measured | Unspent, against the cap |
+|---|---:|---:|---:|---:|
+| `AGENTS.md` + `CONTEXT.md` | 7,000 | 6,300 | 5,971.5 (23,886 B) | 14.7% |
+| `skills/review-discipline/SKILL.md` | 5,000 | 4,500 | 4,320.0 (17,280 B) | 13.6% |
+| `skills/code-quality/SKILL.md` | 5,000 | 4,500 | 3,600.75 (14,403 B) | 28.0% |
+
+`test_required_startup_path_fits_budget_and_keeps_hot_invariants` and `test_hot_skill_cores_fit_budget` are the tests that fail if a row grows past its reserve limit. Both were watched red at review by tightening `BUDGET_RESERVE` to 0.45, which is the measurement that shows the reserve is read by both and not only by the startup one; lowering `STARTUP_TOKEN_CAP` to 6,000, and applying the hot-core cap to the startup subject, each killed the startup test alone.
+
+Two relocations bought the first two rows, and neither deleted a rule. `review-discipline`'s stop policy moved into `skills/review-discipline/references/fail-stop-rule.md`: checked against the pre-change section, five of its six paragraphs are byte-identical, the sixth was rewrapped and re-pointed at the core's section as the route, and a new opening paragraph names the one verdict that loads it. `CONTEXT.md`'s ADR list moved into `specs/architecture-principles.md` → *Cross-cutting decisions* → *The ADR index*: all sixteen ADRs are still linked, the entries are byte-identical apart from the `specs/` prefix the new location drops, and every link resolves to a tracked file.
+
+The startup cap moved 6,500 → 7,000 with its reason recorded beside the constant. `tests/unit/test_process_doc_hook_inventory.py` obliges `process/harness.md` — byte-mirrored into `AGENTS.md` — to carry one row per tracked hook in both directions, so installing a hook mandatorily grows this path; the two hook tables are 2,248 B of the pair today, and neither they nor that guard existed when the cap was set (6,500 came from #401 at `bd80c2d`, the tables from #436 at `ab406ac`).
+
+**The re-home carried its own dangling check with it.** `CONTEXT.md` is one of `test_v4_records_only_what_remains`'s six entry documents and `specs/architecture-principles.md` is not, so moving the ADR list out of the first took the sixteen links out of the only sweep that resolved them — *a deletion pass that moves a definition must move its killer*. Review measured it with a paired splice: breaking one ADR link in the new home passed all 1,817 tests, while the identical break spliced into `CONTEXT.md` failed `test_every_path_the_entry_documents_name_resolves`. The killer was re-homed as `test_decision_storage_strategy.test_the_adr_index_names_exactly_the_records_on_disk`, written as a correspondence rather than a count: the filenames the index links equal the `*.md` files under `paths.decisions`, so an ADR filed without an entry and an entry naming no file both fail, and nothing in it rots when a seventeenth ADR lands. Widening `_ENTRY_DOCUMENTS` to cover the spec was rejected — that module's subject is startup-required reading, and the spec is a historical record whose Decision blocks cite retired machinery deliberately. The prose floor `_RESOLUTION_FLOOR` was re-anchored to 65, just under the 69 paths the six entry documents resolve on this tree, of which `CONTEXT.md` contributes 24; the floor still sits above the 45 that would remain if `CONTEXT.md` were lost entirely.
+
+#### Scenario: an ADR is filed without an index entry
+
+- GIVEN a change adds `specs/decisions/0017-<slug>.md` and does not link it from *The ADR index*
+- WHEN the gate runs
+- THEN the correspondence fails, naming the file absent from the index
+- AND the reverse edit — an index entry whose target is not on disk — fails the same test, from the other direction
+
 ### Measured active paths
 
 The footprint guard uses the same UTF-8 `bytes / 4` estimate as `hooks/context-monitor.js`.
 
-| Active path | Before #401 | As built |
+| Active path | Before #401 | Measured at #401 (`bd80c2d`) |
 |---|---:|---:|
 | Required `AGENTS.md` + `CONTEXT.md` startup | 12,439.5 tokens | 5,408 tokens |
 | `code-quality` core | 5,226.75 tokens | 2,771.25 tokens |
 | `review-discipline` core | 5,366.25 tokens | 3,252 tokens |
 | Reviewer role | 985 words | 362 words |
 | Steward role | 1,774 words | 248 words |
+
+**The right-hand column is a historical measurement, not a live property**, which is why it names the tree it was taken over rather than saying "as built". Every one of its five figures re-derives exactly at `bd80c2d` and none of them is re-derived per change, so a document that grows past its row breaks nothing. The live constraint is the reserve-backed cap in `test_guidance_efficiency_topology`, and the figures for the current tree are in *A budget is enforced with a tenth of its cap held back* above. Presenting this column as current is what let the startup path drift to within 28 bytes of its ceiling unnoticed (#461, from the proposals ledger).
 
 Four rows were dropped in #435 rather than re-measured: each was a `/harness` command payload — the router plus one selected workflow body — and all five documents are deleted. Their bound (every activated payload below 5,000 estimated tokens) went with them; re-pointing it at the surviving reference trees would have invented a limit nothing has ever held them to.
 
@@ -866,7 +897,8 @@ The guidance system changes no runtime application data. `registry.yaml` records
 - The dead-cite sweep is scoped to `status: accepted`, and this tree has none, so it asserts nothing about the corpus it ships with. Measured at review by running the shipped predicate over all 32 tracked proposals: **24 of them carry at least one dead cite** — 16 `shipped`, 7 `superseded`, 1 `rejected` — and the sweep looks at none. That follows from what the vocabulary means rather than being a gap in the guard: only `accepted` claims still-buildable, and a `shipped` or `superseded` proposal is history whose dead cites are the point. The consequence worth stating is that the guard's live evidence is entirely in its samples, and the sweep is a promise about the next proposal accepted.
 - The predicate sees backticked tokens only, and among those only ones carrying a suffix from a fixed list or a trailing `/`. A cite written without backticks, or naming a suffix the list does not hold, is invisible to it — the same blacklist-with-no-completion-condition shape as the size guard's extension list. The foreign-prefix rule additionally drops every `.`-prefixed token, so relative `../decisions/…` cites and any cite of a dotted tree (`.codex/`, `.github/`) are out of scope by construction; the module records that as a deliberate over-exclusion, because narrowing the prefix list would start reporting every relative cite as dead.
 - Nothing holds a supersession banner's or an outcome note's **content** to the tree. The guard reads the opener's shape — the literal word, an ISO date, line start — and exempts its paragraph; whether the banner names the right superseding record, and whether a `shipped` note describes what actually shipped, is reviewer judgment. Every artifact named in the eleven shipped-status notes was resolved against the tree at review, and the two classifications the build overturned were re-derived independently; nothing in the gate would have caught either being wrong.
-- `AGENTS.md` + `CONTEXT.md` measure 25,972 of the 26,000 bytes `test_guidance_efficiency_topology` allows (6,493 of 6,500 estimated tokens) on this tree. The *Measured active paths* table above records the #401 figure for that pair and is not re-measured per change, so the cap rather than the table is the live constraint, and it is 28 bytes away.
+- `AGENTS.md` + `CONTEXT.md` measure 23,886 bytes (5,971.5 estimated tokens) on this tree, against a `test_guidance_efficiency_topology` cap of 7,000 tokens enforced at 6,300 by the 10% reserve — 328.5 estimated tokens, about 1.3 KB of prose, before the guard fails, and 1,028.5 tokens before the declared cap. It was 28 bytes at #461's base; the reserve and the two relocations bought that back. The *Measured active paths* table above records the #401 figure for that pair and is not re-measured per change, so the cap rather than the table is the live constraint.
+- `BUDGET_RESERVE` is not itself pinned by anything, and cannot usefully be: a bound with slack cannot be falsified by loosening it, so setting the reserve to `0.0` leaves the whole suite green — measured at review, with the observable being the constant's own value. The reserve is a decision recorded beside the constant rather than a mechanism that defends itself, and erasing it is the cheapest repair the next budget failure will offer. An assertion pinning the fraction would only be the guard agreeing with its own constant.
 
 ## Decisions
 

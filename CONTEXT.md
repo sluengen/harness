@@ -74,23 +74,7 @@ A ticket is driven agent-led (`/build`, or `/start → /review → /ship` when a
 
 Use `specs/decisions/` only for cross-cutting choices that are consequential and expensive to reverse. Feature-local decisions stay in their feature spec. Amend a superseded ADR in place so links remain stable.
 
-[0015](specs/decisions/0015-harness-v4-thin-verification-layer.md) retires the runtime, so every decision below that governed a runtime mechanism is superseded in mechanism — the reasoning stands, the machinery it chose is gone. They are kept for the audit, not as instructions.
-
-- [0001 — local loop default; optional per-target cloud](specs/decisions/0001-cloud-runnable-harness-loop.md) — superseded in mechanism by 0015
-- [0002 — in-container review engine](specs/decisions/0002-in-container-review-engine.md), amended by [0013](specs/decisions/0013-codex-engines-in-container.md) — superseded in mechanism by 0015
-- [0003 — promotion lifecycle and branch topology](specs/decisions/0003-promotion-lifecycle.md) — the topology stands; the `harness promote` verb that drove it is retired by 0015
-- [0004 — repo-guide drift guard](specs/decisions/0004-repo-guide-drift-guard.md)
-- [0005 — retired per-ticket model tiering](specs/decisions/0005-per-ticket-model-tiering.md) — superseded in mechanism by 0015
-- [0006 — hold kinds](specs/decisions/0006-hold-kinds.md)
-- [0007 — design verb](specs/decisions/0007-design-verb.md) — superseded in mechanism by 0015
-- [0008 — inherited ledger events](specs/decisions/0008-inherited-ledger-events.md) — superseded in mechanism by 0015
-- [0009 — verb attempt telemetry](specs/decisions/0009-verb-attempt-telemetry.md) — superseded in mechanism by 0015
-- [0010 — rebased-tree recertification](specs/decisions/0010-rebased-tree-recertification.md) — superseded in mechanism by 0015
-- [0011 — attended-run spend scope](specs/decisions/0011-attended-run-spend-scope.md) — superseded in mechanism by 0015
-- [0012 — persistent runtime host](specs/decisions/0012-persistent-runtime-host.md) — superseded in mechanism by 0015
-- [0014 — changelog from commits](specs/decisions/0014-changelog-from-commits.md) — the rule stands (the commit body *is* the entry); the `CHANGELOG.md` a release assembled into is deleted by 0015, since there is nothing left to release
-- [0015 — harness v4: retire the runtime, thin verification layer](specs/decisions/0015-harness-v4-thin-verification-layer.md)
-- [0016 — tests own structure and negative space; the reviewer owns meaning](specs/decisions/0016-tests-own-structure-and-negative-space.md)
+The index itself — every numbered record, with what 0015 superseded in mechanism — lives one level away in `specs/architecture-principles.md` → *Cross-cutting decisions* → *The ADR index*, beside the bar it is filed against.
 
 ## Where deeper truth lives
 

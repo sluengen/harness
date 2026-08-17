@@ -207,12 +207,28 @@ def _unresolved(
 #: ``_PATH_SHAPED`` reports zero dangling paths, which reads exactly like a
 #: clean tree.
 #:
-#: Set just under the 77 measured across the six entry documents at the teardown.
-#: It sat at 30 against that same population, which is slack enough to swallow
-#: ``CONTEXT.md`` — the document contributing 37 of the 77 — without the floor
-#: moving. A floor that survives losing its largest subject is not measuring the
-#: extraction, only asserting that something was extracted.
-_RESOLUTION_FLOOR = 72
+#: Set just under the 69 measured across the six entry documents, of which
+#: ``CONTEXT.md`` contributes 24 — still the largest subject, and the floor sits
+#: above what would remain without it. A floor that survives losing its largest
+#: subject is not measuring the extraction, only asserting that something was
+#: extracted; it sat at 30 against the teardown's population of 77, which was
+#: slack enough to swallow ``CONTEXT.md`` whole.
+#:
+#: Re-anchored 85 → 69 by #461, which moved the ADR index out of ``CONTEXT.md``
+#: into ``specs/architecture-principles.md`` to relieve the startup budget.
+#: Sixteen ADR links went with it, and the drop is exactly those sixteen: 85 was
+#: the population on the tree #461 was built from, not the 77 the paragraph above
+#: records for the teardown, which this comment previously carried forward as
+#: though it were still current. Re-measure the population when you move the
+#: floor; carrying the old figure is how a floor comes to describe a tree that no
+#: longer exists.
+#:
+#: The cost of the move is stated rather than left for a lowered floor to imply:
+#: this sweep's subject is the *required-reading* set, so those sixteen links
+#: left it. They are not unguarded — review re-homed their killer as
+#: ``test_decision_storage_strategy.test_the_adr_index_names_exactly_the_records_on_disk``,
+#: which holds the index against the decision directory in both directions.
+_RESOLUTION_FLOOR = 65
 
 #: The floor under the **registry** half, which is counted separately and not
 #: pooled with the one above. Mutating ``_TOKEN`` to match nothing was the entry
@@ -461,14 +477,18 @@ def _live_markdown() -> list[str]:
 #: load-bearing rather than tidy. :func:`_sentences` splits on ``[.!?]`` followed
 #: by whitespace and a capital, which no Markdown bullet, heading or table row
 #: satisfies — so a run of list items merges into one "sentence" thousands of
-#: characters long. ``CONTEXT.md``'s Decisions index is the live case: it forms a
-#: single 2,677-character unit that runs from the index into *Gotchas*, and
-#: because the index says "superseded" the whole span is excused. An instruction
-#: to run a retired verb added anywhere in it passed the sweep silently, which
-#: was verified by adding one. The polarity anchor was computing the opposite
-#: boolean because the text unit was wrong.
+#: characters long. ``CONTEXT.md``'s Decisions index was the case that found
+#: this: at #435 it formed a single 2,677-character unit that ran from the index
+#: into *Gotchas*, and because the index said "superseded" the whole span was
+#: excused. An instruction to run a retired verb added anywhere in it passed the
+#: sweep silently, which was verified by adding one. The polarity anchor was
+#: computing the opposite boolean because the text unit was wrong. #461 moved
+#: that bullet list to ``specs/architecture-principles.md``, so the offending
+#: span is no longer in ``CONTEXT.md`` — the rule below is what stops it
+#: reappearing anywhere, including in the list's new home, which this sweep also
+#: reads.
 #:
-#: Splitting on blank lines alone is not enough (the index is one block), and
+#: Splitting on blank lines alone is not enough (a bullet list is one block), and
 #: splitting on every line is too much: it cuts hard-wrapped prose mid-sentence
 #: and turns the true retirement record in ``commands/promote.md`` into a false
 #: offender. A block boundary is the unit that separates one *statement* from the
@@ -786,8 +806,10 @@ def test_the_retirement_markers_are_pinned() -> None:
 #: from it removes a document from the resolution sweep without failing anything:
 #: the floor absorbs the loss, the dangling check simply stops reading the file,
 #: and both stay green. ``CONTEXT.md`` is the one that mattered — it contributes
-#: 37 of the 77 resolved paths, so it is both the most valuable subject and the
-#: cheapest to lose unnoticed.
+#: 24 of the 69 resolved paths, so it is both the most valuable subject and the
+#: cheapest to lose unnoticed. (37 of 77 at the teardown; #461 moved the ADR
+#: index out of it and this sentence is a second home for the same measurement
+#: as ``_RESOLUTION_FLOOR``'s note, so re-derive both together.)
 _REQUIRED_ENTRY_DOCUMENTS = {
     "CONTEXT.md": "this repo's own values, and the densest source of repo paths",
     "process/harness.md": "the canonical process doc every agent reads",

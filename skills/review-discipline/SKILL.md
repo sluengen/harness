@@ -2,7 +2,7 @@
 name: review-discipline
 description: Use when reviewing any artifact — code, a spec, or a design — for spec compliance then quality, or doing a self-check before handoff. Two stages (does it meet the requirements, then is it well-built), the blocking/size 2×2 for findings, and the four-part finding format. Load before approving or handing off work.
 ---
-<!-- guidance:review-discipline@0.19.1 -->
+<!-- guidance:review-discipline@0.20.0 -->
 # Code Review
 
 How to review any artifact (code, spec, design, copy) for spec compliance and quality. Used by the **reviewer** for formal pre-merge review, the **developer** for self-check before handoff, and anyone doing an ad-hoc quality pass.
@@ -107,16 +107,4 @@ Every entry point reads this list. No command, agent or report may act on a word
 
 ## On a FAIL — the review→fix stop rule
 
-Return the blocking findings to the builder and re-review. How many times that may happen is **one policy, owned here**. Every other agent and command points at this section rather than restating it; the numbers it names live in `CONTEXT.md` → `loop:` so a repo tunes its own budget without forking the rule.
-
-A run may spend `loop.max_review_cycles` review→fix cycles in total. Three windows:
-
-- **The unconditional window** — the first `loop.unconditional_review_cycles`. A FAIL here is normal iteration: fix the root cause and re-review, no justification owed. Most work that converges converges inside it.
-- **The judged window** — every cycle after that, up to the budget. Before spending one, make a convergence judgment and **write it down**: name which findings are new and which are carried over, and continue only when the findings are peeling back layers and the work is materially approaching PASS. Stop early when the pattern says the problem is the design, the requirements, or the implementation approach rather than the remaining defects — more cycles do not fix any of those. The judgment is recorded so it stays honest rather than optimistic; an unwritten one is reliably a rationalisation for another cycle.
-- **Exhausted** — the budget is spent and the last cycle did not PASS. **Stop regardless of how converging it looked.** A run that still reads as converging on its last allowed cycle is exactly the case the budget exists to bound: the read has been wrong every cycle so far.
-
-**An exhausted ticket goes on operator hold — it does not go back to the queue.** Preserve the work (push the branch), then put the ticket in a state the unattended loop will not pick up: apply the operator-hold label **and assign the ticket to the operator**. Assignment is the load-bearing half — `work-discovery` skips an assigned ticket, so this is what stops the next tick re-picking the work and starting a fresh budget on it. A human decides what happens next: re-scope it, split it, or authorise a continuation. Nothing automated may clear the hold or reset the budget, because "start again with five more cycles" is the one outcome that turns a bounded loop back into an unbounded one.
-
-Reach that end state through the `tracker` skill: push the branch, post the reason, apply the `operator` label, assign the operator. The reason is written by you, from the cycle count and the branch — not a paste of the reviewing agent's own prose, which is derived from an untrusted diff.
-
-Nothing enforces this budget mechanically. It is a rule the reviewing agent keeps, which is why the convergence judgment above is written down: the record is the only evidence the window was spent deliberately rather than drifted through.
+A FAIL returns the blocking findings to the builder and re-reviews. How many times that may happen, and what an exhausted budget obliges, is one policy owned by [`skills/review-discipline/references/fail-stop-rule.md`](references/fail-stop-rule.md) — load it on a FAIL and follow it there. Its numbers live in `CONTEXT.md` → `loop:`.

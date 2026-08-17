@@ -352,6 +352,57 @@ def test_architecture_principles_indexes_the_configured_decision_directory() -> 
     )
 
 
+def test_the_adr_index_names_exactly_the_records_on_disk() -> None:
+    """The re-homed ADR index answers to the decision directory, both ways.
+
+    #461 moved this index out of ``CONTEXT.md`` — one of
+    ``test_v4_records_only_what_remains``'s six entry documents — and into
+    ``specs/architecture-principles.md``, which is not one. The sixteen links
+    went with it and left the only sweep that dangling-checked them: *a
+    deletion pass that moves a definition must move its killer*
+    (``skills/review-discipline/references/craft.md``). Measured at that
+    ticket's review, with a paired splice: breaking one ADR link in the new home
+    passed all 1,817 tests, while the same break spliced into ``CONTEXT.md``
+    failed ``test_every_path_the_entry_documents_name_resolves``. The survival
+    was a gap, not an unproven claim, because the control died first.
+
+    This is that killer, re-homed beside the index. It is a correspondence
+    rather than a count, so it fails in both directions and no number in it
+    rots: an ADR filed without an index entry fails, and an index entry naming
+    no file fails. Widening ``_ENTRY_DOCUMENTS`` to cover this spec was the
+    alternative and was rejected — that module's subject is what an agent is
+    *required* to read at startup, and this spec is a historical record whose
+    Decision blocks cite retired machinery on purpose.
+    """
+    paths = _context_paths_block()
+    m = re.search(r"^\s*decisions:\s*(?P<value>\S+)", paths, re.MULTILINE)
+    if m is None:  # a repo may drop the directory; then there is no index to hold
+        return
+    on_disk = {path.name for path in (_REPO_ROOT / m.group("value")).glob("*.md")}
+    assert on_disk, (
+        f"no ADRs under {m.group('value')} — the correspondence below would hold "
+        "over two empty sets and measure nothing"
+    )
+
+    spec = _REPO_ROOT / "specs" / "architecture-principles.md"
+    # `_section` raises when the heading is gone, so re-titling the index fails
+    # here rather than quietly reducing this guard to a pair of empty sets.
+    index = _section(spec.read_text(), "The ADR index")
+    targets = re.findall(r"\]\((?!\w+:)([^)\s#]+\.md)\)", index)
+    unresolved = [target for target in targets if not (spec.parent / target).is_file()]
+    assert not unresolved, (
+        "the ADR index links paths resolving to no file, and since #461 nothing "
+        f"else dangling-checks this document: {unresolved}"
+    )
+
+    linked = {Path(target).name for target in targets}
+    assert linked == on_disk, (
+        "the ADR index and the configured decision directory disagree. Absent "
+        f"from the index: {sorted(on_disk - linked)}; indexed but not on disk: "
+        f"{sorted(linked - on_disk)}"
+    )
+
+
 def test_no_feature_spec_duplicates_an_adr_decision() -> None:
     """One canonical home: a feature spec links to an ADR, never restates it."""
     paths = _context_paths_block()

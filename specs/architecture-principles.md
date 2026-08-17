@@ -1,7 +1,7 @@
 <!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
-last_updated: 2026-08-15  # #435: ADR 0015 retires the runtime — the principles that governed the verbs, the ledger and the review engine go with it
+last_updated: 2026-08-17  # #461: the ADR index moves here from CONTEXT.md, beside the bar a record is filed against
 ---
 
 # Architecture Principles
@@ -63,7 +63,29 @@ The contract this governs is a command's **name, its arguments, and the shape of
 
 ## Cross-cutting decisions
 
-This repo declares `paths.decisions`, so it keeps two homes and the boundary between them is the bar, not the topic. A cross-cutting decision that is also **consequential and expensive to reverse** — branch topology, tracker architecture, security posture, a certification invariant — is filed as a numbered ADR under `specs/decisions/` and indexed from `CONTEXT.md`; superseding one amends it **in place** with a dated note, and the specs that cite it carry the link, not the reasoning. Everything below that bar stays here as a Decision block (`templates/decision.md`), recorded in place rather than as a standalone file: context, decision, alternatives rejected, consequences, superseded inline with a dated note. The two blocks below predate the ADR set and stay where they are — they are decisions about the guidance system itself, not the architecture invariants the ADRs hold.
+This repo declares `paths.decisions`, so it keeps two homes and the boundary between them is the bar, not the topic. A cross-cutting decision that is also **consequential and expensive to reverse** — branch topology, tracker architecture, security posture, a certification invariant — is filed as a numbered ADR under `specs/decisions/` and indexed below under *The ADR index*; superseding one amends it **in place** with a dated note, and the specs that cite it carry the link, not the reasoning. Everything below that bar stays here as a Decision block (`templates/decision.md`), recorded in place rather than as a standalone file: context, decision, alternatives rejected, consequences, superseded inline with a dated note. The two Decision blocks at the end of this section predate the ADR set and stay where they are — they are decisions about the guidance system itself, not the architecture invariants the ADRs hold.
+
+### The ADR index
+
+Every numbered record, in one place. `CONTEXT.md` → *Decisions index* states the placement bar and points here.
+
+[0015](decisions/0015-harness-v4-thin-verification-layer.md) retires the runtime, so every decision below that governed a runtime mechanism is superseded in mechanism — the reasoning stands, the machinery it chose is gone. They are kept for the audit, not as instructions.
+
+- [0001 — local loop default; optional per-target cloud](decisions/0001-cloud-runnable-harness-loop.md) — superseded in mechanism by 0015
+- [0002 — in-container review engine](decisions/0002-in-container-review-engine.md), amended by [0013](decisions/0013-codex-engines-in-container.md) — superseded in mechanism by 0015
+- [0003 — promotion lifecycle and branch topology](decisions/0003-promotion-lifecycle.md) — the topology stands; the `harness promote` verb that drove it is retired by 0015
+- [0004 — repo-guide drift guard](decisions/0004-repo-guide-drift-guard.md)
+- [0005 — retired per-ticket model tiering](decisions/0005-per-ticket-model-tiering.md) — superseded in mechanism by 0015
+- [0006 — hold kinds](decisions/0006-hold-kinds.md)
+- [0007 — design verb](decisions/0007-design-verb.md) — superseded in mechanism by 0015
+- [0008 — inherited ledger events](decisions/0008-inherited-ledger-events.md) — superseded in mechanism by 0015
+- [0009 — verb attempt telemetry](decisions/0009-verb-attempt-telemetry.md) — superseded in mechanism by 0015
+- [0010 — rebased-tree recertification](decisions/0010-rebased-tree-recertification.md) — superseded in mechanism by 0015
+- [0011 — attended-run spend scope](decisions/0011-attended-run-spend-scope.md) — superseded in mechanism by 0015
+- [0012 — persistent runtime host](decisions/0012-persistent-runtime-host.md) — superseded in mechanism by 0015
+- [0014 — changelog from commits](decisions/0014-changelog-from-commits.md) — the rule stands (the commit body *is* the entry); the `CHANGELOG.md` a release assembled into is deleted by 0015, since there is nothing left to release
+- [0015 — harness v4: retire the runtime, thin verification layer](decisions/0015-harness-v4-thin-verification-layer.md)
+- [0016 — tests own structure and negative space; the reviewer owns meaning](decisions/0016-tests-own-structure-and-negative-space.md)
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 
