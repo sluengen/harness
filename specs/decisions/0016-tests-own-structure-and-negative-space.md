@@ -10,7 +10,7 @@
 ADR 0015 deleted the runtime. What remains is a guidance surface, a gate, and `tests/unit/` — and the guards are now, by a wide margin, the largest thing in the repo that a change has to satisfy. Measured on `5194fb3` (2026-08-16):
 
 - **137 guard modules, 1,162 test functions, 1,863 collected tests, 35,537 lines.**
-- **26 modules (675 tests) exercise executable behaviour** — node-spawned hooks, `scripts/` exercisers, the mutation instrument. That part is strong, and this decision does not touch it. The predicate that yields the pair, and the five modules where it and this description disagree, are in *Amendment (2026-08-17, #470)* below.
+- **26 modules (675 tests) exercise executable behaviour** — node-spawned hooks, `scripts/` exercisers, the mutation instrument. That part is strong, and this decision does not touch it. The predicate that yields the pair, and the modules where it and this description disagree, are in *Amendment (2026-08-17, #470)* below.
 - The remaining **111 modules are prose-readers**: they read the published guidance and assert something about its text.
 
 The prose-readers are two generations coexisting. The newer house style — derived corpora, positional predicates, synthetic controls, did-not-delete floors, negative-token sweeps (`test_v4_teardown`, `test_final_evidence_ordering`, the distributed-prose family) — works and ages well. The older generation pins sentences, and it is the recurring tax:
@@ -59,23 +59,25 @@ The rule's home in the installed surface is `skills/code-quality/SKILL.md` Part 
 
 **What changed.** Nothing in the decision. Two figures this record states — 26 behaviour modules, 675 test node ids — were written without the predicate that produced them, so no reader could re-run the count or tell whether it had drifted. #470 turned that into a rule in `skills/spec-authoring/SKILL.md` → *Feature spec*: an as-built record does not state a present-tense quantity on its own. This amendment applies the rule to the record that motivated it.
 
-**The derivation.** This record never said which predicate it counted with, so what follows is reconstructed rather than recovered: of thirteen definitions tried, exactly one reproduces both figures over `tests/unit/` at `5194fb3` (measured 2026-08-17; the nearest misses were `subprocess.run` at 24/624, `import subprocess` at 23/614, and `scripts/` at 29/669).
+**The derivation.** This record never said which predicate it counted with, so what follows is reconstructed rather than recovered: of thirteen definitions tried, one reproduces both figures over `tests/unit/` at `5194fb3` and the other twelve do not (measured 2026-08-17; the nearest misses were `subprocess.run` at 24/624, `import subprocess` at 23/614, and `scripts/` at 29/669).
 
 ```bash
 mkdir -p /tmp/adr16 && git archive 5194fb3 | tar -x -C /tmp/adr16 && cd /tmp/adr16
 git init -q && git add -A && git commit -qm snapshot     # several modules query the git index at collection time
-grep -l subprocess tests/unit/test_*.py | wc -l                        # 26
-pytest $(grep -l subprocess tests/unit/test_*.py) --collect-only -q    # 675 tests collected
+grep -l subprocess tests/unit/test_*.py | wc -l                    # 26
+uv run --extra dev pytest $(grep -l subprocess tests/unit/test_*.py) \
+  --collect-only -q                                                # 675 tests collected
 ```
 
 For scale, the same collection over the whole of `tests/unit/` at that tree reports 137 modules and 1,863 tests, which are the other two figures in *Context*.
 
-**Where the predicate and the prose disagree.** `subprocess` is what a module reaches for to run a child process — a node hook, `git`, `verify.sh`, `mutate.py` — which makes the grep a good proxy for "executes code rather than reading text" and a poor definition of it. Measured at `5194fb3`, the two sets differ in five modules:
+**Where the predicate and the prose disagree.** `subprocess` is what a module reaches for to run a child process — a node hook, `git`, `verify.sh`, `mutate.py` — which makes the grep a good proxy for "executes code rather than reading text" and a poor definition of it. What follows is what two mechanical sweeps over `tests/unit/` at `5194fb3` see: the 26 against `grep -l 'import subprocess'`, and every module against `grep -lE '\bexec\(|\beval\(|runpy|Popen|os\.system|importlib|sys\.path\.insert'`, which is how a test module runs code without spawning a child. They report what those two predicates find, not that nothing else qualifies:
 
 - Three of the 26 never import `subprocess`; they name it in a docstring or read it as an AST subject: `test_fixture_git_init_declares_its_branch.py` (10 node ids), `test_mutate.py` (46), `test_mutate_json_report.py` (5).
-- Two modules outside the 26 import a `scripts/` module and drive it directly, without a child process: `test_mutate_docs_currency.py` (12) and `test_mutate_liveness.py` (23).
+- Three modules outside the 26 run code in this process rather than a child one: `test_mutate_docs_currency.py` (12) and `test_mutate_liveness.py` (23) import `scripts/mutate.py` and drive it directly; `test_size_guard_reference.py` (32) compiles and executes the reference walker `templates/size-guard.md` ships, which is what its triage row below already says it does.
+- Wider than either sweep, and deliberately not folded into a figure: 16 further modules outside the 26 call `tests/_gitutil.py`, which runs `git` in a child process on their behalf. Whether a prose-reader that shells out for a file list executes code is a line this record never drew, and drawing it either way moves the count by more than every disagreement above.
 
-So the figures are reproducible and their description is approximate, which is the honest reading and the reason the invariant below is stated as an exclusion rather than as a count.
+So the figures reproduce and the set they stand for has no exact boundary. That is the honest reading, and it is why the invariant below is stated as an exclusion rather than as a count.
 
 **What a later reader should take from the numbers.** They measure one tree on one day. Nothing re-derives them, and the triage they bound is frozen, so read them as the size of the excluded set when the decision was made — not as a live property of `tests/unit/`.
 

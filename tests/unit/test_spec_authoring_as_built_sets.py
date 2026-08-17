@@ -27,17 +27,37 @@ Neither guard goes wholly vacuous that way, but a conjunct that survives the
 deletion of the rule it guards is defending nothing — the double-anchoring trap
 in ``review-discipline`` → ``references/craft.md`` (*A prose mutation needs a
 paired splice to prove it was live*). Each tripwire therefore resolves its own
-paragraph by an anchor unique to that rule, and an anchor that resolves to
-anything other than exactly one paragraph fails by name rather than falling
-through to a neighbour.
+paragraph by an anchor unique to that rule, an anchor that resolves to anything
+other than exactly one paragraph fails by name rather than falling through to a
+neighbour, and the resolved paragraph must not carry the *other* rule's anchor.
 
-**What this guard does not catch, deliberately.** An *appended* exception —
-the rule left intact with a sentence granting a carve-out added after it —
-passes, measured. That is the fail-open shape ``craft.md`` names under *A
-blacklist inversion sweep fails open on an appended grant*, and closing it would
-need a whitelist sweep over permissive wording, which ADR 0016 rules out as
-asserting meaning. The reviewer catches that edit; this guard catches the rule
-going missing, losing its polarity, or losing one of its three alternatives.
+That last condition is the one a window this shape loses silently. Measured at
+review: deleting the blank line between the two rules leaves both anchors
+resolving to one paragraph and both counts at exactly one, so nothing complains
+— and breaking the code-owned rule's guard/derive conjunct then passes again,
+which is the whole defect the narrowing was added to remove, restored by a
+formatting edit. A separation the guard depends on has to be a separation the
+guard asserts.
+
+**What this guard does not catch, deliberately.** Two shapes, both measured at
+review by splicing a form the guard is known to catch into the same location
+first, so each survivor is a gap rather than an unproven claim:
+
+* An *appended* exception — the rule left intact with a sentence granting a
+  carve-out added after it — passes. That is the fail-open shape ``craft.md``
+  names under *A blacklist inversion sweep fails open on an appended grant*, and
+  closing it would need a whitelist sweep over permissive wording, which ADR
+  0016 rules out as asserting meaning.
+* The quantity rule's **subject** is unpinned: re-scoping it from *an as-built
+  record* to any other subject leaves all five assertions satisfied, because the
+  three alternatives and the prohibition are all still there. Binding the
+  subject to the prohibition is possible, and was declined here as brittle
+  against a benign rewording of a rule whose scope its own section already
+  states; it is recorded rather than closed.
+
+The reviewer catches both. This guard catches the rule going missing, losing its
+polarity, losing one of its three alternatives, or being merged into its
+neighbour.
 
 Occurrence this guard prevents (#470, promoted from the proposals ledger
 2026-08-17): four false or unreconstructable measured claims across four
@@ -115,8 +135,8 @@ def _feature_spec_section() -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
-def _rule_paragraph(anchor: re.Pattern[str], rule: str) -> str:
-    """The one paragraph of ``## Feature spec`` carrying ``rule``.
+def _rule_paragraph(anchor: re.Pattern[str], neighbour: re.Pattern[str], rule: str) -> str:
+    """The one paragraph of ``## Feature spec`` carrying ``rule``, and only it.
 
     Resolving the window is itself an assertion, and a loud one. Two rules now
     live in this section and they share their sanctioned-alternative vocabulary
@@ -125,6 +145,12 @@ def _rule_paragraph(anchor: re.Pattern[str], rule: str) -> str:
     real narrowing if a missing anchor **fails** — a helper that returned the
     section, the first paragraph, or an empty string on no match would restore
     exactly the fall-through it exists to prevent.
+
+    ``neighbour`` is the other rule's anchor, and it is asserted **absent** from
+    the window. A count of one is not the property the narrowing needs: joining
+    the two rules into a single paragraph leaves each anchor matching exactly
+    one paragraph, and that paragraph is then both rules at once — the
+    section-wide window under another name, arrived at by deleting a blank line.
     """
     hits = [
         para
@@ -139,6 +165,13 @@ def _rule_paragraph(anchor: re.Pattern[str], rule: str) -> str:
         f"neighbouring paragraph that shares its vocabulary and report green "
         f"over a rule that is gone."
     )
+    assert not neighbour.search(hits[0]), (
+        f"the {rule} rule shares its paragraph with the rule "
+        f"{neighbour.pattern!r} anchors, so the window below is both rules at "
+        f"once and each one's guard/derive conjunct is satisfied by the other. "
+        f"The count above still reads one, which is why this is asserted "
+        f"separately. Keep the two rules in separate paragraphs."
+    )
     return hits[0]
 
 
@@ -151,7 +184,9 @@ def test_the_code_owned_set_rule_has_a_home() -> None:
     ``guard``/``derive`` is the sanctioned escape, without which the rule bans
     the useful list instead of pricing it.
     """
-    section = _rule_paragraph(_ENUMERATED_SET_ANCHOR, "code-owned set")
+    section = _rule_paragraph(
+        _ENUMERATED_SET_ANCHOR, _QUANTITY_ANCHOR, "code-owned set"
+    )
     assert _MUST_NOT_ENUMERATE.search(section), (
         "spec-authoring's '## Feature spec' section no longer states that an "
         "as-built record must *not* enumerate a code-owned set. Term "
@@ -184,7 +219,9 @@ def test_the_present_tense_quantity_rule_has_a_home() -> None:
     (``review-discipline`` → ``references/craft.md``, *Every prose obligation
     needs a pair with separate exclusive killers*).
     """
-    para = _rule_paragraph(_QUANTITY_ANCHOR, "present-tense quantity")
+    para = _rule_paragraph(
+        _QUANTITY_ANCHOR, _ENUMERATED_SET_ANCHOR, "present-tense quantity"
+    )
     assert _MUST_NOT_STATE.search(para), (
         "spec-authoring's quantity rule no longer states that a present-tense "
         "figure must *not* be stated on its own. Without the negation beside "
